@@ -59,13 +59,15 @@ class AgentCharter:
         return d
 
 
-# The roster. Scout + Analyst + Insight run interactive/background work today; Watcher +
-# Briefer are wired to the metered monitor/brief cron (WP-7, flag `ops.metered_monitors`);
+# The roster. Explorer + Analyst + Responder run interactive/background work today; Watcher +
+# Briefer are wired to the metered monitor/briefing cron (WP-7, flag `ops.metered_monitors`);
 # Curator runs the R12 birth job (kind "profile" — eager intelligence at connection/canvas
 # birth, flag `birth.job`), moved under the kernel per its original Phase-3 reservation.
 AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
-        id="scout", name="Scout", role="Autonomous data explorer",
+        # id is a persisted governance key (see docs/GLOSSARY.md, "Names that are frozen") —
+        # only `name`/`role`/`goal` are display copy.
+        id="scout", name="Explorer", role="Autonomous data explorer",
         goal="Continuously explore connected data and surface findings — no prompts, no dashboards.",
         lane="background", job_kinds=("exploration",),
         tools=("schema profiling", "grounded SQL", "finding synthesis"),
@@ -74,7 +76,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         default_budget=Budget(token_budget=200_000, time_budget_s=600),
     ),
     AgentCharter(
-        id="analyst", name="Analyst", role="Deep-analysis reasoner",
+        id="analyst", name="Analyst", role="Deep analysis reasoner",
         goal="Root-cause a question with evidence — plan → query → score → synthesize.",
         lane="interactive", job_kinds=("investigation", "investigation_salvage"),
         tools=("NL→SQL", "fan-out / additivity guards", "evidence scoring", "Trust Receipt"),
@@ -83,7 +85,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         default_budget=Budget(token_budget=500_000, time_budget_s=900),
     ),
     AgentCharter(
-        id="insight", name="Insight", role="Quick answerer",
+        id="insight", name="Responder", role="Quick answerer",
         goal="Answer a question fast in chat — grounded NL→SQL with a Trust Receipt.",
         lane="interactive", job_kinds=(),
         tools=("NL→SQL", "auto-repair", "Trust Receipt"),
@@ -93,7 +95,7 @@ AGENTS: tuple[AgentCharter, ...] = (
     ),
     AgentCharter(
         id="watcher", name="Watcher", role="KPI sentinel",
-        goal="Watch metrics and spawn an investigation when something moves.",
+        goal="Watch metrics and start a deep analysis when something moves.",
         lane="background", job_kinds=("monitor",), tools=("thresholds", "anomaly checks"),
         icon="radar",
         # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
@@ -106,9 +108,9 @@ AGENTS: tuple[AgentCharter, ...] = (
         goal="Synthesize the briefing — the state of the business in one read.",
         lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
         icon="newspaper",
-        # WP-7: a brief runs real tree-reduce synthesis (LLM) over the workspace insights.
+        # WP-7: a briefing runs real tree-reduce synthesis (LLM) over the workspace findings.
         recommended_models={"openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free"},
-        # scheduled so latency-tolerant, and brief prose quality is user-visible
+        # scheduled so latency-tolerant, and briefing prose quality is user-visible
         default_budget=Budget(token_budget=400_000, time_budget_s=300)),
     AgentCharter(
         id="curator", name="Curator", role="Semantic-layer keeper",
@@ -147,11 +149,18 @@ def agent_for(kind: str | None) -> dict:
     return {"id": c.id, "agent": c.name, "blurb": c.role, "icon": c.icon}
 
 
-# Specialist sub-agents that collaborate *inside* an Analyst investigation (Phase 2):
-# SQL-Engineer → Verifier → Narrator. They run within Analyst's budget/governance, so
-# they're not in the governable roster — this is just identity for the agent.handoff
-# provenance, so the collaboration is legible in the Fleet view + Trust Receipt.
+# Sub-roles that collaborate *inside* an Analyst deep analysis (Phase 2):
+# Orchestrator → SQL Engineer → Verifier → Narrator. They run within Analyst's
+# budget/governance, so they're not in the governable roster — this is just identity for
+# the agent.handoff provenance, so the collaboration is legible in the agents view +
+# Trust Receipt.
+#
+# `orchestrator` emits handoffs (agent/investigate.py) but was never registered here, so
+# every one of its handoffs rendered through the unknown-echo fallback below: the raw id
+# as its name, an empty role, and a gear icon. It is a real sub-role; it is declared here.
 SPECIALISTS: dict[str, dict] = {
+    "orchestrator": {"name": "Orchestrator", "role": "Phase plan + contradiction check",
+                     "icon": "gear"},
     "sql_engineer": {"name": "SQL Engineer", "role": "Grounded SQL + repair", "icon": "builder"},
     "verifier":     {"name": "Verifier", "role": "Trust guards + plausibility", "icon": "shield"},
     "narrator":     {"name": "Narrator", "role": "Grounded prose", "icon": "brief"},
@@ -159,8 +168,20 @@ SPECIALISTS: dict[str, dict] = {
 
 
 def specialist(agent_id: str) -> dict:
-    """Identity for an ADA specialist sub-agent (never raises; unknown → echoed)."""
-    return SPECIALISTS.get(agent_id, {"name": agent_id, "role": "", "icon": "gear"})
+    """Identity for a deep-analysis sub-role (never raises; unknown → echoed).
+
+    Falls back to the ROSTER before echoing, because a handoff names both sub-roles and
+    charters — `investigate.py` emits `orchestrator → analyst` and `analyst → orchestrator`,
+    and `analyst` is a charter, not a sub-role. Without this it rendered as the bare
+    lowercase id with no role, so one side of every such handoff looked unknown.
+    """
+    hit = SPECIALISTS.get(agent_id)
+    if hit is not None:
+        return hit
+    charter = _BY_ID.get(agent_id)
+    if charter is not None:
+        return {"name": charter.name, "role": charter.role, "icon": charter.icon}
+    return {"name": agent_id, "role": "", "icon": "gear"}
 
 
 # ── Governance (override-wins: workspace > app > charter default) ─────────────

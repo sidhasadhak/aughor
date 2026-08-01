@@ -74,7 +74,7 @@ class SemanticContext:
         entries = raw.get("north_star_metrics") or []
         if not isinstance(entries, list):
             return []
-        from aughor.profile.models import NorthStarMetric
+        from aughor.business_profile.models import NorthStarMetric
         out: list = []
         for nd in entries:
             try:
@@ -139,7 +139,7 @@ def resolve(question: str, connection_id: str, scope_schema: str | None = None, 
 
     # The cached business profile — read-only load, never triggers LLM inference here.
     try:
-        from aughor.profile.store import load_raw
+        from aughor.business_profile.store import load_raw
         ctx.profile = load_raw(connection_id, scope_schema)
     except Exception as exc:
         _tolerate(exc, "semantic.resolve: profile")

@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import duckdb
 
 from aughor.connectors.base import Connector
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection

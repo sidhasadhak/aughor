@@ -7,7 +7,7 @@ back what actually happened. The work itself stays where it was.
 
 The package exists for a structural reason (Wave H5). Two packages need to start an
 investigation and neither may own it: :mod:`aughor.automations` (a scheduled effect) and
-:mod:`aughor.kinetic` (a declared ``trigger_investigation`` side effect). While the drain
+:mod:`aughor.actions` (a declared ``trigger_investigation`` side effect). While the drain
 lived inside ``automations/engine.py``, wiring kinetic to it would have made K import A —
 inverting the wave dependency, since A already routes its ``kinetic_action`` effect
 through K's executor. A module that imports neither makes both callers peers.

@@ -101,7 +101,7 @@ export function DocumentUploader() {
       <div>
         <h2 className="text-sm font-semibold text-zinc-200">Documents</h2>
         <p className="text-xs text-zinc-500 mt-0.5">
-          Upload PDFs, Word docs, or Markdown files. ADA retrieves relevant snippets during investigations.
+          Upload PDFs, Word docs, or Markdown files. Deep analysis retrieves relevant snippets while it runs.
         </p>
       </div>
 
@@ -182,7 +182,7 @@ export function DocumentUploader() {
 
       {docs.length === 0 && !uploading && (
         <p className="text-xs text-zinc-500 text-center py-4">
-          No documents yet. Upload one above to give ADA external context.
+          No documents yet. Upload one above to give deep analysis external context.
         </p>
       )}
     </div>

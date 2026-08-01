@@ -119,7 +119,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         overflowY: "auto", padding: 10 }}>
         {focusInvestigationId && (
           <div style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px 8px" }}>
-            traces for investigation <code style={{ fontSize: 10 }}>{focusInvestigationId}</code>
+            traces for deep analysis <code style={{ fontSize: 10 }}>{focusInvestigationId}</code>
           </div>
         )}
         {notRecorded ? (
@@ -172,7 +172,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                   {detail.events.length} events
                   {totalMs > 0 && ` · ${fmtMs(totalMs)}`}
                   {detail.agent_id && ` · agent ${detail.agent_id}`}
-                  {invId && ` · investigation ${invId}`}
+                  {invId && ` · deep analysis ${invId}`}
                 </div>
               </div>
               {detail.ok != null && (
@@ -263,7 +263,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
                 {!invId ? (
                   <div style={{ fontSize: 12, color: "var(--t3)" }}>
-                    This trace recorded no investigation id (a quick turn), so a verdict has
+                    This trace recorded no deep analysis id (a quick turn), so a verdict has
                     nothing durable to attach to. Feedback is available on deep runs.
                   </div>
                 ) : (

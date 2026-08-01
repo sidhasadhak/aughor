@@ -795,7 +795,7 @@ def query_capability_answer(body: _CapabilityAnswerRequest):
             schema = db.get_schema()
         except Exception:
             schema = ""
-        from aughor.capability import run_capability, CapabilityRequest
+        from aughor.pipeline import run_capability, CapabilityRequest
         from aughor.trust import Scope
         res = run_capability(body.domain or "data", CapabilityRequest(
             question=body.question,

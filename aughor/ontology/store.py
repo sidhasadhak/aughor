@@ -231,8 +231,8 @@ def patch_action(
         if field in _EDITABLE:
             action_dict[field] = value
 
-    from aughor.ontology.models import OntologyAction
-    graph.actions[action_id] = OntologyAction.model_validate(action_dict)
+    from aughor.ontology.models import QueryTemplate
+    graph.actions[action_id] = QueryTemplate.model_validate(action_dict)
 
     cache[k] = {"graph": graph.model_dump()}
     _save(cache)

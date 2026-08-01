@@ -20,7 +20,7 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-WS4B_FLAGS = ["ada.premise_check", "ada.causal_drill", "ask.clarify", "closed_loop"]
+WS4B_FLAGS = ["deep_analysis.premise_check", "deep_analysis.causal_drill", "ask.clarify", "closed_loop"]
 
 
 @pytest.fixture(autouse=True)
@@ -42,13 +42,13 @@ def test_auto_eligible_flag_env_semantics(monkeypatch):
     # explicit env value always wins — the kill switch survives graduation.
     monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
     monkeypatch.delenv("AUGHOR_PREMISE_CHECK", raising=False)
-    assert flag_enabled("ada.premise_check") is True
+    assert flag_enabled("deep_analysis.premise_check") is True
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "1")
-    assert flag_enabled("ada.premise_check") is True
+    assert flag_enabled("deep_analysis.premise_check") is True
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "garbage")
-    assert flag_enabled("ada.premise_check") is False
+    assert flag_enabled("deep_analysis.premise_check") is False
     monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "0")
-    assert flag_enabled("ada.premise_check") is False
+    assert flag_enabled("deep_analysis.premise_check") is False
 
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):

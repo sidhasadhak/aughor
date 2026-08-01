@@ -286,9 +286,9 @@ def _ada_nodes(flag):
     from aughor.db.connection import DuckDBConnection
     from aughor.agent.graph import build_graph_generic
     if flag:
-        os.environ["AUGHOR_ADA_PARALLEL_LENSES"] = flag
+        os.environ["AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES"] = flag
     else:
-        os.environ.pop("AUGHOR_ADA_PARALLEL_LENSES", None)
+        os.environ.pop("AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES", None)
     try:
         db = DuckDBConnection.__new__(DuckDBConnection)
         db._conn = duckdb.connect(":memory:")
@@ -296,7 +296,7 @@ def _ada_nodes(flag):
         db._connection_id = "t"
         return set(build_graph_generic(db).get_graph().nodes.keys())
     finally:
-        os.environ.pop("AUGHOR_ADA_PARALLEL_LENSES", None)
+        os.environ.pop("AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES", None)
 
 
 def test_flag_off_has_no_multilens_node():
@@ -338,7 +338,7 @@ def _install_interaction_stubs(monkeypatch, *, why_findings=True, interaction_ph
 
 def test_interaction_appends_and_gets_both_summaries_when_flag_on(monkeypatch):
     captured = _install_interaction_stubs(monkeypatch)
-    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert ids[-1] == "cross_section_interaction"           # forward-chained last
@@ -347,7 +347,7 @@ def test_interaction_appends_and_gets_both_summaries_when_flag_on(monkeypatch):
 
 def test_interaction_off_by_default(monkeypatch):
     _install_interaction_stubs(monkeypatch)
-    monkeypatch.delenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", raising=False)
+    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", raising=False)
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
 
@@ -355,7 +355,7 @@ def test_interaction_off_by_default(monkeypatch):
 def test_interaction_skipped_without_why_findings(monkeypatch):
     # composition ran but produced no findings → nothing to cross → no interaction (even flag-on)
     _install_interaction_stubs(monkeypatch, why_findings=False)
-    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
 
@@ -406,7 +406,7 @@ def _install_deepen_stubs(monkeypatch, *, why_findings=True):
 
 def test_deepen_appends_benchmark_and_drill_when_flag_on(monkeypatch):
     seen = _install_deepen_stubs(monkeypatch)
-    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert "reason_benchmark" in ids and "reason_drill" in ids
@@ -416,7 +416,7 @@ def test_deepen_appends_benchmark_and_drill_when_flag_on(monkeypatch):
 
 def test_deepen_off_by_default(monkeypatch):
     _install_deepen_stubs(monkeypatch)
-    monkeypatch.delenv("AUGHOR_ADA_WHY_DEEPEN", raising=False)
+    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", raising=False)
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert "reason_benchmark" not in ids and "reason_drill" not in ids
@@ -424,7 +424,7 @@ def test_deepen_off_by_default(monkeypatch):
 
 def test_deepen_skipped_without_why_findings(monkeypatch):
     _install_deepen_stubs(monkeypatch, why_findings=False)
-    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert "reason_benchmark" not in ids and "reason_drill" not in ids
@@ -595,8 +595,8 @@ def _install_forward_stub(monkeypatch, *, seen=None, sleep=0.0):
     monkeypatch.setattr(inv, "_run_reason_benchmark_lens", lambda s, c, b: _mk("why_benchmark")(s, c))
     monkeypatch.setattr(inv, "_run_reason_drill_lens", lambda s, c, b: _mk("why_drill")(s, c))
     # enable the two WHY-lens families whose lenses we parallelize
-    monkeypatch.setenv("AUGHOR_ADA_WHY_WHERE_INTERACTION", "1")
-    monkeypatch.setenv("AUGHOR_ADA_WHY_DEEPEN", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
 
 
 def test_forward_why_lenses_wave_is_byte_identical_to_serial(monkeypatch):
@@ -605,9 +605,9 @@ def test_forward_why_lenses_wave_is_byte_identical_to_serial(monkeypatch):
     monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
     _install_forward_stub(monkeypatch)
 
-    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", raising=False)
     serial = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
-    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", "1")
     wave = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
 
     assert serial == wave                                  # byte-identical merged phase order
@@ -621,11 +621,11 @@ def test_forward_why_lenses_wave_uses_a_reader_per_lens(monkeypatch):
     seen: list = []
     _install_forward_stub(monkeypatch, seen=seen)
 
-    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", raising=False)
     serial_top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), serial_top)
 
-    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", "1")
     wave_top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), wave_top)
 
@@ -639,7 +639,7 @@ def test_forward_why_lenses_serial_when_flag_off_shares_conn(monkeypatch):
     """Default (flag off) → the serial chain, each lens on the SAME top-level conn (no clones)."""
     seen: list = []
     _install_forward_stub(monkeypatch, seen=seen)
-    monkeypatch.delenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", raising=False)
+    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", raising=False)
     top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), top)
 
@@ -651,7 +651,7 @@ def test_forward_why_lenses_wave_runs_concurrently(monkeypatch):
     """The wall-clock win: three ~0.3s forward lenses finish in ~0.3s under the wave, not ~0.9s."""
     monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
     _install_forward_stub(monkeypatch, sleep=0.3)
-    monkeypatch.setenv("AUGHOR_ADA_PARALLEL_WHY_LENSES", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES", "1")
     t0 = time.time()
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     dt = time.time() - t0

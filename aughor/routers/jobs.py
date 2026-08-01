@@ -1,7 +1,7 @@
-"""K1 — the Fleet surface: a read view over the kernel's job table + journal, plus
-cancellation. Mirrors MotherDuck's Flights tool shape (list / get / logs / cancel)
-so the autonomy we already run is legible as a fleet of named agents — and so the
-same surface can be exposed as MCP tools later.
+"""K1 — the Agents surface: a read view over the kernel's job table + journal, plus
+cancellation. Four verbs — list / get / logs / cancel — so the autonomy we already run
+is legible as a roster of named agents, and so the same surface can be exposed as MCP
+tools later.
 
 See docs/AGENTIC_ARCHITECTURE.md §6-7 and docs/MOTHERDUCK_LEARNINGS.md R2/R5.
 

@@ -105,8 +105,8 @@ def test_rewrite_preserves_percent_scale():
 
 
 def test_defan_returns_none_for_non_dim_ratio_kind():
-    from aughor.sql.fanout import FanoutFinding
-    assert build_dim_ratio_rewrite(_ROAS, FanoutFinding(hub_root="x", satellites=["a"], kind="chasm")) is None
+    from aughor.sql.fanout import FanoutIssue
+    assert build_dim_ratio_rewrite(_ROAS, FanoutIssue(hub_root="x", satellites=["a"], kind="chasm")) is None
 
 
 def test_prompt_text_names_both_tables_and_dimension():

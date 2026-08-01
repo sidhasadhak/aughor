@@ -1,11 +1,12 @@
 """
 Ontology data models — M12a (structural, no LLM).
 
-Four core object types mirror a Palantir-style ontology:
-  OntologyEntity      — a business object with identity, lifecycle, and business rules
+Four core types (the shape came out of a study; see
+docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md):
+  OntologyEntity       — a business object with identity, lifecycle, and business rules
   OntologyRelationship — a typed, directional relationship between two entities
-  OntologyMetric      — a computable KPI defined in terms of entities
-  OntologyAction      — a parameterized SQL template with business-rule enforcement
+  OntologyMetric       — a computable KPI defined in terms of entities
+  QueryTemplate        — a parameterized SQL template with business-rule enforcement
 
 All fields are JSON-serialisable so the graph can be cached as plain JSON.
 Pydantic is used for construction-time validation only — the store serialises
@@ -16,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, computed_field
 
 
 class ComputedProperty(BaseModel):
@@ -30,16 +31,16 @@ class ComputedProperty(BaseModel):
     verification_note: str = ""   # why it failed, when not verified
 
 
-class ObjectSet(BaseModel):
-    """A named, reusable filtered view of an entity's rows — mirrors Palantir's Object Set concept.
+class Segment(BaseModel):
+    """A saved, named filter over one entity's rows.
 
     Examples:
       - "Active Orders"    filter_sql="order_status NOT IN ('canceled', 'delivered')"
       - "Delivered Orders" filter_sql="order_status = 'delivered'"
       - "All Orders"       filter_sql=""  (no filter — full table)
 
-    object_sets complement active_filter (which remains the single fast-path SQL fragment
-    used by the investigation pipeline). The default object set's filter_sql is always
+    Segments complement active_filter (which remains the single fast-path SQL fragment
+    used by the investigation pipeline). The default segment's filter_sql is always
     kept in sync with active_filter on the parent entity.
     """
     id: str                      # snake_case: "active_orders", "delivered_orders"
@@ -55,7 +56,7 @@ class ObjectSet(BaseModel):
 
 
 class EntityProperty(BaseModel):
-    """First-class property on an entity — mirrors Palantir's Property concept.
+    """First-class property on an entity.
 
     Sourced from ColumnProfile at build time; description enriched from glossary.
     A property is the semantic label on a column — not the raw column itself.
@@ -93,7 +94,7 @@ class OntologyEntity(BaseModel):
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
 
-    # Palantir-style entity classification (set by enricher; heuristic fallback in builder)
+    # Entity classification (set by enricher; heuristic fallback in builder)
     # reference_data  — master/lookup data referenced by others (Customer, Product, Category)
     # business_object — operational entity with state transitions (Order, Contract, Ticket)
     # event           — append-only record or line-item (Payment, OrderItem, LogEntry)
@@ -109,10 +110,29 @@ class OntologyEntity(BaseModel):
     terminal_states: list[str] = Field(default_factory=list)
     active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
 
-    # Named object sets — composable, reusable filters over this entity's rows.
+    # Named segments — composable, reusable saved filters over this entity's rows.
     # Auto-generated from lifecycle states; enriched by exploration findings.
-    # Keyed by ObjectSet.id for fast lookup.
-    object_sets: dict[str, ObjectSet] = Field(default_factory=dict)
+    # Keyed by Segment.id for fast lookup.
+    #
+    # `object_sets` stays a VALIDATION alias so every ontology already cached as JSON
+    # (data/ontology_cache.json, written before the rename) still deserialises into
+    # `segments` instead of silently coming back empty.
+    segments: dict[str, Segment] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("segments", "object_sets"),
+    )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def object_sets(self) -> dict[str, Segment]:
+        """Deprecated copy of ``segments`` — RETAINED FOR ONE RELEASE.
+
+        Emitted by ``model_dump()`` so every consumer of the entity payload (the HTTP
+        views, the JSON cache, an out-of-tree client) keeps reading the old key while it
+        migrates. Delete this property — and the ``object_sets`` validation alias above —
+        in the release after the one that introduced ``segments``.
+        """
+        return self.segments
 
     # Temporal
     created_at_col: Optional[str] = None      # primary event-time column
@@ -123,7 +143,7 @@ class OntologyEntity(BaseModel):
 
     # First-class properties — one entry per column on the source table(s).
     # Keyed by column name. Sourced from ColumnProfile at build time;
-    # description enriched from glossary. Mirrors Palantir's Property concept.
+    # description enriched from glossary.
     properties: dict[str, EntityProperty] = Field(default_factory=dict)
 
     # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
@@ -140,7 +160,7 @@ class OntologyEntity(BaseModel):
 
 
 class OntologyInterface(BaseModel):
-    """A shared structural shape implemented by multiple entity types — mirrors Palantir's Interface concept.
+    """A shared structural shape implemented by multiple entity types.
 
     Interfaces let you write polymorphic queries across entity types without
     knowing specific table schemas.  Examples:
@@ -199,7 +219,13 @@ class OntologyMetric(BaseModel):
 
 
 class ActionParameter(BaseModel):
-    """A typed, named input to an OntologyAction — mirrors Palantir's Action parameter concept.
+    """A typed, named input to a QueryTemplate *or* to a declared, governed write action.
+
+    Deliberately NOT renamed alongside QueryTemplate: this one type is shared by the
+    read-side template (``QueryTemplate.parameters``) and the write-surface unit's
+    ``params`` (the declared-action model below), and "action" is still the right word
+    for the latter. Naming it ``QueryTemplateParameter`` would mislabel every declared
+    write-action parameter.
 
     Parameters are extracted from {placeholder} tokens in the sql_template.
     Data type is inferred from column profiles where possible; falls back to VARCHAR.
@@ -212,11 +238,22 @@ class ActionParameter(BaseModel):
     default_value: Optional[str] = None  # serialised as string; cast at runtime
 
 
-class OntologyAction(BaseModel):
+class QueryTemplate(BaseModel):
+    """A reusable, governed SQL template over one entity — read-only, never a write.
+
+    Was ``OntologyAction``. It never acted on anything: it is a parameterized SELECT with
+    business rules attached, which is what the planner reuses instead of re-deriving the
+    query. "Action" now means exactly one thing (a governed write to the data), so this
+    type had to give the word back — the declared-action model below is the write surface.
+
+    The persisted spelling is frozen: these live under ``OntologyGraph.actions`` in the
+    JSON cache and under ``data/learned_actions.json``, and ``action_type`` / ``origin``
+    are stored values. Only the Python symbol moved.
+    """
     id: str                                    # "get_active_orders"
     display_name: str
     description: str
-    entity: str                                # entity this acts on
+    entity: str                                # entity this template queries
     action_type: Literal["filter", "compute", "traverse", "aggregate", "validate"]
     sql_template: str                          # SQL with optional {param} placeholders
     parameters: list[ActionParameter] = Field(default_factory=list)
@@ -224,11 +261,11 @@ class OntologyAction(BaseModel):
     returns: str                               # description of what the SQL returns
     source_table: str                          # primary table this queries
 
-    # Provenance — how this action came to exist.  Additive, non-breaking:
+    # Provenance — how this template came to exist.  Additive, non-breaking:
     #   structural — derived by the ontology builder from schema shape (default)
     #   learned    — crystallized from a repeated high-confidence investigation
     #   manual     — authored/edited by a user
-    # Learned actions live in a separate {conn}:{schema}-keyed store
+    # Learned templates live in a separate {conn}:{schema}-keyed store
     # (data/learned_actions.json) that survives ontology rebuilds, and are
     # overlaid into the graph at read time.
     origin: Literal["structural", "learned", "manual"] = "structural"
@@ -237,8 +274,8 @@ class OntologyAction(BaseModel):
 
 
 # ── Wave K: declared, governed actions (the kinetic plane) ───────────────────────────
-# A KineticAction is DISTINCT from OntologyAction (above, a read-side SQL-template shortcut)
-# and from the ActionHub ActionTrigger (an outbound webhook). It is the write-surface unit:
+# A KineticAction is DISTINCT from QueryTemplate (above, a read-side SQL-template shortcut)
+# and from the notification ActionTrigger (an outbound webhook). It is the write-surface unit:
 # typed parameters + submission criteria + graduated approval, composing the other two. It
 # never mutates source data — its `kind` is an annotation, a side effect, or a governed read
 # query. Declared by a human in the per-connection ontology overlay (overrides.py), not built.
@@ -306,7 +343,9 @@ class OntologyGraph(BaseModel):
     entities: dict[str, OntologyEntity] = Field(default_factory=dict)
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
     metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
-    actions: dict[str, OntologyAction] = Field(default_factory=dict)
+    # Key frozen as `actions`: it is a persisted JSON key in data/ontology_cache.json and
+    # the shape of GET /ontology/actions. The TYPE is a QueryTemplate (see above).
+    actions: dict[str, QueryTemplate] = Field(default_factory=dict)
     # Wave K: human-declared governed actions, overlaid at read time (kept separate from the
     # read-side `actions` dict above so the two "action" concepts never collide). Additive —
     # defaults empty, so an old JSON-cached graph deserialises unchanged.
@@ -322,5 +361,5 @@ class OntologyGraph(BaseModel):
         eid = self.table_to_entity.get(table)
         return self.entities.get(eid) if eid else None
 
-    def actions_for_entity(self, entity_id: str) -> list[OntologyAction]:
+    def actions_for_entity(self, entity_id: str) -> list[QueryTemplate]:
         return [a for a in self.actions.values() if a.entity == entity_id]

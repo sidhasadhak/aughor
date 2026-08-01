@@ -103,7 +103,7 @@ function CanvasHistory({
     return (
       <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
         <Icon name="clock" size={28} color="var(--t4)" />
-        <div style={{ fontSize: 13, color: "var(--t3)" }}>No investigations yet in this Data Canvas.</div>
+        <div style={{ fontSize: 13, color: "var(--t3)" }}>No deep analyses yet in this Data Canvas.</div>
       </div>
     );
   }
@@ -148,7 +148,7 @@ function CanvasHistory({
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
-            {kind === "chat" ? "Chat" : "Investigation"}
+            {kind === "chat" ? "Chat" : "Deep analysis"}
           </span>
           <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
@@ -811,11 +811,11 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
                   padding: "14px 32px 0", flexShrink: 0,
                   fontSize: 12, fontWeight: 500, color: "var(--t2)",
                 }}>
-                  Recent investigations
+                  Recent deep analyses
                   {/* Scope label — this list is canvas-scoped by design; without saying so,
                       runs launched elsewhere look like they vanished (live confusion). */}
                   <span style={{ fontWeight: 400, color: "var(--t4)", marginLeft: 8, fontSize: 11 }}>
-                    on this canvas · all runs live under Investigations in the sidebar
+                    on this canvas · all runs live under Deep analyses in the sidebar
                   </span>
                 </div>
                 <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />

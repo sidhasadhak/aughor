@@ -264,7 +264,7 @@ def build_external_context_section(query: str, top_k: int = 4) -> str:
     doc_ids. An agent with no bound documents sees none (fail-closed — its
     context is what its creator gave it). No agent → unchanged global behavior.
     """
-    from aughor.user_agents.context import agent_doc_ids
+    from aughor.custom_agents.context import agent_doc_ids
     allowed = agent_doc_ids()
     if allowed is not None and not allowed:
         return ""

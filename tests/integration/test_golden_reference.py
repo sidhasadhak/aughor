@@ -30,7 +30,7 @@ def golden_db(tmp_path_factory):
 
     from aughor.db import registry
     from aughor.db.connection import open_connection_for
-    from aughor.samples.setup import _seed_ecommerce
+    from aughor.demo.setup import _seed_ecommerce
 
     path = tmp_path_factory.mktemp("golden") / "samples.duckdb"
     conn = duckdb.connect(str(path))

@@ -335,7 +335,7 @@ def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "grounded-schema format probe is advisory; fall through to manual "
-                       "table filtering", counter="ada.schema_grounding")
+                       "table filtering", counter="deep_analysis.schema_grounding")
     relevant = [metric_table] + [d.rsplit(".", 1)[0] for d in (dimensions or []) if "." in d]
     if date_column and "." in date_column:
         relevant.append(date_column.rsplit(".", 1)[0])
@@ -420,7 +420,7 @@ def _resolve_date_column(date_column: str, metric_table: str, full_schema: str, 
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "fk-neighbour expand best-effort; date-column resolution proceeds "
-                       "with bare seeds", counter="ada.date_resolve")
+                       "with bare seeds", counter="deep_analysis.date_resolve")
     ordered: list = []
     seen: set = set()
     for group in (seeds, list(typed.keys())):
@@ -604,7 +604,7 @@ def _parallel_execute_safe(
     # visible only as N identical per-worker rejections.
     try:
         from aughor.tools.executor import check_sql_fanout
-        check_sql_fanout([s for _, s in valid], where="ada.phase_queries")
+        check_sql_fanout([s for _, s in valid], where="deep_analysis.phase_queries")
     except Exception:
         import logging as _logging
         _logging.getLogger(__name__).debug("parallel-safety pre-check skipped", exc_info=True)
@@ -625,7 +625,7 @@ def _parallel_execute_safe(
     # DURING the node (`ada.progress_events`); no-op when no SSE sink is bound (the default).
     total_n = len(valid)
     try:
-        with _fanout_region("ada.phase_queries"), ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
+        with _fanout_region("deep_analysis.phase_queries"), ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
             futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
             ordered: list[tuple | None] = [None] * len(valid)
             done_n = 0
@@ -674,13 +674,13 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                         validate=flag_enabled("semops.guarded_extract"),
                     )
                     r = op.result
-                    _s.inc("ada.semantic_steps_applied")
+                    _s.inc("deep_analysis.semantic_steps_applied")
                 else:
-                    _s.inc("ada.semantic_steps_skipped_nontext")
+                    _s.inc("deep_analysis.semantic_steps_skipped_nontext")
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
                 tolerate(_e, "ADA semantic step is best-effort; raw result still used",
-                         counter="ada.semantic_step_failed")
+                         counter="deep_analysis.semantic_step_failed")
         out.append((q, r))
     return out
 
@@ -908,7 +908,7 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
                     f["trust_caveat"] = _why
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
-                tolerate(_e, "ada: advisory trust check", counter="ada.trust_advisory_failed")
+                tolerate(_e, "ada: advisory trust check", counter="deep_analysis.trust_advisory_failed")
         # WP-1a — live-detected guard caveats from `execute_guarded` (a value-disjoint
         # join / unbound filter the retry could not clear). These were detected against
         # the REAL data at execute time, so they lead; the static verify_insight caveat
@@ -1219,12 +1219,12 @@ def _repair_conditioned_ratio(findings: list, conn, metric_sql: str, metric_labe
             repaired.append(f)
         if repaired:
             from aughor.stats import stats as _s
-            _s.inc("ada.ratio_grain_repaired", len(repaired))
+            _s.inc("deep_analysis.ratio_grain_repaired", len(repaired))
         return repaired, gstr, g
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "grain-correct ratio repair is best-effort; suppression stands",
-                 counter="ada.ratio_grain_repair_failed")
+                 counter="deep_analysis.ratio_grain_repair_failed")
         return [], known_global_str, known_global
 
 
@@ -1392,7 +1392,7 @@ def _prune_and_rank_phases(phases: list) -> list:
     """Deliver only what's relevant, most-material first. Drops findings that can't move the
     reader (see _finding_earns_place), hides a phase left with nothing to say, and re-orders
     so the phase carrying the decision (the opportunity gap) leads instead of trailing —
-    the Databricks 'what → why → how' shape. Findings are dropped, phases are only HIDDEN
+    the 'what → why → how' shape. Findings are dropped, phases are only HIDDEN
     (a flag the renderers honour), so the 'phases run' count and plan reconciliation stay
     intact. Returns the re-ranked list; mutates findings in place."""
     for ph in phases or []:
@@ -1930,7 +1930,7 @@ def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
         graph = load_latest_ontology(connection_id or "")
         if graph is None or not getattr(graph, "kinetic_actions", None):
             return
-        from aughor.kinetic.propose import propose_actions
+        from aughor.actions.propose import propose_actions
         context = f"{answer_report.get('headline', '')}\n\n{answer_report.get('executive_summary', '')}".strip()
         answer_report["proposals"] = [
             {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
@@ -2105,7 +2105,7 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake probe connection close failed; probe result already "
-                               "returned", counter="ada.intake_probe_close")
+                               "returned", counter="deep_analysis.intake_probe_close")
 
 
 def _metric_definition_receipt(intake_data: dict) -> str:
@@ -2195,7 +2195,7 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake probe connection close failed; probe result already "
-                               "returned", counter="ada.intake_probe_close")
+                               "returned", counter="deep_analysis.intake_probe_close")
 
 
 def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
@@ -2229,7 +2229,7 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake probe connection close failed; probe result already "
-                               "returned", counter="ada.intake_probe_close")
+                               "returned", counter="deep_analysis.intake_probe_close")
 
 
 def _question_pins_period(question: str, obs_start: str, obs_end: str) -> bool:
@@ -2892,7 +2892,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "unit-conversion probe is best-effort (unproven conversion is "
-                      "caveated, never rewritten)", counter="ada.unit_probe")
+                      "caveated, never rewritten)", counter="deep_analysis.unit_probe")
         return False
 
 
@@ -2977,7 +2977,7 @@ def _pinned_metric_runs(conn, connection_id: str, metric_table: str, sql: str) -
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake pin-probe connection close failed; probe result already "
-                               "returned", counter="ada.intake_probe_close")
+                               "returned", counter="deep_analysis.intake_probe_close")
 
 
 def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric_table: str,
@@ -3015,7 +3015,7 @@ def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "ledger crystallization of the metric pin is best-effort; the pin itself is "
-                      "unaffected", counter="ada.metric_pin_ledger")
+                      "unaffected", counter="deep_analysis.metric_pin_ledger")
 
 
 def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) -> Optional[str]:
@@ -3026,7 +3026,7 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     (``ada.pin_canonical_metric``); deterministic; fail-open on every uncertainty."""
     try:
         from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("ada.pin_canonical_metric"):
+        if not flag_enabled("deep_analysis.pin_canonical_metric"):
             return None
     except Exception:
         return None
@@ -3039,7 +3039,7 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "canonical-metric resolve for intake pin is best-effort; keeping the LLM "
-                      "metric formula", counter="ada.metric_pin")
+                      "metric formula", counter="deep_analysis.metric_pin")
         return None
     cand = _match_canonical_metric(intake.metric_label, llm_sql, metrics or [])
     if cand is None:
@@ -3098,7 +3098,7 @@ def _probe_metric_scalar(conn, connection_id: str, metric_table: str, sql: str) 
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "clarify metric-probe connection close failed; probe result already "
-                               "returned", counter="ada.clarify_probe_close")
+                               "returned", counter="deep_analysis.clarify_probe_close")
 
 
 def _metrics_materially_diverge(a: float, b: float) -> bool:
@@ -3121,7 +3121,7 @@ def _lookup_metric_resolution(connection_id: str, metric_label: str):
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "clarify ledger lookup is best-effort; a miss just means we ask/pin",
-                 counter="ada.clarify_ledger")
+                 counter="deep_analysis.clarify_ledger")
     return None
 
 
@@ -3138,7 +3138,7 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     fail-open: only binds a substitutable formula that actually runs over the metric table."""
     try:
         from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("ada.clarify_gate"):
+        if not flag_enabled("deep_analysis.clarify_gate"):
             return None
     except Exception:
         return None
@@ -3170,7 +3170,7 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     Deterministic; fail-open on every uncertainty."""
     try:
         from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("ada.clarify_gate"):
+        if not flag_enabled("deep_analysis.clarify_gate"):
             return None
     except Exception:
         return None
@@ -3188,7 +3188,7 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "clarify governed-metric resolve is best-effort; proceed without a clarify",
-                 counter="ada.clarify_resolve")
+                 counter="deep_analysis.clarify_resolve")
         return None
     if cand is None:
         return None
@@ -3242,7 +3242,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # large context, tighter on a small BYO model so the curated payload fits instead of
     # overflowing. Defaults preserved exactly when the window is generous.
     from aughor.llm.context_budget import schema_scan_char_limits
-    from aughor.platform import vend_llm
+    from aughor.control_plane import vend_llm
     _schema_cap, _scan_cap = schema_scan_char_limits(vend_llm("coder").max_context,
                                                      default_schema=_SCHEMA_CHAR_LIMIT,
                                                      default_scan=_SCAN_CHAR_LIMIT)
@@ -3314,7 +3314,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake correction retry failed; keeping the original intake "
-                               "spec despite validation errors", counter="ada.intake_retry")
+                               "spec despite validation errors", counter="deep_analysis.intake_retry")
 
     # RC1 — metric-feasibility caveat: when the question needs a metric the schema can't
     # support (margin/profit with no cost column; efficiency with no spend/outcome), record
@@ -3345,7 +3345,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             _axis = _resolve_temporal_axis(state, conn, intake_data=intake.model_dump())
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_exc, "intake temporal-axis recovery best-effort", counter="ada.intake_temporal")
+            tolerate(_exc, "intake temporal-axis recovery best-effort", counter="deep_analysis.intake_temporal")
             _axis = None
         if _axis and _axis.get("date_column"):
             intake.date_column = _axis["date_column"]
@@ -3416,7 +3416,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "unsafe-metric retry failed; the deterministic safe fallback "
-                               "applies instead", counter="ada.intake_retry")
+                               "applies instead", counter="deep_analysis.intake_retry")
         if _unsafe:
             _safe = _safe_metric_fallback(intake.metric_sql)
             _metric_note = (
@@ -3457,7 +3457,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             except Exception as _exc2:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc2, "money-coherence retry is best-effort; the parsed metric stands",
-                         counter="ada.intake_money_retry")
+                         counter="deep_analysis.intake_money_retry")
 
     # Unit-conversion guard: a planner sometimes invents a unit story for an integer
     # money column ("stored in cents") and bakes /100.0 into the metric — every number
@@ -3672,7 +3672,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ontology entity enrichment is best-effort; intake proceeds without "
-                       "lifecycle context", counter="ada.intake_ontology")
+                       "lifecycle context", counter="deep_analysis.intake_ontology")
 
     # Pin canonical entity/metric definitions once so every phase uses the same
     # identifiers/expressions (prevents figures drifting between phases).
@@ -3706,7 +3706,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "shared data-understanding grounding is advisory; phases build it "
-                       "per-phase when the shared block is absent", counter="ada.plan_grounding")
+                       "per-phase when the shared block is absent", counter="deep_analysis.plan_grounding")
 
     # Orchestrator: declare the phase path the deterministic routers will execute, so the
     # Analyst's autonomy is legible (a plan of record, not emergent gate-by-gate routing).
@@ -3799,11 +3799,11 @@ def _phase_grounding(
         # Reused the block ada_intake built once — the R3 dedupe working. Counting it
         # makes the optimization observable on real runs: reused ≫ built per phase means
         # the shared block is threading through; a spike in "built" means it isn't.
-        _s.inc("ada.grounding_reused")
+        _s.inc("deep_analysis.grounding_reused")
         return grounding_block
     if not schema:
         return ""
-    _s.inc("ada.grounding_built")
+    _s.inc("deep_analysis.grounding_built")
     try:
         from aughor.semantic.data_understanding import build_data_understanding
         return build_data_understanding(
@@ -3812,7 +3812,7 @@ def _phase_grounding(
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "data-understanding grounding block is advisory; planner prompt "
-                       "unchanged", counter="ada.plan_grounding")
+                       "unchanged", counter="deep_analysis.plan_grounding")
         return ""
 
 
@@ -3932,7 +3932,7 @@ def run_analysis_phase(
                             _refs.add(f"{_t.db}.{_t.name}" if _t.db else _t.name)
                     except Exception as _e2:
                         from aughor.kernel.errors import tolerate
-                        tolerate(_e2, "fanout schema-augment: query parse", counter="ada.fanout_augment_parse")
+                        tolerate(_e2, "fanout schema-augment: query parse", counter="deep_analysis.fanout_augment_parse")
                 for _ref in _refs:
                     if not _ref or _ref.lower() in _have:
                         continue
@@ -3950,10 +3950,10 @@ def run_analysis_phase(
                             _have.add(_ref.lower())
                     except Exception as _e2:
                         from aughor.kernel.errors import tolerate
-                        tolerate(_e2, "fanout schema-augment: column probe", counter="ada.fanout_augment_probe")
+                        tolerate(_e2, "fanout schema-augment: column probe", counter="deep_analysis.fanout_augment_probe")
             except Exception as _e1:
                 from aughor.kernel.errors import tolerate
-                tolerate(_e1, "fanout schema-augment is best-effort", counter="ada.fanout_augment_failed")
+                tolerate(_e1, "fanout schema-augment is best-effort", counter="deep_analysis.fanout_augment_failed")
 
         def _scan_fanout(queries):
             # The owned Verifier runs the deterministic detector battery (fan-out / id-
@@ -3963,7 +3963,7 @@ def run_analysis_phase(
 
         _fanout_hints = [] if _preplanned else _scan_fanout(plan.queries)
         if _fanout_hints:
-            from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
+            from aughor.stats import stats as _s; _s.inc("deep_analysis.fanout_guard_retries")
             try:
                 _fixed = _provider("coder").complete(
                     system=plan_system_eff,
@@ -3988,7 +3988,7 @@ def run_analysis_phase(
             # plausible query that still double-counts). If the metric STILL aggregates across a
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
             if _scan_fanout(plan.queries):
-                _s.inc("ada.fanout_guard_unresolved")
+                _s.inc("deep_analysis.fanout_guard_unresolved")
                 _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
@@ -4005,7 +4005,7 @@ def run_analysis_phase(
             except Exception as _st_exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_st_exc, "caller sql_transform is best-effort; original SQL runs",
-                         counter="ada.sql_transform_failed")
+                         counter="deep_analysis.sql_transform_failed")
     # Phase-level unit-conversion strip: the intake guard cleans intake.metric_sql, but
     # each phase's coder writes FRESH SQL and can re-invent the '/100 cents' story there
     # (live recurrence: the temporal phase emitted SUM(totalPrice)/100.0 on its own,
@@ -4027,7 +4027,7 @@ def run_analysis_phase(
     except Exception as _uc_exc:
         from aughor.kernel.errors import tolerate
         tolerate(_uc_exc, "phase-level unit-conversion strip is best-effort",
-                 counter="ada.unit_probe_phase")
+                 counter="deep_analysis.unit_probe_phase")
 
     # Adaptive temporal grain: a coder defaulting to DATE_TRUNC('month') over a
     # 17-day window produces ONE bucket ("single data point — cannot establish a
@@ -4053,7 +4053,7 @@ def run_analysis_phase(
                                  rf"\g<1>'{_grain}'", _sql, flags=re.IGNORECASE)
     except Exception as _tg_exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_tg_exc, "adaptive temporal grain is best-effort", counter="ada.temporal_grain")
+        tolerate(_tg_exc, "adaptive temporal grain is best-effort", counter="deep_analysis.temporal_grain")
 
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
@@ -4082,7 +4082,7 @@ def run_analysis_phase(
                     break
         except Exception as _cov_exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_cov_exc, "join-coverage probe is best-effort", counter="ada.coverage_probe")
+            tolerate(_cov_exc, "join-coverage probe is best-effort", counter="deep_analysis.coverage_probe")
 
     # Step 3 — interpret
     results_text = _results_to_text([r for _, r in results], max_rows=interpret_max_rows)
@@ -4241,7 +4241,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "level-shift magnitude is best-effort; router falls back to sigma",
-                 counter="ada.level_shift_probe")
+                 counter="deep_analysis.level_shift_probe")
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "baseline")
@@ -4322,7 +4322,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
             val_result = _execute_safe(conn, "premise_check", three_way_sql, schema=schema)
             from aughor.kernel import metering
-            metering.record_activation("ada.premise_check")   # Activation Receipt (Wave 1·E3)
+            metering.record_activation("deep_analysis.premise_check")   # Activation Receipt (Wave 1·E3)
             if (not val_result.error and val_result.rows
                     and len(val_result.rows[0]) >= 3):
                 row = val_result.rows[0]
@@ -4398,7 +4398,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "premise check is best-effort; investigation proceeds with the "
-                       "original window, never crash the pipeline", counter="ada.premise_check")
+                       "original window, never crash the pipeline", counter="deep_analysis.premise_check")
 
     phase = _phase_result(
         "baseline", "Baseline & Anomaly Assessment", "📊",
@@ -4751,7 +4751,7 @@ def _premise_direction(question: str) -> "Optional[str]":
 def _premise_enabled() -> bool:
     from aughor.kernel.flags import flag_enabled
 
-    return flag_enabled("ada.premise_check")
+    return flag_enabled("deep_analysis.premise_check")
 
 
 def _causal_drill_enabled() -> bool:
@@ -4761,7 +4761,7 @@ def _causal_drill_enabled() -> bool:
     composition/share-of-returns lens) instead of stopping and merely recommending it."""
     from aughor.kernel.flags import flag_enabled
 
-    return flag_enabled("ada.causal_drill")
+    return flag_enabled("deep_analysis.causal_drill")
 
 
 def _causal_split(dimensions: list) -> "tuple[list, list]":
@@ -4918,7 +4918,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                 rationale="Reuse the drilled finding's grain-correct query so the drill-down reproduces it exactly.")])
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_exc, "cross-section origin-finding anchor best-effort", counter="ada.xsec_anchor")
+            tolerate(_exc, "cross-section origin-finding anchor best-effort", counter="deep_analysis.xsec_anchor")
 
     # Period restriction (forward-chain drill): scope every ranking query to the anomalous period
     # the temporal WHEN lens flagged, so the drill explains WHICH cut concentrated the returns IN
@@ -5382,7 +5382,7 @@ def _discover_population_dims(state: AgentState, conn: "DatabaseConnection") -> 
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, f"uniqueness probe on {t} failed; skip this dim-source",
-                         counter="ada.pop_discover")
+                         counter="deep_analysis.pop_discover")
                 continue
             for c, ty in cols:
                 cl = c.lower()
@@ -5548,7 +5548,7 @@ def _resolve_temporal_axis(state: AgentState, conn: "DatabaseConnection" = None,
             seeds = fk_neighbor_expand(full_schema, seeds, cap=12)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_exc, "fk-neighbour expand best-effort; using bare seeds", counter="ada.temporal_axis")
+            tolerate(_exc, "fk-neighbour expand best-effort; using bare seeds", counter="deep_analysis.temporal_axis")
         seed_bare = {_bare(s) for s in seeds}
 
         def _score(t: str) -> int:
@@ -5775,7 +5775,7 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "temporal lens best-effort; skipped", counter="ada.temporal_lens")
+        tolerate(_exc, "temporal lens best-effort; skipped", counter="deep_analysis.temporal_lens")
         return None, None
 
     if not _run.ok:
@@ -5883,7 +5883,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "composition lens best-effort; skipped", counter="ada.composition_lens")
+        tolerate(_exc, "composition lens best-effort; skipped", counter="deep_analysis.composition_lens")
         return None
     if not _run.ok:
         return _run.error_phase
@@ -5943,7 +5943,7 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
             raise
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_exc, f"period drill '{name}' best-effort; skipped", counter="ada.period_drill")
+            tolerate(_exc, f"period drill '{name}' best-effort; skipped", counter="deep_analysis.period_drill")
     return phases
 
 
@@ -5952,7 +5952,7 @@ def _why_where_interaction_enabled() -> bool:
     Off by default; resolved fail-safe → 'off' on any error."""
     try:
         from aughor.kernel.flags import flag_enabled
-        return flag_enabled("ada.why_where_interaction")
+        return flag_enabled("deep_analysis.why_where_interaction")
     except Exception:
         return False
 
@@ -6014,7 +6014,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "interaction lens best-effort; skipped", counter="ada.interaction_lens")
+        tolerate(_exc, "interaction lens best-effort; skipped", counter="deep_analysis.interaction_lens")
         return None
     if not _run.ok:
         return _run.error_phase
@@ -6047,7 +6047,7 @@ def _why_deepen_enabled() -> bool:
     second-level-drill WHY lenses. Off by default; fail-safe → 'off' on any error."""
     try:
         from aughor.kernel.flags import flag_enabled
-        return flag_enabled("ada.why_deepen")
+        return flag_enabled("deep_analysis.why_deepen")
     except Exception:
         return False
 
@@ -6059,7 +6059,7 @@ def _parallel_why_lenses_enabled() -> bool:
     Off by default; fail-safe → 'off' on any error."""
     try:
         from aughor.kernel.flags import flag_enabled
-        return flag_enabled("ada.parallel_why_lenses")
+        return flag_enabled("deep_analysis.parallel_why_lenses")
     except Exception:
         return False
 
@@ -6113,7 +6113,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "benchmark lens best-effort; skipped", counter="ada.benchmark_lens")
+        tolerate(_exc, "benchmark lens best-effort; skipped", counter="deep_analysis.benchmark_lens")
         return None
     return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
                                 "📊", "benchmark", metric_label, "Reason benchmark computed.",
@@ -6164,7 +6164,7 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
         )
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "reason drill lens best-effort; skipped", counter="ada.reason_drill_lens")
+        tolerate(_exc, "reason drill lens best-effort; skipped", counter="deep_analysis.reason_drill_lens")
         return None
     return _lens_phase_from_run(_run, "reason_drill", "Reason Drill — Which Products Concentrate It",
                                 "🎯", "drill", metric_label, "Reason drill computed.")
@@ -6254,7 +6254,7 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, f"lifecycle probe '{qualified}' best-effort; skipped",
-                     counter="ada.loss_lifecycle_probe")
+                     counter="deep_analysis.loss_lifecycle_probe")
             continue
         vals = [str(row[0]) for row in (r.rows or []) if row and row[0] is not None]
         # One value pins nothing; 25 means it isn't a lifecycle column at all.
@@ -6305,7 +6305,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         _rules = lifecycle_rules(_probed)
         _lc_transform = lifecycle_transform(
             _rules, dialect=getattr(conn, "dialect", "duckdb"),
-            on_apply=lambda applied: _stats.inc("ada.lifecycle_guard_applied", len(applied)))
+            on_apply=lambda applied: _stats.inc("deep_analysis.lifecycle_guard_applied", len(applied)))
         # Auditable by design: a guard that fails silently reads as "no losses to pin".
         # This line is how the live gap was found — every offline repro passed while the
         # live path produced unpinned SQL, and only the run's own log could arbitrate.
@@ -6359,7 +6359,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         return phases
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
-        tolerate(_exc, "loss lens phases best-effort; skipped", counter="ada.loss_lens")
+        tolerate(_exc, "loss lens phases best-effort; skipped", counter="deep_analysis.loss_lens")
         return []
 
 
@@ -6434,13 +6434,13 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, f"ada multilens '{name}' best-effort; lens skipped",
-                     counter="ada.multilens_lens")
+                     counter="deep_analysis.multilens_lens")
             return name, [], None, None, None
 
     results: list = []
     width = min(len(specs), max(1, _ADA_LENS_WIDTH))
     try:
-        with _fanout_region("ada.parallel_lenses"), ContextThreadPoolExecutor(max_workers=width) as pool:
+        with _fanout_region("deep_analysis.parallel_lenses"), ContextThreadPoolExecutor(max_workers=width) as pool:
             futs = [pool.submit(_run_spec, s) for s in specs]
             for fut in as_completed(futs):
                 results.append(fut.result())   # BudgetExceeded re-raises here → abort the run
@@ -6480,7 +6480,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             raise
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
-            tolerate(_exc, "period drill best-effort; skipped", counter="ada.period_drill")
+            tolerate(_exc, "period drill best-effort; skipped", counter="deep_analysis.period_drill")
 
     # Forward-chained WHY lenses (all depend on the WHY composition finding). Computed once here.
     _why_phase = next((p for p in merged[base_n:]
@@ -6511,21 +6511,21 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     if _why_phase and primary_summary and _why_where_interaction_enabled():
         forward_specs.append(("interaction",
                               lambda c: _run_interaction_lens(state, c, primary_summary, _why_summary),
-                              "ada.interaction_lens"))
+                              "deep_analysis.interaction_lens"))
     if _why_phase and _why_deepen_enabled():
         forward_specs.append(("benchmark",
                               lambda c: _run_reason_benchmark_lens(state, c, _why_summary),
-                              "ada.benchmark_lens"))
+                              "deep_analysis.benchmark_lens"))
         forward_specs.append(("drill",
                               lambda c: _run_reason_drill_lens(state, c, _why_summary),
-                              "ada.reason_drill_lens"))
+                              "deep_analysis.reason_drill_lens"))
 
     if len(forward_specs) >= 2 and _parallel_why_lenses_enabled():
         # Parallel wave — each lens on its own reader clone; merge in FIXED spec order (never
         # completion order), so the report is byte-identical to the serial chain, just faster.
         _fwd: dict = {}
         try:
-            with _fanout_region("ada.forward_specs"), ContextThreadPoolExecutor(max_workers=len(forward_specs)) as pool:
+            with _fanout_region("deep_analysis.forward_specs"), ContextThreadPoolExecutor(max_workers=len(forward_specs)) as pool:
                 _futs = {pool.submit(_run_forward, label, fn, counter, conn.make_reader()): label
                          for (label, fn, counter) in forward_specs}
                 for fut in as_completed(_futs):
@@ -6572,7 +6572,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
 
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
 def _adversarial_should_run(synth, *, high_stakes: bool) -> bool:
-    """Whether the ReFoRCE-style refuter should spend its ONE skeptic LLM call on this verdict. The
+    """Whether the refuter should spend its ONE skeptic LLM call on this verdict. The
     caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection / abstention).
     ``high_stakes`` (``ada.adversarial_high_stakes``) is the deterministic materiality gate: fire
     ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
@@ -6781,7 +6781,7 @@ def ada_synthesize(state: AgentState) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "metric-targets section is advisory; synthesis proceeds without "
-                       "benchmark targets", counter="ada.synth_context")
+                       "benchmark targets", counter="deep_analysis.synth_context")
 
     # Build playbook section — match playbook entries against this investigation's context
     playbook_section = ""
@@ -6804,7 +6804,7 @@ def ada_synthesize(state: AgentState) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "playbook section is advisory; synthesis proceeds without playbook "
-                       "guidance", counter="ada.synth_context")
+                       "guidance", counter="deep_analysis.synth_context")
 
     # Build external context section from uploaded documents
     external_context_section = ""
@@ -6814,7 +6814,7 @@ def ada_synthesize(state: AgentState) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "external-document context is advisory; synthesis proceeds without "
-                       "uploaded-document grounding", counter="ada.synth_context")
+                       "uploaded-document grounding", counter="deep_analysis.synth_context")
 
     # Build org-wide intelligence section from promoted canvas insights
     org_intelligence_section = ""
@@ -6824,7 +6824,7 @@ def ada_synthesize(state: AgentState) -> dict:
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "org-intelligence section is advisory; synthesis proceeds without "
-                       "promoted canvas insights", counter="ada.synth_context")
+                       "promoted canvas insights", counter="deep_analysis.synth_context")
 
     # agents.user_defined — the active persona's standing instructions lead the
     # synthesis prompt (mirrors the quick path's rules_block seam; the document
@@ -6832,12 +6832,12 @@ def ada_synthesize(state: AgentState) -> dict:
     # Inert ("") when no agent is active.
     _agent_brief = ""
     try:
-        from aughor.user_agents.context import agent_brief_block
+        from aughor.custom_agents.context import agent_brief_block
         _agent_brief = agent_brief_block()
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "agent brief is advisory; synthesis proceeds without it",
-                 counter="ada.synth_context")
+                 counter="deep_analysis.synth_context")
 
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         question=question,
@@ -6859,7 +6859,7 @@ def ada_synthesize(state: AgentState) -> dict:
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
     # R16 P2 — the narrator's system prompt lives with the other prompts; under
-    # `report.argument_style` it carries the Genie-study writing contract.
+    # `report.argument_style` it carries the report-style writing contract.
     from aughor.agent.prompts_investigate import synthesis_system_prompt
     _synth_system = synthesis_system_prompt()
     # R6 — stream the report prose (executive_summary) to the client as the narrator
@@ -6887,7 +6887,7 @@ def ada_synthesize(state: AgentState) -> dict:
         synth = None
         if isinstance(e, _cf.TimeoutError):
             from aughor.stats import stats as _s
-            _s.inc("ada.synthesis_timeout")
+            _s.inc("deep_analysis.synthesis_timeout")
     finally:
         # Don't block the investigation on a hung LLM call — abandon the worker, keep the fallback.
         _synth_ex.shutdown(wait=False)
@@ -6897,7 +6897,7 @@ def ada_synthesize(state: AgentState) -> dict:
     conn_id = state.get("connection_id") or ""
     if synth and inv_id and hasattr(synth, "causal_links") and synth.causal_links:
         try:
-            from aughor.process.causal import CausalProposal, save_proposals
+            from aughor.lifecycle.causal import CausalProposal, save_proposals
             proposals = [
                 CausalProposal(
                     from_signal=cl.from_signal,
@@ -6914,7 +6914,7 @@ def ada_synthesize(state: AgentState) -> dict:
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "causal-proposal save is best-effort; the synthesis output is "
-                           "already complete", counter="ada.synth_causal_save")
+                           "already complete", counter="deep_analysis.synth_causal_save")
 
     # ── Honest confidence floor ───────────────────────────────────────────────
     # A run that gathered no usable data can never be HIGH/MEDIUM confidence,
@@ -6962,9 +6962,9 @@ def ada_synthesize(state: AgentState) -> dict:
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "verdict-recommendation coherence check is best-effort; report proceeds",
-                     counter="ada.coherence_check")
+                     counter="deep_analysis.coherence_check")
 
-    # T4-3 / P5: confidence-tiered adversarial verification (ReFoRCE-style). Spend ONE skeptic LLM call
+    # T4-3 / P5: confidence-tiered adversarial verification. Spend ONE skeptic LLM call
     # to try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before
     # shipping — the few high-stakes conclusions, never per finding. A surviving refutation records the
     # objection and caps a HIGH confidence to MEDIUM. One materiality-gated tier
@@ -6972,7 +6972,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # where being wrong is costly and the cap bites. (The always-challenge full tier was deleted
     # 2026-07-31 — flag strategy §4G.)
     from aughor.kernel.flags import flag_enabled as _flag_enabled
-    _adv_high_stakes = _flag_enabled("ada.adversarial_high_stakes")
+    _adv_high_stakes = _flag_enabled("deep_analysis.adversarial_high_stakes")
     if synth and _adv_high_stakes:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
@@ -6982,11 +6982,11 @@ def ada_synthesize(state: AgentState) -> dict:
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)
                 from aughor.kernel import metering               # Activation Receipt (Wave 1·E3)
-                metering.record_activation("ada.adversarial_high_stakes")
+                metering.record_activation("deep_analysis.adversarial_high_stakes")
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "adversarial verification is best-effort; report proceeds",
-                     counter="ada.adversarial")
+                     counter="deep_analysis.adversarial")
 
     # F3/F2 — a CROSS-SECTIONAL scan ranks the metric ACROSS dimensions at a point in time; it
     # measures no temporal change, so:
@@ -7237,7 +7237,7 @@ def ada_synthesize(state: AgentState) -> dict:
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "evidence-ledger capture is non-critical; never break the "
-                           "investigation output", counter="ada.evidence_ledger")
+                           "investigation output", counter="deep_analysis.evidence_ledger")
 
     return {
         "answer_report": answer_report,

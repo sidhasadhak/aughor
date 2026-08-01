@@ -281,7 +281,7 @@ def test_trace_tagged_with_ambient_session_user_agent(monkeypatch):
 
     from aughor.org.context import (reset_session_id, reset_user_id,
                                     set_session_id, set_user_id)
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
 
     _set_flag(monkeypatch, True)
     stub = _make_stub(active=True)
@@ -386,7 +386,7 @@ def test_executor_emits_tool_span(monkeypatch):
     stub = _make_stub(active=True)
     monkeypatch.setitem(sys.modules, "mlflow", stub)
 
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.control_plane.contracts.execution import QueryResult
 
     class _Conn:
         dialect = "duckdb"
@@ -449,7 +449,7 @@ def test_real_mlflow_trace_roundtrip(monkeypatch, tmp_path):
 
     from aughor.org.context import (reset_session_id, reset_user_id,
                                     set_session_id, set_user_id)
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
 
     prev_uri = mlflow.get_tracking_uri()
     st = set_session_id("sess-int")
@@ -500,7 +500,7 @@ def test_agent_trace_stats_real_aggregation(monkeypatch, tmp_path):
 
     import types as _types
 
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
 
     prev_uri = mlflow.get_tracking_uri()
     try:

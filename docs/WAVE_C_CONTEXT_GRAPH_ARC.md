@@ -257,7 +257,7 @@ read-back that exists is N disjoint blocks; the read-back that matters (findings
 not exist at all. And the ontology graph, the one artifact that *is* per-connection typed structure,
 is not similarity-searchable — so you cannot ask it "which tables handle churn?".
 
-**The single choke point is already identified and shared.** `aughor/verify/priors.py::retrieve_priors`
+**The single choke point is already identified and shared.** `aughor/feedback/priors.py::retrieve_priors`
 (`:142`) / `build_corrections_section` (`:183`) is documented as "read the captured feedback loop BACK
 into the planner" (`priors.py:1-23`) and is **already called by both paths before SQL generation** —
 the quick path at `investigations.py:1490` and the deep plan node at `nodes.py:578`. A connection-graph

@@ -81,7 +81,7 @@ def test_converted_stores_migrate_cleanly():
     from aughor.metastore import store as ms
     from aughor.packs import bindings
     from aughor.security import audit
-    from aughor.verify import verdicts
+    from aughor.feedback import verdicts
     from aughor.workspace import store as ws
 
     def _prep(connect, ensure):

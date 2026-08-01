@@ -33,7 +33,7 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-FLAG = "ada.evidence_stubs"      # registered, defaults off, and E4's own sixth customer
+FLAG = "deep_analysis.evidence_stubs"      # registered, defaults off, and E4's own sixth customer
 # `ai_sql` deliberately: the nested-release assertion below expects OTHER's AMBIENT value
 # to be off, and ai_sql is intentionally-off forever (per-row LLM cost) so this test never
 # needs re-pointing when a flag graduates (its previous exemplar, ada.evidence_dedup,
@@ -76,9 +76,9 @@ def test_nested_blocks_merge_so_one_axis_can_vary_inside_another():
 
 def test_unknown_flag_name_raises_rather_than_no_opping():
     with pytest.raises(UnknownFlagError) as exc:
-        with flag_overrides({"ada.evidence_stub": True}):   # missing trailing 's'
+        with flag_overrides({"deep_analysis.evidence_stub": True}):   # missing trailing 's'
             pass
-    assert "ada.evidence_stub" in str(exc.value)
+    assert "deep_analysis.evidence_stub" in str(exc.value)
 
 
 def test_unknown_name_is_rejected_before_any_flag_is_applied():
@@ -148,13 +148,13 @@ def test_graph_topology_reads_the_override_only_at_compile_time():
     from aughor.agent import graph as g
 
     assert g._ada_parallel_lenses_enabled() is False
-    with flag_overrides({"ada.parallel_lenses": True}):
+    with flag_overrides({"deep_analysis.parallel_lenses": True}):
         assert g._ada_parallel_lenses_enabled() is True     # read INSIDE ⇒ override applies
     assert g._ada_parallel_lenses_enabled() is False
 
     # A value captured before the block is fixed — exactly what a pre-built graph holds.
     captured = g._ada_parallel_lenses_enabled()
-    with flag_overrides({"ada.parallel_lenses": True}):
+    with flag_overrides({"deep_analysis.parallel_lenses": True}):
         assert captured is False
 
-    clear_flag("ada.parallel_lenses")
+    clear_flag("deep_analysis.parallel_lenses")

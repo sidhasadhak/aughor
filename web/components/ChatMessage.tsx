@@ -642,7 +642,7 @@ function Section({
 }
 
 // ── Dossier (Tier-0 trace) — the explorer's pre-computed derivation, served
-// instead of a fresh ADA run. "Investigate deeper" escalates to a seeded ADA. ──
+// instead of a fresh deep analysis. "Investigate deeper" escalates to a seeded one. ──
 function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onDeeper?: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
@@ -671,9 +671,9 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
 
 // ── Investigate body — delegates to the appropriate rich report view ──────────
 // ── Turn renderer registry (the gen-UI seam · REC-U6 / LAYER-05) ──────────────
-// Each answer *shape* (dossier / ADA / explore / direct) is a registry entry, not a
+// Each answer *shape* (dossier / deep / explore / direct) is a registry entry, not a
 // branch in a god-component. First match wins — array order IS priority (dossier
-// before ADA before explore before direct, exactly the old if-chain). Adding a new
+// before deep before explore before direct, exactly the old if-chain). Adding a new
 // answer surface = one entry; InvestigateBody never changes. `registerTurnRenderer`
 // lets a pack/plugin contribute a surface (prepended → matches before the built-ins)
 // without touching this file — the seam the "agent composes its own UI" thesis needs.
@@ -691,7 +691,7 @@ export interface TurnRenderer {
 
 export const TURN_RENDERERS: TurnRenderer[] = [
   {
-    id: "dossier", // Tier 0: the explorer's pre-computed dossier — no ADA was run.
+    id: "dossier", // Tier 0: the explorer's pre-computed dossier — no deep analysis was run.
     match: (t) => !!t.dossierReport,
     render: (t, p) => (
       <DossierReportView
@@ -701,13 +701,14 @@ export const TURN_RENDERERS: TurnRenderer[] = [
     ),
   },
   {
-    id: "ada",
-    match: (t) => t.queryMode === "investigate" || !!t.adaReport,
+    id: "deep",
+    // `queryMode` is a wire value from the backend — "investigate" stays as sent.
+    match: (t) => t.queryMode === "investigate" || !!t.deepReport,
     render: (t, p) => (
       <InvestigationReportView
-        report={t.adaReport ?? undefined}
-        streamingPhases={t.adaReport ? undefined : t.phases}
-        streamingReport={t.adaReport ? undefined : (t.reportStream ?? undefined)}
+        report={t.deepReport ?? undefined}
+        streamingPhases={t.deepReport ? undefined : t.phases}
+        streamingReport={t.deepReport ? undefined : (t.reportStream ?? undefined)}
         onShowSource={p.onShowSource}
       />
     ),
@@ -917,10 +918,10 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-// ── Insight answer, rendered as a clean Brief ─────────────────────────────────
-// Headline + interpretation prose + the one framed result (chart / table /
+// ── Quick answer, rendered as a clean Brief ───────────────────────────────────
+// Headline + narrative prose + the one framed result (chart / table /
 // metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
-function InsightBrief({
+function NarrativeBrief({
   turn, connectionId, onShowSource, onFollowUp, onRunFresh,
 }: {
   turn: ChatTurn;
@@ -930,23 +931,23 @@ function InsightBrief({
   onRunFresh?: (q: string) => void;
 }) {
   const streaming = turn.status === "loading";
-  const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
-  const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
+  const proseText = turn.narrative?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
+  const anomalies = (turn.narrative?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
   // The narrative + anomalies ride along the follow-ups narrator call (no extra cost),
   // but for a direct lookup they're noise — reveal them on demand via "Explain the data".
   const [explained, setExplained] = useState(false);
-  // CK-0.2 token streaming: while `insight_delta` frames arrive (and no final insight
+  // CK-0.2 token streaming: while `narrative_delta` frames arrive (and no final narrative
   // yet), the narrative is being written live — auto-reveal the prose section and ride
-  // the partial text. Once the terminal `insight` lands (insightStream clears), stay
+  // the partial text. Once the terminal `narrative` lands (narrativeStream clears), stay
   // revealed rather than collapsing back behind the button.
-  const streamingProse = turn.insight == null ? turn.insightStream : null;
+  const streamingProse = turn.narrative == null ? turn.narrativeStream : null;
   // CK-0.2: while `headline_delta` frames arrive (and no terminal headline yet), type the
   // partial headline in place of the skeleton — the authoritative `headline` overwrites it.
   const streamingHeadline = turn.headline == null ? turn.headlineStream : null;
   useEffect(() => {
-    if (turn.insightStream != null) setExplained(true);
-  }, [turn.insightStream]);
+    if (turn.narrativeStream != null) setExplained(true);
+  }, [turn.narrativeStream]);
   const hasExplanation = !!(proseText || anomalies.length);
   // Post-done arrival fade (uplift pattern) — live turns only; restored turns render
   // instantly, and prefers-reduced-motion disables the CSS animation globally.
@@ -957,7 +958,7 @@ function InsightBrief({
       {turn.fromCache && (
         <BriefMeta
           items={[
-            "From a similar past investigation",
+            "From a similar past deep analysis",
             turn.cachedQuestion && turn.cachedQuestion !== turn.question
               ? <span key="cq" className="italic">originally: &ldquo;{turn.cachedQuestion}&rdquo;</span>
               : null,
@@ -1004,7 +1005,7 @@ function InsightBrief({
           {/* One BriefProse for both phases (streaming partial → final narrative) so the
               text swap never remounts; safePartial closes a dangling ** mid-stream. While
               the partial is still arriving, trail a pulsing caret and settle the block in
-              with a one-time blur-lift; both vanish the instant the terminal insight lands. */}
+              with a one-time blur-lift; both vanish the instant the terminal narrative lands. */}
           {(streamingProse || proseText) && (
             <BriefProse
               className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
@@ -1040,7 +1041,7 @@ function InsightBrief({
           answer (headline + narrative) with an in-place checkmark, no toast. */}
       {!streaming && turn.headline && (
         <div className="opacity-0 group-hover:opacity-100 transition-opacity -ml-1.5">
-          <CopyAnswerButton text={[turn.headline, turn.insight?.narrative?.trim()].filter(Boolean).join("\n\n")} />
+          <CopyAnswerButton text={[turn.headline, turn.narrative?.narrative?.trim()].filter(Boolean).join("\n\n")} />
         </div>
       )}
 
@@ -1277,7 +1278,7 @@ export function ChatMessage({
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
   const hasResult = isInvestigate
-    ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
+    ? !!(turn.deepReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
   // Quick-mode scaffold-then-fill: the backend delivers a quick answer's data at
@@ -1285,7 +1286,7 @@ export function ChatMessage({
   // Brief as a shimmer scaffold for the whole wait — a preview of the answer's
   // shape (headline + figure) that fills in place when the result lands.
   const quickScaffold = !isInvestigate && turn.status === "loading";
-  // Show streaming ADA phases even while still loading (not for direct/explore routes)
+  // Show streaming deep analysis phases even while still loading (not for direct/explore routes)
   const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0
     && turn.queryMode !== "direct";
 
@@ -1368,7 +1369,7 @@ export function ChatMessage({
               </span>
             </div>
           )}
-          {/* Live ADA phase stream — show completed phases as they arrive */}
+          {/* Live deep analysis phase stream — show completed phases as they arrive */}
           {showStreamingBody && <InvestigateBody turn={turn} />}
         </div>
       )}
@@ -1427,10 +1428,10 @@ export function ChatMessage({
         <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} onExploreFact={onExploreFact} />
       )}
 
-      {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
+      {/* ── Quick answer — the answer as a clean Brief; mounts as a shimmer scaffold
            during the wait (fills in place) and completes at done. ── */}
       {!collapsed && !isInvestigate && !turn.overviewReport && (isDone || quickScaffold) && (
-        <InsightBrief
+        <NarrativeBrief
           turn={turn}
           connectionId={connectionId}
           onShowSource={onShowSource}
@@ -1448,7 +1449,7 @@ export function ChatMessage({
                 <InformationIcon label="Info" size="small" />
               </span>
               <span className="flex-1">
-                <span className="text-amber-300 font-medium">From a similar past investigation</span>
+                <span className="text-amber-300 font-medium">From a similar past deep analysis</span>
                 {turn.cachedQuestion && turn.cachedQuestion !== turn.question && (
                   <span className="text-amber-400/70"> — originally asked: &ldquo;{turn.cachedQuestion}&rdquo;</span>
                 )}
@@ -1527,7 +1528,7 @@ function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionI
       size="xs"
       onClick={save}
       disabled={state === "saving"}
-      title={msg || "Crystallize this investigation into a reusable, governed skill (Ontology ▸ Learned skills)"}
+      title={msg || "Crystallize this deep analysis into a reusable, governed skill (Ontology ▸ Learned skills)"}
       className="h-auto px-2.5 py-1 aug-fs-xs font-normal text-violet-400 hover:text-violet-300 border-violet-500/30 rounded hover:bg-transparent dark:hover:bg-transparent"
     >
       {state === "saving" ? "Saving…" : state === "error" ? "Retry — not skill-worthy?" : "Save as skill"}

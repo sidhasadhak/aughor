@@ -173,7 +173,7 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
       </div>
 
       <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, marginTop: 0, marginBottom: 18, maxWidth: 720 }}>
-        Every claim from a Deep Analysis is logged with its source query, confidence and freshness.
+        Every claim from a deep analysis is logged with its source query, confidence and freshness.
         Validate or dispute them to teach Aughor which findings hold up.
       </p>
 
@@ -190,8 +190,8 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
         }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No evidence yet</div>
           <div style={{ fontSize: 12, lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
-            The ledger fills as you run Deep Analyses on this {canvasId ? "canvas" : "connection"}. Each
-            investigation records the claims it makes and the queries behind them here.
+            The ledger fills as you run deep analyses on this {canvasId ? "canvas" : "connection"}. Each
+            deep analysis records the claims it makes and the queries behind them here.
           </div>
         </div>
       ) : (

@@ -13,7 +13,7 @@ import pytest
 
 import aughor.agent.program_planner as pp
 from aughor.agent.program_planner import Program, ProgramResult, ProgramStep
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 from aughor.routers.investigations import (
     AskRequest,
     ChatHistoryTurn,

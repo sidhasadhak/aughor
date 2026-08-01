@@ -21,7 +21,7 @@ from aughor.evals.runner import run_experiment
 from aughor.evals.targets import reference_checker, reference_target
 from aughor.kernel.flags import clear_flag
 
-FLAG = "ada.evidence_stubs"
+FLAG = "deep_analysis.evidence_stubs"
 TABLES = ["orders"]
 
 

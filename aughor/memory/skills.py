@@ -1,6 +1,6 @@
 """Learned skills — agent procedural memory.
 
-A "skill" is a reusable, governed `OntologyAction` (origin='learned') crystallized from a
+A "skill" is a reusable, governed `QueryTemplate` (origin='learned') crystallized from a
 finished investigation: its grounded, read-only SQL — conservatively parameterized so a
 WHERE literal becomes a `{param}` — saved so the planner can re-run that analysis instead of
 re-deriving it. Skills live in their own `{conn}:{schema}`-keyed store so they survive ontology
@@ -22,7 +22,9 @@ from aughor.util.json_store import KeyedJsonStore
 
 logger = logging.getLogger(__name__)
 
-# {conn}:{schema} -> {action_id: OntologyAction.model_dump()}. Ledger-backed (transactional),
+# {conn}:{schema} -> {action_id: QueryTemplate.model_dump()}. Ledger-backed (transactional),
+# The store key, the file name and the `action_id` key are FROZEN persisted identities —
+# only the Python symbol renamed (OntologyAction -> QueryTemplate).
 # survives ontology rebuilds (the structural fingerprint cache never bakes these in).
 # WP-4: path resolves AUGHOR_MEMORY_DIR (test-isolatable) instead of a hardcoded data/ path.
 _STORE = KeyedJsonStore(learned_actions_path())
@@ -51,9 +53,9 @@ def resolve_active_schema(connection_id: str) -> str:
 # ── load / persist ────────────────────────────────────────────────────────────────
 
 def load_learned_actions(connection_id: str, schema_name: str) -> dict[str, Any]:
-    """Map of learned `OntologyAction`s by id for this {conn}:{schema}. Deserialized from the
+    """Map of learned `QueryTemplate`s by id for this {conn}:{schema}. Deserialized from the
     store; a row that can't be parsed is skipped (never breaks the ontology overlay)."""
-    from aughor.ontology.models import OntologyAction
+    from aughor.ontology.models import QueryTemplate
     out: dict[str, Any] = {}
     try:
         raw = _STORE.get(_key(connection_id, schema_name), {}) or {}
@@ -62,7 +64,7 @@ def load_learned_actions(connection_id: str, schema_name: str) -> dict[str, Any]
         return {}
     for aid, dump in raw.items():
         try:
-            out[aid] = OntologyAction(**dump)
+            out[aid] = QueryTemplate(**dump)
         except Exception as exc:
             logger.debug("learned skill %s skipped (unparseable): %s", aid, exc)
     return out
@@ -268,10 +270,10 @@ def propose_skill_from_investigation(
     inv_id: str, table_to_entity: Optional[dict[str, str]] = None
 ) -> Optional[Any]:
     """Crystallize a candidate learned skill from a finished investigation: take its grounded,
-    read-only SQL, parameterize the WHERE literals, and shape a learned `OntologyAction`. Returns
+    read-only SQL, parameterize the WHERE literals, and shape a learned `QueryTemplate`. Returns
     the CANDIDATE (not saved — the UI confirms, then POSTs to save_skill), or None when the run
     has no reusable read-only query."""
-    from aughor.ontology.models import OntologyAction
+    from aughor.ontology.models import QueryTemplate
     try:
         from aughor.db.history import get_investigation
         inv = get_investigation(inv_id)
@@ -289,7 +291,7 @@ def propose_skill_from_investigation(
     entity = t2e.get(table) or t2e.get(table.split(".")[-1]) or (table.split(".")[-1].rstrip("s").title() if table else "")
     templated, params = _parameterize_sql(sql)
     try:
-        return OntologyAction(
+        return QueryTemplate(
             id=_skill_id(question, table),
             display_name=(question[:80] or (f"Analysis on {table}" if table else "Saved analysis")),
             description=(_finding_text(inv) or question or "Reusable analysis")[:300],

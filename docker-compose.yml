@@ -9,11 +9,11 @@ services:
     environment:
       QDRANT__LOG_LEVEL: WARN
 
-  # Opt-in observability backend for the `obs.mlflow` feature flag:
+  # Opt-in observability backend for MLflow tracing:
   #   docker compose --profile obs up -d mlflow
-  # then set AUGHOR_MLFLOW_TRACKING_URI=http://localhost:5001 and flip the flag
-  # (Settings → System, or AUGHOR_OBS_MLFLOW=1). Default `docker compose up`
-  # is unchanged — the profile keeps this service off.
+  # then set AUGHOR_MLFLOW_TRACKING_URI=http://localhost:5001 — that env var is
+  # the on switch; there is no feature flag. Default `docker compose up` is
+  # unchanged — the profile keeps this service off.
   mlflow:
     image: ghcr.io/mlflow/mlflow:v3.14.0
     profiles: ["obs"]

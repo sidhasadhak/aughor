@@ -394,7 +394,7 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
         {"question": "rows", "artifact": "SELECT id, v FROM t ORDER BY id"}]})
     client.post(f"/evals/suites/{sid}/run", json={"iterations": 3})
 
-    flag = "ada.evidence_stubs"          # a real, default-OFF flag (the E4 A/B candidate)
+    flag = "deep_analysis.evidence_stubs"          # a real, default-OFF flag (the E4 A/B candidate)
     before = flag_state(flag)
     assert before == "off"
 

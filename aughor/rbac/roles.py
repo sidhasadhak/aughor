@@ -8,10 +8,13 @@ surface stays auditable.
 
 The ladder (each a strict superset of the one below):
 
-  - **viewer**  — read-only. See answers, investigations, canvases; nothing else.
-  - **analyst** — the working data analyst: read + write + delete + export own work,
-                  run analysis, and create/delete connections. No governance.
+  - **viewer**  — read-only. See answers, deep analyses, canvases; nothing else.
+  - **analyst** — displayed as **Editor**: read + write + delete + export own work, run
+                  analysis, and create/delete connections. No governance.
   - **owner**   — everything, including role administration and billing.
+
+The middle rung is stored as ``analyst`` and shown as "Editor" — "Analyst" is the agent
+that runs deep analyses, and one word cannot name both. The stored value is frozen.
 """
 from __future__ import annotations
 
@@ -28,10 +31,23 @@ VIEWER = "viewer"
 
 @dataclass(frozen=True)
 class Role:
-    """A named permission bundle. Frozen — the built-ins are immutable singletons."""
+    """A named permission bundle. Frozen — the built-ins are immutable singletons.
+
+    ``name`` is the PERSISTED value (it is what the assignment store holds and what every
+    existing grant says); ``display`` is what a human is shown. They differ for one role:
+    the middle rung is stored as ``analyst`` but displayed as **Editor**, because "Analyst"
+    also names the agent that runs deep analyses and one word cannot mean both. Renaming
+    the stored value would invalidate every grant, so it stays.
+    """
     name: str
     permissions: frozenset[Permission]
     description: str = ""
+    display: str = ""
+
+    @property
+    def label(self) -> str:
+        """The human-facing name — ``display`` when it differs from the stored value."""
+        return self.display or self.name.capitalize()
 
     def grants(self, perm: Permission) -> bool:
         return perm in self.permissions
@@ -56,9 +72,11 @@ _OWNER_PERMS: frozenset[Permission] = ALL_PERMISSIONS
 
 
 BUILTIN_ROLES: dict[str, Role] = {
-    VIEWER: Role(VIEWER, _VIEWER_PERMS, "Read-only access to answers and analyses."),
-    ANALYST: Role(ANALYST, _ANALYST_PERMS, "Run analyses and manage connections and one's own work."),
-    OWNER: Role(OWNER, _OWNER_PERMS, "Full control, including role administration and billing."),
+    VIEWER: Role(VIEWER, _VIEWER_PERMS, "Read-only access to answers and analyses.", "Viewer"),
+    ANALYST: Role(ANALYST, _ANALYST_PERMS,
+                  "Run analyses and manage connections and one's own work.", "Editor"),
+    OWNER: Role(OWNER, _OWNER_PERMS,
+                "Full control, including role administration and billing.", "Owner"),
 }
 
 

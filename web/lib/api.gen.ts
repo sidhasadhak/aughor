@@ -354,7 +354,7 @@ export interface paths {
          * User Agent Observability
          * @description The Agent Workspace overview data for one agent: its run history (from the
          *     history store, stamped with agent_id) enriched with MLflow trace stats when
-         *     `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
+         *     MLflow tracing is configured. Degrades to history-only (`trace_stats: null`) when the
          *     tracking server is off — the workspace is useful without MLflow (B3: the
          *     dependency is one-directional).
          *
@@ -442,7 +442,7 @@ export interface paths {
          *     ``suggested_goldens`` — suggestions, each stating what it still needs. A pack cannot
          *     supply a golden's reference SQL (it does not know your schema, and its evals are
          *     behavioural expectations rather than queries), so the template says so rather than
-         *     seeding a suite that would measure nothing. See :mod:`aughor.user_agents.templates`.
+         *     seeding a suite that would measure nothing. See :mod:`aughor.custom_agents.templates`.
          */
         get: operations["list_agent_templates_agents_templates_get"];
         put?: never;
@@ -953,6 +953,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/briefing/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Briefing Subscriptions */
+        get: operations["list_briefing_subscriptions_briefing_subscriptions_get"];
+        put?: never;
+        /** Create Briefing Subscription */
+        post: operations["create_briefing_subscription_briefing_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/briefing/subscriptions/{sub_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Briefing Subscription */
+        put: operations["update_briefing_subscription_briefing_subscriptions__sub_id__put"];
+        post?: never;
+        /** Delete Briefing Subscription */
+        delete: operations["delete_briefing_subscription_briefing_subscriptions__sub_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/briefing/subscriptions/{sub_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Briefing Subscription
+         * @description Deliver the briefing immediately and return the outcome (status + preview).
+         */
+        post: operations["test_briefing_subscription_briefing_subscriptions__sub_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefs/subscriptions": {
         parameters: {
             query?: never;
@@ -960,10 +1016,23 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Brief Subscriptions */
+        /**
+         * List Brief Subscriptions
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /briefing/subscriptions``.
+         *
+         *     Identical payload — it delegates to the handler above. Use ``/briefing/subscriptions``.
+         */
         get: operations["list_brief_subscriptions_briefs_subscriptions_get"];
         put?: never;
-        /** Create Brief Subscription */
+        /**
+         * Create Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /briefing/subscriptions``.
+         *
+         *     Same body, same payload, same persisted subscription — it delegates to the handler
+         *     above. Use ``/briefing/subscriptions``.
+         */
         post: operations["create_brief_subscription_briefs_subscriptions_post"];
         delete?: never;
         options?: never;
@@ -979,10 +1048,20 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update Brief Subscription */
+        /**
+         * Update Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``PUT /briefing/subscriptions/{sub_id}``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Use ``/briefing/…``.
+         */
         put: operations["update_brief_subscription_briefs_subscriptions__sub_id__put"];
         post?: never;
-        /** Delete Brief Subscription */
+        /**
+         * Delete Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``DELETE /briefing/subscriptions/{sub_id}``. Use ``/briefing/…``.
+         */
         delete: operations["delete_brief_subscription_briefs_subscriptions__sub_id__delete"];
         options?: never;
         head?: never;
@@ -1000,7 +1079,10 @@ export interface paths {
         put?: never;
         /**
          * Test Brief Subscription
-         * @description Deliver the brief immediately and return the outcome (status + preview).
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /briefing/subscriptions/{sub_id}/test``.
+         *
+         *     Identical payload — it delegates to the handler above. Use ``/briefing/…``.
          */
         post: operations["test_brief_subscription_briefs_subscriptions__sub_id__test_post"];
         delete?: never;
@@ -1844,8 +1926,8 @@ export interface paths {
         put?: never;
         /**
          * Prewarm Connection
-         * @description R5 deferred (closed) — the composer-open warm, the Databricks
-         *     value-index/preload-cache analog: build the profiles (and the persisted
+         * @description R5 deferred (closed) — the composer-open warm: preload the value index
+         *     and cache, i.e. build the profiles (and the persisted
          *     entity-value samples entity resolution + the filter guard bind from) BEFORE
          *     the first question. Runs as one supervised kernel job (kind `profile`, the
          *     Curator charter) with an idempotency key, so composer-open spam can't stack
@@ -2791,6 +2873,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Canvas Finding */
+        post: operations["dismiss_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/canvas/{canvas_id}/findings/{finding_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Promote Canvas Finding */
+        post: operations["promote_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss": {
         parameters: {
             query?: never;
@@ -2800,7 +2916,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Dismiss Canvas Insight */
+        /**
+         * Dismiss Canvas Insight
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Kept for one release.
+         */
         post: operations["dismiss_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__dismiss_post"];
         delete?: never;
         options?: never;
@@ -2817,7 +2939,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Promote Canvas Insight */
+        /**
+         * Promote Canvas Insight
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/promote``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
+         */
         post: operations["promote_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__promote_post"];
         delete?: never;
         options?: never;
@@ -2937,6 +3065,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/kpi/time-to-first-finding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Time To First Finding Kpi
+         * @description B-6 product KPI: the connect→first-finding funnel, measured.
+         *
+         *     Reads the `exploration.first_insight` milestone events the explorer stamps (one per
+         *     run, on the first finding from any phase — the event kind is a persisted identity and
+         *     keeps its old spelling) and reports the distribution of elapsed seconds — so "how fast
+         *     does a fresh connection deliver its first finding" is a query, not a vibe. Mirrors
+         *     /metrics/enforcement-rate: a measured rate the product is held to.
+         */
+        get: operations["time_to_first_finding_kpi_exploration_kpi_time_to_first_finding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/kpi/time-to-first-insight": {
         parameters: {
             query?: never;
@@ -2946,13 +3100,11 @@ export interface paths {
         };
         /**
          * Time To First Insight Kpi
-         * @description B-6 product KPI: the connect→first-insight funnel, measured.
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /exploration/kpi/time-to-first-finding``.
          *
-         *     Reads the `exploration.first_insight` milestone events the explorer stamps
-         *     (one per run, on the first insight from any phase) and reports the
-         *     distribution of elapsed seconds — so "how fast does a fresh connection
-         *     deliver its first finding" is a query, not a vibe. Mirrors
-         *     /metrics/enforcement-rate: a measured rate the product is held to.
+         *     Identical payload — it delegates to the handler above. Kept so a client pinned to the
+         *     old path keeps working for one release.
          */
         get: operations["time_to_first_insight_kpi_exploration_kpi_time_to_first_insight_get"];
         put?: never;
@@ -3297,6 +3449,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{connection_id}/findings/{finding_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Connection Finding
+         * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
+         *     from intel, kept in the store, reversible) and logs the reason for the guard
+         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file.
+         */
+        post: operations["dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Connection Finding
+         * @description Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
+         *
+         *     Counterpart to the canvas promote endpoint — connection-level findings (the
+         *     default Briefing scope) had no promotion path until now.
+         */
+        post: operations["promote_connection_finding_exploration__connection_id__findings__finding_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Finding Receipt
+         * @description K3 Trust Receipt — the versioned finding artifact + its provenance edges
+         *     (source SQL, input tables, guards) + the kernel job that computed it. One
+         *     query over the ledger answers 'why should I trust this number'. Findings
+         *     persisted before K3 have no artifact yet — they gain one on the next
+         *     explore/refresh (404 until then, by design).
+         */
+        get: operations["get_finding_receipt_exploration__connection_id__findings__finding_id__receipt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/revalidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revalidate Connection Finding
+         * @description Re-check a finding's dossier against LIVE data — re-run its stored SQL once
+         *     (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
+         *     `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
+         *     never silently serve a stale figure. Requires a dossier (404 otherwise).
+         */
+        post: operations["revalidate_connection_finding_exploration__connection_id__findings__finding_id__revalidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{connection_id}/insights/{insight_id}/dismiss": {
         parameters: {
             query?: never;
@@ -3308,9 +3552,10 @@ export interface paths {
         put?: never;
         /**
          * Dismiss Connection Insight
-         * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
-         *     from intel, kept in the store, reversible) and logs the reason for the guard
-         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file.
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/dismiss``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["dismiss_connection_insight_exploration__connection_id__insights__insight_id__dismiss_post"];
         delete?: never;
@@ -3330,10 +3575,10 @@ export interface paths {
         put?: never;
         /**
          * Promote Connection Insight
-         * @description Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/promote``.
          *
-         *     Counterpart to the canvas promote endpoint — connection-level findings (the
-         *     default Briefing scope) had no promotion path until now.
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["promote_connection_insight_exploration__connection_id__insights__insight_id__promote_post"];
         delete?: never;
@@ -3351,11 +3596,10 @@ export interface paths {
         };
         /**
          * Get Insight Receipt
-         * @description K3 Trust Receipt — the versioned finding artifact + its provenance edges
-         *     (source SQL, input tables, guards) + the kernel job that computed it. One
-         *     query over the ledger answers 'why should I trust this number'. Findings
-         *     persisted before K3 have no artifact yet — they gain one on the next
-         *     explore/refresh (404 until then, by design).
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /exploration/{connection_id}/findings/{finding_id}/receipt``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         get: operations["get_insight_receipt_exploration__connection_id__insights__insight_id__receipt_get"];
         put?: never;
@@ -3377,10 +3621,10 @@ export interface paths {
         put?: never;
         /**
          * Revalidate Insight
-         * @description Re-check a finding's dossier against LIVE data — re-run its stored SQL once
-         *     (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
-         *     `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
-         *     never silently serve a stale figure. Requires a dossier (404 otherwise).
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/revalidate``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["revalidate_insight_exploration__connection_id__insights__insight_id__revalidate_post"];
         delete?: never;
@@ -5078,7 +5322,11 @@ export interface paths {
         };
         /**
          * Get Entity Object Sets
-         * @description Return all named ObjectSets for an entity — keyed by object set id.
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /ontology/entities/{entity_id}/segments``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept so a client pinned to the
+         *     old path keeps working for one release; use ``/segments``.
          */
         get: operations["get_entity_object_sets_ontology_entities__entity_id__object_sets_get"];
         put?: never;
@@ -5099,7 +5347,11 @@ export interface paths {
         get?: never;
         /**
          * Override Ontology Object Set
-         * @description Define (or correct) a named row-filter (object set) on an entity.
+         * @deprecated
+         * @description DEPRECATED alias of ``PUT /ontology/entities/{entity_id}/segments/{segment_id}``.
+         *
+         *     Same body, same payload, same persisted override — it delegates to the handler above.
+         *     Kept for one release; use ``/segments/{segment_id}``.
          */
         put: operations["override_ontology_object_set_ontology_entities__entity_id__object_sets__set_id__put"];
         post?: never;
@@ -5122,6 +5374,46 @@ export interface paths {
          */
         get: operations["get_entity_properties_ontology_entities__entity_id__properties_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Entity Segments
+         * @description Return every saved, named filter (segment) on an entity — keyed by segment id.
+         */
+        get: operations["get_entity_segments_ontology_entities__entity_id__segments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/segments/{segment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Override Entity Segment
+         * @description Define (or correct) a saved, named row-filter (segment) on an entity.
+         */
+        put: operations["override_entity_segment_ontology_entities__entity_id__segments__segment_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5443,7 +5735,7 @@ export interface paths {
         };
         /**
          * List Learned Skills
-         * @description Learned skills (origin='learned' OntologyActions) for this connection/schema.
+         * @description Learned skills (origin='learned' QueryTemplates) for this connection/schema.
          */
         get: operations["list_learned_skills_ontology_skills_get"];
         put?: never;
@@ -5471,7 +5763,7 @@ export interface paths {
          * Propose Learned Skill
          * @description Crystallize a *candidate* skill from a finished investigation.
          *
-         *     Returns the proposed OntologyAction WITHOUT persisting it — the UI shows it
+         *     Returns the proposed QueryTemplate WITHOUT persisting it — the UI shows it
          *     for confirmation, then calls POST /ontology/skills to save.
          */
         post: operations["propose_learned_skill_ontology_skills_propose_post"];
@@ -6945,7 +7237,13 @@ export interface components {
         };
         /**
          * ActionParameter
-         * @description A typed, named input to an OntologyAction — mirrors Palantir's Action parameter concept.
+         * @description A typed, named input to a QueryTemplate *or* to a declared, governed write action.
+         *
+         *     Deliberately NOT renamed alongside QueryTemplate: this one type is shared by the
+         *     read-side template (``QueryTemplate.parameters``) and the write-surface unit's
+         *     ``params`` (the declared-action model below), and "action" is still the right word
+         *     for the latter. Naming it ``QueryTemplateParameter`` would mislabel every declared
+         *     write-action parameter.
          *
          *     Parameters are extracted from {placeholder} tokens in the sql_template.
          *     Data type is inferred from column profiles where possible; falls back to VARCHAR.
@@ -7835,7 +8133,7 @@ export interface components {
          * @description What to do when the conditions hold — a reference to an existing primitive.
          *
          *     ``kinetic_action`` is the governed write: it runs through
-         *     :func:`~aughor.kinetic.executor.execute_kinetic_action`, inheriting submission criteria,
+         *     :func:`~aughor.actions.executor.execute_kinetic_action`, inheriting submission criteria,
          *     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
          *     why nothing above LOW risk can auto-fire from an automation either.
          *
@@ -8282,43 +8580,6 @@ export interface components {
              */
             wrong_usage_examples: string[];
         };
-        /** OntologyAction */
-        OntologyAction: {
-            /**
-             * Action Type
-             * @enum {string}
-             */
-            action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
-            /** Business Rules Enforced */
-            business_rules_enforced?: string[];
-            /** Description */
-            description: string;
-            /** Display Name */
-            display_name: string;
-            /** Entity */
-            entity: string;
-            /** Id */
-            id: string;
-            /**
-             * Origin
-             * @default structural
-             * @enum {string}
-             */
-            origin: "structural" | "learned" | "manual";
-            /** Parameters */
-            parameters?: components["schemas"]["ActionParameter"][];
-            /** Returns */
-            returns: string;
-            /** Source Table */
-            source_table: string;
-            /** Sql Template */
-            sql_template: string;
-            /**
-             * Usage Count
-             * @default 0
-             */
-            usage_count: number;
-        };
         /**
          * OrgSettings
          * @description App-wide organization settings (the singleton) and the shape of a
@@ -8580,6 +8841,55 @@ export interface components {
             actor: string;
             /** Context */
             context: string;
+        };
+        /**
+         * QueryTemplate
+         * @description A reusable, governed SQL template over one entity — read-only, never a write.
+         *
+         *     Was ``OntologyAction``. It never acted on anything: it is a parameterized SELECT with
+         *     business rules attached, which is what the planner reuses instead of re-deriving the
+         *     query. "Action" now means exactly one thing (a governed write to the data), so this
+         *     type had to give the word back — the declared-action model below is the write surface.
+         *
+         *     The persisted spelling is frozen: these live under ``OntologyGraph.actions`` in the
+         *     JSON cache and under ``data/learned_actions.json``, and ``action_type`` / ``origin``
+         *     are stored values. Only the Python symbol moved.
+         */
+        QueryTemplate: {
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
+            /** Business Rules Enforced */
+            business_rules_enforced?: string[];
+            /** Description */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            /** Entity */
+            entity: string;
+            /** Id */
+            id: string;
+            /**
+             * Origin
+             * @default structural
+             * @enum {string}
+             */
+            origin: "structural" | "learned" | "manual";
+            /** Parameters */
+            parameters?: components["schemas"]["ActionParameter"][];
+            /** Returns */
+            returns: string;
+            /** Source Table */
+            source_table: string;
+            /** Sql Template */
+            sql_template: string;
+            /**
+             * Usage Count
+             * @default 0
+             */
+            usage_count: number;
         };
         /**
          * ReasoningMessage
@@ -9376,17 +9686,6 @@ export interface components {
             /** Unit */
             unit?: string | null;
         };
-        /** _ObjectSetOverride */
-        _ObjectSetOverride: {
-            /** Description */
-            description?: string | null;
-            /** Display Name */
-            display_name?: string | null;
-            /** Filter Sql */
-            filter_sql?: string | null;
-            /** Is Default */
-            is_default?: boolean | null;
-        };
         /** _PlanAnswerRequest */
         _PlanAnswerRequest: {
             /** Conn Id */
@@ -9524,6 +9823,17 @@ export interface components {
         _SchemaCreate: {
             /** Name */
             name: string;
+        };
+        /** _SegmentOverride */
+        _SegmentOverride: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Filter Sql */
+            filter_sql?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** _SemanticContextRequest */
         _SemanticContextRequest: {
@@ -11384,6 +11694,169 @@ export interface operations {
             header?: never;
             path: {
                 automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_briefing_subscriptions_briefing_subscriptions_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_briefing_subscription_briefing_subscriptions_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SubscriptionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_briefing_subscription_briefing_subscriptions__sub_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                sub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SubscriptionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_briefing_subscription_briefing_subscriptions__sub_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_briefing_subscription_briefing_subscriptions__sub_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_id: string;
             };
             cookie?: never;
         };
@@ -14991,6 +15464,74 @@ export interface operations {
             };
         };
     };
+    dismiss_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dismiss_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__dismiss_post: {
         parameters: {
             query?: never;
@@ -15229,6 +15770,37 @@ export interface operations {
             path: {
                 canvas_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    time_to_first_finding_kpi_exploration_kpi_time_to_first_finding_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -15835,6 +16407,138 @@ export interface operations {
             header?: never;
             path: {
                 conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_connection_finding_exploration__connection_id__findings__finding_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_finding_receipt_exploration__connection_id__findings__finding_id__receipt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revalidate_connection_finding_exploration__connection_id__findings__finding_id__revalidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
             };
             cookie?: never;
         };
@@ -19244,7 +19948,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["_ObjectSetOverride"];
+                "application/json": components["schemas"]["_SegmentOverride"];
             };
         };
         responses: {
@@ -19281,6 +19985,79 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entity_segments_ontology_entities__entity_id__segments_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    override_entity_segment_ontology_entities__entity_id__segments__segment_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                segment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SegmentOverride"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -19845,7 +20622,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OntologyAction"];
+                "application/json": components["schemas"]["QueryTemplate"];
             };
         };
         responses: {

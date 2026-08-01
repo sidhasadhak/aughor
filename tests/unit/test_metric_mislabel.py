@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from aughor.explorer.agent import verify_insight
 from aughor.explorer.metric_coherence import mislabeled_named_metric
-from aughor.profile.metric_kb import metric_vocabulary
+from aughor.business_profile.metric_kb import metric_vocabulary
 
 _RETAIL = "Retail / E-commerce"
 _AOV_SQL = ("SELECT o.marketing_channel, SUM(o.order_value) / NULLIF(COUNT(DISTINCT o.order_id), 0) "

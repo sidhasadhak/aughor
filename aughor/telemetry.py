@@ -205,7 +205,7 @@ def trace_identity() -> tuple[str, str, str]:
     except Exception:
         session_id, user_id = "", ""
     try:
-        from aughor.user_agents.context import current_agent
+        from aughor.custom_agents.context import current_agent
         agent = current_agent()
         agent_id = agent.id if agent is not None else ""
     except Exception:
@@ -215,7 +215,8 @@ def trace_identity() -> tuple[str, str, str]:
 
 def _tag_current_trace(mlf: Any, trace_id: str) -> None:
     """Attribute the active trace so MLflow's Sessions / user / per-agent + cost
-    views populate (E1 of the 2026-07-11 Databricks-OSS study).
+    views populate (E1 of
+    docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md).
 
     ``investigation_id`` and ``agent_id`` are TAGS (mutable, filterable); session
     and user go through ``update_current_trace``'s dedicated kwargs, which write
@@ -278,8 +279,8 @@ def mlflow_tool_span(
     """A TOOL span for a unit of work (e.g. a guarded SQL execution).
 
     Two independent, both-optional sinks hang off this one call:
-    - the MLflow TOOL span nested under the active trace (flag `obs.mlflow`) —
-      no-op unless that flag is on, mlflow imports, AND a trace is already active;
+    - the MLflow TOOL span nested under the active trace — no-op unless a tracking
+      URI is configured, mlflow imports, AND a trace is already active;
     - the `task_history` row (flag `obs.task_table`) — no-op unless that flag is
       on, inheriting the ambient node trace id + parenting to the enclosing span.
 
@@ -597,7 +598,7 @@ def span(
                 logger.debug("Langfuse span start failed: %s", exc)
 
     # ── MLflow + OTel nested spans ─────────────────────────────────────────────
-    # One ExitStack for both: MLflow (flag `obs.mlflow`; autolog owns the trace
+    # One ExitStack for both: MLflow (autolog owns the trace
     # root, this only nests the node span + tags the trace with the
     # investigation id) and OTel. Span START failures degrade to no-span; span
     # END failures are suppressed (`_close_span_stack`) — telemetry must never

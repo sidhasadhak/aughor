@@ -109,7 +109,7 @@ def test_unified_grounding_surfaces_north_star(monkeypatch):
     class _Prof:
         north_star_metrics = [_NSM()]
 
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: _Prof())
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])  # empty catalog → no DB open
     out = C.unified_metric_grounding("conn", "schema", schema_text="TABLE: t\n  margin\n  price")
     assert "Gross Margin Rate" in out
@@ -167,7 +167,7 @@ def test_resolve_contracts_render_is_byte_identical_to_canonical(monkeypatch):
     class _Prof:
         north_star_metrics = [_NSM()]
 
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: _Prof())
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
 
     canon = C.resolve_canonical_metrics("conn", None, catalog=catalog, ontology=onto)
     contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)
@@ -187,7 +187,7 @@ def test_resolve_contracts_render_is_byte_identical_to_canonical(monkeypatch):
 
 def test_resolve_contracts_precedence_catalog_wins(monkeypatch):
     from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
     catalog = [_real_md("revenue", "SUM(price*qty)")]
     onto = _real_onto(_real_om("revenue", "SUM(net)", verified=True))
     contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)
@@ -198,7 +198,7 @@ def test_resolve_contracts_precedence_catalog_wins(monkeypatch):
 def test_resolve_contracts_carries_rich_fields_canonical_dropped(monkeypatch):
     """The whole point of the contract: it keeps thresholds/additivity the CanonicalMetric lost."""
     from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
     catalog = [_real_md("mrr", "SUM(amount)", additivity="additive", target_value=100000.0)]
     contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)
     c = contracts[0]
@@ -207,7 +207,7 @@ def test_resolve_contracts_carries_rich_fields_canonical_dropped(monkeypatch):
 
 def test_resolve_contracts_skips_empty_sql_and_is_noop_safe(monkeypatch):
     from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
     assert C.resolve_contracts("conn", None, catalog=[_real_md("ghost", "")], ontology=None) == []
     assert C.resolve_contracts("", None, catalog=[], ontology=None) == []
     assert C.render_contracts_block([]) == ""
@@ -235,7 +235,7 @@ def _pin_three_sources(monkeypatch):
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: list(catalog))
     monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda c, s=None: onto)
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: _Prof())
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
     return C
 
 
@@ -291,7 +291,7 @@ def test_planning_view_verified_maps_to_injectable_not_raw_verified(monkeypatch)
     verified=False (never executed) — mapping to the wrong field would wrongly drop it."""
     from aughor.semantic import canonical as C
 
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
     monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
     catalog = [_real_md("revenue", "SUM(price*qty)")]     # status defaults to "draft"
     view = C.resolve_planning_metrics("conn", None, catalog=catalog, ontology=None)[0]

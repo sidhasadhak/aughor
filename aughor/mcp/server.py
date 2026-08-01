@@ -33,7 +33,7 @@ How to use this server:
 2. For a specific question, use `ask` (fast; returns the answer + a Trust Receipt). Prefer
    it over writing SQL yourself — the answer is governed and grounded, not plausible.
 3. For a "why / root-cause / driver" question that needs multi-step evidence, use
-   `deep_analysis` (slower; runs the autonomous Deep Analysis agent and returns a report).
+   `deep_analysis` (slower; runs the autonomous deep analysis and returns a report).
 4. `get_metric` returns the EXACT governed value of a registered metric — use it instead of
    re-deriving a formula. `list_findings` / `get_briefing` surface what Aughor already
    discovered in the background. `explore` kicks off background discovery.
@@ -81,11 +81,11 @@ async def deep_analysis(
     question: Annotated[str, Field(description="An open-ended analytical question, e.g. 'Why did margin fall in Q3?' or 'What's driving low review scores?'")],
     connection: Annotated[str, Field(description="A connection id from list_connections.")],
     schema: Annotated[Optional[str], Field(description="Optional schema name to scope a multi-schema connection.")] = None,
-    deep: Annotated[bool, Field(description="True (default) runs the full Deep Analysis agent; False serves a pre-computed finding dossier when the question maps to one.")] = True,
+    deep: Annotated[bool, Field(description="True (default) runs the full deep analysis; False serves a pre-computed finding dossier when the question maps to one.")] = True,
     fresh: Annotated[bool, Field(description="Skip the similar-investigation cache and force a new run.")] = False,
 ) -> dict:
-    """Run Aughor's autonomous Deep Analysis agent (ADA) — a multi-step, evidence-gathering
-    investigation for "why / root-cause / driver" questions that one query can't answer. The
+    """Run Aughor's autonomous deep analysis — a multi-step, evidence-gathering
+    run for "why / root-cause / driver" questions that one query can't answer. The
     agent forms hypotheses, runs and verifies queries (fan-out- and grain-safe), and
     synthesizes a report with findings and recommendations, plus a Trust Receipt.
 
@@ -103,8 +103,8 @@ async def deep_analysis(
 async def get_investigation(
     investigation_id: Annotated[str, Field(description="The id returned by deep_analysis.")],
 ) -> dict:
-    """Fetch a Deep Analysis report by its investigation id — use this to poll for a report
-    after `deep_analysis` returned status='running', or to re-read a past investigation."""
+    """Fetch a deep-analysis report by its id — use this to poll for a report after
+    `deep_analysis` returned status='running', or to re-read a past run."""
     return await _client.get_investigation(investigation_id)
 
 

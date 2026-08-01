@@ -23,11 +23,11 @@ def test_bump_is_fail_safe_and_counts():
 
 
 def test_defan_counts_attempt_and_rewrite():
-    from aughor.sql.fanout import FanoutFinding, defan
+    from aughor.sql.fanout import FanoutIssue, defan
 
     before_attempt = _count("guard.defan.attempt.chasm")
     # An unbuildable finding still counts the attempt; rewritten only on success.
-    finding = FanoutFinding(hub_root="orders", satellites=["a", "b"], aggregates=[], kind="chasm")
+    finding = FanoutIssue(hub_root="orders", satellites=["a", "b"], aggregates=[], kind="chasm")
     defan("SELECT 1", finding)
     assert _count("guard.defan.attempt.chasm") == before_attempt + 1
 

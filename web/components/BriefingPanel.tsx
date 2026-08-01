@@ -517,7 +517,7 @@ function GenerateBriefButton({
             stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
           </svg>
-          {hasNarrative ? "Regenerate Brief" : "Generate AI Brief"}
+          {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
         </>
       )}
     </button>
@@ -2020,7 +2020,7 @@ const PHASE_LABELS: Record<string, string> = {
   distribution:      "profiling distributions",
   cross_table:       "finding cross-table patterns",
   domain_intel:      "synthesising domain intelligence",
-  synthesis:         "composing cross-finding insights",
+  synthesis:         "composing cross-domain findings",
 };
 
 function BriefingEmpty({
@@ -2156,7 +2156,7 @@ const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px 
 function SynthesisSkeleton() {
   return (
     <div style={{ ...skelCard, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 9 }}
-      aria-busy="true" aria-label="Writing intelligence brief">
+      aria-busy="true" aria-label="Writing briefing">
       {["100%", "97%", "99%", "94%", "98%", "62%"].map((w, i) => <Shimmer key={i} w={w} h={12} />)}
     </div>
   );
@@ -2276,7 +2276,7 @@ export function BriefingPanel({
   }, []);
 
   const showTriggersHint = useCallback(() => {
-    toast.info("No delivery channel yet", { description: "Add a Slack/webhook trigger in Action Hub to share findings." });
+    toast.info("No delivery channel yet", { description: "Add a Slack/webhook trigger in Notifications to share findings." });
   }, []);
 
   const load = useCallback(async () => {
@@ -2441,7 +2441,7 @@ export function BriefingPanel({
   const startRefCmd = useRef(runExplorer);
   useEffect(() => { regenRefCmd.current = generateNarrative; startRefCmd.current = runExplorer; });
   const briefCommands = useMemo<Command[]>(() => [
-    { id: "brief-regen",   label: "Regenerate brief",  sublabel: "Re-synthesize the intelligence briefing",          icon: "spark",   accent: "var(--blue3)", keywords: "regenerate refresh brief narrative synthesis",  run: () => regenRefCmd.current(true) },
+    { id: "brief-regen",   label: "Regenerate briefing", sublabel: "Re-synthesize the intelligence briefing",        icon: "spark",   accent: "var(--blue3)", keywords: "regenerate refresh brief narrative synthesis",  run: () => regenRefCmd.current(true) },
     { id: "brief-explore", label: "Start exploration", sublabel: "Run the autonomous explorer on this connection",   icon: "process", accent: "var(--cyn3)",  keywords: "explore exploration run analyze discover signals", run: () => startRefCmd.current() },
   ], []);
   useRegisterCommands("briefing", briefCommands);

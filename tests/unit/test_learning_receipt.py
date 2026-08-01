@@ -144,14 +144,14 @@ def test_write_answer_receipt_byte_identical_when_flag_off(monkeypatch, run):
 
 def test_record_activation_noop_without_a_run():
     assert metering.activations_snapshot() is None
-    metering.record_activation("ada.premise_check")          # off-run touchpoint must not crash
+    metering.record_activation("deep_analysis.premise_check")          # off-run touchpoint must not crash
     assert metering.activations_snapshot() is None
 
 
 def test_activation_receipt_none_when_flag_off(monkeypatch, run):
     # capabilities.receipt graduated to default-ON (2026-07-13); off now means explicit "0"
     monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "0")
-    metering.record_activation("ada.premise_check")
+    metering.record_activation("deep_analysis.premise_check")
     assert build_activation_receipt() is None                # off → byte-identical
 
 
@@ -162,13 +162,13 @@ def test_activation_receipt_none_when_nothing_fired(monkeypatch, run):
 
 def test_activation_receipt_aggregates_with_reasons(monkeypatch, run):
     monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "1")
-    metering.record_activation("ada.premise_check")
+    metering.record_activation("deep_analysis.premise_check")
     metering.record_activation("capability.contract")
     metering.record_activation("capability.contract")        # fired twice this run
     r = build_activation_receipt()
     assert r is not None
     by = {e["capability"]: e for e in r}
-    assert by["ada.premise_check"]["count"] == 1 and by["ada.premise_check"]["reason"]   # trigger text present
+    assert by["deep_analysis.premise_check"]["count"] == 1 and by["deep_analysis.premise_check"]["reason"]   # trigger text present
     assert by["capability.contract"]["count"] == 2
 
 

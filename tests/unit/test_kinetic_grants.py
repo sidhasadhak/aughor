@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kinetic import grants
-from aughor.kinetic.executor import execute_kinetic_action
+from aughor.actions import grants
+from aughor.actions.executor import execute_kinetic_action
 from aughor.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
 
 
@@ -115,7 +115,7 @@ def test_a_numeric_grant_minted_from_coerced_params_actually_matches(proposals_o
     NUMERIC action accepted with 500 coerces to 500.0; a grant bound as raw '500' would never match
     the executor's coerced '500.0'. Minting from coerced params is what makes the grant it just
     created usable. (VARCHAR tests miss this because coercion is identity there.)"""
-    from aughor.kinetic.executor import coerce_params
+    from aughor.actions.executor import coerce_params
     action = KineticAction(
         id="refund_eur", kind="side_effect",
         params=[ActionParameter(name="amount_eur", data_type="NUMERIC", required=True)],

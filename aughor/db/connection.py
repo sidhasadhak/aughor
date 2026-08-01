@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 import sqlglot
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
 
@@ -1109,7 +1109,12 @@ class PostgresConnection(DatabaseConnection):
         return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
-        """Introspect information_schema and return a Hermes-formatted schema string with SQL hints."""
+        """Introspect information_schema and return the prompt schema string with SQL hints.
+
+        The shared text format every backend's ``get_schema`` emits: one
+        ``TABLE: name  (N rows)`` header per table, two-space-indented ``column  type``
+        lines under it, annotations injected inline, then the detected SQL hints.
+        """
         try:
             with self._conn.cursor() as cur:
                 cur.execute("""

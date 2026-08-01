@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 
-from aughor.kinetic.executor import execute_kinetic_action
+from aughor.actions.executor import execute_kinetic_action
 from aughor.ontology.models import ActionParameter, KineticAction, SideEffect
 from aughor.runners import InvestigationRequest, run_investigation
 from aughor.runners.investigation import DISPATCH_EVENT
-from aughor.user_agents import create_agent, delete_agent, list_agents
+from aughor.custom_agents import create_agent, delete_agent, list_agents
 
 REPO = Path(__file__).resolve().parents[2]
 AUGHOR = REPO / "aughor"
@@ -307,24 +307,24 @@ def test_the_runner_imports_neither_of_its_callers():
     the exact state H5 exists to leave behind."""
     for path in _py("runners"):
         offending = {m for m in _imported_aughor_modules(path)
-                     if m.startswith(("aughor.automations", "aughor.kinetic"))}
+                     if m.startswith(("aughor.automations", "aughor.actions"))}
         assert not offending, f"{path.name} imports its own caller: {sorted(offending)}"
 
 
 def test_kinetic_never_imports_automations():
     """The inversion H5 refused to make. A depends on K (its `kinetic_action` effect runs
     through K's executor); K reaching back for A's engine would close the cycle."""
-    for path in _py("kinetic"):
+    for path in _py("actions"):
         offending = {m for m in _imported_aughor_modules(path)
                      if m.startswith("aughor.automations")}
         assert not offending, (
-            f"aughor/kinetic/{path.name} imports {sorted(offending)} — A already depends on K, "
+            f"aughor/actions/{path.name} imports {sorted(offending)} — A already depends on K, "
             f"so this closes the cycle. Call aughor.runners instead.")
 
 
 def test_both_callers_go_through_the_runner():
     """The other half: a private copy of the drain reappearing in either package would pass
     the two tests above while defeating the point."""
-    for module in (AUGHOR / "automations" / "engine.py", AUGHOR / "kinetic" / "executor.py"):
+    for module in (AUGHOR / "automations" / "engine.py", AUGHOR / "actions" / "executor.py"):
         assert any(m.startswith("aughor.runners") for m in _imported_aughor_modules(module)), \
             f"{module.name} no longer runs investigations through the neutral runner"

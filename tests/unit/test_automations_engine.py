@@ -9,7 +9,7 @@ retry → fallback → record. Two properties carry most of the weight:
   with the AUTHORED message verbatim — the Wave-K property, inherited rather than re-implemented.
 
 Hermetic: both seams (probe, dispatch) are injected; the kinetic test fakes the ontology load so
-the real :func:`~aughor.kinetic.executor.execute_kinetic_action` runs unmocked.
+the real :func:`~aughor.actions.executor.execute_kinetic_action` runs unmocked.
 """
 from __future__ import annotations
 
@@ -335,7 +335,7 @@ def test_kinetic_effect_criterion_failure_returns_the_authored_message_verbatim(
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
                         lambda conn_id, schema=None: _graph_with(action))
     dispatched = []
-    monkeypatch.setattr("aughor.kinetic.executor.default_dispatch",
+    monkeypatch.setattr("aughor.actions.executor.default_dispatch",
                         lambda a, p, s="": dispatched.append(a.id))
 
     a = _automation(effects=[Effect(kind="kinetic_action",
@@ -359,7 +359,7 @@ def test_kinetic_effect_executes_when_the_criteria_hold(monkeypatch):
         seen.append((act.id, params, scope))
         return {"ok": True}
 
-    monkeypatch.setattr("aughor.kinetic.executor.default_dispatch", fake_dispatch)
+    monkeypatch.setattr("aughor.actions.executor.default_dispatch", fake_dispatch)
 
     a = _automation(conn_id="conn-kin",
                     effects=[Effect(kind="kinetic_action",

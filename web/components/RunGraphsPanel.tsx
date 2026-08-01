@@ -35,6 +35,46 @@ const PHASE_HUE: Record<string, "positive" | "negative" | "caution" | "muted"> =
   complete: "positive", partial: "caution", skipped: "muted", error: "negative",
 };
 
+// Readable phase names for the graph node ids the backend returns in `topology`.
+// The IDS are the backend's (`aughor/agent/graph.py` compile order) and are frozen —
+// this maps them at RENDER only, so a node the map doesn't know still renders as its
+// raw id rather than disappearing. Covers all three branches (deep / explore / direct)
+// including the flag-gated parallel variants.
+const NODE_LABEL: Record<string, string> = {
+  // shared entry
+  route_question: "Routing",
+  // deep-analysis branch
+  exploratory_scan: "Exploration scan",
+  ada_intake: "Intake",
+  clarify_gate: "Clarify gate",
+  ada_cross_section: "Cross-section",
+  ada_cross_section_multilens: "Cross-section (parallel lenses)",
+  ada_phase_wave: "Baseline · Decomposition · Dimensional (parallel)",
+  ada_baseline: "Baseline",
+  ada_decompose: "Decomposition",
+  ada_dimensional: "Dimensional",
+  ada_behavioral: "Behavioral",
+  ada_synthesize: "Synthesis",
+  // survey (explore) branch
+  exploratory_scan_explore: "Exploration scan",
+  decompose_exploration: "Sub-question plan",
+  plan_gate: "Plan gate",
+  plan_and_execute_subq: "Sub-questions",
+  plan_and_execute_wave: "Sub-questions (parallel)",
+  synthesize_exploration: "Synthesis",
+  // quick (direct) branch
+  plan_queries: "Query plan",
+  execute_planned_queries: "Query execution",
+  score_evidence: "Evidence scoring",
+  replan: "Replan",
+  synthesize: "Synthesis",
+};
+
+/** Display name for a graph node — falls back to the raw backend id. */
+function nodeLabel(node: string): string {
+  return NODE_LABEL[node] ?? node;
+}
+
 export function RunGraphsPanel({ onOpenInvestigation }: {
   onOpenInvestigation?: (invId: string) => void;
 }) {
@@ -127,7 +167,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
 
       {/* ── (b) deep-run phase view ── */}
       <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 8 }}>
-        Deep-run phases — the fixed ADA topology
+        Deep-run phases — the fixed deep analysis topology
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ width: 260, flexShrink: 0 }}>
@@ -178,8 +218,10 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                           border: `1px solid ${atGate ? "var(--amb3)" : "var(--b1)"}`,
                           background: atGate ? "var(--amb1)" : "var(--bg-1)",
                           color: atGate ? "var(--amb5)" : "var(--t2)" }}
-                          title={atGate ? "paused at this gate (derived from state markers)" : undefined}>
-                          {node}{atGate ? " ⏸" : ""}
+                          title={atGate
+                            ? `${node} — paused at this gate (derived from state markers)`
+                            : node}>
+                          {nodeLabel(node)}{atGate ? " ⏸" : ""}
                         </span>
                       </span>
                     );
@@ -216,8 +258,11 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                   border: "1px solid var(--amb2)", borderRadius: "var(--r2)",
                   display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--amb5)", flex: 1 }}>
-                    Paused at <code style={{ fontSize: 11 }}>{graph.interrupt.gate}</code> —
-                    resume with feedback from the investigation view.
+                    Paused at{" "}
+                    <code style={{ fontSize: 11 }} title={graph.interrupt.gate ?? undefined}>
+                      {nodeLabel(graph.interrupt.gate ?? "")}
+                    </code> —
+                    resume with feedback from the deep analysis view.
                   </span>
                   {onOpenInvestigation && (
                     <Button variant="secondary" size="xs"

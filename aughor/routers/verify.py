@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from aughor.verify import record_verdict, verdict_stats, list_verdicts
+from aughor.feedback import record_verdict, verdict_stats, list_verdicts
 
 router = APIRouter(tags=["verify"])
 

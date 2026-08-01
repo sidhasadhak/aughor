@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 import aughor.govern.actions as govern
-from aughor.kinetic.executor import (
+from aughor.actions.executor import (
     CriterionError,
     ParamError,
     coerce_params,

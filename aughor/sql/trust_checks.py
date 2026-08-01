@@ -35,7 +35,7 @@ _NUMERICISH = ("num", "amount", "amt", "count", "cnt", "score", "rate", "qty", "
 
 
 @dataclass
-class TrustFinding:
+class TrustIssue:
     pattern: str        # "E1-date-boundary" | "E1-lexicographic-order" | "E1-text-numeric-compare"
     subject: str        # the column / expression involved
     message: str
@@ -91,7 +91,7 @@ def _date_only_literal(node) -> Optional[str]:
 
 
 def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
-                     dialect: str = "duckdb") -> list[TrustFinding]:
+                     dialect: str = "duckdb") -> list[TrustIssue]:
     """Return E1 function-semantics caveats for `sql`. Pure AST; never raises. `col_types` keys are
     lowercased "table.col" and/or "col" → type string (optional)."""
     try:
@@ -103,14 +103,14 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
     a2t = _alias_to_table(tree)
     all_tables = {t.name for t in tree.find_all(exp.Table)}
     single = next(iter(all_tables)) if len(all_tables) == 1 else None
-    out: list[TrustFinding] = []
+    out: list[TrustIssue] = []
     seen: set = set()
 
     def _emit(pattern: str, subject: str, message: str) -> None:
         key = (pattern, subject.lower())
         if key not in seen:
             seen.add(key)
-            out.append(TrustFinding(pattern, subject, message))
+            out.append(TrustIssue(pattern, subject, message))
 
     # E1-date-boundary: a TIMESTAMP column bounded by a DATE-only literal misses that day's later rows.
     for b in tree.find_all(exp.Between):

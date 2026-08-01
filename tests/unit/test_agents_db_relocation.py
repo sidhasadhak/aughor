@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from aughor.user_agents import store
+from aughor.custom_agents import store
 
 
 def _connect_at(monkeypatch, path: Path) -> sqlite3.Connection:

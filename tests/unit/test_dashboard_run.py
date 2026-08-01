@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from aughor.api import app
 from aughor.dashboard.models import DashboardCard
 from aughor.dashboard.store import get_card, upsert_card
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)
 

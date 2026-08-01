@@ -178,7 +178,7 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
     This shape had NO builder — it fell through to `_build_chat`, which reads only
     inv-level columns/rows (absent on a wave), so the export dropped every chart and
     shipped a 2-page text note. Found by the W5 chart-grammar A/B: the outlier-entities
-    starter routes here, and its Databricks reference report is exactly this shape."""
+    starter routes here, and its reference report is exactly this shape."""
     rep = inv.get("report") or {}
     headline = rep.get("headline") or inv.get("question") or "Exploration"
     answers = rep.get("subq_answers") or []
@@ -223,10 +223,10 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
 
 
 def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
-    """The structured 'Deep Analysis' report (ADA: metric → phases → findings →
+    """The structured deep-analysis report (metric → phases → findings →
     attribution → recommendations). Charts live right on each finding."""
     rep = inv.get("report") or {}
-    headline = rep.get("headline") or inv.get("question") or "Deep Analysis"
+    headline = rep.get("headline") or inv.get("question") or "Deep analysis"
     conf = (rep.get("confidence") or "").upper()
     meta = [m for m in (
         inv.get("connection_id") or "",
@@ -385,7 +385,7 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
 def _build_analysis(inv: dict) -> ExportDoc:
     """The hypothesis-driven AnalysisReport shape (verdict + key_findings + …)."""
     rep = inv.get("report") or {}
-    headline = rep.get("headline") or inv.get("question") or "Deep Analysis"
+    headline = rep.get("headline") or inv.get("question") or "Deep analysis"
     findings = rep.get("key_findings") or []
     meta = [m for m in (
         inv.get("connection_id") or "",
@@ -432,7 +432,7 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
     """Dispatch on the report's actual shape → an ExportDoc.
 
     The stored `kind` is a coarse hint; the report dict's own `_report_type` /
-    field set is authoritative (a 'investigation' row often holds an ADA report)."""
+    field set is authoritative (an 'investigation' row often holds a deep-analysis report)."""
     rep = inv.get("report") or {}
     if rep.get("_report_type") == "investigate" or "phases" in rep:
         builder = _build_ada

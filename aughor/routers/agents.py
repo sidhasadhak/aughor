@@ -148,7 +148,7 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
 
 
 # ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
-# Dynamic, user-created personas (aughor/user_agents/) — distinct from the
+# Dynamic, user-created personas (aughor/custom_agents/) — distinct from the
 # static built-in fleet charters above. Routes 404 when the flag is off.
 
 def _require_user_agents() -> None:
@@ -161,7 +161,7 @@ def _require_user_agents() -> None:
 def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
                            connection_id: Optional[str] = None,
                            doc_ids: Optional[list] = None) -> None:
-    from aughor.user_agents.models import INSTRUCTIONS_MAX, NAME_MAX
+    from aughor.custom_agents.models import INSTRUCTIONS_MAX, NAME_MAX
     if name is not None and not (0 < len(name.strip()) <= NAME_MAX):
         raise HTTPException(status_code=422, detail=f"name must be 1..{NAME_MAX} chars")
     if instructions is not None and len(instructions) > INSTRUCTIONS_MAX:
@@ -225,7 +225,7 @@ class UserAgentFromTemplate(BaseModel):
 def list_user_agents():
     """All user-defined agents (the persona roster, newest first)."""
     _require_user_agents()
-    from aughor.user_agents import list_agents
+    from aughor.custom_agents import list_agents
     return [a.model_dump() for a in list_agents()]
 
 
@@ -237,10 +237,10 @@ def list_agent_templates():
     ``suggested_goldens`` — suggestions, each stating what it still needs. A pack cannot
     supply a golden's reference SQL (it does not know your schema, and its evals are
     behavioural expectations rather than queries), so the template says so rather than
-    seeding a suite that would measure nothing. See :mod:`aughor.user_agents.templates`.
+    seeding a suite that would measure nothing. See :mod:`aughor.custom_agents.templates`.
     """
     _require_user_agents()
-    from aughor.user_agents.templates import list_templates
+    from aughor.custom_agents.templates import list_templates
     return {"templates": list_templates()}
 
 
@@ -253,7 +253,7 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
     its pass chip only once real ground truth exists.
     """
     _require_user_agents()
-    from aughor.user_agents.templates import create_from_template
+    from aughor.custom_agents.templates import create_from_template
     made = create_from_template(body.pack_id, name=body.name,
                                 connection_id=body.connection_id,
                                 schema_scope=body.schema_scope)
@@ -268,7 +268,7 @@ def create_user_agent(body: UserAgentCreate):
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
     from aughor.org.context import current_org_id
-    from aughor.user_agents import create_agent
+    from aughor.custom_agents import create_agent
     agent = create_agent(body.name, instructions=body.instructions,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
@@ -279,7 +279,7 @@ def create_user_agent(body: UserAgentCreate):
 @router.get("/agents/custom/{agent_id}")
 def get_user_agent(agent_id: str):
     _require_user_agents()
-    from aughor.user_agents import get_agent
+    from aughor.custom_agents import get_agent
     agent = get_agent(agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")
@@ -291,7 +291,7 @@ def patch_user_agent(agent_id: str, body: UserAgentPatch):
     _require_user_agents()
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
-    from aughor.user_agents import update_agent
+    from aughor.custom_agents import update_agent
     agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
@@ -311,8 +311,8 @@ def list_user_agent_revisions(agent_id: str, limit: int = 50):
     about what the agent does.
     """
     _require_user_agents()
-    from aughor.user_agents import get_agent
-    from aughor.user_agents.revisions import list_revisions
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.revisions import list_revisions
     agent = get_agent(agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")
@@ -333,8 +333,8 @@ def restore_user_agent_revision(agent_id: str, version: int):
     with it.
     """
     _require_user_agents()
-    from aughor.user_agents import get_agent, update_agent
-    from aughor.user_agents.revisions import revision_config
+    from aughor.custom_agents import get_agent, update_agent
+    from aughor.custom_agents.revisions import revision_config
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     config = revision_config(agent_id, version)
@@ -349,7 +349,7 @@ def restore_user_agent_revision(agent_id: str, version: int):
 @router.delete("/agents/custom/{agent_id}")
 def delete_user_agent(agent_id: str):
     _require_user_agents()
-    from aughor.user_agents import delete_agent
+    from aughor.custom_agents import delete_agent
     if not delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="No such agent")
     return {"deleted": agent_id}
@@ -365,8 +365,8 @@ class GoldenCreate(BaseModel):
 @router.get("/agents/custom/{agent_id}/goldens")
 def list_agent_goldens(agent_id: str):
     _require_user_agents()
-    from aughor.user_agents import get_agent
-    from aughor.user_agents.store import list_goldens
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.store import list_goldens
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     return list_goldens(agent_id)
@@ -378,8 +378,8 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
     the ground truth the evaluation compares against (executed, not matched as
     text) — read-only statements only."""
     _require_user_agents()
-    from aughor.user_agents import get_agent
-    from aughor.user_agents.store import add_golden
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.store import add_golden
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     if not body.question.strip() or not body.reference_sql.strip():
@@ -405,7 +405,7 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
 @router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
 def delete_agent_golden(agent_id: str, golden_id: str):
     _require_user_agents()
-    from aughor.user_agents.store import delete_golden
+    from aughor.custom_agents.store import delete_golden
     if not delete_golden(golden_id):
         raise HTTPException(status_code=404, detail="No such golden")
     return {"deleted": golden_id}
@@ -415,7 +415,7 @@ def delete_agent_golden(agent_id: str, golden_id: str):
 def user_agent_observability(agent_id: str):
     """The Agent Workspace overview data for one agent: its run history (from the
     history store, stamped with agent_id) enriched with MLflow trace stats when
-    `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
+    MLflow tracing is configured. Degrades to history-only (`trace_stats: null`) when the
     tracking server is off — the workspace is useful without MLflow (B3: the
     dependency is one-directional).
 
@@ -428,7 +428,7 @@ def user_agent_observability(agent_id: str):
     on a tile, and only one of them is true.
     """
     _require_user_agents()
-    from aughor.user_agents import get_agent
+    from aughor.custom_agents import get_agent
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     from aughor import telemetry
@@ -475,8 +475,8 @@ def evaluate_user_agent(agent_id: str):
     and stamp the result on the agent — 'your agent still passes 11/12'. Run it
     after editing instructions or documents to catch regressions."""
     _require_user_agents()
-    from aughor.user_agents import get_agent
-    from aughor.user_agents.quality import evaluate_agent
+    from aughor.custom_agents import get_agent
+    from aughor.custom_agents.quality import evaluate_agent
     agent = get_agent(agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")

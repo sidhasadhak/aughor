@@ -226,7 +226,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # machinery made honest to the user. Best-effort; gated with the ledger (closed_loop).
         _resolved_ambig: list = []
         try:
-            from aughor.verify.priors import closed_loop_enabled
+            from aughor.feedback.priors import closed_loop_enabled
             if closed_loop_enabled():
                 from aughor.semantic.ambiguity_ledger import retrieve_resolutions
                 for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
@@ -261,7 +261,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                      counter="chat.receipt_activations")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
         # answer cost. For job-backed answers (ADA) the job row carries the full total
-        # too; for the synchronous chat/insight path this is the only sink.
+        # too; for the synchronous quick-answer path this is the only sink.
         from aughor.kernel import metering
         _cost = metering.snapshot()
         # WP-10: stamp the coder model used, so the public receipt's model{role,id} is honest
@@ -280,7 +280,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # omission rather than carrying an empty agent that reads like a real one.
         _agent = None
         try:
-            from aughor.user_agents.context import current_agent
+            from aughor.custom_agents.context import current_agent
             _a = current_agent()
             _agent = {"id": _a.id, "name": _a.name} if _a is not None else None
         except Exception:
@@ -502,7 +502,7 @@ def _investigation_stream(graph_stream):
     at ``phase_complete``); off → plain ``_aiter_sync`` (byte-identical, no sink, no extra tasks)."""
     try:
         from aughor.kernel.flags import flag_enabled
-        on = flag_enabled("ada.progress_events")
+        on = flag_enabled("deep_analysis.progress_events")
     except Exception:
         on = False
     if not on:
@@ -610,6 +610,22 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
     return None
 
 
+def _ambiguity_probe_enabled() -> bool:
+    """Whether the structural-ambiguity probe is opted in.
+
+    Reads the current variable, then the retired one. `AUGHOR_SOMA_CLARIFY` named the
+    SOMA-SQL paper the technique came from rather than what the probe does; it still works
+    so an operator's existing .env does not silently stop opting in on the day we renamed
+    it. Set `AUGHOR_AMBIGUITY_CLARIFY` going forward.
+    """
+    for var in ("AUGHOR_AMBIGUITY_CLARIFY", "AUGHOR_SOMA_CLARIFY"):
+        raw = os.getenv(var)
+        if raw is not None:
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
+
 async def salvage_orphaned_investigation(
     inv_id: str, connection_id: str, canvas_id: Optional[str], question: str,
 ) -> None:
@@ -679,7 +695,10 @@ class InvestigateRequest(BaseModel):
     # a deterministic ledger read, NOT a second ADA run. `deep` is the explicit
     # "Investigate deeper" escalation: run ADA, seeded with that dossier.
     insight_id: Optional[str] = None
-    deep: bool = False
+    # `escalate` is the explicit "go deeper than the saved finding" flag. It is NOT the
+    # `depth` knob — the two were both spelled `deep` on the same request, which is how
+    # one word came to mean two things. Accepts the old name `deep` on the wire.
+    escalate: bool = Field(default=False, alias="deep")
     # Recent conversation turns (question + SQL + result digest), so a follow-up in a
     # canvas composes on the previous query instead of starting cold — parity with the
     # quick /chat path. Same shape /chat + /ask accept.
@@ -753,8 +772,9 @@ class AskRequest(BaseModel):
     # R13/R10 seam — the starter's purpose tag; pure provenance (carried on the
     # route receipt so a starter run is legible as one).
     purpose: str = ""
-    # Pass-throughs preserved from the investigate path.
-    deep: bool = False
+    # Pass-throughs preserved from the investigate path. `escalate` accepts the old wire
+    # name `deep`; it is the dossier-escalation flag, not the `depth` knob above.
+    escalate: bool = Field(default=False, alias="deep")
     insight_id: Optional[str] = None
     seed_sql: Optional[str] = None
     seed_context: str = ""
@@ -868,7 +888,7 @@ class _ChatAnswer(BaseModel):
     chart_type: str = "auto"
     intent: str = ""         # "You want to see…" — plain-English restatement of the question
     approach: list[str] = [] # 3-5 concise steps describing how the answer is calculated
-    # MindsDB-style: chart config generated alongside SQL so chart always matches data
+    # Chart config generated alongside SQL so the chart always matches the data
     chart_config: dict = Field(default_factory=dict, description=
         "Vega-Lite chart configuration: {type, x_field, y_field, color_field, title}. "
         "Empty dict if the result is not chartable.")
@@ -891,18 +911,18 @@ class _FollowUpBase(BaseModel):
         return _coerce_list_str(v)
 
 
-class _InsightResult(BaseModel):
-    """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
+class _NarrativeResult(BaseModel):
+    """The prose enrichment attached to a quick answer — anomaly detection, trend, comparison."""
     narrative: str = Field(default="", description="2-3 tight sentences that lead with the answer and wrap decisive numbers in **bold**.")
     anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
     trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
     confidence: str = Field(default="medium", description="One of: high, medium, low.")
 
 
-class _PostAnswer(_InsightResult):
-    """Combined post-answer enrichment: analytical insight + follow-up questions
+class _PostAnswer(_NarrativeResult):
+    """Combined post-answer enrichment: the narrative + follow-up questions
     in ONE narrator call (was two separate narrator round-trips per answer).
-    Inherits insight fields; adds the follow-up list with the same coercion guard."""
+    Inherits the narrative fields; adds the follow-up list with the same coercion guard."""
     questions: list[str] = Field(default_factory=list, description="Exactly 3 concise follow-up data questions, max 12 words each.")
 
     @field_validator("questions", mode="before")
@@ -1047,7 +1067,7 @@ def _resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> 
     profile, falling back to USD '$'. The app/workspace override applies even when no profile
     is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
     try:
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         from aughor.orgsettings import resolve_currency
         from aughor.knowledge.triage import currency_symbol
         prof = _pstore.load(connection_id, schema_name)
@@ -1274,7 +1294,7 @@ async def _stream_chat(
             return (s + "\n\n") if s else ""
 
         def _causal() -> str:
-            from aughor.process.causal import build_causal_context_section
+            from aughor.lifecycle.causal import build_causal_context_section
             s = build_causal_context_section(question, conn_id=connection_id)
             return (s + "\n") if s else ""
 
@@ -1350,7 +1370,7 @@ async def _stream_chat(
         _full_schema = schema  # keep the un-narrowed schema for FK-neighbour expansion
         schema = _grounding_schema_slice(question, connection_id, schema=schema)
 
-        # Build structured Data Catalog from linked tables (MindsDB-style),
+        # Build structured Data Catalog from linked tables,
         # expanded with FK neighbours so bridge/output tables a multi-table
         # question needs only via a join are present.
         semantic_layer_section = ""
@@ -1365,7 +1385,7 @@ async def _stream_chat(
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
-                # M24c: verified semantic layer (object sets + computed properties)
+                # M24c: verified semantic layer (segments + computed properties)
                 # for the linked entities — only items validated against the live DB.
                 try:
                     from aughor.ontology.store import load_latest_ontology
@@ -1383,7 +1403,7 @@ async def _stream_chat(
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
-        # Hard cap: max 10 tables in context (MindsDB best practice)
+        # Hard cap: max 10 tables in context
         try:
             from aughor.tools.data_catalog import enforce_context_cap
             schema = enforce_context_cap(schema, max_tables=10)
@@ -1392,7 +1412,7 @@ async def _stream_chat(
             tolerate(exc, "10-table context cap is best-effort; answering from the uncapped schema context",
                      counter="chat.context_cap")
 
-        # ── final_text path (MindsDB-style): definitional questions answered from KB ──
+        # ── final_text path: definitional questions answered from KB ──
         definitional = re.search(
             r"^(what is|what are|what does|define|explain|meaning of)",
             question,
@@ -1512,7 +1532,7 @@ async def _stream_chat(
                 tolerate(exc, "playbook prompt enrichment is best-effort; answering without playbook context",
                          counter="chat.playbook_section")
 
-        # M24c: verified semantic layer — object sets (named WHERE filters) and
+        # M24c: verified semantic layer — segments (named WHERE filters) and
         # computed properties for the linked entities, all executed against the
         # live DB. Prepended below the trusted block so trusted patterns stay on top.
         if semantic_layer_section:
@@ -1551,7 +1571,7 @@ async def _stream_chat(
         # ── Ground-first resolution (flag `ask.resolve_first`) ────────────────
         # Decide ONCE, deterministically, whether this is answerable as asked —
         # BEFORE anything model-shaped runs. This sits ABOVE the semantic compiler
-        # and the SOMA probe deliberately: both spend an LLM call parsing/probing
+        # and the ambiguity probe deliberately: both spend an LLM call parsing/probing
         # the question, which is wasted work (cost + latency) when the verdict is
         # an honest abstention. Off → `_resolution` stays None → byte-identical.
         _resolution = None
@@ -1641,31 +1661,30 @@ async def _stream_chat(
         # answer to a cheaper model would just shift work onto the guards. The cost lever
         # is applied to the robust routing *decision* instead (classify_question). See
         # docs/NL2SQL_WINNING_FORMULA_2026.md.
-        # SOMA structural-ambiguity probe (3b) — execution-grounded. On a structural-suspect
+        # Structural-ambiguity probe (3b) — execution-grounded. On a structural-suspect
         # question the cheap deterministic clarify left quiet (e.g. "top products" — by units or
         # revenue?), generate candidate readings, execute them on THIS connection, and ask only if
         # their results materially diverge (the labels become grounded chips). LLM machinery + N
-        # executions, so it is opt-in (AUGHOR_SOMA_CLARIFY) and fail-open. Greenlit by the measurement
+        # executions, so it is opt-in (AUGHOR_AMBIGUITY_CLARIFY) and fail-open. Greenlit by the measurement
         # chain (evals/ambiguity_eval + evals/its_structural).
-        if (not skip_clarify
-                and os.getenv("AUGHOR_SOMA_CLARIFY", "0").lower() in ("1", "true", "yes", "on")):
+        if (not skip_clarify and _ambiguity_probe_enabled()):
             try:
-                from aughor.agent.soma import (is_structural_suspect, generate_candidate_readings,
+                from aughor.agent.ambiguity_probe import (is_structural_suspect, generate_candidate_readings,
                                                assess_structural_ambiguity)
                 if is_structural_suspect(question):
                     _cands = await asyncio.to_thread(generate_candidate_readings, question, schema)
                     if len(_cands) >= 2:
-                        def _soma_ex(_sql):
-                            _r = db.execute("soma_probe", _sql)
+                        def _probe_ex(_sql):
+                            _r = db.execute("ambiguity_probe", _sql)
                             return (not _r.error, _r.rows or [], _r.error or "")
                         _sv = await asyncio.to_thread(
-                            assess_structural_ambiguity, question, _cands, _soma_ex)
+                            assess_structural_ambiguity, question, _cands, _probe_ex)
                         if _sv.ambiguous:
                             yield _sse("clarify", _sv.to_event())
                             yield _sse("done", {})
                             return
             except Exception:
-                logger.debug("SOMA probe failed; proceeding to answer", exc_info=True)
+                logger.debug("ambiguity probe failed; proceeding to answer", exc_info=True)
 
         # Constrain generation with what the resolution settled (entity binding,
         # grain ceiling). The resolution itself ran ABOVE the compiler; the prepend
@@ -1681,7 +1700,7 @@ async def _stream_chat(
         # CK-0.2: token-stream the coder's `headline` field as it is written, filling the
         # otherwise-dead SQL-generation wait with the answer's headline typing in. The deltas
         # are the RAW (pre-grounding) headline; the terminal grounded `headline` event below is
-        # authoritative and overwrites the stream (self-healing, mirroring the `insight` stream).
+        # authoritative and overwrites the stream (self-healing, mirroring the `narrative` stream).
         # Flag off = the exact pre-streaming blocking call, byte-identical.
         from aughor.kernel.flags import flag_enabled as _hl_stream_flag
         # Chart-grammar: under `chart.exhibit_grammar` the system prompt no longer offers
@@ -1712,7 +1731,7 @@ async def _stream_chat(
             _hl_thread = _hthreading.Thread(target=_hl_worker, daemon=True, name="headline-stream")
             _hl_thread.start()
             # Drain partials → SSE deltas, throttled (grew ≥6 chars or >120ms) — a headline is
-            # short, so a tighter throttle than insight keeps it typing smoothly.
+            # short, so a tighter throttle than the narrative keeps it typing smoothly.
             _hl_last_len, _hl_last_ts = 0, _htime.monotonic()
             _HL_EMPTY = object()
 
@@ -2191,12 +2210,12 @@ async def _stream_chat(
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
-        # ONE narrator call produces BOTH the analytical insight and the
-        # follow-up questions (was two separate round-trips). For trivial result
+        # ONE narrator call produces BOTH the narrative and the follow-up
+        # questions (was two separate round-trips). For trivial result
         # shapes (a single scalar / empty set) there's no trend to interpret, so
         # we ask only for follow-ups and skip the narrative — same single call.
-        _insight_dict = None
-        _insight_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
+        _narrative_dict = None
+        _narrative_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
         try:
             # Bounded sample: up to 20 rows × 8 columns. For a time series, weight toward the
             # most recent periods so the narrative leads with current state, not year-one.
@@ -2205,7 +2224,7 @@ async def _stream_chat(
             _rows_text = "\n".join(
                 ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
             )
-            if _insight_worth_it:
+            if _narrative_worth_it:
                 _ts_clause = (
                     " This result is a TIME SERIES shown as the series start then the most recent periods: "
                     "LEAD WITH THE MOST RECENT period and its current trend, and state the net change since "
@@ -2215,7 +2234,7 @@ async def _stream_chat(
                 _system = (
                     "You are an analytical data interpreter writing for a clean published brief. "
                     "Given a user question, the SQL that answered it, and a sample of the results: "
-                    "(1) produce a tight analytical insight (2-3 sentences) that LEADS WITH THE ANSWER, "
+                    "(1) produce a tight analytical narrative (2-3 sentences) that LEADS WITH THE ANSWER, "
                     "wraps each decisive number in **double asterisks** for bold (e.g. **$2,112**, **+18%**), "
                     "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
@@ -2248,9 +2267,9 @@ async def _stream_chat(
                 f"{_rows_text}"
                 f"{_res_note}"
             )
-            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): dual-emit the
-            # narrative as `insight_delta` frames while the narrator writes it, then let
-            # the existing terminal `insight` event carry the authoritative final value —
+            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): stream the
+            # narrative as `narrative_delta` frames while the narrator writes it, then let
+            # the terminal `narrative` event carry the authoritative final value —
             # self-healing (a dropped delta costs nothing; old clients ignore the unknown
             # event). Flag off = the exact pre-streaming blocking call, byte-identical.
             from aughor.kernel.flags import flag_enabled as _stream_flag
@@ -2277,12 +2296,12 @@ async def _stream_chat(
                         _pa_q.put(None)   # sentinel: the stream is over
 
                 _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
-                                               name="insight-stream")
+                                               name="narrative-stream")
                 _pa_thread.start()
                 # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
                 # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
-                # go out strictly BEFORE the terminal `insight` event, and only when the
-                # insight is worth narrating (same gate the terminal event uses).
+                # go out strictly BEFORE the terminal `narrative` event, and only when the
+                # answer is worth narrating (same gate the terminal event uses).
                 _last_len, _last_ts = 0, _time.monotonic()
                 _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
 
@@ -2300,13 +2319,18 @@ async def _stream_chat(
                         continue
                     if _item is None:
                         break
-                    if not (_insight_worth_it and isinstance(_item, str)):
+                    if not (_narrative_worth_it and isinstance(_item, str)):
                         continue
                     _now = _time.monotonic()
                     if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
                         _last_len, _last_ts = len(_item), _now
-                        yield _sse("insight_delta",
-                                   {"narrative": _apply_currency(_item, _cur_sym)})
+                        _delta_payload = {"narrative": _apply_currency(_item, _cur_sym)}
+                        yield _sse("narrative_delta", _delta_payload)
+                        # DUAL-EMIT, one release only: the retired `insight_delta` name
+                        # carries the IDENTICAL payload so a client deployed before the
+                        # rename keeps typing the partial. Delete once no such client
+                        # remains; the frontend already prefers `narrative_delta`.
+                        yield _sse("insight_delta", _delta_payload)
                 await asyncio.to_thread(_pa_thread.join)
                 if "exc" in _pa_result:
                     raise _pa_result["exc"]
@@ -2320,28 +2344,35 @@ async def _stream_chat(
                         temperature=0.2,
                     )
                 )
-            if _insight_worth_it and _pa.narrative:
-                _insight_dict = {
+            if _narrative_worth_it and _pa.narrative:
+                _narrative_dict = {
                     "narrative": _apply_currency(_pa.narrative, _cur_sym),
                     "anomalies": _pa.anomalies[:3],
                     "trend": _pa.trend,
                     "confidence": _pa.confidence,
                 }
-                yield _sse("insight", _insight_dict)
-                # Persist insight so it survives page reload / history navigation
+                yield _sse("narrative", _narrative_dict)
+                # DUAL-EMIT, one release only: the retired `insight` name carries the
+                # IDENTICAL payload (same dict object) so a client deployed before the
+                # rename still receives the terminal value. Delete once no such client
+                # remains; the frontend already prefers `narrative`.
+                yield _sse("insight", _narrative_dict)
+                # Persist so the narrative survives page reload / history navigation.
+                # The stored key stays `report_json["insight"]` (db/history.py) — a
+                # persisted identity; renaming it would orphan every stored turn.
                 if _chat_inv_id:
                     try:
                         from aughor.db.history import update_chat_turn_insight
-                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
+                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _narrative_dict))
                     except Exception as exc:
                         from aughor.kernel.errors import tolerate
-                        tolerate(exc, "insight persistence is best-effort; the insight was already streamed this session",
+                        tolerate(exc, "narrative persistence is best-effort; it was already streamed this session",
                                  counter="chat.insight_persist")
             if _pa.questions:
                 yield _sse("followups", {"questions": _pa.questions[:3]})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
+            tolerate(exc, "post-answer narrative/follow-up enrichment is best-effort; the answer is already done",
                      counter="chat.post_answer")
 
         # Semantic inspect — logical validation. Phase 3 of the ground-first
@@ -2635,7 +2666,7 @@ async def _stream_investigation(
             schema = link_schema(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
         except Exception:
             logger.warning("Schema-linking pre-filter failed (agentic path); using full schema", exc_info=True)
-        # Build structured Data Catalog (MindsDB-style) from linked tables
+        # Build structured Data Catalog from linked tables
         data_catalog = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
@@ -2665,7 +2696,7 @@ async def _stream_investigation(
         except Exception:
             logger.warning("Data Catalog build failed (agentic path); using linked schema", exc_info=True)
 
-        # Hard cap: max 10 tables in context (MindsDB best practice)
+        # Hard cap: max 10 tables in context
         try:
             from aughor.tools.data_catalog import enforce_context_cap
             schema = enforce_context_cap(schema, max_tables=10)
@@ -2688,7 +2719,7 @@ async def _stream_investigation(
             except Exception:
                 logger.debug("context_assembled emit failed (best-effort)", exc_info=True)
 
-        # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
+        # Prefer structured Data Catalog as the primary schema context
         schema_for_agent = data_catalog if data_catalog else schema
 
         # Inject the UNIFIED metric grounding so ADA resolves a metric (e.g. "revenue")
@@ -2716,7 +2747,7 @@ async def _stream_investigation(
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
         from aughor.kernel.flags import flag_enabled as _flag_enabled
-        _clarify_gate = _flag_enabled("ada.clarify_gate")
+        _clarify_gate = _flag_enabled("deep_analysis.clarify_gate")
         agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
@@ -3079,7 +3110,7 @@ def _apply_clarify_choice(merged: dict, clarify_choice: Optional[str], connectio
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "crystallizing the clarify choice is best-effort; the run still binds the reading",
-                 counter="ada.clarify_crystallize")
+                 counter="deep_analysis.clarify_crystallize")
     return patch
 
 
@@ -3200,7 +3231,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
 async def _metered_stream(gen: AsyncGenerator[str, None],
                           budget: tuple | None = None) -> AsyncGenerator[str, None]:
     """Meter a synchronous streaming answer + enforce its budget in-context. The
-    chat/insight path is not a kernel job, so it has no JobKernel._run (to flush its
+    quick-answer path is not a kernel job, so it has no JobKernel._run (to flush its
     compute) and no heartbeat (to enforce a budget). We set the per-run accumulator
     for the whole iteration — the receipt reads it via metering.snapshot() — and arm
     the Insight agent's budget; the LLM funnel raises BudgetExceeded (a BaseException,
@@ -3313,8 +3344,8 @@ async def _investigation_job_streamed(
     job_id = await kernel().submit(
         "investigation", _drive,
         conn_id=connection_id, canvas_id=canvas_id,
-        # R10 — the starter's purpose tag rides the job row (the Databricks
-        # request_purpose analog), so Fleet/jobs are queryable per purpose.
+        # R10 — the starter's purpose tag rides the job row, so Fleet/jobs
+        # are queryable per purpose.
         payload={"question": question[:200], **({"purpose": purpose} if purpose else {})},
     )
     logger.debug("investigation job %s submitted", job_id)
@@ -3333,7 +3364,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
-            insight_id=req.insight_id, deep=req.deep, history=req.history,
+            insight_id=req.insight_id, deep=req.escalate, history=req.history,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -3349,7 +3380,7 @@ def _federation_eligible(req) -> bool:
     from aughor.kernel.flags import flag_enabled
     return bool(
         flag_enabled("federation.planner") and req.depth == "auto"
-        and not req.deep and not req.insight_id and not req.canvas_id
+        and not req.escalate and not req.insight_id and not req.canvas_id
         and not req.history and not req.skip_clarify
     )
 
@@ -3433,7 +3464,7 @@ def _program_eligible(req) -> bool:
     from aughor.kernel.flags import flag_enabled
     return bool(
         flag_enabled("plan.program") and req.depth == "auto"
-        and not req.deep and not req.insight_id and not req.canvas_id
+        and not req.escalate and not req.insight_id and not req.canvas_id
         and not req.history and not req.skip_clarify
     )
 
@@ -3467,7 +3498,7 @@ async def _stream_program(pr, conn_id: str) -> AsyncGenerator[str, None]:
 
 
 # ── Overview / "interesting facts about this schema" (the default first-look) ──
-# The widest-possible question answered the Genie way: a deterministic profile of the
+# The widest-possible question, answered as a deterministic profile of the
 # whole dataset, not an investigation of one metric. Detection is a phrasing regex AND
 # the ABSENCE of a named metric/entity/time window — so a specific question still routes
 # normally. Fully deterministic (no LLM) → graduated to Auto (flag `ask.overview`).
@@ -3504,7 +3535,7 @@ def _overview_eligible(req) -> bool:
     from aughor.kernel.flags import flag_enabled
     return bool(
         flag_enabled("ask.overview") and req.depth == "auto"
-        and not req.deep and not req.insight_id and not req.history and not req.skip_clarify
+        and not req.escalate and not req.insight_id and not req.history and not req.skip_clarify
         and _is_overview_question(req.question)
     )
 
@@ -3637,7 +3668,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # resolution is an authoritative prior on this turn and every future one — the class never
     # re-ambiguates on this connection. Gated with the ledger (closed_loop); best-effort.
     if req.clarify_reading:
-        from aughor.verify.priors import closed_loop_enabled
+        from aughor.feedback.priors import closed_loop_enabled
         if closed_loop_enabled():
             try:
                 from aughor.org.context import current_org_id
@@ -3665,7 +3696,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield _ev
         return
 
-    if (req.depth == "auto" and not req.deep and not req.insight_id and not req.skip_clarify
+    if (req.depth == "auto" and not req.escalate and not req.insight_id and not req.skip_clarify
             and flag_enabled("ask.clarify")):
         from aughor.agent.clarify import assess_clarification
         decision = assess_clarification(req.question)
@@ -3724,7 +3755,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # so run it off the event loop.
     route = await asyncio.to_thread(
         decide_ask_route, req.question,
-        depth_override=req.depth, deep_flag=req.deep,
+        depth_override=req.depth, deep_flag=req.escalate,
         insight_id=req.insight_id, has_deep=has_deep,
         mode_override=req.mode,   # R13 — a named starter's declared path
     )
@@ -3738,7 +3769,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql,
-            seed_context=req.seed_context, insight_id=req.insight_id, deep=req.deep,
+            seed_context=req.seed_context, insight_id=req.insight_id, deep=req.escalate,
             history=req.history,  # follow-up composition on the deep path (parity with quick)
             # R9 — carry the route verdict's mode so a wide question reaches the explore wave.
             # Normally "investigate"; "explore" only when the deterministic wide detector fired
@@ -3868,7 +3899,7 @@ def _resolve_ask_agent(req: "AskRequest"):
     if not flag_enabled("agents.user_defined"):
         raise HTTPException(status_code=404,
                             detail="user-defined agents are disabled (flag agents.user_defined)")
-    from aughor.user_agents import get_agent
+    from aughor.custom_agents import get_agent
     agent = get_agent(req.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"No such agent '{req.agent_id}'")
@@ -3902,7 +3933,7 @@ def _apply_agent_bindings(req: "AskRequest", agent, conn_id: str) -> str:
 
 def _current_agent_id() -> str:
     """The active user-agent's id for state seeding ("" when none)."""
-    from aughor.user_agents.context import current_agent
+    from aughor.custom_agents.context import current_agent
     agent = current_agent()
     return agent.id if agent is not None else ""
 
@@ -3922,7 +3953,7 @@ def persona_for_investigation(inv_id: str):
         agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""
         if not agent_id:
             return None
-        from aughor.user_agents import get_agent
+        from aughor.custom_agents import get_agent
         persona = get_agent(agent_id)
         return persona if (persona is not None and persona.enabled) else None
     except Exception as exc:
@@ -3936,7 +3967,7 @@ async def _stream_as_agent(agent, stream: AsyncGenerator[str, None]) -> AsyncGen
     """Run the ask stream with the user-agent contextvar active, so the prompt
     brief and the document-retrieval scope see the agent everywhere (threads
     included — ContextThreadPoolExecutor propagates contextvars)."""
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
     token = activate_agent(agent)
     try:
         yield _sse("agent", {"agent_id": agent.id, "name": agent.name,
@@ -4176,7 +4207,12 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
 
     # Branch, from what the checkpoint actually holds. A run with no checkpoint
     # reports unknown rather than a guessed picture. A run paused at the clarify
-    # gate has no phases yet — the pending clarify marker is the ADA tell.
+    # gate has no phases yet — the pending clarify marker is the deep-analysis tell.
+    #
+    # The wire value stays "ada": clients (including web/lib/api.ts) compare against it,
+    # and the node ids in `topology` below are the graph's real, frozen node names. The
+    # response carries an additive `branch_label` for anything that wants to DISPLAY the
+    # branch without learning the acronym.
     if phases or clarify_pending:
         branch = "ada"
     elif sub_questions:
@@ -4223,6 +4259,8 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
     return {
         "investigation_id": inv_id,
         "status": inv.get("status"),
+        "branch_label": {"ada": "Deep analysis", "explore": "Survey",
+                         "direct": "Quick answer"}.get(branch, "Unknown"),
         "question": inv.get("question"),
         "branch": branch,
         "topology": topology,
@@ -4364,7 +4402,7 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest)
     if req.status in ("verified", "implemented", "rejected"):
         update_playbook_success_rates()
         try:
-            from aughor.process.causal import promote_on_outcome
+            from aughor.lifecycle.causal import promote_on_outcome
             promote_on_outcome(inv_id, contradicted=(req.status == "rejected"))
         except Exception as exc:
             from aughor.kernel.errors import tolerate

@@ -212,8 +212,8 @@ def _agent_pack_preference_never_bypasses_the_deploy_gate() -> Comparison:
     PREFERENCE that restricts selection — never a deploy-gate bypass. An agent
     explicitly bound to the pack still gets no steering until a human deploys the
     pack on the connection (the promise in user_agents/context.py's docstring)."""
-    from aughor.user_agents import create_agent, delete_agent
-    from aughor.user_agents.context import activate_agent, release_agent
+    from aughor.custom_agents import create_agent, delete_agent
+    from aughor.custom_agents.context import activate_agent, release_agent
 
     agent = create_agent("receipt pack-preference probe",
                          instructions="Prefer cohort framing.",

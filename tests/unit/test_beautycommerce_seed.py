@@ -11,7 +11,7 @@ import pytest
 
 def _seeded():
     duckdb = pytest.importorskip("duckdb")
-    from aughor.samples.beautycommerce import _seed_beauty_db
+    from aughor.demo.beautycommerce import _seed_beauty_db
     c = duckdb.connect(":memory:")
     _seed_beauty_db(c)
     return c

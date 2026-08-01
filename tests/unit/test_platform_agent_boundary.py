@@ -28,10 +28,15 @@ AUGHOR = Path(__file__).resolve().parents[2] / "aughor"
 # runs at startup like the host layer, legitimately seeding both platform data and
 # agent metrics (e.g. the BeautyCommerce metric catalog). It is setup code, not core
 # platform substrate.
+# Wave W renamed several of these. Two are easy to get wrong and both are load-bearing:
+# the OUTBOUND-delivery package (webhooks/Slack) is platform and is now `notifications`
+# (it was `actions`); the GOVERNED-WRITE package is agent-side and is now `actions` (it was
+# `kinetic`). Listing the new `actions` here would silently reclassify agent code as
+# platform and invert the boundary this file exists to defend.
 PLATFORM_DIRS = {
-    "db", "kernel", "connectors", "metastore", "org", "platform", "security",
-    "llm", "licensing", "workspace", "orgsettings", "volumes", "canvas",
-    "export", "savedquery", "actions",
+    "db", "kernel", "connectors", "metastore", "org", "control_plane", "security",
+    "llm", "licensing", "workspace", "orgsettings", "files", "canvas",
+    "export", "savedquery", "notifications",
 }
 PLATFORM_TOP_MODULES = {"secretvault.py", "stats.py", "telemetry.py"}
 # sql/ is split: the safety inspectors are platform; the LLM SQL generator (`writer.py`)
@@ -41,9 +46,9 @@ SQL_AGENT_FILES = {"writer.py", "query_log_miner.py"}
 
 # ── Agent packages — forbidden import targets for platform code ───────────────
 AGENT_PKGS = {
-    "agent", "explorer", "ontology", "semantic", "knowledge", "briefs",
-    "playbook", "packs", "profile", "verify", "evidence", "semops",
-    "monitors", "memory", "process", "tools", "rules",
+    "agent", "explorer", "ontology", "semantic", "knowledge", "briefing",
+    "playbook", "packs", "business_profile", "feedback", "evidence", "semops",
+    "monitors", "memory", "lifecycle", "tools", "rules",
 }
 
 # ── Edges that still exist mid-migration (each inversion step deletes its rows) ─

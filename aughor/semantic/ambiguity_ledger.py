@@ -1,6 +1,6 @@
-"""The Ambiguity Ledger — resolution that COMPOUNDS (SOMA improvisation I1).
+"""The Ambiguity Ledger — resolution that COMPOUNDS.
 
-SOMA re-pays its full probe pipeline every time any user asks an ambiguous question; the
+A bare probe pipeline re-pays its full cost every time any user asks an ambiguous question; the
 resolution evaporates after the answer. Aughor has what a paper harness cannot — a persistent
 per-connection substrate — so a resolved ambiguity can be **crystallized once and reused
 forever**. When a disagreement is settled (by a B1 probe, by a user's clarify choice, or by a
@@ -8,7 +8,7 @@ human verdict), we write a first-class `AmbiguityResolution`; the read path cons
 FIRST, so a question that matches a resolved dimension injects the resolution as an authoritative
 prior and skips candidates + probes entirely.
 
-The consequence: SOMA's cost curve is flat per question; Aughor's **burns down monotonically per
+The consequence: a bare probe's cost curve is flat per question; Aughor's **burns down monotonically per
 connection** — the ambiguity space of a deployed schema shrinks with use. Design:
 docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md §3/I1; the mechanical version of the
 "living context graph that compounds" (memory: context-graph-closed-loop-gap).

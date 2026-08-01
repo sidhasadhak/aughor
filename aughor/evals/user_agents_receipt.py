@@ -81,7 +81,7 @@ def _resolve(req, *, flag_on: bool) -> dict:
 def _prompt_surface(*, flag_on: bool) -> dict:
     """Everything the persona seams contribute to a run with no agent activated."""
     from aughor.kernel.flags import flag_overrides
-    from aughor.user_agents.context import (
+    from aughor.custom_agents.context import (
         agent_brief_block, agent_doc_ids, agent_pack_ids, current_agent,
     )
     with flag_overrides({FLAG: flag_on}):
@@ -94,14 +94,14 @@ def _prompt_surface(*, flag_on: bool) -> dict:
 
 
 def _agent(**kw):
-    from aughor.user_agents import create_agent
+    from aughor.custom_agents import create_agent
     base = dict(name="receipt probe", instructions="Prefer cohort framing.")
     base.update(kw)
     return create_agent(**base)
 
 
 def _drop(agent) -> None:
-    from aughor.user_agents import delete_agent
+    from aughor.custom_agents import delete_agent
     delete_agent(agent.id)
 
 
@@ -243,7 +243,7 @@ def _a_conflicting_connection_binding_is_refused() -> Comparison:
 
 @scenario("a_disabled_or_unknown_agent_is_refused")
 def _a_disabled_or_unknown_agent_is_refused() -> Comparison:
-    from aughor.user_agents import update_agent
+    from aughor.custom_agents import update_agent
     agent = _agent(name="disabled probe")
     update_agent(agent.id, enabled=False)
     try:
@@ -265,7 +265,7 @@ def _a_disabled_or_unknown_agent_is_refused() -> Comparison:
 def _an_active_agent_sees_only_its_own_documents() -> Comparison:
     """Fail-closed retrieval, the promise in the flag's own description: an agent
     with no bound documents sees NONE — never a fall-back to everything."""
-    from aughor.user_agents.context import activate_agent, agent_doc_ids, release_agent
+    from aughor.custom_agents.context import activate_agent, agent_doc_ids, release_agent
 
     bound = _agent(name="scoped probe", doc_ids=["doc-1", "doc-2"])
     empty = _agent(name="unscoped probe", doc_ids=[])
@@ -326,7 +326,7 @@ def measured_effect() -> dict[str, Any]:
     Reported, never asserted: the numbers describe this deployment on the day the
     receipt was minted, and a fresh clone's are all zero by construction.
     """
-    from aughor.user_agents import list_agents
+    from aughor.custom_agents import list_agents
 
     agents = list_agents()
     return {

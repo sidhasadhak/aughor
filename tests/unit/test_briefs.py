@@ -1,16 +1,16 @@
 """Scheduled brief subscriptions — store CRUD, cron resolution, delivery wiring.
 
 Backend for backlog #4 (#20c): push the Intelligence Digest on a schedule via an
-Action Hub trigger. See aughor/briefs/.
+Action Hub trigger. See aughor/briefing/.
 """
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-import aughor.briefs.store as bstore
-from aughor.briefs.models import BriefSubscription, DEFAULT_CRON
-from aughor.briefs import delivery as bdelivery
+import aughor.briefing.store as bstore
+from aughor.briefing.models import BriefSubscription, DEFAULT_CRON
+from aughor.briefing import delivery as bdelivery
 
 
 # ── model: cron resolution ───────────────────────────────────────────────────
@@ -77,7 +77,7 @@ def _fake_digest(alerts=2, critical=1, sections=1):
 
 
 def test_build_brief_payload_summary(monkeypatch):
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest())
     sub = BriefSubscription(conn_id="c1", name="W", trigger_id="t1", period="week")
     summary, md, digest = bdelivery.build_brief_payload(sub)
@@ -87,7 +87,7 @@ def test_build_brief_payload_summary(monkeypatch):
 
 
 def test_build_brief_payload_quiet_period(monkeypatch):
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest(alerts=0, critical=0, sections=0))
     sub = BriefSubscription(conn_id="c1", name="W", trigger_id="t1", period="day")
     summary, _md, _d = bdelivery.build_brief_payload(sub)
@@ -96,7 +96,7 @@ def test_build_brief_payload_quiet_period(monkeypatch):
 
 def test_deliver_subscription_no_trigger(monkeypatch, tmp_path):
     _isolate(tmp_path, monkeypatch)
-    import aughor.actions.store as astore
+    import aughor.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: None)
     sub = bstore.save_subscription(BriefSubscription(conn_id="c1", name="W", trigger_id="missing"))
     result = bdelivery.deliver_subscription(sub)
@@ -108,11 +108,11 @@ def test_deliver_subscription_no_trigger(monkeypatch, tmp_path):
 
 def test_deliver_subscription_fires_and_records(monkeypatch, tmp_path):
     _isolate(tmp_path, monkeypatch)
-    import aughor.actions.store as astore
-    import aughor.actions.executor as execu
+    import aughor.notifications.store as astore
+    import aughor.notifications.executor as execu
     monkeypatch.setattr(astore, "get_trigger",
                         lambda tid: SimpleNamespace(id=tid, enabled=True))
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest())
     captured = {}
 
@@ -143,7 +143,7 @@ def _fake_request():
 
 def test_router_create_rejects_missing_trigger(monkeypatch):
     from aughor.routers.briefs import create_brief_subscription, _SubscriptionBody
-    import aughor.actions.store as astore
+    import aughor.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: None)
     with pytest.raises(HTTPException) as ei:
         create_brief_subscription(_SubscriptionBody(conn_id="c1", name="W", trigger_id="nope"), _fake_request())

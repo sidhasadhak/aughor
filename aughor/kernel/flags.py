@@ -36,28 +36,28 @@ FLAG_ENV = {
     "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
     "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
     "birth.job": "AUGHOR_BIRTH_JOB",
-    "ada.parallel_lenses": "AUGHOR_ADA_PARALLEL_LENSES",
-    "ada.parallel_phases": "AUGHOR_ADA_PARALLEL_PHASES",
-    "ada.why_where_interaction": "AUGHOR_ADA_WHY_WHERE_INTERACTION",
-    "ada.why_deepen": "AUGHOR_ADA_WHY_DEEPEN",
-    "ada.parallel_why_lenses": "AUGHOR_ADA_PARALLEL_WHY_LENSES",
+    "deep_analysis.parallel_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES",
+    "deep_analysis.parallel_phases": "AUGHOR_DEEP_ANALYSIS_PARALLEL_PHASES",
+    "deep_analysis.why_where_interaction": "AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION",
+    "deep_analysis.why_deepen": "AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN",
+    "deep_analysis.parallel_why_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES",
     "preflight.parallel": "AUGHOR_PREFLIGHT_PARALLEL",
     "trust.verify_facade": "AUGHOR_TRUST_FACADE",
     "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
     "semantic.contract_live": "AUGHOR_SEMANTIC_CONTRACT_LIVE",
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
-    "ada.premise_check": "AUGHOR_PREMISE_CHECK",
-    "ada.causal_drill": "AUGHOR_CAUSAL_DRILL",
+    "deep_analysis.premise_check": "AUGHOR_PREMISE_CHECK",
+    "deep_analysis.causal_drill": "AUGHOR_CAUSAL_DRILL",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
-    "ada.adversarial_high_stakes": "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES",
-    "ada.pin_canonical_metric": "AUGHOR_ADA_PIN_CANONICAL_METRIC",
-    "ada.progress_events": "AUGHOR_ADA_PROGRESS_EVENTS",
-    "ada.clarify_gate": "AUGHOR_CLARIFY_GATE",
+    "deep_analysis.adversarial_high_stakes": "AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES",
+    "deep_analysis.pin_canonical_metric": "AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC",
+    "deep_analysis.progress_events": "AUGHOR_DEEP_ANALYSIS_PROGRESS_EVENTS",
+    "deep_analysis.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
     "ask.conversation_context": "AUGHOR_ASK_CONVERSATION_CONTEXT",
@@ -84,8 +84,8 @@ FLAG_ENV = {
     "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
     "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
-    "ada.evidence_dedup": "AUGHOR_ADA_EVIDENCE_DEDUP",
-    "ada.evidence_stubs": "AUGHOR_ADA_EVIDENCE_STUBS",
+    "deep_analysis.evidence_dedup": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP",
+    "deep_analysis.evidence_stubs": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS",
     "evals.experiments": "AUGHOR_EVALS_EXPERIMENTS",
     "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
@@ -122,6 +122,83 @@ FLAG_ENV = {
     "lifecycle.freeze": "AUGHOR_LIFECYCLE_FREEZE",  # Wave V4: live-by-default + explicit freeze; gone data errors loudly
 }
 
+# ── Renamed flags (Wave W vocabulary unification) ─────────────────────────────────────
+# A flag name is a CONTRACT with three independent holders: an operator's `.env`, a
+# persisted runtime override row in the ledger kv, and any script passing the name to
+# `flag_overrides`. Renaming the FLAG_ENV key alone silently strands all three — the
+# operator's variable stops being read, the stored override stops being found, and the
+# script raises UnknownFlagError. `MIGRATION` does not help: it is a disposition
+# CATEGORY for two-code-path forks, not a rename facility.
+#
+# So a rename registers here instead of just editing FLAG_ENV, and every resolution
+# path canonicalizes through it. Both maps EMPTY means the layer is inert and flag
+# resolution is byte-identical to before it existed (asserted in the ratchet test).
+#
+# Retiring a name is a one-line move, never a deletion:
+#   RENAMED["ada.parallel_lenses"] = "deep_analysis.parallel_lenses"
+#   RETIRED_ENV["AUGHOR_ADA_PARALLEL_LENSES"] = "deep_analysis.parallel_lenses"
+
+#: Retired flag name → its current name. Old names keep working; they never re-register
+#: in FLAG_ENV (the ratchet asserts this, so a rename cannot be quietly reverted).
+RENAMED: dict[str, str] = {
+    # Wave W: the `ada.*` family. "ADA" expanded, in its own docstring, to words it does
+    # not spell; the feature is "deep analysis" everywhere a human reads it. Call sites
+    # may keep passing the old name indefinitely — `_canonical` resolves it.
+    "ada.adversarial_high_stakes": "deep_analysis.adversarial_high_stakes",
+    "ada.causal_drill": "deep_analysis.causal_drill",
+    "ada.clarify_gate": "deep_analysis.clarify_gate",
+    "ada.evidence_dedup": "deep_analysis.evidence_dedup",
+    "ada.evidence_stubs": "deep_analysis.evidence_stubs",
+    "ada.parallel_lenses": "deep_analysis.parallel_lenses",
+    "ada.parallel_phases": "deep_analysis.parallel_phases",
+    "ada.parallel_why_lenses": "deep_analysis.parallel_why_lenses",
+    "ada.pin_canonical_metric": "deep_analysis.pin_canonical_metric",
+    "ada.premise_check": "deep_analysis.premise_check",
+    "ada.progress_events": "deep_analysis.progress_events",
+    "ada.why_deepen": "deep_analysis.why_deepen",
+    "ada.why_where_interaction": "deep_analysis.why_where_interaction",
+}
+
+#: Retired env var → the flag it now feeds. Consulted only when the current flag's own
+#: env var is unset, so an operator who has already migrated is never second-guessed.
+RETIRED_ENV: dict[str, str] = {
+    # Wave W: `AUGHOR_ADA_*` → `AUGHOR_DEEP_ANALYSIS_*`. An operator's existing .env keeps
+    # opting in. (The three `ada.*` flags whose env var never said ADA — PREMISE_CHECK,
+    # CAUSAL_DRILL, CLARIFY_GATE — kept their variable and need no entry.)
+    "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES": "deep_analysis.adversarial_high_stakes",
+    "AUGHOR_ADA_EVIDENCE_DEDUP": "deep_analysis.evidence_dedup",
+    "AUGHOR_ADA_EVIDENCE_STUBS": "deep_analysis.evidence_stubs",
+    "AUGHOR_ADA_PARALLEL_LENSES": "deep_analysis.parallel_lenses",
+    "AUGHOR_ADA_PARALLEL_PHASES": "deep_analysis.parallel_phases",
+    "AUGHOR_ADA_PARALLEL_WHY_LENSES": "deep_analysis.parallel_why_lenses",
+    "AUGHOR_ADA_PIN_CANONICAL_METRIC": "deep_analysis.pin_canonical_metric",
+    "AUGHOR_ADA_PROGRESS_EVENTS": "deep_analysis.progress_events",
+    "AUGHOR_ADA_WHY_DEEPEN": "deep_analysis.why_deepen",
+    "AUGHOR_ADA_WHY_WHERE_INTERACTION": "deep_analysis.why_where_interaction",
+}
+
+
+def _canonical(name: str) -> str:
+    """The current name for a possibly-retired flag name.
+
+    Follows a chain (a flag renamed twice) with a bound, so a mistaken cycle degrades to
+    "resolve as far as we got" rather than hanging the answer path.
+    """
+    seen = name
+    for _ in range(4):
+        nxt = RENAMED.get(seen)
+        if nxt is None or nxt == seen:
+            return seen
+        seen = nxt
+    return seen
+
+
+def _retired_names(name: str) -> list[str]:
+    """Every retired name that now resolves to ``name`` — the keys an override may still
+    be persisted under. Computed per call: RENAMED is a handful of entries and this runs
+    only when the canonical lookup already missed."""
+    return [old for old in RENAMED if _canonical(old) == name and old != name]
+
 # A flag whose env var is UNSET resolves to its default (False unless listed).
 # `ask.clarify` shipped default-ON (`os.getenv("AUGHOR_ASK_CLARIFY", "1")` at the
 # old call site), so registering it here must not flip the live default.
@@ -149,7 +226,7 @@ FLAG_DEFAULT = {
     "learning.receipt": True,      # learning visibility: reused/crystallized resolutions per answer
     "ask.context_receipt": True,   # input-side trust: the exact grounding block, inspectable
     "obs.task_table": True,        # the queryable spine — a sink over spans already emitted
-    "ada.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
+    "deep_analysis.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
     "ask.stream_text": True,       # CK-0.2 dual-emit insight deltas; terminal event stays authoritative
     # Presentation/intake graduation — Batch 1 of the flag-drift audit (2026-07-22).
     # See docs/FLAG_GRADUATION_AUDIT_2026-07-22.md.
@@ -311,7 +388,7 @@ FLAG_DEFAULT = {
     # its legacy oracle (now pinned OFF there — the comparison is between loops, not
     # the bridge).
     "preflight.parallel": True,        # receipt 889789dda475 — same four non-LLM lookups, pooled; byte-identical
-    "ada.evidence_dedup": True,        # receipt 0c96518ab1c4 — lossless collapse; first copy stays full, errors never collapse
+    "deep_analysis.evidence_dedup": True,        # receipt 0c96518ab1c4 — lossless collapse; first copy stays full, errors never collapse
     "schema.two_tier_catalog": True,   # receipt 3b3ce99e3f9b — never larger, error-named tables autoloaded with full DDL
     "explore.wandering_detector": True,# receipt 854a1fbb7848 — fail-open brake; repeats reused verbatim
     "monitors.guarded": True,          # receipt 9bf08c312faa — caveat-and-deliver on fired alerts; never rewrites SQL
@@ -386,91 +463,91 @@ FLAG_META = {
     },
     "agui.endpoint": {
         "label": "AG-UI protocol endpoint (POST /agui/run)",
-        "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the CopilotKit/AG-UI adoption plan's CK-1 seam, letting any AG-UI client (CopilotKit, the @ag-ui/client transport) drive Aughor. Forced off ⇒ the route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `b395745f7771`); force off with AUGHOR_AGUI_ENDPOINT=0 or a runtime override.",
+        "description": "Expose an additive AG-UI-compatible translator at POST /agui/run that re-frames the existing /ask event stream (via the shared build_ask_stream factory) into standard AG-UI protocol events (RunStarted / TextMessage* / ToolCall* / Custom / RunError / RunFinished) using the ag-ui-protocol SDK. Purely additive — the legacy /ask, /chat and /investigate emission is byte-identical and the frontend's default transport is unchanged; this is the backend half of the AG-UI protocol seam, letting any AG-UI client (for example the @ag-ui/client transport) drive Aughor. Forced off ⇒ the route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `b395745f7771`); force off with AUGHOR_AGUI_ENDPOINT=0 or a runtime override. See docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md.",
     },
     "kinetic.actions": {
-        "label": "Declared actions in the ontology (Wave K)",
-        "description": "Overlay human-DECLARED KineticActions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate in K1 — the actions become visible in the ontology and the API but are not executed until the Wave-K executor (K2) lands. Additive: off = the graph's kinetic_actions stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced. Default-ON since flag strategy batch B (2026-07-31, receipt `e1514203d474`); force off with AUGHOR_KINETIC_ACTIONS=0 or a runtime override.",
+        "label": "Declared actions in the ontology",
+        "description": "Overlay human-DECLARED actions from the per-connection ontology overrides onto the graph at read time: typed-parameter operations with submission criteria (whose authored failure messages are shown verbatim to humans and the model) and side effects. Read-only substrate — the actions become visible in the ontology and the API, and running one goes through the governed action executor. Additive: off = the graph's declared-action list stays empty (byte-identical), and a malformed declared action is rejected at overlay, never surfaced. Default-ON since flag strategy batch B (2026-07-31, receipt `e1514203d474`); force off with AUGHOR_KINETIC_ACTIONS=0 or a runtime override.",
     },
     "kinetic.overlay": {
-        "label": "Human overlay edits on query results (Wave K3)",
+        "label": "Human overlay edits on query results",
         "description": "Merge human annotations and corrections ('this outlier is a known launch-day spike', 'order 8821 is a test order') onto query results at READ time, matched by the columns present in the result — never mutating the source data. Edits live in an independent org+connection-scoped store, so they survive schema refreshes and rebuilds, and a machine-sourced edit never overrides a human one on the same target. Forced off ⇒ results carry no annotations (byte-identical); best-effort so an overlay hiccup never takes down a real result. Default-ON since flag strategy batch B (2026-07-31, receipt `af2f7e4dd9c6`); force off with AUGHOR_KINETIC_OVERLAY=0 or a runtime override.",
     },
     "kinetic.agent_actions": {
-        "label": "Agent proposes declared actions (Wave K4)",
-        "description": "Let the agent PROPOSE declared KineticActions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
+        "label": "Agent proposes declared actions",
+        "description": "Let the agent PROPOSE declared actions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
     },
     "automations.engine": {
-        "label": "Automations — declared condition → governed effect (Wave A)",
-        "description": "One engine binding combinable CONDITIONS (a cron schedule, or a metric condition delegated to an existing monitor) to ordered EFFECTS (run a deep investigation, deliver a brief, notify an Action Hub trigger, or execute a declared KineticAction), with muting, expiry, jittered retries, a fallback effect, and a per-tick history that records the ticks which deliberately did NOTHING — the question monitor_alerts cannot answer, since it stores only alerts that fired. A write effect runs through the one Wave-K executor, inheriting submission criteria, the graduated-approval gate and the audit trail, so nothing above LOW risk auto-fires from an automation either. Off by default ⇒ the heartbeat never starts and every /automations route 404s (byte-identical); the legacy monitor and brief schedulers are untouched either way.",
+        "label": "Automations — declared condition → governed effect",
+        "description": "One engine binding combinable CONDITIONS (a cron schedule, or a metric condition delegated to an existing monitor) to ordered EFFECTS (run a deep analysis, deliver a briefing, fire a notification, or execute a declared action), with muting, expiry, jittered retries, a fallback effect, and a per-tick history that records the ticks which deliberately did NOTHING — the question monitor_alerts cannot answer, since it stores only alerts that fired. A write effect runs through the one governed action executor, inheriting submission criteria, the graduated-approval gate and the audit trail, so nothing above LOW risk auto-fires from an automation either. Off by default ⇒ the heartbeat never starts and every /automations route 404s (byte-identical); the legacy monitor and briefing schedulers are untouched either way.",
     },
     "automations.source_probes": {
-        "label": "Automation change detection — source version probes (Wave A3)",
+        "label": "Automation change detection — source version probes",
         "description": "Let `source_change` and `entity_appears` automation conditions fire on actual data arrival instead of staleness-days: one bounded aggregate per watched table (COUNT(*) plus MAX of its best change-signal column — never a data scan) computes a version fingerprint, compared by inequality so deletes and backfills register too; `entity_appears` restricts the signal to insertions, so an updated_at touch is not a new entity. Baselines commit only on a tick that actually FIRED, which is what makes a change impossible to consume silently when the other condition of an `all`-logic automation is false. A table the probe cannot READ at all (missing, or not a plain identifier) fails OPEN to 'changed' with the reason recorded on the run — noisy and diagnosable, never silently never-firing. A table that merely lacks a change-signal column is a weaker case, and worth knowing before you point an automation at one: it is versioned by COUNT(*) alone, so inserts and deletes still register, but an in-place UPDATE — or an insert and a delete in the same window — leaves the count unchanged and the condition stays QUIET. Gated separately from automations.engine so an operator can run schedule/metric automations without per-minute warehouse probes; off by default ⇒ source conditions error loudly as unwired (byte-identical otherwise). Default-ON since flag strategy batch B (2026-07-31, receipt `f526cbf2ac45`); force off with AUGHOR_AUTOMATIONS_SOURCE_PROBES=0 or a runtime override.",
     },
     "automations.proposals": {
-        "label": "Proposal inbox + standing grants (Wave A4)",
-        "description": "Make a Wave-K agent proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Forced off ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `f6c0b3a73690`); force off with AUGHOR_AUTOMATIONS_PROPOSALS=0 or a runtime override.",
+        "label": "Proposal inbox + standing grants",
+        "description": "Make an agent's action proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Forced off ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `f6c0b3a73690`); force off with AUGHOR_AUTOMATIONS_PROPOSALS=0 or a runtime override.",
     },
     "graph.build": {
-        "label": "Build the connection knowledge graph (Wave C1)",
+        "label": "Build the connection knowledge graph",
         "description": "Project the already-built structural ontology plus the narrative stores (glossary, governed metrics, crystallized ambiguity resolutions, discovered findings) into ONE typed, committed, provenance-complete graph per (org, connection, schema) — the read-back artifact every question will pass through in C2. Deterministic projection: no LLM, no SQL; node summaries/tags are a later narrow emission. Every edge carries real provenance or is not constructible (J4) — a `joins_on` edge carries the join guard's MEASURED value-domain overlap (already probed at ontology-build time; value-disjoint coincidences were dropped upstream), and the self-reported model confidences (EvidenceClaim.confidence, pack_deltas.confidence) are banned as edge evidence. The graph is a git-reviewable file under data/context_graph/, version-bumped on rebuild. Forced off = byte-identical: the projection is never invoked and nothing is written (C1 builds the artifact; nothing reads it back until C2). Default-ON since flag strategy batch C (2026-07-31, receipt `1a773d95d0b3`); force off with AUGHOR_GRAPH_BUILD=0 or a runtime override.",
     },
     "graph.readback": {
-        "label": "Grep-the-graph-first read-back (Wave C2)",
-        "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers/exploration insights) and the `resolves` readings, so a question about a table Aughor already investigated inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
+        "label": "Grep-the-graph-first read-back",
+        "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers and exploration findings) and the `resolves` readings, so a question about a table Aughor already analysed inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
     },
     "graph.freshness": {
-        "label": "Graph freshness — change-classified refresh + staleness (Wave C3)",
-        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graph, briefs, profiles, caches). Deterministic; no LLM. Forced off ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `506ba8c6a163`); force off with AUGHOR_GRAPH_FRESHNESS=0 or a runtime override.",
+        "label": "Graph freshness — change-classified refresh + staleness",
+        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graphs, briefings, profiles, caches). Deterministic; no LLM. Forced off ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `506ba8c6a163`); force off with AUGHOR_GRAPH_FRESHNESS=0 or a runtime override.",
     },
     "graph.surface": {
-        "label": "Connection knowledge graph surface (Wave C4)",
+        "label": "Connection knowledge graph surface",
         "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Forced off ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view. Default-ON since flag strategy batch C (2026-07-31, receipt `049ac074f300`); force off with AUGHOR_GRAPH_SURFACE=0 or a runtime override.",
     },
     "graph.tour": {
-        "label": "Connection tour — a curriculum from graph topology (Wave C5)",
+        "label": "Connection tour — a curriculum from graph topology",
         "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Forced off ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum. Default-ON since flag strategy batch C (2026-07-31, receipt `68328602e77f`); force off with AUGHOR_GRAPH_TOUR=0 or a runtime override.",
     },
     "graph.export": {
-        "label": "Graph distribution — the committed artifact + skills pack (Wave C6)",
+        "label": "Graph distribution — the committed artifact + skills pack",
         "description": "Export a connection's knowledge graph as a self-contained pack a teammate consumes with NO LLM, no API key and no Aughor running — generation paid once, consumption free. Writes graph.json (the C1 nodes/edges/provenance re-emitted as id-sorted, pretty-printed, greppable lists inside an envelope carrying the source spine, the graph version and C3's typed freshness state), two markdown skills that run the C2 read-back protocol offline (freshness-check → grep labels/summaries/tags → pull the 1-hop subgraph → answer only from that subgraph, citing tables), a README, and an install.sh that SYMLINKS the skills into agent platforms. The staleness state travels with the data because a consumer offline cannot re-derive it, and a freshness it cannot determine ships as `unknown`, never as a cheerful `fresh`. NO coercive hook injection (the forbidden anti-pattern): install.sh only links files — it registers no hook, no daemon, nothing that speaks for the user, and no skill instructs an agent to hide the freshness state or refuse the reader. Exporting a connection with no committed graph is refused rather than shipping an empty pack that answers confidently from nothing. Forced off ⇒ export_pack returns None and nothing is written (byte-identical). Requires a graph built by `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `adeca7f0fe7d`); force off with AUGHOR_GRAPH_EXPORT=0 or a runtime override.",
     },
     "govern.usage_caps": {
-        "label": "Org and per-user usage caps (Wave G4)",
-        "description": "Refuse to START new model work once an org or a user has exceeded a declared allowance, measured on the same rollup the usage page shows so a cap and a dashboard can never disagree about whether a limit was hit. Caps are declared per (scope, subject, metric, window) over calls, tokens or cost, with an action of `alert` (record and proceed) or `block` (refuse the next start). The algebra is deliberately two rules rather than one clever comparator, because getting either backwards is a real outage or a real overspend: MOST-PERMISSIVE WITHIN a scope, since two rows about one subject and metric are two statements about one allowance and the larger is the operator's latest intent — otherwise raising a limit does nothing until somebody deletes the old row; and MOST-RESTRICTIVE ACROSS scopes, since an org cap and a user cap describe the pool and one person's share of it, both hold at once, and the permissive reading would let one user drain the org. A `block` anywhere in a merged group survives the merge, so raising a limit never silently downgrades the gate to `alert`. Enforcement is PRE-FLIGHT ONLY and there is no abort path: work already running is never killed, because clawing back an in-flight investigation destroys work the user already paid for and leaves a partial artifact whose provenance claims it completed. A breach is a typed `budget_exceeded` refusal naming the metric, the limit, the observed value and the window — withhold the work, never the reason. Forced off => every decision allows and the check costs one boolean. Default-ON since flag strategy batch B (2026-07-31, receipt `0e5bf079d953`); force off with AUGHOR_GOVERN_USAGE_CAPS=0 or a runtime override.",
+        "label": "Org and per-user usage caps",
+        "description": "Refuse to START new model work once an org or a user has exceeded a declared allowance, measured on the same rollup the usage page shows so a cap and a dashboard can never disagree about whether a limit was hit. Caps are declared per (scope, subject, metric, window) over calls, tokens or cost, with an action of `alert` (record and proceed) or `block` (refuse the next start). The algebra is deliberately two rules rather than one clever comparator, because getting either backwards is a real outage or a real overspend: MOST-PERMISSIVE WITHIN a scope, since two rows about one subject and metric are two statements about one allowance and the larger is the operator's latest intent — otherwise raising a limit does nothing until somebody deletes the old row; and MOST-RESTRICTIVE ACROSS scopes, since an org cap and a user cap describe the pool and one person's share of it, both hold at once, and the permissive reading would let one user drain the org. A `block` anywhere in a merged group survives the merge, so raising a limit never silently downgrades the gate to `alert`. Enforcement is PRE-FLIGHT ONLY and there is no abort path: work already running is never killed, because clawing back an in-flight deep analysis destroys work the user already paid for and leaves a partial artifact whose provenance claims it completed. A breach is a typed `budget_exceeded` refusal naming the metric, the limit, the observed value and the window — withhold the work, never the reason. Forced off => every decision allows and the check costs one boolean. Default-ON since flag strategy batch B (2026-07-31, receipt `0e5bf079d953`); force off with AUGHOR_GOVERN_USAGE_CAPS=0 or a runtime override.",
     },
     "govern.clearances": {
-        "label": "Clearance enforcement on governed tags (Wave G2)",
-        "description": "Let governed tags on catalogs, schemas, tables and artifacts gate who may read them. A tag is a namespaced key-value fact recorded with WHO set it and when — `pii=true`, `tier=restricted` — and a small, explicit set of keys is access-controlling while every other tag stays purely descriptive, so adding a `domain=finance` label never silently becomes a lock. A principal holds clearances; a securable whose tags demand one the principal lacks is withheld. This is a THIRD authorization axis composing with AND alongside the licensing capability (what the org's PLAN unlocks) and the RBAC permission (what this USER may do): a role says analysts may run analyses, a clearance says not over the salary table, and neither expresses the other. An untagged securable is always allowed — governance is opt-in per object, because defaulting to deny would make enabling this a platform-wide outage rather than a policy. A refusal NAMES the tag that blocked it and the clearance that would unblock it, and is never an empty result: that is the pinned anti-pattern from the Genie teardown, where a silently trimmed answer teaches its reader the data does not exist. Nothing infers a tag, and a write with no author is refused outright — J4's provenance discipline reaching past the context graph. Forced off ⇒ every decision is ALLOW with no requirements, so the check can be wired in unconditionally and the off state is byte-identical to not calling it. Default-ON since flag strategy batch B (2026-07-31, receipt `94d8869fa9ca`); force off with AUGHOR_GOVERN_CLEARANCES=0 or a runtime override.",
+        "label": "Clearance enforcement on governed tags",
+        "description": "Let governed tags on catalogs, schemas, tables and artifacts gate who may read them. A tag is a namespaced key-value fact recorded with WHO set it and when — `pii=true`, `tier=restricted` — and a small, explicit set of keys is access-controlling while every other tag stays purely descriptive, so adding a `domain=finance` label never silently becomes a lock. A principal holds clearances; a securable whose tags demand one the principal lacks is withheld. This is a THIRD authorization axis composing with AND alongside the licensing capability (what the org's PLAN unlocks) and the RBAC permission (what this USER may do): a role says analysts may run analyses, a clearance says not over the salary table, and neither expresses the other. An untagged securable is always allowed — governance is opt-in per object, because defaulting to deny would make enabling this a platform-wide outage rather than a policy. A refusal NAMES the tag that blocked it and the clearance that would unblock it, and is never an empty result: a silently trimmed answer teaches its reader the data does not exist, which is the pinned anti-pattern (see docs/GENIE_DOCS_TEARDOWN_2026-07-26.md). Nothing infers a tag, and a write with no author is refused outright — J4's provenance discipline reaching past the context graph. Forced off ⇒ every decision is ALLOW with no requirements, so the check can be wired in unconditionally and the off state is byte-identical to not calling it. Default-ON since flag strategy batch B (2026-07-31, receipt `94d8869fa9ca`); force off with AUGHOR_GOVERN_CLEARANCES=0 or a runtime override.",
     },
     "graph.consolidate": {
-        "label": "Consolidate the finding corpus before the cap (Wave N3)",
+        "label": "Consolidate the finding corpus before the cap",
         "description": "Spend the graph's 100-finding budget on distinct LIVE knowledge instead of 100 newest receipts. The projection appends one finding per answered question and evicts newest-first, so on the reference connection the committed artifact carried 77 distinct subjects — 59 of them still reachable — out of 274 that exist across 794 receipts. With this on, repeated subjects (same question over the same tables) fold together BEFORE the cap applies, and findings grounded in tables that are no longer in the ontology sort last so the cap evicts what can no longer be verified before it evicts live knowledge. Measured on the reference connection: 100 live distinct subjects instead of 59, same node budget. The platform never picks a winner: a repeat whose SQL is unchanged is simply superseded by the newest reading (the data moved), but a repeat that reached a DIFFERENT conclusion by a DIFFERENT query is marked `contested` and carries the alternative conclusions inline — settling it is a human's decision through the answer-consistency review, not a matter of which run was most recent. Nothing is deleted: every input finding leaves as a survivor, a superseded id, or a contested variant, and the counts are asserted to balance. Deterministic, read-only, no LLM: the added cost is one bounded read of a local store, and nothing runs on the answer path. Default-ON since Wave N3, graduated on run `3dec60f4a580` of the deterministic suite `aughor/evals/consolidation.py` (8/8, bar 1.0). Turning it OFF is byte-identical to the pre-N3 projection — the finding payload carries exactly {generated_at, sql, tables} and the loader is called exactly as before. Flipping this rewrites nothing on its own: a committed graph changes only when something rebuilds it.",
     },
     "freshness.resolved_rebuild": {
-        "label": "Staleness-resolved rebuild — inputs + logic, not a timer (Wave V2)",
-        "description": "Rebuild a cached artifact only when its SOURCE DATA or its PRODUCER LOGIC actually changed, instead of when a wall-clock TTL lapsed. A timer is wrong in both directions at once: the briefing's 2-hour TTL rebuilds a brief whose inputs never moved (pure cost — and each rebuild is an LLM call, not just CPU) AND serves a brief for up to two hours after its source table changed (a wrong number, the expensive failure). The input signal is Wave A3's source probe — one bounded aggregate per table (COUNT(*), MAX(signal)), never a scan — making this its second consumer and turning it from an automations feature into a platform primitive; the logic signal is Wave V1's LOGIC_VERSIONS inventory. Three refusals keep it from becoming a worse timer: a table that cannot be versioned FAILS OPEN to the caller's existing TTL decision and says so in the reason (counted, never silently read as 'unchanged' — A3's rule that noisy beats silent); probing is capped and a bitten cap names how many tables were skipped rather than implying full coverage; and state is recorded only AFTER a successful rebuild, because recording on failure would consume a change and make a genuinely stale artifact read fresh. Every decision carries a `resolved` bit so a caller can never claim 'nothing changed' on a probe that did not answer, plus the as-of source view the output was computed on (what Wave V4's freeze will pin against). Forced off ⇒ resolve() returns the caller's own TTL decision unchanged (byte-identical). Default-ON since flag strategy batch B (2026-07-31, receipt `442adc34dee9`); force off with AUGHOR_FRESHNESS_RESOLVED_REBUILD=0 or a runtime override.",
+        "label": "Staleness-resolved rebuild — inputs + logic, not a timer",
+        "description": "Rebuild a cached artifact only when its SOURCE DATA or its PRODUCER LOGIC actually changed, instead of when a wall-clock TTL lapsed. A timer is wrong in both directions at once: the briefing's 2-hour TTL rebuilds a briefing whose inputs never moved (pure cost — and each rebuild is an LLM call, not just CPU) AND serves a briefing for up to two hours after its source table changed (a wrong number, the expensive failure). The input signal is Wave A3's source probe — one bounded aggregate per table (COUNT(*), MAX(signal)), never a scan — making this its second consumer and turning it from an automations feature into a platform primitive; the logic signal is Wave V1's LOGIC_VERSIONS inventory. Three refusals keep it from becoming a worse timer: a table that cannot be versioned FAILS OPEN to the caller's existing TTL decision and says so in the reason (counted, never silently read as 'unchanged' — A3's rule that noisy beats silent); probing is capped and a bitten cap names how many tables were skipped rather than implying full coverage; and state is recorded only AFTER a successful rebuild, because recording on failure would consume a change and make a genuinely stale artifact read fresh. Every decision carries a `resolved` bit so a caller can never claim 'nothing changed' on a probe that did not answer, plus the as-of source view the output was computed on (what Wave V4's freeze will pin against). Forced off ⇒ resolve() returns the caller's own TTL decision unchanged (byte-identical). Default-ON since flag strategy batch B (2026-07-31, receipt `442adc34dee9`); force off with AUGHOR_FRESHNESS_RESOLVED_REBUILD=0 or a runtime override.",
     },
     "lifecycle.publish": {
-        "label": "Artifact lifecycle — save≠publish, versions, changelog, revert (Wave V3)",
+        "label": "Artifact lifecycle — save≠publish, versions, changelog, revert",
         "description": "Give user-authored artifacts a version and a publication state, so an editor's half-finished edit is no longer what every viewer sees. Saved queries, canvases, dashboard cards and eval cases had NO version at all — update was destructive and 'what did this look like last week' had no answer. Built ON the kernel Ledger rather than beside it: artifact_write already implements supersede-not-delete and artifact_by_id already resolves an exact version (its docstring calls that 'so a receipt link is immutable', which is precisely a pin), so this layer stores nothing of its own. resolve(audience='viewer') returns the newest PUBLISHED version and never a draft; audience='editor' returns the working copy — that one function is save≠publish. Revert restores an earlier version's content as a NEW version, never by rewinding the counter, because a rewind would erase the evidence that the reverted state ever shipped. The changelog reports MOVES as moves: reordering a dashboard's cards is the most common edit there is, and a differ without move detection reports every element from the move point onward as deleted-and-re-added — pages of noise for a four-word change. Convergence of the four pre-existing draft state machines is by PROJECTION (a documented table mapping governance/playbook/packs statuses onto one publication axis), not by forced rewrite: governance's draft→proposed→approved is a review workflow, and pushing a saved query through 'proposed' would invent ceremony nobody wants, while playbook's auto-promotion is a policy that would have to be rewritten to fit. An unknown status projects to `draft`, the conservative direction — a viewer sees nothing rather than something whose state cannot be read. Forced off ⇒ nothing is written and every wired store behaves exactly as before. Default-ON since flag strategy batch B (2026-07-31, receipt `339e77dc3cea`); force off with AUGHOR_LIFECYCLE_PUBLISH=0 or a runtime override.",
     },
     "lifecycle.freeze": {
-        "label": "Freeze — live by default, snapshot by choice (Wave V4)",
+        "label": "Freeze — live by default, snapshot by choice",
         "description": "Let a user pin an artifact to an exact version AND the data version behind it, with an as-of stamp, and return it to following live on demand. Composes three pins that already existed unconnected: ledger.artifact_by_id (an immutable receipt link), playbook.get_version (frozen past content), and db/snapshot.data_version + execute_as_of (a replayable data version). TWO MODES, named rather than assumed, because a freeze promises 'you will see exactly what I saw' and that is not always deliverable: on version-aware storage (DuckLake) the pinned snapshot id is replayable via AT (VERSION => n) — mode `reproducible`; on a plain DuckDB file the portable fingerprint can only detect that data CHANGED, never reconstruct it — mode `detect_only`. Conflating them would be exactly the safety-by-coincidence this codebase has paid for before, so a detect-only pin never claims reproducibility, and when nothing can be pinned at all the freeze is REFUSED up front (with the reason) instead of accepted and quietly not honoured — a lock icon that guarantees nothing is worse than no lock. Reading a frozen artifact whose pin can no longer be honoured raises FrozenDataGoneError carrying the as-of stamp and the reason; it NEVER falls back to live data, because a frozen label over live numbers is the one outcome worse than an error. Forced off ⇒ nothing can be frozen and every read is live (byte-identical). Default-ON since flag strategy batch B (2026-07-31, receipt `41f41f9d1273`); force off with AUGHOR_LIFECYCLE_FREEZE=0 or a runtime override.",
     },
     "automations.adopt_legacy": {
-        "label": "Adopt monitors + briefs onto the automation engine (Wave A5)",
-        "description": "Run every enabled Monitor and Brief subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor/brief schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a brief (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors/briefs. No data migration either way; flipping it off restores the legacy path.",
+        "label": "Adopt monitors and briefings onto the automation engine",
+        "description": "Run every enabled Monitor and Briefing subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor and briefing schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a briefing (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors and briefings. No data migration either way; flipping it off restores the legacy path.",
     },
     "ask.stream_text": {
         "label": "Token-stream the answer narrative",
-        "description": "Stream the post-answer insight narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. CK-0.2 of the CopilotKit/AG-UI adoption plan.",
+        "description": "Stream the post-answer narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. See docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md.",
     },
     "ask.overview": {
         "label": "Interesting-facts overview tour (the default first-look)",
-        "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — the way Genie offers by default: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity, not an investigation of one metric. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
+        "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — as a first-look tour rather than a deep analysis of one metric: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
     },
     "ask.context_receipt": {
         "label": "Grounding-context receipt (show what the model was grounded on)",
@@ -478,7 +555,7 @@ FLAG_META = {
     },
     "obs.task_table": {
         "label": "task_history — spans as a queryable table",
-        "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and Deep Analysis can investigate its own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
+        "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and a deep analysis can examine the platform's own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
     },
     "obs.session_log": {
         "label": "session_events — the agent-session log",
@@ -490,14 +567,14 @@ FLAG_META = {
     },
     "obs.popularity": {
         "label": "Query popularity as a shared notability signal",
-        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14). Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override.",
+        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical. Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
     },
     "search.rrf": {
         "label": "Reciprocal Rank Fusion (hybrid retrieval)",
         "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to; it preserves vector order when there is no lexical signal, so it is a safe A/B on the KB-retrieval evals. Off by default = byte-identical (α-blend). Rec 6 of the combined platform study.",
     },
     "explorer.manifest_driven": {
-        "label": "Manifest-driven deterministic exploration (Phase 8)",
+        "label": "Manifest-driven deterministic exploration",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
     },
     "learning.receipt": {
@@ -510,11 +587,11 @@ FLAG_META = {
     },
     "trust.e1_live": {
         "label": "E1 function-semantics checks on live answers",
-        "description": "Run the E1 footgun battery (a timestamp bounded by a date-only literal drops that day's later rows; ORDER BY/MIN/MAX over numeric-looking text sorts lexicographically; text↔numeric comparisons) on the FINAL SQL of live answers — the quick/chat headline and every Deep-Analysis phase query — as labelled WARN caveats. Pure AST, deterministic, never rewrites the query (the E1 contract). Previously these checks ran only on /query/validate, never on an answer a user actually saw. Off by default = byte-identical. WP-1e of the 2026-07-12 platform review.",
+        "description": "Run the E1 footgun battery (a timestamp bounded by a date-only literal drops that day's later rows; ORDER BY/MIN/MAX over numeric-looking text sorts lexicographically; text↔numeric comparisons) on the FINAL SQL of live answers — the quick/chat headline and every deep-analysis phase query — as labelled WARN caveats. Pure AST, deterministic, never rewrites the query (the E1 contract). Previously these checks ran only on /query/validate, never on an answer a user actually saw. Off by default = byte-identical. WP-1e of the 2026-07-12 platform review.",
     },
     "ops.metered_monitors": {
-        "label": "Meter background monitors & briefs through the kernel",
-        "description": "Route each scheduled monitor tick and brief delivery through the job kernel (as the Watcher / Briefer agents) instead of calling the runner directly on the scheduler thread. The warehouse SQL a monitor/brief runs then joins the same metering as an answer — visible in Fleet/metering, counted toward the agent's per-run token/time budget, and heartbeat-supervised (a run over budget is cancelled). Preserves the tenant re-bind the schedulers already do. Default-ON since flag strategy batch A (2026-07-31, receipt `b167bb891764` — the SAME work closure runs on both paths, and with no kernel loop captured the bridge declines cleanly so the legacy in-thread path runs unchanged); force off with AUGHOR_METERED_MONITORS=0 or a runtime override for the direct in-thread path. Unblocks the `explorer.continuous` default decision — background cost is now metered. WP-7 of the 2026-07-12 platform review.",
+        "label": "Meter background monitors and briefings through the kernel",
+        "description": "Route each scheduled monitor tick and briefing delivery through the job kernel (as the Watcher / Briefer agents) instead of calling the runner directly on the scheduler thread. The warehouse SQL a monitor or briefing runs then joins the same metering as an answer — visible in the Agents workspace metering, counted toward the agent's per-run token/time budget, and heartbeat-supervised (a run over budget is cancelled). Preserves the tenant re-bind the schedulers already do. Default-ON since flag strategy batch A (2026-07-31, receipt `b167bb891764` — the SAME work closure runs on both paths, and with no kernel loop captured the bridge declines cleanly so the legacy in-thread path runs unchanged); force off with AUGHOR_METERED_MONITORS=0 or a runtime override for the direct in-thread path. Unblocks the `explorer.continuous` default decision — background cost is now metered. WP-7 of the 2026-07-12 platform review.",
     },
     "monitors.guarded": {
         "label": "Guarded monitor evaluations",
@@ -522,7 +599,7 @@ FLAG_META = {
     },
     "explorer.continuous": {
         "label": "Continuous exploration (re-explore on schema change / staleness)",
-        "description": "Keep the Scout learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted insights, so only genuinely new cuts spend budget — and still flow through the Scout-governance + AUTO_EXPLORATION gates and the per-run charter budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
+        "description": "Keep the Explorer learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted findings, so only genuinely new cuts spend budget — and still flow through the Explorer-governance + AUTO_EXPLORATION gates and the per-run exploration budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
     },
     "capabilities.receipt": {
         "label": "Activation Receipt (which guards fired, and why)",
@@ -537,47 +614,47 @@ FLAG_META = {
         "description": "Fire cross-finding synthesis the moment a new finding creates a combinable pair, not only at end-of-run. More 'alive', more compute. Phase 9 always runs at end-of-run regardless.",
     },
     "specialist_packs": {
-        "label": "Specialist Agents (Domain Expertise Packs)",
-        "description": "Load user-built specialist packs (packs/) and let them steer the engine at intake — the pack's stance, grounded metric recipes and diagnostic questions prepended to the explore planner context. Steering is data-gated three gates deep: it requires an installed pack whose manifest says status: active, matching the question, AND a human-pinned deploy binding on the exact connection (propose → confirm → pin in the deploy UI; auto-proposals never steer). A hired agent's pack bindings restrict selection to its packs but never bypass the deploy gate. Default-ON since the 2026-07-31 flag-strategy batch 1, graduated on receipt `452a6fcebba4` (run `c84f1e75a50c` of aughor/evals/specialist_packs_receipt.py, 8/8 stable ×3): with no active pack or no pinned deployment the planner context is byte-identical on vs off, and the fresh-clone delta is exactly GET /packs reporting enabled: true (the shipped sample pack is status: draft). Force off with AUGHOR_SPECIALIST_PACKS=0 or a runtime override. See docs/DOMAIN_EXPERTISE_PACKS.md.",
+        "label": "Packs — authored domain bundles that steer the planner",
+        "description": "Load user-built packs (packs/) and let them steer the engine at intake — the pack's stance, grounded metric recipes and diagnostic questions prepended to the explore planner context. Steering is data-gated three gates deep: it requires an installed pack whose manifest says status: active, matching the question, AND a human-pinned deploy binding on the exact connection (propose → confirm → pin in the deploy UI; auto-proposals never steer). A custom agent's pack bindings restrict selection to its packs but never bypass the deploy gate. Default-ON since the 2026-07-31 flag-strategy batch 1, graduated on receipt `452a6fcebba4` (run `c84f1e75a50c` of aughor/evals/specialist_packs_receipt.py, 8/8 stable ×3): with no active pack or no pinned deployment the planner context is byte-identical on vs off, and the fresh-clone delta is exactly GET /packs reporting enabled: true (the shipped sample pack is status: draft). Force off with AUGHOR_SPECIALIST_PACKS=0 or a runtime override. See docs/DOMAIN_EXPERTISE_PACKS.md.",
     },
     "explore.parallel_subq": {
         "label": "Parallel explore sub-questions",
-        "description": "Run independent explore sub-questions concurrently in dependency-respecting waves (map-reduce over the operator.add state) instead of one-at-a-time. Cuts wall-clock on multi-cut investigations; multiplies concurrent LLM calls (bounded by the fan-out width cap + the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+        "description": "Run independent explore sub-questions concurrently in dependency-respecting waves (map-reduce over the operator.add state) instead of one-at-a-time. Cuts wall-clock on multi-cut deep analyses; multiplies concurrent LLM calls (bounded by the fan-out width cap + the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
-        "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single Deep-Analysis investigation. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay investigations. Unlocks the already-built explore wave from /ask. Off by default.",
+        "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Unlocks the already-built explore wave from /ask. Off by default.",
     },
     "report.argument_style": {
         "label": "Argument-style report composition",
-        "description": "Compose exported deep-analysis reports the way a human analyst argues (the Genie report study): one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
+        "description": "Compose exported deep-analysis reports the way a human analyst argues: one exhibit per claim (chart OR a small table, never both), no degenerate exhibits (a 1-bar chart or single-point trend becomes a sentence), key numbers bold inline in the prose instead of stat-tile rows, the Question-Intake machinery out of the body (it stays in the Trust Receipt), and the R15 opportunity number promoted to its own Financial impact section. Deterministic re-composition of the SAME report data — no model. Off by default = byte-identical exports — see docs/REPORT_STYLE_STUDY_2026-07-16.md (R16 P1).",
     },
-    "ada.evidence_dedup": {
-        "label": "Collapse duplicate query results in the synthesis block (Wave R3)",
-        "description": "When two steps ran the identical query, the synthesis prompt renders the identical table twice. This replaces the second with a one-line pointer to the first. LOSSLESS by construction — the table is still in the block, once — so nothing the narrator could cite disappears. Sees the whole block, so a repeat spread across two hypothesis sections is still caught. No-op below a 24k-char evidence block. Default-ON since flag strategy batch A (2026-07-31, receipt `0c96518ab1c4` — the first copy always renders full and byte-identical; an errored result never collapses); force off with AUGHOR_ADA_EVIDENCE_DEDUP=0 or a runtime override. Counter: ada.evidence.duplicates.",
+    "deep_analysis.evidence_dedup": {
+        "label": "Collapse duplicate query results in the synthesis block",
+        "description": "When two steps ran the identical query, the synthesis prompt renders the identical table twice. This replaces the second with a one-line pointer to the first. LOSSLESS by construction — the table is still in the block, once — so nothing the narrator could cite disappears. Sees the whole block, so a repeat spread across two hypothesis sections is still caught. No-op below a 24k-char evidence block. Default-ON since flag strategy batch A (2026-07-31, receipt `0c96518ab1c4` — the first copy always renders full and byte-identical; an errored result never collapses); force off with AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP=0 or a runtime override. Counter: deep_analysis.evidence.duplicates.",
     },
-    "ada.evidence_stubs": {
-        "label": "Stale-stub already-scored evidence in the synthesis block (Wave R3)",
-        "description": "Every result reaching synthesis was already rendered in FULL once, for the score_evidence step that turned it into its hypothesis's key_finding — so the narrator re-reads up to thirty rows of a table whose conclusion is stated three lines above it, for every query the run made. This renders such a result as a stub instead: the SQL (provenance), the column names, the TRUE row count, every statistical finding, and the first four real rows, with the omitted count stated explicitly so the head can never be mistaken for the whole table. Only hypotheses that actually produced a key_finding are eligible; an unscored or unattributed result is always rendered full, because nothing else in the prompt carries its meaning yet. ⚠️ Unlike its dedup sibling this DOES drop rows, so the token saving is measured but the effect on ANSWER QUALITY is not — it should not graduate until Wave E4 can A/B it against the full-evidence baseline. Off by default. Counter: ada.evidence.stubbed.",
+    "deep_analysis.evidence_stubs": {
+        "label": "Stale-stub already-scored evidence in the synthesis block",
+        "description": "Every result reaching synthesis was already rendered in FULL once, for the score_evidence step that turned it into its hypothesis's key_finding — so the narrator re-reads up to thirty rows of a table whose conclusion is stated three lines above it, for every query the run made. This renders such a result as a stub instead: the SQL (provenance), the column names, the TRUE row count, every statistical finding, and the first four real rows, with the omitted count stated explicitly so the head can never be mistaken for the whole table. Only hypotheses that actually produced a key_finding are eligible; an unscored or unattributed result is always rendered full, because nothing else in the prompt carries its meaning yet. ⚠️ Unlike its dedup sibling this DOES drop rows, so the token saving is measured but the effect on ANSWER QUALITY is not — it should not graduate until Wave E4 can A/B it against the full-evidence baseline. Off by default. Counter: deep_analysis.evidence.stubbed.",
     },
     "evals.experiments": {
-        "label": "Grid experiments: run-scoped model / temperature / flag overrides (Wave E4)",
-        "description": "Lets an eval suite run the same cases under several configurations in ONE process, so a variant can be compared against its baseline instead of against a number recorded on a different day under an unrecorded config. Flags resolve through the ledger and the environment, both process-global, so before this two cells of a grid could not disagree; a contextvar consulted ahead of both can, and it reaches worker threads through ContextThreadPoolExecutor like the model pin and the metering hook. The plane is inert unless a run enters it (the contextvars default to unset, so ordinary traffic is byte-identical), and it refuses to measure at all while AUGHOR_FALLBACK_DISABLED is off, because the failover chain would silently finish a run on a different model and the report would attribute the number to the binding that started it. Every cell records the configuration read back through the product's own resolvers rather than the one requested — an override that silently no-ops is indistinguishable from a variant that did not help, and the second reading flatters the harness. First customers: the five flags the graduation audit could not measure, plus ada.evidence_stubs, which trades rows for tokens with the saving measured and the quality effect not. Default-ON since flag strategy batch A (2026-07-31, receipt `1bc0e4690955` — the plane is inert until a run enters it: ambient traffic carries no run-scoped overrides, and with the flag off a grid REFUSES loudly rather than silently running one configuration); force off with AUGHOR_EVALS_EXPERIMENTS=0 or a runtime override.",
+        "label": "Grid experiments: run-scoped model / temperature / flag overrides",
+        "description": "Lets an eval suite run the same cases under several configurations in ONE process, so a variant can be compared against its baseline instead of against a number recorded on a different day under an unrecorded config. Flags resolve through the ledger and the environment, both process-global, so before this two cells of a grid could not disagree; a contextvar consulted ahead of both can, and it reaches worker threads through ContextThreadPoolExecutor like the model pin and the metering hook. The plane is inert unless a run enters it (the contextvars default to unset, so ordinary traffic is byte-identical), and it refuses to measure at all while AUGHOR_FALLBACK_DISABLED is off, because the failover chain would silently finish a run on a different model and the report would attribute the number to the binding that started it. Every cell records the configuration read back through the product's own resolvers rather than the one requested — an override that silently no-ops is indistinguishable from a variant that did not help, and the second reading flatters the harness. First customers: the five flags the graduation audit could not measure, plus deep_analysis.evidence_stubs, which trades rows for tokens with the saving measured and the quality effect not. Default-ON since flag strategy batch A (2026-07-31, receipt `1bc0e4690955` — the plane is inert until a run enters it: ambient traffic carries no run-scoped overrides, and with the flag off a grid REFUSES loudly rather than silently running one configuration); force off with AUGHOR_EVALS_EXPERIMENTS=0 or a runtime override.",
     },
     "schema.two_tier_catalog": {
-        "label": "Two-tier schema catalog for SQL repair prompts (Wave R3)",
-        "description": "The SQL repair prompt sends the ENTIRE schema context on every failure, on both the investigate and explore paths — on a wide warehouse the largest prompt the app builds, and almost all of it irrelevant to the one query that broke. Instead: a one-line manifest of every table (so the model still knows what exists and can decide it must join somewhere new) plus full DDL only for the tables the failing SQL references AND any table the ERROR MESSAGE names. That last set is the error-path autoload, and it changes outcomes rather than just cost: a binder error ('no such column x on table y') is unfixable if y's columns are not in front of the model, and schema-linking structurally cannot supply them — it selects from the QUESTION, before the query has failed. Safe direction only: below 12k chars the full schema is returned untouched (byte-identical), and any ambiguity — unparseable schema, empty focus set, narrowing that saves nothing — falls back to sending everything. Default-ON since flag strategy batch A (2026-07-31, receipt `3b3ce99e3f9b`); force off with AUGHOR_SCHEMA_TWO_TIER_CATALOG=0 or a runtime override to always send the full schema. Counters: schema.two_tier.focused / .chars_saved.",
+        "label": "Two-tier schema catalog for SQL repair prompts",
+        "description": "The SQL repair prompt sends the ENTIRE schema context on every failure, on both the deep-analysis and explore paths — on a wide warehouse the largest prompt the app builds, and almost all of it irrelevant to the one query that broke. Instead: a one-line manifest of every table (so the model still knows what exists and can decide it must join somewhere new) plus full DDL only for the tables the failing SQL references AND any table the ERROR MESSAGE names. That last set is the error-path autoload, and it changes outcomes rather than just cost: a binder error ('no such column x on table y') is unfixable if y's columns are not in front of the model, and schema-linking structurally cannot supply them — it selects from the QUESTION, before the query has failed. Safe direction only: below 12k chars the full schema is returned untouched (byte-identical), and any ambiguity — unparseable schema, empty focus set, narrowing that saves nothing — falls back to sending everything. Default-ON since flag strategy batch A (2026-07-31, receipt `3b3ce99e3f9b`); force off with AUGHOR_SCHEMA_TWO_TIER_CATALOG=0 or a runtime override to always send the full schema. Counters: schema.two_tier.focused / .chars_saved.",
     },
     "explore.wandering_detector": {
-        "label": "Wandering detector for exploration waves (Wave R3)",
+        "label": "Stall detector for exploration waves",
         "description": "A deterministic brake on an exploration that has stopped learning. Three signals nothing else catches: a REPEAT (the planner re-emits SQL this run already executed — vetoed before dispatch, the earlier result reused verbatim and marked, saving the scan AND the interpret call), NO PROGRESS (different queries, identical results, three steps running — a repeat counter cannot see this), and CHURN (many distinct queries collapsing onto a couple of distinct results — a streak counter cannot see this either). On repeated vetoes or either progress signal the wave ends GRACEFULLY: it routes to the same synthesis it would have reached at the iteration cap, having spent a planner and an interpret call per redundant step to get there. Reads only the run's own query_history, so no new state and no lock; fail-open everywhere — any error and the query runs exactly as it would have, because a detector that can suppress real evidence is worse than the redundancy it saves. Default-ON since flag strategy batch A (2026-07-31, receipt `854a1fbb7848` — a repeat is reused VERBATIM, marked with a caveat, never silently absorbed); force off with AUGHOR_EXPLORE_WANDERING_DETECTOR=0 or a runtime override. Counters: explore.wandering.*",
     },
     "llm.structured_salvage": {
-        "label": "Deterministic salvage of structured LLM responses (Wave R1)",
+        "label": "Deterministic salvage of structured LLM responses",
         "description": "When a structured call fails to parse or validate, recover it deterministically before spending another request: strip markdown fences and surrounding prose, repair trailing commas, Python literals and smart quotes, fold enum case, drop schema-forbidden extra keys — then re-validate. Also classifies the failure first, so a response TRUNCATED at the output ceiling fails immediately instead of failing over to a second provider that will hit the same ceiling. Zero additional requests, no model in the loop, and no guessing: enum matching folds case and separators only, so a genuine typo still fails loudly. On by default — off means a stray markdown fence keeps costing a whole extra provider request. Counters at GET /dev/stats (llm.salvage.*, llm.failure.*).",
     },
     "llm.bounded_repair": {
-        "label": "One bounded repair request for a salvageable structured response (Wave R1)",
+        "label": "One bounded repair request for a salvageable structured response",
         "description": "After deterministic salvage fails, ask the model ONCE to fix its own output — carrying the specific validation error (the field and why) and the original text, at temperature 0 and capped in output tokens. At most one, on the same binding, and never for a truncated, empty or refused response (a second request cannot fix any of those). This REPLACES a larger cost rather than adding one: instructor's default of 3 attempts per structured call was never overridden, so a malformed response already re-sent the whole prompt three times; Wave R1 cuts that to one attempt and spends at most one small repair after it. Turn off for a hard ceiling of one request per structured call, at the cost of losing the answers only a repair recovers. Counters: llm.repair.calls / llm.repair.ok.",
     },
     "intake.loss_signals": {
@@ -586,47 +663,47 @@ FLAG_META = {
     },
     "chart.exhibit_grammar": {
         "label": "Semantic chart grammar (exhibit spec)",
-        "description": "Charts encode meaning the way the Genie reports do (the 2026-07-16 chart-grammar study): the model is no longer OFFERED the combo chart (one measure per exhibit; the renderer's deterministic dual-axis gate is the only door to one), a rate/percent ranking carries a severity color ramp (value → hue, red family for cost-like metrics), cross-section findings gain deterministic reference lines (segment-weighted average; the R15 best-peer benchmark), the peer-benchmark lens draws its peer median, and an entity scatter labels its points by ID. All computed from rows already fetched — no model, no extra query; carried as an additive `exhibit` payload on findings/answers. Off by default = byte-identical charts and prompts.",
+        "description": "Charts encode meaning the way a published analyst exhibit does (the 2026-07-16 chart-grammar study): the model is no longer OFFERED the combo chart (one measure per exhibit; the renderer's deterministic dual-axis gate is the only door to one), a rate/percent ranking carries a severity color ramp (value → hue, red family for cost-like metrics), cross-section findings gain deterministic reference lines (segment-weighted average; the R15 best-peer benchmark), the peer-benchmark lens draws its peer median, and an entity scatter labels its points by ID. All computed from rows already fetched — no model, no extra query; carried as an additive `exhibit` payload on findings/answers. Off by default = byte-identical charts and prompts.",
     },
     "lens.decision_grade": {
         "label": "Decision-grade output lenses",
-        "description": "Two deterministic output moves borrowed from the Genie reports' strongest habits: (1) the opportunity-cost lens — for a weak segment in a dimensional scan, benchmark it against its best material peer and quantify gap × volume as one hedged key number ('closing the gap ≈ N', a ceiling not a forecast); (2) the named-outlier-entity lens — the overview tour surfaces the single entity BY ID that towers over its top-10 peers, with a mini-profile and honest 'potential causes' (data artifact vs real whale) plus the drill SQL to verify. No model in the loop; both compute from rows already fetched (plus one bounded probe per table for the entity lens). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R15).",
+        "description": "Two deterministic output moves borrowed from the strongest habits of published analyst reports: (1) the opportunity-cost lens — for a weak segment in a dimensional scan, benchmark it against its best material peer and quantify gap × volume as one hedged key number ('closing the gap ≈ N', a ceiling not a forecast); (2) the named-outlier-entity lens — the overview tour surfaces the single entity BY ID that towers over its top-10 peers, with a mini-profile and honest 'potential causes' (data artifact vs real whale) plus the drill SQL to verify. No model in the loop; both compute from rows already fetched (plus one bounded probe per table for the entity lens). Off by default = byte-identical — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R15).",
     },
     "starters.library": {
-        "label": "Named research-starter playbooks",
-        "description": "Surface a library of named, deterministic research playbooks (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep investigation or the explore landscape wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Default-ON since flag strategy batch A (2026-07-31, receipt `3155c4d9de61` — deterministic payload, purely additive `starters` key on /suggestions); force off with AUGHOR_STARTERS_LIBRARY=0 or a runtime override for LLM-generated-only suggestions — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
+        "label": "Named starter questions",
+        "description": "Surface a library of named, deterministic starters (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep analysis or the wide explore wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Default-ON since flag strategy batch A (2026-07-31, receipt `3155c4d9de61` — deterministic payload, purely additive `starters` key on /suggestions); force off with AUGHOR_STARTERS_LIBRARY=0 or a runtime override for LLM-generated-only suggestions — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
     },
     "ontology.autodoc": {
         "label": "Compile ontology docs as a build artifact",
-        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. When an embedder + Qdrant are available the compiled table docs are ALSO embedded into the knowledge store with FQN provenance (R8a), so retrieval can ground on understanding, not just uploads — best-effort, degrades to the YAML artifact alone. Forced off — see docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8). Default-ON since flag strategy batch C (2026-07-31, receipt `4847eceb9a1f`); force off with AUGHOR_ONTOLOGY_AUTODOC=0 or a runtime override.",
+        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. When an embedder + Qdrant are available the compiled table docs are ALSO embedded into the knowledge store with FQN provenance (R8a), so retrieval can ground on understanding, not just uploads — best-effort, degrades to the YAML artifact alone. Forced off ⇒ the doc tree is never compiled. Default-ON since flag strategy batch C (2026-07-31, receipt `4847eceb9a1f`); force off with AUGHOR_ONTOLOGY_AUTODOC=0 or a runtime override. See docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
     },
     "birth.job": {
         "label": "Connection/canvas birth as one observable job",
-        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Forced off: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12). Default-ON since flag strategy batch C (2026-07-31, receipt `189fc985e2a0`); force off with AUGHOR_BIRTH_JOB=0 or a runtime override.",
+        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Forced off: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before. Default-ON since flag strategy batch C (2026-07-31, receipt `189fc985e2a0`); force off with AUGHOR_BIRTH_JOB=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12).",
     },
     "ontology.column_config": {
         "label": "Per-column visibility / sampling / indexing config",
-        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Forced off — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11). Default-ON since flag strategy batch C (2026-07-31, receipt `743f540b4d72`); force off with AUGHOR_ONTOLOGY_COLUMN_CONFIG=0 or a runtime override.",
+        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Forced off ⇒ the config is never consulted for prompts, sampling or indexing. Default-ON since flag strategy batch C (2026-07-31, receipt `743f540b4d72`); force off with AUGHOR_ONTOLOGY_COLUMN_CONFIG=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11).",
     },
-    "ada.parallel_lenses": {
-        "label": "Parallel Deep-Analysis lenses",
-        "description": "For a cross-sectional Deep-Analysis ('why is X high/low'), run independent investigative lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
+    "deep_analysis.parallel_lenses": {
+        "label": "Parallel deep-analysis lenses",
+        "description": "For a cross-sectional deep analysis ('why is X high/low'), run independent lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
     },
-    "ada.parallel_phases": {
-        "label": "Parallel Deep-Analysis phases",
-        "description": "Run the temporal investigation's middle phases (baseline ∥ decomposition ∥ dimensional) as one concurrent wave instead of a serial chain, keeping the serial tier-routers' early-stop semantics post-hoc (anything the serial path would have skipped is dropped from the report). Behavioral stays sequential — it targets the dimensional dominant finding. Cuts deep-run wall-clock; multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default.",
+    "deep_analysis.parallel_phases": {
+        "label": "Parallel deep-analysis phases",
+        "description": "Run a temporal deep analysis's middle phases (baseline ∥ decomposition ∥ dimensional) as one concurrent wave instead of a serial chain, keeping the serial tier-routers' early-stop semantics post-hoc (anything the serial path would have skipped is dropped from the report). Behavioral stays sequential — it targets the dimensional dominant finding. Cuts deep-run wall-clock; multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default.",
     },
-    "ada.why_where_interaction": {
+    "deep_analysis.why_where_interaction": {
         "label": "WHY×WHERE interaction lens",
-        "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires 'Parallel Deep-Analysis lenses'. Off by default.",
+        "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires 'Parallel deep-analysis lenses'. Off by default.",
     },
-    "ada.why_deepen": {
+    "deep_analysis.why_deepen": {
         "label": "Deepen the WHY (benchmark + drill)",
-        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires 'Parallel Deep-Analysis lenses'. Off by default.",
+        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires 'Parallel deep-analysis lenses'. Off by default.",
     },
-    "ada.parallel_why_lenses": {
+    "deep_analysis.parallel_why_lenses": {
         "label": "Parallel WHY-deepening lenses",
-        "description": "Run the forward-chained WHY lenses (WHY×WHERE interaction ∥ peer benchmark ∥ reason drill) as one concurrent wave instead of a serial chain. Each depends ONLY on the already-computed WHERE/WHY summaries, never on each other, so the merge is byte-identical (fixed spec order, never completion order) — just faster wall-clock when two or more are enabled. Multiplies concurrent LLM calls (bounded by the P6 token budget); requires 'Parallel Deep-Analysis lenses' + the WHY lenses it parallelizes. Off by default.",
+        "description": "Run the forward-chained WHY lenses (WHY×WHERE interaction ∥ peer benchmark ∥ reason drill) as one concurrent wave instead of a serial chain. Each depends ONLY on the already-computed WHERE/WHY summaries, never on each other, so the merge is byte-identical (fixed spec order, never completion order) — just faster wall-clock when two or more are enabled. Multiplies concurrent LLM calls (bounded by the P6 token budget); requires 'Parallel deep-analysis lenses' + the WHY lenses it parallelizes. Off by default.",
     },
     "preflight.parallel": {
         "label": "Parallel plan-time retrievals",
@@ -638,11 +715,11 @@ FLAG_META = {
     },
     "trust.verify_live": {
         "label": "Trust plane on the deep answer path",
-        "description": "In the Deep-Analysis executor, route every generated SQL through trust.verify before execute — the AST read-only BLOCK the generation path never ran (defence-in-depth; the connection layer is already fail-closed). A blocked statement returns a blocked result instead of executing. Off by default (AL-01 live migration).",
+        "description": "In the deep-analysis executor, route every generated SQL through trust.verify before execute — the AST read-only BLOCK the generation path never ran (defence-in-depth; the connection layer is already fail-closed). A blocked statement returns a blocked result instead of executing. Off by default (AL-01 live migration).",
     },
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
-        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep investigation is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Forced off (AL-05 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `49e7af321440`); force off with AUGHOR_SEMANTIC_RESOLVE_LIVE=0 or a runtime override.",
+        "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep analysis is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Forced off (AL-05 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `49e7af321440`); force off with AUGHOR_SEMANTIC_RESOLVE_LIVE=0 or a runtime override.",
     },
     "semantic.contract_live": {
         "label": "Unified metric contract (planning)",
@@ -652,29 +729,29 @@ FLAG_META = {
         "label": "Capability plane answer path",
         "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Forced off (AL-02 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `0dd2b45930c7`); force off with AUGHOR_CAPABILITY_PIPELINE_LIVE=0 or a runtime override.",
     },
-    "ada.premise_check": {
+    "deep_analysis.premise_check": {
         "label": "Premise validation",
-        "description": "A 'why is X so high/low' investigation validates the premise (subject vs overall/peers) BEFORE explaining it — questioning the question itself instead of assuming it. Adds one comparison query per qualifying run. Off by default.",
+        "description": "A 'why is X so high/low' deep analysis validates the premise (subject vs overall/peers) BEFORE explaining it — questioning the question itself instead of assuming it. Adds one comparison query per qualifying run. Off by default.",
     },
-    "ada.causal_drill": {
+    "deep_analysis.causal_drill": {
         "label": "Causal-dimension priority + WHERE→WHY drill",
-        "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel Deep-Analysis lenses' is on, which lands the same idea in-lens). Off by default.",
+        "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel deep-analysis lenses' is on, which lands the same idea in-lens). Off by default.",
     },
-    "ada.adversarial_high_stakes": {
+    "deep_analysis.adversarial_high_stakes": {
         "label": "Adversarial verify — high-stakes only",
-        "description": "The materiality-gated tier of adversarial verification (ReFoRCE-style): challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. The always-challenge full tier (`ada.adversarial_verify`) was deleted 2026-07-31 (flag strategy §4G) — this is the one refuter gate.",
+        "description": "The materiality-gated tier of adversarial verification: challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. The always-challenge full tier (`deep_analysis.adversarial_verify`) was deleted 2026-07-31 (flag strategy §4G) — this is the one refuter gate.",
     },
-    "ada.pin_canonical_metric": {
-        "label": "Pin governed metric at Deep-Analysis intake",
-        "description": "When a deep investigation parses a metric the connection already GOVERNS (curated catalog / north-star / verified ontology), pin the intake's formula to the governed one so the cross-section scan decomposes on a stable, canonical definition instead of a run-varying LLM guess (the count-vs-value 'refund rate' class that left the breakdown un-decomposable → 'cause remains unidentified'). Deterministic, fail-open: only replaces the LLM formula when a governed metric matches the label, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over the metric table. Off by default = byte-identical.",
+    "deep_analysis.pin_canonical_metric": {
+        "label": "Pin the governed metric at deep-analysis intake",
+        "description": "When a deep analysis parses a metric the connection already GOVERNS (curated catalog / north-star / verified ontology), pin the intake's formula to the governed one so the cross-section scan decomposes on a stable, canonical definition instead of a run-varying LLM guess (the count-vs-value 'refund rate' class that left the breakdown un-decomposable → 'cause remains unidentified'). Deterministic, fail-open: only replaces the LLM formula when a governed metric matches the label, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over the metric table. Off by default = byte-identical.",
     },
-    "ada.clarify_gate": {
-        "label": "Interactive metric-ambiguity clarify (Deep-Analysis)",
-        "description": "When a deep investigation finds that a metric's GOVERNED reading and the LLM's parsed reading both run but give materially different numbers (the count-vs-value 'refund rate' class), PAUSE before the scan and ask the user which reading they meant — instead of silently choosing one. The choice binds the metric for the run and is crystallized to the Ambiguity Ledger (source=user), so the same question never re-asks on that connection. Mirrors the plan-gate interrupt/resume. Off by default; asks at most once per run, only on a real divergence.",
+    "deep_analysis.clarify_gate": {
+        "label": "Interactive metric-ambiguity clarify (deep analysis)",
+        "description": "When a deep analysis finds that a metric's GOVERNED reading and the LLM's parsed reading both run but give materially different numbers (the count-vs-value 'refund rate' class), PAUSE before the scan and ask the user which reading they meant — instead of silently choosing one. The choice binds the metric for the run and is crystallized to the Ambiguity Ledger (source=user), so the same question never re-asks on that connection. Mirrors the plan-gate interrupt/resume. Off by default; asks at most once per run, only on a real divergence.",
     },
-    "ada.progress_events": {
-        "label": "Live per-dimension Deep-Analysis progress",
-        "description": "Stream a per-dimension progress event as each query of a Deep-Analysis scan completes, so a long cross-section/decompose phase reports 'scanning brand (3/6)…' DURING execution instead of a multi-minute silent spinner between phase_complete events. Interleaves a lightweight progress marker into the SSE stream via a best-effort in-process sink (no extra model cost, graph events never dropped). Off by default = byte-identical stream.",
+    "deep_analysis.progress_events": {
+        "label": "Live per-dimension deep-analysis progress",
+        "description": "Stream a per-dimension progress event as each query of a deep-analysis scan completes, so a long cross-section/decompose phase reports 'scanning brand (3/6)…' DURING execution instead of a multi-minute silent spinner between phase_complete events. Interleaves a lightweight progress marker into the SSE stream via a best-effort in-process sink (no extra model cost, graph events never dropped). Off by default = byte-identical stream.",
     },
     "ask.clarify": {
         "label": "Ask-vs-guess clarification",
@@ -689,8 +766,8 @@ FLAG_META = {
         "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. AUTO-ELIGIBLE since flag strategy batch B (2026-07-31): both call sites are guarded by the deterministic is_followup detector, so under Auto-mode the trigger decides per turn; an explicit On/Off always wins.",
     },
     "ask.brief_context": {
-        "label": "Ask this briefing — ground the answer in the brief on screen",
-        "description": "When a question is asked from the Briefing, prepend the brief the user is LOOKING AT (its verdict, synthesis and cited findings) to the quick-answer prompt, so 'why is that?' and 'break that down' have a referent instead of arriving cold. Read SERVER-SIDE from the same conn:schema cache entry the Briefing rendered — never posted up by the client, so it cannot drift from what is on screen or be spoofed into the prompt. CONTEXT ONLY: it resolves references and pins the entities/time window; every number in the answer still comes from the query that runs. Bounded (verdict + up to 8 cited findings + a capped synthesis) and empty when no brief is cached — no context beats invented context. Forced off = byte-identical. Default-ON since flag strategy batch B (2026-07-31, receipt `1277dd3f3f70`); force off with AUGHOR_ASK_BRIEF_CONTEXT=0 or a runtime override.",
+        "label": "Ask this briefing — ground the answer in the briefing on screen",
+        "description": "When a question is asked from the Briefing, prepend the briefing the user is LOOKING AT (its verdict, synthesis and cited findings) to the quick-answer prompt, so 'why is that?' and 'break that down' have a referent instead of arriving cold. Read SERVER-SIDE from the same conn:schema cache entry the Briefing rendered — never posted up by the client, so it cannot drift from what is on screen or be spoofed into the prompt. CONTEXT ONLY: it resolves references and pins the entities/time window; every number in the answer still comes from the query that runs. Bounded (verdict + up to 8 cited findings + a capped synthesis) and empty when no briefing is cached — no context beats invented context. Forced off = byte-identical. Default-ON since flag strategy batch B (2026-07-31, receipt `1277dd3f3f70`); force off with AUGHOR_ASK_BRIEF_CONTEXT=0 or a runtime override.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",
@@ -710,7 +787,7 @@ FLAG_META = {
     },
     "semops.champion_validate": {
         "label": "Champion cascade on semantic filter",
-        "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator in the Palimpzest/LOTUS lineage.",
+        "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator: disagreement between the two tiers is the signal, so no ground-truth labels are needed.",
     },
     "federation.remote_join": {
         "label": "Cross-source batched-foreach join",
@@ -729,8 +806,8 @@ FLAG_META = {
         "description": "Compile per-role, per-table row-filters into executed SQL (a deterministic AST rewrite wrapping each policied table as a filtered subquery) so a role physically cannot read rows outside its filter. Double-gated like the rest of RBAC (no-op unless identity AND the org's RBAC_SSO capability are on) AND this flag; fails CLOSED (a policy that can't be applied blocks the query). Enforced at every connector's execution gate (DuckDB/Postgres/warehouse/file/API). Forced off. Rec 7 of the external-sources study. Default-ON since flag strategy batch B (2026-07-31, receipt `37fa12f2e54a`); force off with AUGHOR_RBAC_ROW_POLICY=0 or a runtime override.",
     },
     "agents.user_defined": {
-        "label": "User-defined agents (domain personas)",
-        "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into a persona, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Default-ON since Wave H, graduated on receipt `df89c044999a` (run `234be1fbb62b` of aughor/evals/user_agents_receipt.py, 9/9 stable over 3 iterations) on a DATA-GATED claim: every behaviour it adds needs an agent you created AND a request naming it, so with none named the prompt block is empty, retrieval stays unrestricted and a resumed run attaches no persona — all byte-identical to off. Turning it on does exactly one thing by itself: /agents/custom stops 404-ing and returns an empty roster. Force off with AUGHOR_USER_AGENTS=0 or a runtime override. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
+        "label": "Custom agents (your own instructions + documents)",
+        "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into one custom agent, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Default-ON since Wave H, graduated on receipt `df89c044999a` (run `234be1fbb62b` of aughor/evals/user_agents_receipt.py, 9/9 stable over 3 iterations) on a DATA-GATED claim: every behaviour it adds needs an agent you created AND a request naming it, so with none named the prompt block is empty, retrieval stays unrestricted and a resumed run attaches no custom agent — all byte-identical to off. Turning it on does exactly one thing by itself: /agents/custom stops 404-ing and returns an empty roster. Force off with AUGHOR_USER_AGENTS=0 or a runtime override. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
     },
     "plan.program": {
         "label": "Plan-as-program executor",
@@ -746,12 +823,12 @@ FLAG_META = {
 # flipping each. Cost-dangerous flags (ai_sql, federation.*, semops.champion_validate) are deliberately
 # NOT here: running them automatically would be expensive, so they stay manual.
 AUTO_ELIGIBLE: frozenset = frozenset({
-    "ada.premise_check", "ada.clarify_gate", "ada.adversarial_high_stakes",
+    "deep_analysis.premise_check", "deep_analysis.clarify_gate", "deep_analysis.adversarial_high_stakes",
     "join.key_reconciliation", "capability.contract", "semops.guarded_extract",
     # Graduated 2026-07-13 (agentic-platform unification): both are deterministic and fail-open —
     # resolve() degrades to `answerable` when nothing binds; metric pinning requires a governed
     # metric match AND a clean dry-run before it does anything.
-    "ask.resolve_first", "ada.pin_canonical_metric",
+    "ask.resolve_first", "deep_analysis.pin_canonical_metric",
     # Graduated 2026-07-14: the "interesting facts about this schema" tour is fully
     # deterministic (no LLM), bounded, and fires ONLY on a metric/entity/time-free
     # overview-phrased question — the great default first-look, on by default.
@@ -765,14 +842,14 @@ AUTO_ELIGIBLE: frozenset = frozenset({
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
 CAPABILITY_TRIGGER: dict = {
-    "ada.premise_check": "the question asserts why a metric is high or low",
-    "ada.clarify_gate": "candidate readings diverge materially on the metric",
-    "ada.adversarial_high_stakes": "a high-confidence verdict would change the decision",
+    "deep_analysis.premise_check": "the question asserts why a metric is high or low",
+    "deep_analysis.clarify_gate": "candidate readings diverge materially on the metric",
+    "deep_analysis.adversarial_high_stakes": "a high-confidence verdict would change the decision",
     "join.key_reconciliation": "a join's key value-domains mismatch",
     "capability.contract": "a generated query fails on a native-SQL warehouse",
     "semops.guarded_extract": "a typed-field extraction fails",
     "ask.resolve_first": "the question names an entity or time grain the schema resolves deterministically",
-    "ada.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
+    "deep_analysis.pin_canonical_metric": "a governed metric matches the question and its canonical SQL dry-runs clean",
     "ask.overview": "the question asks for a broad overview with no metric, entity, or time window",
     "ask.conversation_context": "the turn is a follow-up to an earlier question",
 }
@@ -819,11 +896,11 @@ EXPERIMENT: dict = {
                       "prompt cost?",
     "explore.route_wide": "do landscape questions answer better through the explore wave?",
     "explorer.synthesis_incremental": "is mid-run synthesis worth the extra LLM calls?",
-    "ada.why_where_interaction": "does the WHY×WHERE cross query change conclusions?",
-    "ada.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
-    "ada.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
+    "deep_analysis.why_where_interaction": "does the WHY×WHERE cross query change conclusions?",
+    "deep_analysis.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
+    "deep_analysis.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
                         "performance profile makes parallel the default",
-    "ada.evidence_stubs": "drops rows — its own description forbids graduation before "
+    "deep_analysis.evidence_stubs": "drops rows — its own description forbids graduation before "
                           "an A/B against the full-evidence baseline",
     "search.rrf": "RRF vs α-blend on the KB-retrieval evals (cheap; the evals are the grid)",
     "explorer.manifest_driven": "does deterministic coverage match LLM-loop quality?",
@@ -838,8 +915,8 @@ EXPERIMENT: dict = {
 #: profile (Conservative / Balanced / Fast) that sets these together; under a 20 RPM
 #: free-tier transport, defaulting them on individually is actively wrong today.
 COST_LATENCY_PROFILE: frozenset = frozenset({
-    "explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
-    "ada.parallel_why_lenses",
+    "explore.parallel_subq", "deep_analysis.parallel_lenses", "deep_analysis.parallel_phases",
+    "deep_analysis.parallel_why_lenses",
 })
 
 #: Group F — a fork of two maintained code paths with a completion obligation: flip,
@@ -900,6 +977,14 @@ def _env_resolved(name: str) -> bool:
     var = FLAG_ENV.get(name, "")
     raw = os.getenv(var)
     if raw is None:
+        # A retired variable still in the operator's .env — honoured only while the
+        # current one is unset, so migrating is a strict upgrade and never a surprise.
+        for old_var, target in RETIRED_ENV.items():
+            if target == name:
+                raw = os.getenv(old_var)
+                if raw is not None:
+                    break
+    if raw is None:
         if FLAG_DEFAULT.get(name, False):
             return True
         # Capabilities Auto-mode: an unset auto-eligible guard is enabled (its own trigger then decides)
@@ -912,8 +997,30 @@ def _env_resolved(name: str) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_present(name: str) -> bool:
+    """Whether an env var actually sets this flag — its own, or one it was renamed from.
+
+    `flag_state` and `list_flags` report `source: "env"` from this rather than from
+    `os.getenv(FLAG_ENV[name])` alone, so a retired variable can never make them disagree
+    with `flag_enabled` (which would read "off" beside a live-on flag).
+    """
+    if os.getenv(FLAG_ENV.get(name, "")) is not None:
+        return True
+    return any(os.getenv(old) is not None
+               for old, target in RETIRED_ENV.items() if target == name)
+
+
 def _override(name: str):
-    return Ledger.default().kv_get(_STORE, name, None)
+    """The persisted runtime override, looked up under the current name and then under any
+    name it was renamed from — an operator's existing override must survive a rename."""
+    val = Ledger.default().kv_get(_STORE, name, None)
+    if val is not None:
+        return val
+    for old in _retired_names(name):
+        val = Ledger.default().kv_get(_STORE, old, None)
+        if val is not None:
+            return val
+    return None
 
 
 # ── Run-scoped overrides (Wave E4) ────────────────────────────────────────────────────
@@ -950,7 +1057,7 @@ def active_flag_overrides() -> dict:
 def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
     """Force specific flags for the duration of the block, for this context only.
 
-    Dotted names (`ada.parallel_lenses`) cannot be keyword arguments, so the mapping form
+    Dotted names (`deep_analysis.parallel_lenses`) cannot be keyword arguments, so the mapping form
     is the primary one; kwargs are accepted for the handful of undotted flags. Nested use
     merges, so an inner block can vary one axis of an outer configuration.
 
@@ -960,7 +1067,7 @@ def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
     the run leaves the topology at whatever the process-global layers said, and the
     override looks like it did nothing. `tests/unit/test_flag_overrides.py` pins this.
     """
-    requested = {**(mapping or {}), **kw}
+    requested = {_canonical(n): v for n, v in {**(mapping or {}), **kw}.items()}
     unknown = sorted(n for n in requested if n not in FLAG_ENV)
     if unknown:
         raise UnknownFlagError(
@@ -978,6 +1085,7 @@ def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
 
 def flag_enabled(name: str) -> bool:
     """The effective value: a run-scoped override wins, then a runtime override, then env."""
+    name = _canonical(name)
     run = _run_overrides.get()
     if run is not None and name in run:
         return bool(run[name])
@@ -993,14 +1101,14 @@ def flag_state(name: str) -> str:
     ``"auto"`` means the capability is enabled ONLY because the master Auto-mode elevated this self-gating
     guard (its deterministic trigger decides per run) — an explicit operator On/Off always resolves to
     ``"on"``/``"off"``. A display refinement over ``flag_enabled`` (which is True for both on and auto)."""
+    name = _canonical(name)
     run = _run_overrides.get()
     if run is not None and name in run:
         return "on" if run[name] else "off"
     ov = _override(name)
     if ov is not None:
         return "on" if ov else "off"
-    raw = os.getenv(FLAG_ENV.get(name, ""))
-    if raw is not None:
+    if _env_present(name):
         return "on" if _env_resolved(name) else "off"
     if FLAG_DEFAULT.get(name, False):
         return "on"
@@ -1010,13 +1118,28 @@ def flag_state(name: str) -> str:
 
 
 def set_flag(name: str, value: bool) -> None:
-    """Set a runtime override (wins over the env var until cleared)."""
-    Ledger.default().kv_put(_STORE, name, bool(value))
+    """Set a runtime override (wins over the env var until cleared).
+
+    Writes under the CURRENT name, and drops any row still held under a name this flag
+    was renamed from — otherwise the legacy row would outlive the setting that replaced
+    it and resurface the moment the new one is cleared.
+    """
+    name = _canonical(name)
+    led = Ledger.default()
+    led.kv_put(_STORE, name, bool(value))
+    for old in _retired_names(name):
+        if led.kv_get(_STORE, old, None) is not None:
+            led.kv_put(_STORE, old, None)
 
 
 def clear_flag(name: str) -> None:
-    """Drop the override so the env var decides again."""
-    Ledger.default().kv_put(_STORE, name, None)
+    """Drop the override so the env var decides again — under every name it may be
+    stored as, or a retired row would silently keep overriding."""
+    name = _canonical(name)
+    led = Ledger.default()
+    led.kv_put(_STORE, name, None)
+    for old in _retired_names(name):
+        led.kv_put(_STORE, old, None)
 
 
 def list_flags() -> dict:
@@ -1041,13 +1164,17 @@ def list_flags() -> dict:
             # variable nobody had set. That gets more misleading with every graduation, so
             # the two are distinguished: "env" means the variable is actually present.
             "source": ("run" if name in run else "runtime" if ov is not None
-                       else "env" if os.getenv(var) is not None else "default"),
+                       else "env" if _env_present(name) else "default"),
             "env_var": var,
             "label": meta.get("label", name),
             "description": meta.get("description", ""),
             # The declared disposition (flag strategy §5.1) — lets the Settings UI
             # group by KIND instead of rendering one flat list of toggles.
             "disposition": flag_disposition(name),
+            # Names this flag used to have. Present so an operator searching the docs or
+            # their own .env for the old name can see where it went; empty for almost
+            # every flag, and omitted entirely when there is nothing to say.
+            **({"renamed_from": _retired_names(name)} if _retired_names(name) else {}),
             **({"disposition_note": INTENTIONALLY_OFF.get(name)
                                     or EXPERIMENT.get(name)
                                     or MIGRATION.get(name)

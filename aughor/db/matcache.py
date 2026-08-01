@@ -35,7 +35,7 @@ from typing import Optional
 import duckdb
 
 from aughor.db.sqlite_util import resolve_db_path
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 # WP-4 — env override (AUGHOR_MATCACHE_DB) so the test suite can point this at a temp
 # file; it was hardcoded to the live data/ dir with no override (a non-hermetic hole).

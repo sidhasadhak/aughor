@@ -26,8 +26,8 @@ from aughor.evals.experiments import Cell, MeasurementIntegrityError
 from aughor.kernel.flags import clear_flag, flag_enabled
 from aughor.llm import provider as P
 
-FLAG = "ada.evidence_stubs"
-OTHER = "ada.evidence_dedup"
+FLAG = "deep_analysis.evidence_stubs"
+OTHER = "deep_analysis.evidence_dedup"
 
 
 @pytest.fixture(autouse=True)

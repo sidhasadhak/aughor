@@ -12,9 +12,9 @@ def _p(name, st):
     return NS(name=name, semantic_type=st)
 
 
-def _entity(eid, tables, props, *, created_at_col=None, active_filter=None, object_sets=None):
+def _entity(eid, tables, props, *, created_at_col=None, active_filter=None, segments=None):
     return NS(id=eid, source_tables=tables, created_at_col=created_at_col,
-              active_filter=active_filter, object_sets=object_sets or {},
+              active_filter=active_filter, segments=segments or {},
               properties={p.name: p for p in props})
 
 
@@ -39,8 +39,8 @@ ORDERS = _entity("Order", ["orders"],
                   _p("status", "dimension"), _p("order_date", "timestamp")],
                  created_at_col="order_date",
                  active_filter="status <> 'canceled'",
-                 object_sets={"delivered": NS(filter_sql="status = 'delivered'", verified=True),
-                              "unverified_set": NS(filter_sql="x = 1", verified=False)})
+                 segments={"delivered": NS(filter_sql="status = 'delivered'", verified=True),
+                           "unverified_segment": NS(filter_sql="x = 1", verified=False)})
 ONTO = _onto(ORDERS)
 
 
@@ -112,17 +112,17 @@ def test_ranking_default_limit():
     assert "limit 10" in _l(sql)
 
 
-# ── object set + window filters ───────────────────────────────────────────────
+# ── segment + window filters ──────────────────────────────────────────────────
 
-def test_object_set_filter_applied():
+def test_segment_filter_applied():
     sql = synthesize_sql(QueryIntent(intent_type="scalar", table="orders", measure="amount",
-                                     object_set="delivered"), ONTO, metrics=[])
+                                     segment="delivered"), ONTO, metrics=[])
     assert "delivered" in _l(sql)
 
 
-def test_unverified_object_set_gated():
+def test_unverified_segment_gated():
     assert synthesize_sql(QueryIntent(intent_type="scalar", table="orders", measure="amount",
-                                      object_set="unverified_set"), ONTO, metrics=[]) is None
+                                      segment="unverified_segment"), ONTO, metrics=[]) is None
 
 
 def test_window_filter_applied():
@@ -203,7 +203,7 @@ def test_named_metric_binding_is_identical_under_contract_live_flag(monkeypatch)
     md = MetricDefinition(name="revenue", label="Revenue", sql="SUM(amount)", tables=["orders"])
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [md])
     monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
-    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
 
     intent = QueryIntent(intent_type="scalar", table="orders", metric="revenue")
     monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)

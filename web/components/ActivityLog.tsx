@@ -184,7 +184,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
       <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
-        {status.insights_found    > 0 && ` · ${status.insights_found} insights`}
+        {status.insights_found    > 0 && ` · ${status.insights_found} findings`}
       </span>
       <div className="ml-auto flex items-center gap-2">
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>

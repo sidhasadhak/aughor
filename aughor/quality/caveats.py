@@ -168,6 +168,7 @@ def candidates_from_profile(connection_id: str, table: str, columns: Iterable[di
 
         if distinct is not None and 0 < int(distinct) <= LOW_CARDINALITY_MAX:
             out.append(Candidate(
+                # frozen inbox record value — see candidates.CANDIDATE_KINDS
                 connection_id=connection_id, kind="object_set",
                 subject=f"{table}.{name}",
                 proposal=f"value dictionary for {table}.{name}", origin="query_log",

@@ -21,7 +21,7 @@ export interface UpgradeInfo {
 
 // Friendly labels for the capabilities we gate (fallback prettifies the raw value).
 const FEATURE_LABELS: Record<string, string> = {
-  "analysis.deep": "Deep Analysis",
+  "analysis.deep": "Deep analysis",
   "exploration.auto": "Autonomous Exploration",
   "intel.domain": "Domain Intelligence",
   "fix.save": "Save & Repair",
@@ -29,8 +29,8 @@ const FEATURE_LABELS: Record<string, string> = {
   "semantic.edit": "Semantic Layer Editing",
   "monitors": "Monitors",
   "metrics.define": "Metric Definitions",
-  "actions.hub": "Action Hub",
-  "briefs.scheduled": "Scheduled Briefs",
+  "actions.hub": "Notifications",
+  "briefs.scheduled": "Scheduled Briefings",
   "playbook": "Playbook",
   "federation": "Multi-Connection Federation",
   "eval.suite": "Evaluation Suite",

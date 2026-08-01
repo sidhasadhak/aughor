@@ -90,7 +90,7 @@ function SubQuestionCard({
           {/* Insight */}
           {answer.insight && answer.insight !== answer.answer && stripPlannerNotes(answer.insight) && (
             <p className="aug-fs-sm text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
-              <span className="text-zinc-500 uppercase tracking-wide aug-fs-xs mr-1.5">Insight</span>
+              <span className="text-zinc-500 uppercase tracking-wide aug-fs-xs mr-1.5">Takeaway</span>
               {renderEmphasis(stripPlannerNotes(answer.insight))}
             </p>
           )}

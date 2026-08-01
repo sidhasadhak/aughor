@@ -1,7 +1,7 @@
 """Ontology-related prompts for M12b semantic enrichment."""
 
 ENRICH_ONTOLOGY_PROMPT = """\
-You are building a Palantir-style semantic ontology for a business data warehouse.
+You are building a semantic ontology for a business data warehouse.
 You have the STRUCTURAL ONTOLOGY derived automatically from schema profiling.
 Your job: enrich it with precise semantic meaning so the canvas reads like a live
 business process map — not a database schema diagram.

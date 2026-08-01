@@ -33,9 +33,9 @@ def test_the_full_tier_stays_deleted_and_the_auto_tier_remains():
     re-registration would silently resurrect an LLM call per decision-changing verdict."""
     from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV
 
-    assert "ada.adversarial_verify" not in FLAG_ENV
-    assert "ada.adversarial_high_stakes" in FLAG_ENV
-    assert "ada.adversarial_high_stakes" in AUTO_ELIGIBLE
+    assert "deep_analysis.adversarial_verify" not in FLAG_ENV
+    assert "deep_analysis.adversarial_high_stakes" in FLAG_ENV
+    assert "deep_analysis.adversarial_high_stakes" in AUTO_ELIGIBLE
 
 
 def test_refuter_alias_is_public_and_callable():

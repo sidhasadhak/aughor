@@ -1446,7 +1446,7 @@ class SchemaExplorer:
         """
         For each verified join, check if a dimension in the PK table (t2)
         meaningfully explains variation in a measure in the FK table (t1).
-        Records findings as OntologyInsights.
+        Records findings as ExplorerFindings.
         """
         tp = tp or {}
         done_ids = {i.get("id") for i in self._state.get("insights", [])}
@@ -1615,7 +1615,7 @@ class SchemaExplorer:
         llm = get_provider("coder")
         _tc = getattr(sql_writer, "table_cols", {})
         _dialect = getattr(self._conn, "dialect", "duckdb")
-        from aughor.profile.validate import profile_metric_ranges
+        from aughor.business_profile.validate import profile_metric_ranges
         _mranges = profile_metric_ranges(profile)
         stored = 0
 
@@ -2135,7 +2135,7 @@ class SchemaExplorer:
         _profile_for_pin = None
         _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
         try:
-            from aughor.profile.infer import get_or_infer
+            from aughor.business_profile.infer import get_or_infer
             # Key the profile by THIS run's schema (a per-schema run) or the connection's
             # configured schema, so the Briefing's schema selector fetches the matching one.
             _conn_schema = self.schema_name
@@ -2149,7 +2149,7 @@ class SchemaExplorer:
             if _bp is not None:
                 _profile_for_pin = _bp
                 try:
-                    from aughor.profile.validate import profile_metric_ranges
+                    from aughor.business_profile.validate import profile_metric_ranges
                     _metric_ranges = profile_metric_ranges(_bp)
                 except Exception:
                     _metric_ranges = []
@@ -2167,7 +2167,7 @@ class SchemaExplorer:
                 # to compute at, and the anti-pattern that produces a wrong number
                 # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
                 # authoritatively so generated SQL gets the join/grain right.
-                from aughor.profile import store as _pstore
+                from aughor.business_profile import store as _pstore
                 _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
                 # Drop recipes whose formula columns don't exist in THIS schema: a generic
                 # profile recipe (SUM(revenue - cogs), customer_id, ecommerce.orders) doesn't
@@ -2219,7 +2219,7 @@ class SchemaExplorer:
                 # none of it.
                 _kb_block = ""
                 try:
-                    from aughor.profile.metric_kb import match_industry
+                    from aughor.business_profile.metric_kb import match_industry
                     _sel_kb = match_industry(_eff_industry)
                     if _sel_kb and (_sel_kb.get("metrics") or []):
                         _kb_lines = "\n".join(

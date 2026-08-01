@@ -154,7 +154,7 @@ export interface OverviewReport {
   generated_at: string;
 }
 
-// ── ADA types ────────────────────────────────────────────────────────────────
+// ── Deep analysis types ──────────────────────────────────────────────────────
 
 export interface PhaseKeyNumber {
   label: string;
@@ -209,9 +209,6 @@ export interface AnswerRecommendation {
   timeline: string;
 }
 
-/** @deprecated Use {@link AnswerRecommendation}. Kept one release for the `ADA`→answer rename (REC-U9). */
-export type ADARecommendation = AnswerRecommendation;
-
 export interface AnswerReport {
   headline: string;
   executive_summary: string;
@@ -239,9 +236,6 @@ export interface AnswerReport {
   metric_definition?: string | null;
 }
 
-/** @deprecated Use {@link AnswerReport}. Kept one release for the `ADA`→answer rename (REC-U9). */
-export type ADAReport = AnswerReport;
-
 // SSE event shapes
 export type InvestigationEvent =
   | { type: "start"; question: string; investigation_id?: string }
@@ -258,7 +252,8 @@ export type InvestigationEvent =
   | { type: "phase_progress"; phase_id: string; done: number; total: number; current?: string }
   | { type: "clarify_pending"; investigation_id: string; subject: string; metric_label: string; question: string; options: string[]; previews: string[] }
   | { type: "answer_report"; answer_report: AnswerReport; investigation_id: string; query_mode: "investigate"; mode?: "investigate" }
-  /** @deprecated wire alias for `answer_report`, kept one release (REC-U9). */
+  /** WIRE NAME — FROZEN. Deprecated alias for `answer_report`, kept one release (REC-U9).
+   *  The event name and payload key are what the backend sends; never renamed here. */
   | { type: "ada_report"; ada_report: AnswerReport; investigation_id: string; query_mode: "investigate" }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -298,7 +293,7 @@ export interface InvestigationState {
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
   exploreReport: ExplorationReport | null;
-  // ADA investigate mode
+  // Deep analysis (investigate) mode
   investigationPhases: InvestigationPhase[];
-  adaReport: AnswerReport | null;
+  deepReport: AnswerReport | null;
 }

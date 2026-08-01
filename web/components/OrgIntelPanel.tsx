@@ -166,7 +166,7 @@ export function OrgIntelPanel() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Filter insights…"
+          placeholder="Filter findings…"
           style={{
             flex: 1,
             background: "var(--bg-2)",
@@ -223,11 +223,11 @@ export function OrgIntelPanel() {
           >
             <span style={{ fontSize: 32, opacity: 0.25 }}>◈</span>
             <span style={{ fontSize: 12 }}>
-              {search ? "No insights match your filter" : "No org-wide intelligence yet"}
+              {search ? "No findings match your filter" : "No org-wide intelligence yet"}
             </span>
             {!search && (
               <span style={{ fontSize: 11, color: "var(--t3)", maxWidth: 280, textAlign: "center" }}>
-                Promote canvas domain insights via the "Promote to Org →" button in Domain Intel to build collective knowledge.
+                Promote canvas domain findings via the "Promote to Org →" button in Domain Intel to build collective knowledge.
               </span>
             )}
           </div>

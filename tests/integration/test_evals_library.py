@@ -205,9 +205,9 @@ def test_findings_with_set_fields_stay_json_safe(db):
     import json
 
     from aughor.evals.adapters import _detail_of
-    from aughor.sql.composite_key import KeyFinding
+    from aughor.sql.composite_key import KeyIssue
 
-    detail = _detail_of(KeyFinding(left_table="a", right_table="b",
+    detail = _detail_of(KeyIssue(left_table="a", right_table="b",
                                    used={"x"}, missing={"y", "z"}))
     json.dumps(detail)
     assert detail["missing"] == ["y", "z"]

@@ -5,7 +5,7 @@
  *
  * What it replaces: `BriefAskBox`, which was neither a conversation nor an insight-mode ask.
  * Every question spawned an INDEPENDENT card with no shared history, and each one ran a full
- * ADA deep investigation (`POST /investigate`, `deep: true`) — so a two-word follow-up cost a
+ * deep analysis (`POST /investigate`, `deep: true`) — so a two-word follow-up cost a
  * multi-minute research job and still couldn't see the previous answer.
  *
  * What this is instead:
@@ -99,7 +99,7 @@ export function BriefAskPanel({
             Ask a follow-up about this briefing — it already knows the verdict, the findings
             behind it, and which schema they came from.
             <div style={{ marginTop: 10, color: "var(--t4)" }}>
-              For a full investigation, use <strong style={{ color: "var(--t3)" }}>Open in Ask</strong> on an answer.
+              For a full deep analysis, use <strong style={{ color: "var(--t3)" }}>Open in Ask</strong> on an answer.
             </div>
           </div>
         ) : (

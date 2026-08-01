@@ -120,7 +120,7 @@ export function FleetOverviewPanel({ onOpenAgent }: {
     return <div style={{ padding: 24, color: "var(--red4)", fontSize: 12 }}>{error}</div>;
   }
   if (!data) {
-    return <div style={{ padding: 24, color: "var(--t3)", fontSize: 12 }}>Loading fleet…</div>;
+    return <div style={{ padding: 24, color: "var(--t3)", fontSize: 12 }}>Loading overview…</div>;
   }
 
   const { tiles } = data;
@@ -173,11 +173,11 @@ export function FleetOverviewPanel({ onOpenAgent }: {
 
       {/* ── density toggle ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span className="aug-label" style={{ color: "var(--t3)" }}>The fleet</span>
+        <span className="aug-label" style={{ color: "var(--t3)" }}>All agents</span>
         <span style={{ flex: 1 }} />
         {!data.session_log_recording && (
           <span style={{ fontSize: 11, color: "var(--amb4)" }}>
-            session log not recording — persona spend is frozen at its last rows
+            session log not recording — custom agent spend is frozen at its last rows
           </span>
         )}
         <Button variant={density === "calm" ? "secondary" : "ghost"} size="xs"
@@ -272,7 +272,7 @@ export function FleetOverviewPanel({ onOpenAgent }: {
                     );
                   })()}
                 </td>
-                <td><StatusChip hue="accent" strength="soft">persona</StatusChip></td>
+                <td><StatusChip hue="accent" strength="soft">custom</StatusChip></td>
                 <td>
                   <StatusChip hue={row.enabled ? "positive" : "caution"} strength="soft">
                     {row.enabled ? "active" : "paused"}

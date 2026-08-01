@@ -1,5 +1,5 @@
 """
-Aughor CLI — start the platform and run autonomous investigations from the terminal.
+Aughor CLI — start the platform and run autonomous deep analyses from the terminal.
 
 Usage:
   aughor up          # start API (:8000) + web UI (:3000) — the one-command bootstrap
@@ -59,7 +59,7 @@ def seed(db: str):
     customers with a discoverable APAC payment-gateway outage — replacing any
     existing file at the target path.
     """
-    from aughor.samples.scenario import seed_scenario_db
+    from aughor.demo.scenario import seed_scenario_db
 
     summary = seed_scenario_db(Path(db), overwrite=True)
     console.print(f"Database seeded at: [bold]{db}[/bold]")
@@ -317,7 +317,7 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool):
 @click.option("--model", default=None, help="Override the model (e.g. qwen2.5-coder:14b)")
 @click.option("--backend", default="ollama", show_default=True, type=click.Choice(list(LLM_BACKENDS)))
 def investigate(question: str, db: str, model: Optional[str], backend: str):
-    """Run an autonomous investigation on a business question."""
+    """Run an autonomous deep analysis on a business question."""
     import os
     if model:
         os.environ["AUGHOR_MODEL"] = model
@@ -383,7 +383,7 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
     elapsed_total = time.monotonic() - start
     conn.close()
 
-    # The deep-analysis (ADA) path produces a rich answer_report (phases, per-finding SQL,
+    # The deep-analysis path produces a rich answer_report (phases, per-finding SQL,
     # key numbers, real significance). Render that directly — the legacy AnalysisReport
     # flattens away the SQL and the logic. Fall back to legacy only when no answer_report exists.
     if final_state.get("answer_report"):
@@ -430,7 +430,7 @@ def _print_node_update(node_name: str, state: Any, elapsed: float):
 
 
 def _print_ada_report(report: dict, elapsed: float):
-    """Render the rich deep-analysis (ADA) report: phases, per-finding SQL, key numbers,
+    """Render the rich deep-analysis report: phases, per-finding SQL, key numbers,
     real significance and confidence. Prose is rendered as Markdown (so **bold** doesn't leak
     as literal asterisks), and the actual query for each finding is shown — the terminal user
     gets the same access to query + logic the web report gives."""

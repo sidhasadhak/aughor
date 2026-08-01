@@ -1,6 +1,6 @@
 """The Evals plane's contract types — ``EvalCase``, ``EvalObservation``, ``EvalScore``, ``Evaluator``.
 
-Wave E2. Mirrors the shape of ``aughor/capability/pipeline.py`` (typed request →
+Wave E2. Mirrors the shape of ``aughor/pipeline/pipeline.py`` (typed request →
 Protocol → typed result) so the two planes read the same way.
 
 **Why this exists.** The guard battery is the product's strongest asset and it

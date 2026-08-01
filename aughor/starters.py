@@ -1,7 +1,7 @@
 """R13 — named research-starter playbooks + per-space curated questions.
 
-The Databricks ``curated-questions`` / ``research_agent_*`` analog (wire study
-#2): a small library of NAMED, deterministic research playbooks — one-click
+A small library of NAMED, deterministic research playbooks (wire study #2,
+docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md) — one-click
 Deep-Research starters, distinct from free-typed questions — plus per-space
 curated questions projected from the R8 doc tree's analyst questions.
 

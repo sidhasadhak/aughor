@@ -40,7 +40,7 @@ function investigationToTraceState(
   const queryHistory = inv.query_history ?? [];
   const queryMode: InvestigationState["queryMode"] =
     reportType === "explore" ? "explore" : reportType === "direct" ? "direct" : "investigate";
-  const ada = reportType === "investigate" ? (reportRaw as unknown as AnswerReport) : null;
+  const deep = reportType === "investigate" ? (reportRaw as unknown as AnswerReport) : null;
   return {
     status: "done",
     question: inv.question,
@@ -62,8 +62,8 @@ function investigationToTraceState(
     subQuestions: (reportRaw?.sub_questions ?? []) as SubQuestion[],
     subqAnswers: (reportRaw?.subq_answers ?? []) as SubQuestionAnswer[],
     exploreReport: reportType === "explore" ? (reportRaw as unknown as ExplorationReport) : null,
-    investigationPhases: ada?.phases ?? [],
-    adaReport: ada,
+    investigationPhases: deep?.phases ?? [],
+    deepReport: deep,
   };
 }
 
@@ -129,7 +129,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
   if (!invId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-        <p className="text-2xl font-semibold text-zinc-500">Select an investigation</p>
+        <p className="text-2xl font-semibold text-zinc-500">Select a deep analysis</p>
         <p className="text-sm text-zinc-500 max-w-xs">
           Click any item on the left to view its full results.
         </p>
@@ -156,7 +156,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
   if (!inv) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">
-        Failed to load investigation.
+        Failed to load the deep analysis.
       </div>
     );
   }
@@ -188,7 +188,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
         {onBack && (
           <button
             onClick={onBack}
-            title="Back to investigations"
+            title="Back to deep analyses"
             style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               padding: "8px 14px", background: "none", border: "none",
@@ -233,7 +233,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
             <div style={{ padding: "40px 0", textAlign: "center" }}>
               <p style={{ fontSize: 13, color: "var(--t3)", marginBottom: 6 }}>No evidence claims yet.</p>
               <p style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
-                Claims are extracted automatically when an ADA investigation completes.
+                Claims are extracted automatically when a deep analysis completes.
               </p>
             </div>
           )}
@@ -330,7 +330,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
               {(reportType === "direct" || reportType === "legacy") && (
                 <>
                   <p className="text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>
-                    {reportType === "direct" ? "Query Report" : "Investigation Report"}
+                    {reportType === "direct" ? "Query Report" : "Deep analysis report"}
                   </p>
                   <ReportView
                     report={inv.report as Report}
@@ -347,7 +347,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
 
           {!reportRaw && (
             <div style={{ border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: "16px", fontSize: 13, color: "var(--t3)" }}>
-              This investigation did not complete — no report available.
+              This deep analysis did not complete — no report available.
             </div>
           )}
 

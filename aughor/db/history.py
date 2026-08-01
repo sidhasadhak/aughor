@@ -89,15 +89,16 @@ def _migrate_v2(c: sqlite3.Connection) -> None:
 
 def _migrate_v3(c: sqlite3.Connection) -> None:
     """Persist the active user-agent on the run row so per-agent run history is
-    joinable (E1/E5 of the 2026-07-11 Databricks-OSS study — ``agent_id`` lived
+    joinable (E1/E5 of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md
+    — ``agent_id`` lived
     only in the LangGraph checkpoint before, invisible to the history store).
     Additive + idempotent; existing rows default to '' (no agent)."""
     add_column_if_missing(c, "investigations", "agent_id", "TEXT NOT NULL DEFAULT ''")
 
 
 def _migrate_v4(c: sqlite3.Connection) -> None:
-    """R10 — persist the request's purpose tag (a named starter's provenance,
-    the Databricks request_purpose analog) on the run row, so runs are queryable
+    """R10 — persist the request's purpose tag (a named starter's provenance)
+    on the run row, so runs are queryable
     per purpose the same way they are per agent. '' = a free-typed question."""
     add_column_if_missing(c, "investigations", "purpose", "TEXT NOT NULL DEFAULT ''")
 
@@ -287,7 +288,7 @@ def save_chat_turn(
     persona survives the hop to the worker thread.)
     """
     try:
-        from aughor.user_agents.context import current_agent
+        from aughor.custom_agents.context import current_agent
         _a = current_agent()
         agent_id = _a.id if _a is not None else ""
     except Exception:

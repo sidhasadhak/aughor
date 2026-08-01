@@ -8,8 +8,8 @@ wrong answer is strictly worse than not being able to express one. A measure DEC
 `semiadditive: last` cannot be summed across periods, because the planner instantiates the
 declaration rather than asking for SQL.
 
-The vocabulary is the UC metric-view frame algebra, which the Genie teardown identified as
-the reference spec:
+The vocabulary is the UC metric-view frame algebra, identified as the reference spec in
+docs/GENIE_DOCS_TEARDOWN_2026-07-26.md:
 
     order       the column the window is ordered by (usually a date)
     range       current · cumulative · trailing · leading · all

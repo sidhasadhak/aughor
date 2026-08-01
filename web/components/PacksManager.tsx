@@ -23,7 +23,7 @@ export function PacksManager() {
   return (
     <div className="mb-5">
       <p className="aug-fs-xs uppercase tracking-widest text-zinc-500 mb-2">
-        Specialist packs{enabled ? "" : " · flag off (gated)"}
+        Packs{enabled ? "" : " · flag off (gated)"}
       </p>
       <div className="bg-white/[0.03] rounded-[var(--r3)] divide-y divide-white/5">
         {packs.map(p => (
@@ -200,7 +200,7 @@ function PackDeploy({ packId }: { packId: string }) {
       {/* Flywheel changelog */}
       {deltas.length > 0 && (
         <div className="aug-fs-xs">
-          <div className="text-zinc-500 mb-1">Expert changelog — {deltas.length} proposed learning(s)</div>
+          <div className="text-zinc-500 mb-1">Pack changelog — {deltas.length} proposed learning(s)</div>
           {deltas.map(d => (
             <div key={d.id} className="flex items-start justify-between gap-2 py-1 border-b border-white/5 last:border-0">
               <span className="text-zinc-400">

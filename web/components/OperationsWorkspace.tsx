@@ -39,7 +39,7 @@ export type OpsLayer = "monitors" | "automations" | "actions" | "security";
 const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
   { id: "automations", icon: "gear",     label: "Automations",      blurb: "Condition → effect, & the proposal queue" },
-  { id: "actions",     icon: "spark",    label: "Action Hub",       blurb: "Governed actions & approvals" },
+  { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
 

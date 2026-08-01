@@ -1,4 +1,4 @@
-"""Unit tests for the build-time value_sql audit (aughor/profile/validate.py).
+"""Unit tests for the build-time value_sql audit (aughor/business_profile/validate.py).
 
 Proves the audit drops the two real-path value_sql bugs — a chasm-fan-out ROAS
 (structural) and a conversion rate that reads 100% because its denominator was
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.profile.validate import audit_value_sql, audit_chart_sql, audit_profile, _range_kind
+from aughor.business_profile.validate import audit_value_sql, audit_chart_sql, audit_profile, _range_kind
 
 # A chasm: attribution and invoices are each on the many-side of `order`.
 TC = {

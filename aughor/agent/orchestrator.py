@@ -303,7 +303,7 @@ _NONACTIONABLE_REC_RE = re.compile(
 
 def is_decision_changing_verdict(headline, executive_summary) -> bool:
     """T4-3 — does the report's verdict REJECT the question's premise or report no material issue?
-    These are the high-stakes conclusions worth an adversarial second look (ReFoRCE-style tiering:
+    These are the high-stakes conclusions worth an adversarial second look (confidence-tiered:
     verify the few decision-changing verdicts, not every finding). Reuses the same rejection lexicon
     the coherence check keys on. Deterministic."""
     return bool(_VERDICT_REJECTION_RE.search(f"{headline or ''} {executive_summary or ''}"))

@@ -63,7 +63,7 @@ def test_memory_paths_are_isolated():
 
 
 def test_actions_paths_are_isolated():
-    from aughor.actions import store as astore
+    from aughor.notifications import store as astore
     assert "aughor-test-stores" in str(astore._TRIGGERS_PATH)
     assert "aughor-test-stores" in str(astore._LOGS_PATH)
 
@@ -72,7 +72,7 @@ def test_agents_db_default_is_under_data_not_repo_root():
     # The default path (used when AUGHOR_AGENTS_DB is unset) must live under data/ so it
     # is covered by data/'s gitignore — the bare "agents.db" default escaped it and got
     # a live runtime DB tracked in git.
-    from aughor.user_agents import store
+    from aughor.custom_agents import store
     assert store._DEFAULT_DB_PATH == pathlib.Path("data") / "agents.db"
 
 # ── 2026-07-21: the family WP-4 MISSED — per-connection GENERATED state. Each of these
@@ -87,7 +87,7 @@ def test_exploration_store_dir_is_isolated():
 
 
 def test_profile_store_dir_is_isolated():
-    from aughor.profile import store as profile_store
+    from aughor.business_profile import store as profile_store
     assert "aughor-test-stores" in str(profile_store._DATA_DIR)
 
 
@@ -117,7 +117,7 @@ def test_purge_resolves_the_SAME_dir_as_the_stores_it_deletes_from():
     deletes on the real files."""
     from aughor.db import purge
     from aughor.explorer import store
-    from aughor.profile import store as profile_store
+    from aughor.business_profile import store as profile_store
     assert "aughor-test-stores" in str(purge._DATA_DIR)
     assert purge._DATA_DIR == store._DATA_DIR == profile_store._DATA_DIR
 
@@ -137,7 +137,7 @@ def test_no_generated_state_store_still_hardcodes_the_data_dir():
     offenders = [
         str(p.relative_to(root))
         for p in [root / "explorer" / "store.py", root / "explorer" / "watermark.py",
-                  root / "explorer" / "revalidate_live.py", root / "profile" / "store.py",
+                  root / "explorer" / "revalidate_live.py", root / "business_profile" / "store.py",
                   root / "knowledge" / "briefing.py", root / "knowledge" / "patterns.py",
                   root / "db" / "purge.py", root / "routers" / "exploration.py",
                   root / "db" / "schema_cache.py"]

@@ -124,7 +124,7 @@ def _add_kernel_org_ids(c: sqlite3.Connection) -> None:
 
 def _create_task_history(c: sqlite3.Connection) -> None:
     """The `task_history` spine (Rec 4 of the 2026-07-11 platform study, flag
-    `obs.task_table`): one append-only row per span, with Spice's exact shape, so
+    `obs.task_table`): one append-only row per span, with that study's exact shape, so
     "what did the agent actually do" is a SELECT instead of a log grep. It is a
     SINK for the span events telemetry already emits — the writer only fires under
     the flag, so an unflagged DB keeps this table empty (byte-identical)."""

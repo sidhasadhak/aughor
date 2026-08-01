@@ -15,11 +15,11 @@ export interface ThreadRunOpts {
   /** Scope a non-canvas investigation to a specific schema (multi-schema connections). */
   schema?: string | null;
   canvasId?: string | null;
-  /** The exact query the seed finding came from — anchors ADA on the real tables/window. */
+  /** The exact query the seed finding came from — anchors the deep analysis on the real tables/window. */
   seedSql?: string | null;
   /** Free-text seed (e.g. the briefing claim being pulled on). */
   seedContext?: string;
-  /** The originating finding's insight id. When it resolves to a dossier, ADA is
+  /** The originating finding's insight id. When it resolves to a dossier, the deep analysis is
    *  seeded with the RICH dossier (grounded values + verified structure) instead of
    *  just seedContext/seedSql — the same seed the chat "Investigate deeper" uses. */
   insightId?: string | null;
@@ -28,7 +28,7 @@ export interface ThreadRunOpts {
 }
 
 /**
- * Drives ONE inline ADA investigation thread over the /investigate SSE stream.
+ * Drives ONE inline deep analysis thread over the /investigate SSE stream.
  *
  * Unlike useChat (which keeps a list of turns and aborts any in-flight request
  * on each new ask), this owns a single turn and a single AbortController PER HOOK

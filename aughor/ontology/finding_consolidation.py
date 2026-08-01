@@ -19,8 +19,8 @@ cap keeps*: 100 newest receipts, most of them re-answers of each other, instead 
 distinct things this connection has learned. Consolidating **before** the cap is the whole
 idea; everything else here is the discipline that makes it safe.
 
-**Why this cannot simply "collapse to the newest".** That is what the Neo4j study scoped, and
-measuring the corpus refused it. Of the 132 repeated subjects in the full corpus, **25 assert
+**Why this cannot simply "collapse to the newest".** That is what the context-graph study
+scoped (docs/NEO4J_CONTEXT_GRAPH_STUDY_2026-07-28.md), and measuring the corpus refused it. Of the 132 repeated subjects in the full corpus, **25 assert
 conflicting numbers** — one run says ``Count: 50,048`` and another says ``Count: 30,949`` to
 the same question, or ``Roas: 4.72`` against ``2.87``. Collapsing by recency would have
 silently settled all 25, which is precisely the move Wave N1 exists to refuse: whether a

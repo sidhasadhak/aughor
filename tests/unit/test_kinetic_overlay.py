@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kinetic import overlay as OV
-from aughor.kinetic.overlay import OverlayEdit
+from aughor.actions import overlay as OV
+from aughor.actions.overlay import OverlayEdit
 
 
 class _Result:
@@ -182,7 +182,7 @@ def test_end_to_end_through_execute_guarded(monkeypatch):
 
 def test_annotate_action_writes_an_edit(monkeypatch):
     monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
     from aughor.ontology.models import ActionParameter, KineticAction
 
     action = KineticAction(

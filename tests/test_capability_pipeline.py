@@ -1,4 +1,4 @@
-"""Plane-conformance tests for the Capability plane (AL-02) — `aughor/capability`.
+"""Plane-conformance tests for the Capability plane (AL-02) — `aughor/pipeline`.
 
 The review's acceptance bar: "a new capability can be added by registering one impl + reusing the
 Trust/Semantic/Memory planes — no edits to Orchestration." So the tests prove (1) a toy capability
@@ -11,22 +11,22 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.capability import (
+from aughor.pipeline import (
     CapabilityRequest,
     get_capability,
     register_capability,
     registered_domains,
     run_capability,
 )
-from aughor.capability.builtins import SqlCapability
+from aughor.pipeline.builtins import SqlCapability
 from aughor.trust import Scope, Verdict
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 
 @pytest.fixture
 def clean_registry():
     """Snapshot the global registry and restore it, so toy registrations don't leak across tests."""
-    from aughor.capability import registry as reg
+    from aughor.pipeline import registry as reg
     snapshot = dict(reg._PIPELINES)
     yield
     reg._PIPELINES.clear()
@@ -129,7 +129,7 @@ class _SchemaConn:
 
 
 def test_metadata_capability_returns_schema(clean_registry):
-    from aughor.capability.builtins import MetadataCapability
+    from aughor.pipeline.builtins import MetadataCapability
     assert "metadata" in registered_domains()
     assert isinstance(get_capability("metadata"), MetadataCapability)
     res = run_capability("metadata", CapabilityRequest(

@@ -20,8 +20,8 @@ low-cardinality values is built FROM table data, so publishing one for a
 clearance-restricted table leaks its contents through the linker — the exact leak G5 closed
 one layer up. :func:`visible_value_dictionaries` therefore applies the G5 trim, and the
 scoping doc pins it as a gate. Generation runs under a service context and never a user's,
-so the dictionary content itself is not shaped by whoever happened to trigger it (Genie's
-own leakage carve-out).
+so the dictionary content itself is not shaped by whoever happened to trigger it (the same
+leakage carve-out flagged in docs/GENIE_DOCS_TEARDOWN_2026-07-26.md).
 
 **Format specs are half of #189, deliberately.** Declaring that a metric is a percent with
 one decimal is O1's job; *rendering* it is S2's (J11). Nothing here formats a number, and

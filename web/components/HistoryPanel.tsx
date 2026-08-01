@@ -69,7 +69,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
 
   async function handleClearAll() {
     if (clearing || items.length === 0) return;
-    if (!window.confirm(`Delete all ${items.length} investigations and chats? This also removes their evidence and search index, and can't be undone.`)) {
+    if (!window.confirm(`Delete all ${items.length} deep analyses and chats? This also removes their evidence and search index, and can't be undone.`)) {
       return;
     }
     setClearing(true);
@@ -84,7 +84,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   if (items.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
-        <p className="text-sm text-zinc-500">No investigations yet.</p>
+        <p className="text-sm text-zinc-500">No deep analyses yet.</p>
         <p className="aug-fs-xs text-zinc-500">Run your first to see it here.</p>
       </div>
     );
@@ -108,7 +108,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
               <button
                 onClick={handleClearAll}
                 disabled={clearing}
-                title="Delete all investigations and chats"
+                title="Delete all deep analyses and chats"
                 className="aug-fs-xs text-zinc-500 hover:text-red-400 transition disabled:opacity-50"
               >
                 {clearing ? "Clearing…" : "Clear all"}
@@ -187,7 +187,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   {inv.status === "timed_out" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 aug-fs-xs font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 aug-fs-xs font-medium" title="Deep analysis exceeded the time limit">⏱ timed out</span>
                     </>
                   )}
                   {inv.status === "failed" && (

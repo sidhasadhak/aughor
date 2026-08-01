@@ -72,7 +72,7 @@ export interface ChatTurn {
   // semantics). Cleared when the authoritative `headline` lands; null on restored turns.
   headlineStream: string | null;
   chartType: string | null;
-  // MindsDB-style: chart config from backend (Vega-Lite spec subset)
+  // Chart config from the backend (a Vega-Lite spec subset)
   chartConfig?: Record<string, unknown> | null;
 
   // Unified /ask routing receipt — the depth the router chose + why, rendered as a
@@ -102,7 +102,7 @@ export interface ChatTurn {
   clarify: {
     question: string;
     options: string[];
-    previews: string[];      // parallel to options (soma): what each reading RETURNS ("= 68")
+    previews: string[];      // parallel to options: what each candidate reading RETURNS ("= 68")
     source: string;          // "underspecified" | "ambiguous_term" | "structural"
     reason: string;
   } | null;
@@ -114,10 +114,10 @@ export interface ChatTurn {
     reason: string;
   } | null;
 
-  // Investigate mode — ADA phases stream in progressively
+  // Investigate mode — deep analysis phases stream in progressively
   statusText: string | null;
   phases: InvestigationPhase[];
-  adaReport: AnswerReport | null;
+  deepReport: AnswerReport | null;
   report: Record<string, unknown> | null;
   queryMode: string | null;
 
@@ -127,7 +127,7 @@ export interface ChatTurn {
   exploreReport: ExplorationReport | null;
 
   // Dossier (Tier-0 trace) — the explorer's pre-computed derivation, served
-  // instead of a fresh ADA run when drilling into a known finding.
+  // instead of a fresh deep analysis when drilling into a known finding.
   dossierReport: FindingDossier | null;
   dossierInsightId: string | null;
 
@@ -180,19 +180,20 @@ export interface ChatTurn {
   // Org-playbook items referenced for this turn (user can keep/modify/remove)
   playbookRefs: PlaybookRef[];
 
-  // Insight narrative — analytical interpretation streamed post-answer (Genie-style)
-  insight: {
+  // Narrative — the prose enrichment attached to a quick answer, streamed post-answer
+  narrative: {
     narrative: string;
     anomalies: string[];
     trend: string;
     confidence: string;
   } | null;
 
-  // CK-0.2 token streaming — the narrative's growing partial text (`insight_delta`
-  // frames, replace semantics). Cleared when the authoritative `insight` lands.
+  // CK-0.2 token streaming — the narrative's growing partial text (`narrative_delta`
+  // frames, replace semantics). Cleared when the authoritative `narrative` lands.
   // Always null on restored turns (history never carries deltas).
-  insightStream: string | null;
-  reportStream: string | null;   // R6: live ada_synthesize prose, before the terminal adaReport lands
+  narrativeStream: string | null;
+  // R6: live synthesis prose (backend node `ada_synthesize`), before the terminal deepReport lands
+  reportStream: string | null;
 
   // Clarifying questions surfaced before deep analysis starts
   clarifyingQuestions: string[];
@@ -222,7 +223,7 @@ export type ChatAction =
   | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
   | { type: "STATUS_TEXT";  text: string }
   | { type: "PHASE";        phase: InvestigationPhase }
-  | { type: "ADA_REPORT";   report: AnswerReport; queryMode: string; investigationId: string | null }
+  | { type: "DEEP_REPORT";  report: AnswerReport; queryMode: string; investigationId: string | null }
   | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[]; investigationId: string | null }
   | { type: "DOSSIER_REPORT"; dossier: FindingDossier; insightId: string | null }
   | { type: "OVERVIEW_REPORT"; report: OverviewReport }
@@ -243,8 +244,8 @@ export type ChatAction =
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string; detail?: ErrorDetail | null }
-  | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
-  | { type: "INSIGHT_DELTA";     narrative: string }
+  | { type: "NARRATIVE";         narrative: string; anomalies: string[]; trend: string; confidence: string }
+  | { type: "NARRATIVE_DELTA";   narrative: string }
   | { type: "REPORT_DELTA";      text: string }
   | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE"; receiptId?: string | null }
@@ -295,7 +296,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   clarify: null,
   escalate: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
-  statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
+  statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   dossierReport: null, dossierInsightId: null,
   overviewReport: null,
@@ -306,8 +307,8 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
   playbookRefs: [],
-  insight: null,
-  insightStream: null,
+  narrative: null,
+  narrativeStream: null,
   reportStream: null,
   clarifyingQuestions: [],
   clarifyingContext: '',
@@ -384,20 +385,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
     case "CLARIFYING_QUESTIONS":
       return updateLast(state, t => ({ ...t, clarifyingQuestions: action.questions, clarifyingContext: action.contextNote }));
-    case "INSIGHT":
-      // The terminal insight replaces the partial stream (delta frames are advisory;
-      // this event is authoritative) — clear insightStream so renderers switch over.
-      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence }, insightStream: null }));
-    case "INSIGHT_DELTA":
+    case "NARRATIVE":
+      // The terminal narrative replaces the partial stream (delta frames are advisory;
+      // this event is authoritative) — clear narrativeStream so renderers switch over.
+      return updateLast(state, t => ({ ...t, narrative: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence }, narrativeStream: null }));
+    case "NARRATIVE_DELTA":
       // Growing partial narrative (replace semantics — each frame carries the full text so far).
-      return updateLast(state, t => ({ ...t, insightStream: action.narrative }));
+      return updateLast(state, t => ({ ...t, narrativeStream: action.narrative }));
     case "REPORT_DELTA":
-      // Growing deep-report prose (replace semantics); the terminal ADA_REPORT clears it and wins.
+      // Growing deep-report prose (replace semantics); the terminal DEEP_REPORT clears it and wins.
       return updateLast(state, t => ({ ...t, reportStream: action.text }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
-    case "ADA_REPORT":
-      return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, reportStream: null, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+    case "DEEP_REPORT":
+      return { ...updateLast(state, t => finish({ ...t, status: "done", deepReport: action.report, reportStream: null, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "DOSSIER_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", dossierReport: action.dossier, dossierInsightId: action.insightId, queryMode: "dossier", statusText: null })), streaming: false };
     case "OVERVIEW_REPORT":
@@ -429,6 +430,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 function summarisePayload(type: string, p: Record<string, unknown>): string {
   switch (type) {
     case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
+    // WIRE NAMES — FROZEN: `ada_report` / `p.ada_report` are what the backend sends.
     case "answer_report":
     case "ada_report":     return `headline: ${String(((p.answer_report ?? p.ada_report) as { headline?: string })?.headline ?? "").slice(0, 60)}`;
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
@@ -438,7 +440,9 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "escalate":       return `${p.signal ?? "?"} · ${String(p.reason ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
+    case "narrative":
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
+    case "narrative_delta":
     case "insight_delta":  return `partial: ${String(p.narrative ?? "").slice(0, 32)}`;
     case "report_delta":   return `partial: ${String(p.executive_summary ?? "").slice(0, 40)}`;
     case "headline_delta": return `partial: ${String(p.headline ?? "").slice(0, 40)}`;
@@ -570,10 +574,14 @@ export async function consumeStream(
             case "hypotheses":
               dispatch({ type: "HYPOTHESES", hypotheses: (p.hypotheses as Hypothesis[]) ?? [] });
               break;
+            // WIRE NAMES — FROZEN. The event name `ada_report` and the payload key
+            // `p.ada_report` are the backend's spelling (deprecated alias for
+            // `answer_report`, kept one release — REC-U9) and must keep parsing verbatim;
+            // only the local action name is the platform's own vocabulary.
             case "answer_report":
-            case "ada_report":   // deprecated wire alias, kept one release (REC-U9)
+            case "ada_report":
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
-              dispatch({ type: "ADA_REPORT", report: (p.answer_report ?? p.ada_report) as AnswerReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
+              dispatch({ type: "DEEP_REPORT", report: (p.answer_report ?? p.ada_report) as AnswerReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
               break;
             case "dossier_report":
               dispatch({ type: "DOSSIER_REPORT", dossier: p.dossier as FindingDossier, insightId: (p.insight_id as string) ?? null });
@@ -623,8 +631,15 @@ export async function consumeStream(
               });
               break;
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
-            case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
-            case "insight_delta": dispatch({ type: "INSIGHT_DELTA", narrative: (p.narrative as string) ?? "" }); break;
+            // WIRE-NAME BOUNDARY — `narrative` is the name; `insight` is the retired one
+            // the backend still dual-emits for one release. Both cases carry an identical
+            // payload and dispatch the same action, so receiving both is idempotent
+            // (replace semantics). Delete the `insight*` cases when the backend stops
+            // sending them; keeping them lets a new client talk to an older server.
+            case "narrative":
+            case "insight":      dispatch({ type: "NARRATIVE", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
+            case "narrative_delta":
+            case "insight_delta": dispatch({ type: "NARRATIVE_DELTA", narrative: (p.narrative as string) ?? "" }); break;
             case "report_delta":  dispatch({ type: "REPORT_DELTA", text: (p.executive_summary as string) ?? "" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string, detail: toErrorDetail(p) }); break;
@@ -670,7 +685,7 @@ async function recoverAfterDrop(invId: string | null, dispatch: (a: ChatAction) 
       // Render the recovered report when it's the expected shape; a mismatch can't throw
       // (the turn renderer is wrapped in an error boundary), but guard anyway.
       if (rep && Array.isArray(rep.phases) && rep.headline) {
-        dispatch({ type: "ADA_REPORT", report: rep, queryMode: "investigate", investigationId: invId });
+        dispatch({ type: "DEEP_REPORT", report: rep, queryMode: "investigate", investigationId: invId });
       }
       dispatch({ type: "DONE", receiptId: invId });
       return;

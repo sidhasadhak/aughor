@@ -156,7 +156,7 @@ def test_crystallize_verdict_is_highest_authority():
 def test_record_verdict_bridges_to_the_ledger(monkeypatch):
     """The live hook: a reject/correct verdict on a headlined finding crystallizes a
     verdict-source resolution; accept / no-headline / flag-off write nothing."""
-    from aughor.verify import verdicts
+    from aughor.feedback import verdicts
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     purge_connections(["vb_conn"])
     verdicts.record_verdict("vb_conn", "inv1", "correct", note="use per-career totals",

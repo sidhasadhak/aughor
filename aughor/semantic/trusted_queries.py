@@ -1,7 +1,7 @@
 """Trusted query templates — curated, data-team-reviewed SQL patterns.
 
-The Databricks-Genie / Foundry "trusted assets" idea: a small store of KNOWN-CORRECT
-queries for a connection. When a user's question matches one, the verified pattern
+A "trusted assets" store (see docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md): a small set of
+KNOWN-CORRECT queries for a connection. When a user's question matches one, the verified pattern
 is injected AUTHORITATIVELY into the prompt ("reuse this exact join/aggregation
 structure"), and the answer can be marked Verified. This bypasses model-reasoning
 gaps that prompt rules can't fix — most importantly multi-fact FAN-OUT (the model

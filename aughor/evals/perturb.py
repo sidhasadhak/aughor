@@ -111,7 +111,7 @@ class Brittleness:
 
 
 def _default_comparator(a: Any, b: Any) -> bool:
-    from aughor.user_agents.quality import results_match
+    from aughor.custom_agents.quality import results_match
     return results_match(a, b)
 
 

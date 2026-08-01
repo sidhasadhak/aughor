@@ -13,7 +13,7 @@ Storage layout (tenant-pathed, schema-aware)::
         finance/
             ledger.parquet
 
-The {org_id} segment is resolved via aughor.platform.vending.vend_storage (§5.1);
+The {org_id} segment is resolved via aughor.control_plane.vending.vend_storage (§5.1);
 this connector never joins the upload root directly.
             ledger.parquet.import.json
 
@@ -46,8 +46,8 @@ from pathlib import Path
 import duckdb
 
 from aughor.connectors.base import Connector
-from aughor.platform.contracts.execution import QueryResult
-from aughor.platform.vending import STORAGE_ROOT, vend_storage
+from aughor.control_plane.contracts.execution import QueryResult
+from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
 
 logger = logging.getLogger(__name__)
 
@@ -472,7 +472,7 @@ class LocalUploadConnection(Connector):
 
         # Materialize the table first (applying any user overrides), THEN pin the
         # result: DESCRIBE the created table to capture the full effective
-        # {column: type} contract — Databricks' schemaHints analog. On reload we
+        # {column: type} contract — a pinned schema hint. On reload we
         # reproduce these exact types instead of re-sniffing the file, which can
         # drift across DuckDB versions / sampling and silently re-type a column.
         self._register_file(dest, table_name, schema, clean_types)

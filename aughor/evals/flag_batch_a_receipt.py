@@ -13,7 +13,7 @@ The nine, and the claim each rests on:
   non-LLM; the flag changes only WHICH EXECUTOR runs the same closures, and the risk it
   buys is context propagation into pooled workers — asserted here through the exact
   ``fanout_region`` + ``ContextThreadPoolExecutor`` pattern the code uses.
-- ``ada.evidence_dedup`` — lossless by construction: the FIRST occurrence renders full
+- ``deep_analysis.evidence_dedup`` — lossless by construction: the FIRST occurrence renders full
   and byte-identical, only later same-fingerprint repeats become pointers naming where
   the full copy is, and an errored result is never collapsed. (The fingerprint is over
   normalized SQL — the same same-SQL-same-run equivalence the wandering veto already
@@ -54,7 +54,7 @@ SUITE_NAME = "flag strategy batch A — nine construction-decidable graduations"
 
 #: The flags this suite is evidence for (each minted its own graduation decision).
 FLAGS = (
-    "preflight.parallel", "ada.evidence_dedup", "schema.two_tier_catalog",
+    "preflight.parallel", "deep_analysis.evidence_dedup", "schema.two_tier_catalog",
     "explore.wandering_detector", "monitors.guarded", "consistency.divergence",
     "ops.metered_monitors", "evals.experiments", "starters.library",
 )
@@ -62,7 +62,7 @@ FLAGS = (
 #: The scenario-name prefix that backs each flag — the receipt's flag→cases map.
 SCENARIO_PREFIX = {
     "preflight.parallel": "preflight_parallel",
-    "ada.evidence_dedup": "evidence_dedup",
+    "deep_analysis.evidence_dedup": "evidence_dedup",
     "schema.two_tier_catalog": "two_tier_catalog",
     "explore.wandering_detector": "wandering_detector",
     "monitors.guarded": "monitors_guarded",
@@ -84,7 +84,7 @@ def scenario(name: str) -> Callable[[Scenario], Scenario]:
 
 
 def _qr(step: str, sql: str, *, rows=None, error=None):
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.control_plane.contracts.execution import QueryResult
     rows = [[1]] if rows is None else rows
     return QueryResult(hypothesis_id=step, sql=sql, columns=["a"], rows=rows,
                        row_count=len(rows), error=error, caveats=[])
@@ -95,7 +95,7 @@ def _qr(step: str, sql: str, *, rows=None, error=None):
 @scenario("preflight_parallel__context_reaches_pooled_workers")
 def _preflight_parallel__context_reaches_pooled_workers() -> Comparison:
     """The flag swaps the executor, not the work: four closures either run serially or
-    through ``ContextThreadPoolExecutor`` inside ``fanout_region("ada.preflight")`` —
+    through ``ContextThreadPoolExecutor`` inside ``fanout_region("deep_analysis.preflight")`` —
     the exact pattern at aughor/agent/nodes.py. What the flip actually risks is context
     loss in the pool (flags, org, model pins all travel by contextvar), so that is what
     is asserted: the pooled run sees the same context and returns the same values in
@@ -111,7 +111,7 @@ def _preflight_parallel__context_reaches_pooled_workers() -> Comparison:
 
     with flag_overrides({"preflight.parallel": True}), using_org("default"):
         serial = [probe(t) for t in ("schema", "kb", "causal", "priors")]
-        with fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as pool:
+        with fanout_region("deep_analysis.preflight"), ContextThreadPoolExecutor(max_workers=4) as pool:
             futs = [pool.submit(probe, t) for t in ("schema", "kb", "causal", "priors")]
             pooled = [f.result() for f in futs]
     return Comparison(
@@ -479,7 +479,7 @@ def ensure_suite() -> str:
             SUITE_NAME,
             description=("Flag strategy batch A — nine deterministic flags graduate on "
                          "construction-decidable claims: byte-identical or lossless "
-                         "transforms (preflight.parallel, ada.evidence_dedup, "
+                         "transforms (preflight.parallel, deep_analysis.evidence_dedup, "
                          "schema.two_tier_catalog), fail-open cost brakes "
                          "(explore.wandering_detector), additive audit surfaces "
                          "(monitors.guarded, consistency.divergence, starters.library), "

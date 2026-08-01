@@ -79,7 +79,7 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
 
     # ── Uploaded data (the bytes themselves) — platform storage ─────────────────
     try:
-        from aughor.platform.vending import vend_storage
+        from aughor.control_plane.vending import vend_storage
         root = vend_storage(conn_id, org_id).root
         if root.exists():
             shutil.rmtree(root, ignore_errors=True)

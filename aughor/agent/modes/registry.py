@@ -22,6 +22,21 @@ _MANIFEST_DIR = Path(__file__).parent / "manifests"
 # The structural modes the graph knows how to run. A manifest may tune these; it may
 # NOT invent a fifth structural mode (that needs a graph branch), so an unknown-name
 # manifest is ignored for routing.
+#
+# These four names are FROZEN (docs/GLOSSARY.md, "Names that are frozen"). `query_mode`
+# is a field on the checkpointed graph state, and the checkpointer is a SqliteSaver over
+# `data/checkpoints.db` — so every value here is written to disk and read back to resume
+# a paused run. Renaming one orphans every paused run that carries it.
+#
+# Each therefore has a separate DISPLAY word, mapped at the boundary:
+#   direct       -> "Quick answer"
+#   investigate  -> "Deep analysis"
+#   explore      -> "Survey"          (the wide, multi-cut question mode)
+#   final_text   -> "Knowledge answer"
+# "Survey" in particular is why `aughor/agent/explore.py` keeps its name: renaming the
+# module to survey.py while the mode id stays `explore` would trade one mismatch for
+# another. The background learner (`aughor/explorer/`) is a different subsystem and
+# keeps "Exploration".
 STRUCTURAL_MODES = ("direct", "investigate", "explore", "final_text")
 
 

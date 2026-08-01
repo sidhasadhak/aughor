@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 
 from aughor.org import using_org
-from aughor.platform import vending
-from aughor.platform.vending import (
+from aughor.control_plane import vending
+from aughor.control_plane.vending import (
     StorageCapability,
     migrate_uploads_to_org_layout,
     vend_storage,

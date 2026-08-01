@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import aughor.llm.provider as provider
 from aughor.org import using_org
-from aughor.platform import InferenceCapability, capability_for, vend_llm
+from aughor.control_plane import InferenceCapability, capability_for, vend_llm
 
 
 # ── the capability profile (pure: strings → declared behaviour) ───────────────

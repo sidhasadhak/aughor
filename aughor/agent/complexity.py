@@ -2,8 +2,7 @@
 
 The 2025/2026 text-to-SQL literature converges on **test-time scaling**: allocate
 compute by difficulty — a cheap/fast model + single shot for easy questions, the
-frontier model (+ the heavier candidate/verify depth) for hard ones (EllieSQL,
-SquRL, Agentar-Scale, ReForce's confidence-tiered probing; see
+frontier model (+ the heavier candidate/verify depth) for hard ones (see
 ``docs/NL2SQL_WINNING_FORMULA_2026.md``).
 
 Aughor's prior conclusion is that **deterministic guards beat added LLM machinery on a

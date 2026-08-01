@@ -88,14 +88,14 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
       <div style={{ width: 268, flexShrink: 0, borderRight: "1px solid var(--b1)",
         overflowY: "auto", padding: 10 }}>
         <div style={{ display: "flex", alignItems: "center", padding: "2px 6px 8px" }}>
-          <span className="aug-label" style={{ color: "var(--t3)" }}>Personas</span>
+          <span className="aug-label" style={{ color: "var(--t3)" }}>Custom agents</span>
           <span style={{ flex: 1 }} />
           <Button variant="outline" size="xs"
-            onClick={() => setSelected({ kind: "hire" })}>+ Hire / New</Button>
+            onClick={() => setSelected({ kind: "hire" })}>+ Create</Button>
         </div>
         {personas.length === 0 && (
           <div style={{ fontSize: 11.5, color: "var(--t4)", padding: "0 6px 10px" }}>
-            None yet — hire from a pack or create one.
+            None yet — create one from a pack or from scratch.
           </div>
         )}
         {personas.map(p => (
@@ -153,7 +153,9 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{name}</span>
-        <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">{kind}</StatusChip>
+        <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
+          {kind === "persona" ? "custom" : kind}
+        </StatusChip>
         {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
       </span>
       {sub && (
@@ -187,7 +189,7 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{persona.name}</div>
           <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
-            persona · {persona.connection_id || "any connection"}
+            custom · {persona.connection_id || "any connection"}
             {persona.schema_scope ? ` · ${persona.schema_scope}` : ""}
             {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
           </div>
@@ -436,7 +438,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
       </div>
       {packs.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <span className="aug-label">Expertise packs</span>
+          <span className="aug-label">Packs</span>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 130,
             overflowY: "auto", padding: "8px 10px", border: "1px solid var(--b1)",
             borderRadius: "var(--r2)" }}>
@@ -761,7 +763,7 @@ function HireDetail({ onDone, onError }: {
       {templates.length > 0 && (
         <>
           <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 4 }}>
-            Hire from a domain pack
+            Create from a pack
           </div>
           <div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 10, lineHeight: 1.5 }}>
             Starts the agent with the pack&rsquo;s reasoning stance and keeps the pack
@@ -781,7 +783,7 @@ function HireDetail({ onDone, onError }: {
                     ? ` — ${t.suggested_goldens.length} suggested questions` : ""}
                 </div>
                 <Button size="sm" variant="outline" disabled={saving}
-                  onClick={() => hire(t)} className="self-start">Hire {t.name}</Button>
+                  onClick={() => hire(t)} className="self-start">Create {t.name}</Button>
               </div>
             ))}
           </div>

@@ -6,7 +6,7 @@ operator over a prior step's text residue). A deterministic runner then executes
 battery validates each SQL step and every intermediate result is a NAMED artifact, so raw rows are threaded
 between steps rather than re-flooding the LLM context.
 
-Plan-then-execute (PromptQL), deterministic-first: the LLM only produces the *plan*; deterministic guards
+Plan-then-execute, deterministic-first: the LLM only produces the *plan*; deterministic guards
 validate it and the runner executes it. One LLM call, everything after is code — so the result is inspectable
 (the plan + per-step artifacts are returned) and repeatable. This is the exact shape the cross-source
 federated planner (`federated_planner.py`) already ships, generalized from "an ordered list of per-source
@@ -31,7 +31,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +426,7 @@ def answer_program(question: str, conn_id: str, *, investigation_id: Optional[st
     Closed-loop replay (Stage C): when ``closed_loop`` is on, a matching trusted program is replayed
     deterministically instead of re-planning, and a clean fresh run is crystallized so it replays next time.
     Both are best-effort and default-off, so the base behaviour is unchanged."""
-    from aughor.verify.priors import closed_loop_enabled
+    from aughor.feedback.priors import closed_loop_enabled
 
     inv = investigation_id or hashlib.sha1(question.encode()).hexdigest()[:12]
     oid = org_id or ""

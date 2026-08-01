@@ -166,7 +166,7 @@ def execute_guarded(
                                                       dialect=getattr(conn, "dialect", "duckdb")),
                                      kind="sql")
             if not _verdict.ok:
-                from aughor.platform.contracts.execution import QueryResult
+                from aughor.control_plane.contracts.execution import QueryResult
                 return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
                                    row_count=0, error=f"[BLOCKED] {_verdict.reason}")
         except Exception as _exc:
@@ -174,9 +174,9 @@ def execute_guarded(
             tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
                      counter="trust.verify_live")
 
-    # obs.mlflow: a TOOL span per guarded execution, nested under the active
-    # investigation trace. When the flag is off this is one ledger flag read —
-    # the same cost class as the trust.verify_live gate above.
+    # MLflow: a TOOL span per guarded execution, nested under the active
+    # investigation trace. With no tracking URI configured this is one env read —
+    # cheaper than the trust.verify_live ledger gate above.
     from aughor.telemetry import mlflow_tool_span
     with mlflow_tool_span("sql.execute", {"query_id": query_id, "sql": sql,
                                           "dialect": getattr(conn, "dialect", "")}):
@@ -253,7 +253,7 @@ def execute_guarded(
         # Wave K3: merge this connection's human overlay edits onto the result at read time
         # (flag `kinetic.overlay`, default off ⇒ byte-identical). Best-effort inside apply_overlay.
         if flag_enabled("kinetic.overlay"):
-            from aughor.kinetic.overlay import apply_overlay
+            from aughor.actions.overlay import apply_overlay
             apply_overlay(res, getattr(conn, "_connection_id", ""))
         return res
 

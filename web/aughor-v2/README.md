@@ -1,7 +1,7 @@
 # Aughor Design Language v2 — Handoff Package
 
-A drop-in elevation of the existing Aughor system (Palantir-Blueprint accent ×
-Databricks-Genie charcoal, DM Sans, token-driven dark/light). Same DNA — deeper
+A drop-in elevation of the existing Aughor system (primary-blue accent on
+near-black charcoal surfaces, DM Sans, token-driven dark/light). Same DNA — deeper
 surfaces, real elevation, rounded bars, smooth gated motion, a unified component
 and chart treatment across both themes.
 
@@ -56,7 +56,7 @@ then proceed. **See INTEGRATION.md before applying.**
   The original "max 6px" rule was intentional — if you must keep it, comment out
   the three `--r*` lines in `tokens-v2.css` (everything else still applies).
 - **Accent brightened** `#2D72D2` → `#3B82F6` (dark) for contrast on the deeper
-  canvas. Light stays Tableau blue `#1F77B4`.
+  canvas. Light stays the muted blue `#1F77B4`.
 - **Two flat shadows → a 4-step tinted elevation scale** (`--shadow-sm/md/lg/xl`).
 
 All reference values and rationale are in `MAPPING.md`.

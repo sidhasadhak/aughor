@@ -38,7 +38,10 @@ def _sorted_perms(perms) -> list[str]:
 def list_roles():
     """The built-in role catalogue + the permissions each grants (reference data)."""
     return [
-        {"name": r.name, "description": r.description, "permissions": _sorted_perms(r.permissions)}
+        # `name` is the value a grant stores; `label` is what to show a human. They differ
+        # for `analyst`, displayed as "Editor" — see rbac/roles.py.
+        {"name": r.name, "label": r.label, "description": r.description,
+         "permissions": _sorted_perms(r.permissions)}
         for r in BUILTIN_ROLES.values()
     ]
 

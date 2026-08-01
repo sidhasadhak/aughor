@@ -70,8 +70,8 @@ def test_on_prem_override_allows_private(monkeypatch):
 
 def test_executor_blocks_unsafe_url_at_send_time(monkeypatch):
     """fire_action must NOT POST to an unsafe URL — it records a failed log instead."""
-    from aughor.actions import executor
-    from aughor.actions.models import ActionTrigger, ActionPayload
+    from aughor.notifications import executor
+    from aughor.notifications.models import ActionTrigger, ActionPayload
 
     posted = {}
     monkeypatch.setattr(executor, "_post",

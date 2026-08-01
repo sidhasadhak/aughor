@@ -18,7 +18,7 @@
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .aug-btn { border-radius: var(--r1); font-weight: 600; transition: all var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-pop); }
 .aug-btn:active { transform: translateY(1px) scale(.985); }
-/* Flat primary — MLflow discipline: one solid blue, white text, no gradient/glow. */
+/* Flat primary — restrained: one solid blue, white text, no gradient/glow. */
 .aug-btn-primary {
   background: var(--blue-solid);
   border-color: var(--blue-solid); color: #fff;

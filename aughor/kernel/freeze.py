@@ -1,6 +1,7 @@
 """Freeze — live by default, snapshot by choice, gone data errors loudly. Wave V4.
 
-Foundry's rule (study L337): *live-by-default + explicit freeze with a lock icon and an
+The rule (docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md, L337): *live-by-default + explicit
+freeze with a lock icon and an
 as-of timestamp; frozen artifacts whose backing data is gone error loudly.* All three
 ingredients already existed in this tree and none was composed:
 

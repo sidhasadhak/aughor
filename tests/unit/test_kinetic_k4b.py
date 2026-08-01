@@ -7,7 +7,7 @@ loader are faked; no model, no store.
 from __future__ import annotations
 
 from aughor.agent import investigate as I
-from aughor.kinetic.propose import Proposal
+from aughor.actions.propose import Proposal
 from aughor.ontology.models import KineticAction, OntologyGraph, SubmissionCriterion
 
 
@@ -35,7 +35,7 @@ def test_attaches_staged_proposals_when_flag_on(monkeypatch):
         seen["scope"] = scope
         return [Proposal("refund", "proposed", {"amount_eur": 480.0}, "clear duplicate charge")]
 
-    monkeypatch.setattr("aughor.kinetic.propose.propose_actions", _fake_propose)
+    monkeypatch.setattr("aughor.actions.propose.propose_actions", _fake_propose)
 
     ar = _ar()
     I._attach_kinetic_proposals(ar, "conn-1")

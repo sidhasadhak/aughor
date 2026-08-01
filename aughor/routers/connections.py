@@ -187,8 +187,8 @@ def _warm_profiles(conn_id: str) -> dict:
 
 @router.post("/connections/{conn_id}/prewarm", status_code=202)
 async def prewarm_connection(conn_id: str):
-    """R5 deferred (closed) — the composer-open warm, the Databricks
-    value-index/preload-cache analog: build the profiles (and the persisted
+    """R5 deferred (closed) — the composer-open warm: preload the value index
+    and cache, i.e. build the profiles (and the persisted
     entity-value samples entity resolution + the filter guard bind from) BEFORE
     the first question. Runs as one supervised kernel job (kind `profile`, the
     Curator charter) with an idempotency key, so composer-open spam can't stack
@@ -623,7 +623,7 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
     conn_type, _ = get_dsn(conn_id)
     if conn_type == "local_upload":
         from aughor.connectors.file.local_upload import _SIDECAR_SUFFIX, _safe_ident
-        from aughor.platform.vending import vend_storage
+        from aughor.control_plane.vending import vend_storage
         # Tenant-scoped storage via the control plane (same seam the connector uses).
         upload_dir = vend_storage(conn_id).root
         schema_dir = upload_dir / _safe_ident(safe_schema or "main", "main")
@@ -1063,7 +1063,7 @@ async def restore_connection_samples(conn_id: str, schema: str | None = None):
 @router.get("/connections/{conn_id}/process-map/{entity_id}")
 def get_process_map(conn_id: str, entity_id: str):
     try:
-        from aughor.process.mapper import build_process_map
+        from aughor.lifecycle.mapper import build_process_map
         return build_process_map(entity_id, conn_id).model_dump()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1074,5 +1074,5 @@ def get_process_map(conn_id: str, entity_id: str):
 
 @router.get("/connections/{conn_id}/causal-graph")
 def get_causal_graph(conn_id: str):
-    from aughor.process.causal import load_causal_graph
+    from aughor.lifecycle.causal import load_causal_graph
     return [e.model_dump() for e in load_causal_graph(conn_id)]

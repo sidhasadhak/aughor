@@ -35,7 +35,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Callable
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection

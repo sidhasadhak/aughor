@@ -1,5 +1,5 @@
 """Learned skills — agent procedural memory (R8 Agent-Skills). The inert stubs are now a real
-subsystem: a finished investigation crystallizes into a reusable, governed `OntologyAction`
+subsystem: a finished investigation crystallizes into a reusable, governed `QueryTemplate`
 (origin='learned'), saved (EXPLAIN-gated) under a {conn}:{schema} store that the ontology overlay
 re-enters. These tests cover the store CRUD, the conservative SQL parameterization, and the
 crystallizer. The store is redirected to a tmp path so nothing touches the real data file."""
@@ -12,7 +12,7 @@ from aughor.memory.skills import (
     _parameterize_sql, _materialize, _is_read_only, _primary_sql, _primary_table,
     _infer_action_type, propose_skill_from_investigation, auto_crystallize,
 )
-from aughor.ontology.models import OntologyAction
+from aughor.ontology.models import QueryTemplate
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def _store(tmp_path, monkeypatch):
 def _action(aid="learned_top_region", sql="SELECT region, SUM(rev) AS r FROM orders WHERE region = {region} GROUP BY region",
             params=None):
     from aughor.ontology.models import ActionParameter
-    return OntologyAction(
+    return QueryTemplate(
         id=aid, display_name="Top by region", description="d", entity="Order",
         action_type="aggregate", sql_template=sql,
         parameters=params if params is not None else [ActionParameter(name="region", data_type="VARCHAR", default_value="EU")],

@@ -433,7 +433,7 @@ function DomainProfile({
 
         {/* Metric pills */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Pill><strong style={{ color: "var(--t1)" }}>{data.insights.length}</strong> insights</Pill>
+          <Pill><strong style={{ color: "var(--t1)" }}>{data.insights.length}</strong> findings</Pill>
           <Pill>
             <span style={{ color: "var(--grn3)", fontWeight: 600 }}>{breakdown.high}H</span>
             <span style={{ color: "var(--amb3)", fontWeight: 600 }}>{breakdown.mid}M</span>
@@ -576,7 +576,7 @@ function DomainCard({
       <div style={{ display: "flex", gap: 14 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{data.insights.length}</div>
-          <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>insights</div>
+          <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>findings</div>
         </div>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{data.angles_covered.length}</div>
@@ -726,7 +726,7 @@ function SynthesisHome({
 
   const KPIS = [
     { value: domains.length,    label: "Domains",       accent: "var(--blue3)" },
-    { value: totalInsights,     label: "Insights",      accent: "var(--grn3)"  },
+    { value: totalInsights,     label: "Findings",      accent: "var(--grn3)"  },
     { value: highNovelty,       label: "High-novelty",  accent: "var(--grn3)"  },
     { value: crossDomain.length,label: "Cross-domain",  accent: "var(--vio3)"  },
     { value: orgInsights.length,label: "Org knowledge", accent: "var(--vio3)"  },
@@ -859,7 +859,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
     setEvidenceDomain(domain); setEvidenceInsight(ins);
   }, []);
   const showTriggersHint = useCallback(() => {
-    setHint("No delivery channel yet — add a Slack/webhook trigger in Action Hub to share findings.");
+    setHint("No delivery channel yet — add a Slack/webhook trigger in Notifications to share findings.");
     setTimeout(() => setHint(null), 5000);
   }, []);
 

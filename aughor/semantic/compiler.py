@@ -13,7 +13,7 @@ Four intents are covered — the ones that map 1:1 to a grounded, single-table t
   • ranking    — breakdown + ORDER + LIMIT (top-N)   → … ORDER BY metric DESC LIMIT n
 
 synthesize_sql is **coverage-gated**: every reference (entity/table, measure or named
-metric, dimension, time column, object set) must resolve against the ontology, and the
+metric, dimension, time column, segment) must resolve against the ontology, and the
 metric must be single-table — otherwise it returns None and the caller falls back to the
 LLM SQL path. It never guesses. Single-table only in v1: cross-table joins are exactly
 where free-form generation goes wrong (fan-out), so they stay on the fallback path.
@@ -52,7 +52,7 @@ class QueryIntent(BaseModel):
     time_col:    str = Field(default="", description="Timestamp column for timeseries (else resolved)")
     time_grain:  str = Field(default="month", description="hour|day|week|month|quarter|year")
 
-    object_set:   str = Field(default="", description="Named verified object set to filter by")
+    segment:      str = Field(default="", description="Named verified segment to filter by")
     window_start: str = Field(default="", description="ISO date lower bound on time_col (inclusive)")
     window_end:   str = Field(default="", description="ISO date upper bound on time_col (inclusive)")
     order_desc:   bool = Field(default=True)
@@ -129,12 +129,12 @@ def _filters(intent: QueryIntent, entity, props: dict, time_col: Optional[str]) 
     af = getattr(entity, "active_filter", None)
     if af:
         out.append(af)
-    if intent.object_set:
-        os_ = (getattr(entity, "object_sets", {}) or {}).get(intent.object_set)
-        if os_ is None or not getattr(os_, "verified", False):
-            return None  # asked for an object set we can't verify → fall back
-        if getattr(os_, "filter_sql", ""):
-            out.append(os_.filter_sql)
+    if intent.segment:
+        seg = (getattr(entity, "segments", {}) or {}).get(intent.segment)
+        if seg is None or not getattr(seg, "verified", False):
+            return None  # asked for a segment we can't verify → fall back
+        if getattr(seg, "filter_sql", ""):
+            out.append(seg.filter_sql)
     if time_col:
         if intent.window_start:
             out.append(f"{time_col} >= '{intent.window_start}'")
@@ -256,10 +256,10 @@ def _catalog(ontology, metrics: Optional[list]) -> str:
                 f"measures=[{', '.join(measures[:10])}] dimensions=[{', '.join(dims[:10])}]")
         if ts:
             line += f" time_col={ts}"
-        os_ = getattr(e, "object_sets", None) or {}
-        verified_sets = [k for k, v in os_.items() if getattr(v, "verified", False)]
-        if verified_sets:
-            line += f" object_sets=[{', '.join(verified_sets)}]"
+        segs = getattr(e, "segments", None) or {}
+        verified_segments = [k for k, v in segs.items() if getattr(v, "verified", False)]
+        if verified_segments:
+            line += f" segments=[{', '.join(verified_segments)}]"
         lines.append(line)
     named = [m.name for m in (metrics or []) if getattr(m, "verified", True)]
     if named:
@@ -275,7 +275,7 @@ _PARSE_SYS = (
     "If the question doesn't fit one of these, needs a JOIN across entities, or needs columns/"
     "metrics not listed, return intent_type='none'.\n\n"
     "Rules:\n"
-    "- Use ONLY entity ids, table names, measure/dimension columns, time_col, object_sets and "
+    "- Use ONLY entity ids, table names, measure/dimension columns, time_col, segments and "
     "named metrics that appear verbatim in the SCHEMA. Never invent names.\n"
     "- The measure is EITHER a named `metric` OR an `agg` (sum/avg/min/max/count/count_distinct) "
     "over a `measure` column. count needs no column.\n"

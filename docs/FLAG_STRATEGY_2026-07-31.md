@@ -40,7 +40,7 @@ The visible Settings surface drops from 91 toggles to ~22 decisions.
 `agents.user_defined` graduated ON (#241). Wave H4 (#237) shipped hire-an-analyst-from-a-pack.
 But on a fresh clone the feature is **half dead**:
 
-- The hire path (`aughor/user_agents/templates.py::create_from_template`,
+- The hire path (`aughor/custom_agents/templates.py::create_from_template`,
   `routers/agents.py` `_validate_agent_packs`) **never consults `specialist_packs`** — hiring
   works, the pack binds, validation passes.
 - The steering path (`aughor/packs/intake.py:55` `injection_for_question`) returns `None` when

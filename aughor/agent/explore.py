@@ -856,7 +856,7 @@ def _execute_one_subq(
 
 
 # ── Node: exploratory_scan_subq ───────────────────────────────────────────────
-# MindsDB-style mid-chain discovery: before planning SQL for a sub-question,
+# Mid-chain discovery: before planning SQL for a sub-question,
 # run 1–2 quick probes to discover cardinalities, ranges, and distinct values.
 # Results feed into the planner as a "Data Portrait" paragraph.
 

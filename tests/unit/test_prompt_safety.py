@@ -53,7 +53,7 @@ def test_fence_max_chars_truncates_block():
 
 
 def test_format_result_for_llm_fences_untrusted_rows():
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.control_plane.contracts.execution import QueryResult
     from aughor.tools.executor import format_result_for_llm
 
     r = QueryResult(

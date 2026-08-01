@@ -55,7 +55,7 @@ def dialect_rules_block() -> str:
 
 
 def agent_brief(question: str = "", connection_id: str = "") -> str:
-    from aughor.user_agents.context import agent_brief_block
+    from aughor.custom_agents.context import agent_brief_block
     return _safe(agent_brief_block, "grounding: active agent/pack brief")
 
 
@@ -66,7 +66,7 @@ def trusted_templates(question: str, connection_id: str) -> str:
 
 
 def correction_priors(question: str, connection_id: str) -> str:
-    from aughor.verify.priors import build_corrections_section
+    from aughor.feedback.priors import build_corrections_section
     return _safe(lambda: build_corrections_section(question, connection_id),
                  "grounding: ambiguity-ledger corrections")
 
@@ -93,7 +93,7 @@ def exploration_annotations(question: str, connection_id: str) -> str:
 
 
 def causal_context(question: str, connection_id: str) -> str:
-    from aughor.process.causal import build_causal_context_section
+    from aughor.lifecycle.causal import build_causal_context_section
     return _safe(lambda: build_causal_context_section(question, conn_id=connection_id),
                  "grounding: causal context")
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.sql.grain_guard import detect_fanout, fanout_caveat, FanoutFinding
+from aughor.sql.grain_guard import detect_fanout, fanout_caveat, FanoutRatioIssue
 
 
 def _mock_probe(fanned_tables: dict):
@@ -54,7 +54,7 @@ def test_unique_join_not_flagged():
 
 
 def test_caveat_text():
-    f = FanoutFinding(fanned_table="tags", join_key="fact_id", ratio=2.0, aggregates=["SUM(f.amount)"])
+    f = FanoutRatioIssue(fanned_table="tags", join_key="fact_id", ratio=2.0, aggregates=["SUM(f.amount)"])
     c = fanout_caveat([f])
     assert "over-count" in c.lower() and "tags" in c and "fact_id" in c
 

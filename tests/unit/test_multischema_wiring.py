@@ -84,9 +84,9 @@ def test_digest_exploration_section_reads_real_insights(tmp_path):
         {"id": "s1", "finding": "APAC SMB revenue dropped 38.8% on the outage day. More prose."},
         {"id": "s2", "finding": "quarantined", "invalid": True},
     ])
-    from aughor.monitors.digest import build_digest
+    from aughor.monitors.alert_summary import build_alert_summary
 
-    sections = build_digest("c1").sections
+    sections = build_alert_summary("c1").sections
     expl = next((s for s in sections if s.title == "Exploration Insights"), None)
     assert expl is not None, "exploration section still dead"
     assert expl.items == ["APAC SMB revenue dropped 38.8% on the outage day."]

@@ -1,7 +1,7 @@
 """Wave A2 — the ONE engine for declared automations.
 
 Every automation fires through :func:`run_automation`, and only through it. The gate order is
-load-bearing and deliberately mirrors :mod:`aughor.kinetic.executor`: cheap, side-effect-free gates
+load-bearing and deliberately mirrors :mod:`aughor.actions.executor`: cheap, side-effect-free gates
 first; the only step that can cause a side effect is last.
 
     enabled → not expired → not paused → conditions (all|any)
@@ -24,7 +24,7 @@ Both seams are injectable, as in K2:
   ``source_change`` / ``entity_appears``, which land in A3 — a seam that raises, never one that
   silently reports "not fired".
 * ``dispatch(effect, automation) -> EffectOutcome`` performs the effect. The default dispatcher
-  routes ``kinetic_action`` through :func:`~aughor.kinetic.executor.execute_kinetic_action`, so a
+  routes ``kinetic_action`` through :func:`~aughor.actions.executor.execute_kinetic_action`, so a
   declared write inherits submission criteria, the graduated-approval gate and the audit trail
   unchanged. **Wave A adds no second write path**, which is why nothing above LOW risk can auto-fire
   from an automation either.
@@ -191,7 +191,7 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
     A criterion failure comes back as the AUTHORED message, passed through verbatim into the run
     history exactly as K2 passes it to a human and K4 passes it to the model.
     """
-    from aughor.kinetic.executor import execute_kinetic_action
+    from aughor.actions.executor import execute_kinetic_action
     from aughor.ontology.store import load_latest_ontology
 
     # The public loader already overlays human overrides, so kinetic_actions are applied —
@@ -232,9 +232,9 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
 
 
 def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
-    from aughor.actions.executor import fire_action
-    from aughor.actions.models import ActionPayload
-    from aughor.actions.store import get_trigger
+    from aughor.notifications.executor import fire_action
+    from aughor.notifications.models import ActionPayload
+    from aughor.notifications.store import get_trigger
 
     trigger_id = str(effect.config.get("trigger_id", ""))
     trigger = get_trigger(trigger_id)
@@ -260,8 +260,8 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
 
 
 def _dispatch_brief(effect: Effect, automation: Automation) -> EffectOutcome:
-    from aughor.briefs.delivery import deliver_subscription
-    from aughor.briefs.store import get_subscription
+    from aughor.briefing.delivery import deliver_subscription
+    from aughor.briefing.store import get_subscription
 
     sub_id = str(effect.config.get("subscription_id", ""))
     sub = get_subscription(sub_id)
@@ -312,7 +312,7 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     """Run a deep investigation on the automation's connection, optionally AS a user-agent.
 
     Since Wave H5 the running itself belongs to :mod:`aughor.runners.investigation`, a module
-    neither this package nor :mod:`aughor.kinetic` owns, so a declared ``trigger_investigation``
+    neither this package nor :mod:`aughor.actions` owns, so a declared ``trigger_investigation``
     action reaches the same runner without K having to import A (it would be backwards: A already
     routes its ``kinetic_action`` effect through K's executor). What stays here is the part that
     is genuinely an automation's business — how the effect's config becomes a request, what makes

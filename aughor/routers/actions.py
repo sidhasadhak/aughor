@@ -21,7 +21,7 @@ router = APIRouter(tags=["actions"])
 
 @router.get("/actions/triggers")
 def list_action_triggers():
-    from aughor.actions.store import list_triggers
+    from aughor.notifications.store import list_triggers
     # to_safe_dict masks the credential URL — the raw secret never leaves the server.
     return {"triggers": [t.to_safe_dict() for t in list_triggers()]}
 
@@ -40,8 +40,8 @@ class _TriggerBody(BaseModel):
 @router.post("/actions/triggers", status_code=201, dependencies=[gate(Capability.ACTION_HUB)])
 def create_action_trigger(body: _TriggerBody,
                           idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
-    from aughor.actions.models import ActionTrigger
-    from aughor.actions.store  import save_trigger, get_trigger
+    from aughor.notifications.models import ActionTrigger
+    from aughor.notifications.store  import save_trigger, get_trigger
     from aughor.util.url_guard import is_safe_webhook_url
     from aughor.util.idempotency import lookup, remember
     prior = lookup("action_trigger", idempotency_key)  # API-03: retry returns the same trigger
@@ -62,8 +62,8 @@ def create_action_trigger(body: _TriggerBody,
 
 @router.put("/actions/triggers/{trigger_id}", dependencies=[gate(Capability.ACTION_HUB)])
 def update_action_trigger(trigger_id: str, body: _TriggerBody):
-    from aughor.actions.models import ActionTrigger
-    from aughor.actions.store  import save_trigger, get_trigger
+    from aughor.notifications.models import ActionTrigger
+    from aughor.notifications.store  import save_trigger, get_trigger
     from aughor.secretvault    import is_masked
     from aughor.util.url_guard  import is_safe_webhook_url
     existing = get_trigger(trigger_id)
@@ -88,7 +88,7 @@ def update_action_trigger(trigger_id: str, body: _TriggerBody):
 
 @router.delete("/actions/triggers/{trigger_id}", status_code=200)
 def delete_action_trigger(trigger_id: str):
-    from aughor.actions.store import delete_trigger
+    from aughor.notifications.store import delete_trigger
     if not delete_trigger(trigger_id):
         raise HTTPException(status_code=404, detail="Trigger not found")
     return {"message": "Trigger deleted"}
@@ -98,9 +98,9 @@ def delete_action_trigger(trigger_id: str):
 def test_action_trigger(trigger_id: str):
     """Fire a test payload to the trigger URL."""
     import datetime
-    from aughor.actions.store    import get_trigger
-    from aughor.actions.models   import ActionPayload
-    from aughor.actions.executor import fire_action
+    from aughor.notifications.store    import get_trigger
+    from aughor.notifications.models   import ActionPayload
+    from aughor.notifications.executor import fire_action
     trigger = get_trigger(trigger_id)
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
@@ -120,9 +120,9 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     """Fire a configured trigger for a specific recommendation."""
     import datetime
     import json as _json
-    from aughor.actions.store    import get_trigger
-    from aughor.actions.models   import ActionPayload
-    from aughor.actions.executor import fire_action
+    from aughor.notifications.store    import get_trigger
+    from aughor.notifications.models   import ActionPayload
+    from aughor.notifications.executor import fire_action
     from aughor.db.history       import get_investigation
 
     trigger_id = body.get("trigger_id")
@@ -172,9 +172,9 @@ def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
     instead of an investigation recommendation.
     """
     import datetime
-    from aughor.actions.store    import get_trigger
-    from aughor.actions.models   import ActionPayload
-    from aughor.actions.executor import fire_action
+    from aughor.notifications.store    import get_trigger
+    from aughor.notifications.models   import ActionPayload
+    from aughor.notifications.executor import fire_action
 
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="text required")
@@ -194,7 +194,7 @@ def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
 
 @router.get("/actions/logs")
 def list_action_logs(limit: int = 100, trigger_id: Optional[str] = None):
-    from aughor.actions.store import list_logs
+    from aughor.notifications.store import list_logs
     return {"logs": list_logs(limit=limit, trigger_id=trigger_id)}
 
 

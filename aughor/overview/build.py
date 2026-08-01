@@ -1,7 +1,6 @@
 """Overview mode — "Show me interesting facts about this schema".
 
-The widest-possible question, answered the way Databricks Genie offers it by
-default: not an investigation of one metric, but a deterministic *profile* of the
+The widest-possible question, answered by default as a deterministic *profile* of the
 whole dataset, ranked by notability and capped for diversity so the result is a
 scannable TOUR across many tables and fact TYPES — never one measure ranked N ways.
 

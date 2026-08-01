@@ -1,9 +1,9 @@
 """The trust gate (§0.4) — what may consume a run (2026-06-27).
 
 Makes 'nothing consumes a run above its earned trust' executable: the flywheel may compound
-only verified runs; autonomy additionally needs reversibility. See aughor/verify/gate.py.
+only verified runs; autonomy additionally needs reversibility. See aughor/feedback/gate.py.
 """
-from aughor.verify import is_compoundable, can_act_autonomously
+from aughor.feedback import is_compoundable, can_act_autonomously
 from aughor.agent.state import VerificationManifest, VerificationCheck
 
 

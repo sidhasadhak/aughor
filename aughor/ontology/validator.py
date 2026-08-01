@@ -2,7 +2,7 @@
 M24c — Ontology semantic self-validation.
 
 The enricher (M12b) emits metric formulas, computed-property expressions, and
-object-set filters that are *never executed*. This module runs each of them
+segment filters that are *never executed*. This module runs each of them
 against the live database and marks the survivors `verified=True`. Only verified
 semantics are injected into the NL2SQL prompt with authority (see
 ontology.semantic_block + semantic.metrics overlay), so an LLM-hallucinated
@@ -75,7 +75,7 @@ def _check_value(value: Any) -> tuple[bool, str]:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
-    """Execute every metric / computed-property / object-set against `db` and set
+    """Execute every metric / computed-property / segment against `db` and set
     each one's `verified` flag in place. Returns the same graph, marked validated.
 
     Best-effort: any unexpected error leaves that item unverified rather than
@@ -125,19 +125,19 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
             except Exception as e:  # pragma: no cover
                 cp.verified, cp.verification_note = False, str(e)[:120]
 
-        # ── Object sets (per entity) ──────────────────────────────────────────
-        for os_ in entity.object_sets.values():
+        # ── Segments (per entity) ─────────────────────────────────────────────
+        for seg in entity.segments.values():
             try:
-                if not (os_.filter_sql or "").strip():
-                    os_.verified, os_.verification_note = True, ""   # all-rows view
+                if not (seg.filter_sql or "").strip():
+                    seg.verified, seg.verification_note = True, ""   # all-rows view
                     continue
                 if not table:
-                    os_.verified, os_.verification_note = False, "entity has no source table"
+                    seg.verified, seg.verification_note = False, "entity has no source table"
                     continue
-                ok, err, _ = _probe(db, f"SELECT COUNT(*) FROM {table} WHERE {os_.filter_sql}")
-                os_.verified, os_.verification_note = ok, ("" if ok else f"filter failed: {err}")
+                ok, err, _ = _probe(db, f"SELECT COUNT(*) FROM {table} WHERE {seg.filter_sql}")
+                seg.verified, seg.verification_note = ok, ("" if ok else f"filter failed: {err}")
             except Exception as e:  # pragma: no cover
-                os_.verified, os_.verification_note = False, str(e)[:120]
+                seg.verified, seg.verification_note = False, str(e)[:120]
 
     graph.validated = True
     graph.validation_version = VALIDATION_VERSION

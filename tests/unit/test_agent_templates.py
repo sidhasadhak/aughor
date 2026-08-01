@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.user_agents import delete_agent, get_agent, list_agents
-from aughor.user_agents.store import list_goldens
-from aughor.user_agents.templates import (
+from aughor.custom_agents import delete_agent, get_agent, list_agents
+from aughor.custom_agents.store import list_goldens
+from aughor.custom_agents.templates import (
     NEEDS_REFERENCE_SQL, compose_instructions, create_from_template, get_template,
     list_templates,
 )
@@ -58,7 +58,7 @@ def test_an_unknown_pack_is_none_not_an_empty_template():
 
 
 def test_instructions_keep_the_role_when_the_stance_must_be_cut():
-    from aughor.user_agents.models import INSTRUCTIONS_MAX
+    from aughor.custom_agents.models import INSTRUCTIONS_MAX
 
     out = compose_instructions("A retention analyst.", "x" * (INSTRUCTIONS_MAX * 2))
     assert len(out) == INSTRUCTIONS_MAX

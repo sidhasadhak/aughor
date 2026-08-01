@@ -6,8 +6,9 @@ patterns, and glossary/synonym resolution — and none of them asked whether the
 see the tables involved.
 
 **The rule this wave exists to honour.** A permission-trimmed answer that comes back empty
-teaches its reader that the data does not exist. That is the pinned anti-pattern from the
-Genie teardown, and it is worse than a refusal: the reader stops asking. So trimming here
+teaches its reader that the data does not exist. That is the pinned anti-pattern from
+docs/GENIE_DOCS_TEARDOWN_2026-07-26.md, and it is worse than a refusal: the reader stops
+asking. So trimming here
 always produces two things — what survived, and a sentence naming what did not and which
 clearance would restore it. A caller may withhold the rows. It may not withhold the fact
 that rows were withheld.

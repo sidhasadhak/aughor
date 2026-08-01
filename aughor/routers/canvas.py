@@ -38,8 +38,8 @@ def _load_canvas_instructions() -> dict:
 
 
 class CreateCanvasRequest(BaseModel):
-    # R10 — name is now optional (the Databricks generate_space_name:true analog):
-    # an empty name is derived DETERMINISTICALLY from the scope server-side. The
+    # R10 — name is now optional: an empty name is derived
+    # DETERMINISTICALLY from the scope server-side. The
     # richer LLM naming (/canvases/suggest-name) stays the optional client path.
     name: str = ""
     description: str = ""

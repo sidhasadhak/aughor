@@ -24,8 +24,9 @@ A role says "analysts may run analyses". A clearance says "and not over the sala
 table". Neither expresses the other, which is why the third axis earns its keep.
 
 **The refusal is never silence.** ``evaluate`` returns a decision that NAMES what blocked
-it and which clearance would unblock it. R4's rule, and the pinned anti-pattern from the
-Genie teardown: a permission-trimmed answer that comes back empty teaches its reader that
+it and which clearance would unblock it. R4's rule, and the pinned anti-pattern from
+docs/GENIE_DOCS_TEARDOWN_2026-07-26.md: a permission-trimmed answer that comes back empty
+teaches its reader that
 the data does not exist. A caller may withhold the rows; it must not withhold the reason.
 
 Deterministic and pure: :func:`evaluate` takes the tags and the clearances and returns a

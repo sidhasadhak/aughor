@@ -1,6 +1,7 @@
 """R15 — the opportunity-cost / benchmark lens: gap-to-benchmark × volume.
 
-The strongest move in the Databricks losing-money report: not "long-haul load
+The strongest move in the reference losing-money report
+(docs/REPORT_STYLE_STUDY_2026-07-16.md): not "long-haul load
 factor is 74.5%" but "raising it to the short-haul benchmark of 77.2% fills
 1,767 seats across 258 flights". The decision is the QUANTIFIED gap.
 
@@ -15,7 +16,7 @@ material peer, and appends one key number:
 Honesty rules: segments below the materiality floor never anchor either side
 (mirroring ``_detect_anomalous_period``'s gates); the gap must clear BOTH a
 rate floor (≥3% relative — below that is measurement noise) and a volume-aware
-floor (the opportunity itself ≥0.5% of the material total — the Databricks
+floor (the opportunity itself ≥0.5% of the material total — the reference
 case is a 3.5% rate gap that matters precisely because the volume is large);
 the context sentence always carries the hedge — a ceiling computed from peers,
 not a forecast, and the directional read is the reader's (for a cost-like

@@ -25,11 +25,15 @@ from typing import Optional
 #: shape grew.
 PUBLIC_RECEIPT_VERSION = 2
 
-# ledger artifact `kind` → the user-facing mode on the receipt.
+# ledger artifact `kind` → the user-facing mode on the receipt. An unmapped kind falls
+# through to the raw string, which the UI renders verbatim — so every kind that is
+# actually WRITTEN must appear here. `finding` is what the explorer writes
+# (`explorer/agent.py`, `explorer/dossier.py`); `insight` is kept only because older
+# installs may hold artifacts under that kind, and the projection is rebuilt on read.
 _MODE = {
     "chat_answer": "quick", "chat": "quick",
     "ada_report": "deep", "ada": "deep", "answer": "deep",
-    "insight": "explore", "builder": "builder",
+    "finding": "explore", "insight": "explore", "builder": "builder",
     "monitor": "monitor", "brief": "brief",
 }
 

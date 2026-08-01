@@ -525,7 +525,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
       {/* 1. Verdict / Headline */}
       <div className={`rounded-[var(--r3)] border p-5 ${isQueryFailure ? "border-red-500/30 bg-red-500/5" : "border-emerald-500/30 bg-emerald-500/5"}`}>
         <p className={`text-xs font-medium uppercase tracking-widest mb-2 ${isQueryFailure ? "text-red-400" : "text-emerald-400"}`}>
-          {isQueryFailure ? "Query Failed" : isDirect ? "Top Insight" : "Verdict"}
+          {isQueryFailure ? "Query Failed" : isDirect ? "Top Finding" : "Verdict"}
         </p>
         <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
       </div>
@@ -588,7 +588,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
           <p className="text-xs text-zinc-500 mb-3">
             {isQueryFailure
               ? "The query was automatically corrected and retried but still could not execute successfully."
-              : "These structural issues were detected during the investigation and may affect analysis accuracy."}
+              : "These structural issues were detected during the deep analysis and may affect analysis accuracy."}
           </p>
           <div className="space-y-3">
             {dqNotes.map((note, i) => <DataQualityCard key={i} note={note} />)}

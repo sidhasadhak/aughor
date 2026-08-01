@@ -38,7 +38,7 @@ def _to_int(v) -> Optional[int]:
 
 
 @dataclass
-class FanoutFinding:
+class FanoutRatioIssue:
     fanned_table: str           # the joined table that has many rows per join key (the multiplier)
     join_key: str               # the key column the join used on that table
     ratio: float                # COUNT(*) / COUNT(DISTINCT key) on that table (>1 ⇒ fans out)
@@ -72,7 +72,7 @@ def _additive_aggregates(tree: exp.Expression) -> list[str]:
     return out
 
 
-def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[FanoutFinding]:
+def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[FanoutRatioIssue]:
     """Return fan-out findings for `sql`: additive aggregates spanning a join whose other side
     probes as non-unique on its join key. Empty when there is no additive aggregate, no join, or
     every joined side is unique on its key (i.e. no real fan-out)."""
@@ -87,7 +87,7 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
     if not aggregates:
         return []  # no additive aggregate ⇒ fan-out cannot inflate a number
 
-    findings: list[FanoutFinding] = []
+    findings: list[FanoutRatioIssue] = []
     seen: set[tuple[str, str]] = set()
 
     for j in tree.find_all(exp.Join):
@@ -129,7 +129,7 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
         if total is None or not distinct or total <= distinct:
             continue  # non-numeric or unique on key ⇒ this join does not fan out
 
-        findings.append(FanoutFinding(
+        findings.append(FanoutRatioIssue(
             fanned_table=rt, join_key=", ".join(keys),
             ratio=float(total) / float(distinct), aggregates=list(aggregates)))
     if findings:
@@ -138,6 +138,6 @@ def detect_fanout(sql: str, probe_fn: ProbeFn, dialect: str = "sqlite") -> list[
     return findings
 
 
-def fanout_caveat(findings: list[FanoutFinding]) -> str:
+def fanout_caveat(findings: list[FanoutRatioIssue]) -> str:
     """One combined trust caveat for the product to attach to a result (empty when no findings)."""
     return " ".join(f.caveat() for f in findings)

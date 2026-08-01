@@ -1,8 +1,7 @@
 """R14 — query popularity: per-table and per-column usage mined from real history.
 
-The Databricks ``TableMetadataPreviewPopularityData`` analog (wire study #2):
-what people actually query is a notability signal the whole platform should
-share. The pieces existed but were disconnected — ``query_log_miner`` computes
+What people actually query is a notability signal the whole platform should
+share (wire study #2, docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md). The pieces existed but were disconnected — ``query_log_miner`` computes
 ``column_usage`` per schema build and throws it away; ``tables_used`` is stored
 per chat turn and never aggregated. This module mines the history ONCE into a
 small persisted counter store and serves it to four consumers:

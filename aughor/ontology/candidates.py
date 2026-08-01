@@ -34,6 +34,9 @@ from typing import Callable, Iterable, Optional
 #: What a candidate can propose. Typed rather than free-form because the reviewer's
 #: question differs per kind — a join asks "is this key right", a synonym asks "do people
 #: really say that" — and an untyped suggestion queue cannot ask either.
+#: `"object_set"` is FROZEN even though the thing it proposes is now a Segment:
+#: `to_inbox_items` writes it into the A4 inbox as `"ontology.object_set"`, so the
+#: string is a persisted record value. Map it to "segment" for display, never here.
 CANDIDATE_KINDS: tuple[str, ...] = ("join", "measure", "filter", "synonym", "object_set")
 
 #: Where a candidate was mined from. Each is a record of a human having run or approved

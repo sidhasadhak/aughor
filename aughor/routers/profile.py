@@ -5,8 +5,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from aughor.profile import store
-from aughor.profile.infer import infer_business_profile
+from aughor.business_profile import store
+from aughor.business_profile.infer import infer_business_profile
 
 router = APIRouter(tags=["profile"])
 
@@ -24,7 +24,7 @@ def get_business_profile(connection_id: str, schema_name: Optional[str] = Query(
     # a scalar percent/ratio ("Top Return Reason 0.4%") so the KPI strip drops it, without
     # waiting for a re-inference. New profiles are already gated at build time (audit_profile).
     try:
-        from aughor.profile.validate import name_sql_coherent
+        from aughor.business_profile.validate import name_sql_coherent
         for m in (raw.get("profile", {}).get("north_star_metrics") or []):
             if (m.get("value_sql") or "").strip():
                 ok, _ = name_sql_coherent(m.get("name", ""), m.get("unit_or_range", ""))

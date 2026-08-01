@@ -193,8 +193,8 @@ def _kinetic_overlay__no_edits_leaves_a_result_untouched() -> Comparison:
     """apply_overlay on a connection with no stored edits must leave rows, columns
     and caveats byte-identical — and it is best-effort, so even a store hiccup can
     never take down a real result."""
-    from aughor.kinetic.overlay import apply_overlay
-    from aughor.platform.contracts.execution import QueryResult
+    from aughor.actions.overlay import apply_overlay
+    from aughor.control_plane.contracts.execution import QueryResult
 
     def fresh():
         return QueryResult(hypothesis_id="r", sql="SELECT 1", columns=["a"],
@@ -308,7 +308,7 @@ def _automations_proposals__the_executor_is_byte_identical_without_grants() -> C
     """The executor's one hook returns '' when the flag is off — and with the flag ON
     and no grant minted it returns '' too, so a clone that never accepted a proposal
     has a byte-identical executor."""
-    from aughor.kinetic.grants import standing_grant_id
+    from aughor.actions.grants import standing_grant_id
 
     class _A:
         id = "receipt-action-none"

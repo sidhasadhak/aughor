@@ -316,7 +316,7 @@ reason packs are portable.
 **At deploy/activation**, for a `(pack, connection)`:
 
 1. **Propose.** Run the pack's `entities.yaml` roles against the connection's profile +
-   ontology. Aughor already profiles every table (`aughor/profile/`, `aughor/tools/profiler.py`)
+   ontology. Aughor already profiles every table (`aughor/business_profile/`, `aughor/tools/profiler.py`)
    and builds an entity graph. The resolver scores candidate tables/columns per role:
    - `customer` → the entity with a stable identity that other tables reference most.
    - `event` → a dated fact referencing `customer`.
@@ -391,7 +391,7 @@ Multi-tenant falls out for free: packs, grants and bindings are already `org_id`
 
 | Existing seam | Role in specialists | Change |
 |---|---|---|
-| `aughor/profile/` (BusinessProfile, NorthStarMetric) | proposes entity bindings; fills persona templates | reuse |
+| `aughor/business_profile/` (BusinessProfile, NorthStarMetric) | proposes entity bindings; fills persona templates | reuse |
 | `data/kb/*`, `data/kb/industry/*` | metric-recipe shape; routing tags; diagnostic library | reuse (pack metrics extend this shape) |
 | `aughor/semantic/` (compiler, governance, kb_retriever, metric_retrieval) | metric resolution, propose-to-define, routing | reuse |
 | `aughor/playbook/` | pack playbooks are seeded `PlaybookEntry`s | reuse |

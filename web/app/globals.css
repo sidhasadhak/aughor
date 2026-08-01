@@ -13,7 +13,7 @@
    class is never set — so every dark: utility in components/ui was dead.) */
 @custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
 
-/* ── Font wiring (MLflow-informed: two families) ─────────────────────────────
+/* ── Font wiring (two families) ──────────────────────────────────────────────
    DM Sans carries the UI; IBM Plex Mono carries every figure, id, timestamp and
    metric. The `font-mono` Tailwind utility points at the mono family so the data
    labels (table/column names, ids, numbers, chips) render in tabular monospace —
@@ -61,7 +61,7 @@
 /* ── Base reset ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-/* ── Focus rings (accessibility — Blueprint blue outline) ────────────────── */
+/* ── Focus rings (accessibility — primary blue outline) ──────────────────── */
 :focus-visible {
   outline: 2px solid var(--bfocus);
   outline-offset: 2px;

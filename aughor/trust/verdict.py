@@ -1,7 +1,7 @@
 """The Trust plane's contract types — `Scope`, `Check`, `Verdict`.
 
 AL-01 of the Part-2 architecture review: the ~9 validation modules
-(`sql/{readonly,safety,grain_guard,join_guard,trust_checks}`, `agent/{verify,soma,
+(`sql/{readonly,safety,grain_guard,join_guard,trust_checks}`, `agent/{verify,ambiguity_probe,
 sql_consensus}`, `tools/{semantic_validator,sql_consistency}`) are diffused across the
 three answer paths, each of which grew a *different subset* of the same safeguards. The
 Trust plane hoists them behind one `trust.verify(artifact, scope) -> Verdict` façade so a

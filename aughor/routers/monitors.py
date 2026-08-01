@@ -289,7 +289,7 @@ def ack_alert(alert_id: str) -> dict:
     return a.model_dump()
 
 
-# ── Digest ─────────────────────────────────────────────────────────────────────
+# ── Alert summary ──────────────────────────────────────────────────────────────
 
 @router.get("/monitors/digest")
 def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
@@ -299,8 +299,8 @@ def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
     if period not in ("week", "day"):
         raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
     try:
-        from aughor.monitors.digest import build_digest
-        result = build_digest(conn_id=conn_id, period=period)
+        from aughor.monitors.alert_summary import build_alert_summary
+        result = build_alert_summary(conn_id=conn_id, period=period)
         return {**result.model_dump(), "markdown": result.to_markdown()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

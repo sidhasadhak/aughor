@@ -281,14 +281,14 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
     }
 
 
-@router.get("/exploration/kpi/time-to-first-insight")
-def time_to_first_insight_kpi(limit: int = 200):
-    """B-6 product KPI: the connect→first-insight funnel, measured.
+@router.get("/exploration/kpi/time-to-first-finding")
+def time_to_first_finding_kpi(limit: int = 200):
+    """B-6 product KPI: the connect→first-finding funnel, measured.
 
-    Reads the `exploration.first_insight` milestone events the explorer stamps
-    (one per run, on the first insight from any phase) and reports the
-    distribution of elapsed seconds — so "how fast does a fresh connection
-    deliver its first finding" is a query, not a vibe. Mirrors
+    Reads the `exploration.first_insight` milestone events the explorer stamps (one per
+    run, on the first finding from any phase — the event kind is a persisted identity and
+    keeps its old spelling) and reports the distribution of elapsed seconds — so "how fast
+    does a fresh connection deliver its first finding" is a query, not a vibe. Mirrors
     /metrics/enforcement-rate: a measured rate the product is held to."""
     from aughor.kernel.ledger import Ledger
     events = Ledger.default().events(kind="exploration.first_insight", limit=min(int(limit), 500))
@@ -317,6 +317,16 @@ def time_to_first_insight_kpi(limit: int = 200):
         "max_seconds": durations[-1] if durations else None,
         "samples": samples[:50],   # newest-first, for inspection
     }
+
+
+@router.get("/exploration/kpi/time-to-first-insight", deprecated=True)
+def time_to_first_insight_kpi(limit: int = 200):
+    """DEPRECATED alias of ``GET /exploration/kpi/time-to-first-finding``.
+
+    Identical payload — it delegates to the handler above. Kept so a client pinned to the
+    old path keeps working for one release.
+    """
+    return time_to_first_finding_kpi(limit)
 
 
 @router.get("/exploration/{conn_id}/findings")
@@ -363,9 +373,12 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
             result = _filter_findings_by_schema(result, conn_id, schema)
         except SchemaScopeUnavailable as e:
             logger.warning("findings scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
-            return {k: ([] if isinstance(v, list) else {}) for k, v in result.items()} | {
+            result = {k: ([] if isinstance(v, list) else {}) for k, v in result.items()} | {
                 "scope_error": str(e),
             }
+    # `findings` is the current key. The retired one mirrors the SAME list object and is kept
+    # for one release; mirrored AFTER the schema filter so neither can serve unscoped rows.
+    result["findings"] = result["insights"]
     return result
 
 
@@ -441,6 +454,9 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
     result = {}
     for domain, insights in by_domain.items():
         result[domain] = {
+            # Both keys are the SAME list object — `findings` is the current spelling, the
+            # retired one is kept for one release (so the in-place triage below hits both).
+            "findings": insights,
             "insights": insights,
             "queries_used": budgets.get(domain, 0),
             "budget_cap": budgets.get(f"{domain}__cap", 15),
@@ -491,7 +507,7 @@ def _load_business_profile(conn_id: str, schema: str | None):
     the brief must not block on profile inference; without one it still gates + ranks, just
     without north-star weighting or currency correction. Fail-open."""
     try:
-        from aughor.profile import store as _pstore
+        from aughor.business_profile import store as _pstore
         return _pstore.load(conn_id, schema)
     except Exception:
         return None
@@ -990,6 +1006,8 @@ def get_canvas_exploration_findings(canvas_id: str):
         "join_verifications": state.get("join_verifications", []),
         "lifecycle_maps": state.get("lifecycle_maps", {}),
         "distributions": state.get("distributions", {}),
+        # Same list under both keys — `findings` is current, the retired key stays one release.
+        "findings": state.get("insights", []),
         "insights": state.get("insights", []),
     }
 
@@ -1007,6 +1025,8 @@ def get_canvas_domain_insights(canvas_id: str):
     by_domain = _expl_store.get_domain_insights_canvas(canvas_id)
     return {
         domain: {
+            # Same list under both keys — `findings` is current, the retired key stays one release.
+            "findings": insights,
             "insights": insights,
             "queries_used": budgets.get(domain, 0),
             "budget_cap": budgets.get(f"{domain}__cap", 15),
@@ -1125,100 +1145,137 @@ def extend_canvas_domain_budget(canvas_id: str, domain: str, extra: int = 5):
     return {"domain": domain, "new_cap": new_cap}
 
 
-@router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/promote")
-def promote_canvas_insight(canvas_id: str, insight_id: str):
+@router.post("/exploration/canvas/{canvas_id}/findings/{finding_id}/promote")
+def promote_canvas_finding(canvas_id: str, finding_id: str):
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
     from aughor.explorer.store import promote_insight, load_canvas
-    if not promote_insight(canvas_id, insight_id):
-        raise HTTPException(status_code=404, detail="Insight not found")
+    if not promote_insight(canvas_id, finding_id):
+        raise HTTPException(status_code=404, detail="Finding not found")
 
-    # Push the full insight text into the org_intelligence Qdrant collection
+    # Push the full finding text into the org_intelligence Qdrant collection
     try:
         state = load_canvas(canvas_id)
-        insight = next(
-            (i for i in state.get("insights", []) if i.get("id") == insight_id),
+        found = next(
+            (i for i in state.get("insights", []) if i.get("id") == finding_id),
             None,
         )
-        if insight:
+        if found:
             from aughor.canvas.store import resolve_connection_id
             from aughor.knowledge.org_intelligence import promote_to_org
             promote_to_org(
-                insight_id=insight_id,
-                text=insight.get("finding", ""),
-                domain=insight.get("domain", ""),
-                novelty=insight.get("novelty", 3),
+                insight_id=finding_id,   # FROZEN Qdrant payload key
+                text=found.get("finding", ""),
+                domain=found.get("domain", ""),
+                novelty=found.get("novelty", 3),
                 canvas_id=canvas_id,
-                angle=insight.get("angle", ""),
+                angle=found.get("angle", ""),
                 connection_id=resolve_connection_id(canvas_id) or "",
-                schema=insight.get("source_schema", "") or "",
+                schema=found.get("source_schema", "") or "",
             )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
 
-    return {"insight_id": insight_id, "promoted": True}
+    return {"insight_id": finding_id, "promoted": True}
 
 
-@router.post("/exploration/{connection_id}/insights/{insight_id}/promote")
-def promote_connection_insight(connection_id: str, insight_id: str):
+@router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/promote", deprecated=True)
+def promote_canvas_insight(canvas_id: str, insight_id: str):
+    """DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/promote``.
+
+    Identical payload — it delegates to the handler above. Kept for one release.
+    """
+    return promote_canvas_finding(canvas_id, insight_id)
+
+
+@router.post("/exploration/{connection_id}/findings/{finding_id}/promote")
+def promote_connection_finding(connection_id: str, finding_id: str):
     """Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
 
     Counterpart to the canvas promote endpoint — connection-level findings (the
     default Briefing scope) had no promotion path until now.
     """
     from aughor.explorer.store import promote_insight_conn
-    insight = promote_insight_conn(connection_id, insight_id)
-    if insight is None:
-        raise HTTPException(status_code=404, detail="Insight not found")
+    found = promote_insight_conn(connection_id, finding_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
 
-    # Push the full insight text into the org_intelligence Qdrant collection.
+    # Push the full finding text into the org_intelligence Qdrant collection.
     try:
         from aughor.knowledge.org_intelligence import promote_to_org
         promote_to_org(
-            insight_id=insight_id,
-            text=insight.get("finding", ""),
-            domain=insight.get("domain", ""),
-            novelty=insight.get("novelty", 3),
+            insight_id=finding_id,   # FROZEN Qdrant payload key
+            text=found.get("finding", ""),
+            domain=found.get("domain", ""),
+            novelty=found.get("novelty", 3),
             canvas_id=f"conn:{connection_id}",
-            angle=insight.get("angle", ""),
+            angle=found.get("angle", ""),
             connection_id=connection_id,
-            schema=insight.get("source_schema", "") or "",
+            schema=found.get("source_schema", "") or "",
         )
     except Exception:
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
 
-    return {"insight_id": insight_id, "promoted": True}
+    return {"insight_id": finding_id, "promoted": True}
+
+
+@router.post("/exploration/{connection_id}/insights/{insight_id}/promote", deprecated=True)
+def promote_connection_insight(connection_id: str, insight_id: str):
+    """DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/promote``.
+
+    Identical payload — it delegates to the handler above. Kept for one release.
+    """
+    return promote_connection_finding(connection_id, insight_id)
 
 
 class DismissRequest(BaseModel):
     reason: str = ""
 
 
-@router.post("/exploration/{connection_id}/insights/{insight_id}/dismiss")
-def dismiss_connection_insight(connection_id: str, insight_id: str, req: DismissRequest):
+@router.post("/exploration/{connection_id}/findings/{finding_id}/dismiss")
+def dismiss_connection_finding(connection_id: str, finding_id: str, req: DismissRequest):
     """Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
     from intel, kept in the store, reversible) and logs the reason for the guard
     backlog — wrong/stale findings shouldn't need a hand-edited JSON file."""
     from aughor.explorer.store import dismiss_insight_conn
-    insight = dismiss_insight_conn(connection_id, insight_id, req.reason)
-    if insight is None:
-        raise HTTPException(status_code=404, detail="Insight not found")
-    return {"insight_id": insight_id, "dismissed": True}
+    found = dismiss_insight_conn(connection_id, finding_id, req.reason)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return {"insight_id": finding_id, "dismissed": True}
 
 
-@router.get("/exploration/{connection_id}/insights/{insight_id}/receipt")
-def get_insight_receipt(connection_id: str, insight_id: str):
+@router.post("/exploration/{connection_id}/insights/{insight_id}/dismiss", deprecated=True)
+def dismiss_connection_insight(connection_id: str, insight_id: str, req: DismissRequest):
+    """DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/dismiss``.
+
+    Same body, same payload — it delegates to the handler above. Kept for one release.
+    """
+    return dismiss_connection_finding(connection_id, insight_id, req)
+
+
+@router.get("/exploration/{connection_id}/findings/{finding_id}/receipt")
+def get_finding_receipt(connection_id: str, finding_id: str):
     """K3 Trust Receipt — the versioned finding artifact + its provenance edges
     (source SQL, input tables, guards) + the kernel job that computed it. One
     query over the ledger answers 'why should I trust this number'. Findings
     persisted before K3 have no artifact yet — they gain one on the next
     explore/refresh (404 until then, by design)."""
     from aughor.kernel.ledger import Ledger
-    rec = Ledger.default().receipt(f"insight:{connection_id}:{insight_id}")
+    # FROZEN ledger natural-key prefix — the stored provenance identity, not a display word.
+    rec = Ledger.default().receipt(f"insight:{connection_id}:{finding_id}")
     if rec is None:
         raise HTTPException(status_code=404, detail="No receipt — finding predates provenance tracking; re-explore to generate one")
     return rec
+
+
+@router.get("/exploration/{connection_id}/insights/{insight_id}/receipt", deprecated=True)
+def get_insight_receipt(connection_id: str, insight_id: str):
+    """DEPRECATED alias of ``GET /exploration/{connection_id}/findings/{finding_id}/receipt``.
+
+    Identical payload — it delegates to the handler above. Kept for one release.
+    """
+    return get_finding_receipt(connection_id, insight_id)
 
 
 class GroundRequest(BaseModel):
@@ -1309,8 +1366,8 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
                         "numerals": [], "columns": [], "sample_rows": []}
 
 
-@router.post("/exploration/{connection_id}/insights/{insight_id}/revalidate")
-async def revalidate_insight(connection_id: str, insight_id: str):
+@router.post("/exploration/{connection_id}/findings/{finding_id}/revalidate")
+async def revalidate_connection_finding(connection_id: str, finding_id: str):
     """Re-check a finding's dossier against LIVE data — re-run its stored SQL once
     (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
     `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
@@ -1320,7 +1377,8 @@ async def revalidate_insight(connection_id: str, insight_id: str):
     from aughor.explorer.revalidate import revalidate_finding
     from aughor.explorer.dossier import update_dossier
 
-    rec = Ledger.default().receipt(f"insight:{connection_id}:{insight_id}")
+    # FROZEN ledger natural-key prefix — the stored provenance identity, not a display word.
+    rec = Ledger.default().receipt(f"insight:{connection_id}:{finding_id}")
     dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier") if rec else None
     if not dossier:
         raise HTTPException(status_code=404, detail="No dossier to re-validate — re-explore to generate one")
@@ -1334,7 +1392,7 @@ async def revalidate_insight(connection_id: str, insight_id: str):
     # Re-stamp the dossier so "as of" reflects the live check (supersede-not-delete).
     try:
         update_dossier(
-            connection_id, insight_id,
+            connection_id, finding_id,
             merge={"revalidated_at": now, "revalidation": result.get("status")},
             lineage_edge=("revalidated_by", "guard:live_recheck", result.get("status")),
         )
@@ -1343,13 +1401,31 @@ async def revalidate_insight(connection_id: str, insight_id: str):
     return {**result, "revalidated_at": now}
 
 
-@router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")
-def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
+@router.post("/exploration/{connection_id}/insights/{insight_id}/revalidate", deprecated=True)
+async def revalidate_insight(connection_id: str, insight_id: str):
+    """DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/revalidate``.
+
+    Identical payload — it delegates to the handler above. Kept for one release.
+    """
+    return await revalidate_connection_finding(connection_id, insight_id)
+
+
+@router.post("/exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss")
+def dismiss_canvas_finding(canvas_id: str, finding_id: str, req: DismissRequest):
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
     from aughor.explorer.store import dismiss_insight_canvas
-    insight = dismiss_insight_canvas(canvas_id, insight_id, req.reason)
-    if insight is None:
-        raise HTTPException(status_code=404, detail="Insight not found")
-    return {"insight_id": insight_id, "dismissed": True}
+    found = dismiss_insight_canvas(canvas_id, finding_id, req.reason)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return {"insight_id": finding_id, "dismissed": True}
+
+
+@router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss", deprecated=True)
+def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
+    """DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss``.
+
+    Same body, same payload — it delegates to the handler above. Kept for one release.
+    """
+    return dismiss_canvas_finding(canvas_id, insight_id, req)

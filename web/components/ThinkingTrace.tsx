@@ -40,7 +40,7 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
     subqAnswers: turn.subqAnswers,
     exploreReport: turn.exploreReport,
     investigationPhases: turn.phases,
-    adaReport: turn.adaReport,
+    deepReport: turn.deepReport,
   };
 }
 
@@ -121,7 +121,7 @@ const PURPOSE_ICON: Record<string, ReactNode> = {
 // Neutral fallback for purposes the map doesn't know (was "·").
 const PURPOSE_FALLBACK_ICON: ReactNode = <MinusIcon label="" size="small" />;
 
-// Present-tense, plain-language labels for the ADA investigation phases — what the
+// Present-tense, plain-language labels for the deep analysis phases — what the
 // agent is doing right now, not internal phase jargon. Falls back to phase_name.
 const PHASE_ACTION: Record<string, string> = {
   intake:      "Understanding the question",
@@ -135,7 +135,7 @@ const PHASE_ACTION: Record<string, string> = {
 };
 
 function deriveSteps(state: InvestigationState): Step[] {
-  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport, investigationPhases, adaReport } = state;
+  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport, investigationPhases, deepReport } = state;
   const isRunning = status === "running";
   const isDone = status === "done" || status === "paused";
   const steps: Step[] = [];
@@ -146,7 +146,7 @@ function deriveSteps(state: InvestigationState): Step[] {
   steps.push({
     id: "route",
     label: routeDone
-      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Investigation"
+      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Deep analysis"
       : "Classifying question…",
     sublabel: routeDone
       ? (routeReasoning ?? (
@@ -217,10 +217,10 @@ function deriveSteps(state: InvestigationState): Step[] {
     return steps;
   }
 
-  // ── Investigate mode (ADA) — render the streamed phases as the live trace. ──
-  // The ADA flow populates investigationPhases (and finally adaReport), NOT the
+  // ── Investigate mode (deep analysis) — render the streamed phases as the live trace. ──
+  // The deep analysis flow populates investigationPhases (and finally deepReport), NOT the
   // legacy `hypotheses` list, so derive the trace from the phases as they stream.
-  const phases = (adaReport?.phases ?? investigationPhases ?? []);
+  const phases = (deepReport?.phases ?? investigationPhases ?? []);
   if (phases.length > 0) {
     for (const p of phases) {
       // Intake ("Question intake" / "Understanding the question") is setup, not thinking —
@@ -264,14 +264,14 @@ function deriveSteps(state: InvestigationState): Step[] {
     if (!hasSynthPhase) {
       steps.push({
         id: "synthesize",
-        label: adaReport ? "Report ready" : "Analysing the data…",
-        status: adaReport ? "done" : isRunning ? "running" : "pending",
+        label: deepReport ? "Report ready" : "Analysing the data…",
+        status: deepReport ? "done" : isRunning ? "running" : "pending",
       });
     }
     return steps;
   }
 
-  // Fallback: legacy hypothesis-based investigate trace (pre-ADA flows).
+  // Fallback: legacy hypothesis-based investigate trace (pre-deep-analysis flows).
   const hasHypotheses = hypotheses.length > 0;
   steps.push({
     id: "decompose",

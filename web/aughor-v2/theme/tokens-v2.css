@@ -46,7 +46,7 @@
   --t3: #686B77;
   --t4: #525B69;
 
-  /* Accent — two-blue MLflow system. --blue3 is THE interaction accent
+  /* Accent — a two-blue system. --blue3 is THE interaction accent
      (accent, ring, sidebar, nav, links, tabs). --blue-solid is the darker
      primary-button fill (white text); --primary is repointed to it here. */
   --blue1: #10233B; --blue2: #1A4E82; --blue3: #5A9FD6; --blue4: #7DB6E8; --blue5: #BFDBFF;
@@ -60,14 +60,14 @@
   --vio1:  #1B1340; --vio2:  #312069; --vio3:  #7E62BE; --vio4:  #9B7BD4; --vio5:  #C3AEE8;
   --cyn1:  #06222E; --cyn2:  #0B4658; --cyn3:  #38A5A5; --cyn4:  #4FC4C4; --cyn5:  #9BE4E4;
 
-  /* Radius — MLflow: tight controls, softer cards. buttons 6 · pills/inputs 8 · cards 12 */
+  /* Radius — tight controls, softer cards. buttons 6 · pills/inputs 8 · cards 12 */
   --r1: 6px;
   --r2: 8px;
   --r3: 12px;
   --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1). */
   --r-composer: 22px; /* the chat composer pill — a soft, generous corner (UI Wave 2). */
 
-  /* Layout — MLflow shell */
+  /* Layout — app shell */
   --sidebar: 264px;
   --topbar:  54px;
   /* Chat reading measure — wider than the Brief's 760px prose measure so charts
@@ -125,7 +125,7 @@
   --shadow-sm: 0 1px 2px rgba(20,40,80,.06);
   --shadow-md: 0 4px 16px rgba(20,40,80,.10), 0 1px 3px rgba(20,40,80,.06);
 
-  /* Tableau-10 chart palette + light axes */
+  /* Categorical chart palette + light axes */
   --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #FF7F0E;
   --chart-4: #9467BD; --chart-5: #D62728; --chart-6: #17BECF;
   --chart-threshold-warn:   #B25D00;

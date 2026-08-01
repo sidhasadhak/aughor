@@ -16,7 +16,7 @@ import type {
   OntologyGraph,
   OntologyEntity,
   OntologyRelationship,
-  OntologyAction,
+  QueryTemplate,
   OntologyMetric,
   CausalEdge,
 } from "@/lib/api";

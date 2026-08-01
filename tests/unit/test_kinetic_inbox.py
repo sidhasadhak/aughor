@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kinetic import inbox
+from aughor.actions import inbox
 from aughor.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
 
 
@@ -110,11 +110,11 @@ def test_accept_dispatches_exactly_once_under_a_double_accept(flag_on, graph_of)
         return {"ok": True}
 
     # First accept executes once (approved bypasses the approval gate).
-    import aughor.kinetic.executor as ex
+    import aughor.actions.executor as ex
     p = inbox.stage_proposal(_proposal(connection_id="conn-acc"))
 
     # Patch default_dispatch so the real executor path runs but the side effect is captured.
-    import aughor.kinetic.inbox as inbox_mod
+    import aughor.actions.inbox as inbox_mod
     orig = ex.default_dispatch
     ex.default_dispatch = rec_dispatch
     try:
@@ -142,7 +142,7 @@ def test_accept_still_enforces_submission_criteria(flag_on, graph_of):
     msg = "Refunds over the window need a manager."
     graph_of(_action(submission_criteria=[SubmissionCriterion(expr="order_id == '8821'", message=msg)]))
     calls: list = []
-    import aughor.kinetic.executor as ex
+    import aughor.actions.executor as ex
     orig = ex.default_dispatch
     ex.default_dispatch = lambda a, p, s="": calls.append(1)
     try:

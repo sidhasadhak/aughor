@@ -6,7 +6,7 @@ source plus the key that links it to the result assembled so far — validates t
 (each sub-query executes and outputs its key; each link key is a real column of the assembled result),
 then folds the steps through the batched-foreach engine (Stages 1–2b).
 
-Plan-then-execute (PromptQL), deterministic-first: the LLM only produces the *plan*; deterministic
+Plan-then-execute, deterministic-first: the LLM only produces the *plan*; deterministic
 guards validate it and the engine does the joins. One LLM call, everything after is code — so the
 result is inspectable (the plan + per-source SQL are returned) and repeatable. The planner also chooses
 the step ORDER, so it picks which source drives (driver auto-selection) and how the sources chain.
@@ -25,7 +25,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.platform.contracts.execution import QueryResult
+from aughor.control_plane.contracts.execution import QueryResult
 
 logger = logging.getLogger(__name__)
 

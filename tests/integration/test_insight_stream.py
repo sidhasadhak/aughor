@@ -105,7 +105,7 @@ def _stub_providers(monkeypatch):
 # activations) can legitimately differ between runs as resolutions crystallize,
 # so the cross-run sequence comparison filters to this core set.
 _CORE = ("sql", "columns", "rows", "headline", "done",
-         "insight_delta", "insight", "followups", "error")
+         "narrative_delta", "narrative", "insight_delta", "insight", "followups", "error")
 
 
 def _core_types(events):
@@ -143,6 +143,28 @@ def test_flag_on_dual_emits_deltas_before_terminal_insight(client: TestClient, b
     assert followups["questions"] == _QUESTIONS
 
 
+def test_the_narrative_events_dual_emit_under_both_names(client: TestClient, builtin_conn_id: str, monkeypatch):
+    """Wave W — the prose enrichment is a NARRATIVE. The retired `insight` pair is kept
+    for one release so a client deployed before the rename keeps working, and both names
+    must carry the IDENTICAL payload — a divergence would make the two clients disagree
+    about the same answer. This is the whole contract of the additive rename."""
+    monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "1")
+    _stub_providers(monkeypatch)
+
+    events = _stream_events(client, builtin_conn_id, "total value split by group")
+    by_type = lambda t: [e for e in events if e["type"] == t]  # noqa: E731
+
+    # Terminal event: both names, same payload.
+    new, old = by_type("narrative"), by_type("insight")
+    assert len(new) == 1 and len(old) == 1, [e["type"] for e in events]
+    assert new[0]["narrative"] == _FINAL
+    assert {k: v for k, v in new[0].items() if k != "type"} == {k: v for k, v in old[0].items() if k != "type"}
+
+    # Delta frames: both names, same partials, in the same order.
+    assert [d["narrative"] for d in by_type("narrative_delta")] == _PARTIALS
+    assert [d["narrative"] for d in by_type("insight_delta")] == _PARTIALS
+
+
 def test_flag_off_is_the_blocking_path_with_identical_core_sequence(client: TestClient, builtin_conn_id: str, monkeypatch):
     _stub_providers(monkeypatch)
 
@@ -151,12 +173,14 @@ def test_flag_off_is_the_blocking_path_with_identical_core_sequence(client: Test
     monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "0")
     off_events = _stream_events(client, builtin_conn_id, "total value split by group")
 
-    # Zero delta frames when the flag is off…
+    # Zero delta frames when the flag is off — under EITHER name (both are dual-emitted).
+    _DELTAS = ("narrative_delta", "insight_delta")
     off_types = _core_types(off_events)
-    assert "insight_delta" not in off_types, off_types
-    # …but the terminal insight/followups arrive exactly as before, same content.
-    insight = next(e for e in off_events if e["type"] == "insight")
-    assert insight["narrative"] == _FINAL
+    assert not [t for t in off_types if t in _DELTAS], off_types
+    # …but the terminal narrative/followups arrive exactly as before, same content —
+    # and the retired name still carries it too, for a client that predates the rename.
+    for name in ("narrative", "insight"):
+        assert next(e for e in off_events if e["type"] == name)["narrative"] == _FINAL
     # And the core event-type sequence matches the flag-on run minus the deltas.
-    on_types_sans_deltas = [t for t in _core_types(on_events) if t != "insight_delta"]
+    on_types_sans_deltas = [t for t in _core_types(on_events) if t not in _DELTAS]
     assert off_types == on_types_sans_deltas, (off_types, on_types_sans_deltas)

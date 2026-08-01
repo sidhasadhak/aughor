@@ -165,8 +165,8 @@ export function SystemPanel() {
         />
       </Section>
 
-      {/* ADA Investigation */}
-      <Section title="ADA Investigation">
+      {/* Deep analysis */}
+      <Section title="Deep analysis">
         <StatRow
           label="Tier 0 skips (baseline only)"
           value={fmt(c.tier0_skips)}
@@ -213,7 +213,7 @@ export function SystemPanel() {
         <StatRow
           label="RAG cache hits"
           value={fmt(ragHits)}
-          sub={ragTotal > 0 ? `of ${fmt(ragTotal)} investigations` : undefined}
+          sub={ragTotal > 0 ? `of ${fmt(ragTotal)} deep analyses` : undefined}
           highlight={ragHits > 0 ? "good" : "neutral"}
         />
         <StatRow label="RAG misses (fresh)" value={fmt(ragMisses)} />
@@ -352,7 +352,9 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
   );
 }
 
-/** Group E as one control: the four parallelism flags set together, matched to rate limits. */
+/** Group E as one control: the four parallelism flags set together, matched to rate limits.
+ *  These are backend FLAG KEYS — wire names, frozen (renaming one strands the operator's
+ *  env var and persisted override; that only happens via the backend's alias layer). */
 const PERF_FLAGS = ["explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
                     "ada.parallel_why_lenses"] as const;
 

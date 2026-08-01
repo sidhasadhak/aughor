@@ -21,7 +21,7 @@ other. Wave A makes **condition → effect** one declared, governed, inspectable
   declared `KineticAction`), with muting, pausing, expiry, jittered retries, a fallback effect, and
   **per-run history**.
 - **The write path stays governed**: an effect that writes goes through `execute_kinetic_action`
-  ([`kinetic/executor.py:222`](../aughor/kinetic/executor.py)) — the same criteria → approval → audit
+  ([`kinetic/executor.py:222`](../aughor/actions/executor.py)) — the same criteria → approval → audit
   pipeline a human gets. Wave A adds **no** second write path.
 - **A staged-proposal queue with an agent decision log**, so an autonomous write is *proposed*,
   recorded with its reasoning, and applied only on human accept.
@@ -51,15 +51,15 @@ agree**, plus one that is not a trigger at all.
 | Today | Reality | file:line |
 |---|---|---|
 | Monitor scheduling | Own `BackgroundScheduler`, own `_make_job_fn`, `misfire_grace_time=300` | [`monitors/scheduler.py:27`](../aughor/monitors/scheduler.py) |
-| Brief scheduling | A **near-verbatim copy** of the above — own scheduler, own `_make_job_fn`, `misfire_grace_time=3600`. Its own docstring says "Mirrors aughor.monitors.scheduler" | [`briefs/scheduler.py:21`](../aughor/briefs/scheduler.py) |
+| Brief scheduling | A **near-verbatim copy** of the above — own scheduler, own `_make_job_fn`, `misfire_grace_time=3600`. Its own docstring says "Mirrors aughor.monitors.scheduler" | [`briefs/scheduler.py:21`](../aughor/briefing/scheduler.py) |
 | Conditions | **Six already exist** — `threshold_cross`, `trend_reversal`, `anomaly`, `segment_drift`, `data_freshness`, `any_change` — but as a `Literal` *inside* `Monitor`, reachable only by a monitor | [`monitors/models.py:49`](../aughor/monitors/models.py) |
-| Brief conditions | **Time only.** `resolved_cron()` — a brief cannot fire on a metric at all | [`briefs/models.py:39`](../aughor/briefs/models.py) |
-| Effects | Monitor → **exactly one**: append a `MonitorAlert`. Brief → **exactly one**: `deliver_subscription`. Neither can do the other's | [`monitors/scheduler.py:66`](../aughor/monitors/scheduler.py), [`briefs/scheduler.py:42`](../aughor/briefs/scheduler.py) |
+| Brief conditions | **Time only.** `resolved_cron()` — a brief cannot fire on a metric at all | [`briefs/models.py:39`](../aughor/briefing/models.py) |
+| Effects | Monitor → **exactly one**: append a `MonitorAlert`. Brief → **exactly one**: `deliver_subscription`. Neither can do the other's | [`monitors/scheduler.py:66`](../aughor/monitors/scheduler.py), [`briefs/scheduler.py:42`](../aughor/briefing/scheduler.py) |
 | Muting / pausing | `grace_period_hours` — a *severity-aware anti-flap debounce*, monitor-only. There is no pause, no expiry, no mute-until | [`monitors/models.py:40`](../aughor/monitors/models.py) |
 | Retries | **None.** A failed tick is logged and dropped; the next cron fire is the only retry | [`monitors/scheduler.py:84`](../aughor/monitors/scheduler.py) |
 | Run history | Monitors persist only **fired alerts**. A tick that evaluated cleanly, or crashed, leaves **no row** — "did it run?" is unanswerable | [`monitors/store.py:285`](../aughor/monitors/store.py) |
 | "Explorer re-arm" | **Not a trigger.** `explore_watermark.json` is a per-(conn,table) max-activity timestamp used to *narrow a scan* (`delta_clause`), consumed only inside an already-running exploration | [`explorer/watermark.py:42`](../aughor/explorer/watermark.py) |
-| Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../aughor/kinetic/propose.py) |
+| Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../aughor/actions/propose.py) |
 | `trigger_investigation` | *(was an open seam at the time of this recon; **closed by Wave H5**)* — K2 raised `KineticDispatchError` for it, because the only working runner lived inside A. H5 lifted that runner to `aughor/runners/investigation.py`, which both packages call | [`runners/investigation.py`](../aughor/runners/investigation.py) |
 
 **Three findings that change the plan:**
@@ -129,7 +129,7 @@ enabled → not expired → not paused/muted → evaluate conditions (all|any)
 ```
 
 Effect dispatch is injectable (`Dispatch` seam, exactly as
-[`kinetic/executor.py:159`](../aughor/kinetic/executor.py)). The default dispatcher wires
+[`kinetic/executor.py:159`](../aughor/actions/executor.py)). The default dispatcher wires
 `investigate` → a supervised `kernel()` job draining `build_ask_stream` at `depth="deep"` (the real
 answer path, via the same in-process technique the evals `ask_target` uses), `brief` →
 `deliver_subscription`, `notify` → `fire_action`, and `kinetic_action` →
@@ -218,7 +218,7 @@ recorded, never silently never-fires. If a probe costs a full scan on a large ta
 **Scope (redesigned per the program doc J1/J2 — this is no longer a plain proposal table).** Two
 new kinetic-plane stores behind `automations.proposals`:
 
-- **The inbox** ([`kinetic/inbox.py`](../aughor/kinetic/inbox.py)) persists K4's `Proposal` (today a
+- **The inbox** ([`kinetic/inbox.py`](../aughor/actions/inbox.py)) persists K4's `Proposal` (today a
   live-only dataclass) as a **durable, resolve-once** record. Accept/reject is a single conditional
   `UPDATE … WHERE status='pending'` — first-responder-wins; a second resolution updates zero rows and
   is a no-op, never a second dispatch. Idempotent by `(org, run_id, call_id)`, so a replayed run
@@ -226,7 +226,7 @@ new kinetic-plane stores behind `automations.proposals`:
   approval act**, so it executes with `approved=True` — bypassing the approval gate but **never the
   submission criteria** (those run at step 2, before approval at step 3). Both outcomes are audited
   with the actor, so a rejected proposal is evidence, not a gap.
-- **Standing grants** ([`kinetic/grants.py`](../aughor/kinetic/grants.py)) — a human accepting can
+- **Standing grants** ([`kinetic/grants.py`](../aughor/actions/grants.py)) — a human accepting can
   mint a **target-bound** grant: "allow this action → this *exact* target value," eligible only for a
   single-parameter action (no ambiguous target otherwise), **owned by the automation that minted it**
   (revoked with it), consulted by the executor before `govern.guard`, and **cited by id in the audit

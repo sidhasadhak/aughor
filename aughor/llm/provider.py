@@ -482,7 +482,7 @@ def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tup
     """The single binding resolver — the effective ``(backend, model, base_url)`` for a role.
 
     Shared by :func:`get_provider` (data plane, builds the client) and
-    :func:`aughor.platform.inference.vend_llm` (control-plane seam, describes the binding),
+    :func:`aughor.control_plane.inference.vend_llm` (control-plane seam, describes the binding),
     so a vended :class:`InferenceCapability` always matches the binding a real call uses.
     Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
     (``set_run_model``) → role default — i.e. Org default → … → Agent override. The
@@ -1243,7 +1243,7 @@ class LLMProvider:
         The seam Layer-A/Layer-B optimisation and governance routing dispatch on
         (PLATFORM_ARCHITECTURE.md §5b). Lazy import avoids a module-load cycle."""
         from aughor.org.context import current_org_id
-        from aughor.platform.inference import capability_for
+        from aughor.control_plane.inference import capability_for
 
         return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
 
@@ -1737,7 +1737,7 @@ def current_config() -> dict:
     `capabilities` is the per-role vended profile (§5b) — what the bound model can do
     and, crucially for BYO-model governance, its `privacy_class` (local · private_endpoint
     · public_api). All non-secret; surfaced so Settings → Inference shows it plainly."""
-    from aughor.platform.inference import capability_for
+    from aughor.control_plane.inference import capability_for
 
     cfg = _cfg()
     backend = _active_backend()

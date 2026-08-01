@@ -2,7 +2,7 @@
 
 Learned-SKILL crystallization is implemented in `aughor.memory.skills`: a finished
 investigation's grounded, read-only SQL is parameterized and saved as a reusable, governed
-`OntologyAction` (origin='learned') that re-enters the live ontology via the overlay seam.
+`QueryTemplate` (origin='learned') that re-enters the live ontology via the overlay seam.
 The earned L0–L3 autonomy ladder is NOT built yet — autonomy is manual (L0), so
 `auto_crystallize` is a deliberate no-op (a strong run stays a UI-confirmed candidate, never
 silently persisted). `record_run` below persists the per-run signals that ladder will read.

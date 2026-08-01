@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import BUILTIN_ID, get_meta
-from aughor.ontology.models import OntologyAction
+from aughor.ontology.models import QueryTemplate
 from aughor.routers._shared import invalidate_schema_cache as _invalidate_schema_cache
 
 from aughor.licensing import Capability, gate
@@ -69,7 +69,7 @@ class _ComputedPropertyOverride(BaseModel):
     unit: Optional[str] = None
 
 
-class _ObjectSetOverride(BaseModel):
+class _SegmentOverride(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
     filter_sql: Optional[str] = None
@@ -377,20 +377,34 @@ def get_kinetic_actions(
     return {aid: a.model_dump() for aid, a in graph.kinetic_actions.items()}
 
 
-@router.get("/ontology/entities/{entity_id}/object-sets")
-def get_entity_object_sets(
+@router.get("/ontology/entities/{entity_id}/segments")
+def get_entity_segments(
     entity_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Return all named ObjectSets for an entity — keyed by object set id."""
+    """Return every saved, named filter (segment) on an entity — keyed by segment id."""
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     entity = graph.entities.get(entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
-    return {sid: s.model_dump() for sid, s in entity.object_sets.items()}
+    return {sid: s.model_dump() for sid, s in entity.segments.items()}
+
+
+@router.get("/ontology/entities/{entity_id}/object-sets", deprecated=True)
+def get_entity_object_sets(
+    entity_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """DEPRECATED alias of ``GET /ontology/entities/{entity_id}/segments``.
+
+    Identical payload — it delegates to the handler above. Kept so a client pinned to the
+    old path keeps working for one release; use ``/segments``.
+    """
+    return get_entity_segments(entity_id, connection_id, schema_name)
 
 
 @router.get("/ontology/entities/{entity_id}/properties")
@@ -561,28 +575,50 @@ def override_ontology_computed_property(
 
 
 @router.put(
-    "/ontology/entities/{entity_id}/object-sets/{set_id}",
+    "/ontology/entities/{entity_id}/segments/{segment_id}",
     dependencies=[gate(Capability.ONTOLOGY_EDIT)],
 )
-def override_ontology_object_set(
+def override_entity_segment(
     entity_id: str,
-    set_id: str,
-    body: _ObjectSetOverride,
+    segment_id: str,
+    body: _SegmentOverride,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Define (or correct) a named row-filter (object set) on an entity."""
+    """Define (or correct) a saved, named row-filter (segment) on an entity."""
     from aughor.ontology.overrides import OntologyOverride
     effective = _resolve_schema(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
+    # target_kind stays "object_set": it is the persisted override-store value and the
+    # on-disk directory name (see ontology.overrides.TargetKind). Only the URL renamed.
     ov = OntologyOverride(
-        target_kind="object_set", target_id=f"{entity_id}::{set_id}", fields=fields)
+        target_kind="object_set", target_id=f"{entity_id}::{segment_id}", fields=fields)
     ov, graph = _bind_and_persist(connection_id, effective, ov)
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return _override_result(ov)
+
+
+@router.put(
+    "/ontology/entities/{entity_id}/object-sets/{set_id}",
+    dependencies=[gate(Capability.ONTOLOGY_EDIT)],
+    deprecated=True,
+)
+def override_ontology_object_set(
+    entity_id: str,
+    set_id: str,
+    body: _SegmentOverride,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """DEPRECATED alias of ``PUT /ontology/entities/{entity_id}/segments/{segment_id}``.
+
+    Same body, same payload, same persisted override — it delegates to the handler above.
+    Kept for one release; use ``/segments/{segment_id}``.
+    """
+    return override_entity_segment(entity_id, set_id, body, connection_id, schema_name)
 
 
 @router.put("/ontology/metrics/{metric_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -615,6 +651,9 @@ def delete_ontology_override(
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override
+    # "segment" is accepted as the current spelling and mapped to the FROZEN store kind
+    # "object_set" — the override store's directory name and YAML value (overrides.TargetKind).
+    kind = "object_set" if kind == "segment" else kind
     if kind not in ("entity", "object_set", "computed_property", "metric"):
         raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")
     effective = _resolve_schema(connection_id, schema_name)
@@ -948,7 +987,7 @@ def rebuild_ontology(
     # before exploration. Best-effort — a profile failure must not fail the rebuild.
     profile_industry = None
     try:
-        from aughor.profile.infer import infer_business_profile
+        from aughor.business_profile.infer import infer_business_profile
         from aughor.orgsettings import resolve_industry
         bp = infer_business_profile(connection_id, effective)
         profile_industry = resolve_industry(bp.industry)
@@ -1004,7 +1043,7 @@ def list_learned_skills(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Learned skills (origin='learned' OntologyActions) for this connection/schema."""
+    """Learned skills (origin='learned' QueryTemplates) for this connection/schema."""
     from aughor.memory.skills import load_learned_actions
     effective = _skill_schema(connection_id, schema_name)
     actions = load_learned_actions(connection_id, effective)
@@ -1019,7 +1058,7 @@ def propose_learned_skill(
 ):
     """Crystallize a *candidate* skill from a finished investigation.
 
-    Returns the proposed OntologyAction WITHOUT persisting it — the UI shows it
+    Returns the proposed QueryTemplate WITHOUT persisting it — the UI shows it
     for confirmation, then calls POST /ontology/skills to save.
     """
     from aughor.memory.skills import propose_skill_from_investigation
@@ -1038,7 +1077,7 @@ def propose_learned_skill(
 
 @router.post("/ontology/skills", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def save_learned_skill(
-    action: OntologyAction,
+    action: QueryTemplate,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
