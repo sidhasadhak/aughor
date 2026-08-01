@@ -4408,9 +4408,8 @@ export interface paths {
         };
         /**
          * Learning Trusted
-         * @description The trusted assets themselves — curated queries and replayable plan-as-programs injected
-         *     authoritatively into prompts, now inspectable. Programs return metadata only (the serialized program
-         *     body is omitted from the list view). Scoped to the current org, optionally to one connection.
+         * @description The trusted assets themselves — curated queries injected authoritatively into prompts,
+         *     now inspectable. Scoped to the current org, optionally to one connection.
          */
         get: operations["learning_trusted_learning_trusted_get"];
         put?: never;
@@ -6348,55 +6347,6 @@ export interface paths {
          *     (default off → 404).
          */
         post: operations["query_federated_answer_query_federated_answer_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/query/plan-answer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Query Plan Answer
-         * @description Plan+run a program from a natural-language question (Rec 4, Stage 3).
-         *
-         *     One LLM call emits the typed program; deterministic `validate_program` → `run_program` after. A planning
-         *     or validation failure returns an error result (never a 500). Flag-gated on `plan.program` (default off →
-         *     404).
-         */
-        post: operations["query_plan_answer_query_plan_answer_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/query/plan-run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Query Plan Run
-         * @description Run a HAND-AUTHORED typed program over ONE connection (Rec 4, Stage 2).
-         *
-         *     Deterministic: `validate_program` → `run_program`, no LLM. Each DATA step runs through the guard battery
-         *     and each step's result is mirrored to the ledger as a named artifact; the final result plus the program,
-         *     the artifact ids, per-step warnings, and any validation issues are returned (inspectable). Flag-gated on
-         *     `plan.program` (default off → 404).
-         */
-        post: operations["query_plan_run_query_plan_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9685,24 +9635,6 @@ export interface components {
             grain?: string | null;
             /** Unit */
             unit?: string | null;
-        };
-        /** _PlanAnswerRequest */
-        _PlanAnswerRequest: {
-            /** Conn Id */
-            conn_id: string;
-            /** Question */
-            question: string;
-        };
-        /** _PlanRunRequest */
-        _PlanRunRequest: {
-            /** Conn Id */
-            conn_id: string;
-            /** Investigation Id */
-            investigation_id?: string | null;
-            /** Program */
-            program: {
-                [key: string]: unknown;
-            };
         };
         /** _PostprocRequest */
         _PostprocRequest: {
@@ -21614,72 +21546,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_FederatedAnswerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    query_plan_answer_query_plan_answer_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PlanAnswerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    query_plan_run_query_plan_run_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PlanRunRequest"];
             };
         };
         responses: {

@@ -192,7 +192,7 @@ def test_resolved_readings_reach_the_unified_receipt():
 def test_learning_and_activations_reach_the_unified_receipt():
     r = _build(payload={
         "learning": {"readings_reused": 2, "resolutions_crystallized": 1,
-                     "corrections_applied": 0, "trusted_program_replayed": 0},
+                     "corrections_applied": 0},
         "activations": [{"capability": "deep_analysis.premise_check", "reason": "a claim was checkable",
                          "count": 1}],
     })
@@ -215,7 +215,7 @@ def test_the_new_fields_are_inside_the_signature():
     from aughor.trust.receipt import verify
     signed = _build(payload={"learning": {"readings_reused": 1, "resolutions_crystallized": 0,
                                           "corrections_applied": 0,
-                                          "trusted_program_replayed": 0}}, signed=True)
+                                          }}, signed=True)
     assert verify(signed) is True
 
     signed["learning"]["readings_reused"] = 99

@@ -3534,7 +3534,6 @@ export interface LearningReceiptPayload {
   corrections_applied: number;
   by_source: Record<string, number>;
   resolutions_crystallized: number;
-  trusted_program_replayed: number;
 }
 export interface ActivationReceiptEntry { capability: string; reason: string; count: number }
 
@@ -4383,15 +4382,11 @@ export interface LearningSummary {
   connection_id: string | null;
   ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
   verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null };
-  trusted: { queries: number; programs: number };
+  trusted: { queries: number };
 }
 
 export interface TrustedAssets {
   queries: { id: string; question: string; note?: string; tables?: string[]; tags?: string[] }[];
-  programs: {
-    id: string; question: string; use_count: number;
-    verified_at?: string; last_used_at?: string | null; plan_source?: string;
-  }[];
 }
 
 /** The Memory-layer headline (org-wide, or one connection). Null on failure — the panel degrades. */
@@ -4402,7 +4397,7 @@ export async function getLearningSummary(connectionId?: string): Promise<Learnin
   return res.json();
 }
 
-/** The trusted assets themselves — curated queries + replayable programs. */
+/** The trusted assets themselves — curated queries. */
 export async function getTrustedAssets(connectionId?: string): Promise<TrustedAssets | null> {
   const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
   const res = await fetch(`${BASE}/learning/trusted${q}`);

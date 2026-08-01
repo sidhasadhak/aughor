@@ -45,17 +45,6 @@ def test_all_batch_c_flags_are_registered_and_default_on():
         assert FLAG_DEFAULT.get(flag) is True, flag
 
 
-def test_plan_program_stays_an_experiment():
-    """Batch C's premise-check finding, pinned like federation.planner before it: the
-    /ask auto-depth hook (_program_eligible) makes plan.program a routing change, not
-    an invocation-gated surface — it must not silently graduate."""
-    from aughor.kernel.flags import EXPERIMENT, FLAG_DEFAULT, MIGRATION
-
-    assert "plan.program" in EXPERIMENT
-    assert "plan.program" not in FLAG_DEFAULT
-    assert "plan.program" not in MIGRATION
-
-
 def test_the_queue_and_migrations_are_empty():
     """The strategy's terminal state: every flag is graduated, auto, an opt-in, an
     experiment, or in the performance profile. A new queued/migration flag must

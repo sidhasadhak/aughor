@@ -55,7 +55,7 @@ export function MemoryPanel() {
   const acc = verdicts?.acceptance_rate;
   const bySource = ledger?.by_source ?? {};
   const sources = Object.keys(bySource);
-  const trustedTotal = (summary?.trusted.queries ?? 0) + (summary?.trusted.programs ?? 0);
+  const trustedTotal = summary?.trusted.queries ?? 0;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
@@ -78,7 +78,7 @@ export function MemoryPanel() {
             <Tile label="Resolutions" value={compactNumber(ledger?.resolutions ?? 0)} sub="ambiguities settled" />
             <Tile label="Times served" value={compactNumber(ledger?.served_total ?? 0)} sub="priors reused in answers" />
             <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"} sub={`${verdicts?.total ?? 0} verdicts`} />
-            <Tile label="Trusted" value={String(trustedTotal)} sub={`${plural(summary.trusted.queries, "query")} · ${plural(summary.trusted.programs, "program")}`} />
+            <Tile label="Trusted" value={String(trustedTotal)} sub={plural(summary.trusted.queries, "query")} />
           </div>
 
           {sources.length > 0 && (
@@ -96,21 +96,14 @@ export function MemoryPanel() {
           )}
 
           <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 8 }}>Trusted assets</div>
-          {(!trusted || (trusted.queries.length === 0 && trusted.programs.length === 0)) ? (
-            <div style={{ fontSize: 12, color: "var(--t3)" }}>None yet — verified queries and clean plan replays crystallize here.</div>
+          {(!trusted || trusted.queries.length === 0) ? (
+            <div style={{ fontSize: 12, color: "var(--t3)" }}>None yet — verified queries crystallize here.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
               {trusted.queries.map(q => (
                 <div key={`q:${q.id}`} style={rowStyle}>
                   <span style={kindTag}>query</span>
                   <span style={ellipsize}>{q.question}</span>
-                </div>
-              ))}
-              {trusted.programs.map(p => (
-                <div key={`p:${p.id}`} style={rowStyle}>
-                  <span style={kindTag}>program</span>
-                  <span style={ellipsize}>{p.question}</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0 }}>{p.use_count > 0 ? `${p.use_count}× replayed` : "new"}</span>
                 </div>
               ))}
             </div>

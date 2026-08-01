@@ -50,7 +50,6 @@ def build_learning_receipt(resolved_ambig: Optional[list[dict]] = None) -> Optio
         "corrections_applied": sum(1 for r in ra if r.get("source") in _CORRECTION_SOURCES),
         "by_source": by_source,
         "resolutions_crystallized": int(snap.get("resolutions_crystallized", 0) or 0),
-        "trusted_program_replayed": int(snap.get("trusted_program_replayed", 0) or 0),
     }
     # An all-zero receipt is noise — only surface when the loop actually did something this run.
     if not any(receipt[k] for k in receipt if k != "by_source"):

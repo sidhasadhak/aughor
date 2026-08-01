@@ -109,7 +109,6 @@ function Drawer({ receiptId, preloaded, onClose }: {
   if (l?.resolutions_crystallized) {
     learned.push(`crystallized ${l.resolutions_crystallized} new resolution${l.resolutions_crystallized !== 1 ? "s" : ""}`);
   }
-  if (l?.trusted_program_replayed) learned.push("replayed a trusted plan");
 
   return (
     <div
@@ -312,7 +311,7 @@ function GlanceChips({ rec }: { rec: PublicReceipt }) {
   const trusted = rec.guards.filter(g => g.action === "trusted").length;
   const fired = rec.guards.filter(g => g.action !== "trusted").length;
   const learned = rec.learning
-    ? (rec.learning.resolutions_crystallized || 0) + (rec.learning.trusted_program_replayed || 0)
+    ? (rec.learning.resolutions_crystallized || 0)
     : 0;
   const chips: React.ReactNode[] = [];
 

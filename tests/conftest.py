@@ -42,7 +42,6 @@ for _env, _file in (
     ("AUGHOR_VERDICTS_DB", "verdicts.db"),
     ("AUGHOR_AMBIGUITY_LEDGER_DB", "ambiguity_ledger.db"),
     ("AUGHOR_OVERLAY_LEDGER_DB", "overlay_ledger.db"),
-    ("AUGHOR_TRUSTED_PROGRAMS_DB", "trusted_programs.db"),
     ("AUGHOR_PACK_DELTAS_DB", "pack_deltas.db"),
     ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
     ("AUGHOR_GOVERN_TAGS_DB", "govern_tags.db"),

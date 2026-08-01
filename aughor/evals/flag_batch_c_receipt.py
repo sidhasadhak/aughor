@@ -14,7 +14,7 @@ The migrations: `semantic.resolve_live` resolves the Semantic plane ONCE at seed
 the receipt proves the resolved context's metrics equal what the per-node consult
 returns over this box's real stores (the AL-05 equality); `capability.pipeline_live`
 is a pure route gate (its one call site is the first line of /query/capability-answer).
-`plan.program` is deliberately NOT here: like `federation.planner` before it, the
+`plan.program` was deliberately NOT here (and was DELETED 2026-08-01): like `federation.planner`, the
 premise check found an /ask auto-depth hook (`_program_eligible`) — an LLM-bearing
 routing change — so it moved to EXPERIMENT instead of graduating.
 

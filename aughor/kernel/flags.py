@@ -76,7 +76,11 @@ FLAG_ENV = {
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
-    "plan.program": "AUGHOR_PLAN_PROGRAM",
+    # "plan.program" (AUGHOR_PLAN_PROGRAM) was DELETED 2026-08-01 (flag endgame, verdict
+    # sheet Wave 1): a SECOND answer path (typed program executor) with a standing
+    # adopt-or-kill question. One brain, one answer path — the benchmarking arc measured
+    # the lean path plus deterministic guards winning. /query/plan-run, /query/plan-answer,
+    # program_planner.py, the trusted-programs store and the /ask auto-route hook all went.
     "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     "rbac.row_policy": "AUGHOR_RBAC_ROW_POLICY",
     # "obs.mlflow" (AUGHOR_OBS_MLFLOW) was DELETED 2026-07-31 (flag strategy §4C):
@@ -818,10 +822,6 @@ FLAG_META = {
         "label": "Custom agents (your own instructions + documents)",
         "description": "Create reusable agents that bind standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION into one custom agent, then answer as that agent via /ask (agent_id). The agent's instructions lead the prompt, document retrieval is restricted to ITS documents (an agent with none sees none — fail-closed), and its connection binding wins (a conflicting explicit connection is rejected). CRUD under /agents/custom. Default-ON since Wave H, graduated on receipt `df89c044999a` (run `234be1fbb62b` of aughor/evals/user_agents_receipt.py, 9/9 stable over 3 iterations) on a DATA-GATED claim: every behaviour it adds needs an agent you created AND a request naming it, so with none named the prompt block is empty, retrieval stays unrestricted and a resumed run attaches no custom agent — all byte-identical to off. Turning it on does exactly one thing by itself: /agents/custom stops 404-ing and returns an empty roster. Force off with AUGHOR_USER_AGENTS=0 or a runtime override. Part B Phase 1 (slice 1) of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.",
     },
-    "plan.program": {
-        "label": "Plan-as-program executor",
-        "description": "Enable POST /query/plan-run + /query/plan-answer — turn a question into a deterministic typed PROGRAM over ONE database. One LLM call emits an ordered list of DATA (grounded SQL) + SEMOP (semantic-operator) steps over named artifacts; the program is validated deterministically and run step-by-step through the guard battery, threading each step's result as a named, versioned ledger artifact. Plan-then-execute, guarded, inspectable + replayable (the plan + artifacts are returned). Off by default → the routes 404. Rec 4 (plan-as-program), Stage 2–3.",
-    },
 }
 
 
@@ -896,11 +896,8 @@ EXPERIMENT: dict = {
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
     "federation.planner": "does auto-federating fresh /ask turns improve cross-source "
                           "answers enough to pay its planning call?",
-    # Moved from MIGRATION by batch C's premise check — the same disease as
-    # federation.planner: `_program_eligible` auto-routes fresh /ask auto-depth turns
-    # through plan-as-program. The adopt-or-kill decision IS this measurement.
-    "plan.program": "does answering fresh /ask auto turns via plan-as-program match "
-                    "quick-path quality (and settle adopt-or-kill)?",
+    # "plan.program" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
+    # tombstone) — the adopt-or-kill question was settled as KILL, not measured.
     "closed_loop": "does reading captured corrections back into the planner improve "
                    "answers on your data? (its own description names this exit)",
     "graph.readback": "does the injected graph slice improve plans enough to pay its "

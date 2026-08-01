@@ -36,8 +36,8 @@ def test_record_learning_is_noop_without_a_run():
 
 def test_record_learning_accumulates_within_a_run(run):
     metering.record_learning(resolutions_crystallized=1)
-    metering.record_learning(resolutions_crystallized=1, trusted_program_replayed=1)
-    assert metering.learning_snapshot() == {"resolutions_crystallized": 2, "trusted_program_replayed": 1}
+    metering.record_learning(resolutions_crystallized=1)
+    assert metering.learning_snapshot() == {"resolutions_crystallized": 2}
 
 
 def test_record_learning_ignores_unknown_fields(run):
@@ -73,15 +73,15 @@ def test_receipt_counts_readings_and_corrections(monkeypatch, run):
     assert r["readings_reused"] == 3
     assert r["corrections_applied"] == 2                     # user + verdict count as corrections, probe doesn't
     assert r["by_source"] == {"probe": 1, "user": 1, "verdict": 1}
-    assert r["resolutions_crystallized"] == 0 and r["trusted_program_replayed"] == 0
+    assert r["resolutions_crystallized"] == 0
 
 
 def test_receipt_merges_runtime_events(monkeypatch, run):
     monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "1")
-    metering.record_learning(resolutions_crystallized=1, trusted_program_replayed=1)
+    metering.record_learning(resolutions_crystallized=1)
     r = build_learning_receipt([])                           # no readings, but runtime events → still surfaced
     assert r is not None and r["readings_reused"] == 0
-    assert r["resolutions_crystallized"] == 1 and r["trusted_program_replayed"] == 1
+    assert r["resolutions_crystallized"] == 1
 
 
 # ── the touchpoint (end to end) ───────────────────────────────────────────────
