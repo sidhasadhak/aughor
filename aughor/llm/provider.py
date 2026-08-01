@@ -948,7 +948,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
                  **({"temperature": temperature} if temperature is not None else {}),
                  **({"usage_reported": False} if prompt_tokens is None
                     and completion_tokens is None else {}),
-                 # Content only when `obs.prompt_capture` is separately opted in;
+                 # Content only while a prompt-capture WINDOW is open;
                  # the helper owns the capping + truncation-marking policy.
                  **session_log.capture_prompt(system, user, _response_text(output))},
     )
@@ -956,7 +956,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
 
 def _response_text(output: Any) -> Optional[str]:
     """A model response as text, across the shapes the three paths produce
-    (pydantic model, dict, str). Only ever consumed under `obs.prompt_capture`;
+    (pydantic model, dict, str). Only ever consumed while a capture window is open;
     returns None when there is nothing to record."""
     if output is None:
         return None

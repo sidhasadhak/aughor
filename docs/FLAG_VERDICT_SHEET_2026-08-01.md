@@ -166,9 +166,11 @@ flag forced OFF and then ON (off-state tests reach "off" several different ways 
 nothing greppable), then delete flag + dead branch + off-state tests together.
 Every deleted flag gets a tombstone comment (the registry's existing convention).
 
-- **Wave 1 — removals** (ai_sql, search.rrf, evidence_stubs, synthesis_incremental,
-  plan.program; prompt_capture reshaped to a bounded action). Most code deleted per
-  line of review.
+- **Wave 1 — removals** ✅ **DONE 2026-08-01** (ai_sql, search.rrf, evidence_stubs,
+  synthesis_incremental, plan.program; prompt_capture reshaped to a bounded,
+  self-expiring capture window at `POST/GET/DELETE /obs/prompt-capture`, see
+  `aughor/obs/prompt_window.py`). Registry 89 → 83 flags; ~3,000 lines net deleted.
+  `capabilities.auto` dissolves in Wave 3 with the auto guards it enables.
 - **Wave 2 — hardwire the 56 receipted default-ONs**, split by area (trust/obs,
   graph, govern/automations/lifecycle, ask/deep, semantic/capability). Includes the
   two legacy-path deletions (CanonicalMetric, per-node consult).

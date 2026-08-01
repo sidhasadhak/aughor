@@ -89,7 +89,12 @@ FLAG_ENV = {
     # external server and inert with one configured was two ways to be confused.
     "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
     "obs.session_log": "AUGHOR_OBS_SESSION_LOG",
-    "obs.prompt_capture": "AUGHOR_OBS_PROMPT_CAPTURE",
+    # "obs.prompt_capture" (AUGHOR_OBS_PROMPT_CAPTURE) was DELETED 2026-08-01 (flag
+    # endgame, verdict sheet Wave 1). The capability stays — it is how a recorded run
+    # becomes a reproducible bug report — but a standing switch over the most sensitive
+    # content this product writes is a control that depends on somebody remembering to
+    # close it. Replaced by a self-expiring WINDOW (aughor/obs/prompt_window.py,
+    # POST/GET/DELETE /obs/prompt-capture) bounded by a call budget AND a clock.
     "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "llm.structured_salvage": "AUGHOR_LLM_STRUCTURED_SALVAGE",
     "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
@@ -586,10 +591,6 @@ FLAG_META = {
         "label": "session_events — the agent-session log",
         "description": "Record one append-only session_events row per agent-session event (user_request · tool_call · tool_call_result · llm_call · final_response · execution_error) with a stable trace id, a monotonic sequence, explicit success/duration/error-class, and the ambient session/user/agent identity. Fills the gap task_history cannot: it mints the trace at the /ask door, so the QUICK answer path — which today creates no trace id at all and whose SQL bypasses the span-emitting executor — becomes reconstructible; it writes tool_call on ENTRY, so a call that hangs or is cancelled still leaves evidence, where a span row only ever appears after the body returns; and it records each LLM call (model, role, tokens, latency, retries, whether the fallback swapped the model mid-run), which today is aggregated into counters and discarded. Queryable as SQL via the aughor_ops schema, and the substrate a later evals harness turns real sessions into test cases from. Retention is enforced on write (AUGHOR_SESSION_LOG_KEEP_DAYS / _MAX_ROWS). Default-ON since Wave CR0, graduated on receipt `45dcc137f55b` (run `43bf2bc7182d` of aughor/evals/session_log_receipt.py, 7/7): answer frames are byte-identical on vs off, a store failure never reaches the answer path, and the per-event write measured p95 0.078 ms against E1's 5 ms bar. Prompt CONTENT stays a separate opt-in (obs.prompt_capture, still off). Force off with AUGHOR_OBS_SESSION_LOG=0 or a runtime override. Wave E1.",
     },
-    "obs.prompt_capture": {
-        "label": "Capture prompts and completions on llm_call rows",
-        "description": "Store the system prompt, user prompt and model response alongside each llm_call in the session log. SEPARATE from obs.session_log and off by default because the blast radius is entirely different: the rest of the log is metadata (model, tokens, latency, outcome), whereas this writes the actual content of every model call — which for this product means schema, sampled values, glossary text and the user's own question, i.e. potentially the most sensitive material in the deployment. It has no effect unless obs.session_log is also on (nothing writes rows otherwise). Turn it on deliberately, for a bounded window, when you need to reproduce or grade a run — a captured prompt is what lets a recorded session become an eval case or a bug report, rather than a claim about one. Values are capped (AUGHOR_OBS_PROMPT_MAX_CHARS, default 2000) and truncation is marked explicitly, because a silently-shortened prompt reproduces a different call than the one that ran. Consider a retention window (AUGHOR_SESSION_LOG_KEEP_DAYS) and access controls on data/system.db before enabling in production.",
-    },
     "obs.popularity": {
         "label": "Query popularity as a shared notability signal",
         "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical. Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
@@ -876,8 +877,8 @@ CAPABILITY_TRIGGER: dict = {
 #: should stay a raw manual toggle.
 INTENTIONALLY_OFF: dict = {
     # "ai_sql" left this set 2026-08-01: DELETED outright (see the FLAG_ENV tombstone).
-    "obs.prompt_capture": "captures prompt CONTENT — the most sensitive material in a "
-                          "deployment; deliberate, bounded-window use only",
+    # "obs.prompt_capture" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
+    # tombstone) — "bounded-window use only" is now enforced by the window, not by a note.
     "automations.adopt_legacy": "changes an outward-send path (brief delivery); adopt "
                                 "deliberately after the engine soaks, then DELETE the "
                                 "legacy schedulers — the win is one loop, not a flag",

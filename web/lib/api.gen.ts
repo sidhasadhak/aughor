@@ -5075,6 +5075,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/obs/prompt-capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prompt Capture Status
+         * @description Is anything being recorded right now, and for how much longer?
+         */
+        get: operations["prompt_capture_status_obs_prompt_capture_get"];
+        put?: never;
+        /**
+         * Prompt Capture Open
+         * @description Open a capture window. Both bounds are clamped (see ``MAX_CALLS`` /
+         *     ``MAX_MINUTES``) and reported back, so an operator always knows what they got
+         *     rather than what they asked for.
+         */
+        post: operations["prompt_capture_open_obs_prompt_capture_post"];
+        /**
+         * Prompt Capture Close
+         * @description Close the window now. Idempotent.
+         */
+        delete: operations["prompt_capture_close_obs_prompt_capture_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology": {
         parameters: {
             query?: never;
@@ -9635,6 +9665,29 @@ export interface components {
             grain?: string | null;
             /** Unit */
             unit?: string | null;
+        };
+        /** _OpenCaptureRequest */
+        _OpenCaptureRequest: {
+            /**
+             * Calls
+             * @default 20
+             */
+            calls: number;
+            /**
+             * Minutes
+             * @default 15
+             */
+            minutes: number;
+            /**
+             * Opened By
+             * @default
+             */
+            opened_by: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** _PostprocRequest */
         _PostprocRequest: {
@@ -19382,6 +19435,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prompt_capture_status_obs_prompt_capture_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    prompt_capture_open_obs_prompt_capture_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_OpenCaptureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prompt_capture_close_obs_prompt_capture_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

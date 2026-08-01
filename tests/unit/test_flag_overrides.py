@@ -34,11 +34,10 @@ from aughor.kernel.flags import (
 )
 
 FLAG = "closed_loop"      # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
-# `obs.prompt_capture` deliberately: the nested-release assertion below expects OTHER's
-# AMBIENT value to be off, and prompt capture stays intentionally off (content capture
-# is a deliberate opt-in) — its predecessor exemplar `ai_sql` was deleted in the
-# 2026-08-01 flag endgame.
-OTHER = "obs.prompt_capture"
+# The nested-release assertion below expects OTHER's AMBIENT value to be off; this one
+# is an unsettled experiment, so it is off today. (Its predecessor exemplars `ai_sql` and
+# `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame.)
+OTHER = "semops.champion_validate"
 
 
 @pytest.fixture(autouse=True)

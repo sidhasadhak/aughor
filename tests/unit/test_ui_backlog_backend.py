@@ -11,23 +11,23 @@ from aughor.routers.query import _PostprocRequest, query_postproc
 
 class TestFeatureFlags:
     def test_override_wins_then_env_fallback(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
-        clear_flag("obs.prompt_capture")
-        assert flag_enabled("obs.prompt_capture") is False   # no override, env unset
-        set_flag("obs.prompt_capture", True)
-        assert flag_enabled("obs.prompt_capture") is True    # runtime override wins
-        set_flag("obs.prompt_capture", False)
-        monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
-        assert flag_enabled("obs.prompt_capture") is False   # override still wins over env
-        clear_flag("obs.prompt_capture")
-        assert flag_enabled("obs.prompt_capture") is True    # cleared → env decides
-        monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
-        clear_flag("obs.prompt_capture")
+        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+        clear_flag("semops.champion_validate")
+        assert flag_enabled("semops.champion_validate") is False   # no override, env unset
+        set_flag("semops.champion_validate", True)
+        assert flag_enabled("semops.champion_validate") is True    # runtime override wins
+        set_flag("semops.champion_validate", False)
+        monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
+        assert flag_enabled("semops.champion_validate") is False   # override still wins over env
+        clear_flag("semops.champion_validate")
+        assert flag_enabled("semops.champion_validate") is True    # cleared → env decides
+        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+        clear_flag("semops.champion_validate")
 
     def test_list_flags_shape(self):
         f = list_flags()
-        assert "obs.prompt_capture" in f and "snapshot_receipts" in f
-        assert {"value", "source", "env_var", "label", "description"} <= set(f["obs.prompt_capture"])
+        assert "semops.champion_validate" in f and "snapshot_receipts" in f
+        assert {"value", "source", "env_var", "label", "description"} <= set(f["semops.champion_validate"])
 
 
 class TestPostprocEndpoint:

@@ -246,26 +246,35 @@ def _store_failure_never_reaches_the_answer() -> Comparison:
 @scenario("content_capture_stays_off")
 def _content_capture_stays_off() -> Comparison:
     """Graduating the metadata log must not drag prompt CONTENT along: with
-    `obs.session_log` on and `obs.prompt_capture` off, capture returns nothing;
-    with both on it caps and MARKS truncation. The two flags stay separate."""
+    `obs.session_log` on and no capture WINDOW open, capture returns nothing; inside
+    a window it caps and MARKS truncation, and the window closes itself once its
+    budget is spent. Content is never a standing state."""
     from aughor.kernel.flags import flag_overrides
+    from aughor.obs import prompt_window
     from aughor.obs.session_log import capture_prompt
 
-    with flag_overrides({FLAG: True, "obs.prompt_capture": False}):
+    prompt_window.close_window()
+    with flag_overrides({FLAG: True}):
         metadata_only = capture_prompt(system="s" * 10, user="u" * 10, output="o" * 10)
-    with flag_overrides({FLAG: True, "obs.prompt_capture": True}):
+
+        prompt_window.open_window(calls=1, minutes=5, opened_by="receipt")
         captured = capture_prompt(system="s" * 3000, user="short", output=None)
+        after_budget = capture_prompt(system="s" * 10, user="u" * 10, output=None)
+    window_closed = not prompt_window.active()
+    prompt_window.close_window()
 
     return Comparison(
         scenario="content_capture_stays_off",
         expected={"metadata_only": {}, "captured_keys": ["system_prompt",
                   "system_prompt_truncated", "user_prompt"],
-                  "system_capped": True, "truncation_marked": True},
+                  "system_capped": True, "truncation_marked": True,
+                  "after_budget": {}, "window_closed": True},
         observed={"metadata_only": metadata_only, "captured_keys": sorted(captured),
                   "system_capped": len(captured.get("system_prompt", "")) <= 2000,
-                  "truncation_marked": captured.get("system_prompt_truncated") is True},
-        oracle="declared (obs.prompt_capture is a separate opt-in with its own blast radius)",
-        note="the graduation flips metadata only; content capture stays off and independent",
+                  "truncation_marked": captured.get("system_prompt_truncated") is True,
+                  "after_budget": after_budget, "window_closed": window_closed},
+        oracle="declared (content capture is a bounded, self-expiring window, not a flag)",
+        note="the graduation flips metadata only; content needs a window that closes itself",
     )
 
 

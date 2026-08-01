@@ -30,9 +30,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from aughor.kernel.ledger import Ledger
-from aughor.obs import session_log
+from aughor.obs import prompt_window, session_log
 from aughor.org.context import current_org_id
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ router = APIRouter(tags=["obs"])
 _POLL_SECONDS = 1.0          # tail cadence (indexed seq > ? query)
 _HEARTBEAT_EVERY = 25        # SSE comment keep-alive, in tail ticks
 
-#: Payload keys that exist only when `obs.prompt_capture` was on for the call.
+#: Payload keys that exist only when a prompt-capture window was open for the call.
 _CONTENT_KEYS = ("system_prompt", "user_prompt", "response")
 
 
@@ -184,6 +185,39 @@ def get_trace(trace_id: str):
         "events": events,
         "spans": roots,
     }
+
+
+# ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
+# Storing model-call CONTENT is the most sensitive write this product makes, so it is
+# never a standing setting: an operator opens a window bounded by a call budget AND a
+# clock, and it closes itself. See aughor/obs/prompt_window.py.
+
+class _OpenCaptureRequest(BaseModel):
+    calls: int = prompt_window.DEFAULT_CALLS
+    minutes: int = prompt_window.DEFAULT_MINUTES
+    opened_by: str = ""
+    reason: str = ""
+
+
+@router.get("/obs/prompt-capture")
+def prompt_capture_status():
+    """Is anything being recorded right now, and for how much longer?"""
+    return prompt_window.status()
+
+
+@router.post("/obs/prompt-capture")
+def prompt_capture_open(body: _OpenCaptureRequest):
+    """Open a capture window. Both bounds are clamped (see ``MAX_CALLS`` /
+    ``MAX_MINUTES``) and reported back, so an operator always knows what they got
+    rather than what they asked for."""
+    return prompt_window.open_window(calls=body.calls, minutes=body.minutes,
+                                     opened_by=body.opened_by, reason=body.reason)
+
+
+@router.delete("/obs/prompt-capture")
+def prompt_capture_close():
+    """Close the window now. Idempotent."""
+    return prompt_window.close_window()
 
 
 # ── CR2: the activity stream ─────────────────────────────────────────────────────

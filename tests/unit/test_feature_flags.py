@@ -53,15 +53,14 @@ def test_auto_eligible_flag_env_semantics(monkeypatch):
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
-    # `obs.prompt_capture` is the exemplar (its predecessor `ai_sql` was deleted
-    # in the 2026-08-01 flag endgame): content capture stays a deliberate opt-in
-    # until its own Wave-1 reshape, so it is the last reliably-off flag.
-    monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
-    assert flag_enabled("obs.prompt_capture") is False
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
-    assert flag_enabled("obs.prompt_capture") is True
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "garbage")
-    assert flag_enabled("obs.prompt_capture") is False
+    # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
+    # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
+    monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+    assert flag_enabled("semops.champion_validate") is False
+    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
+    assert flag_enabled("semops.champion_validate") is True
+    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "garbage")
+    assert flag_enabled("semops.champion_validate") is False
 
 
 def test_specialist_packs_is_default_on(monkeypatch):

@@ -82,12 +82,18 @@ def _all_events(**kw):
 
 @pytest.fixture(autouse=True)
 def _own_the_log():
-    """Each test owns the table. The kernel ledger is a session-scoped tmp DB
-    shared by the whole run, so without this the log accumulates across tests and
-    any global assertion silently reads someone else's events."""
+    """Each test owns the table AND the capture window. The kernel ledger is a
+    session-scoped tmp DB shared by the whole run, so without this the log
+    accumulates across tests and any global assertion silently reads someone
+    else's events. The window lives in the same ledger and is just as leaky: one
+    left open would silently record prompt CONTENT into a later test's payloads."""
+    from aughor.obs import prompt_window
+
     Ledger.default().session_events_clear()
+    prompt_window.close_window()
     yield
     Ledger.default().session_events_clear()
+    prompt_window.close_window()
 
 
 # ── the decision gate ─────────────────────────────────────────────────────────
@@ -532,11 +538,19 @@ def _one_llm_call(trace: str, *, system="SYS", user="USER"):
     return [e for e in _all_events(trace_id=trace) if e["kind"] == session_log.LLM_CALL][0]
 
 
+def _open_capture(calls: int = 20):
+    """Open a prompt-capture window for the test and guarantee it is closed after."""
+    from aughor.obs import prompt_window
+    prompt_window.open_window(calls=calls, minutes=5, opened_by="test")
+    return prompt_window
+
+
 def test_prompt_capture_off_by_default(monkeypatch):
     """The session log is metadata by default. Content is a separate decision
-    with a different blast radius, so it needs its own opt-in."""
+    with a different blast radius, so it needs its own deliberate window."""
     monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
-    monkeypatch.delenv("AUGHOR_OBS_PROMPT_CAPTURE", raising=False)
+    from aughor.obs import prompt_window
+    prompt_window.close_window()
 
     payload = _one_llm_call("t-nocapture")["payload"]
     assert "system_prompt" not in payload
@@ -545,21 +559,39 @@ def test_prompt_capture_off_by_default(monkeypatch):
     assert payload["role"] == "coder"     # metadata still recorded
 
 
-def test_prompt_capture_records_content_when_enabled(monkeypatch):
+def test_prompt_capture_records_content_while_a_window_is_open(monkeypatch):
     monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+    pw = _open_capture()
+    try:
+        payload = _one_llm_call("t-capture", system="SCHEMA CONTEXT", user="why did revenue drop?")
+        assert payload["payload"]["system_prompt"] == "SCHEMA CONTEXT"
+        assert payload["payload"]["user_prompt"] == "why did revenue drop?"
+        assert "forty-two" in payload["payload"]["response"]
+    finally:
+        pw.close_window()
 
-    payload = _one_llm_call("t-capture", system="SCHEMA CONTEXT", user="why did revenue drop?")
-    assert payload["payload"]["system_prompt"] == "SCHEMA CONTEXT"
-    assert payload["payload"]["user_prompt"] == "why did revenue drop?"
-    assert "forty-two" in payload["payload"]["response"]
+
+def test_a_window_closes_itself_once_its_budget_is_spent(monkeypatch):
+    """The whole point of replacing the standing flag: capture stops on its own.
+    A budget of one means the SECOND call stores metadata only."""
+    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
+    pw = _open_capture(calls=1)
+    try:
+        first = _one_llm_call("t-window-1", system="SYS", user="USER")["payload"]
+        second = _one_llm_call("t-window-2", system="SYS", user="USER")["payload"]
+        assert first["system_prompt"] == "SYS"
+        assert "system_prompt" not in second        # budget spent → content stops
+        assert second["role"] == "coder"            # metadata keeps flowing
+        assert pw.active() is False                 # and the window is gone, not zombie
+    finally:
+        pw.close_window()
 
 
 def test_prompt_capture_needs_the_session_log_too(monkeypatch):
     """Content capture is an add-on: with the session log forced off nothing is
-    written at all, so enabling capture alone cannot leak anything."""
+    written at all, so an open window alone cannot leak anything."""
     monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
+    _open_capture()
 
     from types import SimpleNamespace
 
@@ -585,20 +617,22 @@ def test_truncated_prompts_say_so(monkeypatch):
     """A silently shortened prompt reproduces a different call than the one that
     ran — worse than not capturing it, because it looks authoritative."""
     monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
     monkeypatch.setenv("AUGHOR_OBS_PROMPT_MAX_CHARS", "10")
-
-    payload = _one_llm_call("t-trunc", system="x" * 500, user="short")["payload"]
-    assert payload["system_prompt"] == "x" * 10
-    assert payload["system_prompt_truncated"] is True
-    assert "user_prompt_truncated" not in payload     # fit, so unmarked
+    pw = _open_capture()
+    try:
+        payload = _one_llm_call("t-trunc", system="x" * 500, user="short")["payload"]
+        assert payload["system_prompt"] == "x" * 10
+        assert payload["system_prompt_truncated"] is True
+        assert "user_prompt_truncated" not in payload     # fit, so unmarked
+    finally:
+        pw.close_window()
 
 
 def test_failed_call_still_captures_the_prompt(monkeypatch):
     """The failing call is precisely the one you want to reproduce."""
     monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_CAPTURE", "1")
     monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    _open_capture()
     from types import SimpleNamespace
 
     from aughor import telemetry
