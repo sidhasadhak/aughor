@@ -107,22 +107,7 @@ def test_runs_are_newest_first(persona):
 
 # ── spend: unmeasured is not zero ───────────────────────────────────────────────────
 
-def test_spend_says_unmeasured_rather_than_zero_when_the_log_is_off(monkeypatch):
-    """A confident 0 tokens and an unrecorded 0 tokens render identically on a tile, and
-    only one of them is true. The verdict names the flag that would make it measurable."""
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
-    from aughor.routers.agents import _agent_spend
-
-    spend = _agent_spend("ua_h3")
-    assert spend["measured"] is False
-    assert spend["enable_flag"] == "obs.session_log"
-    assert "total_tokens" not in spend, "an unmeasured spend must not present a number"
-
-
-def test_spend_reads_the_agent_axis_when_the_log_is_on(monkeypatch):
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "obs.session_log")
+def test_spend_reads_the_agent_axis(monkeypatch):
     import aughor.obs.usage as usage
     monkeypatch.setattr(usage, "usage_report", lambda **kw: _FakeReport())
     from aughor.routers.agents import _agent_spend
@@ -133,8 +118,8 @@ def test_spend_reads_the_agent_axis_when_the_log_is_on(monkeypatch):
 
 
 def test_an_agent_with_no_recorded_calls_is_zero_not_missing(monkeypatch):
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "obs.session_log")
+    """Recording is permanent, so an empty slice is a confident zero — not an
+    unmeasured one. That distinction used to need a flag; now it is structural."""
     import aughor.obs.usage as usage
     monkeypatch.setattr(usage, "usage_report", lambda **kw: _FakeReport())
     from aughor.routers.agents import _agent_spend

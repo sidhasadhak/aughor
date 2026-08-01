@@ -113,7 +113,6 @@ def _core_types(events):
 
 
 def test_flag_on_dual_emits_deltas_before_terminal_insight(client: TestClient, builtin_conn_id: str, monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "1")
     _stub_providers(monkeypatch)
 
     events = _stream_events(client, builtin_conn_id, "total value split by group")
@@ -148,7 +147,6 @@ def test_the_narrative_events_dual_emit_under_both_names(client: TestClient, bui
     for one release so a client deployed before the rename keeps working, and both names
     must carry the IDENTICAL payload — a divergence would make the two clients disagree
     about the same answer. This is the whole contract of the additive rename."""
-    monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "1")
     _stub_providers(monkeypatch)
 
     events = _stream_events(client, builtin_conn_id, "total value split by group")
@@ -165,22 +163,3 @@ def test_the_narrative_events_dual_emit_under_both_names(client: TestClient, bui
     assert [d["narrative"] for d in by_type("insight_delta")] == _PARTIALS
 
 
-def test_flag_off_is_the_blocking_path_with_identical_core_sequence(client: TestClient, builtin_conn_id: str, monkeypatch):
-    _stub_providers(monkeypatch)
-
-    monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "1")
-    on_events = _stream_events(client, builtin_conn_id, "total value split by group")
-    monkeypatch.setenv("AUGHOR_ASK_STREAM_TEXT", "0")
-    off_events = _stream_events(client, builtin_conn_id, "total value split by group")
-
-    # Zero delta frames when the flag is off — under EITHER name (both are dual-emitted).
-    _DELTAS = ("narrative_delta", "insight_delta")
-    off_types = _core_types(off_events)
-    assert not [t for t in off_types if t in _DELTAS], off_types
-    # …but the terminal narrative/followups arrive exactly as before, same content —
-    # and the retired name still carries it too, for a client that predates the rename.
-    for name in ("narrative", "insight"):
-        assert next(e for e in off_events if e["type"] == name)["narrative"] == _FINAL
-    # And the core event-type sequence matches the flag-on run minus the deltas.
-    on_types_sans_deltas = [t for t in _core_types(on_events) if t not in _DELTAS]
-    assert off_types == on_types_sans_deltas, (off_types, on_types_sans_deltas)

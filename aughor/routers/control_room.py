@@ -69,7 +69,6 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
     from aughor.kernel.agents import is_enabled as charter_enabled
     from aughor.kernel.agents import charter_for_kind, list_charters
     from aughor.kernel.jobs import concurrency_policy
-    from aughor.obs import session_log
     from aughor.obs.usage import usage_report
     from aughor.custom_agents.store import list_agents as list_personas
 
@@ -191,9 +190,8 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
     # can open would be two views disagreeing about what exists.
     from aughor.kernel.flags import flag_enabled
     personas_on = flag_enabled("agents.user_defined")
-    log_on = session_log.enabled()
     persona_usage: dict[str, Any] = {}
-    if personas_on and log_on:
+    if personas_on:
         try:
             report = usage_report(axes=("agent_id",))
             persona_usage = {r.key.get("agent_id"): r for r in report.rows}
@@ -201,12 +199,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
             logger.warning("fleet: persona usage rollup failed", exc_info=True)
     for persona in (list_personas() if personas_on else []):
         usage_row = persona_usage.get(persona.id)
-        if not log_on:
-            spend = {"measured": False,
-                     "reason": "the session log is off; no model calls are "
-                               "recorded to attribute",
-                     "enable_flag": "obs.session_log"}
-        elif usage_row is None:
+        if usage_row is None:
             spend = {"measured": True, "calls": 0, "total_tokens": 0,
                      "failure_rate": None}
         else:
@@ -222,7 +215,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
             "spend": spend,
         })
 
-    return {"tiles": tiles, "rows": rows, "session_log_recording": log_on}
+    return {"tiles": tiles, "rows": rows, "session_log_recording": True}
 
 
 # ── CR4: needs a human ───────────────────────────────────────────────────────────

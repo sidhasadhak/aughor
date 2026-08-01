@@ -30,7 +30,6 @@ def db(tmp_path):
 
 
 def test_recover_sql_from_real_executor(monkeypatch, db):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
     sql_a = "SELECT COUNT(*) AS n FROM orders"
     sql_b = "SELECT SUM(amount) AS total FROM orders"
 
@@ -59,8 +58,3 @@ def test_recover_sql_from_real_executor(monkeypatch, db):
     assert run.errors() == []
 
 
-def test_recover_is_empty_when_flag_off(monkeypatch, db):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "0")
-    with tel.span("run-off", "explore", {"iteration": 0}):
-        execute_guarded(db, "SELECT 1", query_id="q")
-    assert th.recover_sql("run-off") == []

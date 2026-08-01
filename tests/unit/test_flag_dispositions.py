@@ -73,12 +73,18 @@ def test_list_flags_carries_the_disposition():
 
 
 def test_deleted_flags_stay_deleted():
-    """Tombstones: re-registering one silently resurrects behaviour the strategy
-    removed. ada.adversarial_verify — the always-challenge refuter tier (§4G);
-    obs.mlflow — replaced by self-gating on AUGHOR_MLFLOW_TRACKING_URI (§4C)."""
+    """Tombstones: re-registering one silently resurrects behaviour the endgame
+    removed — either a deleted feature, or a graduated one whose flag is gone
+    because the behaviour is now unconditional."""
     for tombstone in ("deep_analysis.adversarial_verify", "obs.mlflow", "search.rrf",
                       "ai_sql", "deep_analysis.evidence_stubs",
                       "explorer.synthesis_incremental", "plan.program",
-                      "obs.prompt_capture"):
+                      "obs.prompt_capture",
+                      # Wave 2 — hardwired always-on, flag + off-path deleted.
+                      "trust.verify_live", "trust.verify_facade", "trust.e1_live",
+                      "obs.session_log", "obs.task_table", "ask.stream_text",
+                      "ask.context_receipt", "capabilities.receipt", "learning.receipt",
+                      "deep_analysis.progress_events", "llm.structured_salvage",
+                      "llm.bounded_repair"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone

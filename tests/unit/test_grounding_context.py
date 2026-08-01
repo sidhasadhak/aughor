@@ -138,14 +138,7 @@ def test_producers_degrade_to_empty_not_raise(monkeypatch):
 
 # ── endpoint gating ───────────────────────────────────────────────────────────
 
-def test_endpoint_404_when_flag_off(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_CONTEXT_RECEIPT", "0")
-    r = client.get("/ask/context", params={"connection": "samples", "question": "why is revenue down"})
-    assert r.status_code == 404
-
-
 def test_endpoint_returns_receipt_when_flag_on(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_CONTEXT_RECEIPT", "1")
     r = client.get("/ask/context", params={"connection": "samples", "question": "why is revenue down"})
     assert r.status_code == 200
     body = r.json()
@@ -159,6 +152,5 @@ def test_endpoint_returns_receipt_when_flag_on(client, monkeypatch):
 
 
 def test_endpoint_unknown_connection_404(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_CONTEXT_RECEIPT", "1")
     r = client.get("/ask/context", params={"connection": "nope-not-real", "question": "q"})
     assert r.status_code == 404

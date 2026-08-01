@@ -1149,15 +1149,12 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
     if not _is_structured_failure(exc):
         return None
     try:
-        from aughor.kernel.flags import flag_enabled
         from aughor.llm import reliability
     except Exception:
         logger.debug("llm: reliability layer unavailable", exc_info=True)
         return None
 
     try:
-        if not flag_enabled("llm.structured_salvage"):
-            return None
         result = reliability.salvage(exc, response_model)
         if result.ok:
             completion = (getattr(exc, "last_completion", None)
@@ -1168,10 +1165,6 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
 
         diagnosis = result.diagnosis
         if diagnosis is None or not diagnosis.repairable:
-            return None
-        if not flag_enabled("llm.bounded_repair"):
-            logger.info("llm: %s response is %s and repairable, but llm.bounded_repair is off",
-                        response_model.__name__, diagnosis.failure)
             return None
     except Exception:
         logger.debug("llm: deterministic salvage failed", exc_info=True)

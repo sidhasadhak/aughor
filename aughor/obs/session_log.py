@@ -1,6 +1,6 @@
 """The agent-session log — one append-only event per thing that happened in a run.
 
-Flag: ``obs.session_log`` (env ``AUGHOR_OBS_SESSION_LOG``). Strict no-op when off.
+Always on (graduated on receipt ``45dcc137f55b``; the flag was deleted 2026-08-01).
 
 **Why this exists alongside ``task_history``.** That table is span-shaped: one row
 per *completed* unit of work, written on exit, ordered by a start-time string.
@@ -64,13 +64,13 @@ _LONGFORM_KEYS = frozenset({"system_prompt", "user_prompt", "response"})
 
 
 def enabled() -> bool:
-    """True when the ``obs.session_log`` flag is on. Never raises — a flag-store
-    failure means "off", not a broken answer path."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("obs.session_log")
-    except Exception:
-        return False
+    """Recording is permanent (the ``obs.session_log`` flag was hardwired 2026-08-01).
+
+    Kept as a function because the writers call it on every event and a future kill
+    switch — a store outage, a retention emergency — would land here rather than at
+    the ~6 call sites.
+    """
+    return True
 
 
 def _clip(value: Any) -> Any:

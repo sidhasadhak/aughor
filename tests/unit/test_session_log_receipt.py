@@ -1,4 +1,4 @@
-"""Wave CR0 — the deterministic graduation suite for `obs.session_log`.
+"""Wave CR0 — the deterministic invariant suite the session log rests on.
 
 Hermetic: scenarios drive the real door wrapper over synthetic frame streams
 against throwaway ledgers, so these run without a warehouse, an LLM, or anything
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.evals.evaluator import EvalCase
-from aughor.evals.session_log_receipt import FLAG, SCENARIOS, receipt_target
+from aughor.evals.session_log_receipt import SCENARIOS, receipt_target
 
 
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
@@ -31,7 +31,7 @@ def test_every_scenario_declares_an_oracle():
 def test_the_suite_covers_the_invariants_the_flip_rests_on():
     """Pinned by name: these are the properties the flag's default rests on, and a
     silent deletion of one would leave the graduation resting on less than it claims."""
-    assert {"flag_off_is_inert", "frames_identical_on_vs_off",
+    assert {"frames_are_delivered_untouched",
             "crashed_run_leaves_evidence", "store_failure_never_reaches_the_answer",
             "content_capture_stays_off", "retention_bounds_the_table",
             "write_latency_clears_e1_bar"} <= set(SCENARIOS)
@@ -44,7 +44,11 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_the_flag_under_test_is_registered():
+def test_recording_is_unconditional():
+    """The flag this suite once gated on was hardwired 2026-08-01. Pinning it here
+    means a future edit re-introducing an off switch has to face this test."""
     from aughor.kernel.flags import FLAG_ENV
+    from aughor.obs import session_log
 
-    assert FLAG in FLAG_ENV
+    assert "obs.session_log" not in FLAG_ENV
+    assert session_log.enabled() is True

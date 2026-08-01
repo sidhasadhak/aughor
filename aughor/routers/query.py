@@ -646,12 +646,10 @@ def query_validate(body: _QueryValidateRequest):
     # so it runs after the connection is closed.
     mutation_blockers: list = []
     try:
-        from aughor.kernel.flags import flag_enabled
-        if flag_enabled("trust.verify_facade"):
-            from aughor.trust import verify as trust_verify, Scope
-            verdict = trust_verify(sql, Scope(dialect=dialect))
-            mutation_blockers = [{"name": c.name, "reason": c.reason, **c.detail}
-                                 for c in verdict.blockers]
+        from aughor.trust import verify as trust_verify, Scope
+        verdict = trust_verify(sql, Scope(dialect=dialect))
+        mutation_blockers = [{"name": c.name, "reason": c.reason, **c.detail}
+                             for c in verdict.blockers]
     except Exception as exc:
         tolerate(exc, "validate: trust facade", counter="validate.trust_facade")
 

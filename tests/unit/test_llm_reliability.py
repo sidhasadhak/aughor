@@ -287,24 +287,6 @@ def test_a_fenced_response_costs_zero_extra_requests():
     assert len(ep.calls) == 1, "salvage must not issue a request"
 
 
-def test_with_salvage_off_the_failure_still_surfaces(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_STRUCTURED_SALVAGE", "0")
-    ep = _FakeEndpoint(_retry_exc(_completion(f"```json\n{GOOD}\n```")))
-    with pytest.raises(Exception):
-        _run(ep)
-    assert len(ep.calls) == 1
-
-
-def test_turning_the_repair_off_gives_a_hard_ceiling_of_one_request(monkeypatch):
-    """The operator's escape hatch: `llm.bounded_repair=0` means a structured call can
-    never cost more than the one request it was asked to make."""
-    monkeypatch.setenv("AUGHOR_LLM_BOUNDED_REPAIR", "0")
-    ep = _FakeEndpoint(_retry_exc(_completion('{"verdict": "hgih", "note": "ok"}')))
-    with pytest.raises(R.StructuredOutputError):
-        _run(ep)
-    assert len(ep.calls) == 1
-
-
 def test_instructor_gets_one_attempt_not_its_default_three(monkeypatch):
     """The leak this wave found. Instructor defaults to THREE attempts and we had never
     overridden it, so a malformed response re-sent the entire prompt — evidence block
@@ -323,7 +305,6 @@ def test_instructor_gets_one_attempt_not_its_default_three(monkeypatch):
 def test_the_repair_does_not_inherit_a_retry_ladder(monkeypatch):
     """One repair means one request. A ladder on the repair would quietly restore the
     multiplier this wave just removed."""
-    monkeypatch.setenv("AUGHOR_LLM_BOUNDED_REPAIR", "1")
     ep = _FakeEndpoint(_retry_exc(_completion('{"verdict": "hgih", "note": "ok"}')),
                        (Verdict(verdict="high", note="ok"), _completion(GOOD)))
     _run(ep)
@@ -331,7 +312,6 @@ def test_the_repair_does_not_inherit_a_retry_ladder(monkeypatch):
 
 
 def test_the_bounded_repair_is_exactly_one_request(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_BOUNDED_REPAIR", "1")
     ep = _FakeEndpoint(_retry_exc(_completion('{"verdict": "hgih", "note": "ok"}')),
                        (Verdict(verdict="high", note="ok"), _completion(GOOD)))
     out = _run(ep)
@@ -344,7 +324,6 @@ def test_the_bounded_repair_is_exactly_one_request(monkeypatch):
 
 
 def test_a_failed_repair_surfaces_the_original_failure(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_BOUNDED_REPAIR", "1")
     ep = _FakeEndpoint(_retry_exc(_completion('{"verdict": "hgih", "note": "ok"}')),
                        RuntimeError("repair also failed"))
     with pytest.raises(R.StructuredOutputError) as caught:
@@ -356,7 +335,6 @@ def test_a_failed_repair_surfaces_the_original_failure(monkeypatch):
 def test_a_truncation_never_buys_a_repair(monkeypatch):
     """Classify BEFORE retry. The ceiling that cut the response off is ours and is sent
     on every request, so a repair regenerates into the same wall."""
-    monkeypatch.setenv("AUGHOR_LLM_BOUNDED_REPAIR", "1")
     ep = _FakeEndpoint(_retry_exc(_completion('{"verdict": "hi', finish_reason="length")))
     with pytest.raises(R.StructuredOutputError) as caught:
         _run(ep)
@@ -437,12 +415,16 @@ def test_a_validation_failure_does_not_buy_a_reasoning_extras_retry(monkeypatch)
     neither, so on OpenRouter (the only backend that sends extra_body, and the primary)
     EVERY structured-output failure re-sent the whole prompt to test a hypothesis that
     was already false. Measured before the fix: 2 requests per validation failure."""
-    monkeypatch.setenv("AUGHOR_LLM_STRUCTURED_SALVAGE", "0")   # isolate the degrade path
     ep = _FakeEndpoint(_retry_exc(_completion("not json")))
     with pytest.raises(Exception):
         _run(ep, backend="openrouter")
-    assert len(ep.calls) == 1, "a validation error must not re-send the prompt"
     assert "extra_body" in ep.calls[0]                          # extras were never the problem
+    # Bounded repair is permanent now, so a second call is allowed — but it must be the
+    # SMALL repair (the error + the broken text), never the whole prompt sent again to
+    # test the extras hypothesis. That distinction is the whole point of this test.
+    for call in ep.calls[1:]:
+        body = str(call.get("messages"))
+        assert "Rejected because" in body, "a re-send is not a repair"
 
 
 def test_a_shim_that_really_rejects_the_extras_still_degrades():

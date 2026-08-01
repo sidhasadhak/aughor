@@ -497,16 +497,9 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
 
 
 def _investigation_stream(graph_stream):
-    """The deep-run event iterator. With ``ada.progress_events`` on, interleaves per-dimension
-    ``phase_progress`` markers into the stream (a scan node reports progress DURING execution, not only
-    at ``phase_complete``); off → plain ``_aiter_sync`` (byte-identical, no sink, no extra tasks)."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        on = flag_enabled("deep_analysis.progress_events")
-    except Exception:
-        on = False
-    if not on:
-        return _aiter_sync(graph_stream)
+    """The deep-run event iterator: interleaves per-dimension ``phase_progress`` markers
+    into the stream, so a scan node reports progress DURING execution and not only at
+    ``phase_complete``."""
     import contextvars
 
     from aughor.agent.progress import set_progress_sink
@@ -1718,61 +1711,54 @@ async def _stream_chat(
         # gate is the only door). Flag off = the legacy prompt byte-for-byte.
         from aughor.agent.prompts import chat_sql_system as _chat_sql_system
         _chat_system = _chat_sql_system(_hl_stream_flag("chart.exhibit_grammar"))
-        if _hl_stream_flag("ask.stream_text"):
-            import queue as _hq_mod
-            import threading as _hthreading
-            import time as _htime
-            _hl_q = _hq_mod.Queue()
-            _hl_result: dict = {}
+        import queue as _hq_mod
+        import threading as _hthreading
+        import time as _htime
+        _hl_q = _hq_mod.Queue()
+        _hl_result: dict = {}
 
-            def _hl_worker() -> None:
-                # complete_streaming falls back to blocking complete() on any streaming failure,
-                # so "exc" only means BOTH paths failed — re-raised below, exactly as today.
-                try:
-                    _hl_result["ans"] = get_provider("coder").complete_streaming(
-                        system=_chat_system, user=prompt, response_model=_ChatAnswer,
-                        text_field="headline", on_text=_hl_q.put,
-                    )
-                except Exception as worker_exc:
-                    _hl_result["exc"] = worker_exc
-                finally:
-                    _hl_q.put(None)   # sentinel: the stream is over
-
-            _hl_thread = _hthreading.Thread(target=_hl_worker, daemon=True, name="headline-stream")
-            _hl_thread.start()
-            # Drain partials → SSE deltas, throttled (grew ≥6 chars or >120ms) — a headline is
-            # short, so a tighter throttle than the narrative keeps it typing smoothly.
-            _hl_last_len, _hl_last_ts = 0, _htime.monotonic()
-            _HL_EMPTY = object()
-
-            def _hl_poll():
-                try:
-                    return _hl_q.get(True, 0.25)
-                except _hq_mod.Empty:
-                    return _HL_EMPTY
-
-            while True:
-                _hitem = await asyncio.to_thread(_hl_poll)
-                if _hitem is _HL_EMPTY:
-                    continue
-                if _hitem is None:
-                    break
-                if not isinstance(_hitem, str):
-                    continue
-                _hnow = _htime.monotonic()
-                if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
-                    _hl_last_len, _hl_last_ts = len(_hitem), _hnow
-                    yield _sse("headline_delta", {"headline": _hitem})
-            await asyncio.to_thread(_hl_thread.join)
-            if "exc" in _hl_result:
-                raise _hl_result["exc"]
-            answer: _ChatAnswer = _hl_result["ans"]
-        else:
-            answer = await asyncio.to_thread(
-                lambda: get_provider("coder").complete(
+        def _hl_worker() -> None:
+            # complete_streaming falls back to blocking complete() on any streaming failure,
+            # so "exc" only means BOTH paths failed — re-raised below, exactly as today.
+            try:
+                _hl_result["ans"] = get_provider("coder").complete_streaming(
                     system=_chat_system, user=prompt, response_model=_ChatAnswer,
+                    text_field="headline", on_text=_hl_q.put,
                 )
-            )
+            except Exception as worker_exc:
+                _hl_result["exc"] = worker_exc
+            finally:
+                _hl_q.put(None)   # sentinel: the stream is over
+
+        _hl_thread = _hthreading.Thread(target=_hl_worker, daemon=True, name="headline-stream")
+        _hl_thread.start()
+        # Drain partials → SSE deltas, throttled (grew ≥6 chars or >120ms) — a headline is
+        # short, so a tighter throttle than the narrative keeps it typing smoothly.
+        _hl_last_len, _hl_last_ts = 0, _htime.monotonic()
+        _HL_EMPTY = object()
+
+        def _hl_poll():
+            try:
+                return _hl_q.get(True, 0.25)
+            except _hq_mod.Empty:
+                return _HL_EMPTY
+
+        while True:
+            _hitem = await asyncio.to_thread(_hl_poll)
+            if _hitem is _HL_EMPTY:
+                continue
+            if _hitem is None:
+                break
+            if not isinstance(_hitem, str):
+                continue
+            _hnow = _htime.monotonic()
+            if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
+                _hl_last_len, _hl_last_ts = len(_hitem), _hnow
+                yield _sse("headline_delta", {"headline": _hitem})
+        await asyncio.to_thread(_hl_thread.join)
+        if "exc" in _hl_result:
+            raise _hl_result["exc"]
+        answer: _ChatAnswer = _hl_result["ans"]
 
         final_sql = answer.sql
         # Trust-receipt provenance signals — recorded ONLY when a guard
@@ -2085,8 +2071,7 @@ async def _stream_chat(
         # ORDER BY on numeric text, text↔numeric compare) previously ran only on
         # /query/validate — never on an answer a user actually saw. WARN-only: the
         # headline gets the caveat, the SQL is never rewritten (the E1 contract).
-        from aughor.kernel.flags import flag_enabled as _flag_enabled
-        if final_sql and _flag_enabled("trust.e1_live"):
+        if final_sql:
             try:
                 from aughor.sql.trust_checks import connection_column_types, run_trust_checks
                 # Real column types (cached) so the date-boundary check distinguishes a genuine
@@ -2281,79 +2266,68 @@ async def _stream_chat(
             # narrative as `narrative_delta` frames while the narrator writes it, then let
             # the terminal `narrative` event carry the authoritative final value —
             # self-healing (a dropped delta costs nothing; old clients ignore the unknown
-            # event). Flag off = the exact pre-streaming blocking call, byte-identical.
-            from aughor.kernel.flags import flag_enabled as _stream_flag
-            if _stream_flag("ask.stream_text"):
-                import queue as _queue
-                import threading as _threading
-                import time as _time
+            # event).
+            import queue as _queue
+            import threading as _threading
+            import time as _time
 
-                _pa_q: _queue.Queue = _queue.Queue()
-                _pa_result: dict = {}
+            _pa_q: _queue.Queue = _queue.Queue()
+            _pa_result: dict = {}
 
-                def _pa_worker() -> None:
-                    # complete_streaming falls back to the blocking complete() internally
-                    # on ANY streaming failure, so "exc" only means BOTH paths failed —
-                    # re-raised below into the enclosing tolerate, exactly like today.
-                    try:
-                        _pa_result["pa"] = get_provider("narrator").complete_streaming(
-                            system=_system, user=_user, response_model=_PostAnswer,
-                            temperature=0.2, text_field="narrative", on_text=_pa_q.put,
-                        )
-                    except Exception as worker_exc:
-                        _pa_result["exc"] = worker_exc
-                    finally:
-                        _pa_q.put(None)   # sentinel: the stream is over
-
-                _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
-                                               name="narrative-stream")
-                _pa_thread.start()
-                # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
-                # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
-                # go out strictly BEFORE the terminal `narrative` event, and only when the
-                # answer is worth narrating (same gate the terminal event uses).
-                _last_len, _last_ts = 0, _time.monotonic()
-                _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
-
-                def _pa_poll():
-                    # A poll timeout is the loop's heartbeat, not a failure — return a
-                    # marker instead of swallowing queue.Empty at the call site.
-                    try:
-                        return _pa_q.get(True, 0.25)
-                    except _queue.Empty:
-                        return _POLL_EMPTY
-
-                while True:
-                    _item = await asyncio.to_thread(_pa_poll)
-                    if _item is _POLL_EMPTY:
-                        continue
-                    if _item is None:
-                        break
-                    if not (_narrative_worth_it and isinstance(_item, str)):
-                        continue
-                    _now = _time.monotonic()
-                    if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
-                        _last_len, _last_ts = len(_item), _now
-                        _delta_payload = {"narrative": _apply_currency(_item, _cur_sym)}
-                        yield _sse("narrative_delta", _delta_payload)
-                        # DUAL-EMIT, one release only: the retired `insight_delta` name
-                        # carries the IDENTICAL payload so a client deployed before the
-                        # rename keeps typing the partial. Delete once no such client
-                        # remains; the frontend already prefers `narrative_delta`.
-                        yield _sse("insight_delta", _delta_payload)
-                await asyncio.to_thread(_pa_thread.join)
-                if "exc" in _pa_result:
-                    raise _pa_result["exc"]
-                _pa: _PostAnswer = _pa_result["pa"]
-            else:
-                _pa = await asyncio.to_thread(
-                    lambda: get_provider("narrator").complete(
-                        system=_system,
-                        user=_user,
-                        response_model=_PostAnswer,
-                        temperature=0.2,
+            def _pa_worker() -> None:
+                # complete_streaming falls back to the blocking complete() internally
+                # on ANY streaming failure, so "exc" only means BOTH paths failed —
+                # re-raised below into the enclosing tolerate, exactly like today.
+                try:
+                    _pa_result["pa"] = get_provider("narrator").complete_streaming(
+                        system=_system, user=_user, response_model=_PostAnswer,
+                        temperature=0.2, text_field="narrative", on_text=_pa_q.put,
                     )
-                )
+                except Exception as worker_exc:
+                    _pa_result["exc"] = worker_exc
+                finally:
+                    _pa_q.put(None)   # sentinel: the stream is over
+
+            _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
+                                           name="narrative-stream")
+            _pa_thread.start()
+            # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
+            # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
+            # go out strictly BEFORE the terminal `narrative` event, and only when the
+            # answer is worth narrating (same gate the terminal event uses).
+            _last_len, _last_ts = 0, _time.monotonic()
+            _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
+
+            def _pa_poll():
+                # A poll timeout is the loop's heartbeat, not a failure — return a
+                # marker instead of swallowing queue.Empty at the call site.
+                try:
+                    return _pa_q.get(True, 0.25)
+                except _queue.Empty:
+                    return _POLL_EMPTY
+
+            while True:
+                _item = await asyncio.to_thread(_pa_poll)
+                if _item is _POLL_EMPTY:
+                    continue
+                if _item is None:
+                    break
+                if not (_narrative_worth_it and isinstance(_item, str)):
+                    continue
+                _now = _time.monotonic()
+                if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
+                    _last_len, _last_ts = len(_item), _now
+                    _delta_payload = {"narrative": _apply_currency(_item, _cur_sym)}
+                    yield _sse("narrative_delta", _delta_payload)
+                    # DUAL-EMIT, one release only: the retired `insight_delta` name
+                    # carries the IDENTICAL payload so a client deployed before the
+                    # rename keeps typing the partial. Delete once no such client
+                    # remains; the frontend already prefers `narrative_delta`.
+                    yield _sse("insight_delta", _delta_payload)
+            await asyncio.to_thread(_pa_thread.join)
+            if "exc" in _pa_result:
+                raise _pa_result["exc"]
+            _pa: _PostAnswer = _pa_result["pa"]
             if _narrative_worth_it and _pa.narrative:
                 _narrative_dict = {
                     "narrative": _apply_currency(_pa.narrative, _cur_sym),
@@ -3812,13 +3786,8 @@ def ask_context_endpoint(
     priors, dialect rules, trusted templates, and the active agent/pack brief.
 
     The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
-    the same blocks the answer path assembles from the same producers). 404 when
-    the flag is off, so the default path is byte-identical.
+    the same blocks the answer path assembles from the same producers).
     """
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ask.context_receipt"):
-        raise HTTPException(status_code=404,
-                            detail="grounding-context receipt is disabled (flag ask.context_receipt)")
     from aughor.agent.grounding import build_grounding_context
     from aughor.db.connection import open_connection_for
     try:

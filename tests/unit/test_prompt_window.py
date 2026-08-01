@@ -86,9 +86,8 @@ def test_a_store_failure_means_no_capture(monkeypatch):
     assert PW.consume() is False
 
 
-def test_capture_prompt_stores_content_only_inside_a_window(monkeypatch):
+def test_capture_prompt_stores_content_only_inside_a_window():
     """The consumer contract, end to end — session_log defers to the window."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor.obs.session_log import capture_prompt
 
     assert capture_prompt(system="SYS", user="USER") == {}
@@ -97,9 +96,8 @@ def test_capture_prompt_stores_content_only_inside_a_window(monkeypatch):
     assert capture_prompt(system="SYS", user="USER") == {}      # budget spent
 
 
-def test_an_empty_capture_call_does_not_spend_budget(monkeypatch):
+def test_an_empty_capture_call_does_not_spend_budget():
     """A call with nothing to store must not shorten the operator's window."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     PW.open_window(calls=1, minutes=5)
     from aughor.obs.session_log import capture_prompt
 
@@ -110,8 +108,10 @@ def test_an_empty_capture_call_does_not_spend_budget(monkeypatch):
 def test_budget_is_not_spent_while_recording_is_off(monkeypatch):
     """`capture_prompt` is evaluated as an ARGUMENT to `emit`, which writes nothing
     when the log is off — so consuming there would silently drain an operator's
-    window on calls that stored no content at all."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
+    window on calls that stored no content at all. Recording is hardwired on today,
+    so the guard is pinned by patching the one function that decides."""
+    from aughor.obs import session_log
+    monkeypatch.setattr(session_log, "enabled", lambda: False)
     PW.open_window(calls=3, minutes=5)
     from aughor.obs.session_log import capture_prompt
 

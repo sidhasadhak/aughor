@@ -28,6 +28,12 @@ FLAG_ENV = {
     # prompt()/embedding() UDF module (semops/ai_sql.py) went with it; the generic
     # execution-hook seams it registered into remain.
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
+    # HARDWIRED 2026-08-01 (flag endgame Wave 2, trust/observability/LLM group) — each
+    # graduated with a receipt and is now unconditional product behaviour, its flag and
+    # off-path deleted: trust.verify_live · trust.verify_facade · trust.e1_live ·
+    # obs.session_log · obs.task_table · ask.stream_text · ask.context_receipt ·
+    # capabilities.receipt · learning.receipt · deep_analysis.progress_events ·
+    # llm.structured_salvage · llm.bounded_repair.
     # "explorer.synthesis_incremental" (AUGHOR_SYNTHESIS_INCREMENTAL) was DELETED
     # 2026-08-01 (flag endgame, verdict sheet Wave 1): mid-run synthesis spent extra
     # model calls for a "more alive" cadence the chat UI now provides for free, and
@@ -49,8 +55,6 @@ FLAG_ENV = {
     "deep_analysis.why_deepen": "AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN",
     "deep_analysis.parallel_why_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES",
     "preflight.parallel": "AUGHOR_PREFLIGHT_PARALLEL",
-    "trust.verify_facade": "AUGHOR_TRUST_FACADE",
-    "trust.verify_live": "AUGHOR_TRUST_VERIFY_LIVE",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
     "semantic.contract_live": "AUGHOR_SEMANTIC_CONTRACT_LIVE",
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
@@ -63,7 +67,6 @@ FLAG_ENV = {
     # question directly; the refuter itself (run_refutation) is unchanged.
     "deep_analysis.adversarial_high_stakes": "AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES",
     "deep_analysis.pin_canonical_metric": "AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC",
-    "deep_analysis.progress_events": "AUGHOR_DEEP_ANALYSIS_PROGRESS_EVENTS",
     "deep_analysis.clarify_gate": "AUGHOR_CLARIFY_GATE",
     "ask.clarify": "AUGHOR_ASK_CLARIFY",
     "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
@@ -87,8 +90,6 @@ FLAG_ENV = {
     # MLflow tracing now self-gates on AUGHOR_MLFLOW_TRACKING_URI being set, like the
     # other env-configured observability backends — a flag that is a no-op without an
     # external server and inert with one configured was two ways to be confused.
-    "obs.task_table": "AUGHOR_OBS_TASK_TABLE",
-    "obs.session_log": "AUGHOR_OBS_SESSION_LOG",
     # "obs.prompt_capture" (AUGHOR_OBS_PROMPT_CAPTURE) was DELETED 2026-08-01 (flag
     # endgame, verdict sheet Wave 1). The capability stays — it is how a recorded run
     # becomes a reproducible bug report — but a standing switch over the most sensitive
@@ -96,8 +97,6 @@ FLAG_ENV = {
     # close it. Replaced by a self-expiring WINDOW (aughor/obs/prompt_window.py,
     # POST/GET/DELETE /obs/prompt-capture) bounded by a call budget AND a clock.
     "obs.popularity": "AUGHOR_OBS_POPULARITY",
-    "llm.structured_salvage": "AUGHOR_LLM_STRUCTURED_SALVAGE",
-    "llm.bounded_repair": "AUGHOR_LLM_BOUNDED_REPAIR",
     "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
     "deep_analysis.evidence_dedup": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP",
@@ -108,8 +107,6 @@ FLAG_ENV = {
     # forbade graduation without the A/B that was never bought. Its lossless sibling
     # (evidence_dedup) carries the whole win.
     "evals.experiments": "AUGHOR_EVALS_EXPERIMENTS",
-    "ask.context_receipt": "AUGHOR_ASK_CONTEXT_RECEIPT",
-    "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     # "search.rrf" (AUGHOR_SEARCH_RRF) was DELETED 2026-08-01 (flag endgame, verdict
@@ -117,10 +114,7 @@ FLAG_ENV = {
     # real KB corpus (MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957 — the since-removed
     # evals/rrf_retrieval_eval.py). hybrid_rerank now α-blends unconditionally.
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
-    "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
-    "capabilities.receipt": "AUGHOR_CAPABILITIES_RECEIPT",
-    "trust.e1_live": "AUGHOR_TRUST_E1_LIVE",
     "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
     "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
     "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
@@ -177,7 +171,6 @@ RENAMED: dict[str, str] = {
     "ada.parallel_why_lenses": "deep_analysis.parallel_why_lenses",
     "ada.pin_canonical_metric": "deep_analysis.pin_canonical_metric",
     "ada.premise_check": "deep_analysis.premise_check",
-    "ada.progress_events": "deep_analysis.progress_events",
     "ada.why_deepen": "deep_analysis.why_deepen",
     "ada.why_where_interaction": "deep_analysis.why_where_interaction",
 }
@@ -194,7 +187,6 @@ RETIRED_ENV: dict[str, str] = {
     "AUGHOR_ADA_PARALLEL_PHASES": "deep_analysis.parallel_phases",
     "AUGHOR_ADA_PARALLEL_WHY_LENSES": "deep_analysis.parallel_why_lenses",
     "AUGHOR_ADA_PIN_CANONICAL_METRIC": "deep_analysis.pin_canonical_metric",
-    "AUGHOR_ADA_PROGRESS_EVENTS": "deep_analysis.progress_events",
     "AUGHOR_ADA_WHY_DEEPEN": "deep_analysis.why_deepen",
     "AUGHOR_ADA_WHY_WHERE_INTERACTION": "deep_analysis.why_where_interaction",
 }
@@ -234,9 +226,6 @@ FLAG_DEFAULT = {
     # `*_at`/`*_ts` tripping the name heuristic — disappeared, leaving only genuine
     # timestamp-boundary footguns. An operator can still disable any of these with an
     # explicit env `=0` or a runtime override. See docs/PLATFORM_REVIEW…2026-07-12.md WP-1f.
-    "trust.verify_live": True,     # AST read-only BLOCK on the deep-answer executor path
-    "trust.e1_live": True,         # E1 function-semantics WARN caveats on live answers
-    "trust.verify_facade": True,   # AST read-only gate on the /query/validate surface (additive field)
     # Capability graduation (2026-07-13, agentic-platform unification). Policy: a capability that is
     # (a) self-gating behind a deterministic runtime trigger, or (b) a pure observability/receipt
     # surface with negligible cost, GRADUATES to default-on once BUILT→WIRED→TESTED. The platform
@@ -244,12 +233,6 @@ FLAG_DEFAULT = {
     # explicit setting always wins over these defaults. This is E3 Phase 1 ("the flag system should
     # decide, with receipts") made the default posture instead of an opt-in.
     "capabilities.auto": True,     # master: self-gating guards elevate; their triggers gate per run
-    "capabilities.receipt": True,  # autonomy requires receipts — record which guard fired and why
-    "learning.receipt": True,      # learning visibility: reused/crystallized resolutions per answer
-    "ask.context_receipt": True,   # input-side trust: the exact grounding block, inspectable
-    "obs.task_table": True,        # the queryable spine — a sink over spans already emitted
-    "deep_analysis.progress_events": True,   # deep-run dead-air fix (CK-0.4): fine-grained progress beats
-    "ask.stream_text": True,       # CK-0.2 dual-emit insight deltas; terminal event stays authoritative
     # Presentation/intake graduation — Batch 1 of the flag-drift audit (2026-07-22).
     # See docs/FLAG_GRADUATION_AUDIT_2026-07-22.md.
     #
@@ -283,7 +266,6 @@ FLAG_DEFAULT = {
     # single judgement call — enum matching — folds case and separators only and refuses
     # anything fuzzy (`reliability._fold`). "HIGH"→"high" is the same token; "hgih" still
     # fails loudly.
-    "llm.structured_salvage": True,
     # Default-ON for a reason that only became visible once the transport stack was
     # measured end-to-end: instructor's own default is THREE attempts, and we had never
     # overridden it, so a malformed response already cost 3 full-prompt requests. Wave R1
@@ -292,7 +274,6 @@ FLAG_DEFAULT = {
     # and the specific error rather than a second copy of the original prompt and its
     # evidence. Off, the ceiling is 1 request per failure and some salvageable answers
     # are lost; on, it is 2 — still below the 3 this wave inherited.
-    "llm.bounded_repair": True,
     # Wave L4 (2026-07-27) — graduated on MEASURED equivalence, receipt `65364174a172`, from
     # run `309b715b05c0` of the deterministic suite `aughor/evals/equivalence.py` (9/9 stable
     # passes, 0 errors, 0 flaky, bar 1.0). The evidence is not "the tests are green": the suite
@@ -347,7 +328,6 @@ FLAG_DEFAULT = {
     # each /ask, /chat and /agui turn mints a trace and appends metadata rows (model,
     # tokens, latency, outcome; never prompt content) that the control room, /usage
     # attribution and per-agent spend read. Answers are byte-identical by construction.
-    "obs.session_log": True,
     # Wave H (2026-07-31) — graduated on a DETERMINISTIC data-gated claim, receipt
     # `df89c044999a`, from run `234be1fbb62b` of the suite
     # `aughor/evals/user_agents_receipt.py` (9/9 stable over 3 iterations, 0 errors,
@@ -571,25 +551,9 @@ FLAG_META = {
         "label": "Adopt monitors and briefings onto the automation engine",
         "description": "Run every enabled Monitor and Briefing subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor and briefing schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a briefing (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors and briefings. No data migration either way; flipping it off restores the legacy path.",
     },
-    "ask.stream_text": {
-        "label": "Token-stream the answer narrative",
-        "description": "Stream the post-answer narrative as it is written (`insight_delta` SSE events carrying the partial text) instead of one late pop-in, then emit the existing full `insight` event as the authoritative terminal value (self-healing: a dropped delta costs nothing). Dual-emit and additive — old clients ignore the unknown delta events; off = byte-identical to the pre-streaming stream. Falls back to the blocking call on any streaming error. See docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md.",
-    },
     "ask.overview": {
         "label": "Interesting-facts overview tour (the default first-look)",
         "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — as a first-look tour rather than a deep analysis of one metric: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
-    },
-    "ask.context_receipt": {
-        "label": "Grounding-context receipt (show what the model was grounded on)",
-        "description": "Expose the exact grounding block the SQL writer sees — the schema slice chosen, glossary entries, governed-metric bindings, ambiguity-ledger priors applied, value-index literal bindings, dialect rules, and active pack bindings — as JSON + rendered markdown via GET /ask/context and a \"Show grounding\" affordance on the answer. The input-side twin of the Trust Receipt (which covers the output). Assembly is centralised in a pure build_grounding_context() that the answer path and the endpoint share, so the receipt is exactly what the run used (no drift). Off by default = byte-identical (endpoint returns 404, no receipt section). Wave 1 · Rec 5 of the combined platform study.",
-    },
-    "obs.task_table": {
-        "label": "task_history — spans as a queryable table",
-        "description": "Sink the kernel ledger's node/tool span events into one append-only task_history table (trace_id, span_id, parent_span_id, task, input, captured_output, timing, error, labels) — the queryable spine of \"what the agent actually did.\" It is a SINK over the spans telemetry already emits, not new instrumentation: MLflow/Langfuse stay the rich-trace backends; this makes the same exhaust answerable with plain SQL, so evals recover generated SQL by querying the table (no log parsing) and a deep analysis can examine the platform's own behaviour via the aughor_ops schema. Off by default = byte-identical (no rows written). Wave 2 · Rec 4 of the combined platform study.",
-    },
-    "obs.session_log": {
-        "label": "session_events — the agent-session log",
-        "description": "Record one append-only session_events row per agent-session event (user_request · tool_call · tool_call_result · llm_call · final_response · execution_error) with a stable trace id, a monotonic sequence, explicit success/duration/error-class, and the ambient session/user/agent identity. Fills the gap task_history cannot: it mints the trace at the /ask door, so the QUICK answer path — which today creates no trace id at all and whose SQL bypasses the span-emitting executor — becomes reconstructible; it writes tool_call on ENTRY, so a call that hangs or is cancelled still leaves evidence, where a span row only ever appears after the body returns; and it records each LLM call (model, role, tokens, latency, retries, whether the fallback swapped the model mid-run), which today is aggregated into counters and discarded. Queryable as SQL via the aughor_ops schema, and the substrate a later evals harness turns real sessions into test cases from. Retention is enforced on write (AUGHOR_SESSION_LOG_KEEP_DAYS / _MAX_ROWS). Default-ON since Wave CR0, graduated on receipt `45dcc137f55b` (run `43bf2bc7182d` of aughor/evals/session_log_receipt.py, 7/7): answer frames are byte-identical on vs off, a store failure never reaches the answer path, and the per-event write measured p95 0.078 ms against E1's 5 ms bar. Prompt CONTENT stays a separate opt-in (obs.prompt_capture, still off). Force off with AUGHOR_OBS_SESSION_LOG=0 or a runtime override. Wave E1.",
     },
     "obs.popularity": {
         "label": "Query popularity as a shared notability signal",
@@ -599,17 +563,9 @@ FLAG_META = {
         "label": "Manifest-driven deterministic exploration",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
     },
-    "learning.receipt": {
-        "label": "Per-run Learning Receipt",
-        "description": "Attach a Learning Receipt to each answer — a per-run summary of what the closed loop DID: resolved readings reused (and how many were human corrections), resolutions crystallized this run, and trusted plan-as-programs replayed. Emitted as an SSE `learning` event and stamped on the Trust Receipt so the accumulation the loop already captures is finally visible. Off by default = byte-identical (no event, no receipt section). Wave 1 · E4 of the combined platform study.",
-    },
     "capabilities.auto": {
         "label": "Capabilities Auto-mode (self-gating guards decide per run)",
         "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
-    },
-    "trust.e1_live": {
-        "label": "E1 function-semantics checks on live answers",
-        "description": "Run the E1 footgun battery (a timestamp bounded by a date-only literal drops that day's later rows; ORDER BY/MIN/MAX over numeric-looking text sorts lexicographically; text↔numeric comparisons) on the FINAL SQL of live answers — the quick/chat headline and every deep-analysis phase query — as labelled WARN caveats. Pure AST, deterministic, never rewrites the query (the E1 contract). Previously these checks ran only on /query/validate, never on an answer a user actually saw. Off by default = byte-identical. WP-1e of the 2026-07-12 platform review.",
     },
     "ops.metered_monitors": {
         "label": "Meter background monitors and briefings through the kernel",
@@ -622,10 +578,6 @@ FLAG_META = {
     "explorer.continuous": {
         "label": "Continuous exploration (re-explore on schema change / staleness)",
         "description": "Keep the Explorer learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted findings, so only genuinely new cuts spend budget — and still flow through the Explorer-governance + AUTO_EXPLORATION gates and the per-run exploration budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
-    },
-    "capabilities.receipt": {
-        "label": "Activation Receipt (which guards fired, and why)",
-        "description": "Attach an Activation Receipt to each answer — the self-gating guards that actually fired this run and the deterministic trigger that fired them (\"activated premise-check because the question asserts why a metric is high/low\"). Emitted as an SSE `activations` event and stamped on the Trust Receipt, so Auto-mode's per-run decisions are visible instead of implicit. Off by default = byte-identical (no event, no receipt section). Wave 1 · E3 of the combined platform study.",
     },
     "snapshot_receipts": {
         "label": "Snapshot-pinned receipts",
@@ -662,14 +614,6 @@ FLAG_META = {
     "explore.wandering_detector": {
         "label": "Stall detector for exploration waves",
         "description": "A deterministic brake on an exploration that has stopped learning. Three signals nothing else catches: a REPEAT (the planner re-emits SQL this run already executed — vetoed before dispatch, the earlier result reused verbatim and marked, saving the scan AND the interpret call), NO PROGRESS (different queries, identical results, three steps running — a repeat counter cannot see this), and CHURN (many distinct queries collapsing onto a couple of distinct results — a streak counter cannot see this either). On repeated vetoes or either progress signal the wave ends GRACEFULLY: it routes to the same synthesis it would have reached at the iteration cap, having spent a planner and an interpret call per redundant step to get there. Reads only the run's own query_history, so no new state and no lock; fail-open everywhere — any error and the query runs exactly as it would have, because a detector that can suppress real evidence is worse than the redundancy it saves. Default-ON since flag strategy batch A (2026-07-31, receipt `854a1fbb7848` — a repeat is reused VERBATIM, marked with a caveat, never silently absorbed); force off with AUGHOR_EXPLORE_WANDERING_DETECTOR=0 or a runtime override. Counters: explore.wandering.*",
-    },
-    "llm.structured_salvage": {
-        "label": "Deterministic salvage of structured LLM responses",
-        "description": "When a structured call fails to parse or validate, recover it deterministically before spending another request: strip markdown fences and surrounding prose, repair trailing commas, Python literals and smart quotes, fold enum case, drop schema-forbidden extra keys — then re-validate. Also classifies the failure first, so a response TRUNCATED at the output ceiling fails immediately instead of failing over to a second provider that will hit the same ceiling. Zero additional requests, no model in the loop, and no guessing: enum matching folds case and separators only, so a genuine typo still fails loudly. On by default — off means a stray markdown fence keeps costing a whole extra provider request. Counters at GET /dev/stats (llm.salvage.*, llm.failure.*).",
-    },
-    "llm.bounded_repair": {
-        "label": "One bounded repair request for a salvageable structured response",
-        "description": "After deterministic salvage fails, ask the model ONCE to fix its own output — carrying the specific validation error (the field and why) and the original text, at temperature 0 and capped in output tokens. At most one, on the same binding, and never for a truncated, empty or refused response (a second request cannot fix any of those). This REPLACES a larger cost rather than adding one: instructor's default of 3 attempts per structured call was never overridden, so a malformed response already re-sent the whole prompt three times; Wave R1 cuts that to one attempt and spends at most one small repair after it. Turn off for a hard ceiling of one request per structured call, at the cost of losing the answers only a repair recovers. Counters: llm.repair.calls / llm.repair.ok.",
     },
     "intake.loss_signals": {
         "label": "Loss-signal directive at question intake",
@@ -723,14 +667,6 @@ FLAG_META = {
         "label": "Parallel plan-time retrievals",
         "description": "Run the plan_queries pre-flight retrievals (relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections) concurrently instead of one-at-a-time. All four are independent, deterministic, non-LLM lookups, so the result is byte-identical — just less wall-clock (a near-free win, no extra model cost). Default-ON since flag strategy batch A (2026-07-31, receipt `889789dda475`); force off with AUGHOR_PREFLIGHT_PARALLEL=0 or a runtime override for the serial path.",
     },
-    "trust.verify_facade": {
-        "label": "Unified trust.verify façade",
-        "description": "Route SQL validation through the one Trust-plane façade (aughor/trust) — one Verdict composing the read-only/mutation gate, E1 footguns, preflight repair, and value-domain/fan-out probes — instead of a per-path guard subset. Adds the AST read-only gate to the /query/validate surface (closes SEC-02 there). Off by default while the plane lands (AL-01).",
-    },
-    "trust.verify_live": {
-        "label": "Trust plane on the deep answer path",
-        "description": "In the deep-analysis executor, route every generated SQL through trust.verify before execute — the AST read-only BLOCK the generation path never ran (defence-in-depth; the connection layer is already fail-closed). A blocked statement returns a blocked result instead of executing. Off by default (AL-01 live migration).",
-    },
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
         "description": "Resolve the Semantic plane (metrics · ontology · profile · KB) once when a deep analysis is seeded and attach the SemanticContext to the run state, so every node reads one consistent context instead of re-consulting ad-hoc. Forced off (AL-05 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `49e7af321440`); force off with AUGHOR_SEMANTIC_RESOLVE_LIVE=0 or a runtime override.",
@@ -762,10 +698,6 @@ FLAG_META = {
     "deep_analysis.clarify_gate": {
         "label": "Interactive metric-ambiguity clarify (deep analysis)",
         "description": "When a deep analysis finds that a metric's GOVERNED reading and the LLM's parsed reading both run but give materially different numbers (the count-vs-value 'refund rate' class), PAUSE before the scan and ask the user which reading they meant — instead of silently choosing one. The choice binds the metric for the run and is crystallized to the Ambiguity Ledger (source=user), so the same question never re-asks on that connection. Mirrors the plan-gate interrupt/resume. Off by default; asks at most once per run, only on a real divergence.",
-    },
-    "deep_analysis.progress_events": {
-        "label": "Live per-dimension deep-analysis progress",
-        "description": "Stream a per-dimension progress event as each query of a deep-analysis scan completes, so a long cross-section/decompose phase reports 'scanning brand (3/6)…' DURING execution instead of a multi-minute silent spinner between phase_complete events. Interleaves a lightweight progress marker into the SSE stream via a best-effort in-process sink (no extra model cost, graph events never dropped). Off by default = byte-identical stream.",
     },
     "ask.clarify": {
         "label": "Ask-vs-guess clarification",

@@ -4343,14 +4343,12 @@ export interface AgentRunSummary {
 /** A user-defined PERSONA's model spend from the G3 usage store. Distinct from
  *  `AgentSpend` above, which is a fleet CHARTER's (Scout/Analyst) run totals — same word,
  *  different question: what kind of platform work ran, versus whose persona asked.
- *  `measured: false` means the session log recorded nothing to attribute — NOT that the
- *  agent spent nothing, which is why the numeric fields are absent rather than zero. */
-export type UserAgentSpend =
-  | { measured: false; reason: string; enable_flag: string }
-  | {
-      measured: true; calls: number; total_tokens: number;
-      cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
-    };
+ *  Recording is permanent (the flag was hardwired 2026-08-01), so a zero here is a
+ *  confident zero: the agent spent nothing. */
+export type UserAgentSpend = {
+  measured: true; calls: number; total_tokens: number;
+  cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
+};
 
 export interface AgentTraceStats {
   trace_count: number;
@@ -4610,15 +4608,9 @@ export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; de
 }
 
 // ── Control Room (Wave CR) ────────────────────────────────────────────────────
-// Views over stores that already exist. Responses carry the honest-empty union:
-// `measured: false` + `enable_flag` means "nothing recorded", which is a
-// different claim from an empty list under `measured: true`.
-
-export interface NotRecorded {
-  measured: false;
-  reason: string;
-  enable_flag: string;
-}
+// Views over stores that already exist. Recording is permanent, so an empty list
+// under `measured: true` means nothing happened — there is no "switched off" state
+// left to distinguish it from.
 
 /** One session event row (kernel ledger `session_events`). */
 export interface SessionEvent {
@@ -4679,13 +4671,9 @@ export interface TraceSpan {
   children: TraceSpan[];
 }
 
-export type TraceList =
-  | NotRecorded & { recording: boolean; traces: TraceSummary[] }
-  | { measured: true; recording: boolean; traces: TraceSummary[] };
+export type TraceList = { measured: true; recording: boolean; traces: TraceSummary[] };
 
-export type TraceDetail =
-  | NotRecorded & { recording: boolean; trace_id: string; events: SessionEvent[]; spans: TraceSpan[] }
-  | {
+export type TraceDetail = {
       measured: true; recording: boolean; trace_id: string; question: string;
       investigation_id: string | null; conn_id: string | null; agent_id: string | null;
       ok: boolean | null; duration_ms: number | null;
@@ -4712,7 +4700,6 @@ export async function getTrace(traceId: string): Promise<TraceDetail | null> {
 }
 
 export type ActivityResponse =
-  | NotRecorded & { recording: boolean; events: SessionEvent[]; kinds: Record<string, number> }
   | { measured: true; recording: boolean; events: SessionEvent[]; kinds: Record<string, number> };
 
 export async function getActivity(params?: {
@@ -4780,9 +4767,7 @@ export interface FleetPersonaRow {
   last_eval: { passed: number; total: number; at?: string } | null;
   eval_basis: EvalBasis;
   spend_source: "session_log";
-  spend:
-    | NotRecorded
-    | { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
+  spend: { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
 }
 
 export type FleetRow = FleetCharterRow | FleetPersonaRow;

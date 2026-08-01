@@ -327,8 +327,7 @@ _OUTPUT_KEYS = ("captured_output", "output", "result", "row_count")
 
 def _task_table_enabled() -> bool:
     try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("obs.task_table")
+        return True
     except Exception:
         return False
 

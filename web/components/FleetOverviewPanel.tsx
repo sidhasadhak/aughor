@@ -175,11 +175,6 @@ export function FleetOverviewPanel({ onOpenAgent }: {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span className="aug-label" style={{ color: "var(--t3)" }}>All agents</span>
         <span style={{ flex: 1 }} />
-        {!data.session_log_recording && (
-          <span style={{ fontSize: 11, color: "var(--amb4)" }}>
-            session log not recording — custom agent spend is frozen at its last rows
-          </span>
-        )}
         <Button variant={density === "calm" ? "secondary" : "ghost"} size="xs"
           onClick={() => setDensity("calm")}>Calm</Button>
         <Button variant={noc ? "secondary" : "ghost"} size="xs"
@@ -280,13 +275,9 @@ export function FleetOverviewPanel({ onOpenAgent }: {
                 </td>
                 <td style={{ color: "var(--t4)" }}>—</td>
                 <td>
-                  {row.spend.measured
-                    ? <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
-                        {formatCount(row.spend.calls)} model calls
-                      </span>
-                    : <span style={{ fontSize: 11, color: "var(--t3)" }}>
-                        spend not recorded — enable <code style={{ fontSize: 10 }}>{row.spend.enable_flag}</code>
-                      </span>}
+                  <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                    {formatCount(row.spend.calls)} model calls
+                  </span>
                 </td>
                 <td style={{ color: "var(--t4)" }}>—</td>
                 <td>

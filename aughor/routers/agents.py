@@ -444,18 +444,13 @@ def user_agent_observability(agent_id: str):
 
 
 def _agent_spend(agent_id: str) -> dict:
-    """This agent's slice of the G3 usage rollup, or an honest unmeasured verdict.
+    """This agent's slice of the G3 usage rollup.
 
-    ``measured`` is the field a caller must read first: False means the session log
-    recorded nothing to roll up (flag ``obs.session_log`` is off), not that the agent
-    spent nothing. ``cost_is_complete`` carries G3's own caveat forward — a model with
-    no declared price contributes nothing to the total rather than counting as free.
+    Recording is permanent, so an empty slice means this agent spent nothing —
+    not that nothing was watching. ``cost_is_complete`` carries G3's own caveat
+    forward: a model with no declared price contributes nothing to the total
+    rather than counting as free.
     """
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("obs.session_log"):
-        return {"measured": False, "reason": "the session log is off; no model calls are "
-                                             "recorded to attribute",
-                "enable_flag": "obs.session_log"}
     from aughor.obs.usage import usage_report
     report = usage_report(axes=("agent_id",)).to_dict()
     for row in report.get("rows") or []:

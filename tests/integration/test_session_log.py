@@ -101,7 +101,6 @@ def _own_the_log():
 def test_quick_ask_is_reconstructible_from_session_events(
         client: TestClient, builtin_conn_id: str, monkeypatch):
     """THE gate: one quick turn, one trace, request → work → response."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     _stub_providers(monkeypatch)
 
     _ask(client, builtin_conn_id, "which group leads?")
@@ -142,7 +141,6 @@ def test_quick_ask_is_reconstructible_from_session_events(
 def test_chat_door_is_also_covered(client: TestClient, builtin_conn_id: str, monkeypatch):
     """/chat has its own endpoint (it does not go through build_ask_stream), so it
     is wired separately — a live door left dark would defeat the purpose."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     _stub_providers(monkeypatch)
 
     with client.stream("POST", "/chat", json={
@@ -159,23 +157,9 @@ def test_chat_door_is_also_covered(client: TestClient, builtin_conn_id: str, mon
 
 # ── the properties the gate depends on ────────────────────────────────────────
 
-def test_flag_off_writes_nothing(client: TestClient, builtin_conn_id: str, monkeypatch):
-    """OFF stays byte-identical: no rows, no minted id. Since the CR0 graduation
-    the DEFAULT is on, so off is now the operator's explicit force
-    (AUGHOR_OBS_SESSION_LOG=0) — the contract this pins is the off STATE, not
-    how it was reached."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
-    _stub_providers(monkeypatch)
-
-    _ask(client, builtin_conn_id, "which group leads?")
-
-    assert _all_events() == []
-
-
 def test_tool_call_is_written_on_entry(monkeypatch):
     """The reason this is an event log and not a span table: work that never
     returns still leaves a call. A span row only appears after the body does."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-hang"):
@@ -191,8 +175,6 @@ def test_tool_call_is_written_on_entry(monkeypatch):
 def test_span_ids_join_to_task_history(monkeypatch):
     """Both local sinks share one span id, so the two tables describe the same
     work under the same identifier and can be joined."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-join"):
@@ -206,7 +188,6 @@ def test_span_ids_join_to_task_history(monkeypatch):
 
 
 def test_failure_records_ok_false_and_error_class(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-err"):
@@ -227,8 +208,6 @@ def test_bind_trace_is_independent_of_obs_flags(monkeypatch):
     downstream could correlate — that coupling was the bug."""
     # Forced OFF explicitly: since CR0 the session log defaults on, and this
     # test's claim is precisely that binding works with the sinks off.
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "0")
     from aughor import telemetry
 
     assert telemetry.current_trace_id() == ""
@@ -243,13 +222,11 @@ def test_bind_trace_is_independent_of_obs_flags(monkeypatch):
 def test_emit_without_a_trace_is_dropped(monkeypatch):
     """An uncorrelated row cannot be reconstructed into anything; writing it
     would make the table look healthier than it is."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     session_log.emit(session_log.USER_REQUEST, name="orphan")
     assert [e for e in _all_events() if e["name"] == "orphan"] == []
 
 
 def test_identity_rides_the_ambient_contextvars(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
     from aughor.org.context import reset_session_id, set_session_id
 
@@ -265,7 +242,6 @@ def test_identity_rides_the_ambient_contextvars(monkeypatch):
 
 
 def test_folded_views_summarise_a_run(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-fold"):
@@ -290,7 +266,6 @@ def test_folded_views_summarise_a_run(monkeypatch):
 
 
 def test_retention_prunes_by_age_and_row_cap(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     led = Ledger.default()
@@ -305,7 +280,6 @@ def test_retention_prunes_by_age_and_row_cap(monkeypatch):
 
 
 def test_prune_disabled_when_both_limits_are_zero(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-keep"):
@@ -318,7 +292,6 @@ def test_llm_calls_are_recorded_per_call(monkeypatch):
     """metering.record_llm sums tokens into a per-run aggregate; the per-call
     detail — which model, how long, was it the fallback — used to be discarded
     (telemetry.log_generation existed with zero call sites)."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from types import SimpleNamespace
 
     from aughor import telemetry
@@ -354,7 +327,6 @@ def test_llm_calls_are_recorded_per_call(monkeypatch):
 def test_fallback_model_swap_is_visible(monkeypatch):
     """The silent Anthropic fallback can change the model mid-run, which would
     quietly invalidate any measurement attributing the result to the primary."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from types import SimpleNamespace
 
     from aughor import telemetry
@@ -385,7 +357,6 @@ def test_failed_llm_call_is_recorded(monkeypatch):
     """The record used to be written only after the call returned, so a model
     that failed past its retries left NO row — making "which model fails"
     unanswerable exactly when it matters."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
     from types import SimpleNamespace
 
@@ -420,7 +391,6 @@ def test_failed_llm_call_is_recorded(monkeypatch):
 def test_unreported_usage_is_null_not_zero(monkeypatch):
     """Several local backends omit usage entirely. Folding that into 0 makes
     every cost aggregate quietly wrong, so it stays NULL and says so."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from types import SimpleNamespace
 
     from aughor import telemetry
@@ -450,7 +420,6 @@ def test_unreported_usage_is_null_not_zero(monkeypatch):
 def test_retries_are_counted(monkeypatch):
     """A model that only ever succeeds on its second attempt used to look
     identical to one that never struggles — the count was local and discarded."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
     from types import SimpleNamespace
 
@@ -487,7 +456,6 @@ def test_retries_are_counted(monkeypatch):
 def test_tool_results_carry_row_count(monkeypatch):
     """"The query ran" and "the query returned nothing" are different facts, and
     the zero-row case is usually the interesting one."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor import telemetry
 
     with telemetry.bind_trace("t-rows"):
@@ -505,7 +473,6 @@ def test_final_response_captures_the_answer(
         client: TestClient, builtin_conn_id: str, monkeypatch):
     """A run whose output was never captured cannot become a test case — which is
     what the rest of this arc needs from the log."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     _stub_providers(monkeypatch)
 
     _ask(client, builtin_conn_id, "which group leads?")
@@ -548,7 +515,6 @@ def _open_capture(calls: int = 20):
 def test_prompt_capture_off_by_default(monkeypatch):
     """The session log is metadata by default. Content is a separate decision
     with a different blast radius, so it needs its own deliberate window."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     from aughor.obs import prompt_window
     prompt_window.close_window()
 
@@ -560,7 +526,6 @@ def test_prompt_capture_off_by_default(monkeypatch):
 
 
 def test_prompt_capture_records_content_while_a_window_is_open(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     pw = _open_capture()
     try:
         payload = _one_llm_call("t-capture", system="SCHEMA CONTEXT", user="why did revenue drop?")
@@ -574,7 +539,6 @@ def test_prompt_capture_records_content_while_a_window_is_open(monkeypatch):
 def test_a_window_closes_itself_once_its_budget_is_spent(monkeypatch):
     """The whole point of replacing the standing flag: capture stops on its own.
     A budget of one means the SECOND call stores metadata only."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     pw = _open_capture(calls=1)
     try:
         first = _one_llm_call("t-window-1", system="SYS", user="USER")["payload"]
@@ -587,36 +551,9 @@ def test_a_window_closes_itself_once_its_budget_is_spent(monkeypatch):
         pw.close_window()
 
 
-def test_prompt_capture_needs_the_session_log_too(monkeypatch):
-    """Content capture is an add-on: with the session log forced off nothing is
-    written at all, so an open window alone cannot leak anything."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "0")
-    _open_capture()
-
-    from types import SimpleNamespace
-
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
-    from pydantic import BaseModel
-
-    class _Out(BaseModel):
-        ok: bool = True
-
-    class _Endpoint:
-        def create_with_completion(self, **kw):
-            return _Out(), SimpleNamespace(usage=None)
-
-    client = SimpleNamespace(chat=SimpleNamespace(completions=_Endpoint()))
-    with telemetry.bind_trace("t-capture-only"):
-        LLMProvider._complete_on(client, "ollama", "m", "SYS", "USER", _Out, 0.0, role="coder")
-
-    assert _all_events(trace_id="t-capture-only") == []
-
-
 def test_truncated_prompts_say_so(monkeypatch):
     """A silently shortened prompt reproduces a different call than the one that
     ran — worse than not capturing it, because it looks authoritative."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     monkeypatch.setenv("AUGHOR_OBS_PROMPT_MAX_CHARS", "10")
     pw = _open_capture()
     try:
@@ -630,7 +567,6 @@ def test_truncated_prompts_say_so(monkeypatch):
 
 def test_failed_call_still_captures_the_prompt(monkeypatch):
     """The failing call is precisely the one you want to reproduce."""
-    monkeypatch.setenv("AUGHOR_OBS_SESSION_LOG", "1")
     monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
     _open_capture()
     from types import SimpleNamespace

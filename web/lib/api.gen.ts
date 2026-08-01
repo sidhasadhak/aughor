@@ -777,8 +777,7 @@ export interface paths {
          *     priors, dialect rules, trusted templates, and the active agent/pack brief.
          *
          *     The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
-         *     the same blocks the answer path assembles from the same producers). 404 when
-         *     the flag is off, so the default path is byte-identical.
+         *     the same blocks the answer path assembles from the same producers).
          */
         get: operations["ask_context_endpoint_ask_context_get"];
         put?: never;

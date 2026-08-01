@@ -121,7 +121,6 @@ def test_empty_sql_is_ok():
 # ── Integration: the first consumer (/query/validate) calls the plane behind the flag ────
 
 def test_validate_surfaces_mutation_blockers_when_flag_on(client, builtin_conn_id, monkeypatch):
-    monkeypatch.setenv("AUGHOR_TRUST_FACADE", "1")
     r = client.post("/query/validate",
                     json={"conn_id": builtin_conn_id, "sql": "DELETE FROM ecommerce.orders",
                           "dialect": "duckdb"})
@@ -132,12 +131,3 @@ def test_validate_surfaces_mutation_blockers_when_flag_on(client, builtin_conn_i
     assert body["passed"] is False
 
 
-def test_validate_omits_facade_when_flag_off(client, builtin_conn_id, monkeypatch):
-    # WP-1f promoted trust.verify_facade default-ON, so the "off" path is forced explicitly.
-    monkeypatch.setenv("AUGHOR_TRUST_FACADE", "0")
-    r = client.post("/query/validate",
-                    json={"conn_id": builtin_conn_id, "sql": "DELETE FROM ecommerce.orders",
-                          "dialect": "duckdb"})
-    assert r.status_code == 200
-    # Field is always present but empty when the plane is not adopted (flag off).
-    assert r.json()["mutation_blockers"] == []
