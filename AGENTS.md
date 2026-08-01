@@ -33,6 +33,12 @@ reasoning lives in the wave arc docs under `docs/`.
   this" teaches the reader the data does not exist.
 - **Supersede, do not delete.** Findings, ontology overrides and artifacts are superseded
   with history intact. The exceptions are deliberate and documented where they occur.
+- **One word, one concept.** [`docs/GLOSSARY.md`](docs/GLOSSARY.md) is the authority for
+  names in code, UI copy, prompts and flag labels — and it is enforced, not advisory:
+  `tests/unit/test_vocabulary_ratchet.py` holds a measured baseline per retired term, and a
+  baseline may fall but never rise. Renaming a flag goes through `RENAMED` / `RETIRED_ENV`
+  in `kernel/flags.py`; editing a `FLAG_ENV` key alone strands the operator's env var, their
+  persisted override row, and every script passing the old name.
 
 ## Practicalities
 

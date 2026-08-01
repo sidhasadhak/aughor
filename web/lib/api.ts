@@ -4314,7 +4314,7 @@ export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResul
 
 // ── Observability: per-agent run history + optional MLflow trace stats ─────────
 // The Agent Workspace overview. Run history always populates (from the history
-// store); trace_stats is null when obs.mlflow is off — the overview degrades to
+// store); trace_stats is null when MLflow tracing is off — the overview degrades to
 // history-only (the workspace works without a running MLflow server).
 
 export interface AgentRunSummary {

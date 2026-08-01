@@ -278,8 +278,8 @@ def mlflow_tool_span(
     """A TOOL span for a unit of work (e.g. a guarded SQL execution).
 
     Two independent, both-optional sinks hang off this one call:
-    - the MLflow TOOL span nested under the active trace (flag `obs.mlflow`) —
-      no-op unless that flag is on, mlflow imports, AND a trace is already active;
+    - the MLflow TOOL span nested under the active trace — no-op unless a tracking
+      URI is configured, mlflow imports, AND a trace is already active;
     - the `task_history` row (flag `obs.task_table`) — no-op unless that flag is
       on, inheriting the ambient node trace id + parenting to the enclosing span.
 
@@ -597,7 +597,7 @@ def span(
                 logger.debug("Langfuse span start failed: %s", exc)
 
     # ── MLflow + OTel nested spans ─────────────────────────────────────────────
-    # One ExitStack for both: MLflow (flag `obs.mlflow`; autolog owns the trace
+    # One ExitStack for both: MLflow (autolog owns the trace
     # root, this only nests the node span + tags the trace with the
     # investigation id) and OTel. Span START failures degrade to no-span; span
     # END failures are suppressed (`_close_span_stack`) — telemetry must never

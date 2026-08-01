@@ -11,7 +11,7 @@ agent's quality is measured, not vibes. Each golden = {question, reference_sql}
 3. executes both the generated and the reference SQL on the agent's connection,
 4. compares result sets DETERMINISTICALLY (no LLM judges), and
 5. stamps {passed, total, at, per_question} onto the agent (the pass chip) —
-   and logs a span per evaluation when `obs.mlflow` tracing is active.
+   and logs a span per evaluation when MLflow tracing is configured.
 
 Failure posture: a generation/execution error fails THAT golden, never the run.
 """
@@ -166,7 +166,7 @@ def evaluate_agent(agent: UserAgent, db=None,
 
     result["duration_ms"] = round((time.monotonic() - started) * 1000, 1)
     record_eval(agent.id, result)
-    # obs.mlflow — the evaluation as a TOOL span when a trace is active (advisory).
+    # MLflow — the evaluation as a TOOL span when a trace is active (advisory).
     try:
         from aughor.telemetry import mlflow_tool_span
         with mlflow_tool_span("agent.evaluate",

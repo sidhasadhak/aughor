@@ -122,6 +122,52 @@ FLAG_ENV = {
     "lifecycle.freeze": "AUGHOR_LIFECYCLE_FREEZE",  # Wave V4: live-by-default + explicit freeze; gone data errors loudly
 }
 
+# ── Renamed flags (Wave W vocabulary unification) ─────────────────────────────────────
+# A flag name is a CONTRACT with three independent holders: an operator's `.env`, a
+# persisted runtime override row in the ledger kv, and any script passing the name to
+# `flag_overrides`. Renaming the FLAG_ENV key alone silently strands all three — the
+# operator's variable stops being read, the stored override stops being found, and the
+# script raises UnknownFlagError. `MIGRATION` does not help: it is a disposition
+# CATEGORY for two-code-path forks, not a rename facility.
+#
+# So a rename registers here instead of just editing FLAG_ENV, and every resolution
+# path canonicalizes through it. Both maps EMPTY means the layer is inert and flag
+# resolution is byte-identical to before it existed (asserted in the ratchet test).
+#
+# Retiring a name is a one-line move, never a deletion:
+#   RENAMED["ada.parallel_lenses"] = "deep_analysis.parallel_lenses"
+#   RETIRED_ENV["AUGHOR_ADA_PARALLEL_LENSES"] = "deep_analysis.parallel_lenses"
+
+#: Retired flag name → its current name. Old names keep working; they never re-register
+#: in FLAG_ENV (the ratchet asserts this, so a rename cannot be quietly reverted).
+RENAMED: dict[str, str] = {}
+
+#: Retired env var → the flag it now feeds. Consulted only when the current flag's own
+#: env var is unset, so an operator who has already migrated is never second-guessed.
+RETIRED_ENV: dict[str, str] = {}
+
+
+def _canonical(name: str) -> str:
+    """The current name for a possibly-retired flag name.
+
+    Follows a chain (a flag renamed twice) with a bound, so a mistaken cycle degrades to
+    "resolve as far as we got" rather than hanging the answer path.
+    """
+    seen = name
+    for _ in range(4):
+        nxt = RENAMED.get(seen)
+        if nxt is None or nxt == seen:
+            return seen
+        seen = nxt
+    return seen
+
+
+def _retired_names(name: str) -> list[str]:
+    """Every retired name that now resolves to ``name`` — the keys an override may still
+    be persisted under. Computed per call: RENAMED is a handful of entries and this runs
+    only when the canonical lookup already missed."""
+    return [old for old in RENAMED if _canonical(old) == name and old != name]
+
 # A flag whose env var is UNSET resolves to its default (False unless listed).
 # `ask.clarify` shipped default-ON (`os.getenv("AUGHOR_ASK_CLARIFY", "1")` at the
 # old call site), so registering it here must not flip the live default.
@@ -900,6 +946,14 @@ def _env_resolved(name: str) -> bool:
     var = FLAG_ENV.get(name, "")
     raw = os.getenv(var)
     if raw is None:
+        # A retired variable still in the operator's .env — honoured only while the
+        # current one is unset, so migrating is a strict upgrade and never a surprise.
+        for old_var, target in RETIRED_ENV.items():
+            if target == name:
+                raw = os.getenv(old_var)
+                if raw is not None:
+                    break
+    if raw is None:
         if FLAG_DEFAULT.get(name, False):
             return True
         # Capabilities Auto-mode: an unset auto-eligible guard is enabled (its own trigger then decides)
@@ -912,8 +966,30 @@ def _env_resolved(name: str) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_present(name: str) -> bool:
+    """Whether an env var actually sets this flag — its own, or one it was renamed from.
+
+    `flag_state` and `list_flags` report `source: "env"` from this rather than from
+    `os.getenv(FLAG_ENV[name])` alone, so a retired variable can never make them disagree
+    with `flag_enabled` (which would read "off" beside a live-on flag).
+    """
+    if os.getenv(FLAG_ENV.get(name, "")) is not None:
+        return True
+    return any(os.getenv(old) is not None
+               for old, target in RETIRED_ENV.items() if target == name)
+
+
 def _override(name: str):
-    return Ledger.default().kv_get(_STORE, name, None)
+    """The persisted runtime override, looked up under the current name and then under any
+    name it was renamed from — an operator's existing override must survive a rename."""
+    val = Ledger.default().kv_get(_STORE, name, None)
+    if val is not None:
+        return val
+    for old in _retired_names(name):
+        val = Ledger.default().kv_get(_STORE, old, None)
+        if val is not None:
+            return val
+    return None
 
 
 # ── Run-scoped overrides (Wave E4) ────────────────────────────────────────────────────
@@ -960,7 +1036,7 @@ def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
     the run leaves the topology at whatever the process-global layers said, and the
     override looks like it did nothing. `tests/unit/test_flag_overrides.py` pins this.
     """
-    requested = {**(mapping or {}), **kw}
+    requested = {_canonical(n): v for n, v in {**(mapping or {}), **kw}.items()}
     unknown = sorted(n for n in requested if n not in FLAG_ENV)
     if unknown:
         raise UnknownFlagError(
@@ -978,6 +1054,7 @@ def flag_overrides(mapping: Optional[dict] = None, **kw: bool):
 
 def flag_enabled(name: str) -> bool:
     """The effective value: a run-scoped override wins, then a runtime override, then env."""
+    name = _canonical(name)
     run = _run_overrides.get()
     if run is not None and name in run:
         return bool(run[name])
@@ -993,14 +1070,14 @@ def flag_state(name: str) -> str:
     ``"auto"`` means the capability is enabled ONLY because the master Auto-mode elevated this self-gating
     guard (its deterministic trigger decides per run) — an explicit operator On/Off always resolves to
     ``"on"``/``"off"``. A display refinement over ``flag_enabled`` (which is True for both on and auto)."""
+    name = _canonical(name)
     run = _run_overrides.get()
     if run is not None and name in run:
         return "on" if run[name] else "off"
     ov = _override(name)
     if ov is not None:
         return "on" if ov else "off"
-    raw = os.getenv(FLAG_ENV.get(name, ""))
-    if raw is not None:
+    if _env_present(name):
         return "on" if _env_resolved(name) else "off"
     if FLAG_DEFAULT.get(name, False):
         return "on"
@@ -1010,13 +1087,28 @@ def flag_state(name: str) -> str:
 
 
 def set_flag(name: str, value: bool) -> None:
-    """Set a runtime override (wins over the env var until cleared)."""
-    Ledger.default().kv_put(_STORE, name, bool(value))
+    """Set a runtime override (wins over the env var until cleared).
+
+    Writes under the CURRENT name, and drops any row still held under a name this flag
+    was renamed from — otherwise the legacy row would outlive the setting that replaced
+    it and resurface the moment the new one is cleared.
+    """
+    name = _canonical(name)
+    led = Ledger.default()
+    led.kv_put(_STORE, name, bool(value))
+    for old in _retired_names(name):
+        if led.kv_get(_STORE, old, None) is not None:
+            led.kv_put(_STORE, old, None)
 
 
 def clear_flag(name: str) -> None:
-    """Drop the override so the env var decides again."""
-    Ledger.default().kv_put(_STORE, name, None)
+    """Drop the override so the env var decides again — under every name it may be
+    stored as, or a retired row would silently keep overriding."""
+    name = _canonical(name)
+    led = Ledger.default()
+    led.kv_put(_STORE, name, None)
+    for old in _retired_names(name):
+        led.kv_put(_STORE, old, None)
 
 
 def list_flags() -> dict:
@@ -1041,13 +1133,17 @@ def list_flags() -> dict:
             # variable nobody had set. That gets more misleading with every graduation, so
             # the two are distinguished: "env" means the variable is actually present.
             "source": ("run" if name in run else "runtime" if ov is not None
-                       else "env" if os.getenv(var) is not None else "default"),
+                       else "env" if _env_present(name) else "default"),
             "env_var": var,
             "label": meta.get("label", name),
             "description": meta.get("description", ""),
             # The declared disposition (flag strategy §5.1) — lets the Settings UI
             # group by KIND instead of rendering one flat list of toggles.
             "disposition": flag_disposition(name),
+            # Names this flag used to have. Present so an operator searching the docs or
+            # their own .env for the old name can see where it went; empty for almost
+            # every flag, and omitted entirely when there is nothing to say.
+            **({"renamed_from": _retired_names(name)} if _retired_names(name) else {}),
             **({"disposition_note": INTENTIONALLY_OFF.get(name)
                                     or EXPERIMENT.get(name)
                                     or MIGRATION.get(name)

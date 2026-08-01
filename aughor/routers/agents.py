@@ -415,7 +415,7 @@ def delete_agent_golden(agent_id: str, golden_id: str):
 def user_agent_observability(agent_id: str):
     """The Agent Workspace overview data for one agent: its run history (from the
     history store, stamped with agent_id) enriched with MLflow trace stats when
-    `obs.mlflow` is on. Degrades to history-only (`trace_stats: null`) when the
+    MLflow tracing is configured. Degrades to history-only (`trace_stats: null`) when the
     tracking server is off — the workspace is useful without MLflow (B3: the
     dependency is one-directional).
 

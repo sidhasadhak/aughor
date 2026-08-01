@@ -174,9 +174,9 @@ def execute_guarded(
             tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
                      counter="trust.verify_live")
 
-    # obs.mlflow: a TOOL span per guarded execution, nested under the active
-    # investigation trace. When the flag is off this is one ledger flag read —
-    # the same cost class as the trust.verify_live gate above.
+    # MLflow: a TOOL span per guarded execution, nested under the active
+    # investigation trace. With no tracking URI configured this is one env read —
+    # cheaper than the trust.verify_live ledger gate above.
     from aughor.telemetry import mlflow_tool_span
     with mlflow_tool_span("sql.execute", {"query_id": query_id, "sql": sql,
                                           "dialect": getattr(conn, "dialect", "")}):
