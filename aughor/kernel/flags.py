@@ -28,7 +28,10 @@ FLAG_ENV = {
     # prompt()/embedding() UDF module (semops/ai_sql.py) went with it; the generic
     # execution-hook seams it registered into remain.
     "snapshot_receipts": "AUGHOR_SNAPSHOT_RECEIPTS",
-    "explorer.synthesis_incremental": "AUGHOR_SYNTHESIS_INCREMENTAL",
+    # "explorer.synthesis_incremental" (AUGHOR_SYNTHESIS_INCREMENTAL) was DELETED
+    # 2026-08-01 (flag endgame, verdict sheet Wave 1): mid-run synthesis spent extra
+    # model calls for a "more alive" cadence the chat UI now provides for free, and
+    # the end-of-run Phase 9 synthesis always ran regardless.
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
     "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
@@ -623,10 +626,6 @@ FLAG_META = {
         "label": "Snapshot-pinned receipts",
         "description": "Pin every finding to the exact data version it ran against (reproducible-as-of), so a re-validate can tell a MOVED dataset apart from a mis-derived finding — the same data_version Wave V4's freeze pins an artifact to. The version probe is one metadata COUNT(*) per finding table (size-independent on DuckDB; the native snapshot id on DuckLake), added at dossier emit off the answer path. Default-ON since the 2026-07-31 flag strategy experiment-queue settle (batch D, receipt `2dee7a36c03f`): measured median ~0.2ms for a 3-table finding against E1's 5ms bar, additive (off ⇒ the dossier's data_version is None, byte-identical otherwise), and fail-open (a probe that cannot run yields None, never blocking the emit). Force off with AUGHOR_SNAPSHOT_RECEIPTS=0 or a runtime override.",
     },
-    "explorer.synthesis_incremental": {
-        "label": "Incremental synthesis",
-        "description": "Fire cross-finding synthesis the moment a new finding creates a combinable pair, not only at end-of-run. More 'alive', more compute. Phase 9 always runs at end-of-run regardless.",
-    },
     "specialist_packs": {
         "label": "Packs — authored domain bundles that steer the planner",
         "description": "Load user-built packs (packs/) and let them steer the engine at intake — the pack's stance, grounded metric recipes and diagnostic questions prepended to the explore planner context. Steering is data-gated three gates deep: it requires an installed pack whose manifest says status: active, matching the question, AND a human-pinned deploy binding on the exact connection (propose → confirm → pin in the deploy UI; auto-proposals never steer). A custom agent's pack bindings restrict selection to its packs but never bypass the deploy gate. Default-ON since the 2026-07-31 flag-strategy batch 1, graduated on receipt `452a6fcebba4` (run `c84f1e75a50c` of aughor/evals/specialist_packs_receipt.py, 8/8 stable ×3): with no active pack or no pinned deployment the planner context is byte-identical on vs off, and the fresh-clone delta is exactly GET /packs reporting enabled: true (the shipped sample pack is status: draft). Force off with AUGHOR_SPECIALIST_PACKS=0 or a runtime override. See docs/DOMAIN_EXPERTISE_PACKS.md.",
@@ -907,7 +906,8 @@ EXPERIMENT: dict = {
     "graph.readback": "does the injected graph slice improve plans enough to pay its "
                       "prompt cost?",
     "explore.route_wide": "do landscape questions answer better through the explore wave?",
-    "explorer.synthesis_incremental": "is mid-run synthesis worth the extra LLM calls?",
+    # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
+    # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
     "deep_analysis.why_where_interaction": "does the WHY×WHERE cross query change conclusions?",
     "deep_analysis.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
     "deep_analysis.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
