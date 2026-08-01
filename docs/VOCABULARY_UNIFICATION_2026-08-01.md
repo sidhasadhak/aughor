@@ -1,6 +1,14 @@
 # Vocabulary Unification — one word, one concept (Wave W)
 
-**Date:** 2026-08-01 · **Status:** PLAN (nothing executed) · **Scope:** full, P0–P4
+**Date:** 2026-08-01 · **Status:** P0, P1, P2, P4 SHIPPED; P3 partially shipped ·
+**Scope:** full, P0–P4
+
+> **What shipped** — see §9 for the ledger. P0 (glossary + ratchet + flag-alias layer),
+> P1 (every user-visible and model-visible string), P2 (internal identifiers) and P4 (eleven
+> package renames) are complete. P3 shipped its config half — the `ada.*` → `deep_analysis.*`
+> flag family with full back-compat, `AskRequest.deep` → `escalate`, the `AUGHOR_SOMA_CLARIFY`
+> alias, and an additive `branch_label` — and its wire half is partly done. §9 lists what
+> remains, and none of it is blocking: the ratchet holds every gain.
 **Rule:** every concept gets exactly one word, every word names exactly one concept, and the
 word is plain language a new reader already knows. Internal codenames, research acronyms and
 external product names do not appear in identifiers, UI copy, prompts, or flag metadata.
@@ -338,3 +346,43 @@ before `kinetic`→`actions`. Import shims for one release.
 **Deliberately out of scope:** NOM-06 (`SemanticContract`) and NOM-11 (`ExecutionScope`) —
 real architecture, not vocabulary; NOM-07's `Safeguard` base — superseded by the automations
 absorption; any rename of a §5 frozen identity.
+
+---
+
+## 9 · Shipped, and what is left
+
+**Shipped (four commits).** P0 the glossary + ratchet + flag-alias layer; P1 every
+user-visible and model-visible string; P2 the internal identifiers; P4 the eleven package
+renames. P3 shipped its whole config half and part of its wire half.
+
+Measured effect on the ratchet, first count → now: `ada` 862→665 · `genie` 49→24 ·
+`databricks` 81→54 · `palantir` 16→8 · `reforce` 10→1 · `soma` 48→26 · `kinetic` 503→435 ·
+`investigat*` in `web/` 715→659 · `blueprint`, `foundry`, `mindsdb`, `tableau` → **0**.
+Nothing rose. Two brands the original survey missed (MindsDB, Tableau) were found by the
+sweeps and are now ratcheted.
+
+**Deviations from the plan, and why**
+
+- **No import shims in P4.** A shim keeps the retired word alive in the tree and the ratchet
+  would rightly count it. Every in-repo reference moved atomically; `docs/GLOSSARY.md` has
+  the map for out-of-repo callers.
+- **`Capability.DEEP_ANALYSIS` not renamed** — choosing "deep analysis" made it correct.
+- **`tableau10` exempted, not renamed** — it is the standard identifier for that palette
+  (d3 ships `schemeTableau10`) and a persisted org-settings value. Exempting a path states a
+  reason; renaming it would have broken saved settings to satisfy a regex.
+- **`wandering` → stall not done.** It is descriptive English, not jargon or a brand, and the
+  flag `explore.wandering_detector` plus its `explore.wandering.*` counters would need the
+  alias treatment for little gain. Lowest priority of anything here.
+
+**Left for a later pass** (each independently shippable; the ratchet holds the line meanwhile)
+
+- SSE unification: one `report` event carrying `mode`, `narrative`/`narrative_delta`
+  dual-emitted beside `insight`/`insight_delta`, then retiring `ada_report` and
+  `answer_report` after a release. The frontend already reads all three.
+- Dual-routes for `/findings` (over `/exploration/{conn}/insights/*`) and `/briefing`.
+- Mode id `explore` → `survey`, plus registering `overview` and `knowledge` as real modes and
+  adding `final_text` to the frontend union (it is emitted today but not typed).
+- The briefing artifact renames: `Digest` → `BriefingContent`, `monitors/digest.py` →
+  `AlertSummary`.
+- The `insight` burn-down continues by ratchet — 2,062 remain, and they fall as files are
+  touched rather than in one sweep that would conflict with every in-flight branch.

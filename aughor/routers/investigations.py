@@ -4195,7 +4195,12 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
 
     # Branch, from what the checkpoint actually holds. A run with no checkpoint
     # reports unknown rather than a guessed picture. A run paused at the clarify
-    # gate has no phases yet — the pending clarify marker is the ADA tell.
+    # gate has no phases yet — the pending clarify marker is the deep-analysis tell.
+    #
+    # The wire value stays "ada": clients (including web/lib/api.ts) compare against it,
+    # and the node ids in `topology` below are the graph's real, frozen node names. The
+    # response carries an additive `branch_label` for anything that wants to DISPLAY the
+    # branch without learning the acronym.
     if phases or clarify_pending:
         branch = "ada"
     elif sub_questions:
@@ -4242,6 +4247,8 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
     return {
         "investigation_id": inv_id,
         "status": inv.get("status"),
+        "branch_label": {"ada": "Deep analysis", "explore": "Survey",
+                         "direct": "Quick answer"}.get(branch, "Unknown"),
         "question": inv.get("question"),
         "branch": branch,
         "topology": topology,
