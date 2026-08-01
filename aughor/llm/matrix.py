@@ -64,6 +64,7 @@ class VouchedModel:
 # preserves today's blanket "a run pin never reaches `fast`" behaviour exactly.
 
 _VERIFIED_2026_07_24 = "2026-07-24"
+_VERIFIED_2026_08_01 = "2026-08-01"
 
 VOUCHED: tuple[VouchedModel, ...] = (
     # ── OpenRouter ── all 14 confirmed present in the public /models catalogue on
@@ -90,6 +91,51 @@ VOUCHED: tuple[VouchedModel, ...] = (
     VouchedModel("openrouter", "poolside/laguna-m.1:free", _VERIFIED_2026_07_24, False),
     VouchedModel("openrouter", "poolside/laguna-s-2.1:free", _VERIFIED_2026_07_24, False),
     VouchedModel("openrouter", "poolside/laguna-xs-2.1:free", _VERIFIED_2026_07_24, False),
+
+    # ── OpenRouter, PAID ── the deliberate reliability escape hatch from the `:free`
+    # tier. Approved for all three roles (coder / narrator / fast) on 2026-08-01,
+    # confirmed present in the live /models catalogue that day (336 ids listed;
+    # canonical slug `deepseek/deepseek-v4-flash-20260423`).
+    #
+    # Approved, NOT bound: `_DEFAULT_MODELS` stays `:free` and
+    # `ensure_free_or_allowed` still refuses this id without `allow_paid` — being in
+    # this matrix means "checked and cleared to pick", never "billed by default".
+    #
+    # Why it earns a paid slot: the free tier fails two ways we have now observed live —
+    # `google/gemma-4-31b-it:free` (the narrator default) 429s upstream, and
+    # `nvidia/nemotron-3-super-120b-a12b:free` returns empty structured output. This id
+    # declares `structured_outputs`, `response_format`, `tools` and `reasoning_effort`
+    # in its own catalogue entry, which is exactly the capability whose absence produces
+    # the empty-structured-output failure, and a paid slot is not rate-limited upstream.
+    #
+    # fast_eligible=True is honest under this module's conservative rule: 13B *activated*
+    # params (284B MoE) at $0.14/M in · $0.28/M out is cheap enough that a throwaway
+    # interpret call is not a waste — unlike the 550B, whose fast-tier ban is bug #202.
+    # The cost is real money rather than free-tier quota, so a throwaway call is cheap,
+    # not free. 1M ctx.
+    VouchedModel("openrouter", "deepseek/deepseek-v4-flash", _VERIFIED_2026_08_01,
+                 True, "PAID $0.14/M in · $0.28/M out — approved for coder/narrator/fast "
+                       "as the reliability pick when the :free tier 429s or returns empty "
+                       "structured output; binding it still requires allow_paid"),
+    # The dated pin of the same model. Both are live; this is the id to bind when you
+    # want the weights to stay put, since the undated slug rolls forward on release.
+    # Verified the same way on 2026-08-01 — and re-checked against the AUTHENTICATED
+    # catalogue (this account's own key), because per-account pricing was the one
+    # explanation that would have made "paid" wrong. It did not: same $0.14/$0.28.
+    VouchedModel("openrouter", "deepseek/deepseek-v4-flash-0731", _VERIFIED_2026_08_01,
+                 True, "PAID, same weights/pricing as the undated slug — 1M ctx "
+                       "(NOT the 33k the capability chip reports)"),
+    # The premium end of the paid tier. Confirmed in the live catalogue 2026-08-01:
+    # 1M ctx, structured_outputs + tools, $3.00/M in · $15.00/M out.
+    #
+    # fast_eligible=False, and this is the least ambiguous False in the table: at
+    # $15/M output it is ~54× deepseek-v4-flash's completion price, so a throwaway
+    # interpret or evidence-summary call reaching it IS the cost bug #202 — the same reason
+    # 550B is banned from `fast`. Approved for coder and narrator, where one good
+    # answer is worth the money; never for the tier that fires seven times a run.
+    VouchedModel("openrouter", "moonshotai/kimi-k3", _VERIFIED_2026_08_01,
+                 False, "PAID $3.00/M in · $15.00/M out — 1M ctx; the expensive pick, "
+                        "deliberately barred from the cheap `fast` tier"),
 
     # ── Gemini ── confirmed in the live catalogue on 2026-07-24, which lists them
     # PREFIXED as `models/<id>`. See `normalize_id`: comparing raw would report all

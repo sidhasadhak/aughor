@@ -29,17 +29,30 @@ authority on completed waves and J1–J8; this §0 stays the session-level statu
 > and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
 > batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
 
-**`main` is at `4195eef`. Waves A, R, E, C, V and L are ALL complete; Wave N is complete
-locally.** The 2026-07-25 session built A5/A6 + E5/E6 + the E4 loose ends and landed six PRs
-(#208, #211–#215), then Wave C's scoping doc + C1–C5 (#217). The 2026-07-26 session landed the
-install-doc audit (#218), then **C6 + Wave V (V1–V6) together as #219** (the stacking lesson:
-PR the base arc before the stacked arc). The 2026-07-27 session closed Wave L (#221/#224/#225),
-and 2026-07-28 landed **Wave N1+N2 (#226)** plus the two memory studies. **The next build is
-Wave G** per the v2 program above.
+**`main` is at `e122fe5` (reconciled 2026-08-01 against `git log`).** Since the stale `4195eef`
+this §0 last claimed, these merged: **Waves H1–H6** (hired agents over the governed substrate,
+#233–#237/#239/#240), **`agents.user_defined` graduation** (#241), **Wave CR → Agentic Ops**
+(#238), **Waves S2/S4** (#242/#232), and — most recently — **the feature-flag strategy** (#243,
+`e122fe5`): the registry is now dispositioned and ratchet-enforced (89 flags, every one in
+exactly one CI-enforced kind; the graduation-queue and migration sets are empty).
 
-> ⚠️ **This §0 had drifted by three merges** (it claimed `main = 9584931` and "next is Wave L"
-> while L, N1 and N2 were merged). Reconciled 2026-07-28 against `git log`, not against prose —
-> the standing rule for this file, which the drift proves is worth repeating.
+> ⚠️ **The wave table below (A–L states) is OLDER than this header and was NOT re-reconciled this
+> session** — the H/CR/S waves above merged after it was written. Trust `git log --oneline | grep
+> -iE "Wave|#2"` over the table until someone reconciles it fully; §0's header is current.
+
+### ⏭️ Two open threads for the next session
+
+1. **Feature-flag experiment queue (active).** The flag strategy is merged; what remains is
+   **Group D — 12 experiment-queue flags** that need measurement to graduate/delete/keep-off. The
+   free tier is banked on branch **`worktree-flag-experiment-queue`** (2 commits, UNPUSHED, both
+   full-CI-matching green): `snapshot_receipts` graduated (cost measured) and `search.rrf` settled
+   OFF on a measured negative. **The 12 remaining are budget-bound LLM A/B grids (~1/day at the
+   1,000-req cap) or coupled decisions** — see `docs/FLAG_STRATEGY_2026-07-31.md` §D/§7 for the
+   per-flag plan. Any grid needs the env in the ⚠️ note below + `deepseek/deepseek-v4-flash` for
+   fast iteration. Decide push/PR for the two banked commits first.
+2. **The v2 platform program** ([`docs/PLATFORM_PROGRAM_2026-07-26.md`](docs/PLATFORM_PROGRAM_2026-07-26.md),
+   **L → G → O → Q → S**) — the broader wave arc; check `git log` for which of G/O/Q/S have landed
+   before planning the next wave (this §0's wave table is stale on exactly this).
 
 | Wave | What | State |
 |---|---|---|

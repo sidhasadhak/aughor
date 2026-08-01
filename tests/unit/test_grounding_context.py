@@ -16,8 +16,28 @@ def test_all_blocks_present_in_order():
     ctx = G.build_grounding_context("why is revenue down", "samples")
     keys = [b.key for b in ctx.blocks]
     # prepends first, then schema-dependent, then the enrichment body
-    assert keys[:4] == ["dialect_rules", "agent_brief", "trusted", "corrections"]
+    assert keys[:5] == ["dialect_rules", "agent_brief", "pack",
+                        "trusted", "corrections"]
     assert "governed_metrics" in keys and "schema_slice" in keys and "glossary" in keys
+
+
+def test_the_pack_block_is_its_own_block_not_the_agent_brief():
+    """These were conflated: the receipt titled `agent_brief` "Active agent / pack
+    brief" while `agent_brief_block()` only ever renders the *agent's* instructions —
+    it never reads a pack. The receipt claimed pack coverage it did not have, so a
+    reader checking "was a pack steering this answer?" got the wrong block."""
+    ctx = G.build_grounding_context("why is revenue down", "samples")
+    by_key = {b.key: b for b in ctx.blocks}
+    assert by_key["agent_brief"].title == "Active agent brief"       # no pack claim
+    assert by_key["pack"].title == "Pack steering"
+
+
+def test_pack_steering_is_inert_without_a_deployed_pack():
+    """The data-gated claim, which is what makes the block safe to add to three
+    prompts: no active pack + no pinned binding ⇒ '' , so the prompts are
+    byte-identical to before this block existed."""
+    assert G.pack_brief("why is revenue down", "samples", "") == ""
+    assert G.pack_steering("why is revenue down", "samples", "") == ("", "")
 
 
 def test_schema_dependent_blocks_skip_without_schema():

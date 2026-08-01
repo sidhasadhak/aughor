@@ -67,6 +67,33 @@ def test_the_550b_can_never_serve_the_fast_tier():
     assert not M.fast_eligible("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free")
 
 
+def test_deepseek_v4_flash_is_approved_for_all_three_roles():
+    """The paid reliability pick, approved 2026-08-01 against the live catalogue.
+
+    `coder` and `narrator` carry no eligibility gate — being in the matrix at all is
+    what "approved" means for them. `fast` is the one gated tier, so the claim "approved
+    for Code, Narrator and Fast" is only true if `fast_eligible` is True.
+    """
+    entry = M.lookup("openrouter", "deepseek/deepseek-v4-flash")
+    assert entry is not None and entry.vouched          # a real date, not a guess
+    assert M.fast_eligible("openrouter", "deepseek/deepseek-v4-flash")
+
+
+def test_approving_a_paid_model_does_not_make_it_bindable():
+    """Approval and binding are separate acts, and this is the seam between them.
+
+    The matrix says "checked, and cleared to pick". The free-by-default guard still
+    says "paying is a deliberate act". A model can be in the matrix, offered in the
+    picker, and STILL refuse to bind without `allow_paid` — which is what stops an
+    approval from quietly becoming a billed default.
+    """
+    from aughor.llm.provider import ensure_free_or_allowed
+
+    with pytest.raises(ValueError, match="paid OpenRouter model"):
+        ensure_free_or_allowed("openrouter", "deepseek/deepseek-v4-flash")
+    ensure_free_or_allowed("openrouter", "deepseek/deepseek-v4-flash", allow_paid=True)
+
+
 def test_an_unlisted_model_is_never_fast_eligible():
     """What makes wiring the matrix into `_pinned_model` safe: unknown resolves to the
     pre-R2 blanket rule, so nothing changes for a model nobody declared cheap."""

@@ -160,11 +160,48 @@ overhead on real brief ticks; no LLM grid needed, just a cost number.
   the route 404s off and does nothing unless explicitly POSTed. Calling it is the consent
   (the planner's one LLM call is user-initiated). Graduate as always-available surfaces.
 
-### D. The experiment queue — measure with E4, the plane built for exactly this (12)
+### D. The experiment queue — measure with E4, the plane built for exactly this
 
-Each adds LLM calls (or changes prompts/routing) for a claimed quality gain. `closed_loop`'s own
-description — "until its delta is proven on your data" — names the exit criterion for the whole
-group. Pre-check each with "does the flag change the prompt?" before buying any grid
+**Batch D (2026-07-31) — the triage that pays before any grid.** A full "does the flag change
+the prompt?" pass over all 15 (the free `grid-budget` check) split the queue into what needs a
+model and what does not:
+
+- **Settled with ZERO LLM budget:** **`snapshot_receipts` — ✅ GRADUATED** and **`search.rrf` —
+  ✅ SETTLED OFF on a measured negative** (see below). `explore.route_wide`'s routing half is
+  also model-free (already pinned by `evals/route_wide_eval.py`) — only its *answer-quality*
+  delta needs a grid.
+
+**✅ `search.rrf` SETTLED OFF** — not a hunch, a measurement. An honest known-item retrieval eval
+over the real 282-entry `data/kb/` corpus (definitional labels from each entry's own fields, real
+local embeddings, `aughor/evals/rrf_retrieval_eval.py`) found RRF ranks **worse** than the α-blend
+default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957, consistent across the title and usage query
+regimes. The "the evals are the grid" note was optimistic (no labeled KB-retrieval suite existed);
+this built one with construction-honest labels and got a clean negative. RRF's target regime
+(recovering an exact-term hit the dense retriever buries) is not exercised by semantic queries and
+stays unproven, so the flag stays OFF but is not deleted — the mechanic is unit-proven and cheap to
+keep. Moved from the queue to `INTENTIONALLY_OFF` with the measured reason.
+- **A decision, not a grid:** `ada.causal_drill` is inert whenever `ada.parallel_lenses` is on
+  (its serial-path twin), so its exit is coupled to the performance-profile call, not an
+  independent A/B — delete it if/when the parallel profile becomes the default.
+- **Cost measurable free now, quality deferred:** `ada.evidence_stubs` and
+  `explorer.synthesis_incremental` — the token/call cost is deterministic; only the quality
+  effect needs the grid.
+- **Data-gated grids:** `closed_loop`, `graph.readback`, `kinetic.agent_actions` are
+  byte-identical / no-call unless the fixture carries the data (corrections, a built graph,
+  declared actions) — grid only where that data exists; the off-state no-op is already unit-proven.
+
+**✅ `snapshot_receipts` GRADUATED** (receipt `2dee7a36c03f`, run `11de013bb901` of
+`aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3) — its exit was decidable without a
+model. Cost: one metadata `COUNT(*)` per finding table, size-independent on DuckDB (row counts
+are metadata), measured **median ~0.2ms** for a 3-table finding vs E1's 5ms bar. Reconcile: already
+one mechanism — `kernel/freeze.py` imports `data_version` *from* `db/snapshot.py`, so a frozen
+artifact and a pinned finding share one function. Additive/fail-open (off ⇒ `data_version` is
+None; a broken probe ⇒ None, never blocks the emit).
+
+The genuine-grid remainder still needs LLM budget (~1 flag/day at 1,000 req/day). Each adds LLM
+calls (or changes prompts/routing) for a claimed quality gain. `closed_loop`'s own description —
+"until its delta is proven on your data" — names the exit criterion for the whole group.
+Pre-check each with "does the flag change the prompt?" before buying any grid
 (the check that saved ~850 requests on #241).
 
 `closed_loop` · `graph.readback` · `explore.route_wide` · `explorer.synthesis_incremental` ·
@@ -173,9 +210,8 @@ delete it if the performance profile makes parallel the default) · `ada.evidenc
 description forbids graduation before an A/B) · `search.rrf` (cheap: the KB-retrieval evals are
 the grid) · `explorer.manifest_driven` · `kinetic.agent_actions` · `semops.champion_validate`.
 
-`snapshot_receipts` (born 2026-06-23, the oldest OFF flag) also lands here: measure the per-emit
-version-probe cost, and reconcile with V4's data-version machinery (`lifecycle.freeze` composes
-`db/snapshot.data_version` — two pinning mechanisms should become one).
+`snapshot_receipts` (born 2026-06-23, the oldest OFF flag) is **no longer here — it graduated**
+in batch D above (the cost was measured sub-ms and the reconcile was already true).
 
 ### E. Collapse into ONE performance profile (4 → 1 control)
 
@@ -279,12 +315,36 @@ read at call time + the conftest isolation list.
    ✅ C done 2026-07-31 (same commit as B); G done earlier; bundles done in batch C
    (run `2dbff8c60c10`) — the queue is now empty.
 5. **Group F** — migrations: flip `semantic.contract_live` first (byte-identical today).
-   ✅ contract_live flipped 2026-07-31 (receipt `e801ff3a4448`); three migrations remain.
+   ✅ Done 2026-07-31 (batch C): `semantic.contract_live`, `semantic.resolve_live` and
+   `capability.pipeline_live` all flipped default-ON on proven claims; `plan.program` moved to
+   EXPERIMENT (its /ask auto-depth hook). **MIGRATION is now empty** — the remaining obligation is
+   deleting the legacy paths once soaked (noted at each FLAG_DEFAULT entry).
 6. **The ratchet + UI restructure** — after dispositions are code, not prose.
+   ✅ Done 2026-07-31 (batches A/B): `test_flag_dispositions.py` enforces the partition;
+   `list_flags()` carries the disposition; the Settings panel groups by kind with search,
+   collapsible sections and the performance-profile selector.
 7. **Group D** — the E4 queue, run as grid budget allows; each result either graduates the flag
    or moves it to INTENTIONALLY_OFF with the measured reason.
+   🔶 **Free tier done 2026-08-01 (batch D):** `snapshot_receipts` GRADUATED (cost measured, no
+   grid — receipt `2dee7a36c03f`); `search.rrf` SETTLED OFF on a measured negative
+   (`aughor/evals/rrf_retrieval_eval.py`: RRF MRR 0.964 < α-blend 0.977 on the real KB) → moved to
+   INTENTIONALLY_OFF. **12 flags remain — all budget-bound LLM grids or coupled decisions**
+   (see §D); none started (no request budget spent). `ada.causal_drill` rides the perf-profile
+   call; `explore.route_wide` routing is settled, only its answer-quality delta is open.
 
 Discipline per flip (hard-won): simulate with `AUGHOR_<VAR>=1 pytest` BEFORE editing
 `FLAG_DEFAULT` (off-state tests reach "off" several ways — `delenv`, never-setting — nothing to
 grep); then force both states explicitly; snapshot `data/` before full runs; the graduation
-ratchet already refuses on contradicting live overrides (this box is at zero overrides — clean).
+ratchet already refuses on contradicting live overrides. **Match CI exactly from the start:
+`uv sync --all-extras` then `pytest -m "not e2e and not eval"` over the WHOLE tree — the two
+whole-tree ratchets (`test_no_new_silent_swallows`, `test_no_new_private_cross_imports`) and
+`tests/integration` reach "off" cases a `tests/unit`-only run structurally cannot. Avoid p95
+wall-clock assertions in receipt suites (they flake under full-suite load) — assert the median.**
+
+## 7. Current state (2026-08-01)
+
+**89 flags, every one in exactly one CI-enforced disposition:** 57 default-ON · 10 auto · 5
+intentionally-off · 13 experiment · 4 performance-profile · **0 migration · 0 graduation-queue**.
+The whole strategy is executed except the 12 remaining experiment-queue flags, which need LLM
+grid budget (~1/day at the 1,000-req cap) and are the natural next-session work. The registry no
+longer regrows silently — a new flag that declares no exit fails CI.

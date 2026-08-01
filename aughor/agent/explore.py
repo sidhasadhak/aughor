@@ -172,13 +172,16 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
             steered_by = state.get("_pack_id")
             logger.info("[explore] specialist pack '%s' steering (forced) this run", steered_by)
         else:
-            from aughor.packs.intake import injection_for_question, render_injection
-            _inj = injection_for_question(state.get("question", ""), state.get("connection_id", ""),
-                                          state.get("scope_schema", "") or "")
-            if _inj is not None:
-                scan_section = render_injection(_inj) + scan_section
-                steered_by = _inj.pack_id
-                logger.info("[explore] specialist pack '%s' is steering this run", _inj.pack_id)
+            # One producer, three paths (grounding.py) — investigate and quick-/ask read
+            # the same resolve, so a pack that steers exploration now steers all of them.
+            from aughor.agent.grounding import pack_steering
+            _block, _pack_id = pack_steering(
+                state.get("question", ""), state.get("connection_id", ""),
+                state.get("scope_schema", "") or "")
+            if _block:
+                scan_section = _block + scan_section
+                steered_by = _pack_id
+                logger.info("[explore] pack '%s' is steering this run", _pack_id)
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "specialist-pack intake best-effort; run proceeds ungrounded",

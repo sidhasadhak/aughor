@@ -5,7 +5,7 @@ Rec 5 of the 2026-07-11 platform study (flag ``ask.context_receipt``): the
 did; the grounding receipt says what the model was *grounded on* — the schema
 slice chosen, glossary/business definitions, governed-metric bindings,
 ambiguity-ledger priors (closed-loop corrections), dialect rules, trusted-query
-templates, and which pack/agent brief is active.
+templates, and which agent brief and pack are active.
 
 Design (single source of truth, no drift): each grounding block has ONE producer
 function here, wrapping the same underlying retriever the answer path already
@@ -17,7 +17,7 @@ receipt reflects the real grounding rather than a re-derivation that can diverge
 
 Staging note: the quick-``/ask`` assembly (``routers/investigations.py::
 _stream_chat``) currently shares the pure *prepend* producers here (dialect
-rules, agent brief, trusted, corrections); its schema-linking + governed-metric
+rules, agent brief, pack, trusted, corrections); its schema-linking + governed-metric
 blocks are computed inline (entangled with canvas-scope resolution) and are a
 deliberate follow-up to fold in. The value-index literal-binding block is
 post-generation on the answer path (a guard, not a prompt block) and is not yet
@@ -56,7 +56,51 @@ def dialect_rules_block() -> str:
 
 def agent_brief(question: str = "", connection_id: str = "") -> str:
     from aughor.custom_agents.context import agent_brief_block
-    return _safe(agent_brief_block, "grounding: active agent/pack brief")
+    return _safe(agent_brief_block, "grounding: active agent brief")
+
+
+def pack_steering(question: str, connection_id: str = "",
+                  schema_name: str = "") -> tuple[str, str]:
+    """``(block, pack_id)`` for the deployed pack — ``("", "")`` if none steers.
+
+    The pair exists because the explore path labels its run with the pack id, while the
+    other two consumers want only the text. Both halves come from one resolve, so a
+    caller can never report a pack that did not actually steer, or steer without being
+    able to name the pack.
+    """
+    from aughor.packs.intake import injection_for_question, render_injection
+
+    resolved: dict[str, str] = {}
+
+    def _render() -> str:
+        inj = injection_for_question(question, connection_id, schema_name)
+        if inj is None:
+            return ""
+        resolved["pack_id"] = inj.pack_id
+        return render_injection(inj)
+
+    block = _safe(_render, "grounding: pack steering")
+    return (block, resolved.get("pack_id", "")) if block else ("", "")
+
+
+def pack_brief(question: str, connection_id: str = "", schema_name: str = "") -> str:
+    """The deployed pack's steering block, or '' when nothing steers.
+
+    The single producer for pack steering. Before this existed the payload had exactly
+    one engine caller (``agent/explore.py``), so a pack bound to a custom agent sharpened
+    exploration runs and nothing else — and this module's own receipt titled a block
+    "Active agent / pack brief" while :func:`agent_brief` only ever rendered the *agent's*
+    instructions. The receipt claimed pack coverage it did not have.
+
+    ``schema_name`` is a schema NAME, not rendered DDL: it keys ``load_binding``, so
+    handing it the schema TEXT that the neighbouring producers take would look up a
+    binding under a multi-kilobyte key, find none, and return '' forever — a block that
+    silently never fires. The registration below passes ``eff_schema`` for that reason.
+
+    Inert by construction: '' unless the packs flag is on AND an active pack matches
+    AND a human pinned a deploy binding on this connection.
+    """
+    return pack_steering(question, connection_id, schema_name)[0]
 
 
 def trusted_templates(question: str, connection_id: str) -> str:
@@ -148,7 +192,10 @@ def schema_slice(question: str, connection_id: str, *, schema: str = "") -> str:
 # ``needs_schema`` blocks are computed only when the caller resolved a schema.
 _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     ("dialect_rules", "Dialect rules", lambda q, c, **k: dialect_rules_block(), False),
-    ("agent_brief", "Active agent / pack brief", lambda q, c, **k: agent_brief(q, c), False),
+    ("agent_brief", "Active agent brief", lambda q, c, **k: agent_brief(q, c), False),
+    # eff_schema (the schema NAME), never k["schema"] (rendered DDL) — see pack_brief.
+    ("pack", "Pack steering",
+     lambda q, c, **k: pack_brief(q, c, k.get("eff_schema") or ""), False),
     ("trusted", "Trusted query templates", lambda q, c, **k: trusted_templates(q, c), False),
     ("corrections", "Ambiguity-ledger priors (corrections)", lambda q, c, **k: correction_priors(q, c), False),
     ("governed_metrics", "Governed-metric bindings",

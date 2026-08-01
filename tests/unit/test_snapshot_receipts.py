@@ -44,8 +44,12 @@ def test_data_version_fail_open_on_missing_table():
     assert snap.data_version(c, ["does_not_exist"]) is None    # never raises
 
 
-def test_flag_off_by_default(monkeypatch):
+def test_flag_default_on_and_honours_forced_off(monkeypatch):
+    # Graduated 2026-07-31 (flag strategy batch D): default-ON now, so an unset env
+    # resolves on; "off" is the operator escape hatch (an explicit falsy value).
     monkeypatch.delenv("AUGHOR_SNAPSHOT_RECEIPTS", raising=False)
+    assert snap.snapshot_receipts_enabled() is True
+    monkeypatch.setenv("AUGHOR_SNAPSHOT_RECEIPTS", "0")
     assert snap.snapshot_receipts_enabled() is False
 
 
