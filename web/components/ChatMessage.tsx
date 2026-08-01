@@ -918,10 +918,10 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-// ── Insight answer, rendered as a clean Brief ─────────────────────────────────
-// Headline + interpretation prose + the one framed result (chart / table /
+// ── Quick answer, rendered as a clean Brief ───────────────────────────────────
+// Headline + narrative prose + the one framed result (chart / table /
 // metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
-function InsightBrief({
+function NarrativeBrief({
   turn, connectionId, onShowSource, onFollowUp, onRunFresh,
 }: {
   turn: ChatTurn;
@@ -931,23 +931,23 @@ function InsightBrief({
   onRunFresh?: (q: string) => void;
 }) {
   const streaming = turn.status === "loading";
-  const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
-  const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
+  const proseText = turn.narrative?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
+  const anomalies = (turn.narrative?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
   // The narrative + anomalies ride along the follow-ups narrator call (no extra cost),
   // but for a direct lookup they're noise — reveal them on demand via "Explain the data".
   const [explained, setExplained] = useState(false);
-  // CK-0.2 token streaming: while `insight_delta` frames arrive (and no final insight
+  // CK-0.2 token streaming: while `narrative_delta` frames arrive (and no final narrative
   // yet), the narrative is being written live — auto-reveal the prose section and ride
-  // the partial text. Once the terminal `insight` lands (insightStream clears), stay
+  // the partial text. Once the terminal `narrative` lands (narrativeStream clears), stay
   // revealed rather than collapsing back behind the button.
-  const streamingProse = turn.insight == null ? turn.insightStream : null;
+  const streamingProse = turn.narrative == null ? turn.narrativeStream : null;
   // CK-0.2: while `headline_delta` frames arrive (and no terminal headline yet), type the
   // partial headline in place of the skeleton — the authoritative `headline` overwrites it.
   const streamingHeadline = turn.headline == null ? turn.headlineStream : null;
   useEffect(() => {
-    if (turn.insightStream != null) setExplained(true);
-  }, [turn.insightStream]);
+    if (turn.narrativeStream != null) setExplained(true);
+  }, [turn.narrativeStream]);
   const hasExplanation = !!(proseText || anomalies.length);
   // Post-done arrival fade (uplift pattern) — live turns only; restored turns render
   // instantly, and prefers-reduced-motion disables the CSS animation globally.
@@ -1005,7 +1005,7 @@ function InsightBrief({
           {/* One BriefProse for both phases (streaming partial → final narrative) so the
               text swap never remounts; safePartial closes a dangling ** mid-stream. While
               the partial is still arriving, trail a pulsing caret and settle the block in
-              with a one-time blur-lift; both vanish the instant the terminal insight lands. */}
+              with a one-time blur-lift; both vanish the instant the terminal narrative lands. */}
           {(streamingProse || proseText) && (
             <BriefProse
               className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
@@ -1041,7 +1041,7 @@ function InsightBrief({
           answer (headline + narrative) with an in-place checkmark, no toast. */}
       {!streaming && turn.headline && (
         <div className="opacity-0 group-hover:opacity-100 transition-opacity -ml-1.5">
-          <CopyAnswerButton text={[turn.headline, turn.insight?.narrative?.trim()].filter(Boolean).join("\n\n")} />
+          <CopyAnswerButton text={[turn.headline, turn.narrative?.narrative?.trim()].filter(Boolean).join("\n\n")} />
         </div>
       )}
 
@@ -1428,10 +1428,10 @@ export function ChatMessage({
         <OverviewReportView report={turn.overviewReport} onShowSource={onShowSource} onExploreFact={onExploreFact} />
       )}
 
-      {/* ── Insight — the answer as a clean Brief; mounts as a shimmer scaffold
+      {/* ── Quick answer — the answer as a clean Brief; mounts as a shimmer scaffold
            during the wait (fills in place) and completes at done. ── */}
       {!collapsed && !isInvestigate && !turn.overviewReport && (isDone || quickScaffold) && (
-        <InsightBrief
+        <NarrativeBrief
           turn={turn}
           connectionId={connectionId}
           onShowSource={onShowSource}

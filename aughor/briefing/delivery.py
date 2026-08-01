@@ -23,10 +23,10 @@ def build_brief_payload(sub: BriefSubscription):
 
     summary  — one-line headline suitable for a Slack message / webhook field
     markdown — the full rendered digest (truncated for the delivery field)
-    digest   — the DigestResult (for callers that want structured access)
+    digest   — the AlertSummary (for callers that want structured access)
     """
-    from aughor.monitors.digest import build_digest
-    digest = build_digest(conn_id=sub.conn_id, period=sub.period)
+    from aughor.monitors.alert_summary import build_alert_summary
+    digest = build_alert_summary(conn_id=sub.conn_id, period=sub.period)
     md = digest.to_markdown()
     period_label = f"{sub.period.capitalize()}ly"
     bits = []

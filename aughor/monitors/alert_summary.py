@@ -6,7 +6,7 @@ Aggregates:
   - New causal edges added since last digest
   - Open recommendations from the action hub
 
-Returns a structured DigestResult (Pydantic) and a Markdown render.
+Returns a structured AlertSummary (Pydantic) and a Markdown render.
 """
 from __future__ import annotations
 
@@ -18,16 +18,16 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
-class DigestSection(BaseModel):
+class AlertSummarySection(BaseModel):
     title: str
     items: list[str] = Field(default_factory=list)
 
 
-class DigestResult(BaseModel):
+class AlertSummary(BaseModel):
     conn_id: str
     period: str                     # "week" | "day"
     generated_at: str
-    sections: list[DigestSection] = Field(default_factory=list)
+    sections: list[AlertSummarySection] = Field(default_factory=list)
     alert_count: int = 0
     critical_count: int = 0
 
@@ -57,8 +57,8 @@ class DigestResult(BaseModel):
 
 # ── Builder ────────────────────────────────────────────────────────────────────
 
-def build_digest(conn_id: str, period: str = "week") -> DigestResult:
-    """Aggregate recent activity into a DigestResult.
+def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
+    """Aggregate recent activity into a AlertSummary.
 
     Args:
         conn_id: Connection to scope the digest to.
@@ -69,7 +69,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
     since_iso = since.isoformat()
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    sections: list[DigestSection] = []
+    sections: list[AlertSummarySection] = []
     alert_count = 0
     critical_count = 0
 
@@ -92,7 +92,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
                 items.append(f"{badge} [{ts}] {a.message}")
             if len(recent_alerts) > 10:
                 items.append(f"… and {len(recent_alerts) - 10} more alerts")
-            sections.append(DigestSection(title="Monitor Alerts", items=items))
+            sections.append(AlertSummarySection(title="Monitor Alerts", items=items))
     except Exception as exc:
         logger.debug("Digest: monitor alerts section failed: %s", exc)
 
@@ -117,7 +117,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
                 first = _re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].strip()
                 raw_insights.append(first if first.endswith((".", "!", "?")) else first + ".")
         if raw_insights:
-            sections.append(DigestSection(
+            sections.append(AlertSummarySection(
                 title="Exploration Insights",
                 items=raw_insights[:8],
             ))
@@ -138,7 +138,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
                     f"(strength: {e.get('weight', 0):.2f})"
                     for e in top
                 ]
-                sections.append(DigestSection(title="Top Causal Relationships", items=items))
+                sections.append(AlertSummarySection(title="Top Causal Relationships", items=items))
     except Exception as exc:
         logger.debug("Digest: causal graph section failed: %s", exc)
 
@@ -155,7 +155,7 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
                 f"{a.get('title', 'Untitled')} — {a.get('description', '')[:80]}"
                 for a in open_recs
             ]
-            sections.append(DigestSection(title="Open Recommendations", items=items))
+            sections.append(AlertSummarySection(title="Open Recommendations", items=items))
     except Exception as exc:
         logger.debug("Digest: recommendations section failed: %s", exc)
 
@@ -174,14 +174,14 @@ def build_digest(conn_id: str, period: str = "week") -> DigestResult:
                     "SELECT COUNT(*) AS n FROM evidence_claims WHERE owner_feedback IS NULL"
                 ).fetchone()["n"]
             if unreviewed:
-                sections.append(DigestSection(
+                sections.append(AlertSummarySection(
                     title="Evidence Review Queue",
                     items=[f"{unreviewed} claim(s) awaiting validation — open the Evidence tab to review."],
                 ))
     except Exception as exc:
         logger.debug("Digest: evidence section failed: %s", exc)
 
-    return DigestResult(
+    return AlertSummary(
         conn_id=conn_id,
         period=period,
         generated_at=now_iso,

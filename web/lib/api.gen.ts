@@ -953,6 +953,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/briefing/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Briefing Subscriptions */
+        get: operations["list_briefing_subscriptions_briefing_subscriptions_get"];
+        put?: never;
+        /** Create Briefing Subscription */
+        post: operations["create_briefing_subscription_briefing_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/briefing/subscriptions/{sub_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Briefing Subscription */
+        put: operations["update_briefing_subscription_briefing_subscriptions__sub_id__put"];
+        post?: never;
+        /** Delete Briefing Subscription */
+        delete: operations["delete_briefing_subscription_briefing_subscriptions__sub_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/briefing/subscriptions/{sub_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Briefing Subscription
+         * @description Deliver the briefing immediately and return the outcome (status + preview).
+         */
+        post: operations["test_briefing_subscription_briefing_subscriptions__sub_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/briefs/subscriptions": {
         parameters: {
             query?: never;
@@ -960,10 +1016,23 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Brief Subscriptions */
+        /**
+         * List Brief Subscriptions
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /briefing/subscriptions``.
+         *
+         *     Identical payload — it delegates to the handler above. Use ``/briefing/subscriptions``.
+         */
         get: operations["list_brief_subscriptions_briefs_subscriptions_get"];
         put?: never;
-        /** Create Brief Subscription */
+        /**
+         * Create Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /briefing/subscriptions``.
+         *
+         *     Same body, same payload, same persisted subscription — it delegates to the handler
+         *     above. Use ``/briefing/subscriptions``.
+         */
         post: operations["create_brief_subscription_briefs_subscriptions_post"];
         delete?: never;
         options?: never;
@@ -979,10 +1048,20 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update Brief Subscription */
+        /**
+         * Update Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``PUT /briefing/subscriptions/{sub_id}``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Use ``/briefing/…``.
+         */
         put: operations["update_brief_subscription_briefs_subscriptions__sub_id__put"];
         post?: never;
-        /** Delete Brief Subscription */
+        /**
+         * Delete Brief Subscription
+         * @deprecated
+         * @description DEPRECATED alias of ``DELETE /briefing/subscriptions/{sub_id}``. Use ``/briefing/…``.
+         */
         delete: operations["delete_brief_subscription_briefs_subscriptions__sub_id__delete"];
         options?: never;
         head?: never;
@@ -1000,7 +1079,10 @@ export interface paths {
         put?: never;
         /**
          * Test Brief Subscription
-         * @description Deliver the brief immediately and return the outcome (status + preview).
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /briefing/subscriptions/{sub_id}/test``.
+         *
+         *     Identical payload — it delegates to the handler above. Use ``/briefing/…``.
          */
         post: operations["test_brief_subscription_briefs_subscriptions__sub_id__test_post"];
         delete?: never;
@@ -2791,6 +2873,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Canvas Finding */
+        post: operations["dismiss_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/canvas/{canvas_id}/findings/{finding_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Promote Canvas Finding */
+        post: operations["promote_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss": {
         parameters: {
             query?: never;
@@ -2800,7 +2916,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Dismiss Canvas Insight */
+        /**
+         * Dismiss Canvas Insight
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/dismiss``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Kept for one release.
+         */
         post: operations["dismiss_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__dismiss_post"];
         delete?: never;
         options?: never;
@@ -2817,7 +2939,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Promote Canvas Insight */
+        /**
+         * Promote Canvas Insight
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/canvas/{canvas_id}/findings/{finding_id}/promote``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
+         */
         post: operations["promote_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__promote_post"];
         delete?: never;
         options?: never;
@@ -2937,6 +3065,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/kpi/time-to-first-finding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Time To First Finding Kpi
+         * @description B-6 product KPI: the connect→first-finding funnel, measured.
+         *
+         *     Reads the `exploration.first_insight` milestone events the explorer stamps (one per
+         *     run, on the first finding from any phase — the event kind is a persisted identity and
+         *     keeps its old spelling) and reports the distribution of elapsed seconds — so "how fast
+         *     does a fresh connection deliver its first finding" is a query, not a vibe. Mirrors
+         *     /metrics/enforcement-rate: a measured rate the product is held to.
+         */
+        get: operations["time_to_first_finding_kpi_exploration_kpi_time_to_first_finding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/kpi/time-to-first-insight": {
         parameters: {
             query?: never;
@@ -2946,13 +3100,11 @@ export interface paths {
         };
         /**
          * Time To First Insight Kpi
-         * @description B-6 product KPI: the connect→first-insight funnel, measured.
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /exploration/kpi/time-to-first-finding``.
          *
-         *     Reads the `exploration.first_insight` milestone events the explorer stamps
-         *     (one per run, on the first insight from any phase) and reports the
-         *     distribution of elapsed seconds — so "how fast does a fresh connection
-         *     deliver its first finding" is a query, not a vibe. Mirrors
-         *     /metrics/enforcement-rate: a measured rate the product is held to.
+         *     Identical payload — it delegates to the handler above. Kept so a client pinned to the
+         *     old path keeps working for one release.
          */
         get: operations["time_to_first_insight_kpi_exploration_kpi_time_to_first_insight_get"];
         put?: never;
@@ -3297,6 +3449,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{connection_id}/findings/{finding_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Connection Finding
+         * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
+         *     from intel, kept in the store, reversible) and logs the reason for the guard
+         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file.
+         */
+        post: operations["dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Connection Finding
+         * @description Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
+         *
+         *     Counterpart to the canvas promote endpoint — connection-level findings (the
+         *     default Briefing scope) had no promotion path until now.
+         */
+        post: operations["promote_connection_finding_exploration__connection_id__findings__finding_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Finding Receipt
+         * @description K3 Trust Receipt — the versioned finding artifact + its provenance edges
+         *     (source SQL, input tables, guards) + the kernel job that computed it. One
+         *     query over the ledger answers 'why should I trust this number'. Findings
+         *     persisted before K3 have no artifact yet — they gain one on the next
+         *     explore/refresh (404 until then, by design).
+         */
+        get: operations["get_finding_receipt_exploration__connection_id__findings__finding_id__receipt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{connection_id}/findings/{finding_id}/revalidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revalidate Connection Finding
+         * @description Re-check a finding's dossier against LIVE data — re-run its stored SQL once
+         *     (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
+         *     `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
+         *     never silently serve a stale figure. Requires a dossier (404 otherwise).
+         */
+        post: operations["revalidate_connection_finding_exploration__connection_id__findings__finding_id__revalidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{connection_id}/insights/{insight_id}/dismiss": {
         parameters: {
             query?: never;
@@ -3308,9 +3552,10 @@ export interface paths {
         put?: never;
         /**
          * Dismiss Connection Insight
-         * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
-         *     from intel, kept in the store, reversible) and logs the reason for the guard
-         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file.
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/dismiss``.
+         *
+         *     Same body, same payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["dismiss_connection_insight_exploration__connection_id__insights__insight_id__dismiss_post"];
         delete?: never;
@@ -3330,10 +3575,10 @@ export interface paths {
         put?: never;
         /**
          * Promote Connection Insight
-         * @description Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/promote``.
          *
-         *     Counterpart to the canvas promote endpoint — connection-level findings (the
-         *     default Briefing scope) had no promotion path until now.
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["promote_connection_insight_exploration__connection_id__insights__insight_id__promote_post"];
         delete?: never;
@@ -3351,11 +3596,10 @@ export interface paths {
         };
         /**
          * Get Insight Receipt
-         * @description K3 Trust Receipt — the versioned finding artifact + its provenance edges
-         *     (source SQL, input tables, guards) + the kernel job that computed it. One
-         *     query over the ledger answers 'why should I trust this number'. Findings
-         *     persisted before K3 have no artifact yet — they gain one on the next
-         *     explore/refresh (404 until then, by design).
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /exploration/{connection_id}/findings/{finding_id}/receipt``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         get: operations["get_insight_receipt_exploration__connection_id__insights__insight_id__receipt_get"];
         put?: never;
@@ -3377,10 +3621,10 @@ export interface paths {
         put?: never;
         /**
          * Revalidate Insight
-         * @description Re-check a finding's dossier against LIVE data — re-run its stored SQL once
-         *     (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
-         *     `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
-         *     never silently serve a stale figure. Requires a dossier (404 otherwise).
+         * @deprecated
+         * @description DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/revalidate``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept for one release.
          */
         post: operations["revalidate_insight_exploration__connection_id__insights__insight_id__revalidate_post"];
         delete?: never;
@@ -11475,6 +11719,169 @@ export interface operations {
             };
         };
     };
+    list_briefing_subscriptions_briefing_subscriptions_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_briefing_subscription_briefing_subscriptions_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SubscriptionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_briefing_subscription_briefing_subscriptions__sub_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                sub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SubscriptionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_briefing_subscription_briefing_subscriptions__sub_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_briefing_subscription_briefing_subscriptions__sub_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_brief_subscriptions_briefs_subscriptions_get: {
         parameters: {
             query?: {
@@ -15057,6 +15464,74 @@ export interface operations {
             };
         };
     };
+    dismiss_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_canvas_finding_exploration_canvas__canvas_id__findings__finding_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canvas_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dismiss_canvas_insight_exploration_canvas__canvas_id__insights__insight_id__dismiss_post: {
         parameters: {
             query?: never;
@@ -15295,6 +15770,37 @@ export interface operations {
             path: {
                 canvas_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    time_to_first_finding_kpi_exploration_kpi_time_to_first_finding_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -15901,6 +16407,138 @@ export interface operations {
             header?: never;
             path: {
                 conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_connection_finding_exploration__connection_id__findings__finding_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_finding_receipt_exploration__connection_id__findings__finding_id__receipt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revalidate_connection_finding_exploration__connection_id__findings__finding_id__revalidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                finding_id: string;
             };
             cookie?: never;
         };

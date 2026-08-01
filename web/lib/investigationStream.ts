@@ -180,18 +180,18 @@ export interface ChatTurn {
   // Org-playbook items referenced for this turn (user can keep/modify/remove)
   playbookRefs: PlaybookRef[];
 
-  // Insight narrative — analytical interpretation streamed post-answer (Genie-style)
-  insight: {
+  // Narrative — the prose enrichment attached to a quick answer, streamed post-answer
+  narrative: {
     narrative: string;
     anomalies: string[];
     trend: string;
     confidence: string;
   } | null;
 
-  // CK-0.2 token streaming — the narrative's growing partial text (`insight_delta`
-  // frames, replace semantics). Cleared when the authoritative `insight` lands.
+  // CK-0.2 token streaming — the narrative's growing partial text (`narrative_delta`
+  // frames, replace semantics). Cleared when the authoritative `narrative` lands.
   // Always null on restored turns (history never carries deltas).
-  insightStream: string | null;
+  narrativeStream: string | null;
   // R6: live synthesis prose (backend node `ada_synthesize`), before the terminal deepReport lands
   reportStream: string | null;
 
@@ -244,8 +244,8 @@ export type ChatAction =
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string; detail?: ErrorDetail | null }
-  | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
-  | { type: "INSIGHT_DELTA";     narrative: string }
+  | { type: "NARRATIVE";         narrative: string; anomalies: string[]; trend: string; confidence: string }
+  | { type: "NARRATIVE_DELTA";   narrative: string }
   | { type: "REPORT_DELTA";      text: string }
   | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE"; receiptId?: string | null }
@@ -307,8 +307,8 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
   playbookRefs: [],
-  insight: null,
-  insightStream: null,
+  narrative: null,
+  narrativeStream: null,
   reportStream: null,
   clarifyingQuestions: [],
   clarifyingContext: '',
@@ -385,13 +385,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
     case "CLARIFYING_QUESTIONS":
       return updateLast(state, t => ({ ...t, clarifyingQuestions: action.questions, clarifyingContext: action.contextNote }));
-    case "INSIGHT":
-      // The terminal insight replaces the partial stream (delta frames are advisory;
-      // this event is authoritative) — clear insightStream so renderers switch over.
-      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence }, insightStream: null }));
-    case "INSIGHT_DELTA":
+    case "NARRATIVE":
+      // The terminal narrative replaces the partial stream (delta frames are advisory;
+      // this event is authoritative) — clear narrativeStream so renderers switch over.
+      return updateLast(state, t => ({ ...t, narrative: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence }, narrativeStream: null }));
+    case "NARRATIVE_DELTA":
       // Growing partial narrative (replace semantics — each frame carries the full text so far).
-      return updateLast(state, t => ({ ...t, insightStream: action.narrative }));
+      return updateLast(state, t => ({ ...t, narrativeStream: action.narrative }));
     case "REPORT_DELTA":
       // Growing deep-report prose (replace semantics); the terminal DEEP_REPORT clears it and wins.
       return updateLast(state, t => ({ ...t, reportStream: action.text }));
@@ -440,7 +440,9 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "escalate":       return `${p.signal ?? "?"} · ${String(p.reason ?? "").slice(0, 40)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
+    case "narrative":
     case "insight":        return String(p.narrative ?? "").slice(0, 40);
+    case "narrative_delta":
     case "insight_delta":  return `partial: ${String(p.narrative ?? "").slice(0, 32)}`;
     case "report_delta":   return `partial: ${String(p.executive_summary ?? "").slice(0, 40)}`;
     case "headline_delta": return `partial: ${String(p.headline ?? "").slice(0, 40)}`;
@@ -629,8 +631,15 @@ export async function consumeStream(
               });
               break;
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
-            case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
-            case "insight_delta": dispatch({ type: "INSIGHT_DELTA", narrative: (p.narrative as string) ?? "" }); break;
+            // WIRE-NAME BOUNDARY — `narrative` is the name; `insight` is the retired one
+            // the backend still dual-emits for one release. Both cases carry an identical
+            // payload and dispatch the same action, so receiving both is idempotent
+            // (replace semantics). Delete the `insight*` cases when the backend stops
+            // sending them; keeping them lets a new client talk to an older server.
+            case "narrative":
+            case "insight":      dispatch({ type: "NARRATIVE", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
+            case "narrative_delta":
+            case "insight_delta": dispatch({ type: "NARRATIVE_DELTA", narrative: (p.narrative as string) ?? "" }); break;
             case "report_delta":  dispatch({ type: "REPORT_DELTA", text: (p.executive_summary as string) ?? "" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string, detail: toErrorDetail(p) }); break;

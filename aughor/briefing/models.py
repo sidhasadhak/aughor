@@ -17,7 +17,7 @@ DEFAULT_CRON = {
 
 
 class BriefSubscription(BaseModel):
-    """A recurring delivery of a connection's Intelligence Digest.
+    """A recurring delivery of a connection's briefing.
 
     `trigger_id` references an Action Hub trigger (Slack/webhook/Jira) that performs
     the actual delivery — keeping subscriptions decoupled from channel mechanics.

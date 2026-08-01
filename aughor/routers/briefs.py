@@ -1,7 +1,11 @@
-"""Scheduled Brief subscriptions — CRUD + test delivery.
+"""Scheduled briefing subscriptions — CRUD + test delivery.
 
-A subscription pushes a connection's Intelligence Digest on a recurring schedule
-through an existing Action Hub trigger. See aughor/briefing/.
+A subscription pushes a connection's briefing on a recurring schedule through an
+existing notification trigger. See aughor/briefing/.
+
+The canonical paths are ``/briefing/subscriptions*``. The older ``/briefs/*`` paths stay
+registered as thin ``deprecated=True`` aliases that delegate to the handlers below, so a
+client pinned to them keeps working for one release.
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ def _brief_owner_guard(request: Request) -> None:
         check_owner("brief", sid, get_principal(request))
 
 
-router = APIRouter(tags=["briefs"], dependencies=[Depends(_brief_owner_guard)])
+router = APIRouter(tags=["briefing"], dependencies=[Depends(_brief_owner_guard)])
 
 
 class _SubscriptionBody(BaseModel):
@@ -39,8 +43,8 @@ def _validate_period(period: str) -> None:
         raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
 
 
-@router.get("/briefs/subscriptions")
-def list_brief_subscriptions(conn_id: Optional[str] = None):
+@router.get("/briefing/subscriptions")
+def list_briefing_subscriptions(conn_id: Optional[str] = None):
     from aughor.briefing.store import list_subscriptions
     from aughor.security.authz import org_visible_conn_ids
     org_conns = org_visible_conn_ids()  # DATA-06: only this org's subscriptions
@@ -51,8 +55,17 @@ def list_brief_subscriptions(conn_id: Optional[str] = None):
     return {"subscriptions": [s.to_dict() for s in subs]}
 
 
-@router.post("/briefs/subscriptions", status_code=201, dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
-def create_brief_subscription(body: _SubscriptionBody, request: Request):
+@router.get("/briefs/subscriptions", deprecated=True)
+def list_brief_subscriptions(conn_id: Optional[str] = None):
+    """DEPRECATED alias of ``GET /briefing/subscriptions``.
+
+    Identical payload — it delegates to the handler above. Use ``/briefing/subscriptions``.
+    """
+    return list_briefing_subscriptions(conn_id)
+
+
+@router.post("/briefing/subscriptions", status_code=201, dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
+def create_briefing_subscription(body: _SubscriptionBody, request: Request):
     from aughor.briefing.models    import BriefSubscription
     from aughor.briefing.store     import save_subscription
     from aughor.briefing.scheduler import reload_subscription
@@ -73,8 +86,23 @@ def create_brief_subscription(body: _SubscriptionBody, request: Request):
     return saved.to_dict()
 
 
-@router.put("/briefs/subscriptions/{sub_id}", dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
-def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
+@router.post(
+    "/briefs/subscriptions",
+    status_code=201,
+    dependencies=[gate(Capability.SCHEDULED_BRIEFS)],
+    deprecated=True,
+)
+def create_brief_subscription(body: _SubscriptionBody, request: Request):
+    """DEPRECATED alias of ``POST /briefing/subscriptions``.
+
+    Same body, same payload, same persisted subscription — it delegates to the handler
+    above. Use ``/briefing/subscriptions``.
+    """
+    return create_briefing_subscription(body, request)
+
+
+@router.put("/briefing/subscriptions/{sub_id}", dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
+def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     from aughor.briefing.store     import get_subscription, save_subscription
     from aughor.briefing.scheduler import reload_subscription
 
@@ -94,8 +122,21 @@ def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
     return saved.to_dict()
 
 
-@router.delete("/briefs/subscriptions/{sub_id}", status_code=204)
-def delete_brief_subscription(sub_id: str):
+@router.put(
+    "/briefs/subscriptions/{sub_id}",
+    dependencies=[gate(Capability.SCHEDULED_BRIEFS)],
+    deprecated=True,
+)
+def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
+    """DEPRECATED alias of ``PUT /briefing/subscriptions/{sub_id}``.
+
+    Same body, same payload — it delegates to the handler above. Use ``/briefing/…``.
+    """
+    return update_briefing_subscription(sub_id, body)
+
+
+@router.delete("/briefing/subscriptions/{sub_id}", status_code=204)
+def delete_briefing_subscription(sub_id: str):
     from aughor.briefing.store     import delete_subscription
     from aughor.briefing.scheduler import remove_subscription
     if not delete_subscription(sub_id):
@@ -103,11 +144,26 @@ def delete_brief_subscription(sub_id: str):
     remove_subscription(sub_id)
 
 
-@router.post("/briefs/subscriptions/{sub_id}/test")
-def test_brief_subscription(sub_id: str):
-    """Deliver the brief immediately and return the outcome (status + preview)."""
+@router.delete("/briefs/subscriptions/{sub_id}", status_code=204, deprecated=True)
+def delete_brief_subscription(sub_id: str):
+    """DEPRECATED alias of ``DELETE /briefing/subscriptions/{sub_id}``. Use ``/briefing/…``."""
+    delete_briefing_subscription(sub_id)
+
+
+@router.post("/briefing/subscriptions/{sub_id}/test")
+def test_briefing_subscription(sub_id: str):
+    """Deliver the briefing immediately and return the outcome (status + preview)."""
     from aughor.briefing.scheduler import trigger_now
     result = trigger_now(sub_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return result
+
+
+@router.post("/briefs/subscriptions/{sub_id}/test", deprecated=True)
+def test_brief_subscription(sub_id: str):
+    """DEPRECATED alias of ``POST /briefing/subscriptions/{sub_id}/test``.
+
+    Identical payload — it delegates to the handler above. Use ``/briefing/…``.
+    """
+    return test_briefing_subscription(sub_id)

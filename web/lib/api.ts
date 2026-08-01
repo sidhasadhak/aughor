@@ -1444,7 +1444,7 @@ export async function extendCanvasDomainBudget(canvasId: string, domain: string)
 
 export async function promoteCanvasInsight(canvasId: string, insightId: string): Promise<{ promoted: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/promote`,
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to promote insight");
@@ -1453,7 +1453,7 @@ export async function promoteCanvasInsight(canvasId: string, insightId: string):
 
 export async function promoteConnectionInsight(connectionId: string, insightId: string): Promise<{ promoted: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/promote`,
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to promote insight");
@@ -1655,7 +1655,7 @@ export async function graduateCard(
 
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
   );
   if (!res.ok) throw new Error("Failed to dismiss insight");
@@ -1664,7 +1664,7 @@ export async function dismissCanvasInsight(canvasId: string, insightId: string, 
 
 export async function dismissConnectionInsight(connectionId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
   );
   if (!res.ok) throw new Error("Failed to dismiss insight");
@@ -2970,7 +2970,7 @@ export interface BriefSubscription {
 
 export async function getBriefSubscriptions(connId?: string): Promise<BriefSubscription[]> {
   const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
-  const res = await fetch(`${BASE}/briefs/subscriptions${qs}`);
+  const res = await fetch(`${BASE}/briefing/subscriptions${qs}`);
   if (!res.ok) throw new Error("Failed to fetch brief subscriptions");
   const data = await res.json();
   return data.subscriptions ?? [];
@@ -2979,7 +2979,7 @@ export async function getBriefSubscriptions(connId?: string): Promise<BriefSubsc
 export async function createBriefSubscription(
   body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
 ): Promise<BriefSubscription> {
-  const res = await fetch(`${BASE}/briefs/subscriptions`, {
+  const res = await fetch(`${BASE}/briefing/subscriptions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -2992,7 +2992,7 @@ export async function updateBriefSubscription(
   id: string,
   body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
 ): Promise<BriefSubscription> {
-  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -3002,7 +3002,7 @@ export async function updateBriefSubscription(
 }
 
 export async function deleteBriefSubscription(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete brief subscription");
 }
 
@@ -3015,7 +3015,7 @@ export interface BriefDeliveryResult {
 }
 
 export async function testBriefSubscription(id: string): Promise<BriefDeliveryResult> {
-  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
+  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to test brief subscription");
   return res.json();
 }
@@ -3656,7 +3656,7 @@ export interface RevalidateResult {
 
 export async function revalidateInsight(connId: string, insightId: string): Promise<RevalidateResult> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connId)}/insights/${encodeURIComponent(insightId)}/revalidate`,
+    `${BASE}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/revalidate`,
     { method: "POST" },
   );
   if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
@@ -3666,7 +3666,7 @@ export async function revalidateInsight(connId: string, insightId: string): Prom
 /** K3 Trust Receipt — provenance for a finding (404 if it predates tracking). */
 export async function getInsightReceipt(connId: string, insightId: string): Promise<InsightReceipt | null> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connId)}/insights/${encodeURIComponent(insightId)}/receipt`,
+    `${BASE}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/receipt`,
   );
   if (!res.ok) return null;
   return res.json();

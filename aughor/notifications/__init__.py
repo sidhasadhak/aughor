@@ -1,4 +1,4 @@
-"""Action Hub — webhook dispatch when recommendations are acted upon."""
+"""Notifications — webhook / Slack / Jira dispatch when recommendations are acted upon."""
 from aughor.notifications.models  import ActionTrigger, ActionPayload, ActionLog
 from aughor.notifications.store   import (
     list_triggers, get_trigger, save_trigger,

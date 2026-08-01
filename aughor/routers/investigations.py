@@ -261,7 +261,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                      counter="chat.receipt_activations")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
         # answer cost. For job-backed answers (ADA) the job row carries the full total
-        # too; for the synchronous chat/insight path this is the only sink.
+        # too; for the synchronous quick-answer path this is the only sink.
         from aughor.kernel import metering
         _cost = metering.snapshot()
         # WP-10: stamp the coder model used, so the public receipt's model{role,id} is honest
@@ -911,18 +911,18 @@ class _FollowUpBase(BaseModel):
         return _coerce_list_str(v)
 
 
-class _InsightResult(BaseModel):
-    """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
+class _NarrativeResult(BaseModel):
+    """The prose enrichment attached to a quick answer — anomaly detection, trend, comparison."""
     narrative: str = Field(default="", description="2-3 tight sentences that lead with the answer and wrap decisive numbers in **bold**.")
     anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
     trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
     confidence: str = Field(default="medium", description="One of: high, medium, low.")
 
 
-class _PostAnswer(_InsightResult):
-    """Combined post-answer enrichment: analytical insight + follow-up questions
+class _PostAnswer(_NarrativeResult):
+    """Combined post-answer enrichment: the narrative + follow-up questions
     in ONE narrator call (was two separate narrator round-trips per answer).
-    Inherits insight fields; adds the follow-up list with the same coercion guard."""
+    Inherits the narrative fields; adds the follow-up list with the same coercion guard."""
     questions: list[str] = Field(default_factory=list, description="Exactly 3 concise follow-up data questions, max 12 words each.")
 
     @field_validator("questions", mode="before")
@@ -1700,7 +1700,7 @@ async def _stream_chat(
         # CK-0.2: token-stream the coder's `headline` field as it is written, filling the
         # otherwise-dead SQL-generation wait with the answer's headline typing in. The deltas
         # are the RAW (pre-grounding) headline; the terminal grounded `headline` event below is
-        # authoritative and overwrites the stream (self-healing, mirroring the `insight` stream).
+        # authoritative and overwrites the stream (self-healing, mirroring the `narrative` stream).
         # Flag off = the exact pre-streaming blocking call, byte-identical.
         from aughor.kernel.flags import flag_enabled as _hl_stream_flag
         # Chart-grammar: under `chart.exhibit_grammar` the system prompt no longer offers
@@ -1731,7 +1731,7 @@ async def _stream_chat(
             _hl_thread = _hthreading.Thread(target=_hl_worker, daemon=True, name="headline-stream")
             _hl_thread.start()
             # Drain partials → SSE deltas, throttled (grew ≥6 chars or >120ms) — a headline is
-            # short, so a tighter throttle than insight keeps it typing smoothly.
+            # short, so a tighter throttle than the narrative keeps it typing smoothly.
             _hl_last_len, _hl_last_ts = 0, _htime.monotonic()
             _HL_EMPTY = object()
 
@@ -2210,12 +2210,12 @@ async def _stream_chat(
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
-        # ONE narrator call produces BOTH the analytical insight and the
-        # follow-up questions (was two separate round-trips). For trivial result
+        # ONE narrator call produces BOTH the narrative and the follow-up
+        # questions (was two separate round-trips). For trivial result
         # shapes (a single scalar / empty set) there's no trend to interpret, so
         # we ask only for follow-ups and skip the narrative — same single call.
-        _insight_dict = None
-        _insight_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
+        _narrative_dict = None
+        _narrative_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
         try:
             # Bounded sample: up to 20 rows × 8 columns. For a time series, weight toward the
             # most recent periods so the narrative leads with current state, not year-one.
@@ -2224,7 +2224,7 @@ async def _stream_chat(
             _rows_text = "\n".join(
                 ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
             )
-            if _insight_worth_it:
+            if _narrative_worth_it:
                 _ts_clause = (
                     " This result is a TIME SERIES shown as the series start then the most recent periods: "
                     "LEAD WITH THE MOST RECENT period and its current trend, and state the net change since "
@@ -2234,7 +2234,7 @@ async def _stream_chat(
                 _system = (
                     "You are an analytical data interpreter writing for a clean published brief. "
                     "Given a user question, the SQL that answered it, and a sample of the results: "
-                    "(1) produce a tight analytical insight (2-3 sentences) that LEADS WITH THE ANSWER, "
+                    "(1) produce a tight analytical narrative (2-3 sentences) that LEADS WITH THE ANSWER, "
                     "wraps each decisive number in **double asterisks** for bold (e.g. **$2,112**, **+18%**), "
                     "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
@@ -2267,9 +2267,9 @@ async def _stream_chat(
                 f"{_rows_text}"
                 f"{_res_note}"
             )
-            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): dual-emit the
-            # narrative as `insight_delta` frames while the narrator writes it, then let
-            # the existing terminal `insight` event carry the authoritative final value —
+            # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): stream the
+            # narrative as `narrative_delta` frames while the narrator writes it, then let
+            # the terminal `narrative` event carry the authoritative final value —
             # self-healing (a dropped delta costs nothing; old clients ignore the unknown
             # event). Flag off = the exact pre-streaming blocking call, byte-identical.
             from aughor.kernel.flags import flag_enabled as _stream_flag
@@ -2296,12 +2296,12 @@ async def _stream_chat(
                         _pa_q.put(None)   # sentinel: the stream is over
 
                 _pa_thread = _threading.Thread(target=_pa_worker, daemon=True,
-                                               name="insight-stream")
+                                               name="narrative-stream")
                 _pa_thread.start()
                 # Drain partials → SSE deltas, throttled (grew ≥12 chars since the last
                 # emit, or >150ms elapsed) so a chatty stream can't spam frames. Deltas
-                # go out strictly BEFORE the terminal `insight` event, and only when the
-                # insight is worth narrating (same gate the terminal event uses).
+                # go out strictly BEFORE the terminal `narrative` event, and only when the
+                # answer is worth narrating (same gate the terminal event uses).
                 _last_len, _last_ts = 0, _time.monotonic()
                 _POLL_EMPTY = object()  # poll-timeout marker, distinct from the None sentinel
 
@@ -2319,13 +2319,18 @@ async def _stream_chat(
                         continue
                     if _item is None:
                         break
-                    if not (_insight_worth_it and isinstance(_item, str)):
+                    if not (_narrative_worth_it and isinstance(_item, str)):
                         continue
                     _now = _time.monotonic()
                     if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
                         _last_len, _last_ts = len(_item), _now
-                        yield _sse("insight_delta",
-                                   {"narrative": _apply_currency(_item, _cur_sym)})
+                        _delta_payload = {"narrative": _apply_currency(_item, _cur_sym)}
+                        yield _sse("narrative_delta", _delta_payload)
+                        # DUAL-EMIT, one release only: the retired `insight_delta` name
+                        # carries the IDENTICAL payload so a client deployed before the
+                        # rename keeps typing the partial. Delete once no such client
+                        # remains; the frontend already prefers `narrative_delta`.
+                        yield _sse("insight_delta", _delta_payload)
                 await asyncio.to_thread(_pa_thread.join)
                 if "exc" in _pa_result:
                     raise _pa_result["exc"]
@@ -2339,28 +2344,35 @@ async def _stream_chat(
                         temperature=0.2,
                     )
                 )
-            if _insight_worth_it and _pa.narrative:
-                _insight_dict = {
+            if _narrative_worth_it and _pa.narrative:
+                _narrative_dict = {
                     "narrative": _apply_currency(_pa.narrative, _cur_sym),
                     "anomalies": _pa.anomalies[:3],
                     "trend": _pa.trend,
                     "confidence": _pa.confidence,
                 }
-                yield _sse("insight", _insight_dict)
-                # Persist insight so it survives page reload / history navigation
+                yield _sse("narrative", _narrative_dict)
+                # DUAL-EMIT, one release only: the retired `insight` name carries the
+                # IDENTICAL payload (same dict object) so a client deployed before the
+                # rename still receives the terminal value. Delete once no such client
+                # remains; the frontend already prefers `narrative`.
+                yield _sse("insight", _narrative_dict)
+                # Persist so the narrative survives page reload / history navigation.
+                # The stored key stays `report_json["insight"]` (db/history.py) — a
+                # persisted identity; renaming it would orphan every stored turn.
                 if _chat_inv_id:
                     try:
                         from aughor.db.history import update_chat_turn_insight
-                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
+                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _narrative_dict))
                     except Exception as exc:
                         from aughor.kernel.errors import tolerate
-                        tolerate(exc, "insight persistence is best-effort; the insight was already streamed this session",
+                        tolerate(exc, "narrative persistence is best-effort; it was already streamed this session",
                                  counter="chat.insight_persist")
             if _pa.questions:
                 yield _sse("followups", {"questions": _pa.questions[:3]})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "post-answer insight/follow-up enrichment is best-effort; the answer is already done",
+            tolerate(exc, "post-answer narrative/follow-up enrichment is best-effort; the answer is already done",
                      counter="chat.post_answer")
 
         # Semantic inspect — logical validation. Phase 3 of the ground-first
@@ -3219,7 +3231,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
 async def _metered_stream(gen: AsyncGenerator[str, None],
                           budget: tuple | None = None) -> AsyncGenerator[str, None]:
     """Meter a synchronous streaming answer + enforce its budget in-context. The
-    chat/insight path is not a kernel job, so it has no JobKernel._run (to flush its
+    quick-answer path is not a kernel job, so it has no JobKernel._run (to flush its
     compute) and no heartbeat (to enforce a budget). We set the per-run accumulator
     for the whole iteration — the receipt reads it via metering.snapshot() — and arm
     the Insight agent's budget; the LLM funnel raises BudgetExceeded (a BaseException,

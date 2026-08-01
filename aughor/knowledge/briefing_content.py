@@ -68,7 +68,7 @@ class Section:
 
 
 @dataclass
-class Digest:
+class BriefingContent:
     """The workspace digest — counted facts, each citing its store."""
 
     connection_id: str
@@ -205,7 +205,7 @@ def _abstentions() -> Section:
         source="answer receipts (prose only)")
 
 
-def build_digest(connection_id: str, *, window_days: int = DEFAULT_WINDOW_DAYS) -> Digest:
+def build_briefing_content(connection_id: str, *, window_days: int = DEFAULT_WINDOW_DAYS) -> BriefingContent:
     """Assemble the digest. Every section is best-effort; one failure never sinks the rest."""
     from aughor.kernel.errors import tolerate
     from aughor.util.time import now_iso
@@ -230,5 +230,5 @@ def build_digest(connection_id: str, *, window_days: int = DEFAULT_WINDOW_DAYS) 
             # missing section reads as "nothing to report", which is a different claim.
             sections.append(Section(key=key, title=key.title(), measurable=False,
                                     detail="could not be computed this run"))
-    return Digest(connection_id=connection_id, window_days=window_days,
+    return BriefingContent(connection_id=connection_id, window_days=window_days,
                   generated_at=now_iso(), sections=sections)

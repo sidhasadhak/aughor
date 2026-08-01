@@ -612,8 +612,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           cachedQuestion: null,
           inspectWarning: null,
           playbookRefs: [],
-          insight: t.insight || null,
-          insightStream: null,   // deltas are live-only; history restores the final insight
+          // WIRE-NAME BOUNDARY — the stored key is `insight` (report_json["insight"], a
+          // persisted identity); the turn field is `narrative`.
+          narrative: t.insight || null,
+          narrativeStream: null,   // deltas are live-only; history restores the final narrative
           reportStream: null,
           clarifyingQuestions: [],
           clarifyingContext: "",

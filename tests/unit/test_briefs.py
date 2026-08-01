@@ -77,7 +77,7 @@ def _fake_digest(alerts=2, critical=1, sections=1):
 
 
 def test_build_brief_payload_summary(monkeypatch):
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest())
     sub = BriefSubscription(conn_id="c1", name="W", trigger_id="t1", period="week")
     summary, md, digest = bdelivery.build_brief_payload(sub)
@@ -87,7 +87,7 @@ def test_build_brief_payload_summary(monkeypatch):
 
 
 def test_build_brief_payload_quiet_period(monkeypatch):
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest(alerts=0, critical=0, sections=0))
     sub = BriefSubscription(conn_id="c1", name="W", trigger_id="t1", period="day")
     summary, _md, _d = bdelivery.build_brief_payload(sub)
@@ -112,7 +112,7 @@ def test_deliver_subscription_fires_and_records(monkeypatch, tmp_path):
     import aughor.notifications.executor as execu
     monkeypatch.setattr(astore, "get_trigger",
                         lambda tid: SimpleNamespace(id=tid, enabled=True))
-    monkeypatch.setattr("aughor.monitors.digest.build_digest",
+    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: _fake_digest())
     captured = {}
 
