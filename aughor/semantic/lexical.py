@@ -78,36 +78,6 @@ def _alpha_blend_order(vec: list[float], lex: list[float], *, alpha: float) -> l
     return sorted(range(len(vec)), key=lambda i: (alpha * v[i] + (1.0 - alpha) * l[i], v[i]), reverse=True)
 
 
-def _ranks(scores: list[float]) -> list[int]:
-    """1-based positional ranks (highest score → rank 1). Ties keep pool order (Python's stable sort),
-    so the ranking is deterministic."""
-    order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-    ranks = [0] * len(scores)
-    for pos, i in enumerate(order):
-        ranks[i] = pos + 1
-    return ranks
-
-
-def _rrf_order(vec: list[float], lex: list[float], *, alpha: float = 0.6, k: int = 60) -> list[int]:
-    """Reciprocal Rank Fusion (Rec 6 / L5): fuse the vector and lexical RANKINGS, not their scores.
-
-    Each signal contributes ``weight / (k + rank)`` with ``k=60``; the α knob carries over as the rank
-    weights (``w_vec=α``, ``w_lex=1-α``). Because only ranks enter, the result is immune to the
-    score-scale mismatch that min-max α-blending suffers — a tight Qdrant-cosine cluster stretched to
-    [0,1] beside a lone dominant BM25 spike no longer distorts the fusion. A pool with no lexical signal
-    falls back to pure vector rank (matching the α-blend's preserve-vector guarantee); the raw vector
-    score breaks ties, stably."""
-    n = len(vec)
-    rv = _ranks(vec)
-    w_vec, w_lex = alpha, 1.0 - alpha
-    if any(x > 0 for x in lex):
-        rl = _ranks(lex)
-        fused = [w_vec / (k + rv[i]) + w_lex / (k + rl[i]) for i in range(n)]
-    else:
-        fused = [w_vec / (k + rv[i]) for i in range(n)]
-    return sorted(range(n), key=lambda i: (fused[i], vec[i]), reverse=True)
-
-
 def hybrid_rerank(
     query: str,
     candidates: list[dict],
@@ -120,21 +90,14 @@ def hybrid_rerank(
     recovering the exact-term hits a dense retriever buries. ``alpha=0.6`` keeps the semantic vector in
     the lead while letting an exact lexical hit climb.
 
-    Two fusion methods, selected by the ``search.rrf`` flag:
-      • **off (default)** — min-max α-blend, byte-identical to the historical behaviour.
-      • **on** — Reciprocal Rank Fusion (rank-based, k=60), robust to the cosine⊕BM25 score-scale
-        mismatch that α-blending is sensitive to. See ``_rrf_order``.
-
-    Both are stable (vector score breaks ties) and both preserve the pool's vector order when there is no
-    lexical signal, so flipping the flag is a safe, evaluable change."""
+    Fusion is the min-max α-blend: stable (vector score breaks ties) and the pool's vector order is
+    preserved when there is no lexical signal. Rank-based RRF was measured against it on the real KB
+    corpus (2026-07-31) and ranked consistently worse — MRR 0.964 vs 0.977 — so it was removed."""
     if len(candidates) <= 1:
         return list(candidates)
     vec = [float(c.get(score_key, 0.0) or 0.0) for c in candidates]
     lex = bm25_scores(query, [text_of(c) for c in candidates])
-    from aughor.kernel.flags import flag_enabled
-    order = (_rrf_order(vec, lex, alpha=alpha)
-             if flag_enabled("search.rrf")
-             else _alpha_blend_order(vec, lex, alpha=alpha))
+    order = _alpha_blend_order(vec, lex, alpha=alpha)
     return [candidates[i] for i in order]
 
 

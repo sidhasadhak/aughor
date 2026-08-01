@@ -91,7 +91,10 @@ FLAG_ENV = {
     "ask.stream_text": "AUGHOR_ASK_STREAM_TEXT",
     "ask.overview": "AUGHOR_ASK_OVERVIEW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
-    "search.rrf": "AUGHOR_SEARCH_RRF",
+    # "search.rrf" (AUGHOR_SEARCH_RRF) was DELETED 2026-08-01 (flag endgame, verdict
+    # sheet Wave 1): the RRF fusion was MEASURED worse than the α-blend default on the
+    # real KB corpus (MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957 — the since-removed
+    # evals/rrf_retrieval_eval.py). hybrid_rerank now α-blends unconditionally.
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
     "learning.receipt": "AUGHOR_LEARNING_RECEIPT",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
@@ -581,10 +584,6 @@ FLAG_META = {
         "label": "Query popularity as a shared notability signal",
         "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical. Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
     },
-    "search.rrf": {
-        "label": "Reciprocal Rank Fusion (hybrid retrieval)",
-        "description": "Fuse the vector and lexical (BM25) rankings in hybrid_rerank by Reciprocal Rank Fusion (rank-based, k=60) instead of the min-max α-blend. Rank-based fusion is robust to the score-scale mismatch between Qdrant cosine and BM25 that α-blending is sensitive to, and preserves vector order when there is no lexical signal. MEASURED and kept OFF (2026-07-31): an honest known-item retrieval eval over the real 282-entry data/kb corpus (aughor/evals/rrf_retrieval_eval.py) found RRF ranks WORSE than the α-blend default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957 — so flipping it would regress retrieval on realistic queries. Force ON with AUGHOR_SEARCH_RRF=1 to try RRF (e.g. on a keyword-heavy corpus where the buried-exact-term case dominates). Rec 6 of the combined platform study.",
-    },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
@@ -886,18 +885,8 @@ INTENTIONALLY_OFF: dict = {
                                 "legacy schedulers — the win is one loop, not a flag",
     "explorer.continuous": "recurring background spend; revisit now that "
                            "ops.metered_monitors (its declared gate) is default-ON",
-    # Settled 2026-07-31 (batch D) by a MEASURED negative result, not a hunch: an honest
-    # known-item retrieval eval over the real 282-entry data/kb corpus (definitional
-    # labels, local embeddings, `aughor/evals/rrf_retrieval_eval.py`) found RRF ranks
-    # WORSE than the α-blend default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957,
-    # consistently across the title and usage query regimes. RRF's hypothesised benefit
-    # (recovering an exact-term hit the dense retriever buries) is not exercised by
-    # realistic semantic queries and stays unproven; on the realistic distribution it is
-    # a small but consistent regression. Keep α-blend. Revisit only if a keyword-buried-hit
-    # regime or real relevance labels show RRF winning — the RRF mechanic itself stays
-    # unit-proven (scale-invariant) in test_lexical.py, so the code is cheap to keep.
-    "search.rrf": "measured worse than the α-blend default on the real KB (MRR 0.964 vs "
-                  "0.977); keep off unless a keyword-buried-hit eval shows RRF winning",
+    # "search.rrf" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
+    # tombstone) — the flag endgame has no "measured worse, kept anyway" state.
 }
 
 #: Group D — adds LLM calls (or changes prompts/routing) for a claimed quality gain;
