@@ -18,9 +18,10 @@ Two pieces:
   * ``execute_with_repair`` — the loop. Real execution, repair-on-error, recover-on-empty.
     Adopts a rewrite ONLY if it executes (and returns rows when recovering), so it can correct
     but never regress — the same fail-closed discipline as ``preflight_repair``.
-  * ``rows_to_csv`` — output-contract conformance. Matches the Spider2 evaluator's
+  * ``rows_to_csv`` — output-contract conformance. Emits
     ``pd.DataFrame(rows, columns=cols).to_csv(path, index=False)`` byte-for-byte: real ``None`` →
-    empty cell (NOT the literal string ``"NULL"``), column order from the cursor, no row cap.
+    empty cell (NOT the literal string ``"NULL"``), column order from the cursor, no row cap —
+    the form result-match graders compare against (Spider 2.0).
     This is exactly what ``SnowflakeConnection.execute`` got wrong (``"NULL"`` stringify +
     ``MAX_ROWS=2000`` truncation) and why a correct query could still score 0.
 """
@@ -128,9 +129,9 @@ def execute_with_repair(
 
 
 def rows_to_csv(columns: Sequence[str], rows: Sequence[Sequence[Any]], path) -> None:
-    """Materialize a result table to CSV matching the Spider2 evaluator's contract.
+    """Materialize a result table to CSV in the grader-comparable contract (Spider 2.0).
 
-    The evaluator does ``pd.DataFrame(rows, columns=columns).to_csv(path, index=False)`` and then
+    The grader does ``pd.DataFrame(rows, columns=columns).to_csv(path, index=False)`` and then
     compares column vectors with ``abs_tol=1e-2``. To match it we MUST:
       * preserve the cursor's column order and names (header row),
       * write real ``None`` as an EMPTY cell — never the literal ``"NULL"``,

@@ -2,17 +2,17 @@
    Single source of truth for all CSS custom properties.
    Imported by app/globals.css — do not use directly in components.
 
-   System: Palantir Blueprint accent on Databricks Genie neutral-charcoal surfaces.
+   System: a primary-blue accent on neutral near-black surfaces.
    Fonts : DM Sans (UI) + IBM Plex Mono (data / code / monospace values)
-   Accent: Blueprint blue #2D72D2
+   Accent: primary blue #2D72D2
    Shape : max 6px border-radius (--r3), 1px borders
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* ── Dark mode (default) ─────────────────────────────────────────────────── */
 :root {
   /* ── Backgrounds ──
-     Databricks Genie near-black: flat, deep, very slightly cool — NOT charcoal.
-     Tight steps so panels barely lift off the page (Databricks reads borderless). */
+     A calm near-black: flat, deep, very slightly cool — NOT charcoal.
+     Tight steps so panels barely lift off the page and read as surfaces, not boxes. */
   --bg-0: #0D1117;
   --bg-1: #111418;
   --bg-2: #161A20;
@@ -21,14 +21,14 @@
   --bg-hover: rgba(255, 255, 255, 0.04);
   --bg-sel:   rgba(12, 140, 233, 0.12);
 
-  /* ── Borders ──  hairline, near-invisible (Databricks) */
+  /* ── Borders ──  hairline, near-invisible */
   --b0: #161A20;
   --b1: #1E2329;
   --b2: #252B33;
   --b3: #2E3540;
   --bfocus: #0C8CE9;
 
-  /* ── Text ──  cool greys, Databricks hierarchy.
+  /* ── Text ──  cool greys, four-tier hierarchy.
      Floor raised 2026-06-10: the old --t3 #5A6270 (~3:1) and --t4 #3A414D
      (~1.9:1 — below perceivable) made row numbers, timestamps and labels
      "almost invisible" (user report). Hierarchy preserved, every tier legible. */
@@ -46,7 +46,7 @@
   --cyn1:  #0D2030; --cyn2:  #124060; --cyn3:  #1690BE; --cyn4:  #30B8E0; --cyn5:  #78D8F8;
 
   /* ── Typography ── */
-  /* Two families (MLflow-informed): DM Sans for UI, IBM Plex Mono for every
+  /* Two families: DM Sans for UI, IBM Plex Mono for every
      figure / id / timestamp / metric. --font-mono is repointed to the mono
      family so tabular data reads as a precision instrument. --font-code stays
      mono for SQL/code <pre> blocks. */
@@ -100,7 +100,7 @@
   --chart-tick:  #9DA1A8;
 
   /* ── Tailwind v4 bridge ─────────────────────────────────────────────────
-     Maps Tailwind color names → Palantir tokens so components can use
+     Maps Tailwind color names → our design tokens so components can use
      Tailwind utilities (text-zinc-500 etc.) while remaining token-driven.
      ── */
   --background:           var(--bg-0);
@@ -173,11 +173,11 @@
 }
 
 /* ── Light mode overrides ─────────────────────────────────────────────────────
-   Tableau-style (2026-06-10, replacing the blue-cast scheme the user found
+   Neutral-gray scheme (2026-06-10, replacing the blue-cast scheme the user found
    hard on the eyes): neutral true-gray surfaces with white panes, #333/#666
-   text, hairline #e1e1e1 borders, Tableau-blue (#1F77B4) accent, and the
-   tab10 palette for charts. Values only — layout, structure and radii are
-   untouched. Ramp semantics preserved: N1 = subtle tint bg, N2 = strong
+   text, hairline #e1e1e1 borders, a muted blue (#1F77B4) accent, and the
+   categorical palette for charts. Values only — layout, structure and
+   radii are untouched. Ramp semantics preserved: N1 = subtle tint bg, N2 = strong
    tint/border, N3 = base accent, N4/N5 = darker text-grade shades. */
 [data-theme="light"] {
   --bg-0: #F5F5F5;

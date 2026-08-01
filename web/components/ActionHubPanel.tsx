@@ -224,7 +224,7 @@ export function ActionHubPanel() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
         </svg>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Action Hub</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Notifications</span>
         <div style={{ display: "flex", gap: 4, marginLeft: 12 }}>
           {(["triggers", "logs"] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{
@@ -277,7 +277,7 @@ export function ActionHubPanel() {
             <div style={{ padding: "48px 0", textAlign: "center" }}>
               <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 8 }}>No action triggers configured.</div>
               <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
-                Create a trigger to fire webhooks, Slack messages, or Jira tickets when you action an investigation recommendation.
+                Create a trigger to fire webhooks, Slack messages, or Jira tickets when you action a deep analysis recommendation.
               </div>
             </div>
           ) : (

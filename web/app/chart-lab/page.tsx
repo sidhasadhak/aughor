@@ -62,7 +62,7 @@ const priceRating: Row[] = Array.from({ length: 18 }, (_, i) => ({
 const autoCols = ["order_date", "orders"];
 const autoRows = MONTHS.map((m, i) => [m, 800 + i * 120 + (i % 2) * 60]);
 
-// ── Chart-grammar exhibits (flag chart.exhibit_grammar) — the Genie-report semantics ──
+// ── Chart-grammar exhibits (flag chart.exhibit_grammar) — the report-chart semantics ──
 // Severity-ramped rate ranking + reference lines (the "lowest load factors" exhibit).
 const loadFactors: Row[] = ([
   ["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7], ["GVA-EZE", 68.1],
@@ -85,8 +85,8 @@ const delayScatter: Row[] = ([
   ([aircraft_id, aircraft_type, flight_count, avg_delay_min]) =>
     ({ aircraft_id, aircraft_type, flight_count, avg_delay_min }));
 
-// ── native-fit viz types (2026-07 wave) + the Databricks color-binding examples ──
-// Aircraft example mirrors the two Databricks screenshots: the SAME load-factor ranking,
+// ── native-fit viz types (2026-07 wave) + the color-binding examples ──
+// Aircraft example shows two readings of the SAME load-factor ranking:
 // coloured categorically by haul (long/short → legend) or continuously by revenue (gradient).
 const aircraftPerf: Row[] = ([
   ["A350-900", 71.2, 302000, "long"], ["B777-300ER", 74.6, 268000, "long"],
@@ -285,10 +285,10 @@ export default function ChartLab() {
       </div>
 
       <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
-        Color binding — colour marks by a chosen field (the Databricks &quot;Color&quot;)
+        Color binding — colour marks by a chosen field
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
-        The two screenshots: the SAME load-factor ranking, coloured categorically by <code>haul</code>
+        Two readings of the SAME load-factor ranking, coloured categorically by <code>haul</code>
         (dimension → discrete legend) or continuously by <code>revenue_per_flight</code> (measure → gradient legend).
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
@@ -426,7 +426,7 @@ export default function ChartLab() {
         &lt;ResultChartCard&gt; — clean chart, edit in the side panel (hover the pencil)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
-        The chart renders clean; hover and click the pencil to open the Databricks-style viz editor —
+        The chart renders clean; hover and click the pencil to open the visual editor —
         Metric / Dimension / Aggregation (grain-aware — try SUM on the rate), chart type, transform, and table/pivot.
       </p>
       <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14, maxWidth: 720 }}>

@@ -1,12 +1,11 @@
 """R11 — per-column semantic config: ``{visible, sample, index}`` — persisted + editable.
 
-The Databricks ``column-configs`` analog (wire study #2,
-docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md): at canvas birth Databricks
-persists a per-(table, column) decision — ``is_visible`` / ``is_sampling`` /
-``is_indexing`` — that the whole downstream stack reads. This module is Aughor's
-version, with two deliberate differences:
+At canvas birth we persist a per-(table, column) decision — ``is_visible`` /
+``is_sampling`` / ``is_indexing`` — that the whole downstream stack reads (wire study #2,
+docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md). Two deliberate differences from
+the product that study measured:
 
-  • **Deterministic defaults, no LLM.** Databricks spends 13.8 s of silent model
+  • **Deterministic defaults, no LLM.** That product spends 13.8 s of silent model
     time deciding the flags; our profiler already knows the answer. Defaults are
     computed from ``ColumnProfile`` facts (semantic_type / null_rate / name), and
     the ``index`` default is exactly the R5 value-sample gate — persisted and

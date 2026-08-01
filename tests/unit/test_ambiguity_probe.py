@@ -1,11 +1,11 @@
-"""SOMA candidate-disagreement (3b) — execution-grounded structural-ambiguity detection.
+"""The ambiguity probe (3b) — execution-grounded structural-ambiguity detection.
 
 Contract: ask ONLY when candidate readings, when executed, produce materially different results;
 the distinct readings' labels become grounded option chips. The suspect filter gates the probe.
 """
 from __future__ import annotations
 
-from aughor.agent.soma import (
+from aughor.agent.ambiguity_probe import (
     CandidateReading, assess_structural_ambiguity, is_structural_suspect,
 )
 

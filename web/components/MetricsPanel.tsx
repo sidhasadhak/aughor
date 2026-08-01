@@ -340,7 +340,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
         {metrics.length === 0 && !adding && (
           <p className="text-xs text-zinc-500 mt-2">
-            No metrics defined yet. Add a KPI formula to ensure consistent SQL across all investigations.
+            No metrics defined yet. Add a KPI formula to ensure consistent SQL across all deep analyses.
           </p>
         )}
 

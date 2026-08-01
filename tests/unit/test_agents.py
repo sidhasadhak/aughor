@@ -40,8 +40,11 @@ class TestRegistry:
         assert charter_for_kind("nonsense").id == "worker"   # graceful unknown
 
     def test_agent_badge_shape(self):
+        # `id` is the persisted governance key and stays "scout"; the DISPLAY name is
+        # "Explorer" (Wave W) — the two deliberately differ, see docs/GLOSSARY.md.
         b = agent_for("exploration")
-        assert b == {"id": "scout", "agent": "Scout", "blurb": charter_for_kind("exploration").role, "icon": "telescope"}
+        assert b == {"id": "scout", "agent": "Explorer",
+                     "blurb": charter_for_kind("exploration").role, "icon": "telescope"}
 
     def test_roster_has_lanes_and_reserved(self):
         ids = {c.id for c in list_charters()}

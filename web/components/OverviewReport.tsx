@@ -41,7 +41,7 @@ function lensHue(lens: string): ChipHue {
 }
 
 // Build a grounded investigation seed from a fact — the "explore this fact" drill.
-// seedSql anchors ADA on the exact probe when the fact has one; seedContext always
+// seedSql anchors the deep analysis on the exact probe when the fact has one; seedContext always
 // carries the headline + why + location, so pure-profile facts (scale / distribution /
 // coverage — no SQL) still seed a real drill via the backend's raw-seed origin-finding
 // fallback (_build_origin_finding needs only a non-empty seed_context OR seed_sql).
@@ -69,7 +69,7 @@ function FactCard({
 }: {
   fact: OverviewFact;
   onShowSource?: (data: SourcePanelData) => void;
-  /** Drill this fact into a live ADA investigation seeded with its probe/context. */
+  /** Drill this fact into a live deep analysis seeded with its probe/context. */
   onExplore?: () => void;
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
@@ -124,10 +124,10 @@ function FactCard({
         />
       )}
 
-      {/* Actions — "Explore this fact" drills into a live ADA investigation; "View SQL"
+      {/* Actions — "Explore this fact" drills into a live deep analysis; "View SQL"
           opens the probe behind the fact. Explore shows for EVERY fact (even the pure-profile
           scale / distribution / coverage facts that carry no SQL): its seed carries
-          table/measure/dimension so ADA still anchors. With a source panel wired, View SQL
+          table/measure/dimension so the deep analysis still anchors. With a source panel wired, View SQL
           opens the richer drawer; otherwise it toggles an inline block. */}
       {(onExplore || fact.sql) && (
         <div className="mt-auto flex items-center gap-3 flex-wrap pt-0.5">

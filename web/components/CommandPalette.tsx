@@ -39,7 +39,7 @@ const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table"
 const SECTION_LABELS: Record<ItemType, string> = {
   command:       "Commands",
   action:        "Navigation",
-  investigation: "Recent investigations",
+  investigation: "Recent deep analyses",
   table:         "Tables",
   canvas:        "Canvases",
 };
@@ -132,7 +132,7 @@ export function GlobalCommands({ onNavigate, onGoToChat }: { onNavigate: (t: str
   useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; });
 
   const commands = useMemo<Command[]>(() => [
-    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new investigation",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
+    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new deep analysis",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
     { id: "cmd-new-canvas",  label: "New Data Canvas",    sublabel: "Create or browse Data Canvases",  icon: "canvas",   accent: "var(--blue3)", keywords: "create canvas new workspace",             run: () => navRef.current("canvases") },
     { id: "cmd-new-monitor", label: "New monitor",        sublabel: "Watch a metric for threshold, drift or staleness", icon: "activity", accent: "var(--grn3)", keywords: "create alert watch threshold notify", run: () => navRef.current("monitors") },
     { id: "cmd-new-query",   label: "Build a query",      sublabel: "Open the visual Query Builder",   icon: "builder",  accent: "var(--t2)",    keywords: "sql query builder new compose",           run: () => navRef.current("builder") },
@@ -190,18 +190,18 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
     { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
-    { id: "nav-recents",     label: "Investigation history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
-    { id: "nav-inbox",       label: "Recommendation Inbox", sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
-    { id: "nav-intel",       label: "Domain Intelligence",  sublabel: "Per-domain insights and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
-    { id: "nav-ontology",    label: "Business Ontology",    sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
-    { id: "nav-health",      label: "Health Scorecard",     sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
-    { id: "nav-agentic-ops", label: "Agentic Ops",          sublabel: "Fleet, agents, attention, activity, run graphs", type: "action", icon: "process", accent: "var(--vio3)" },
+    { id: "nav-recents",     label: "Deep analysis history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
+    { id: "nav-inbox",       label: "Inbox",                sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
+    { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
+    { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
+    { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
+    { id: "nav-agentic-ops", label: "Agents",               sublabel: "Overview, agents, attention, activity, run graphs", type: "action", icon: "process", accent: "var(--vio3)" },
     { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
     { id: "nav-builder",     label: "Query Builder",        sublabel: "Visual SQL builder with live results",type: "action", icon: "builder", accent: "var(--t2)" },
     { id: "nav-connections", label: "Connections",          sublabel: "Manage data source connections",     type: "action", icon: "plug",     accent: "var(--grn3)" },
     { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
-    { id: "nav-actions",     label: "Action Hub",           sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },
+    { id: "nav-actions",     label: "Notifications",        sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },
     { id: "nav-settings",    label: "Settings",             sublabel: "Theme, model, system configuration", type: "action", icon: "settings", accent: "var(--t3)" },
   ];
 

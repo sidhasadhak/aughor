@@ -117,31 +117,52 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)blueprint", ("web",), (),
         "describe the colour and its role, not the design system it came from",
     ),
+    # Both found by the P1/P2 sweeps rather than the original survey — neither is an
+    # integration here (no connector, no dependency), so both are pure inspiration-naming.
+    "tableau": (
+        # The palette modules are EXEMPT, not banned: `tableau10`/`tableau20` are the
+        # standard identifiers for those categorical schemes (d3 ships
+        # `schemeTableau10`), and the key is persisted in org settings. Banning it would
+        # force a breaking rename of a value that is simply the palette's real name.
+        # What is banned is describing OUR design system as Tableau's.
+        r"(?i)tableau|\btab10\b", ("web",),
+        ("web/lib/chartPalettes.ts", "web/lib/orgSettings.ts",
+         "web/components/QueryBuilder.tsx", "web/components/Chart.tsx"),
+        "our design system is ours; name the colour scheme, not its origin",
+    ),
+    "mindsdb": (
+        r"(?i)mindsdb", CODE_ROOTS, (),
+        "not an integration — describe what the code does",
+    ),
 }
 
-#: Measured 2026-08-01. A baseline may fall, never rise.
+#: Measured 2026-08-01 after Wave W phases 1-3. A baseline may fall, never rise.
+#: `blueprint`, `foundry`, `mindsdb` and `tableau` are at ZERO — they stay listed so
+#: the ratchet keeps them there.
 BASELINE: dict[str, int] = {
-    "ada": 862,
-    "insight": 2087,
-    "soma": 48,
-    "kinetic": 503,
-    "persona": 327,
-    "hire": 32,
-    "specialist": 93,
-    "expertise": 45,
-    "digest": 190,
-    "agentic_ops": 31,
-    "control_room": 27,
-    "fleet": 62,
+    "ada": 665,
+    "agentic_ops": 27,
+    "blueprint": 0,
     "charter": 72,
-    "investigation_in_web": 715,
-    "palantir": 16,
-    "genie": 49,
-    "foundry": 4,
-    "databricks": 81,
-    "copilotkit": 8,
-    "reforce": 10,
-    "blueprint": 3,
+    "control_room": 27,
+    "copilotkit": 5,
+    "databricks": 54,
+    "digest": 189,
+    "expertise": 43,
+    "fleet": 58,
+    "foundry": 0,
+    "genie": 24,
+    "hire": 27,
+    "insight": 2062,
+    "investigation_in_web": 659,
+    "kinetic": 499,
+    "mindsdb": 0,
+    "palantir": 8,
+    "persona": 321,
+    "reforce": 1,
+    "soma": 26,
+    "specialist": 88,
+    "tableau": 0,
 }
 
 
@@ -266,18 +287,31 @@ def test_glossary_exists_and_covers_the_banned_terms():
 # a tested path rather than an untested one.
 
 
-def test_alias_layer_ships_inert():
-    from aughor.kernel.flags import RENAMED, RETIRED_ENV
+def test_every_alias_resolves_to_a_registered_flag():
+    """P0 shipped this layer inert; P3 filled it with the `ada.*` family. Every retired
+    name must land on a name that actually exists, or the alias silently resolves to
+    nothing and the flag reads as off."""
+    from aughor.kernel.flags import FLAG_ENV, RENAMED, RETIRED_ENV
 
-    assert RENAMED == {}, "P0 registers the mechanism, not renames"
-    assert RETIRED_ENV == {}
+    for old, new in RENAMED.items():
+        assert new in FLAG_ENV, f"{old} -> {new}, which is not registered"
+    for var, target in RETIRED_ENV.items():
+        assert target in FLAG_ENV, f"retired env {var} -> {target}, which is not registered"
 
 
-def test_canonical_is_identity_when_nothing_is_renamed():
+def test_canonical_is_identity_for_current_names():
     from aughor.kernel.flags import FLAG_ENV, _canonical
 
     for name in FLAG_ENV:
         assert _canonical(name) == name
+
+
+def test_no_ada_flag_survives_in_the_registry():
+    """The rename is complete on the registry side: `ada.*` exists only as an alias."""
+    from aughor.kernel.flags import FLAG_ENV, RENAMED
+
+    assert not [n for n in FLAG_ENV if n.startswith("ada.")]
+    assert [n for n in RENAMED if n.startswith("ada.")], "the aliases must still be there"
 
 
 def test_a_renamed_flag_resolves_through_its_old_name(monkeypatch):

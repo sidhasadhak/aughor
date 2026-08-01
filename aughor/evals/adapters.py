@@ -36,7 +36,7 @@ from aughor.trust import WARN, Check
 def _detail_of(finding: Any) -> dict:
     """A JSON-safe detail dict for a finding, whatever its class.
 
-    Prefers the finding's own ``to_dict`` (only ``TrustFinding`` has one), then
+    Prefers the finding's own ``to_dict`` (only ``TrustIssue`` has one), then
     dataclass fields, then ``vars``. Sets are listified — ``composite_key`` uses
     set-valued fields, which are not JSON-serialisable.
     """

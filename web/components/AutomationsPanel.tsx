@@ -41,9 +41,9 @@ const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] =
 ];
 
 const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [
-  { value: "notify",         label: "Notify",         desc: "Send through an Action Hub trigger" },
-  { value: "investigate",    label: "Investigate",    desc: "Run a deep investigation" },
-  { value: "brief",          label: "Deliver brief",  desc: "Deliver a brief subscription" },
+  { value: "notify",         label: "Notify",         desc: "Send through a Notifications trigger" },
+  { value: "investigate",    label: "Investigate",    desc: "Run a deep analysis" },
+  { value: "brief",          label: "Deliver briefing", desc: "Deliver a briefing subscription" },
   { value: "kinetic_action", label: "Declared action", desc: "Run a governed KineticAction" },
 ];
 
@@ -607,11 +607,11 @@ function EffectRow({ e, agents, onChange, onRemove }: { e: AutoEffect; agents: U
       </select>
       <div style={{ flex: 1 }}>
         {e.kind === "notify" && (
-          <input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Action Hub trigger id" />
+          <input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Notifications trigger id" />
         )}
         {e.kind === "investigate" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="investigation question" />
+            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="deep analysis question" />
             {agents.length > 0 && (
               <select style={inputStyle} value={String(e.config.agent_id ?? "")}
                 onChange={ev => set({ agent_id: ev.target.value })}>
@@ -624,7 +624,7 @@ function EffectRow({ e, agents, onChange, onRemove }: { e: AutoEffect; agents: U
           </div>
         )}
         {e.kind === "brief" && (
-          <input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="brief subscription id" />
+          <input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="briefing subscription id" />
         )}
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -667,7 +667,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
     <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
       <div style={{ fontSize: 32, marginBottom: 12 }}>⚙️</div>
       <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No automations yet</div>
-      <div style={{ fontSize: 12, marginBottom: 20 }}>Bind a condition (a schedule, a metric, a data change) to an effect — investigate, deliver a brief, notify, or run a governed action.</div>
+      <div style={{ fontSize: 12, marginBottom: 20 }}>Bind a condition (a schedule, a metric, a data change) to an effect — investigate, deliver a briefing, notify, or run a governed action.</div>
       <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first automation</Button>
     </div>
   );

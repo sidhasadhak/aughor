@@ -1,4 +1,4 @@
-"""SOMA candidate-disagreement — execution-grounded detection of STRUCTURAL ambiguity.
+"""The ambiguity probe — execution-grounded detection of STRUCTURAL ambiguity.
 
 3b of the unified-answer-path arc (``docs/UNIFIED_ANSWER_PATH.md``), greenlit by the measurement chain:
 the deterministic clarify detector (``aughor/agent/clarify.py``) is blind to *structural* ambiguity —
@@ -7,11 +7,12 @@ qualifier ("top products" units vs revenue; "average order value" per-order vs s
 ``evals/ambiguity_eval`` + ``evals/its_structural`` runs proved the gap is real (0/6 detected) and that
 asking recovers correctness on divergent cases (0/3 → 3/3).
 
-The idea (from SOMA-SQL): generate a few **candidate interpretations**, execute them, and ask **only
+The idea (see docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md): generate a few
+**candidate interpretations**, execute them, and ask **only
 when their results materially diverge** — execution is the arbiter, so we never ask about a question
 whose readings happen to agree, and the candidate *labels* become grounded option chips. This is LLM
 machinery, so it is deliberately gated: only on **structural-suspect** turns the cheap deterministic
-detector left quiet, behind ``AUGHOR_SOMA_CLARIFY``, fail-open.
+detector left quiet, behind ``AUGHOR_AMBIGUITY_CLARIFY``, fail-open.
 
 The core (``assess_structural_ambiguity``) is pure — candidates and the executor are injected — so it is
 unit-testable without an LLM or a database; the live candidate generator + wiring are thin adapters.
@@ -37,7 +38,7 @@ _BINDING = re.compile(r"\bby\s+\w|\bper\s+\w|>=|<=|\bas a (share|percentage|frac
 
 
 def is_structural_suspect(question: str) -> bool:
-    """Cheap, deterministic: could this question hide a structural ambiguity worth the SOMA probe?
+    """Cheap, deterministic: could this question hide a structural ambiguity worth probing?
 
     True for "top products" / "biggest customer" / "average order value"; False once the measure is
     bound ("top customers by revenue") or for a plain lookup ("total revenue last month")."""
@@ -57,7 +58,7 @@ class CandidateReading:
 
 
 @dataclass(frozen=True)
-class SomaVerdict:
+class AmbiguityVerdict:
     ambiguous: bool
     question: str = ""
     options: list = field(default_factory=list)   # distinct interpretation labels (grounded chips)
@@ -115,7 +116,7 @@ def _preview(rows) -> str:
 ExecuteFn = Callable[[str], tuple]
 
 
-def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn) -> SomaVerdict:
+def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn) -> AmbiguityVerdict:
     """Execute the candidate readings and ask only if their results MATERIALLY diverge.
 
     Candidates whose SQL errors are dropped. The surviving candidates are grouped by result signature;
@@ -135,9 +136,9 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
         groups.setdefault(sig, (c, _preview(rows)))
     distinct = list(groups.values())
     if len(distinct) < 2:
-        return SomaVerdict(False, n_groups=len(distinct))
+        return AmbiguityVerdict(False, n_groups=len(distinct))
     labelled = [(c, p) for (c, p) in distinct if c.label][:4]
-    return SomaVerdict(
+    return AmbiguityVerdict(
         True,
         question="This could be read a few ways — which did you mean?",
         options=[c.label for c, _p in labelled],
@@ -148,7 +149,7 @@ def assess_structural_ambiguity(question: str, candidates, execute_fn: ExecuteFn
 
 # ── Live candidate generation (the LLM adapter — only reached on a suspect turn) ──
 
-_SOMA_SYSTEM = (
+_READINGS_SYSTEM = (
     "You disambiguate analytics questions. A question can have multiple reasonable interpretations "
     "that compute DIFFERENT answers (e.g. 'top products' by units vs by revenue; 'average order "
     "value' per order line vs per order). List the genuinely-distinct interpretations only — if the "
@@ -175,7 +176,7 @@ def generate_candidate_readings(question: str, schema: str, *, k: int = 3) -> li
         llm = get_provider("coder")
         user = (f"SCHEMA:\n{schema}\n\nQUESTION: {question}\n\n"
                 f"List up to {k} distinct interpretations (label + DuckDB SQL). One if unambiguous.")
-        out = llm.complete(system=_SOMA_SYSTEM, user=user, response_model=_Readings)
+        out = llm.complete(system=_READINGS_SYSTEM, user=user, response_model=_Readings)
         readings = []
         for r in (out.readings or [])[:k]:
             label = (r.get("label") if isinstance(r, dict) else getattr(r, "label", "")) or ""

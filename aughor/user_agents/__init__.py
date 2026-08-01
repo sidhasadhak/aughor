@@ -1,5 +1,5 @@
 """User-defined agents — the product entity binding instructions + documents +
-a connection into a reusable persona ("Gems on governed data").
+a connection into a reusable persona that answers over governed data.
 
 Part B Phase 1 of docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md.
 Flag `agents.user_defined`, **default ON since Wave H** (receipt `df89c044999a` —

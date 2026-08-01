@@ -33,14 +33,14 @@ The canonical accent is **`--blue3`** (read by `--primary`/`--accent`/`--ring`/`
 
 | Ramp | Original `3` (base) | v2 `3` | Notes |
 |---|---|---|---|
-| blue | `#0C8CE9` | `#3B82F6` | brighter Blueprint blue; full ramp re-tuned |
+| blue | `#0C8CE9` | `#3B82F6` | brighter primary blue; full ramp re-tuned |
 | grn | `#18985A` | `#1FA968` | |
 | amb | `#BD8800` | `#D9A013` | |
 | red | `#C42A2A` | `#E0444E` | |
 | vio | `#6040B8` | `#7C5CE0` | |
 | cyn | `#1690BE` | `#1AA0C4` | |
 
-Light mode keeps the Tableau-neutral scheme: accent `#1F77B4`, Tableau-10 chart
+Light mode keeps the neutral-gray scheme: accent `#1F77B4`, categorical chart
 palette. Full ramps in `tokens-v2.css`.
 
 ## Radius

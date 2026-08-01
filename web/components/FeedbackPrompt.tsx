@@ -43,7 +43,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
           </p>
           <p className="text-xs text-zinc-500 mt-0.5">
             {postCompletion
-              ? "Were these hypotheses correct? Add context to improve future investigations."
+              ? "Were these hypotheses correct? Add context to improve future deep analyses."
               : "The agent has tested all hypotheses. Add context or redirect before it synthesises the report."}
           </p>
         </div>

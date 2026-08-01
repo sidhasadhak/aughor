@@ -13,7 +13,7 @@ metric/time), but NOT *value/term* ambiguity ("urgent orders" → which status?)
     only fires on genuinely vague, anchor-less questions.
   * **Source B — ambiguous term.** A subjective/relative qualifier that implies an *unstated value
     filter*, when the question is **not already grounded** (no nearby metric / threshold / number).
-    This is a deterministic proxy for SOMA candidate-disagreement; the execution-grounded version
+    This is a deterministic proxy for candidate-disagreement; the execution-grounded version
     (bind the term against the value index / glossary, ask only on real disagreement) is the deepening
     (3b) — the seam is here.
 

@@ -3,7 +3,7 @@
 /**
  * SignificanceBadge — a quiet "is this real, or within noise?" marker.
  *
- * The backend already computes is_significant (z-score / p-value) for ADA
+ * The backend already computes is_significant (z-score / p-value) for deep-analysis
  * findings but only ever surfaced the raw stat_note string. This badge makes
  * the verdict glanceable WITHOUT a loud colored pill — matching Brief's
  * "dots, not boxes" philosophy (same w-1.5 dot the confidence factors use).

@@ -704,7 +704,7 @@ def _detect_interfaces(
     entities: dict[str, "OntologyEntity"],
 ) -> dict[str, OntologyInterface]:
     """
-    Scan all entity properties to detect which Palantir-style interfaces each
+    Scan all entity properties to detect which shared-shape interfaces each
     entity implements.  Mutates entity.implements in-place; returns the
     interfaces dict (only includes interfaces with at least one implementor).
     """

@@ -40,11 +40,11 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 export type AgenticOpsLayer = "fleet" | "agents" | "attention" | "activity" | "runs";
 
 const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
-  { id: "fleet",     icon: "gauge",    label: "Fleet",      blurb: "What is running & what it costs" },
+  { id: "fleet",     icon: "gauge",    label: "Overview",   blurb: "What is running & what it costs" },
   { id: "agents",    icon: "spark",    label: "Agents",     blurb: "Roster, governance & configuration" },
   { id: "attention", icon: "hand",     label: "Attention",  blurb: "What needs a human, and for how long" },
   { id: "activity",  icon: "activity", label: "Activity",   blurb: "Every event · one run reconstructed" },
-  { id: "runs",      icon: "flow",     label: "Run graphs", blurb: "Conditions → effects · ADA phases" },
+  { id: "runs",      icon: "flow",     label: "Run graphs", blurb: "Conditions → effects · deep analysis phases" },
 ];
 
 type Props = {
@@ -92,7 +92,7 @@ export function AgenticOpsWorkspace({
       layers={LAYERS}
       layer={layer}
       onLayerChange={onLayerChange}
-      ariaLabel="Agentic Ops views"
+      ariaLabel="Agents views"
       badges={{ attention }}
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {

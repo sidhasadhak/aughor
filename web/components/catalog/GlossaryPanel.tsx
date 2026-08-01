@@ -122,7 +122,7 @@ export function GlossaryPanel({ table, columns, schema }: {
         borderRadius: 6,
       }}>
         These notes are read by the agent <b style={{ color: "var(--t2)" }}>at query time</b> — descriptions,
-        grain, join hints, known values, and caveats all steer how investigations are planned.
+        grain, join hints, known values, and caveats all steer how deep analyses are planned.
       </div>
 
       {/* ── Table level ── */}

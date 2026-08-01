@@ -472,7 +472,7 @@ class LocalUploadConnection(Connector):
 
         # Materialize the table first (applying any user overrides), THEN pin the
         # result: DESCRIBE the created table to capture the full effective
-        # {column: type} contract — Databricks' schemaHints analog. On reload we
+        # {column: type} contract — a pinned schema hint. On reload we
         # reproduce these exact types instead of re-sniffing the file, which can
         # drift across DuckDB versions / sampling and silently re-type a column.
         self._register_file(dest, table_name, schema, clean_types)

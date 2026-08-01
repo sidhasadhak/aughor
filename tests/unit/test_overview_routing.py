@@ -52,11 +52,11 @@ def test_is_overview_question_handles_empty_and_none():
 
 # ── _overview_eligible ────────────────────────────────────────────────────────
 
-def _req(question="tell me about this data", *, depth="auto", deep=False,
+def _req(question="tell me about this data", *, depth="auto", escalate=False,
          insight_id=None, history=None, skip_clarify=False, canvas_id=None):
     """A minimal AskRequest-shaped stand-in — only the fields _overview_eligible reads."""
     return SimpleNamespace(
-        question=question, depth=depth, deep=deep, insight_id=insight_id,
+        question=question, depth=depth, escalate=escalate, insight_id=insight_id,
         history=history or [], skip_clarify=skip_clarify, canvas_id=canvas_id,
     )
 
@@ -69,7 +69,7 @@ def test_eligible_for_fresh_auto_overview_when_flag_on(monkeypatch):
 @pytest.mark.parametrize("kwargs", [
     {"depth": "quick"},                       # explicit depth override
     {"depth": "deep"},                        # explicit depth override
-    {"deep": True},                           # legacy deep escalation
+    {"escalate": True},                       # dossier escalation
     {"insight_id": "ins_123"},                # dossier drill
     {"history": [{"question": "prev"}]},       # a follow-up, not a fresh look
     {"skip_clarify": True},                   # already answering a clarification

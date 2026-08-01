@@ -6,7 +6,7 @@ operator over a prior step's text residue). A deterministic runner then executes
 battery validates each SQL step and every intermediate result is a NAMED artifact, so raw rows are threaded
 between steps rather than re-flooding the LLM context.
 
-Plan-then-execute (PromptQL), deterministic-first: the LLM only produces the *plan*; deterministic guards
+Plan-then-execute, deterministic-first: the LLM only produces the *plan*; deterministic guards
 validate it and the runner executes it. One LLM call, everything after is code — so the result is inspectable
 (the plan + per-step artifacts are returned) and repeatable. This is the exact shape the cross-source
 federated planner (`federated_planner.py`) already ships, generalized from "an ordered list of per-source

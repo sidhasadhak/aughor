@@ -326,8 +326,11 @@ Run graphs shows phase names instead of `ada_*` ids.
 `/findings`, `/segments` and `/briefing` dual-routes; `branch:"ada"`→`"deep_analysis"`
 (additive); `AskRequest.deep`→`escalate` (accept both); mode id `explore`→`survey`; flag
 family renames through the alias layer; `AUGHOR_ADA_*` / `AUGHOR_SOMA_*` env aliases; MCP
-`deep_analysis` stays (already correct) while `investigate`-flavoured tool prose is aligned;
-`Capability.DEEP_ANALYSIS` member rename with the value frozen.
+`deep_analysis` stays (already correct) while `investigate`-flavoured tool prose is aligned.
+
+> `Capability.DEEP_ANALYSIS` needs no rename after all — choosing "deep analysis" as the
+> canonical word made the existing enum member already correct. Its value `"analysis.deep"`
+> stays frozen regardless.
 
 **P4 — Package moves (1 PR each, mechanical).** §4.8, with `actions`→`notifications` strictly
 before `kinetic`→`actions`. Import shims for one release.

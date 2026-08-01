@@ -193,11 +193,11 @@ def test_learning_and_activations_reach_the_unified_receipt():
     r = _build(payload={
         "learning": {"readings_reused": 2, "resolutions_crystallized": 1,
                      "corrections_applied": 0, "trusted_program_replayed": 0},
-        "activations": [{"capability": "ada.premise_check", "reason": "a claim was checkable",
+        "activations": [{"capability": "deep_analysis.premise_check", "reason": "a claim was checkable",
                          "count": 1}],
     })
     assert r["learning"]["resolutions_crystallized"] == 1
-    assert r["activations"][0]["capability"] == "ada.premise_check"
+    assert r["activations"][0]["capability"] == "deep_analysis.premise_check"
 
 
 def test_an_answer_that_learned_nothing_says_so_without_inventing_shape():

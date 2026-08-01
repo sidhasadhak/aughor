@@ -228,7 +228,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
   }, [canvases, filter, search, sort, connMap]);
 
   const SORT_LABELS: Record<typeof sort, string> = {
-    activity: "Latest investigation",
+    activity: "Latest deep analysis",
     modified: "Last modified",
     name: "Name",
     tables: "Table count",
@@ -371,7 +371,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             letterSpacing: "-.02em", margin: 0, lineHeight: 1.2,
           }}>Data Canvas</h1>
           <p style={{ fontSize: 12, color: "var(--t3)", margin: "5px 0 0", lineHeight: 1.5 }}>
-            Curated table sets you can run scoped intelligence and investigations on.
+            Curated table sets you can run scoped intelligence and deep analyses on.
           </p>
         </div>
         <Button

@@ -187,8 +187,8 @@ def _warm_profiles(conn_id: str) -> dict:
 
 @router.post("/connections/{conn_id}/prewarm", status_code=202)
 async def prewarm_connection(conn_id: str):
-    """R5 deferred (closed) — the composer-open warm, the Databricks
-    value-index/preload-cache analog: build the profiles (and the persisted
+    """R5 deferred (closed) — the composer-open warm: preload the value index
+    and cache, i.e. build the profiles (and the persisted
     entity-value samples entity resolution + the filter guard bind from) BEFORE
     the first question. Runs as one supervised kernel job (kind `profile`, the
     Curator charter) with an idempotency key, so composer-open spam can't stack

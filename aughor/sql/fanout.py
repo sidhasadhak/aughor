@@ -25,7 +25,7 @@ It flags iff ALL hold in the OUTERMOST query scope:
      reference columns from ≥2 of those shared-root tables. COUNT(DISTINCT …) — the
      fan-out-safe form — does NOT count.
 
-Returns a FanoutFinding or None. Pure static analysis; no DB calls.
+Returns a FanoutIssue or None. Pure static analysis; no DB calls.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from aughor.db.schema_render import fk_root
 
 
 @dataclass
-class FanoutFinding:
+class FanoutIssue:
     hub_root: str                      # the shared FK root the satellites fan out across
     satellites: list[str]              # base tables aggregated across the fan-out
     aggregates: list[str] = field(default_factory=list)  # offending aggregate exprs (text)
@@ -99,7 +99,7 @@ def _singular(t: str) -> str:
 
 
 def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"):
-    """Return a FanoutFinding if the OUTER scope fans out across ≥2 shared-root
+    """Return a FanoutIssue if the OUTER scope fans out across ≥2 shared-root
     satellites with non-distinct aggregates over both, else None. Best-effort:
     any parse/analysis error returns None (never raise into the pipeline)."""
     try:
@@ -186,7 +186,7 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
         aggregated = [t for t in sats if t in agg_tables]
         if len(aggregated) >= 2:
             aggs = sorted({a for t in aggregated for a in agg_tables[t]})
-            return FanoutFinding(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6])
+            return FanoutIssue(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6])
 
     # ── Single parent-measure fan-out (the one-to-many case the multi-satellite
     # check above misses): SUM/AVG of a PARENT's measure across a join to a finer-
@@ -206,7 +206,7 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
             continue
         parent_aggs = [a for a in agg_tables.get(parent, []) if re.search(r"\b(?:SUM|AVG)\b", a, re.I)]
         if parent_aggs:
-            return FanoutFinding(
+            return FanoutIssue(
                 hub_root=r, satellites=[parent], children=sorted(children),
                 aggregates=sorted(set(parent_aggs))[:6], kind="parent_fanout",
             )
@@ -1305,7 +1305,7 @@ def cte_grain_mismatch_fanout(sql: str, table_cols: dict | None = None, dialect:
     return None
 
 
-def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+def build_parent_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str = "duckdb"):
     """Deterministic de-fan for a parent_fanout: wrap the source in a DISTINCT
     subquery keyed by the parent's join column, so the parent's measure is summed
     ONCE per parent instead of once per fanned child row. Exact and filter-
@@ -1433,7 +1433,7 @@ def _strip_table_quals(node):
     return n
 
 
-def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+def build_chasm_fanout_rewrite(sql: str, finding: "FanoutIssue", dialect: str = "duckdb"):
     """Deterministic de-fan for a CHASM (≥2 satellites of one hub aggregated across a
     star join — the clicks×impressions case). Pre-aggregate EACH satellite to the hub
     key in its own CTE, then join the CTEs to the hub so each satellite's SUM/COUNT is
@@ -1824,9 +1824,9 @@ def _key_for_table(key_of: dict, alias_to_table: dict, table_bare: str) -> str:
 
 
 def dimension_ratio_chasm(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
-                          is_unique_on=None) -> "FanoutFinding | None":
+                          is_unique_on=None) -> "FanoutIssue | None":
     """Detect a cross-table ratio-of-sums over a shared-dimension join (the #159 shape
-    detect_fanout misses). Returns a FanoutFinding(kind='dim_ratio') the rewrite path
+    detect_fanout misses). Returns a FanoutIssue(kind='dim_ratio') the rewrite path
     can de-fan, or None. `is_unique_on` is accepted for battery-signature parity (the
     rewrite is correct regardless of cardinality, so it is unused). Never raises."""
     try:
@@ -1835,7 +1835,7 @@ def dimension_ratio_chasm(sql: str, table_cols: dict | None = None, dialect: str
         return None
     if not parsed:
         return None
-    return FanoutFinding(
+    return FanoutIssue(
         hub_root=parsed["num_key"] or parsed["den_key"] or "dimension",
         satellites=sorted({parsed["num_table"], parsed["den_table"]}),
         aggregates=[f"{parsed['num_func'].__name__.upper()}({parsed['num_col']})/"
@@ -1844,7 +1844,7 @@ def dimension_ratio_chasm(sql: str, table_cols: dict | None = None, dialect: str
     )
 
 
-def build_dim_ratio_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+def build_dim_ratio_rewrite(sql: str, finding: "FanoutIssue", dialect: str = "duckdb"):
     """Pre-aggregate each side of a dimension-join ratio to the dimension grain in its
     own CTE, then 1:1-join and divide — the exact, cardinality-independent cure for the
     fanned cross-table ratio. Returns rewritten SQL, or None on any shape it can't prove
@@ -1896,7 +1896,7 @@ def build_dim_ratio_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "
         return None
 
 
-def defan(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+def defan(sql: str, finding: "FanoutIssue", dialect: str = "duckdb"):
     """Deterministic de-fan dispatcher. Returns a corrected SQL for the
     parent_fanout, chasm, or dimension-ratio cases, or None when none can be
     safely rewritten (the caller then falls back to the LLM hint)."""

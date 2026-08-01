@@ -5,7 +5,7 @@ import { useInvestigationThread, type ThreadRunOpts } from "@/lib/useInvestigati
 import { ChatMessage, type SourcePanelData } from "@/components/ChatMessage";
 
 export interface InlineInvestigationThreadProps {
-  /** The natural-language question that drives ADA's phase routing. */
+  /** The natural-language question that drives the deep analysis' phase routing. */
   question: string;
   /** connectionId + schema + canvasId + seedSql/seedContext (see ThreadRunOpts). */
   opts: ThreadRunOpts;
@@ -20,7 +20,7 @@ export interface InlineInvestigationThreadProps {
 /**
  * Capability A "pull the thread": an investigation that streams IN PLACE inside the
  * briefing. It owns one useInvestigationThread (one SSE stream, one AbortController),
- * seeded with the originating finding + its SQL, and renders the live phases + ADA
+ * seeded with the originating finding + its SQL, and renders the live phases + deep
  * report by reusing the chat surface's <ChatMessage>. Aborts its stream on unmount.
  */
 export function InlineInvestigationThread({

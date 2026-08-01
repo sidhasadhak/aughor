@@ -260,7 +260,7 @@ export function inferChartType(
     // Single measure — composition (pie/treemap) for an ADDITIVE magnitude OR a SHARE that sums to a
     // whole. You don't pie a conversion RATE (each row's own rate, no whole to compose), but you DO
     // pie a `pct_of_total` whose slices sum to ~100% — a genuine parts-of-a-whole (this is what makes
-    // a "share of returns" composition a donut on the quick path too, matching the ADA lens).
+    // a "share of returns" composition a donut on the quick path too, matching the deep-analysis lens).
     const additive = ADDITIVE_COL.test(columns[numIdx]) && !SHARE_COL.test(columns[numIdx]);
     const shareVals = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
     const shareSum = shareVals.reduce((s, v) => s + v, 0);

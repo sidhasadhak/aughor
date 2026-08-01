@@ -134,7 +134,7 @@ def test_an_errored_result_is_never_stubbed():
 # ── the wiring: byte-identical unless asked, and on a big enough block ────────
 
 def test_synthesis_evidence_is_byte_identical_with_no_flags(monkeypatch):
-    for var in ("AUGHOR_ADA_EVIDENCE_DEDUP", "AUGHOR_ADA_EVIDENCE_STUBS"):
+    for var in ("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", "AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS"):
         monkeypatch.delenv(var, raising=False)
     history = _big_history()
     hyps = [_hyp(f"H{i}") for i in range(1, 13)]
@@ -144,7 +144,7 @@ def test_synthesis_evidence_is_byte_identical_with_no_flags(monkeypatch):
 
 def test_a_small_block_is_left_alone_even_with_the_flags_on(monkeypatch):
     """Safe direction: a block this size is not what strains a window."""
-    monkeypatch.setenv("AUGHOR_ADA_EVIDENCE_STUBS", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS", "1")
     history = [_result("H1", "SELECT a FROM t", n_rows=3)]
     assert sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS
     out = _format_full_evidence(history, [_hyp("H1")])
@@ -153,7 +153,7 @@ def test_a_small_block_is_left_alone_even_with_the_flags_on(monkeypatch):
 
 
 def test_stubbing_shrinks_a_big_block_and_keeps_every_section(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ADA_EVIDENCE_STUBS", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS", "1")
     history = _big_history()
     hyps = [_hyp(f"H{i}") for i in range(1, 13)]
     before = _format_full_evidence(history, [Hypothesis(id=h.id, description=h.description)
@@ -167,7 +167,7 @@ def test_stubbing_shrinks_a_big_block_and_keeps_every_section(monkeypatch):
 
 def test_an_unscored_hypothesis_keeps_its_full_evidence_in_a_big_block(monkeypatch):
     """The mixed case: one hypothesis scored, one not. Only the scored one goes stale."""
-    monkeypatch.setenv("AUGHOR_ADA_EVIDENCE_STUBS", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS", "1")
     history = _big_history()
     hyps = [_hyp("H1")] + [Hypothesis(id=f"H{i}", description="d") for i in range(2, 13)]
     after = _format_full_evidence(history, hyps)
@@ -179,7 +179,7 @@ def test_an_unscored_hypothesis_keeps_its_full_evidence_in_a_big_block(monkeypat
 def test_dedup_sees_across_hypothesis_sections(monkeypatch):
     """A repeat spread across two sections is still a repeat; a per-section renderer would
     miss exactly those."""
-    monkeypatch.setenv("AUGHOR_ADA_EVIDENCE_DEDUP", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", "1")
     history = _big_history() + [_result("H6", "SELECT i, segment, value FROM t1_0")]
     hyps = [_hyp(f"H{i}") for i in range(1, 13)]
     out = _format_full_evidence(history, hyps)
@@ -189,7 +189,7 @@ def test_dedup_sees_across_hypothesis_sections(monkeypatch):
 def test_a_policy_error_falls_back_to_rendering_everything_full(monkeypatch):
     """Synthesis is where the answer is written. A helper that can raise here loses a whole
     investigation to save some tokens."""
-    monkeypatch.setenv("AUGHOR_ADA_EVIDENCE_STUBS", "1")
+    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_STUBS", "1")
     monkeypatch.setattr(EB, "render_history",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     history = _big_history()

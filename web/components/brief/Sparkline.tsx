@@ -3,7 +3,7 @@
 /**
  * Sparkline + TrendStrip — a compact glanceable trend for time-series findings.
  *
- * The ADA EvidenceBlock already renders a full chart, but it never STATES the
+ * The deep-analysis EvidenceBlock already renders a full chart, but it never STATES the
  * period-over-period delta as a number. TrendStrip adds that: a tiny inline
  * sparkline + a signed "%  vs prior <period>" (MoM/WoW/YoY, inferred from the
  * date granularity). Net-new information, render-only — no backend change.

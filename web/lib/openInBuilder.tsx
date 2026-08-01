@@ -4,7 +4,7 @@
  * A tiny app-wide channel for "Open in Query Builder".
  *
  * Insights and Deep Analysis render a generated query's chart/table deep inside
- * their own component trees (DomainIntelPanel via IntelligenceWorkspace, the ADA
+ * their own component trees (DomainIntelPanel via IntelligenceWorkspace, the deep-analysis
  * report via ChatMessage / HistoryDetailPanel). Rather than prop-drill a handler
  * through every layer, the app root provides one function via context; any leaf
  * calls useOpenInBuilder()(sql, connId?) to hand a query off to the builder.

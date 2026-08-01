@@ -215,7 +215,8 @@ def trace_identity() -> tuple[str, str, str]:
 
 def _tag_current_trace(mlf: Any, trace_id: str) -> None:
     """Attribute the active trace so MLflow's Sessions / user / per-agent + cost
-    views populate (E1 of the 2026-07-11 Databricks-OSS study).
+    views populate (E1 of
+    docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md).
 
     ``investigation_id`` and ``agent_id`` are TAGS (mutable, filterable); session
     and user go through ``update_current_trace``'s dedicated kwargs, which write

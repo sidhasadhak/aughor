@@ -33,10 +33,13 @@ def test_list_enriches_agent_cost_and_title(client):
     assert j["duration_ms"] == 1000.0
 
 
-def test_exploration_maps_to_scout(client):
+def test_exploration_maps_to_explorer(client):
+    """The job kind and the agent id stay `exploration`/`scout` (persisted); the DISPLAY
+    name is "Explorer" (Wave W) — see docs/GLOSSARY.md."""
     _seed_job("fleet_exp", "exploration", "RUNNING", "fleet_scout_conn", finished=False)
     j = client.get("/jobs", params={"conn_id": "fleet_scout_conn"}).json()[0]
-    assert j["agent"]["agent"] == "Scout"
+    assert j["agent"]["id"] == "scout"
+    assert j["agent"]["agent"] == "Explorer"
     assert j["title"].startswith("Exploring")
     assert j["cost"] is None and j["duration_ms"] is None  # running, unmetered yet
 

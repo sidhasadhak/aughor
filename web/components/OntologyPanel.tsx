@@ -993,7 +993,7 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
         {error && <p className="aug-fs-xs text-red-400">{error}</p>}
         {!loading && !error && skills?.length === 0 && (
           <p className="aug-fs-xs text-zinc-500">
-            No learned skills yet. A skill is crystallized from a finished investigation
+            No learned skills yet. A skill is crystallized from a finished deep analysis
             (its grounded, read-only query) — run a deep analysis, then “Save as skill”.
           </p>
         )}
@@ -1132,7 +1132,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
                 ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
                 : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
             )}
-            title="Learned skills crystallized from investigations"
+            title="Learned skills crystallized from deep analyses"
           >
             Learned skills
           </button>

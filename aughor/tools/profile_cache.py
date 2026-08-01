@@ -113,8 +113,8 @@ def load_value_samples(connection_id: str) -> dict[tuple[str, str], list[str]]:
     builds or writes. Returns {} when nothing is cached.
 
     Feeds offline entity binding (answer_resolution): a value already in the warmed
-    sample resolves without a live warehouse probe (Databricks Genie warms the same
-    thing at composer-open)."""
+    sample resolves without a live warehouse probe (the same warm-at-composer-open
+    move the wire studies measured)."""
     out: dict[tuple[str, str], list[str]] = {}
     try:
         cache = _load()

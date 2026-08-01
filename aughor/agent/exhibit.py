@@ -1,7 +1,8 @@
 """Chart-grammar exhibit spec — deterministic chart SEMANTICS for a finding.
 
-The 2026-07-16 chart-grammar study (the two Databricks Genie reports on the
-airline dataset) showed the readability gap is discipline, not chart variety:
+The 2026-07-16 chart-grammar study (docs/REPORT_STYLE_STUDY_2026-07-16.md, over
+two reference reports on the airline dataset) showed the readability gap is
+discipline, not chart variety:
 color always carries meaning, rankings get reference context (peer benchmark /
 global average lines), and outlier scatters name their entities. This module
 computes that meaning DETERMINISTICALLY from rows the investigation already
@@ -22,7 +23,7 @@ flag ``chart.exhibit_grammar`` — off by default, byte-identical payloads.
 Honesty rules: a reference line that sits far outside the plotted values is
 dropped (it would distort the axis instead of adding context); the severity
 ramp fires only for rate/percent rankings (a magnitude ranking's bar length
-already carries the message — Genie leaves those neutral too).
+already carries the message — the reference reports leave those neutral too).
 """
 from __future__ import annotations
 

@@ -67,8 +67,8 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
         </span>
         <span className="aug-fs-xs text-zinc-500">
           {status.first_insight_seconds != null && (
-            <span className="text-emerald-400" title="Time from exploration start to the first insight (B-6 KPI)">
-              ⏱ first insight in {fmtDuration(status.first_insight_seconds)} ·{" "}
+            <span className="text-emerald-400" title="Time from exploration start to the first finding (B-6 KPI)">
+              ⏱ first finding in {fmtDuration(status.first_insight_seconds)} ·{" "}
             </span>
           )}
           {status.queries_executed > 0 && `${status.queries_executed} queries · `}

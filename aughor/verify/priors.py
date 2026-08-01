@@ -6,7 +6,7 @@ week gets made again this week. This module closes it. Given a question +
 connection it assembles a single prompt section from:
 
 1. **Resolved ambiguities** — the Ambiguity Ledger (:mod:`aughor.semantic.ambiguity_ledger`,
-   SOMA improvisation I1): an ambiguity settled earlier on this connection (by a probe, a
+   the ambiguity ledger): an ambiguity settled earlier on this connection (by a probe, a
    user clarify choice, or a reviewer verdict) is injected as an authoritative prior FIRST,
    so the same question class never re-ambiguates — ambiguity burns down per connection.
 2. **Verified query patterns** — data-team-reviewed known-correct SQL

@@ -1,4 +1,4 @@
-"""Semantic SQL inspector — the "Inspect" step (Databricks Genie equivalent).
+"""Semantic SQL inspector — the "Inspect" step.
 
 After SQL executes successfully, this module runs a lightweight second LLM call
 that checks whether the SQL *logically* answers the question.  Syntactic lint

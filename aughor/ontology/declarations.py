@@ -1,7 +1,8 @@
 """Wave O6 — declared exclusions, coverage, and checking the promises the ontology makes.
 
-**The marketing line, and it is earned by one function.** Genie's own documentation states
-that a wrong cardinality declaration silently corrupts results. It *documents* the hazard.
+**The marketing line, and it is earned by one function.** A wrong cardinality declaration
+silently corrupts results — a hazard comparable products merely *document*
+(docs/GENIE_DOCS_TEARDOWN_2026-07-26.md).
 This module **checks the promise**: a declared cardinality, grain or active-filter is
 re-validated by a cheap probe, and a violated declaration flips the edge to `dirty` in V's
 freshness vocabulary and surfaces as a caveat rather than sitting there being quietly

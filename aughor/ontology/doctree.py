@@ -3,8 +3,9 @@
 *Understanding is a build artifact.* Project the already-built :class:`OntologyGraph`
 (the deterministic column→table rollup Aughor computes from profiles + grain + joins) into a
 persisted, **Merkle-checksummed** doc tree — column → table → schema → connection — where every
-parent summarizes its children's *summaries*, never their raw content. That bottom-up rollup is
-the ReFoRCE "DB-info compression is lever #1" finding made **persistent**: a wide schema's
+parent summarizes its children's *summaries*, never their raw content. That bottom-up rollup makes
+DB-info compression — the largest context-reduction lever on wide schemas (arXiv 2502.00675) —
+**persistent**: a wide schema's
 understanding is compiled once and re-read cheaply, and only the nodes whose inputs actually
 changed are rebuilt.
 
@@ -488,7 +489,8 @@ def estimate_doc_build(
 # ── R8b: per-node LLM enrichment (estimate-then-confirm, width-routed) ──────
 #
 # The deterministic tree is the artifact; this is the OPTIONAL polish pass —
-# never run silently (the Databricks 13.8s lesson): the CLI shows the token
+# never run silently (the 13.8 s silent-model-time lesson,
+# docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md): the CLI shows the token
 # estimate first, and only `--confirm` spends. Width-routing sends small
 # tables to the "fast" provider and wide ones to "coder".
 

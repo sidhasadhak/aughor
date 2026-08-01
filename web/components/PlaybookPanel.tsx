@@ -283,7 +283,7 @@ function PlaybookDetail({
           </p>
           {entry.evidence_sources.length > 0 && (
             <p className="aug-fs-xs mt-0.5" style={{ color: "var(--t4)" }}>
-              {entry.evidence_sources.length} investigation{entry.evidence_sources.length > 1 ? "s" : ""} as evidence
+              {entry.evidence_sources.length} deep analys{entry.evidence_sources.length > 1 ? "es" : "is"} as evidence
             </p>
           )}
         </div>

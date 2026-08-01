@@ -313,7 +313,7 @@ def render_chart(
     if len(num_idx) >= 4 and not date_idx:
         return None
     # Entity-profile gate: an ID-labelled grid with ≥3 measures is a PROFILE (the
-    # Genie reports render these as tables — "Top 3 Customers — Profile Analysis").
+    # reference reports render these as tables — "Top 3 Customers — Profile Analysis").
     # Grouped bars over 3+ heterogeneous per-entity measures have no single message.
     if (not date_idx and len(num_idx) >= 3 and cat_idx
             and all(_id_like(columns[i] or "") for i in cat_idx

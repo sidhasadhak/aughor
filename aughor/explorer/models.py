@@ -109,7 +109,13 @@ class DistributionProfile:
 
 
 @dataclass
-class OntologyInsight:
+class ExplorerFinding:
+    """One discovered, evidence-backed fact from background exploration.
+
+    Was ``OntologyInsight``. The object's own text field has always been called
+    ``finding`` and the ledger has always written it under kind ``finding`` — only the
+    class name said "insight". One word per concept (docs/GLOSSARY.md).
+    """
     id: str
     entities_involved: list[str]
     dimensions: list[str]

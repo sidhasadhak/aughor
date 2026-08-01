@@ -384,7 +384,7 @@ def _score_column(
 
 # Sharded/dated table suffixes that explode wide-warehouse schemas: GA_SESSIONS_20160801,
 # events_2021_01, TCGA_HG19_DATA_V0. Stripped to a common stem so a whole family collapses to one
-# representative block + a count note — ReFoRCE's #1 context-reduction lever for enterprise schemas.
+# representative block + a count note — the #1 context-reduction lever for enterprise schemas.
 _SHARD_SUFFIX = re.compile(r"_(?:\d{4}_\d{2}_\d{2}|\d{4}_\d{2}|\d{4,8}|v\d+|\d+)$", re.IGNORECASE)
 
 
@@ -402,7 +402,7 @@ def compress_schema(schema_str: str, *, min_group: int = 3) -> str:
     to ONE representative block + a count note, leaving every non-sharded table untouched.
 
     On enterprise warehouses a single logical table is often thousands of dated partitions; including
-    them all blows the context window (ReFoRCE measured 50MB→<2MB from this alone). Recall-safe: a
+    them all blows the context window (50MB→<2MB from this alone, arXiv 2502.00675). Recall-safe: a
     table is only collapsed when it is one of ``>= min_group`` siblings sharing a stem — uniquely
     named tables always survive in full — and a no-op on ordinary schemas (returns the input string)."""
     if not schema_str:

@@ -1,7 +1,7 @@
 """Staleness-resolved rebuild — Wave V2.
 
-The Foundry rule (study L44): **an output is fresh iff its inputs AND its logic are
-unchanged.** Aughor rebuilds on a *timer* in ~10 places, and a timer is wrong in both
+**An output is fresh iff its inputs AND its logic are unchanged**
+(docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md, L44). Aughor rebuilds on a *timer* in ~10 places, and a timer is wrong in both
 directions at once. Take the briefing's 2-hour TTL:
 
 * it **rebuilds a brief whose inputs never moved** — pure cost, and each rebuild is an
@@ -244,7 +244,7 @@ def record(artifact_key: str, decision: RebuildDecision, *, as_of: str = "") -> 
     _store.put(artifact_key, {
         "inputs_version": decision.inputs_version,
         "logic_version": decision.logic_version,
-        # The source view the output was computed on (Foundry L340) — what a
+        # The source view the output was computed on (study L340) — what a
         # live-vs-frozen badge and V4's freeze will pin against.
         "as_of": as_of or _now(),
     })

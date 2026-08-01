@@ -474,7 +474,7 @@ const NAV_SECTIONS = [
     label: "Intelligence", // what Aughor knows about your data
     items: [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
-      { id: "recents",      icon: "search",   label: "Investigations" },
+      { id: "recents",      icon: "search",   label: "Deep analyses" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
     ],
@@ -490,9 +490,9 @@ const NAV_SECTIONS = [
   {
     label: "Operations", // monitor, act, govern
     items: [
-      { id: "agentic-ops", icon: "process", label: "Agentic Ops" },
+      { id: "agentic-ops", icon: "process", label: "Agents" },
       { id: "monitors", icon: "activity", label: "Monitors" },
-      { id: "actions",  icon: "spark",    label: "Action Hub" },
+      { id: "actions",  icon: "spark",    label: "Notifications" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
       { id: "evals",    icon: "check",    label: "Evals" },
     ],
@@ -783,11 +783,11 @@ function HomeScreen({
               />
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 4, padding: 3, background: "var(--bg-3)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
-                  <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Insight</Button>
-                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Deep</Button>
+                  <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Quick</Button>
+                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Deep analysis</Button>
                 </div>
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>
-                  {homeMode === "ask" ? "a fast, grounded answer" : "a full multi-step investigation"}
+                  {homeMode === "ask" ? "a fast, grounded answer" : "a multi-step deep analysis"}
                 </span>
                 <div style={{ flex: 1 }} />
                 <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask →</Button>
@@ -807,7 +807,7 @@ function HomeScreen({
               {[
                 { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
                 { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Browse the bundled BeautyCommerce sample workspace.",       cta: "Open the demo",    accent: "var(--vio3)", action: onTryDemo },
-                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the investigation for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
+                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the deep analysis for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
               ].map(s => (
                 <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -830,7 +830,7 @@ function HomeScreen({
             {[
               { icon: "canvas",  name: "Data Canvas",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
               { icon: "db",      name: "Catalog",       desc: "Browse connections, tables, columns, and data distributions.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
-              { icon: "brief",   name: "Briefing",      desc: "Your unified intelligence digest across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
+              { icon: "brief",   name: "Briefing",      desc: "Your unified briefing across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
               { icon: "builder", name: "Query Builder", desc: "Compose and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
             ].map(a => (
               <button key={a.name} onClick={a.action} style={{
@@ -855,7 +855,7 @@ function HomeScreen({
         <div style={{ display: "flex", gap: 10 }}>
           <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("catalog")} />
           <StatCard value={entities} label="Entities mapped"     accent="var(--vio3)"   sub="ontology layer"     onClick={() => onNavigate("ontology")} />
-          <StatCard value={insights} label="Insights discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
+          <StatCard value={insights} label="Findings discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
           <StatCard value={queries}  label="Queries executed"    accent="var(--amb3)"   sub="last 7 days"        onClick={() => onNavigate("activity")} />
         </div>
 
@@ -870,7 +870,7 @@ function HomeScreen({
           </div>
           {recentInvs.length === 0 ? (
             <div style={{ padding: "28px 0", textAlign: "center" }}>
-              <p style={{ fontSize: 12, color: "var(--t3)" }}>No investigations yet — start by asking a question.</p>
+              <p style={{ fontSize: 12, color: "var(--t3)" }}>No deep analyses yet — start by asking a question.</p>
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
@@ -949,7 +949,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
               border: `1px solid ${filter === f ? "var(--blue2)" : "var(--b1)"}`,
               color: filter === f ? "var(--blue5)" : "var(--t3)", transition: "all .1s",
             }}>
-              {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === "all" ? "All" : f === "investigation" ? "Deep analysis" : "Chat"}
             </button>
           ))}
         </div>
@@ -958,7 +958,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
         {activities.length > 0 && (
           <MiniStatRow>
             <MiniStat value={activities.length} label="Total" />
-            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Investigations" tone="var(--blue4)" />
+            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Deep analyses" tone="var(--blue4)" />
             <MiniStat value={activities.filter(a => a.status === "complete").length} label="Completed" tone="var(--grn4)" />
           </MiniStatRow>
         )}
@@ -1977,7 +1977,7 @@ export default function Home() {
 
             {/* ── AGENTIC OPS (Control Room + Agents + Fleet, merged) ── */}
             {tab === "agentic-ops" && (
-              <ErrorBoundary label="Agentic Ops hit an error.">
+              <ErrorBoundary label="The Agents workspace hit an error.">
                 <AgenticOpsWorkspace
                   layer={agenticOpsLayer}
                   onLayerChange={setAgenticOpsLayer}

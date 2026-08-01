@@ -88,12 +88,13 @@ class SnowflakeConnection(Connector):
             return False, str(e)
 
     def export_csv(self, sql: str, path: str, *, statement_timeout: int = 60) -> tuple[bool, str]:
-        """Materialize a query's FULL result to a CSV matching the Spider2 evaluator contract.
+        """Materialize a query's FULL result to a CSV written straight from the cursor.
 
         Unlike ``execute`` (the UI path, which stringifies NULL → "NULL" and caps at MAX_ROWS for
         display), this writes the raw cursor: real NULL → empty cell, column order from
-        ``cursor.description``, and EVERY row (no cap) — byte-compatible with the evaluator's
-        ``pd.DataFrame(results, columns=cols).to_csv(index=False)``. Returns (ok, error)."""
+        ``cursor.description``, and EVERY row (no cap) — byte-compatible with
+        ``pd.DataFrame(results, columns=cols).to_csv(index=False)``, the form result-match
+        graders compare against (Spider 2.0). Returns (ok, error)."""
         from aughor.sql.closed_loop import rows_to_csv
         try:
             cur = self._conn.cursor()

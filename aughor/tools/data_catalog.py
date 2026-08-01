@@ -4,7 +4,7 @@ Builds a compact, markdown-formatted catalog from a database connection
 for a given set of tables. Caches results by (connection_id, table_hash)
 with LRU eviction and TTL expiry.
 
-Inspired by MindsDB DataCatalogBuilder:
+Design constraints:
 - ≤5-row samples per table
 - Exact column-name case preservation
 - Relevance-filtered (only requested tables)
@@ -237,7 +237,7 @@ def clear_cache() -> None:
     _cache.clear()
 
 def enforce_context_cap(schema_or_catalog: str, max_tables: int = 10) -> str:
-    """Hard cap on schema context size — MindsDB best practice.
+    """Hard cap on schema context size.
 
     Counts TABLE: headers. If > max_tables, keeps only the first N tables
     and appends a truncation notice. Preserves exact case.

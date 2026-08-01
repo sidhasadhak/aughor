@@ -77,12 +77,12 @@ def test_outside_a_fanout_nothing_is_refused():
 
 
 def test_inside_a_fanout_an_undeclared_action_is_refused():
-    with PS.fanout("ada.phase_waves"):
+    with PS.fanout("deep_analysis.phase_waves"):
         with pytest.raises(PS.ParallelSafetyError) as caught:
             PS.assert_dispatchable(_action(), name="kinetic.refund_order")
     msg = str(caught.value)
     assert "kinetic.refund_order" in msg
-    assert "ada.phase_waves" in msg              # names the region it came from
+    assert "deep_analysis.phase_waves" in msg              # names the region it came from
     assert "serially" in msg                     # says what to do
 
 
@@ -116,11 +116,11 @@ def test_the_flag_propagates_into_worker_threads():
     workers, which is why the flag is a contextvar and not a thread-local. Without this
     the checkpoint would never fire where it matters — inside the workers."""
     seen: list[str] = []
-    with PS.fanout("ada.phase_queries"):
+    with PS.fanout("deep_analysis.phase_queries"):
         with ContextThreadPoolExecutor(max_workers=2) as pool:
             for f in [pool.submit(PS.current_fanout) for _ in range(4)]:
                 seen.append(f.result())
-    assert seen == ["ada.phase_queries"] * 4
+    assert seen == ["deep_analysis.phase_queries"] * 4
 
 
 def test_a_worker_refuses_an_undeclared_action():
@@ -164,7 +164,7 @@ def test_the_executor_refuses_rather_than_dispatching(monkeypatch):
     from aughor.kinetic.executor import execute_kinetic_action
 
     dispatched = []
-    with PS.fanout("ada.phase_waves"):
+    with PS.fanout("deep_analysis.phase_waves"):
         out = execute_kinetic_action(_action(risk="read_only"), {},
                                      dispatch=lambda *a, **k: dispatched.append(1))
     assert out.status == "parallel_refused" and out.ok is False

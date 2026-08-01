@@ -13,7 +13,7 @@ from aughor.kernel import flags
 from aughor.kernel.flags import AUTO_ELIGIBLE, clear_flag, flag_enabled, flag_state, list_flags, set_flag
 
 MASTER = "capabilities.auto"
-GUARD = "ada.premise_check"                 # an auto-eligible self-gating capability
+GUARD = "deep_analysis.premise_check"                 # an auto-eligible self-gating capability
 COSTLY = "semops.champion_validate"         # registered but NOT auto-eligible (cost-dangerous)
 
 

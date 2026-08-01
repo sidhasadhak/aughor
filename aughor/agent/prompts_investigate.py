@@ -831,7 +831,7 @@ class ADASynthesisModel(BaseModel):
 
 
 # R16 P2 — the argument-style writing contract (flag `report.argument_style`).
-# Distilled from the Genie report study (docs/REPORT_STYLE_STUDY_2026-07-16.md):
+# Distilled from the report-style study (docs/REPORT_STYLE_STUDY_2026-07-16.md):
 # the strongest analyst reports ARGUE in prose — a verdict first, numbers bold
 # inline in sentences, entities named by their identifiers, causes hedged
 # honestly. Appended to the synthesis system prompt only when the flag is on.

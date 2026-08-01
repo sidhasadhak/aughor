@@ -441,7 +441,7 @@ class AgentState(TypedDict):
     # Output
     report: Optional[AnalysisReport]
 
-    # final_text mode: answer from KB/ontology without SQL (MindsDB final_text path)
+    # final_text mode: answer from KB/ontology without SQL
     final_text_answer: str
 
     # Human-in-the-Loop (optional — only present when hitl_enabled=True)
@@ -478,7 +478,7 @@ class AgentState(TypedDict):
     # decompose step in both explore and investigate modes.
     analysis_ledger: str
 
-    # Structured Data Catalog (MindsDB-style): compact markdown with column defs
+    # Structured Data Catalog: compact markdown with column defs
     # + 5-row samples for only the relevant tables. Built once per investigation.
     data_catalog: str
 

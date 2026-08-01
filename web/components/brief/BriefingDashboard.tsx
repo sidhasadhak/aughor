@@ -4,7 +4,7 @@
  * BriefingDashboard — the Briefing tab's actionable findings layer (#3).
  *
  * The explorer's findings — the new, non-obvious signals — render as compact text
- * cards ranked by impact; clicking one "pulls the thread" into an inline ADA
+ * cards ranked by impact; clicking one "pulls the thread" into an inline deep
  * investigation seeded with that finding's exact query.
  *
  * (The industry's key-metric trends used to render here as a standalone chart grid;
@@ -137,7 +137,7 @@ export function BriefingDashboard({
       </div>
 
       {/* New findings — the non-obvious signals, as compact text cards ranked by impact.
-          Clicking a finding pulls the thread: an ADA investigation streams in place
+          Clicking a finding pulls the thread: a deep analysis streams in place
           below the grid, seeded with that finding's exact query. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
         {findingCards.map(f => {

@@ -49,7 +49,7 @@ interface Props {
   initialQuestion?: string;
   initialMode?: "ask" | "investigate";
   /** When the seeded question is a drill into a known finding, its insight id —
-   *  routes the first turn to the Tier-0 Finding Dossier instead of a fresh ADA run. */
+   *  routes the first turn to the Tier-0 Finding Dossier instead of a fresh deep analysis. */
   initialInsightId?: string;
   /** Optional landing block rendered atop the empty state (e.g. canvas Capabilities). */
   capabilities?: React.ReactNode;
@@ -170,8 +170,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <CommentIcon label="Insight" size="small" />
-            Insight
+            <CommentIcon label="Quick" size="small" />
+            Quick
           </button>
           <button
             onClick={() => setMode("investigate")}
@@ -185,8 +185,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Deep Analysis" size="small" />
-            Deep
+            <AiSparkleIcon label="Deep analysis" size="small" />
+            Deep analysis
           </button>
         </div>
 
@@ -317,6 +317,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [events.length]);
 
+  // Keyed by SSE event TYPE — wire names, frozen (`ada_report` is the backend's spelling).
   const TYPE_COLOR: Record<string, string> = {
     start: "text-sky-400", done: "text-emerald-400", error: "text-red-400",
     ada_report: "text-violet-400", explore_report: "text-teal-400", report: "text-blue-400",
@@ -385,7 +386,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
           variant="ghost"
           size="xs"
           onClick={() => onRerun(deep ? "quick" : "deep")}
-          title={deep ? "Re-run as a quick answer" : "Re-run as a deep investigation"}
+          title={deep ? "Re-run as a quick answer" : "Re-run as a deep analysis"}
           className="h-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
           style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--blue4)" }}
         >
@@ -584,7 +585,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           chartType: t.chart_type || null,
           statusText: null,
           phases: [],
-          adaReport: null,
+          deepReport: null,
           report: null,
           queryMode: null,
           subQuestions: [],
@@ -729,8 +730,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 <p className="aug-fs-sm font-bold text-zinc-200">Ask your data anything</p>
                 <p className="aug-fs-sm text-zinc-500 mt-1.5">
                   <span className="text-zinc-400 font-bold">Auto</span> picks the right depth for each question —
-                  or choose <span className="text-zinc-400 font-bold">Insight</span> /{" "}
-                  <span className="text-violet-400/90 font-bold">Deep</span> yourself.
+                  or choose <span className="text-zinc-400 font-bold">Quick</span> /{" "}
+                  <span className="text-violet-400/90 font-bold">Deep analysis</span> yourself.
                 </p>
               </div>
             )}

@@ -20,7 +20,7 @@ Guard composition for `kind="sql"`:
 
 Deferred to later AL-01 slices (documented, not silently dropped): the `code` / `metadata`
 kinds; the semantic-alignment (`tools/semantic_validator`), parallel-consistency
-(`tools/sql_consistency`), numeric-claim (`agent/verify`), structural-ambiguity (`agent/soma`)
+(`tools/sql_consistency`), numeric-claim (`agent/verify`), structural-ambiguity (`agent/ambiguity_probe`)
 and consensus (`agent/sql_consensus`) guards; and migrating the answer paths off their inline
 guard calls onto this façade. This slice builds the plane + its conformance test and wires the
 first consumer (the `/query/validate` surface) behind the `trust.verify_facade` flag.

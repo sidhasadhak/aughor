@@ -29,9 +29,9 @@ interface ChatHistoryTurn {
 // for continuity + the first finding-with-SQL as a representative base a follow-up can
 // compose on. Returns null when there's nothing worth carrying.
 function deepHistoryEntry(t: ChatTurn): ChatHistoryTurn | null {
-  const headline = t.adaReport?.headline || (t.report?.headline as string | undefined) || t.headline || "";
+  const headline = t.deepReport?.headline || (t.report?.headline as string | undefined) || t.headline || "";
   let rep: { sql: string; columns: string[]; rows: (string | number | null)[][] } | undefined;
-  for (const p of t.adaReport?.phases ?? []) {
+  for (const p of t.deepReport?.phases ?? []) {
     rep = p.findings?.find(f => f.sql && f.sql.trim());
     if (rep) break;
   }
@@ -99,7 +99,7 @@ export function useChat() {
           // history: a follow-up in a canvas composes on the previous query (parity
           // with the quick /chat + /ask paths), not just the auto route.
           // seed_sql / seed_context: a drill seeded from a result (overview "explore this
-          // fact", or any raw-seed deeper) anchors ADA on the originating query/observation
+          // fact", or any raw-seed deeper) anchors the deep analysis on the originating query/observation
           // even without an insight_id — the backend's _build_origin_finding raw-seed fallback.
           body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, seed_sql: opts.seedSql ?? null, seed_context: opts.seedContext ?? "", deep: opts.deep ?? false, history: chatHistory() }),
           signal,

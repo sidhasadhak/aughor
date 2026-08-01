@@ -122,7 +122,7 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
     Low-confidence direct falls back to investigate: false-direct (shallow
     answer) is worse than false-investigate (extra thoroughness).
 
-    MindsDB-style final_text path: if the question is definitional/ontological
+    final_text path: if the question is definitional/ontological
     and the KB has a strong match, route to final_text without generating SQL.
     """
     # Cost-tiered routing (test-time scaling): a deterministic complexity assessment
@@ -255,7 +255,7 @@ def route_after_classify(state: AgentState) -> str:
 
 
 # ── Node: answer_text_only ─────────────────────────────────────────────────
-# MindsDB-style final_text path: answer definitional/ontological questions
+# final_text path: answer definitional/ontological questions
 # from the KB without generating SQL.
 
 def answer_text_only(state: AgentState) -> dict[str, Any]:

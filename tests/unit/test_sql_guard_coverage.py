@@ -82,7 +82,7 @@ UNGUARDED = {
     "explorer/fix_persist.py":
         "`__fix_save__` executes a model-repaired query to validate it before persisting.",
     "routers/investigations.py":
-        "`soma_probe` executes model-generated candidate readings for ambiguity assessment.",
+        "`ambiguity_probe` executes model-generated candidate readings for ambiguity assessment.",
     "user_agents/quality.py":
         "the agent-eval harness runs a model-generated query against a reference.",
 }

@@ -1446,7 +1446,7 @@ class SchemaExplorer:
         """
         For each verified join, check if a dimension in the PK table (t2)
         meaningfully explains variation in a measure in the FK table (t1).
-        Records findings as OntologyInsights.
+        Records findings as ExplorerFindings.
         """
         tp = tp or {}
         done_ids = {i.get("id") for i in self._state.get("insights", [])}

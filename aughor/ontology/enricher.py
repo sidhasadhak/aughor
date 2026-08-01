@@ -69,7 +69,7 @@ class EnrichmentOutput(BaseModel):
     # e.g. "BcOrder" → "Customer Order",  "ProductMaster" → "Product"
     entity_display_names: dict[str, str] = {}
 
-    # Palantir-style entity classification override
+    # Entity classification override
     # reference_data | business_object | event | standalone
     entity_types: dict[str, str] = {}
 

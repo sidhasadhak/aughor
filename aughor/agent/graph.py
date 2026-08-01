@@ -120,7 +120,7 @@ def _ada_parallel_lenses_enabled() -> bool:
     """The ada.parallel_lenses flag, resolved fail-safe (env/ledger) → 'off' on any error."""
     try:
         from aughor.kernel.flags import flag_enabled
-        return flag_enabled("ada.parallel_lenses")
+        return flag_enabled("deep_analysis.parallel_lenses")
     except Exception:
         return False
 
@@ -129,7 +129,7 @@ def _ada_parallel_phases_enabled() -> bool:
     """The ada.parallel_phases flag, resolved fail-safe (env/ledger) → 'off' on any error."""
     try:
         from aughor.kernel.flags import flag_enabled
-        return flag_enabled("ada.parallel_phases")
+        return flag_enabled("deep_analysis.parallel_phases")
     except Exception:
         return False
 

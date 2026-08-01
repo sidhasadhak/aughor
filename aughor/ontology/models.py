@@ -1,7 +1,7 @@
 """
 Ontology data models — M12a (structural, no LLM).
 
-Four core object types mirror a Palantir-style ontology:
+Four core object types (see docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md):
   OntologyEntity      — a business object with identity, lifecycle, and business rules
   OntologyRelationship — a typed, directional relationship between two entities
   OntologyMetric      — a computable KPI defined in terms of entities
@@ -31,7 +31,7 @@ class ComputedProperty(BaseModel):
 
 
 class ObjectSet(BaseModel):
-    """A named, reusable filtered view of an entity's rows — mirrors Palantir's Object Set concept.
+    """A named, reusable filtered view of an entity's rows.
 
     Examples:
       - "Active Orders"    filter_sql="order_status NOT IN ('canceled', 'delivered')"
@@ -55,7 +55,7 @@ class ObjectSet(BaseModel):
 
 
 class EntityProperty(BaseModel):
-    """First-class property on an entity — mirrors Palantir's Property concept.
+    """First-class property on an entity.
 
     Sourced from ColumnProfile at build time; description enriched from glossary.
     A property is the semantic label on a column — not the raw column itself.
@@ -93,7 +93,7 @@ class OntologyEntity(BaseModel):
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
 
-    # Palantir-style entity classification (set by enricher; heuristic fallback in builder)
+    # Entity classification (set by enricher; heuristic fallback in builder)
     # reference_data  — master/lookup data referenced by others (Customer, Product, Category)
     # business_object — operational entity with state transitions (Order, Contract, Ticket)
     # event           — append-only record or line-item (Payment, OrderItem, LogEntry)
@@ -123,7 +123,7 @@ class OntologyEntity(BaseModel):
 
     # First-class properties — one entry per column on the source table(s).
     # Keyed by column name. Sourced from ColumnProfile at build time;
-    # description enriched from glossary. Mirrors Palantir's Property concept.
+    # description enriched from glossary.
     properties: dict[str, EntityProperty] = Field(default_factory=dict)
 
     # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
@@ -140,7 +140,7 @@ class OntologyEntity(BaseModel):
 
 
 class OntologyInterface(BaseModel):
-    """A shared structural shape implemented by multiple entity types — mirrors Palantir's Interface concept.
+    """A shared structural shape implemented by multiple entity types.
 
     Interfaces let you write polymorphic queries across entity types without
     knowing specific table schemas.  Examples:
@@ -199,7 +199,7 @@ class OntologyMetric(BaseModel):
 
 
 class ActionParameter(BaseModel):
-    """A typed, named input to an OntologyAction — mirrors Palantir's Action parameter concept.
+    """A typed, named input to an OntologyAction.
 
     Parameters are extracted from {placeholder} tokens in the sql_template.
     Data type is inferred from column profiles where possible; falls back to VARCHAR.

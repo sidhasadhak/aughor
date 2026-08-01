@@ -73,7 +73,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
             {triggers.length === 0
-              ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Action Hub.</p>
+              ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Notifications.</p>
               : triggers.map(t => (
                   <button
                     key={t.id}
@@ -351,7 +351,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
         <div>
           <h2 className="text-sm font-semibold text-zinc-200">Recommendation Inbox</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Track outcomes of ADA&apos;s recommendations across investigations
+            Track outcomes of Aughor&apos;s recommendations across deep analyses
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -401,7 +401,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
           <p className="text-xs text-zinc-500">
             {filter === "pending"
               ? "All recommendations have been actioned — great work."
-              : "Complete an investigation to see recommendations here."}
+              : "Complete a deep analysis to see recommendations here."}
           </p>
         </div>
       ) : (

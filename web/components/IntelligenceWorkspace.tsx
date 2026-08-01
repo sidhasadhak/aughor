@@ -51,7 +51,7 @@ export type IntelLayer = "briefing" | "hub" | "ontology" | "graph" | "evidence" 
 
 const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
-  { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge & data profile" },
+  { id: "hub",      icon: "layers",  label: "Profile",  blurb: "Domain knowledge & data profile" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
   { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
   { id: "memory",   icon: "memory",  label: "Memory",   blurb: "What the closed loop has learned" },

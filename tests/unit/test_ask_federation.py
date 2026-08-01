@@ -21,7 +21,7 @@ def _collect(agen) -> list[str]:
 
 def _req(**kw):
     from types import SimpleNamespace
-    base = dict(depth="auto", deep=False, insight_id=None, canvas_id=None, history=[], skip_clarify=False)
+    base = dict(depth="auto", escalate=False, insight_id=None, canvas_id=None, history=[], skip_clarify=False)
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -43,7 +43,7 @@ def test_federation_not_eligible_on_followups_or_overrides(monkeypatch):
     assert inv._federation_eligible(_req(history=[{"role": "user", "content": "prev"}])) is False  # follow-up
     assert inv._federation_eligible(_req(skip_clarify=True)) is False   # clarify-answer turn
     assert inv._federation_eligible(_req(canvas_id="cv1")) is False     # canvas follow-up
-    assert inv._federation_eligible(_req(deep=True)) is False           # deep-drill
+    assert inv._federation_eligible(_req(escalate=True)) is False        # dossier escalation
     assert inv._federation_eligible(_req(insight_id="i1")) is False     # dossier drill
     assert inv._federation_eligible(_req(depth="quick")) is False       # explicit depth override
 

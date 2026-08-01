@@ -76,7 +76,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
         {status.paused ? "Paused · " : ""}
         {PHASE_LABELS[status.phase] ?? status.phase}
         {isComplete && status.insights_found > 0
-          ? ` · ${status.insights_found} insight${status.insights_found === 1 ? "" : "s"}`
+          ? ` · ${status.insights_found} finding${status.insights_found === 1 ? "" : "s"}`
           : ""}
         {isActive && status.queries_executed > 0
           ? ` · ${status.queries_executed}q`

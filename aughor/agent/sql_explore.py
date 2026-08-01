@@ -9,7 +9,8 @@ hard queries silently go wrong (and a bigger model guesses the same way).
 This module replaces guessing with observation: before writing the final query it
 issues small read-only PROBE queries against the live database, reads the results,
 and feeds those observations into generation. This is exactly how a competent
-analyst (or a SOTA agent like ReFoRCE's column-exploration / Spider-Agent) works.
+analyst works, and how the strongest published column-exploration agents work
+(arXiv 2502.00675).
 
 Backend-agnostic: execution and model calls are injected as callables, so the same
 loop drives SQLite (benchmark) or DuckDB/Postgres (production).

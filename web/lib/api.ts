@@ -3713,7 +3713,8 @@ export async function groundBriefingNumber(
   return res.json();
 }
 
-/** K3-wide Trust Receipt for a chat or ADA answer (404 if it predates receipts). */
+/** K3-wide Trust Receipt for a chat or deep-analysis answer (404 if it predates receipts).
+ *  `kind` is a ROUTE SEGMENT — the `/ada/` path is a wire name, frozen. */
 export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id: string): Promise<InsightReceipt | null> {
   const res = await fetch(
     `${BASE}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
@@ -4838,6 +4839,7 @@ export interface InvestigationGraph {
   investigation_id: string;
   status: string;
   question: string;
+  /** Wire value from the backend graph endpoint — "ada" is its spelling, frozen. */
   branch: "ada" | "explore" | "direct" | "unknown";
   topology: string[];
   phases: {

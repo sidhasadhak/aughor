@@ -260,7 +260,7 @@ _EXTRACT_SYS = (
 # (DataAgentBench's patent-date tasks score 0% across every model). Aughor's answer is its usual one —
 # a deterministic guard over the LLM's output. When ``validate=True`` each extracted value is checked
 # against a type inferred from the field's name/description; cells that fail are RE-EXTRACTED with
-# targeted feedback in a bounded "gleaning" loop (à la DocETL). Values are only ever re-asked and kept,
+# targeted feedback in a bounded "gleaning" loop. Values are only ever re-asked and kept,
 # never dropped or blanked, so the operator's never-silently-lose-data contract still holds.
 
 _TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {

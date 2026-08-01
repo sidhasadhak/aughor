@@ -24,7 +24,7 @@ from sqlglot import exp
 
 
 @dataclass
-class KeyFinding:
+class KeyIssue:
     left_table: str
     right_table: str
     used: set[str]
@@ -47,7 +47,7 @@ def _alias_to_table(tree: exp.Expression) -> dict[str, str]:
     return m
 
 
-def detect_partial_keys(sql: str, table_cols: dict[str, set], dialect: str = "sqlite") -> list[KeyFinding]:
+def detect_partial_keys(sql: str, table_cols: dict[str, set], dialect: str = "sqlite") -> list[KeyIssue]:
     """Find joins that use only a subset of the key-like columns the two tables share."""
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
@@ -59,7 +59,7 @@ def detect_partial_keys(sql: str, table_cols: dict[str, set], dialect: str = "sq
     cols_lc = {t.lower(): {c.lower() for c in cs} for t, cs in table_cols.items()}
     real_name = {t.lower(): t for t in table_cols}
     a2t = _alias_to_table(tree)
-    findings: list[KeyFinding] = []
+    findings: list[KeyIssue] = []
 
     for j in tree.find_all(exp.Join):
         right = j.this
@@ -96,14 +96,14 @@ def detect_partial_keys(sql: str, table_cols: dict[str, set], dialect: str = "sq
             missing = shared_keyish - used_cols
             # only flag when the join actually uses a subset of the shared key
             if missing and used_cols & shared_keyish:
-                findings.append(KeyFinding(
+                findings.append(KeyIssue(
                     left_table=real_name.get(lt, lt), right_table=real_name.get(rt, rt),
                     used=used_cols & shared_keyish, missing=missing))
                 break
     return findings
 
 
-def confirm_fanout(finding: KeyFinding, probe_fn: Callable[[str], tuple]) -> bool:
+def confirm_fanout(finding: KeyIssue, probe_fn: Callable[[str], tuple]) -> bool:
     """Probe: is the used subset NON-unique on the right table? (i.e. real fan-out)
     probe_fn(sql) -> (ok, rows, error). Returns True if it fans out (or unknown)."""
     keys = sorted(finding.used)
@@ -123,7 +123,7 @@ def confirm_fanout(finding: KeyFinding, probe_fn: Callable[[str], tuple]) -> boo
     return True   # can't tell → assume risk, let the fix apply
 
 
-def repair_partial_key(sql: str, finding: KeyFinding, dialect: str = "sqlite") -> Optional[str]:
+def repair_partial_key(sql: str, finding: KeyIssue, dialect: str = "sqlite") -> Optional[str]:
     """Add the missing key column(s) to the offending join. Handles USING(...) and
     qualified ON a.x=b.x ... by appending equalities. Returns new SQL or None."""
     try:

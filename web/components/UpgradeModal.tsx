@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 // What each plan adds — shown so the upsell explains the value, not just the lock.
 const PLAN_HIGHLIGHTS: Record<string, string[]> = {
   Pro: [
-    "Autonomous exploration & deep investigations",
-    "Monitors, scheduled briefs & the Action Hub",
+    "Autonomous exploration & deep analyses",
+    "Monitors, scheduled briefings & Notifications",
     "Ontology + semantic-layer editing and saved fixes",
   ],
   Enterprise: [

@@ -1844,8 +1844,8 @@ export interface paths {
         put?: never;
         /**
          * Prewarm Connection
-         * @description R5 deferred (closed) — the composer-open warm, the Databricks
-         *     value-index/preload-cache analog: build the profiles (and the persisted
+         * @description R5 deferred (closed) — the composer-open warm: preload the value index
+         *     and cache, i.e. build the profiles (and the persisted
          *     entity-value samples entity resolution + the filter guard bind from) BEFORE
          *     the first question. Runs as one supervised kernel job (kind `profile`, the
          *     Curator charter) with an idempotency key, so composer-open spam can't stack
@@ -6945,7 +6945,7 @@ export interface components {
         };
         /**
          * ActionParameter
-         * @description A typed, named input to an OntologyAction — mirrors Palantir's Action parameter concept.
+         * @description A typed, named input to an OntologyAction.
          *
          *     Parameters are extracted from {placeholder} tokens in the sql_template.
          *     Data type is inferred from column profiles where possible; falls back to VARCHAR.
