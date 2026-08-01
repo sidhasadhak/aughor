@@ -249,7 +249,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 
 ## 4. Business intelligence layer (ontology · metrics · glossary)
 
-- **Business ontology** — auto-built object sets + computed properties + causal graph; refreshed by the
+- **Business ontology** — auto-built segments + computed properties + causal graph; refreshed by the
   domain-intelligence loop; **per-schema isolated**; org-level ontology board.
 - **Human-editable, version-controlled overrides** — YAML ontology with override-wins; a Phase-8 gate
   binds every per-domain block against the live schema (dry-run/EXPLAIN as the universal binder).

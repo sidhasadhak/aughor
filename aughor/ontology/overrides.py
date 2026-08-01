@@ -20,7 +20,7 @@ it to human curations:
     ``_overlay_learned_actions``), on both the cache-hit and cache-miss branches.
 
 Authority gate. ``ontology.semantic_block.render_semantic_layer`` injects an
-object set / computed property into the NL2SQL prompt only when ``verified`` is
+segment / computed property into the NL2SQL prompt only when ``verified`` is
 True. A human assertion must clear that gate — but not blindly: SQL-bearing
 fields are EXPLAIN-bound against the live DB (``bind_overrides``) before they are
 marked ``verified=True, verification_note="human-asserted"``. A human override
@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from aughor.ontology.models import (
     ComputedProperty,
     KineticAction,
-    ObjectSet,
+    Segment,
     OntologyEntity,
     OntologyGraph,
     OntologyMetric,
@@ -48,6 +48,11 @@ from aughor.ontology.models import (
 
 _ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_overrides"
 
+# FROZEN VALUES. A target kind is BOTH a field written into every override YAML and the
+# directory it lives in (`{conn}/{schema}/{kind}/{id}.yaml`), so `"object_set"` stays even
+# though the type it targets is now a `Segment`. Renaming it would orphan every override a
+# human has already authored and every one committed to a repo. The display word is mapped
+# at the HTTP boundary (routers/ontology.py), not here.
 TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action"]
 
 # Whitelist of fields a human may override, per target kind. Anything outside
@@ -58,6 +63,7 @@ _EDITABLE: dict[str, set[str]] = {
         "description", "display_name", "domain", "active_filter",
         "default_filters", "exclude_when", "lifecycle_states", "terminal_states",
     },
+    # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
     "computed_property": {"label", "formula_sql", "unit"},
     "metric": {"display_name", "description", "formula_sql", "grain", "unit"},
@@ -77,7 +83,7 @@ class OntologyOverride(BaseModel):
     """One human edit to one ontology target, with provenance and bind status.
 
     ``target_id`` is the entity/metric id for those kinds, and ``"{entity_id}::{local_id}"``
-    for object sets and computed properties (which are nested under an entity).
+    for segments and computed properties (which are nested under an entity).
     """
     target_kind: TargetKind
     target_id: str
@@ -99,7 +105,7 @@ class OntologyOverride(BaseModel):
 
     @property
     def local_id(self) -> str:
-        """The object-set / computed-property id within its entity (or the target id)."""
+        """The segment / computed-property id within its entity (or the target id)."""
         return self.target_id.split("::", 1)[1] if "::" in self.target_id else self.target_id
 
     def sql_field_ok(self, field: str) -> bool:
@@ -187,43 +193,43 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
         setattr(ent, field, value)
         touched.append(field)
         # active_filter is the fast-path WHERE used directly by the investigation
-        # pipeline (no verified gate). Mirror it into the default object set so the
+        # pipeline (no verified gate). Mirror it into the default segment so the
         # *prompt* path (render_semantic_layer) gets it too — but only verified
         # when the SQL bound.
         if field == "active_filter" and value:
             default_id = "active"
-            os_ = ent.object_sets.get(default_id) or ObjectSet(
+            seg = ent.segments.get(default_id) or Segment(
                 id=default_id, display_name=f"Active {ent.display_name or ent.id}",
                 is_default=True, source="manual",
             )
-            os_.filter_sql = value
-            os_.verified = ov.sql_field_ok("active_filter")
-            os_.verification_note = "human-asserted" if os_.verified else (
+            seg.filter_sql = value
+            seg.verified = ov.sql_field_ok("active_filter")
+            seg.verification_note = "human-asserted" if seg.verified else (
                 ov.binding.get("active_filter", {}).get("note", "") or "unbound"
             )
-            ent.object_sets[default_id] = os_
+            ent.segments[default_id] = seg
     return touched
 
 
-def _apply_object_set(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+def _apply_segment(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
     local = ov.local_id
-    os_ = ent.object_sets.get(local) or ObjectSet(id=local, display_name=local, source="manual")
+    seg = ent.segments.get(local) or Segment(id=local, display_name=local, source="manual")
     touched: list[str] = []
     for field, value in ov.fields.items():
         if field not in _EDITABLE["object_set"]:
             continue
-        setattr(os_, field, value)
+        setattr(seg, field, value)
         touched.append(field)
     # Earn verified only when its filter SQL bound (empty filter = all rows = trivially fine).
-    if (os_.filter_sql or "").strip():
-        os_.verified = ov.sql_field_ok("filter_sql")
-        os_.verification_note = "human-asserted" if os_.verified else (
+    if (seg.filter_sql or "").strip():
+        seg.verified = ov.sql_field_ok("filter_sql")
+        seg.verification_note = "human-asserted" if seg.verified else (
             ov.binding.get("filter_sql", {}).get("note", "") or "unbound"
         )
     else:
-        os_.verified = True
-        os_.verification_note = "human-asserted (all rows)"
-    ent.object_sets[local] = os_
+        seg.verified = True
+        seg.verification_note = "human-asserted (all rows)"
+    ent.segments[local] = seg
     return touched
 
 
@@ -308,7 +314,7 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
                 if not ent:
                     report.skipped.append(f"{ov.target_kind}:{ov.target_id} — entity not in graph")
                     continue
-                touched = (_apply_object_set if ov.target_kind == "object_set"
+                touched = (_apply_segment if ov.target_kind == "object_set"
                            else _apply_computed_property)(ent, ov)
             elif ov.target_kind == "metric":
                 touched = _apply_metric(graph, ov)

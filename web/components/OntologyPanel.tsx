@@ -7,7 +7,7 @@ import NodeIcon        from "@atlaskit/icon/core/node";
 import SettingsIcon    from "@atlaskit/icon/core/settings";
 import {
   getOntology,
-  patchOntologyAction,
+  patchQueryTemplate,
   patchOntologyEntity,
   getEntityLifecycleCounts,
   getConnectionSettings,
@@ -21,7 +21,7 @@ import {
   getAutonomy,
   type OntologyGraph,
   type OntologyEntity,
-  type OntologyAction,
+  type QueryTemplate,
   type OntologyRelationship,
   type LifecycleCount,
   type ConnectionSettings,
@@ -150,7 +150,7 @@ function EntityDetailDrawer({
   connectionId: string;
   onClose: () => void;
   onEntityUpdated: (e: OntologyEntity) => void;
-  onActionUpdated: (a: OntologyAction) => void;
+  onActionUpdated: (a: QueryTemplate) => void;
   onInvestigate?: (q: string) => void;
 }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
@@ -546,9 +546,9 @@ function ActionRow({
   connectionId,
   onUpdated,
 }: {
-  action: OntologyAction;
+  action: QueryTemplate;
   connectionId: string;
-  onUpdated: (a: OntologyAction) => void;
+  onUpdated: (a: QueryTemplate) => void;
 }) {
   const [editDesc, setEditDesc] = useState(false);
   const [draft, setDraft] = useState(action.description);
@@ -558,7 +558,7 @@ function ActionRow({
     if (draft === action.description) { setEditDesc(false); return; }
     setSaving(true);
     try {
-      const updated = await patchOntologyAction(connectionId, action.id, { description: draft });
+      const updated = await patchQueryTemplate(connectionId, action.id, { description: draft });
       onUpdated(updated);
       setEditDesc(false);
     } finally { setSaving(false); }
@@ -937,13 +937,13 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
 
 // ── Learned-skills drawer (R8 Agent-Skills) ───────────────────────────────────
 // Lists the skills crystallized from finished investigations (origin='learned'
-// OntologyActions that the planner already reuses via the ontology overlay). A human can
+// QueryTemplates that the planner already reuses via the ontology overlay). A human can
 // see each skill's reusable SQL + reuse count, "Use" it (records a use → feeds autonomy),
 // or delete it. The connection's EARNED autonomy level is shown at the top.
 const _AUTONOMY_TONE = ["text-zinc-400", "text-sky-300", "text-violet-300", "text-emerald-300"];
 
 function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
-  const [skills,   setSkills]   = useState<OntologyAction[] | null>(null);
+  const [skills,   setSkills]   = useState<QueryTemplate[] | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [busy,     setBusy]     = useState<string | null>(null);
@@ -1067,7 +1067,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
     setGraph({ ...graph, entities: { ...graph.entities, [updated.id]: updated } });
   };
 
-  const handleActionUpdated = (updated: OntologyAction) => {
+  const handleActionUpdated = (updated: QueryTemplate) => {
     if (!graph) return;
     setGraph({ ...graph, actions: { ...graph.actions, [updated.id]: updated } });
   };

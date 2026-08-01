@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 from aughor.ontology.models import (
     ActionParameter,
     EntityProperty,
-    ObjectSet,
-    OntologyAction,
+    Segment,
+    QueryTemplate,
     OntologyEntity,
     OntologyGraph,
     OntologyInterface,
@@ -441,7 +441,7 @@ def _extract_action_parameters(
 def _generate_deterministic_actions(
     entities: dict[str, OntologyEntity],
     table_to_entity: dict[str, str],
-) -> dict[str, OntologyAction]:
+) -> dict[str, QueryTemplate]:
     """
     Generate deterministic actions for every entity:
       • filter action  — for entities with an active_filter or lifecycle (get_active_*)
@@ -449,7 +449,7 @@ def _generate_deterministic_actions(
 
     Parameters are extracted from {placeholder} tokens in the SQL template.
     """
-    actions: dict[str, OntologyAction] = {}
+    actions: dict[str, QueryTemplate] = {}
 
     for entity in entities.values():
         if not entity.source_tables:
@@ -467,7 +467,7 @@ def _generate_deterministic_actions(
         if _active_filter:
             action_id = f"get_active_{slug}s"
             sql = f"SELECT * FROM {table}\nWHERE {_active_filter}"
-            actions[action_id] = OntologyAction(
+            actions[action_id] = QueryTemplate(
                 id=action_id,
                 display_name=f"Get Active {entity.display_name}s",
                 description=(
@@ -488,7 +488,7 @@ def _generate_deterministic_actions(
             pk = entity.identity_key
             action_id = f"get_{slug}_by_id"
             sql = f"SELECT * FROM {table}\nWHERE {pk} = {{{pk}}}"
-            actions[action_id] = OntologyAction(
+            actions[action_id] = QueryTemplate(
                 id=action_id,
                 display_name=f"Get {entity.display_name} by ID",
                 description=f"Fetch a single {entity.display_name} row by its primary key.",
@@ -566,31 +566,31 @@ def _build_entity_properties(
     return props
 
 
-# ── Object set generation ─────────────────────────────────────────────────────
+# ── Segment generation ────────────────────────────────────────────────────────
 
-def _build_object_sets(
+def _build_segments(
     entity_id: str,
     lifecycle_col: Optional[str],
     lifecycle_states: list[str],
     terminal_states: list[str],
     active_filter: Optional[str],
-) -> "dict[str, ObjectSet]":
+) -> "dict[str, Segment]":
     """
-    Auto-generate named ObjectSets from lifecycle data.
+    Auto-generate named Segments from lifecycle data.
 
     Produces:
       - "All {Entity}"    — no filter, full table
       - "Active {Entity}" — non-terminal rows (filter_sql = active_filter); is_default=True
-      - One set per terminal state: "Delivered {Entity}", "Canceled {Entity}", …
+      - One segment per terminal state: "Delivered {Entity}", "Canceled {Entity}", …
 
-    For entities with no lifecycle, only the "All" set is generated.
+    For entities with no lifecycle, only the "All" segment is generated.
     """
-    sets: dict[str, ObjectSet] = {}
+    sets: dict[str, Segment] = {}
     label = entity_id  # e.g. "Order"
 
-    # Always include an unfiltered "All" set
+    # Always include an unfiltered "All" segment
     all_id = f"all_{label.lower()}s"
-    sets[all_id] = ObjectSet(
+    sets[all_id] = Segment(
         id=all_id,
         display_name=f"All {label}s",
         description=f"Every {label} row with no filters applied.",
@@ -608,11 +608,11 @@ def _build_object_sets(
         tl = ", ".join(f"'{s}'" for s in terminal_states)
         _active_filter = f"{lifecycle_col} NOT IN ({tl})"
 
-    # Active set (non-terminal rows)
+    # Active segment (non-terminal rows)
     active_id = f"active_{label.lower()}s"
     active_display = f"Active {label}s"
     if _active_filter:
-        sets[active_id] = ObjectSet(
+        sets[active_id] = Segment(
             id=active_id,
             display_name=active_display,
             description=f"{label}s that are currently in-progress (non-terminal states).",
@@ -620,14 +620,14 @@ def _build_object_sets(
             is_default=True,
             source="lifecycle",
         )
-        # "All" set is no longer default since we have an explicit active set
+        # "All" segment is no longer default since we have an explicit active segment
         sets[all_id].is_default = False
 
-    # One set per terminal state
+    # One segment per terminal state
     for state in terminal_states:
         state_id = f"{state.lower().replace(' ', '_').replace('-', '_')}_{label.lower()}s"
         state_display = f"{state.capitalize()} {label}s"
-        sets[state_id] = ObjectSet(
+        sets[state_id] = Segment(
             id=state_id,
             display_name=state_display,
             description=f"{label}s with status '{state}'.",
@@ -881,8 +881,8 @@ def extract_structural_ontology(
             schema_name=schema_name,
         )
 
-        # Object sets — named composable filters derived from lifecycle states
-        object_sets = _build_object_sets(
+        # Segments — named saved filters derived from lifecycle states
+        segments = _build_segments(
             entity_id=entity_id,
             lifecycle_col=lifecycle_col,
             lifecycle_states=lifecycle_states,
@@ -908,7 +908,7 @@ def extract_structural_ontology(
             default_filters=default_filters,
             exclude_when=exclude_when,
             properties=properties,
-            object_sets=object_sets,
+            segments=segments,
         )
         entities[entity_id] = entity
         table_to_entity[table] = entity_id

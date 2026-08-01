@@ -5078,7 +5078,11 @@ export interface paths {
         };
         /**
          * Get Entity Object Sets
-         * @description Return all named ObjectSets for an entity — keyed by object set id.
+         * @deprecated
+         * @description DEPRECATED alias of ``GET /ontology/entities/{entity_id}/segments``.
+         *
+         *     Identical payload — it delegates to the handler above. Kept so a client pinned to the
+         *     old path keeps working for one release; use ``/segments``.
          */
         get: operations["get_entity_object_sets_ontology_entities__entity_id__object_sets_get"];
         put?: never;
@@ -5099,7 +5103,11 @@ export interface paths {
         get?: never;
         /**
          * Override Ontology Object Set
-         * @description Define (or correct) a named row-filter (object set) on an entity.
+         * @deprecated
+         * @description DEPRECATED alias of ``PUT /ontology/entities/{entity_id}/segments/{segment_id}``.
+         *
+         *     Same body, same payload, same persisted override — it delegates to the handler above.
+         *     Kept for one release; use ``/segments/{segment_id}``.
          */
         put: operations["override_ontology_object_set_ontology_entities__entity_id__object_sets__set_id__put"];
         post?: never;
@@ -5122,6 +5130,46 @@ export interface paths {
          */
         get: operations["get_entity_properties_ontology_entities__entity_id__properties_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Entity Segments
+         * @description Return every saved, named filter (segment) on an entity — keyed by segment id.
+         */
+        get: operations["get_entity_segments_ontology_entities__entity_id__segments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/segments/{segment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Override Entity Segment
+         * @description Define (or correct) a saved, named row-filter (segment) on an entity.
+         */
+        put: operations["override_entity_segment_ontology_entities__entity_id__segments__segment_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5443,7 +5491,7 @@ export interface paths {
         };
         /**
          * List Learned Skills
-         * @description Learned skills (origin='learned' OntologyActions) for this connection/schema.
+         * @description Learned skills (origin='learned' QueryTemplates) for this connection/schema.
          */
         get: operations["list_learned_skills_ontology_skills_get"];
         put?: never;
@@ -5471,7 +5519,7 @@ export interface paths {
          * Propose Learned Skill
          * @description Crystallize a *candidate* skill from a finished investigation.
          *
-         *     Returns the proposed OntologyAction WITHOUT persisting it — the UI shows it
+         *     Returns the proposed QueryTemplate WITHOUT persisting it — the UI shows it
          *     for confirmation, then calls POST /ontology/skills to save.
          */
         post: operations["propose_learned_skill_ontology_skills_propose_post"];
@@ -6945,7 +6993,12 @@ export interface components {
         };
         /**
          * ActionParameter
-         * @description A typed, named input to an OntologyAction.
+         * @description A typed, named input to a QueryTemplate *or* to a KineticAction.
+         *
+         *     Deliberately NOT renamed alongside QueryTemplate: this one type is shared by the
+         *     read-side template (``QueryTemplate.parameters``) and the governed write unit
+         *     (``KineticAction.params``), and "action" is still the right word for the latter.
+         *     Naming it ``QueryTemplateParameter`` would mislabel every KineticAction parameter.
          *
          *     Parameters are extracted from {placeholder} tokens in the sql_template.
          *     Data type is inferred from column profiles where possible; falls back to VARCHAR.
@@ -8282,43 +8335,6 @@ export interface components {
              */
             wrong_usage_examples: string[];
         };
-        /** OntologyAction */
-        OntologyAction: {
-            /**
-             * Action Type
-             * @enum {string}
-             */
-            action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
-            /** Business Rules Enforced */
-            business_rules_enforced?: string[];
-            /** Description */
-            description: string;
-            /** Display Name */
-            display_name: string;
-            /** Entity */
-            entity: string;
-            /** Id */
-            id: string;
-            /**
-             * Origin
-             * @default structural
-             * @enum {string}
-             */
-            origin: "structural" | "learned" | "manual";
-            /** Parameters */
-            parameters?: components["schemas"]["ActionParameter"][];
-            /** Returns */
-            returns: string;
-            /** Source Table */
-            source_table: string;
-            /** Sql Template */
-            sql_template: string;
-            /**
-             * Usage Count
-             * @default 0
-             */
-            usage_count: number;
-        };
         /**
          * OrgSettings
          * @description App-wide organization settings (the singleton) and the shape of a
@@ -8580,6 +8596,55 @@ export interface components {
             actor: string;
             /** Context */
             context: string;
+        };
+        /**
+         * QueryTemplate
+         * @description A reusable, governed SQL template over one entity — read-only, never a write.
+         *
+         *     Was ``OntologyAction``. It never acted on anything: it is a parameterized SELECT with
+         *     business rules attached, which is what the planner reuses instead of re-deriving the
+         *     query. "Action" now means exactly one thing (a governed write to the data), so this
+         *     type had to give the word back — see ``KineticAction`` below for the write surface.
+         *
+         *     The persisted spelling is frozen: these live under ``OntologyGraph.actions`` in the
+         *     JSON cache and under ``data/learned_actions.json``, and ``action_type`` / ``origin``
+         *     are stored values. Only the Python symbol moved.
+         */
+        QueryTemplate: {
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
+            /** Business Rules Enforced */
+            business_rules_enforced?: string[];
+            /** Description */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            /** Entity */
+            entity: string;
+            /** Id */
+            id: string;
+            /**
+             * Origin
+             * @default structural
+             * @enum {string}
+             */
+            origin: "structural" | "learned" | "manual";
+            /** Parameters */
+            parameters?: components["schemas"]["ActionParameter"][];
+            /** Returns */
+            returns: string;
+            /** Source Table */
+            source_table: string;
+            /** Sql Template */
+            sql_template: string;
+            /**
+             * Usage Count
+             * @default 0
+             */
+            usage_count: number;
         };
         /**
          * ReasoningMessage
@@ -9376,17 +9441,6 @@ export interface components {
             /** Unit */
             unit?: string | null;
         };
-        /** _ObjectSetOverride */
-        _ObjectSetOverride: {
-            /** Description */
-            description?: string | null;
-            /** Display Name */
-            display_name?: string | null;
-            /** Filter Sql */
-            filter_sql?: string | null;
-            /** Is Default */
-            is_default?: boolean | null;
-        };
         /** _PlanAnswerRequest */
         _PlanAnswerRequest: {
             /** Conn Id */
@@ -9524,6 +9578,17 @@ export interface components {
         _SchemaCreate: {
             /** Name */
             name: string;
+        };
+        /** _SegmentOverride */
+        _SegmentOverride: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Filter Sql */
+            filter_sql?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** _SemanticContextRequest */
         _SemanticContextRequest: {
@@ -19244,7 +19309,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["_ObjectSetOverride"];
+                "application/json": components["schemas"]["_SegmentOverride"];
             };
         };
         responses: {
@@ -19281,6 +19346,79 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entity_segments_ontology_entities__entity_id__segments_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    override_entity_segment_ontology_entities__entity_id__segments__segment_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                segment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_SegmentOverride"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -19845,7 +19983,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OntologyAction"];
+                "application/json": components["schemas"]["QueryTemplate"];
             };
         };
         responses: {

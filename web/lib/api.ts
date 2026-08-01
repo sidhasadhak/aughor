@@ -889,7 +889,7 @@ export interface ComputedProperty {
   unit: string;
 }
 
-// OE-1: first-class typed property on an entity (mirrors Palantir Property)
+// OE-1: first-class typed property on an entity — the semantic label on a column
 export interface EntityProperty {
   name: string;
   display_name: string;
@@ -912,8 +912,8 @@ export interface EntityProperty {
   p75: number | null;
 }
 
-// OE-2: named composable filter over entity rows (mirrors Palantir Object Set)
-export interface ObjectSet {
+// OE-2: a segment — a saved, named filter over one entity's rows
+export interface Segment {
   id: string;
   display_name: string;
   description: string;
@@ -922,7 +922,8 @@ export interface ObjectSet {
   source: "lifecycle" | "exploration" | "manual";
 }
 
-// OE-3: typed parameter extracted from {placeholder} tokens in sql_template
+// OE-3: typed parameter extracted from {placeholder} tokens in sql_template. Shared by
+// QueryTemplate.parameters and a declared write action's params — hence the name.
 export interface ActionParameter {
   name: string;
   display_name: string;
@@ -955,7 +956,9 @@ export interface OntologyEntity {
   lifecycle_states: string[];
   terminal_states: string[];
   active_filter: string | null;
-  object_sets: Record<string, ObjectSet>;         // OE-2
+  // OE-2. The backend also emits a deprecated `object_sets` copy of this for one
+  // release; read `segments`.
+  segments: Record<string, Segment>;
   created_at_col: string | null;
   default_filters: string[];
   exclude_when: string[];
@@ -1012,7 +1015,9 @@ export interface OntologyRelationship {
   nullable: boolean;
 }
 
-export interface OntologyAction {
+// A reusable, governed SQL template over one entity (read-only). The wire keys stay
+// `actions` / `action_type` — those are the frozen persisted contract.
+export interface QueryTemplate {
   id: string;
   display_name: string;
   description: string;
@@ -1048,7 +1053,7 @@ export interface OntologyGraph {
   entities: Record<string, OntologyEntity>;
   relationships: Record<string, OntologyRelationship>;
   metrics: Record<string, OntologyMetric>;
-  actions: Record<string, OntologyAction>;
+  actions: Record<string, QueryTemplate>;
   interfaces: Record<string, OntologyInterface>;  // OE-6
 }
 
@@ -1174,11 +1179,11 @@ export async function patchOntologyEntity(
   return res.json();
 }
 
-export async function patchOntologyAction(
+export async function patchQueryTemplate(
   connectionId: string,
   actionId: string,
-  overrides: Partial<Pick<OntologyAction, "description" | "sql_template" | "business_rules_enforced" | "returns">>,
-): Promise<OntologyAction> {
+  overrides: Partial<Pick<QueryTemplate, "description" | "sql_template" | "business_rules_enforced" | "returns">>,
+): Promise<QueryTemplate> {
   const res = await fetch(
     `${BASE}/ontology/actions/${encodeURIComponent(actionId)}?connection_id=${encodeURIComponent(connectionId)}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
@@ -1188,7 +1193,7 @@ export async function patchOntologyAction(
 }
 
 // ── Learned Skills (agent procedural memory) ──────────────────────────────────
-// Skills ARE OntologyActions with origin='learned' + a usage_count. The backend
+// Skills ARE QueryTemplates with origin='learned' + a usage_count. The backend
 // crystallizes them from finished investigations and the ontology overlay re-enters
 // them into the planner's action set; this surface lets a human review + manage them.
 
@@ -1201,7 +1206,7 @@ export interface AutonomyLevel {
   usage_count?: number;          // present on the per-skill variant
 }
 
-export async function getLearnedSkills(connectionId: string, schemaName?: string): Promise<OntologyAction[]> {
+export async function getLearnedSkills(connectionId: string, schemaName?: string): Promise<QueryTemplate[]> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(`${BASE}/ontology/skills?${q}`);
@@ -1213,7 +1218,7 @@ export async function getLearnedSkills(connectionId: string, schemaName?: string
 // confirms, then calls saveLearnedSkill). 422 when the run isn't skill-worthy.
 export async function proposeLearnedSkill(
   invId: string, connectionId: string, schemaName?: string,
-): Promise<OntologyAction> {
+): Promise<QueryTemplate> {
   const q = new URLSearchParams({ inv_id: invId, connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(`${BASE}/ontology/skills/propose?${q}`, { method: "POST" });
@@ -1221,11 +1226,11 @@ export async function proposeLearnedSkill(
     const e = await res.json().catch(() => ({}));
     throw new Error((e as { detail?: string }).detail ?? "Run is not skill-worthy");
   }
-  return (await res.json()).candidate as OntologyAction;
+  return (await res.json()).candidate as QueryTemplate;
 }
 
 export async function saveLearnedSkill(
-  action: OntologyAction, connectionId: string, schemaName?: string,
+  action: QueryTemplate, connectionId: string, schemaName?: string,
 ): Promise<{ ok: boolean; schema_name: string; id: string }> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);

@@ -14,7 +14,7 @@ Aughor has FOUR partially-connected compounding stores, none executable/composab
   (updated by `outcomes.py::update_playbook_success_rates`) — a proto-skill, advisory only.
 - `semantic/trusted_queries.py::TrustedQuery` — flat trusted-SQL strings, token-overlap retrieval top-k 2.
 - `ontology/models.py` — the genuinely rich WORLD MODEL (verified ComputedProperty.formula_sql,
-  ObjectSet.filter_sql, grain_verified, null_meaning, measure_grain) — verified but declarative-only.
+  Segment.filter_sql, grain_verified, null_meaning, measure_grain) — verified but declarative-only.
 - `semantic/ambiguity_ledger.py` — per-connection resolution priors.
 Gap a skill-library idea would fill: parameterized, EXECUTABLE, verified, composable analytical
 procedures that accumulate per warehouse — today's stores hold text + SQL strings, not procedures.

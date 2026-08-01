@@ -49,11 +49,11 @@ def export_tree(root: Path, graph: OntologyGraph) -> list[str]:
             "_kind": "entity",
             "id": e.id,
             "editable": {f: getattr(e, f, None) for f in sorted(_EDITABLE["entity"])},
-            "object_sets": {
-                oid: {"display_name": os_.display_name, "description": os_.description,
-                      "filter_sql": os_.filter_sql, "is_default": os_.is_default,
-                      "_verified": os_.verified}
-                for oid, os_ in e.object_sets.items()
+            "segments": {
+                sid: {"display_name": seg.display_name, "description": seg.description,
+                      "filter_sql": seg.filter_sql, "is_default": seg.is_default,
+                      "_verified": seg.verified}
+                for sid, seg in e.segments.items()
             },
             "computed_properties": [
                 {"id": c.id, "label": c.label, "formula_sql": c.formula_sql,
@@ -135,14 +135,16 @@ def _entity_overrides(eid: str, doc: dict, base) -> list[OntologyOverride]:
     if changed:
         out.append(OntologyOverride(target_kind="entity", target_id=eid, fields=changed))
 
-    # object sets
-    base_os = base.object_sets
-    for oid, od in (doc.get("object_sets") or {}).items():
-        bo = base_os.get(oid)
-        f = {k: od[k] for k in _EDITABLE["object_set"]
-             if k in od and (bo is None or od.get(k) != getattr(bo, k, None))}
+    # segments — `object_sets` is still read so a tree exported before the rename (or an
+    # edit branched off one) still imports instead of silently producing no overrides.
+    base_segs = base.segments
+    for sid, sd in (doc.get("segments") or doc.get("object_sets") or {}).items():
+        bs = base_segs.get(sid)
+        f = {k: sd[k] for k in _EDITABLE["object_set"]
+             if k in sd and (bs is None or sd.get(k) != getattr(bs, k, None))}
         if f:
-            out.append(OntologyOverride(target_kind="object_set", target_id=f"{eid}::{oid}", fields=f))
+            # target_kind "object_set" is the frozen store value (see overrides.TargetKind)
+            out.append(OntologyOverride(target_kind="object_set", target_id=f"{eid}::{sid}", fields=f))
 
     # computed properties
     base_cps = {c.id: c for c in base.computed_properties}

@@ -262,10 +262,10 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
                         if terminal:
                             tl = ", ".join(f"'{s}'" for s in terminal)
                             entity.active_filter = f"{col} NOT IN ({tl})"
-                        # Rebuild object sets to reflect the explorer-verified lifecycle
+                        # Rebuild segments to reflect the explorer-verified lifecycle
                         try:
-                            from aughor.ontology.builder import _build_object_sets
-                            entity.object_sets = _build_object_sets(
+                            from aughor.ontology.builder import _build_segments
+                            entity.segments = _build_segments(
                                 entity_id=entity.id,
                                 lifecycle_col=entity.lifecycle_column,
                                 lifecycle_states=entity.lifecycle_states,

@@ -210,7 +210,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     except Exception:
         pass
 
-    # M24c: verified semantic layer (object sets + computed properties) for the
+    # M24c: verified semantic layer (segments + computed properties) for the
     # linked entities — mirrors the chat path so the eval measures the same lift.
     semantic_layer_section = ""
     try:
@@ -250,7 +250,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
                 prompt = _pbsec + "\n" + prompt
         except Exception:
             pass
-    # M24c: verified semantic layer (object sets + computed properties), below trusted.
+    # M24c: verified semantic layer (segments + computed properties), below trusted.
     if semantic_layer_section:
         prompt = semantic_layer_section + "\n\n" + prompt
     # Trusted query templates (authoritative) — prepended last so they sit at the

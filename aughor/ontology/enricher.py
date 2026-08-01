@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
-from aughor.ontology.models import OntologyAction, OntologyGraph
+from aughor.ontology.models import OntologyGraph, QueryTemplate
 
 
 def _coerce_json(v: Any) -> Any:
@@ -307,7 +307,7 @@ def enrich_ontology_semantics(
                 params = _extract_action_parameters(adef.sql_template, entity_obj) if entity_obj else []
             except Exception:
                 params = []
-            graph.actions[adef.id] = OntologyAction(
+            graph.actions[adef.id] = QueryTemplate(
                 id=adef.id,
                 display_name=adef.display_name,
                 description=adef.description,

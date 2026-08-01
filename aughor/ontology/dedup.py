@@ -68,7 +68,7 @@ def merge_entities(graph: Any, merge_ids: list[str], canonical_id: str) -> Any:
     repointed consistently — relationships (from/to, regenerated id, self-loops dropped, deduped),
     interfaces' ``implementing_entities``, metrics' / actions' ``entity``, and the three reverse maps
     (``entity_to_tables`` / ``table_to_entity`` / ``relationship_index``). The canonical entity absorbs
-    the others' ``source_tables`` / ``properties`` / ``object_sets`` (deduped by name); all other fields
+    the others' ``source_tables`` / ``properties`` / ``segments`` (deduped by name); all other fields
     are the canonical's. Deterministic, no LLM. Raises ``ValueError`` for an unknown entity id."""
     entities = getattr(graph, "entities", {})
     if canonical_id not in entities:
@@ -85,11 +85,11 @@ def merge_entities(graph: Any, merge_ids: list[str], canonical_id: str) -> Any:
 
     g = graph.model_copy(deep=True)
 
-    # 1) entities — canonical absorbs the others' tables/properties/object-sets, then drop the rest
+    # 1) entities — canonical absorbs the others' tables/properties/segments, then drop the rest
     canon = g.entities[canonical_id]
     tables = list(canon.source_tables)
     prop_names = {p.name for p in canon.properties}
-    set_names = {s.name for s in canon.object_sets}
+    set_names = {s.name for s in canon.segments}
     for m in merge_ids:
         if m == canonical_id:
             continue
@@ -100,9 +100,9 @@ def merge_entities(graph: Any, merge_ids: list[str], canonical_id: str) -> Any:
         for p in me.properties:
             if p.name not in prop_names:
                 canon.properties.append(p); prop_names.add(p.name)
-        for s in me.object_sets:
+        for s in me.segments:
             if s.name not in set_names:
-                canon.object_sets.append(s); set_names.add(s.name)
+                canon.segments.append(s); set_names.add(s.name)
     canon.source_tables = tables
     g.entities = {eid: e for eid, e in g.entities.items() if eid not in remove}
     g.entities[canonical_id] = canon

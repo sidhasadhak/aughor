@@ -1385,7 +1385,7 @@ async def _stream_chat(
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
-                # M24c: verified semantic layer (object sets + computed properties)
+                # M24c: verified semantic layer (segments + computed properties)
                 # for the linked entities — only items validated against the live DB.
                 try:
                     from aughor.ontology.store import load_latest_ontology
@@ -1532,7 +1532,7 @@ async def _stream_chat(
                 tolerate(exc, "playbook prompt enrichment is best-effort; answering without playbook context",
                          counter="chat.playbook_section")
 
-        # M24c: verified semantic layer — object sets (named WHERE filters) and
+        # M24c: verified semantic layer — segments (named WHERE filters) and
         # computed properties for the linked entities, all executed against the
         # live DB. Prepended below the trusted block so trusted patterns stay on top.
         if semantic_layer_section:
