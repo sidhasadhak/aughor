@@ -210,6 +210,68 @@ def builtin_conn_id() -> str:
     return "fixture"
 
 
+# ── exemplar flags for the flag machinery's own tests ────────────────────────────
+# `kernel/flags.py`'s contract — default-on resolution, env precedence, override
+# drift — has to be asserted against SOME registered flag. Borrowing a product flag
+# makes those assertions a moving target: the flag endgame deletes every flag it
+# touches, so each wave strands whichever exemplar it happens to hardwire.
+# `test_feature_flags.py` has already re-pointed its default-OFF exemplar twice
+# (ai_sql -> obs.prompt_capture -> semops.champion_validate), and Wave 2d removes
+# `ask.clarify`, the default-ON exemplar. These fixtures register a flag that exists
+# only for the duration of the requesting test, so the machinery's contract stops
+# depending on any product flag's disposition.
+#
+# Registration is a monkeypatched dict insert because that is exactly how the real
+# registry is read: `flag_enabled`, `list_flags` and `override_drift` all consult
+# FLAG_ENV / FLAG_DEFAULT at call time. `UnknownFlagError` is deliberately loud, so
+# an unregistered name would not silently no-op — it has to be registered for real.
+
+SYNTHETIC_DEFAULT_ON = "_synthetic.default_on"
+SYNTHETIC_DEFAULT_ON_VAR = "AUGHOR_SYNTHETIC_DEFAULT_ON"
+SYNTHETIC_DEFAULT_OFF = "_synthetic.default_off"
+SYNTHETIC_DEFAULT_OFF_VAR = "AUGHOR_SYNTHETIC_DEFAULT_OFF"
+
+
+def _register_synthetic(monkeypatch, name: str, var: str, default: bool) -> str:
+    from aughor.kernel import flags as _flags
+
+    monkeypatch.setitem(_flags.FLAG_ENV, name, var)
+    monkeypatch.setitem(_flags.FLAG_META, name,
+                        {"label": f"Synthetic {'default-on' if default else 'default-off'} flag",
+                         "description": "Test-only flag registered by a fixture."})
+    if default:
+        monkeypatch.setitem(_flags.FLAG_DEFAULT, name, True)
+    monkeypatch.delenv(var, raising=False)
+    return name
+
+
+@pytest.fixture
+def synthetic_default_on(monkeypatch):
+    """A registered DEFAULT-ON flag that exists only inside the requesting test.
+
+    Its disposition resolves to `default_on` for free — `flag_disposition` derives
+    that from FLAG_DEFAULT membership rather than a separate table.
+    """
+    from aughor.kernel import flags as _flags
+
+    name = _register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_ON,
+                               SYNTHETIC_DEFAULT_ON_VAR, default=True)
+    yield name
+    # Safe against the real store: conftest points AUGHOR_SYSTEM_DB at a tempdir.
+    _flags.clear_flag(name)
+
+
+@pytest.fixture
+def synthetic_default_off(monkeypatch):
+    """A registered DEFAULT-OFF flag that exists only inside the requesting test."""
+    from aughor.kernel import flags as _flags
+
+    name = _register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_OFF,
+                               SYNTHETIC_DEFAULT_OFF_VAR, default=False)
+    yield name
+    _flags.clear_flag(name)
+
+
 @pytest.fixture(autouse=True)
 def _reset_provider_process_caches():
     """Clear the LLM provider's process-global caches between tests.
