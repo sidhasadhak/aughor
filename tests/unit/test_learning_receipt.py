@@ -36,8 +36,8 @@ def test_record_learning_is_noop_without_a_run():
 
 def test_record_learning_accumulates_within_a_run(run):
     metering.record_learning(resolutions_crystallized=1)
-    metering.record_learning(resolutions_crystallized=1, trusted_program_replayed=1)
-    assert metering.learning_snapshot() == {"resolutions_crystallized": 2, "trusted_program_replayed": 1}
+    metering.record_learning(resolutions_crystallized=1)
+    assert metering.learning_snapshot() == {"resolutions_crystallized": 2}
 
 
 def test_record_learning_ignores_unknown_fields(run):
@@ -55,33 +55,23 @@ def test_cost_snapshot_stays_byte_identical(run):
 
 # ── the pure builder ──────────────────────────────────────────────────────────
 
-def test_receipt_is_none_when_flag_off(monkeypatch, run):
-    # learning.receipt graduated to default-ON (2026-07-13); off now means explicit "0"
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "0")
-    metering.record_learning(resolutions_crystallized=1)
-    assert build_learning_receipt(_ra("user")) is None       # off → nothing, byte-identical
-
-
 def test_receipt_is_none_when_nothing_happened(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "1")
     assert build_learning_receipt([]) is None                # all-zero receipt is noise → suppressed
 
 
 def test_receipt_counts_readings_and_corrections(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "1")
     r = build_learning_receipt(_ra("probe", "user", "verdict"))
     assert r["readings_reused"] == 3
     assert r["corrections_applied"] == 2                     # user + verdict count as corrections, probe doesn't
     assert r["by_source"] == {"probe": 1, "user": 1, "verdict": 1}
-    assert r["resolutions_crystallized"] == 0 and r["trusted_program_replayed"] == 0
+    assert r["resolutions_crystallized"] == 0
 
 
 def test_receipt_merges_runtime_events(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "1")
-    metering.record_learning(resolutions_crystallized=1, trusted_program_replayed=1)
+    metering.record_learning(resolutions_crystallized=1)
     r = build_learning_receipt([])                           # no readings, but runtime events → still surfaced
     assert r is not None and r["readings_reused"] == 0
-    assert r["resolutions_crystallized"] == 1 and r["trusted_program_replayed"] == 1
+    assert r["resolutions_crystallized"] == 1
 
 
 # ── the touchpoint (end to end) ───────────────────────────────────────────────
@@ -106,7 +96,6 @@ def _capture_artifacts(monkeypatch):
 
 
 def test_write_answer_receipt_attaches_and_returns_learning(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "1")
     monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")            # retrieve_resolutions is closed_loop-gated
     from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["lr_wr"])
@@ -123,45 +112,17 @@ def test_write_answer_receipt_attaches_and_returns_learning(monkeypatch, run):
     assert payloads and payloads[0].get("learning") == lr    # the SAME receipt is persisted + returned
 
 
-def test_write_answer_receipt_byte_identical_when_flag_off(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_LEARNING_RECEIPT", "0")
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
-    purge_connections(["lr_off"])
-    crystallize_user_choice("lr_off", "top products", "by revenue")
-    payloads = _capture_artifacts(monkeypatch)
-
-    from aughor.routers.investigations import _write_answer_receipt
-    out = _write_answer_receipt(
-        kind="chat_answer", natural_key="chat:lr_off:t1", question="what are the top products?",
-        sqls=["SELECT 1"], headline="Top products", schema="", connection_id="lr_off")
-
-    assert out["learning"] is None                           # flag off → no receipt returned…
-    assert payloads and "learning" not in payloads[0]        # …and no payload key
-
-
-# ── Activation Receipt (Wave 1 · E3) ──────────────────────────────────────────
-
 def test_record_activation_noop_without_a_run():
     assert metering.activations_snapshot() is None
     metering.record_activation("deep_analysis.premise_check")          # off-run touchpoint must not crash
     assert metering.activations_snapshot() is None
 
 
-def test_activation_receipt_none_when_flag_off(monkeypatch, run):
-    # capabilities.receipt graduated to default-ON (2026-07-13); off now means explicit "0"
-    monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "0")
-    metering.record_activation("deep_analysis.premise_check")
-    assert build_activation_receipt() is None                # off → byte-identical
-
-
 def test_activation_receipt_none_when_nothing_fired(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "1")
     assert build_activation_receipt() is None
 
 
 def test_activation_receipt_aggregates_with_reasons(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "1")
     metering.record_activation("deep_analysis.premise_check")
     metering.record_activation("capability.contract")
     metering.record_activation("capability.contract")        # fired twice this run
@@ -173,8 +134,6 @@ def test_activation_receipt_aggregates_with_reasons(monkeypatch, run):
 
 
 def test_write_answer_receipt_carries_activations(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_CAPABILITIES_RECEIPT", "1")
-    monkeypatch.delenv("AUGHOR_LEARNING_RECEIPT", raising=False)   # activations independent of learning
     metering.record_activation("capability.contract")
     payloads = _capture_artifacts(monkeypatch)
 

@@ -39,8 +39,7 @@ def _aughor_ops_available() -> bool:
     always-empty table. Reads through the runtime flag so an operator toggle
     surfaces/hides it live."""
     try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("obs.task_table")
+        return True
     except Exception:
         return False
 

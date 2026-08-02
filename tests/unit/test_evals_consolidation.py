@@ -42,7 +42,10 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_the_flag_under_test_is_registered():
+def test_consolidation_is_unconditional():
+    """`graph.consolidate` was hardwired 2026-08-02: consolidation is how the finding
+    corpus is projected now, not an option. Pinned so a re-introduced switch has to
+    face this test."""
     from aughor.kernel.flags import FLAG_ENV
 
-    assert FLAG in FLAG_ENV
+    assert FLAG not in FLAG_ENV

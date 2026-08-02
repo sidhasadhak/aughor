@@ -44,15 +44,6 @@ def wired(monkeypatch):
     return calls
 
 
-def test_every_route_404s_with_the_flag_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    assert client.get("/kinetic-actions/inbox").status_code == 404
-    assert client.post("/kinetic-actions/inbox/x/accept", json={}).status_code == 404
-    assert client.post("/kinetic-actions/inbox/x/reject", json={}).status_code == 404
-    assert client.get("/kinetic-actions/grants").status_code == 404
-    assert client.post("/kinetic-actions/grants/x/revoke").status_code == 404
-
-
 def test_list_inbox_returns_staged_proposals(flag_on):
     inbox.stage_proposal(inbox.StagedProposal(
         connection_id="conn-api", action_id="refund", params={"order_id": "1"}))

@@ -65,27 +65,13 @@ def _graph() -> ContextGraph:
     return cg
 
 
-@pytest.fixture
-def _on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_GRAPH_EXPORT", "1")
-
-
 def _export(tmp_path, graph=None, **kw):
     return export_pack("shop", tmp_path / "pack", graph=graph or _graph(), **kw)
 
 
 # ── the flag contract ─────────────────────────────────────────────────────────
 
-def test_flag_off_writes_nothing(tmp_path, monkeypatch):
-    """Forced off must be byte-identical: no return value AND no filesystem trace.
-    (Default-ON since flag strategy batch C — =0 is the operator escape hatch.)"""
-    monkeypatch.setenv("AUGHOR_GRAPH_EXPORT", "0")
-    out = tmp_path / "pack"
-    assert export_pack("shop", out, graph=_graph()) is None
-    assert not out.exists()
-
-
-def test_refuses_a_graph_with_no_nodes(_on, tmp_path):
+def test_refuses_a_graph_with_no_nodes(tmp_path):
     """An empty pack would answer confidently from nothing — refuse instead."""
     empty = ContextGraph(org_id="o", connection_id="shop")
     out = tmp_path / "pack"
@@ -93,7 +79,7 @@ def test_refuses_a_graph_with_no_nodes(_on, tmp_path):
     assert not out.exists()
 
 
-def test_refuses_when_no_graph_is_committed(_on, tmp_path, monkeypatch):
+def test_refuses_when_no_graph_is_committed(tmp_path, monkeypatch):
     """No committed graph for the connection ⇒ None (not an empty pack)."""
     from aughor.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "empty_store")
@@ -102,7 +88,7 @@ def test_refuses_when_no_graph_is_committed(_on, tmp_path, monkeypatch):
 
 # ── the pack shape ────────────────────────────────────────────────────────────
 
-def test_exports_the_expected_files(_on, tmp_path):
+def test_exports_the_expected_files(tmp_path):
     pack = _export(tmp_path)
     names = {p.relative_to(pack.root).as_posix() for p in pack.files}
     assert names == {
@@ -112,7 +98,7 @@ def test_exports_the_expected_files(_on, tmp_path):
     assert pack.node_count == 3 and pack.edge_count == 3
 
 
-def test_graph_json_is_self_contained_and_greppable(_on, tmp_path):
+def test_graph_json_is_self_contained_and_greppable(tmp_path):
     """Nodes/edges are id-sorted LISTS, so plain grep works — the consumption story."""
     pack = _export(tmp_path)
     payload = json.loads(pack.graph_json.read_text())
@@ -126,7 +112,7 @@ def test_graph_json_is_self_contained_and_greppable(_on, tmp_path):
     assert '\n  "nodes"' in pack.graph_json.read_text()
 
 
-def test_provenance_travels_with_every_edge(_on, tmp_path):
+def test_provenance_travels_with_every_edge(tmp_path):
     """J4 offline: the measured value-domain overlap must survive the export, or a
     consumer is back to trusting a ✓."""
     payload = json.loads(_export(tmp_path).graph_json.read_text())
@@ -136,7 +122,7 @@ def test_provenance_travels_with_every_edge(_on, tmp_path):
     assert all(e.get("provenance", {}).get("source") for e in payload["edges"])
 
 
-def test_stable_across_re_export_except_timestamps(_on, tmp_path):
+def test_stable_across_re_export_except_timestamps(tmp_path):
     """A re-export of an unchanged graph differs only in its timestamps — so a pack
     committed to git produces a minimal diff."""
     a = json.loads(_export(tmp_path).graph_json.read_text())
@@ -155,7 +141,7 @@ def test_stable_across_re_export_except_timestamps(_on, tmp_path):
 # ── freshness travels ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("state", ["fresh", "dirty", "stale", "unknown"])
-def test_freshness_state_travels_into_the_envelope(_on, tmp_path, state):
+def test_freshness_state_travels_into_the_envelope(tmp_path, state):
     pack = export_pack("shop", tmp_path / f"pack-{state}", graph=_graph(), staleness=state)
     payload = json.loads(pack.graph_json.read_text())
     assert payload["freshness"]["state"] == state
@@ -164,7 +150,7 @@ def test_freshness_state_travels_into_the_envelope(_on, tmp_path, state):
     assert pack.staleness == state
 
 
-def test_unreadable_freshness_ships_unknown_never_fresh(_on, tmp_path, monkeypatch):
+def test_unreadable_freshness_ships_unknown_never_fresh(tmp_path, monkeypatch):
     """A machine whose warehouse is unreachable still exports — but it must not claim
     freshness it never measured."""
     import aughor.ontology.graph_freshness as fresh_mod
@@ -176,7 +162,7 @@ def test_unreadable_freshness_ships_unknown_never_fresh(_on, tmp_path, monkeypat
     assert payload["freshness"]["state"] == "unknown"
 
 
-def test_every_skill_ships_the_freshness_preamble(_on, tmp_path):
+def test_every_skill_ships_the_freshness_preamble(tmp_path):
     pack = export_pack("shop", tmp_path / "pack", graph=_graph(), staleness="stale")
     skills = list((pack.root / "skills").glob("*.md"))
     assert len(skills) == 2
@@ -189,7 +175,7 @@ def test_every_skill_ships_the_freshness_preamble(_on, tmp_path):
 
 # ── the forbidden anti-pattern ────────────────────────────────────────────────
 
-def test_no_coercive_instructions_anywhere_in_the_pack(_on, tmp_path):
+def test_no_coercive_instructions_anywhere_in_the_pack(tmp_path):
     """The anti-pattern table forbids the studied tool's coercive auto-update hook
     ("You MUST … do not ask"). A pack informs and lets the reader act.
 
@@ -212,7 +198,7 @@ def test_no_coercive_instructions_anywhere_in_the_pack(_on, tmp_path):
             assert not re.search(pattern, text, re.I), f"{f.name} contains coercive text: {pattern}"
 
 
-def test_install_sh_is_executable_and_registers_no_hook(_on, tmp_path):
+def test_install_sh_is_executable_and_registers_no_hook(tmp_path):
     pack = _export(tmp_path)
     sh = pack.root / "install.sh"
     assert bool(os.stat(sh).st_mode & stat.S_IXUSR)
@@ -249,7 +235,7 @@ def _answer_what_feeds(graph_json_path, metric_name: str) -> dict:
     }
 
 
-def test_decision_gate_answers_what_feeds_a_metric_offline(_on, tmp_path):
+def test_decision_gate_answers_what_feeds_a_metric_offline(tmp_path):
     """THE GATE: correct answer + table citations, from the pack alone."""
     pack = export_pack("shop", tmp_path / "pack", graph=_graph(), staleness="fresh")
 
@@ -261,7 +247,7 @@ def test_decision_gate_answers_what_feeds_a_metric_offline(_on, tmp_path):
     assert answer["warning"] == ""                                 # fresh ⇒ no caveat
 
 
-def test_decision_gate_warns_when_the_pack_is_stale(_on, tmp_path):
+def test_decision_gate_warns_when_the_pack_is_stale(tmp_path):
     """THE GATE, other half: a stale pack still answers, but says it lags."""
     pack = export_pack(
         "shop", tmp_path / "pack", graph=_graph(),
@@ -275,7 +261,7 @@ def test_decision_gate_warns_when_the_pack_is_stale(_on, tmp_path):
     assert "re-export" in answer["warning"].lower()
 
 
-def test_payload_builder_is_pure(_on):
+def test_payload_builder_is_pure():
     """build_pack_payload writes nothing — it is safe to call for a preview/estimate."""
     payload = build_pack_payload(_graph(), staleness="fresh")
     assert payload["counts"]["table"] == 2

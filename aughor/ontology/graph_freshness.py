@@ -114,11 +114,6 @@ class RefreshResult:
     indexed: int = 0
 
 
-def freshness_enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("graph.freshness")
-
-
 def refresh_context_graph(
     connection_id: str, schema_name: Optional[str] = None, *, org_id: str = "",
     reindex: bool = True, force: bool = False,
@@ -132,12 +127,7 @@ def refresh_context_graph(
     graph has narrative sources too: an exploration run can discover a dozen findings
     without touching a single column, and would classify SKIP. A caller that KNOWS its
     sources moved says so, and gets the rebuild plus the re-index. It bypasses the
-    ``graph.freshness`` gate as well — that flag governs change *classification*, and a
-    forced caller is not asking for a classification. The write itself stays gated by
-    ``graph.build`` inside the builder, so flag-off is still byte-identical.
     """
-    if not freshness_enabled() and not force:
-        return None
     from aughor.kernel.errors import tolerate
     from aughor.org.context import current_org_id
     from aughor.ontology.context_graph_store import load_graphs_for_connection
@@ -261,14 +251,10 @@ def content_drift(connection_id: str, schema_name: Optional[str] = None, *,
     if committed is None:
         return ContentDrift(reason="no committed graph yet — a build would create one")
 
-    from aughor.kernel.flags import flag_overrides
     from aughor.ontology.context_graph_build import build_context_graph
 
     try:
-        # `graph.build` gates WRITING the artifact; a non-persisting projection to answer
-        # "is a rebuild owed?" must not require the operator to have already enabled it.
-        with flag_overrides({"graph.build": True}):
-            fresh = build_context_graph(connection_id, schema_name, org_id=org, persist=False)
+        fresh = build_context_graph(connection_id, schema_name, org_id=org, persist=False)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the drift projection is best-effort; staleness is still reported",

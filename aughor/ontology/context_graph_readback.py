@@ -195,14 +195,9 @@ def _trim_by_clearance(nodes, edges, *, connection_id: str, schema_name: str):
     is a one-line, out-of-band sentence otherwise — never a silent thinning.
 
     Only `table` nodes carry a securable today; a finding or glossary term is withheld
-    transitively when the table it hangs off is, via the edge sweep. Governance-off (the
-    default) returns the inputs unchanged, so this is byte-identical when the flag is off.
+    transitively when the table it hangs off is, via the edge sweep. An untagged
+    securable is always allowed, so a deployment that tags nothing sees no trimming.
     """
-    from aughor.govern import tags as _tags
-
-    if not _tags.enabled():
-        return nodes, edges, ""
-
     from aughor.govern.retrieval_trim import (
         caller_clearances,
         partition,

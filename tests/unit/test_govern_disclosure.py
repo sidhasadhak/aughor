@@ -1,4 +1,4 @@
-"""Wave G6 — governance disclosure on the answer, and sealed programs.
+"""Wave G6 — governance disclosure on the answer.
 
 The carrying tests are the redaction battery: :func:`run_as_identity` is one careless
 f-string away from printing a connection password into an answer, a receipt, a log and an
@@ -127,12 +127,6 @@ def test_a_standing_grant_line_names_how_to_revoke_it():
     assert "connection.delete" in line and "alice" in line and "revoke" in line
 
 
-def test_a_sealed_program_is_disclosed_as_deliberate_not_missing():
-    d = GovernanceDisclosure(sealed_program=True)
-    line = d.lines()[0]
-    assert "sealed" in line and "deliberately not shown" in line
-
-
 def test_the_clearance_notice_rides_the_disclosure():
     d = GovernanceDisclosure(clearance_trimmed=True,
                              clearance_notice="[1 item withheld by data governance]")
@@ -140,77 +134,11 @@ def test_the_clearance_notice_rides_the_disclosure():
 
 
 def test_build_never_raises_on_a_bad_connection():
-    d = build("no-such-connection", sealed_program=True)
-    assert d.run_as == "unknown" and d.sealed_program
+    d = build("no-such-connection", clearance_notice="[1 item withheld]")
+    assert d.run_as == "unknown" and d.clearance_trimmed
 
 
 def test_disclosure_serializes_with_its_lines():
-    d = build("", sealed_program=True)
+    d = build("", clearance_notice="[1 item withheld by data governance]")
     out = d.to_dict()
-    assert out["sealed_program"] is True and out["lines"]
-
-
-# ── sealed programs ─────────────────────────────────────────────────────────────────
-
-class TestSealedPrograms:
-    def _tp(self, sealed: bool):
-        from aughor.semantic.trusted_programs import TrustedProgram
-
-        return TrustedProgram(connection_id="c1", question="q",
-                              program={"steps": [{"sql": "SELECT secret FROM payroll"}]},
-                              sealed=sealed)
-
-    def test_an_unsealed_program_displays_unchanged(self):
-        from aughor.semantic.trusted_programs import redacted_for_display
-
-        tp = self._tp(False)
-        assert redacted_for_display(tp) is tp
-
-    def test_a_sealed_program_hides_its_steps(self):
-        from aughor.semantic.trusted_programs import redacted_for_display
-
-        shown = redacted_for_display(self._tp(True))
-        assert "payroll" not in str(shown.program)
-        assert shown.program["sealed"] is True
-
-    def test_a_sealed_program_says_it_is_withheld_rather_than_being_blank(self):
-        """An empty program reads as 'there was no plan' — the same confusion between
-        withheld and absent that G5's notice exists to prevent, one layer down."""
-        from aughor.semantic.trusted_programs import redacted_for_display
-
-        shown = redacted_for_display(self._tp(True))
-        assert "not displayed" in shown.program["note"]
-
-    def test_redaction_returns_a_copy_so_execution_is_unaffected(self):
-        """Redacting in place would mean one caller's display pass silently disarms the
-        next caller's execution."""
-        from aughor.semantic.trusted_programs import redacted_for_display
-
-        tp = self._tp(True)
-        redacted_for_display(tp)
-        assert tp.program["steps"][0]["sql"] == "SELECT secret FROM payroll"
-
-    def test_seal_round_trips_through_the_store(self):
-        from aughor.semantic.trusted_programs import (
-            list_trusted_programs,
-            save_trusted_program,
-        )
-
-        tp = self._tp(True)
-        tp.connection_id = "g6-seal"
-        save_trusted_program(tp)
-        stored = [p for p in list_trusted_programs("g6-seal")]
-        assert stored and stored[0].sealed is True
-
-    def test_existing_rows_default_to_unsealed(self):
-        """Silently sealing programs an operator had been reading would look like the
-        platform had started hiding its work."""
-        from aughor.semantic.trusted_programs import (
-            list_trusted_programs,
-            save_trusted_program,
-        )
-
-        tp = self._tp(False)
-        tp.connection_id = "g6-unsealed"
-        save_trusted_program(tp)
-        assert list_trusted_programs("g6-unsealed")[0].sealed is False
+    assert out["clearance_trimmed"] is True and out["lines"]

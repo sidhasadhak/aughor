@@ -29,7 +29,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
-from aughor.kernel.flags import flag_enabled
 
 #: The one axis that answers "what does a viewer see?".
 PublicationState = Literal["draft", "published", "archived"]
@@ -61,10 +60,6 @@ def publication_state(vocabulary: str, status: Optional[str]) -> PublicationStat
     """
     table = PROJECTIONS.get(vocabulary) or {}
     return table.get((status or "draft").strip().lower(), "draft")
-
-
-def lifecycle_enabled() -> bool:
-    return flag_enabled("lifecycle.publish")
 
 
 def _now() -> str:
@@ -129,9 +124,7 @@ def _write(kind: str, natural_key: str, body: dict, state: PublicationState, *,
 def save_draft(kind: str, natural_key: str, body: dict, *, conn_id: Optional[str] = None,
                org_id: Optional[str] = None) -> Optional[Revision]:
     """Save an edit as a NEW draft version. The published version is untouched — that is
-    the whole point of save≠publish. Returns None when the flag is off."""
-    if not lifecycle_enabled():
-        return None
+    the whole point of save≠publish."""
     return _write(kind, natural_key, body, "draft", conn_id=conn_id, org_id=org_id)
 
 
@@ -143,8 +136,6 @@ def publish(kind: str, natural_key: str, *, version: Optional[int] = None,
     the history still shows the draft that existed, and "when was this published" is a fact
     on a row rather than an overwritten field.
     """
-    if not lifecycle_enabled():
-        return None
     src = (
         revision(kind, natural_key, version=version) if version is not None
         else _revision(_ledger().artifact_latest(natural_key))
@@ -162,8 +153,6 @@ def revert(kind: str, natural_key: str, to_version: int, *, publish_now: bool = 
     A revert that rewound the version counter would erase the evidence that the reverted
     state ever shipped. The restored body is byte-identical to the target version's.
     """
-    if not lifecycle_enabled():
-        return None
     src = revision(kind, natural_key, version=to_version)
     if src is None:
         return None
@@ -183,8 +172,6 @@ def resolve(kind: str, natural_key: str, *,
     **editor** gets the newest version of any state, which is their working copy. This one
     function is save≠publish.
     """
-    if not lifecycle_enabled():
-        return None
     versions = history(kind, natural_key)
     if audience == "editor":
         return versions[0] if versions else None
@@ -193,8 +180,6 @@ def resolve(kind: str, natural_key: str, *,
 
 def history(kind: str, natural_key: str, *, limit: int = 100) -> list[Revision]:
     """Every version, newest first."""
-    if not lifecycle_enabled():
-        return []
     return [r for r in (_revision(a) for a in
                         _ledger().artifact_versions(natural_key, limit=limit)) if r]
 

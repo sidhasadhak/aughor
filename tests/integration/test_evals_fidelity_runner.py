@@ -21,7 +21,7 @@ from aughor.evals.runner import run_experiment
 from aughor.evals.targets import reference_checker, reference_target
 from aughor.kernel.flags import clear_flag
 
-FLAG = "deep_analysis.evidence_stubs"
+FLAG = "closed_loop"   # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
 TABLES = ["orders"]
 
 
@@ -34,7 +34,7 @@ def _isolated(tmp_path, monkeypatch):
     # Schema loads call `semantic.autoseed.seed_missing_tables`, which makes REAL LLM requests
     # against the 1,000/day budget. Nothing here measures the seeder. Patch the ATTRIBUTE, not
     # the env var: `_ENABLED` is resolved at module import, so a `setenv` here is a no-op —
-    # the same trap `test_program_planner.py` sidesteps.
+    # the same trap the other live-path suites sidestep.
     monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)

@@ -138,17 +138,20 @@ def test_progress_iterator_completes_when_graph_exhausts_with_pending_progress()
 
 # ── Flag gate: off → plain _aiter_sync (byte-identical stream) ─────────────────────
 
-def test_investigation_stream_is_plain_when_flag_off(monkeypatch):
-    # ada.progress_events graduated to default-ON (CK-0.4, 2026-07-13); off = explicit "0"
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PROGRESS_EVENTS", "0")
-    out = _run(_collect(R._investigation_stream(iter([{"a": 1}, {"b": 2}]))))
+def test_investigation_stream_passes_a_quiet_graph_through_unchanged():
+    """A run that emits no progress is delivered verbatim — interleaving is permanent
+    (the flag was hardwired 2026-08-01), so it must add nothing when there is nothing
+    to add."""
+    async def _c():
+        # Built INSIDE the loop, exactly as the two production callers do
+        # (`async for … in _investigation_stream(…)` from an async def).
+        return await _collect(R._investigation_stream(iter([{"a": 1}, {"b": 2}])))
+    out = _run(_c())
     assert out == [{"a": 1}, {"b": 2}]        # no progress markers, no wrapping
 
 
-def test_investigation_stream_interleaves_when_flag_on(monkeypatch):
-    # With the flag on, the stream binds a sink so an emit during a node surfaces as a marker.
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PROGRESS_EVENTS", "1")
-
+def test_investigation_stream_interleaves_progress():
+    # The stream binds a sink so an emit during a node surfaces as a marker.
     def _graph():
         # A one-node "graph" that emits progress while running, then yields its node event.
         progress.emit_phase_progress("cross_section", 1, 1, "brand")

@@ -723,14 +723,9 @@ def graph_export(connection_id: str, out_dir: str, schema: str):
     freshness state travels with it, so a consumer is warned rather than misled when the
     pack lags the warehouse.
 
-    Requires the `graph.export` flag and a graph already built by `graph.build`.
+    Requires a graph already built for this connection.
     """
-    from aughor.ontology.context_graph_export import export_enabled, export_pack
-
-    if not export_enabled():
-        console.print("[yellow]graph.export is off.[/yellow] Enable it (Settings → System, "
-                      "or AUGHOR_GRAPH_EXPORT=1) and retry.")
-        sys.exit(1)
+    from aughor.ontology.context_graph_export import export_pack
 
     pack = export_pack(connection_id, out_dir, schema_name=schema or None)
     if pack is None:

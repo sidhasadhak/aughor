@@ -25,8 +25,7 @@ class _SpyConn:
 
 # ── AL-01 — the Trust plane on the deep executor ─────────────────────────────────────────
 
-def test_al01_blocks_mutation_when_flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_TRUST_VERIFY_LIVE", "1")
+def test_al01_blocks_mutation():
     from aughor.agent.investigate import _execute_safe
     spy = _SpyConn()
     r = _execute_safe(spy, "p1", "DELETE FROM orders", schema=None)
@@ -34,26 +33,14 @@ def test_al01_blocks_mutation_when_flag_on(monkeypatch):
     assert spy.calls == []                       # the mutation never reached execute
 
 
-def test_al01_flag_off_executes_unchanged(monkeypatch):
-    # WP-1f promoted trust.verify_live default-ON, so this "off" path must be forced off
-    # explicitly (the ambient default no longer gates it). Pin e1_live off too: this test
-    # asserts the EXACT executed SQL, and default-on e1 adds an information_schema probe.
-    monkeypatch.setenv("AUGHOR_TRUST_VERIFY_LIVE", "0")
-    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")
-    from aughor.agent.investigate import _execute_safe
-    spy = _SpyConn()
-    _execute_safe(spy, "p1", "DELETE FROM orders", schema=None)
-    assert spy.calls == ["DELETE FROM orders"]   # gate off → byte-identical old behaviour
-
-
-def test_al01_clean_select_passes_when_flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_TRUST_VERIFY_LIVE", "1")
-    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")   # isolate verify_live; e1 adds a col-types probe
+def test_al01_clean_select_passes():
     from aughor.agent.investigate import _execute_safe
     spy = _SpyConn()
     r = _execute_safe(spy, "p1", "SELECT id FROM orders", schema=None)
     assert not (r.error or "").startswith("[BLOCKED]")
-    assert spy.calls == ["SELECT id FROM orders"]
+    # The query itself runs. E1's column-types probe rides along (both gates are
+    # permanent now), so the assertion is membership, not equality.
+    assert "SELECT id FROM orders" in spy.calls
 
 
 # ── AL-05 — the Semantic plane resolved at seed ──────────────────────────────────────────

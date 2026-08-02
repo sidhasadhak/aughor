@@ -693,28 +693,25 @@ def build_and_persist(
             raise ValueError(f"no ontology built for {conn}/{schema!r} — run intelligence first")
     eff_schema = graph.schema_name or schema or ""
     prior = load_doc_tree(conn, eff_schema) if incremental else None
-    # R11 — mark each column doc with its {visible,sample,index} config when the
-    # feature is on (best-effort; docs build fine without it).
+    # R11 — mark each column doc with its {visible,sample,index} config
+    # (best-effort; docs build fine without it).
     column_config = None
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("ontology.column_config"):
-        try:
-            from aughor.ontology.column_config import load_column_configs
-            column_config = load_column_configs(conn, eff_schema or "default") or None
-        except Exception:
-            column_config = None
+    try:
+        from aughor.ontology.column_config import load_column_configs
+        column_config = load_column_configs(conn, eff_schema or "default") or None
+    except Exception:
+        column_config = None
     table_stats = dict(table_stats or {})
     # R14 — fold mined query popularity into the per-table facts (best-effort).
-    if flag_enabled("obs.popularity"):
-        try:
-            from aughor.sql.popularity import load_popularity
-            for t, n in load_popularity(conn).get("table", {}).items():
-                table_stats.setdefault(t, {})
-                table_stats[t] = {**table_stats[t], "query_popularity": n}
-        except Exception as _pop_exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_pop_exc, "popularity fold into doc tree is best-effort",
-                     counter="obs.popularity", conn_id=conn or None)
+    try:
+        from aughor.sql.popularity import load_popularity
+        for t, n in load_popularity(conn).get("table", {}).items():
+            table_stats.setdefault(t, {})
+            table_stats[t] = {**table_stats[t], "query_popularity": n}
+    except Exception as _pop_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_pop_exc, "popularity fold into doc tree is best-effort",
+                 counter="obs.popularity", conn_id=conn or None)
     tree = build_doc_tree(graph, table_stats=table_stats, prior=prior,
                           column_config=column_config)
     if persist:

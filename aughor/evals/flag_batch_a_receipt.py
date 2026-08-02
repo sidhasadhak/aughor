@@ -139,8 +139,8 @@ def _evidence_dedup__collapse_is_lossless_by_construction() -> Comparison:
         _qr("Q3", "select   region,\n  sum(rev)\nfrom sales\ngroup by region;"),  # same query, reformatted
         _qr("Q4", dup_sql, error="timeout"),                                      # errored — never collapsed
     ]
-    parts, info = EB.render_history(history, full_renderer=render, scored_steps=set(),
-                                    collapse_duplicates=True, stub_scored=False, seen={})
+    parts, info = EB.render_history(history, full_renderer=render,
+                                    collapse_duplicates=True, seen={})
     return Comparison(
         scenario="evidence_dedup__collapse_is_lossless_by_construction",
         expected={"first_is_full": True, "repeat_is_pointer": True,

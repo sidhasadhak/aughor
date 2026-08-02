@@ -60,22 +60,18 @@ def test_trace_list_and_waterfall_render_seeded_events(client, ledger):
     assert all(s["name"] != "m1" for s in trace["spans"])
 
 
-def test_unknown_trace_is_404_while_recording(client, monkeypatch):
-    import aughor.obs.session_log as sl
-    monkeypatch.setattr(sl, "enabled", lambda: True)
+def test_unknown_trace_is_404(client):
     assert client.get("/traces/tr-nope").status_code == 404
 
 
-def test_trace_empty_state_names_the_flag_when_off(client, ledger, monkeypatch):
-    import aughor.obs.session_log as sl
-    monkeypatch.setattr(sl, "enabled", lambda: False)
+def test_an_empty_store_is_a_confident_empty(client, ledger):
+    """Recording is permanent (the flag was hardwired 2026-08-01), so a quiet store
+    means nothing happened — never "something was watching but switched off"."""
     ledger.session_events_clear()
 
-    body = client.get("/traces/tr-any").json()
-    assert body["measured"] is False
-    assert body["enable_flag"] == "obs.session_log"
+    assert client.get("/traces/tr-any").status_code == 404
     listing = client.get("/traces").json()
-    assert listing["measured"] is False and listing["traces"] == []
+    assert listing["measured"] is True and listing["traces"] == []
 
 
 # ── CR2: activity ────────────────────────────────────────────────────────────────

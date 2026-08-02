@@ -118,27 +118,6 @@ def test_invalid_kind_is_rejected(_flag_on):
 
 # ── the flag gate: off = byte-identical ──────────────────────────────────────────
 
-def test_flag_off_leaves_kinetic_actions_empty(monkeypatch):
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
-    _save_action("refund_order", _ACTION_FIELDS)
-    g, report = OV.apply_overrides(_graph(), "c", "s")
-    assert g.kinetic_actions == {}
-    assert any("kinetic.actions off" in s for s in report.skipped)
-
-
-def test_flag_off_does_not_disturb_other_overrides(monkeypatch):
-    # A declared action with the flag off must not break a co-located metric override.
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
-    _save_action("refund_order", _ACTION_FIELDS)
-    OV.save_override("c", "s", OV.OntologyOverride(
-        target_kind="metric", target_id="gmv",
-        fields={"entity": "Order", "display_name": "GMV"}))
-    g, report = OV.apply_overrides(_graph(), "c", "s")
-    assert "gmv" in g.metrics and g.kinetic_actions == {}
-
-
-# ── persistence + survives rebuild ───────────────────────────────────────────────
-
 def test_yaml_file_roundtrip_persists_the_spec():
     _save_action("refund_order", _ACTION_FIELDS)
     loaded = OV.load_overrides("c", "s")

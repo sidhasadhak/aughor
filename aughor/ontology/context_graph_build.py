@@ -15,7 +15,6 @@ import threading
 from typing import Callable, Optional
 
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.org.context import current_org_id
 from aughor.ontology.context_graph import ContextGraph, project_graph
 
@@ -190,7 +189,7 @@ def note_brief(
     decline-rather-than-guess rule, and the same projector the full build uses
     (``context_graph.add_briefs``), so the incremental and rebuilt nodes agree.
     """
-    if not flag_enabled("graph.build") or _suppressed_for_measurement():
+    if _suppressed_for_measurement():
         return False
     from aughor.ontology.context_graph import add_briefs
     from aughor.ontology.context_graph_store import (
@@ -252,16 +251,10 @@ def _consolidated_investigation_findings(
 ) -> list[dict]:
     """Receipt-sourced findings for the projection — consolidated first when N3 is on.
 
-    Flag off: exactly the previous call, cap and all (byte-identical).
-
-    Flag on: over-fetch, fold repeated subjects together, age out findings whose grounding
-    has vanished, and only THEN apply the cap — so the artifact's node budget buys distinct
+    Over-fetch, fold repeated subjects together, age out findings whose grounding has
+    vanished, and only THEN apply the cap — so the artifact's node budget buys distinct
     live knowledge rather than the 100 most recent receipts.
     """
-    if not flag_enabled("graph.consolidate"):
-        return _safe(lambda: load_investigation_findings(connection_id, org_id),
-                     "investigation_findings", [])
-
     from aughor.ontology.finding_consolidation import consolidate, live_tables_for
 
     raw = _safe(
@@ -304,13 +297,9 @@ def build_context_graph(
 ) -> Optional[ContextGraph]:
     """Build (and, by default, persist) the connection knowledge graph.
 
-    Returns ``None`` when the flag is off (byte-identical: nothing read, nothing
-    written) or when the connection has no built ontology yet — the graph is a
+    Returns ``None`` when the connection has no built ontology yet — the graph is a
     projection *of* the ontology, so it cannot precede it.
     """
-    if not flag_enabled("graph.build"):
-        return None
-
     from aughor.ontology.store import load_latest_ontology
 
     resolved_org = org_id or current_org_id()
@@ -402,7 +391,7 @@ def note_finding(
     The node is emitted by ``context_graph.add_findings`` — the SAME projector the full
     build uses — so the incremental and rebuilt graphs cannot drift into two shapes.
     """
-    if not flag_enabled("graph.build") or _suppressed_for_measurement():
+    if _suppressed_for_measurement():
         return False
     from aughor.ontology.context_graph import add_findings
     from aughor.ontology.context_graph_store import (

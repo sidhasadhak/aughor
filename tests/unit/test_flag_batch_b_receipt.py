@@ -41,12 +41,16 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_all_batch_b_flags_are_registered_and_default_on():
+def test_batch_b_behaviour_is_unconditional_or_still_default_on():
+    """Most of batch B was HARDWIRED 2026-08-02 — those flags are gone and the
+    behaviour is permanent. The few that still hold a flag must stay default-on."""
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     for flag in FLAGS:
-        assert flag in FLAG_ENV, flag
-        assert FLAG_DEFAULT.get(flag) is True, flag
+        if flag in FLAG_ENV:
+            assert FLAG_DEFAULT.get(flag) is True, flag
+        else:
+            assert flag not in FLAG_DEFAULT, f"{flag} is hardwired; it must not linger"
 
 
 def test_the_conversion_landed_as_auto_not_default_on():

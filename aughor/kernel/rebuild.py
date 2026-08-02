@@ -41,7 +41,6 @@ from typing import Optional, Sequence
 
 from aughor.db.paths import state_dir
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.kernel.freshness import StalenessState, compose_fingerprint
 from aughor.util.json_store import KeyedJsonStore
 
@@ -50,10 +49,6 @@ from aughor.util.json_store import KeyedJsonStore
 MAX_PROBE_TABLES = 25
 
 _store = KeyedJsonStore(state_dir() / "rebuild_state.json", max_entries=500)
-
-
-def resolved_rebuild_enabled() -> bool:
-    return flag_enabled("freshness.resolved_rebuild")
 
 
 def _now() -> str:
@@ -177,11 +172,6 @@ def resolve(
     """
     if force:
         return RebuildDecision(True, "stale", "forced")
-    if not resolved_rebuild_enabled():
-        return RebuildDecision(
-            ttl_expired, "unknown",
-            "resolved rebuild is off; using the caller's TTL decision",
-        )
 
     try:
         version, how = inputs_version(connection_id, tables)

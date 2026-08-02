@@ -162,18 +162,6 @@ def evaluate(
                              requirements=reqs, missing=missing)
 
 
-def enabled() -> bool:
-    """Whether clearance enforcement is live. Off ⇒ every caller's decision is ALLOW.
-
-    Read at call time, never at import: a module-level constant would make a test's
-    ``monkeypatch.setenv`` a silent no-op, which this repo has already paid for once when
-    the eval suite spent real LLM budget against a flag it believed was off.
-    """
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("govern.clearances")
-
-
 def check(
     securable: str,
     clearances: Iterable[str],
@@ -183,11 +171,9 @@ def check(
 ) -> ClearanceDecision:
     """The store-backed convenience wrapper: read the tags, then :func:`evaluate`.
 
-    Returns an ALLOW decision with no requirements when the flag is off, so a caller can
-    wire this in unconditionally and the off state is byte-identical to not calling it.
+    An UNTAGGED securable returns an ALLOW decision with no requirements, so a caller can
+    wire this in unconditionally and a deployment that tags nothing is unaffected.
     """
-    if not enabled():
-        return ClearanceDecision(securable=securable, allowed=True)
     from aughor.govern.tag_store import tags_for
 
     return evaluate(securable, tags_for(securable, org_id=org_id), clearances, bypass=bypass)

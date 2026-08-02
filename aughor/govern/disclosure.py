@@ -1,6 +1,6 @@
 """Wave G6 — say, on the answer, what governance did to produce it.
 
-Three facts exist somewhere in the platform and none of them reaches the person reading an
+Two facts exist somewhere in the platform and neither reaches the person reading an
 answer:
 
 1. **Which standing grants applied.** ``govern.actions`` keeps an action allowlist, and a
@@ -10,10 +10,6 @@ answer:
 2. **Which identity the query ran as.** Every connection executes under some credential,
    and today the answer never says whose. "Why can I see this?" and "why can't I?" both
    have the same root cause and neither is answerable from the UI.
-3. **Whether a sealed program produced it.** G6 introduces programs that execute but are
-   never displayed; an answer built by one must SAY so, or the seal reads as an absence of
-   provenance rather than a deliberate, governed opacity.
-
 **The redaction rule, which is the whole risk in item 2.** A DSN is a credential. This
 module extracts only the *principal* — a username, a role, an account — and never a
 password, host, port, database or query string, because "surface the run-as identity" is
@@ -43,15 +39,14 @@ class GovernanceDisclosure:
     run_as: str = "unknown"
     connection_id: str = ""
     standing_grants: list[dict] = field(default_factory=list)
-    sealed_program: bool = False
     clearance_trimmed: bool = False
     clearance_notice: str = ""
 
     @property
     def is_empty(self) -> bool:
         """True when nothing governance-relevant happened worth telling the reader."""
-        return (not self.standing_grants and not self.sealed_program
-                and not self.clearance_trimmed and self.run_as in ("", "unknown"))
+        return (not self.standing_grants and not self.clearance_trimmed
+                and self.run_as in ("", "unknown"))
 
     def lines(self) -> list[str]:
         """Reader-facing lines. Each names a fact and, where relevant, its remedy."""
@@ -64,9 +59,6 @@ class GovernanceDisclosure:
                 f"`{g.get('scope') or '*'}` (granted by {g.get('actor') or 'unknown'}"
                 f"{', ' + g['at'] if g.get('at') else ''}) — revocable at "
                 f"POST /approvals/revoke.")
-        if self.sealed_program:
-            out.append("Produced by a sealed trusted program: the query is governed and "
-                       "executed, and its text is deliberately not shown.")
         if self.clearance_trimmed and self.clearance_notice:
             out.append(self.clearance_notice)
         return out
@@ -74,7 +66,6 @@ class GovernanceDisclosure:
     def to_dict(self) -> dict:
         return {"run_as": self.run_as, "connection_id": self.connection_id,
                 "standing_grants": list(self.standing_grants),
-                "sealed_program": self.sealed_program,
                 "clearance_trimmed": self.clearance_trimmed,
                 "clearance_notice": self.clearance_notice,
                 "lines": self.lines()}
@@ -173,7 +164,6 @@ def build(
     connection_id: str = "",
     *,
     action_scopes: Optional[list[tuple[str, str]]] = None,
-    sealed_program: bool = False,
     clearance_notice: str = "",
 ) -> GovernanceDisclosure:
     """Assemble the per-answer disclosure. Never raises; degrades to ``unknown``."""
@@ -181,7 +171,6 @@ def build(
         run_as=run_as_for(connection_id) if connection_id else "unknown",
         connection_id=connection_id,
         standing_grants=standing_grants_for(action_scopes),
-        sealed_program=bool(sealed_program),
         clearance_trimmed=bool(clearance_notice),
         clearance_notice=clearance_notice or "",
     )

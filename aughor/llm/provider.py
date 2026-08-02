@@ -948,7 +948,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
                  **({"temperature": temperature} if temperature is not None else {}),
                  **({"usage_reported": False} if prompt_tokens is None
                     and completion_tokens is None else {}),
-                 # Content only when `obs.prompt_capture` is separately opted in;
+                 # Content only while a prompt-capture WINDOW is open;
                  # the helper owns the capping + truncation-marking policy.
                  **session_log.capture_prompt(system, user, _response_text(output))},
     )
@@ -956,7 +956,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
 
 def _response_text(output: Any) -> Optional[str]:
     """A model response as text, across the shapes the three paths produce
-    (pydantic model, dict, str). Only ever consumed under `obs.prompt_capture`;
+    (pydantic model, dict, str). Only ever consumed while a capture window is open;
     returns None when there is nothing to record."""
     if output is None:
         return None
@@ -1149,15 +1149,12 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
     if not _is_structured_failure(exc):
         return None
     try:
-        from aughor.kernel.flags import flag_enabled
         from aughor.llm import reliability
     except Exception:
         logger.debug("llm: reliability layer unavailable", exc_info=True)
         return None
 
     try:
-        if not flag_enabled("llm.structured_salvage"):
-            return None
         result = reliability.salvage(exc, response_model)
         if result.ok:
             completion = (getattr(exc, "last_completion", None)
@@ -1168,10 +1165,6 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
 
         diagnosis = result.diagnosis
         if diagnosis is None or not diagnosis.repairable:
-            return None
-        if not flag_enabled("llm.bounded_repair"):
-            logger.info("llm: %s response is %s and repairable, but llm.bounded_repair is off",
-                        response_model.__name__, diagnosis.failure)
             return None
     except Exception:
         logger.debug("llm: deterministic salvage failed", exc_info=True)

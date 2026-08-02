@@ -1346,17 +1346,15 @@ def profile_connection(
 
     # R11 — when the per-column config exists, its `index` flag decides value-sample
     # eligibility (human override wins; defaults mirror the R5 gate, so an unedited
-    # config changes nothing). Flag-gated + lazy import so the profiler stays
-    # import-light; any hiccup falls back to the built-in gate.
+    # config changes nothing). Lazy import so the profiler stays import-light; any
+    # hiccup falls back to the built-in gate.
     index_cfg: dict[str, dict[str, bool]] = {}
     try:
-        from aughor.kernel.flags import flag_enabled
-        if flag_enabled("ontology.column_config"):
-            from aughor.ontology.column_config import load_column_configs
-            _cc_conn = getattr(conn, "_connection_id", None) or "fixture"
-            _cc_schema = getattr(conn, "_schema_name", None) or "default"
-            for (_t, _c), _fl in load_column_configs(_cc_conn, _cc_schema).items():
-                index_cfg.setdefault(_t, {})[_c] = bool(_fl.index)
+        from aughor.ontology.column_config import load_column_configs
+        _cc_conn = getattr(conn, "_connection_id", None) or "fixture"
+        _cc_schema = getattr(conn, "_schema_name", None) or "default"
+        for (_t, _c), _fl in load_column_configs(_cc_conn, _cc_schema).items():
+            index_cfg.setdefault(_t, {})[_c] = bool(_fl.index)
     except Exception:
         index_cfg = {}
 

@@ -492,13 +492,11 @@ def test_observability_endpoint_history_and_degradation(client, monkeypatch, tmp
 
     empty = client.get(f"/agents/custom/{aid}/observability")
     assert empty.status_code == 200
-    # Wave H3 added `spend`. With `obs.session_log` off it reports UNMEASURED rather than
-    # zeros: nothing recorded the calls, which is a different claim from "spent nothing".
-    assert empty.json() == {
-        "agent_id": aid, "run_count": 0, "runs": [], "trace_stats": None,
-        "spend": {"measured": False, "enable_flag": "obs.session_log",
-                  "reason": "the session log is off; no model calls are recorded to attribute"},
-    }
+    # Wave H3 added `spend`. Recording is permanent, so a fresh agent reports a
+    # confident zero rather than an unmeasured verdict.
+    body0 = empty.json()
+    assert body0["agent_id"] == aid and body0["run_count"] == 0
+    assert body0["spend"]["measured"] is True and body0["spend"]["calls"] == 0
 
     history.create_investigation("why did churn spike", "conn-1", agent_id=aid)
     body = client.get(f"/agents/custom/{aid}/observability").json()

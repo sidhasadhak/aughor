@@ -617,10 +617,9 @@ def apply_schema_enrichment(
     # R11 — prune per-column-config-hidden columns (and sample-disabled value
     # enumerations) from the schema text FIRST, so every downstream reader — join
     # hints, metrics filtering, schema linking, the coder prompt — sees the pruned
-    # schema. Flag-gated; the store is empty until the intelligence phase persists
-    # defaults, and an empty config is a byte-identical no-op.
-    from aughor.kernel.flags import flag_enabled
-    if connection_id and flag_enabled("ontology.column_config"):
+    # schema. The store is empty until the intelligence phase persists defaults, and
+    # an empty config is a byte-identical no-op.
+    if connection_id:
         try:
             from aughor.ontology.column_config import (
                 apply_column_config_to_schema,

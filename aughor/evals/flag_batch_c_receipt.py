@@ -14,7 +14,7 @@ The migrations: `semantic.resolve_live` resolves the Semantic plane ONCE at seed
 the receipt proves the resolved context's metrics equal what the per-node consult
 returns over this box's real stores (the AL-05 equality); `capability.pipeline_live`
 is a pure route gate (its one call site is the first line of /query/capability-answer).
-`plan.program` is deliberately NOT here: like `federation.planner` before it, the
+`plan.program` was deliberately NOT here (and was DELETED 2026-08-01): like `federation.planner`, the
 premise check found an /ask auto-depth hook (`_program_eligible`) — an LLM-bearing
 routing change — so it moved to EXPERIMENT instead of graduating.
 
@@ -66,20 +66,17 @@ def scenario(name: str) -> Callable[[Scenario], Scenario]:
 
 @scenario("graph_build__a_projection_cannot_precede_its_ontology")
 def _graph_build__a_projection_cannot_precede_its_ontology() -> Comparison:
-    """Off ⇒ build() is None with nothing read or written. On ⇒ STILL None for a
-    connection with no built ontology — the graph is a projection OF the ontology, so
-    a fresh clone commits nothing until the intelligence it projects exists."""
-    from aughor.kernel.flags import flag_overrides
+    """A connection with no built ontology yields NO graph — the graph is a projection
+    OF the ontology, so a fresh clone commits nothing until the intelligence it projects
+    exists. (The flag this once compared against was hardwired 2026-08-02; the claim it
+    was protecting is structural and stays.)"""
     from aughor.ontology.context_graph_build import build_context_graph
 
-    with flag_overrides({"graph.build": False}):
-        off = build_context_graph(PROBE_CONN)
-    with flag_overrides({"graph.build": True}):
-        on = build_context_graph(PROBE_CONN)
+    built = build_context_graph(PROBE_CONN)
     return Comparison(
         scenario="graph_build__a_projection_cannot_precede_its_ontology",
-        expected={"off": None, "on_without_ontology": None},
-        observed={"off": off, "on_without_ontology": on},
+        expected={"without_ontology": None},
+        observed={"without_ontology": built},
         oracle="declared (Wave C1 — projection, not source)",
         note="nothing can be written that the connection's ontology does not already contain",
     )
@@ -87,23 +84,19 @@ def _graph_build__a_projection_cannot_precede_its_ontology() -> Comparison:
 
 @scenario("graph_freshness__off_declines_and_on_survives_nothing")
 def _graph_freshness__off_declines_and_on_survives_nothing() -> Comparison:
-    """Off (and not forced) ⇒ refresh returns None. On with no graph to refresh ⇒
-    best-effort — it never raises into a live path."""
-    from aughor.kernel.flags import flag_overrides
+    """With no graph to refresh, the refresh is best-effort — it never raises into a
+    live path."""
     from aughor.ontology.graph_freshness import refresh_context_graph
 
-    with flag_overrides({"graph.freshness": False}):
-        off = refresh_context_graph(PROBE_CONN)
-    with flag_overrides({"graph.freshness": True, "graph.build": True}):
-        try:
-            refresh_context_graph(PROBE_CONN)
-            survived = True
-        except Exception:
-            survived = False
+    try:
+        refresh_context_graph(PROBE_CONN)
+        survived = True
+    except Exception:
+        survived = False
     return Comparison(
         scenario="graph_freshness__off_declines_and_on_survives_nothing",
-        expected={"off": None, "on_survives": True},
-        observed={"off": off, "on_survives": survived},
+        expected={"survives": True},
+        observed={"survives": survived},
         oracle="declared (Wave C3, best-effort)",
         note="a refresh never raises into a live path; off is a clean decline",
     )
@@ -111,27 +104,19 @@ def _graph_freshness__off_declines_and_on_survives_nothing() -> Comparison:
 
 @scenario("graph_surface__the_refusal_shifts_from_flag_to_data")
 def _graph_surface__the_refusal_shifts_from_flag_to_data() -> Comparison:
-    """Off ⇒ GET /graph 404s on the flag. On ⇒ a connection with no graph still gets
-    no invented data — the batch-B kinetic pattern: the door opens, the room is empty
-    until the ontology builds."""
+    """A connection with no graph gets no invented data — the door is open, the room is
+    empty until the ontology builds. The refusal is about DATA, never about a switch."""
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    from aughor.kernel.flags import flag_overrides
 
     client = TestClient(app, raise_server_exceptions=False)
-
-    def probe(on: bool):
-        with flag_overrides({"graph.surface": on, "graph.build": on}):
-            r = client.get("/graph", params={"connection_id": PROBE_CONN})
-            return {"status": r.status_code, "text": r.text[:120]}
-
-    off, on = probe(False), probe(True)
+    r = client.get("/graph", params={"connection_id": PROBE_CONN})
+    on = {"status": r.status_code, "text": r.text[:120]}
     return Comparison(
         scenario="graph_surface__the_refusal_shifts_from_flag_to_data",
-        expected={"off_is_flag_404": True, "on_not_flag_404": True},
-        observed={"off_is_flag_404": off["status"] == 404 and "disabled" in off["text"],
-                  "on_not_flag_404": "graph.surface disabled" not in on["text"]},
+        expected={"not_a_flag_404": True},
+        observed={"not_a_flag_404": "disabled" not in on["text"]},
         oracle="declared (Wave C4, data-gated surface)",
         detail={"on_status": on["status"]},
         note="the panel appears; content waits for a built ontology",
@@ -146,21 +131,14 @@ def _graph_tour__the_route_gates_the_curriculum() -> Comparison:
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    from aughor.kernel.flags import flag_overrides
 
     client = TestClient(app, raise_server_exceptions=False)
-
-    def probe(on: bool):
-        with flag_overrides({"graph.tour": on}):
-            r = client.get("/graph/tour", params={"connection_id": PROBE_CONN})
-            return {"status": r.status_code, "text": r.text[:120]}
-
-    off, on = probe(False), probe(True)
+    r = client.get("/graph/tour", params={"connection_id": PROBE_CONN})
+    on = {"status": r.status_code, "text": r.text[:120]}
     return Comparison(
         scenario="graph_tour__the_route_gates_the_curriculum",
-        expected={"off_is_flag_404": True, "on_not_flag_404": True},
-        observed={"off_is_flag_404": off["status"] == 404 and "disabled" in off["text"],
-                  "on_not_flag_404": "graph.tour disabled" not in on["text"]},
+        expected={"not_a_flag_404": True},
+        observed={"not_a_flag_404": "disabled" not in on["text"]},
         oracle="declared (Wave C5)",
         detail={"on_status": on["status"]},
         note="deterministic order; narration only on explicit request",
@@ -169,24 +147,18 @@ def _graph_tour__the_route_gates_the_curriculum() -> Comparison:
 
 @scenario("graph_export__an_empty_graph_is_refused_not_shipped")
 def _graph_export__an_empty_graph_is_refused_not_shipped() -> Comparison:
-    """Off ⇒ export returns None and writes nothing. On ⇒ a connection with no
-    committed graph is REFUSED rather than shipping a pack that answers confidently
-    from nothing."""
-    from aughor.kernel.flags import flag_overrides
+    """A connection with no committed graph is REFUSED rather than shipping a pack that
+    answers confidently from nothing."""
     from aughor.ontology.context_graph_export import export_pack
 
-    def probe(on: bool):
-        with flag_overrides({"graph.export": on}):
-            try:
-                return {"pack": export_pack(PROBE_CONN) is not None, "raised": False}
-            except Exception:
-                return {"pack": False, "raised": True}
-
-    off, on = probe(False), probe(True)
+    try:
+        on = {"pack": export_pack(PROBE_CONN) is not None, "raised": False}
+    except Exception:
+        on = {"pack": False, "raised": True}
     return Comparison(
         scenario="graph_export__an_empty_graph_is_refused_not_shipped",
-        expected={"off_pack": False, "on_pack": False},
-        observed={"off_pack": off["pack"], "on_pack": on["pack"]},
+        expected={"pack": False},
+        observed={"pack": on["pack"]},
         oracle="declared (Wave C6 — refuse over an empty pack)",
         detail={"on_refusal_raised": on["raised"]},
         note="generation is paid once, and never for nothing",
@@ -197,10 +169,10 @@ def _graph_export__an_empty_graph_is_refused_not_shipped() -> Comparison:
 
 @scenario("birth_job__the_rite_is_double_gated_and_kick_scoped")
 def _birth_job__the_rite_is_double_gated_and_kick_scoped() -> Comparison:
-    """The flag alone starts nothing: the rite fires only inside an explicit
+    """Nothing starts on its own: the rite fires only inside an explicit
     create/re-arm/canvas kick, AND only when the workspace's Curator agent is enabled
-    — the agent-governance kill switch survives the default flip. Asserted: the
-    Curator governance seam exists and answers, and disabling it is honoured."""
+    — the agent-governance kill switch is what gates it now that the flag is gone.
+    Asserted: the Curator governance seam exists and answers."""
     from aughor.kernel.agents import effective_governance, is_enabled
 
     live = is_enabled("curator", None)

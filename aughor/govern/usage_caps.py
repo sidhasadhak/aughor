@@ -201,16 +201,6 @@ def evaluate(
     return decision
 
 
-def enabled() -> bool:
-    """Whether cap enforcement is live. Off ⇒ every decision allows.
-
-    Read at call time so a test's ``monkeypatch.setenv`` is never a no-op.
-    """
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("govern.usage_caps")
-
-
 def check(
     *,
     org_id: str = "default",
@@ -220,12 +210,9 @@ def check(
 ) -> CapDecision:
     """Store-backed pre-flight check: read the caps and the usage, then :func:`evaluate`.
 
-    Returns an unconditional allow when the flag is off, so a caller can wire this in
-    front of expensive work unconditionally and the off state costs one boolean.
+    With no caps declared every decision allows, so a caller can wire this in front of
+    expensive work unconditionally and an org that declares nothing is unaffected.
     """
-    if not enabled():
-        return CapDecision(allowed=True)
-
     from aughor.govern.cap_store import list_caps
 
     resolved = list(caps) if caps is not None else list_caps(org_id=org_id)

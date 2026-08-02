@@ -138,10 +138,8 @@ def _record_revision(q: Optional[SavedQuery]) -> None:
     if q is None:
         return
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+    from aughor.kernel.lifecycle import save_draft
 
-    if not lifecycle_enabled():
-        return
     try:
         save_draft("savedquery", f"savedquery:{q.id}",
                    {"name": q.name, "sql": q.sql, "spec": q.spec},

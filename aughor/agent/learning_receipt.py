@@ -28,14 +28,10 @@ _CORRECTION_SOURCES = frozenset({"user", "verdict"})
 
 
 def build_learning_receipt(resolved_ambig: Optional[list[dict]] = None) -> Optional[dict]:
-    """A per-run learning summary, or ``None`` when the flag is off or nothing happened.
+    """A per-run learning summary, or ``None`` when nothing happened.
 
     ``resolved_ambig`` is the Trust-Receipt writer's list of ``{subject, reading, source}`` for the
     resolutions this question matched; pass it so the two receipts agree (single source of truth)."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("learning.receipt"):
-        return None
-
     ra = resolved_ambig or []
     by_source: dict[str, int] = {}
     for r in ra:
@@ -50,7 +46,6 @@ def build_learning_receipt(resolved_ambig: Optional[list[dict]] = None) -> Optio
         "corrections_applied": sum(1 for r in ra if r.get("source") in _CORRECTION_SOURCES),
         "by_source": by_source,
         "resolutions_crystallized": int(snap.get("resolutions_crystallized", 0) or 0),
-        "trusted_program_replayed": int(snap.get("trusted_program_replayed", 0) or 0),
     }
     # An all-zero receipt is noise — only surface when the loop actually did something this run.
     if not any(receipt[k] for k in receipt if k != "by_source"):
@@ -60,13 +55,10 @@ def build_learning_receipt(resolved_ambig: Optional[list[dict]] = None) -> Optio
 
 def build_activation_receipt() -> Optional[list]:
     """The self-gating guards that fired this run, each with the deterministic trigger that fired it (the
-    Activation Receipt, Wave 1 · E3) — or ``None`` when the ``capabilities.receipt`` flag is off or nothing
-    fired. Entries are ``{capability, reason, count}``, deduped by capability (a guard may fire several times
+    Activation Receipt, Wave 1 · E3) — or ``None`` when nothing fired. Entries are
+    ``{capability, reason, count}``, deduped by capability (a guard may fire several times
     a run) in first-fired order. The 'why' is centralized in ``flags.CAPABILITY_TRIGGER`` so touchpoints
     only record the capability name."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("capabilities.receipt"):
-        return None
     from aughor.kernel import metering
     fired = metering.activations_snapshot() or []
     if not fired:

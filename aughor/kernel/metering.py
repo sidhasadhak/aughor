@@ -37,13 +37,12 @@ class LearningSignals:
     """Closed-loop learning events attributed to one run — the per-run Learning Receipt (Wave 1 · E4).
 
     These are RUNTIME events that occur within the answering run (a resolution settled on a clarify
-    resume, a trusted plan replayed); the receipt combines them with receipt-time read-backs (readings
+    resume); the receipt combines them with receipt-time read-backs (readings
     reused / corrections) — see ``aughor/agent/learning_receipt.py``. (Clarifications-asked is deliberately
     NOT here: the asking turn pauses without a receipt and resumes as a fresh run, so it needs cross-turn
     state to surface honestly — a follow-up.)"""
 
     resolutions_crystallized: int = 0     # a resolution settled by the user/a reviewer this run
-    trusted_program_replayed: int = 0     # a verified plan-as-program replayed deterministically
 
 
 @dataclass
@@ -137,7 +136,7 @@ def record_query(rows: int = 0, ms: float = 0.0) -> None:
 
 def record_learning(**deltas: int) -> None:
     """Attribute closed-loop learning events to the active run (fields of ``LearningSignals``:
-    ``resolutions_crystallized`` / ``trusted_program_replayed``). No-op when no run is active
+    ``resolutions_crystallized``). No-op when no run is active
     (background/seed calls) or a delta names an unknown field — cheap and fail-safe, so touchpoints call
     it unconditionally."""
     m = _current.get()

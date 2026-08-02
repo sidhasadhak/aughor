@@ -152,31 +152,29 @@ def execute_guarded(
     if schema:
         sql = preflight_harden(conn, sql, schema, counter_prefix="ada.exec")
 
-    # AL-01 (behind trust.verify_live) — route the generated SQL through the one Trust plane's
+    from aughor.kernel.flags import flag_enabled
+    # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
     # generation path never ran (the connection layer is already fail-closed, so this is
     # defence-in-depth at the plane). Conn-less Scope → only the pure readonly + E1 checks run
     # (the preflight/join/grain guards already run inline above/below — no double work). A BLOCK
     # returns a blocked QueryResult (handled downstream like any failed query), never raises.
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("trust.verify_live"):
-        try:
-            from aughor.trust import verify as _trust_verify, Scope as _TrustScope
-            _verdict = _trust_verify(sql, _TrustScope(schema=schema,
-                                                      dialect=getattr(conn, "dialect", "duckdb")),
-                                     kind="sql")
-            if not _verdict.ok:
-                from aughor.control_plane.contracts.execution import QueryResult
-                return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
-                                   row_count=0, error=f"[BLOCKED] {_verdict.reason}")
-        except Exception as _exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
-                     counter="trust.verify_live")
+    try:
+        from aughor.trust import verify as _trust_verify, Scope as _TrustScope
+        _verdict = _trust_verify(sql, _TrustScope(schema=schema,
+                                                  dialect=getattr(conn, "dialect", "duckdb")),
+                                 kind="sql")
+        if not _verdict.ok:
+            from aughor.control_plane.contracts.execution import QueryResult
+            return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
+                               row_count=0, error=f"[BLOCKED] {_verdict.reason}")
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "AL-01 trust.verify live gate (advisory; execute proceeds)",
+                 counter="trust.verify_live")
 
     # MLflow: a TOOL span per guarded execution, nested under the active
-    # investigation trace. With no tracking URI configured this is one env read —
-    # cheaper than the trust.verify_live ledger gate above.
+    # investigation trace. With no tracking URI configured this is one env read.
     from aughor.telemetry import mlflow_tool_span
     with mlflow_tool_span("sql.execute", {"query_id": query_id, "sql": sql,
                                           "dialect": getattr(conn, "dialect", "")}):
@@ -250,21 +248,18 @@ def execute_guarded(
     def _attach_caveats(res, extra: list[str]):
         if extra:
             res.caveats = list(dict.fromkeys([*res.caveats, *extra]))
-        # Wave K3: merge this connection's human overlay edits onto the result at read time
-        # (flag `kinetic.overlay`, default off ⇒ byte-identical). Best-effort inside apply_overlay.
-        if flag_enabled("kinetic.overlay"):
-            from aughor.actions.overlay import apply_overlay
-            apply_overlay(res, getattr(conn, "_connection_id", ""))
+        # Wave K3: merge this connection's human overlay edits onto the result at read
+        # time. With no edits the merge is a no-op. Best-effort inside apply_overlay.
+        from aughor.actions.overlay import apply_overlay
+        apply_overlay(res, getattr(conn, "_connection_id", ""))
         return res
 
-    # E1 function-semantics checks (flag `trust.e1_live`, default off): pure-AST
+    # E1 function-semantics checks: pure-AST
     # footgun detection (timestamp bounded by a date-only literal, lexicographic
     # ORDER BY on numeric text, text↔numeric compare). WARN-only per the E1
     # contract — never drives the retry, never rewrites; computed on the FINAL
     # SQL at exit so an accepted repair is re-checked.
     def _e1_caveats(final_sql: str) -> list[str]:
-        if not flag_enabled("trust.e1_live"):
-            return []
         try:
             from aughor.sql.trust_checks import connection_column_types, run_trust_checks
             # Real column types (cached per connection) so the date-boundary check doesn't

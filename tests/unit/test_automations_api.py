@@ -32,14 +32,6 @@ def flag_on(monkeypatch):
                         lambda n: n == "automations.engine")
 
 
-def test_every_route_404s_with_the_flag_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    assert client.get("/automations").status_code == 404
-    assert client.post("/automations", json=BODY).status_code == 404
-    assert client.get("/automations/whatever").status_code == 404
-    assert client.get("/automations/whatever/runs").status_code == 404
-
-
 def test_create_list_get_delete_round_trip(flag_on):
     created = client.post("/automations", json=BODY)
     assert created.status_code == 200

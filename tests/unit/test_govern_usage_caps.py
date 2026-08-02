@@ -157,17 +157,19 @@ def test_there_is_no_abort_path():
 
 # ── the flag and the store ──────────────────────────────────────────────────────────
 
-def test_check_allows_unconditionally_when_the_flag_is_off(monkeypatch):
+def test_check_allows_when_no_caps_are_declared():
+    """An org that declares no allowance is unaffected — which is what made hardwiring
+    the flag safe."""
     import aughor.govern.usage_caps as UC
 
-    monkeypatch.setattr(UC, "enabled", lambda: False)
-    assert UC.check(org_id="acme").allowed
+    assert UC.check(org_id="org-with-no-caps-declared").allowed
 
 
-def test_the_flag_is_registered():
-    from aughor.kernel.flags import FLAG_ENV, FLAG_META
+def test_cap_enforcement_is_unconditional():
+    """The flag was hardwired 2026-08-02; pinned so a re-introduced switch faces this."""
+    from aughor.kernel.flags import FLAG_ENV
 
-    assert "govern.usage_caps" in FLAG_ENV and "govern.usage_caps" in FLAG_META
+    assert "govern.usage_caps" not in FLAG_ENV
 
 
 class TestCapStore:

@@ -34,7 +34,6 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
   const [kinds, setKinds] = useState<Record<string, number>>({});
   const [kindFilter, setKindFilter] = useState<string | null>(null);
   const [errorsOnly, setErrorsOnly] = useState(false);
-  const [notRecorded, setNotRecorded] = useState<string | null>(null);
   const [recording, setRecording] = useState(true);
   const [live, setLive] = useState(false);
   const lastSeq = useRef(0);
@@ -45,8 +44,6 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
       .then(d => {
         setKinds(d.kinds);
         setRecording(d.recording);
-        if (!d.measured) { setNotRecorded(`${d.reason}`); return; }
-        setNotRecorded(null);
         setEvents(d.events);
         lastSeq.current = d.events.reduce((m, e) => Math.max(m, e.seq), lastSeq.current);
       })
@@ -103,12 +100,7 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
 
       {/* ── the stream ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-        {notRecorded ? (
-          <div style={{ padding: 32, textAlign: "center", fontSize: 12, color: "var(--t3)" }}>
-            Not recorded — {notRecorded}. Enable <code style={{ fontSize: 11 }}>obs.session_log</code> to
-            see every request, tool call, model call and error as it happens.
-          </div>
-        ) : events.length === 0 ? (
+        {events.length === 0 ? (
           <div style={{ padding: 32, textAlign: "center", fontSize: 12, color: "var(--t3)" }}>
             {recording
               ? "Quiet — recording is on; events will appear the moment an agent does anything."

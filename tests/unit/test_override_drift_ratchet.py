@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from aughor.evals.promotion import evaluate_graduation
 
-FLAGS = {"graph.readback", "closed_loop", "ai_sql"}
+FLAGS = {"graph.readback", "closed_loop", "semops.champion_validate"}
 
 
 def _clean_summary(total: int = 9) -> dict:
@@ -64,9 +64,10 @@ def test_drift_in_an_unrelated_flag_still_blocks():
     measurement are the ones nobody was thinking about — scoping the check to the
     candidate would miss exactly those."""
     d = evaluate_graduation("graph.readback", _clean_summary(),
-                            registered_flags=FLAGS, override_drift=_drift(ai_sql=True))
+                            registered_flags=FLAGS,
+                            override_drift=_drift(**{"semops.champion_validate": True}))
     assert d.can_graduate is False
-    assert any("ai_sql" in r for r in d.reasons)
+    assert any("semops.champion_validate" in r for r in d.reasons)
 
 
 def test_the_drift_is_recorded_on_the_receipt_not_only_in_the_refusal():

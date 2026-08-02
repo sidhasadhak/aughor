@@ -588,9 +588,7 @@ def _brief_rebuild_decision(key: str, connection_id: str, entry: dict):
     """
     ttl_expired = _age_hours(entry.get("generated_at", "")) >= _CACHE_TTL_HOURS
 
-    from aughor.kernel.rebuild import resolve, resolved_rebuild_enabled
-    if not resolved_rebuild_enabled():
-        return ttl_expired, None
+    from aughor.kernel.rebuild import resolve
 
     decision = resolve(
         f"brief:{key}", connection_id=connection_id, ttl_expired=ttl_expired,
@@ -740,10 +738,7 @@ def _record_brief_inputs(key: str, connection_id: str, pre_decision=None) -> Non
     Reuses the decision taken before generation when there is one, so the stamp names the
     inputs the narrative actually saw — and so the common path pays for one probe, not two.
     """
-    from aughor.kernel.rebuild import record, resolve, resolved_rebuild_enabled
-
-    if not resolved_rebuild_enabled():
-        return
+    from aughor.kernel.rebuild import record, resolve
     from aughor.kernel.errors import tolerate
     try:
         decision = pre_decision or resolve(

@@ -204,15 +204,6 @@ def test_resaving_replaces_rather_than_duplicates():
 class TestValueDictionaryTrim:
     """The hazard the program did not name — pinned by the scoping doc as a gate."""
 
-    def test_governance_off_returns_everything(self, monkeypatch):
-        from aughor.govern import tags as T
-        from aughor.ontology.vocabulary import visible_value_dictionaries
-
-        monkeypatch.setattr(T, "enabled", lambda: False)
-        set_value_dictionary("c1", "salaries", "band", ["A", "B"])
-        kept, notice = visible_value_dictionaries("c1")
-        assert len(kept) == 1 and notice == ""
-
     def test_a_restricted_table_dictionary_is_withheld(self, monkeypatch):
         """Surfacing it would leak the table's CONTENTS through the linker — exactly what
         G5 closed one layer up."""
@@ -221,7 +212,6 @@ class TestValueDictionaryTrim:
         from aughor.ontology.vocabulary import visible_value_dictionaries
 
         req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
-        monkeypatch.setattr(T, "enabled", lambda: True)
         monkeypatch.setattr(
             T, "check",
             lambda securable, held, bypass=False: (

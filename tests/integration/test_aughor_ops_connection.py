@@ -30,17 +30,7 @@ def _emit_a_run():
 
 # ── flag OFF: hidden + not openable ───────────────────────────────────────────
 
-def test_absent_when_flag_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "0")
-    assert registry.AUGHOR_OPS_ID not in [c["id"] for c in registry.list_connections()]
-    with pytest.raises(KeyError):
-        registry.get_dsn(registry.AUGHOR_OPS_ID)
-
-
-# ── flag ON: listed, opens, self-investigates ─────────────────────────────────
-
 def test_listed_and_queryable_when_flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
     _emit_a_run()
 
     listed = {c["id"]: c for c in registry.list_connections()}
@@ -61,7 +51,6 @@ def test_listed_and_queryable_when_flag_on(monkeypatch):
 
 
 def test_recovered_sql_is_visible_in_ops_connection(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
     with tel.span("ops-sql", "plan_queries", None):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 42 AS answer"}):
             pass
@@ -80,7 +69,6 @@ def test_recovered_sql_is_visible_in_ops_connection(monkeypatch):
     "UPDATE aughor_ops.task_history SET task = 'z'",
 ])
 def test_mutations_are_blocked(monkeypatch, stmt):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
     _emit_a_run()
     conn = open_connection_for(registry.AUGHOR_OPS_ID)
     res = conn.execute("q", stmt)

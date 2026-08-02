@@ -18,7 +18,9 @@ def test_plugin_manifest_is_populated():
     assert set(m["schema_annotators"]) >= {"enrichment", "intelligence", "exploration"}
     assert m["purge_hooks"]                       # per-store purge hooks
     assert "knowledge" in m["ingest_sinks"]       # the knowledge-ingestion sink
-    assert m["post_execute_hooks"] and m["on_connect_hooks"]   # ai_sql hooks
+    # The execution-hook registries are seams: present in the manifest, empty since
+    # their only client (ai_sql) was deleted in the 2026-08-01 flag endgame.
+    assert "post_execute_hooks" in m and "on_connect_hooks" in m
 
 
 def test_platform_renders_schema_without_the_agent():

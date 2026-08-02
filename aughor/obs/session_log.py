@@ -1,6 +1,6 @@
 """The agent-session log — one append-only event per thing that happened in a run.
 
-Flag: ``obs.session_log`` (env ``AUGHOR_OBS_SESSION_LOG``). Strict no-op when off.
+Always on (graduated on receipt ``45dcc137f55b``; the flag was deleted 2026-08-01).
 
 **Why this exists alongside ``task_history``.** That table is span-shaped: one row
 per *completed* unit of work, written on exit, ordered by a start-time string.
@@ -64,13 +64,13 @@ _LONGFORM_KEYS = frozenset({"system_prompt", "user_prompt", "response"})
 
 
 def enabled() -> bool:
-    """True when the ``obs.session_log`` flag is on. Never raises — a flag-store
-    failure means "off", not a broken answer path."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("obs.session_log")
-    except Exception:
-        return False
+    """Recording is permanent (the ``obs.session_log`` flag was hardwired 2026-08-01).
+
+    Kept as a function because the writers call it on every event and a future kill
+    switch — a store outage, a retention emergency — would land here rather than at
+    the ~6 call sites.
+    """
+    return True
 
 
 def _clip(value: Any) -> Any:
@@ -83,16 +83,17 @@ def _clip(value: Any) -> Any:
 
 
 def prompt_capture_enabled() -> bool:
-    """True when ``obs.prompt_capture`` is on — the opt-in to storing the actual
-    content of model calls, deliberately separate from ``obs.session_log``.
+    """True when a capture WINDOW is currently open — the deliberate, self-expiring
+    opt-in to storing the actual content of model calls.
 
-    The rest of the log is metadata; this is the material itself (schema,
-    sampled values, glossary, the user's question). Same flag-store failure
-    posture as :func:`enabled` — a failure means off.
+    The rest of the log is metadata; this is the material itself (schema, sampled
+    values, glossary, the user's question), so it is never a standing setting: an
+    operator opens a window bounded by a call budget AND a clock, and it closes itself.
+    See :mod:`aughor.obs.prompt_window`. A store failure means off, like :func:`enabled`.
     """
     try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("obs.prompt_capture")
+        from aughor.obs import prompt_window
+        return prompt_window.active()
     except Exception:
         return False
 
@@ -115,14 +116,28 @@ def _cap_text(value: Any, cap: int) -> tuple[str, bool]:
 
 
 def capture_prompt(system: Any = None, user: Any = None, output: Any = None) -> dict:
-    """The prompt/response fields for an ``llm_call`` payload, or ``{}`` when
-    ``obs.prompt_capture`` is off.
+    """The prompt/response fields for an ``llm_call`` payload, or ``{}`` when no
+    capture window is open.
 
-    The capping and truncation-marking policy lives here rather than at each
-    call site, so every producer stores content the same way and there is one
-    place to change if redaction is ever added.
+    Claiming budget (:func:`prompt_window.consume`) is what makes the operator's
+    number mean what it says: the window shortens only when content is actually
+    stored. That is why recording has to be ON here too — this function is evaluated
+    as an ARGUMENT to :func:`emit`, which is a no-op when the log is off, so
+    consuming first would spend an operator's window on calls that wrote nothing.
+
+    The capping and truncation-marking policy lives here rather than at each call
+    site, so every producer stores content the same way and there is one place to
+    change if redaction is ever added.
     """
-    if not prompt_capture_enabled():
+    if system is None and user is None and output is None:
+        return {}
+    if not enabled():
+        return {}
+    try:
+        from aughor.obs import prompt_window
+        if not prompt_window.consume():
+            return {}
+    except Exception:
         return {}
     cap = _prompt_cap()
     out: dict[str, Any] = {}

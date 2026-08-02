@@ -331,10 +331,10 @@ def test_id_arithmetic_caveat_in_deterministic_mode():
     assert any("id-arithmetic" in c for c in r.caveats), r.caveats
 
 
-def test_e1_caveats_are_flag_gated(monkeypatch):
-    """`trust.e1_live` off (default) → byte-identical, no caveat. On → the E1
-    date-boundary footgun (timestamp bounded by a date-only literal) is caveated
-    on the final SQL, WARN-only (the SQL itself is never rewritten)."""
+def test_e1_caveats_the_date_boundary_footgun():
+    """The E1 date-boundary footgun (a timestamp bounded by a date-only literal) is
+    caveated on the final SQL — WARN-only, the SQL itself is never rewritten. The
+    checks are permanent (the flag was hardwired 2026-08-01)."""
     def _ev_conn():
         conn = DuckDBConnection.__new__(DuckDBConnection)
         conn._path = Path(":memory:")
@@ -346,15 +346,9 @@ def test_e1_caveats_are_flag_gated(monkeypatch):
         return conn
 
     sql = "SELECT COUNT(*) AS n FROM ev WHERE created_at <= '2024-03-01'"
-    # WP-1f promoted trust.e1_live default-ON, so the "off" path is forced explicitly.
-    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "0")
     r = execute_guarded(_ev_conn(), sql, query_id="p1")
-    assert r.caveats == []  # flag off = byte-identical
-
-    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "1")
-    r2 = execute_guarded(_ev_conn(), sql, query_id="p1")
-    assert any("E1-date-boundary" in c for c in r2.caveats), r2.caveats
-    assert r2.sql == sql  # WARN-only — never rewrites
+    assert any("E1-date-boundary" in c for c in r.caveats), r.caveats
+    assert r.sql == sql  # WARN-only — never rewrites
 
 
 def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
@@ -363,7 +357,6 @@ def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
     would false-fire. A genuine TIMESTAMP column of the same shape still IS flagged."""
     from aughor.sql import trust_checks
     monkeypatch.setattr(trust_checks, "_COLTYPE_CACHE", {})   # isolate the per-conn cache
-    monkeypatch.setenv("AUGHOR_TRUST_E1_LIVE", "1")
 
     def _conn_with(coldef: str, col: str):
         conn = DuckDBConnection.__new__(DuckDBConnection)

@@ -259,16 +259,13 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
     """RBAC row-level policy (Rec 7): AND the caller's per-role row filters into ``sql`` before execution.
 
     Returns ``(sql, None)`` to proceed with the (possibly rewritten) SQL, or ``(sql, blocked_result)`` to
-    refuse. Triple-gated — no-op unless ``rbac.row_policy`` is on AND identity is required AND the org has the
-    RBAC_SSO capability — and applies ONLY to an identified caller's request (a set ``current_user_id``), so
+    refuse. Double-gated — no-op unless identity is required AND the org has the RBAC_SSO
+    capability — and applies ONLY to an identified caller's request (a set ``current_user_id``), so
     internal/background/localhost queries (no user context) are never filtered. Fails CLOSED: if a policy
     applies but can't be compiled in, the query is blocked rather than run unfiltered.
 
     Injects on the DuckDB-form SQL these transpile-from-DuckDB engines receive (before translate/normalize),
     so the wrapped subqueries transpile with the rest of the statement."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("rbac.row_policy"):
-        return sql, None
     try:
         ctx = _row_policy_principal()
         if ctx is None:
@@ -293,9 +290,9 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
 def result_cache_tenancy() -> "str | None":
     """Cache-partition fingerprint for RESULT caches (see ``aughor/db/matcache.py``) under the RBAC row policy.
 
-    ``None`` → the policy is inert for this request (flag off, or identity / capability / user absent); the
-    caller uses the legacy ``(conn_id, sql)`` key, **byte-identical** to pre-policy behaviour. Every current
-    (default-off) deployment lands here, so nothing about caching changes until the policy is actually on.
+    ``None`` → the policy is inert for this request (identity / capability / user absent); the caller
+    uses the legacy ``(conn_id, sql)`` key, **byte-identical** to pre-policy behaviour. A deployment
+    without identity lands here, so nothing about caching changes until the policy actually applies.
 
     ``str``  → the policy gate is LIVE for an identified user; the token folds ``(org_id, effective roles,
     resolved row filters)`` so a cached result is only ever reused by a principal entitled to
@@ -308,9 +305,6 @@ def result_cache_tenancy() -> "str | None":
     fingerprint on *exactly* the requests that get filtered. Fails CLOSED: if the gate is live but the
     fingerprint cannot be computed, returns a per-call unique token so the entry can be neither shared nor
     reused (the cache is effectively bypassed for that call) — never the legacy key."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("rbac.row_policy"):
-        return None
     try:
         ctx = _row_policy_principal()
         if ctx is None:
@@ -667,13 +661,9 @@ def apply_lane_envelope(duck_conn, connection_id: str) -> None:
     _apply_lane_envelope(duck_conn, connection_id)
 
 
-def _maybe_register_ai_udfs(duck_conn, md_db) -> None:
-    """Register the governed ``prompt()``/``embedding()`` AI-column UDFs (R8) when
-    ``AUGHOR_AI_SQL`` is on, so agent-generated SQL can compute an AI column in-query.
-    Skipped for MotherDuck-backed connections (they have NATIVE prompt()/embedding() — don't
-    shadow them) and a strict no-op when the flag is off. Fail-open — never breaks a connect."""
-    # On-connect hooks (agent-registered): e.g. installing the AI prompt()/embedding()
-    # UDFs when AUGHOR_AI_SQL is on. No-op if nothing is registered.
+def _run_connect_hooks(duck_conn, md_db) -> None:
+    """Run the agent-registered on-connect hooks over a freshly opened raw handle.
+    No-op if nothing is registered; fail-open — never breaks a connect."""
     from aughor.kernel.registries.execution_hooks import run_on_connect_hooks
     run_on_connect_hooks(duck_conn, is_motherduck=bool(md_db))
 
@@ -722,7 +712,7 @@ class DuckDBConnection(DatabaseConnection):
         # R6: bound this workspace's compute (memory_limit + threads). No-op at defaults.
         _apply_lane_envelope(self._conn, connection_id)
         # R8: optionally expose the governed AI-column UDFs to generated SQL (opt-in, no-op off).
-        _maybe_register_ai_udfs(self._conn, _md_db)
+        _run_connect_hooks(self._conn, _md_db)
 
     def make_reader(self) -> "DuckDBConnection":
         """Open a fresh read-only DuckDB connection for use in a parallel thread.
@@ -751,7 +741,7 @@ class DuckDBConnection(DatabaseConnection):
         # R6: a reader runs in the same workspace lane → same resource envelope.
         _apply_lane_envelope(clone._conn, clone._connection_id)
         # R8: a reader runs the same generated SQL → same governed AI-column UDFs.
-        _maybe_register_ai_udfs(clone._conn, _md_db)
+        _run_connect_hooks(clone._conn, _md_db)
         return clone
 
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:

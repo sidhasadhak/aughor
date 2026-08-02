@@ -55,13 +55,6 @@ def test_author_missing_kind_is_400():
 
 # ── annotate + list ────────────────────────────────────────────────────────────────
 
-def test_annotate_flag_off_is_404(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    with pytest.raises(HTTPException) as e:
-        K.annotate(K.AnnotateRequest(table="orders", body="note"), connection_id="c")
-    assert e.value.status_code == 404
-
-
 def test_annotate_writes_and_lists(monkeypatch):
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
     from aughor.actions import overlay as OVL

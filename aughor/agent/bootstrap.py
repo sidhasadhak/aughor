@@ -23,7 +23,6 @@ def register_agent_plugins() -> None:
     _register_purge_hooks()
     _register_ingest_sinks()
     _register_schema_annotators()
-    _register_execution_hooks()
     _register_authz_resolvers()
     _register_value_sample_loader()
     _REGISTERED = True
@@ -73,36 +72,6 @@ def _register_authz_resolvers() -> None:
 def _register_schema_annotators() -> None:
     from aughor.agent import schema_annotators
     schema_annotators.register()
-
-
-# ── Execution hooks (Pattern B) — invert the semops ai_sql reach-ins ───────────
-
-def _register_execution_hooks() -> None:
-    from aughor.kernel.registries import execution_hooks as eh
-
-    def _ai_column_receipt(sql, result, connection_id):
-        # R8: provenance for an in-SQL AI column — when a query computed one via the
-        # governed prompt()/embedding() UDF, journal an ai.column receipt.
-        from aughor.semops.ai_sql import ai_sql_enabled, sql_uses_ai_column
-        _op = sql_uses_ai_column(sql) if ai_sql_enabled() else None
-        if _op:
-            from aughor.semops.ai_sql import AIColumnReceipt, emit_ai_receipt
-            _rows = getattr(result, "row_count", 0) or 0
-            _rc = AIColumnReceipt(operator=_op, template="(in-SQL UDF)", role="", model="",
-                                  n_input=_rows, n_applied=_rows)
-            _rc.notes.append("computed in-SQL via the governed UDF")
-            emit_ai_receipt(_rc, conn_id=connection_id)
-
-    def _ai_udfs(raw_conn, *, is_motherduck=False):
-        # MotherDuck has NATIVE prompt()/embedding() — don't shadow them.
-        if is_motherduck:
-            return
-        from aughor.semops.ai_sql import ai_sql_enabled, register_ai_udfs
-        if ai_sql_enabled():
-            register_ai_udfs(raw_conn)
-
-    eh.register_post_execute_hook("ai_column_receipt", _ai_column_receipt)
-    eh.register_on_connect_hook("ai_udfs", _ai_udfs)
 
 
 # ── Ingestion sinks (Pattern D) — invert connector → knowledge.indexer ─────────

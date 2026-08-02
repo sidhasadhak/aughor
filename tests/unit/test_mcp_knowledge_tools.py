@@ -94,7 +94,6 @@ class TestClearanceOnTheExternalSurface:
 
         req = Requirement(key="tier", value="restricted",
                           clearance="clearance.restricted")
-        monkeypatch.setattr(T, "enabled", lambda: True)
         monkeypatch.setattr(
             T, "check",
             lambda securable, held, bypass=False: (
@@ -102,15 +101,6 @@ class TestClearanceOnTheExternalSurface:
                                   requirements=[req], missing=[req])
                 if "salaries" in securable
                 else ClearanceDecision(securable=securable, allowed=True)))
-
-    def test_governance_off_returns_everything(self, monkeypatch):
-        from aughor.govern import tags as T
-        import aughor.mcp.knowledge_tools as KT
-
-        monkeypatch.setattr(T, "enabled", lambda: False)
-        nodes = [_node("table:salaries", label="salaries")]
-        kept, notice = KT._trim_nodes([KT._node_dict(n) for n in nodes], "c1", "s")
-        assert len(kept) == 1 and notice == ""
 
     def test_search_withholds_a_restricted_table(self, monkeypatch):
         """The hole this test exists to prevent: an external agent asking the graph for

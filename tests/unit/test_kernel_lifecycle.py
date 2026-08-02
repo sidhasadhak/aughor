@@ -28,7 +28,6 @@ KIND, NK = "savedquery", "savedquery:q1"
 
 @pytest.fixture
 def _on(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "1")
     # Ledger.default() is keyed on AUGHOR_SYSTEM_DB, so a per-test path gives each test a
     # fresh artifact table — without this, versions written by one test are history in the
     # next and every version assertion drifts.
@@ -36,18 +35,6 @@ def _on(monkeypatch, tmp_path):
 
 
 # ── The flag contract ─────────────────────────────────────────────────────────
-
-def test_flag_off_writes_nothing_and_reads_nothing(monkeypatch):
-    # Explicit =0 — default-ON since flag strategy batch B.
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")
-    assert save_draft(KIND, NK, {"a": 1}) is None
-    assert resolve(KIND, NK) is None
-    assert history(KIND, NK) == []
-    assert publish(KIND, NK) is None
-    assert revert(KIND, NK, 1) is None
-
-
-# ── THE GATE ──────────────────────────────────────────────────────────────────
 
 def test_gate_save_is_not_publish(_on):
     """A viewer must never see an in-progress draft — the whole point of the wave."""
@@ -269,15 +256,3 @@ def test_savedquery_update_records_a_revision(_on, monkeypatch, tmp_path):
     assert revs[0].state == "draft", "an edit is a draft until published"
 
 
-def test_savedquery_update_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
-    monkeypatch.setenv("AUGHOR_SAVEDQUERY_DB", str(tmp_path / "sq2.db"))
-    import importlib
-
-    from aughor.savedquery import store as sq
-    importlib.reload(sq)
-
-    q = sq.create_saved_query(connection_id="c1", name="v1", sql="SELECT 1")
-    updated = sq.update_saved_query(q.id, name="v2")
-    assert updated.name == "v2"
-    assert history("savedquery", f"savedquery:{q.id}") == []

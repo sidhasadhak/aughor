@@ -270,13 +270,6 @@ function PersonaOverview({ persona, onOpenTrace }: {
           <Tile label="p90 latency" value={`${(obs.trace_stats.latency_p90_ms / 1000).toFixed(1)}s`} />
         )}
       </div>
-      {spend && !spend.measured && (
-        <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16 }}>
-          Spend is not measured — {spend.reason}. Enable{" "}
-          <code style={{ fontSize: 11 }}>{spend.enable_flag}</code> to attribute model
-          calls per agent.
-        </div>
-      )}
       <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 6 }}>Recent runs</div>
       {runs.length === 0 ? (
         <div style={{ fontSize: 12, color: "var(--t3)" }}>No runs yet for this agent.</div>

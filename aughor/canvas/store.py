@@ -147,10 +147,8 @@ def _record_revision(cv: Optional[Canvas]) -> None:
     if cv is None:
         return
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+    from aughor.kernel.lifecycle import save_draft
 
-    if not lifecycle_enabled():
-        return
     try:
         save_draft("canvas", f"canvas:{cv.id}",
                    {"name": cv.name, "description": cv.description,

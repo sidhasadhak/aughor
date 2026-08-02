@@ -3748,20 +3748,6 @@ class SchemaExplorer:
                     _drill_parent = None
                     _chain_depth = 0
 
-            # Incremental synthesis (opt-in, `explorer.synthesis_incremental`): the moment
-            # a domain has accumulated findings that form combinable pairs, compose a few —
-            # the "more alive" cadence. Bounded + dedup-gated; the full end-of-run Phase 9
-            # still runs. Best-effort; never breaks the domain loop.
-            try:
-                from aughor.kernel.flags import flag_enabled
-                if flag_enabled("explorer.synthesis_incremental"):
-                    await self._phase9_synthesis(cp, tp, max_findings=2, max_pairs=8)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.debug("[explorer:%s] incremental synthesis (non-fatal)",
-                             self.connection_id, exc_info=True)
-
     async def _phase9_synthesis(self, cp, tp, *, max_findings: int = 8, max_pairs: int = 24) -> int:
         """Phase 9 — cross-finding SYNTHESIS. Compose pairs of existing findings that
         share a join key into emergent claims neither parent holds (the five operators

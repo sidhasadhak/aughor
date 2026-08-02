@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { getCatalogTree, getSystemFlags } from "@/lib/api";
+import { getCatalogTree } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
@@ -60,8 +60,8 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
 ];
 
 // Wave C4 — the connection knowledge graph layer, inserted after Ontology (which it
-// promotes). Shown only when `graph.surface` is on, so the workspace is byte-identical
-// with the flag off.
+// promotes). Always present: the graph surface is unconditional, and the panel itself
+// reports honestly when a connection has no graph built yet.
 const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
 
 type Props = {
@@ -128,16 +128,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   }, [connectionId, canvasId]);
   const schema = selectedSchema ?? undefined;
 
-  // Wave C4 — reveal the Graph layer only when `graph.surface` is on (byte-identical off).
-  const [graphOn, setGraphOn] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setGraphOn(!!f["graph.surface"]?.value); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  const layers = graphOn
-    ? LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]))
-    : LAYERS;
+  const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]));
 
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
   const showSchema = !canvasId && schemas.length > 1;

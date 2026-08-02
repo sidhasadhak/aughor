@@ -155,14 +155,14 @@ def test_adopted_monitor_fires_its_effect_through_run_automation(monkeypatch):
 
 # ── reversibility + no double-fire ────────────────────────────────────────────────
 
-def test_adoption_requires_both_flags(monkeypatch):
-    """adopt_legacy alone must do NOTHING — it needs the engine on too, or it would stand the
-    legacy schedulers down with nothing running to replace them."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda n: n == "automations.adopt_legacy")
+def test_adoption_follows_its_own_flag(monkeypatch):
+    """The heartbeat that drives the adopted objects is always running now (the engine
+    flag was hardwired 2026-08-02), so adopt_legacy alone decides whether the legacy
+    schedulers stand down."""
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
     assert adoption_active() is False
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda n: n in ("automations.adopt_legacy", "automations.engine"))
+                        lambda n: n == "automations.adopt_legacy")
     assert adoption_active() is True
 
 

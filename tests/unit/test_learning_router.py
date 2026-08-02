@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from aughor.api import app
 from aughor.org.context import DEFAULT_ORG_ID
 from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
-from aughor.semantic.trusted_programs import TrustedProgram, save_trusted_program
 
 client = TestClient(app)
 # A TestClient request carries no identity, so the endpoint scopes to DEFAULT_ORG_ID — seed the same org.
@@ -30,7 +29,6 @@ def test_learning_summary_reflects_ledger_burndown():
     assert isinstance(body["ledger"]["served_total"], int)
     assert "verdicts" in body                                        # acceptance economy present
     assert isinstance(body["trusted"]["queries"], int)
-    assert isinstance(body["trusted"]["programs"], int)
 
 
 def test_learning_summary_is_connection_scoped():
@@ -39,15 +37,3 @@ def test_learning_summary_is_connection_scoped():
     crystallize_user_choice(a, "revenue definition", "net of refunds", org_id=DEFAULT_ORG_ID)
     rb = client.get("/learning/summary", params={"connection_id": b}).json()
     assert rb["ledger"]["resolutions"] == 0                          # a's resolutions don't leak into b
-
-
-def test_learning_trusted_lists_programs_without_body():
-    conn = "learn_trusted_1"
-    tp = save_trusted_program(TrustedProgram(
-        connection_id=conn, org_id=DEFAULT_ORG_ID, question="monthly revenue by region",
-        program={"steps": [{"op": "aggregate"}]}, plan_source="user"))
-    body = client.get("/learning/trusted", params={"connection_id": conn}).json()
-    assert isinstance(body["queries"], list)                         # not seeded (live-file store) → shape only
-    progs = body["programs"]
-    assert any(p.get("id") == tp.id or p.get("question") == "monthly revenue by region" for p in progs)
-    assert all("program" not in p for p in progs)                    # heavy program body excluded from the list

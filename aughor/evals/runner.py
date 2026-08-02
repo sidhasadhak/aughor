@@ -134,8 +134,7 @@ def _run_config() -> dict:
     try:
         from aughor.kernel.flags import flag_enabled
         cfg["flags"] = {name: flag_enabled(name) for name in
-                        ("trust.verify_live", "trust.e1_live", "ask.resolve_first",
-                         "capabilities.auto", "plan.program")}
+                        ("ask.resolve_first", "capabilities.auto")}
     except Exception as exc:
         tolerate(exc, "eval run config: flag snapshot unavailable",
                  counter="evals.config.flags")

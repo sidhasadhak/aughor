@@ -28,12 +28,6 @@ from aughor.automations.store import (
 router = APIRouter(tags=["automations"])
 
 
-def _require_flag() -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("automations.engine"):
-        raise HTTPException(status_code=404, detail="Automations are not enabled")
-
-
 # ── Request bodies ─────────────────────────────────────────────────────────────
 
 class CreateAutomationRequest(BaseModel):
@@ -62,7 +56,6 @@ class PauseRequest(BaseModel):
 
 @router.get("/automations")
 def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
-    _require_flag()
     return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}
 
 
@@ -72,14 +65,12 @@ def all_runs(conn_id: Optional[str] = None, limit: int = 100):
     (`get_runs`) always supported this; only the per-automation route existed.
     Declared before `/automations/{automation_id}` so "runs" is never read as
     an id."""
-    _require_flag()
     return {"runs": [r.model_dump()
                      for r in get_runs(conn_id=conn_id, limit=min(int(limit), 500))]}
 
 
 @router.get("/automations/{automation_id}")
 def get_one(automation_id: str):
-    _require_flag()
     a = get_automation(automation_id)
     if a is None:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -90,7 +81,6 @@ def get_one(automation_id: str):
 def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
     it never reaches the store, so a broken automation cannot sit in the DB looking schedulable."""
-    _require_flag()
     try:
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
@@ -100,7 +90,6 @@ def create(body: CreateAutomationRequest):
 
 @router.put("/automations/{automation_id}")
 def update(automation_id: str, body: CreateAutomationRequest):
-    _require_flag()
     existing = get_automation(automation_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -114,7 +103,6 @@ def update(automation_id: str, body: CreateAutomationRequest):
 
 @router.delete("/automations/{automation_id}")
 def remove(automation_id: str):
-    _require_flag()
     if not delete_automation(automation_id):
         raise HTTPException(status_code=404, detail="Automation not found")
     # Owner cascade (A4): grants an automation minted, and proposals it staged, are its
@@ -128,7 +116,6 @@ def remove(automation_id: str):
 
 @router.post("/automations/{automation_id}/enabled")
 def set_enabled(automation_id: str, enabled: bool = True):
-    _require_flag()
     a = set_automation_enabled(automation_id, enabled)
     if a is None:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -139,7 +126,6 @@ def set_enabled(automation_id: str, enabled: bool = True):
 def pause(automation_id: str, body: PauseRequest):
     """Mute until a timestamp (or clear it). Distinct from disabling: a pause has an end, and the
     run history keeps recording *why* nothing fired while it holds."""
-    _require_flag()
     a = pause_automation(automation_id, body.until)
     if a is None:
         raise HTTPException(status_code=404, detail="Automation not found")
@@ -150,7 +136,6 @@ def pause(automation_id: str, body: PauseRequest):
 def run_now(automation_id: str):
     """Run one automation immediately, through the same gates the heartbeat uses — so a gated
     automation returns the REASON it is gated rather than silently doing nothing."""
-    _require_flag()
     from aughor.automations.scheduler import trigger_now
     run = trigger_now(automation_id)
     if run is None:
@@ -160,5 +145,4 @@ def run_now(automation_id: str):
 
 @router.get("/automations/{automation_id}/runs")
 def runs(automation_id: str, limit: int = 50):
-    _require_flag()
     return {"runs": [r.model_dump() for r in get_runs(automation_id=automation_id, limit=limit)]}

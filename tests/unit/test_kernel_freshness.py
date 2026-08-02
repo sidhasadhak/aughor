@@ -296,7 +296,6 @@ _FINGERPRINT_ALLOWLIST = {
     ("ontology", "_latest_fingerprint"),        # reads a stored value; computes nothing
     ("continuous", "connection_schema_fingerprint"),  # delegates to profile_cache
     ("evidence_budget", "_fingerprint"),        # content: result identity for rendering
-    ("trusted_programs", "_fingerprint"),       # content: plan cache key
     ("ambiguity_ledger", "_fingerprint"),       # content: facet identity
 }
 

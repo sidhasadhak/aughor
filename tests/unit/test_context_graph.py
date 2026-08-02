@@ -259,21 +259,10 @@ def _graph_store(tmp_path, monkeypatch):
     return store
 
 
-def test_note_finding_is_a_noop_when_the_flag_is_off(_graph_store, monkeypatch):
-    """Byte-identical with `graph.build` off: nothing read, nothing written."""
-    from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: False)
-
-    before = _graph_store.graph_path("org1", "c1", "main").read_bytes()
-    assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is False
-    assert _graph_store.graph_path("org1", "c1", "main").read_bytes() == before
-
-
-def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store, monkeypatch):
+def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store):
     """The L1 gate, at the unit: an answer becomes a `finding` node + `grounded_in`
     edge on the COMMITTED artifact, with no full rebuild and no manual step."""
     from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
 
     assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is True
 
@@ -286,12 +275,11 @@ def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store, monk
                for e in g.edges.values())
 
 
-def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store, monkeypatch):
+def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store):
     """The incremental path and the rebuild path must not drift into two shapes —
     which is why both go through `_project_findings` rather than each building a node.
     """
     from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
     build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
     incremental = _graph_store.load_graph("org1", "c1", "main").nodes["finding:rcpt1"]
 
@@ -305,7 +293,6 @@ def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeyp
     from aughor.ontology import context_graph_store as store
     from aughor.ontology import context_graph_build as build_mod
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
     for schema in ("main", "other"):
         g = _build()
         g.schema_name = schema
@@ -322,7 +309,6 @@ def test_note_finding_on_an_unbuilt_connection_is_not_an_error(tmp_path, monkeyp
     from aughor.ontology import context_graph_store as store
     from aughor.ontology import context_graph_build as build_mod
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
     assert build_mod.note_finding("never_built", _L1_FINDING, org_id="org1") is False
 
 
@@ -413,9 +399,8 @@ def test_regenerating_a_brief_supersedes_rather_than_accumulates():
     assert g.nodes["brief:c1"].summary == "Rewritten."
 
 
-def test_note_brief_lands_on_the_committed_artifact(_graph_store, monkeypatch):
+def test_note_brief_lands_on_the_committed_artifact(_graph_store):
     from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
     build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
 
     assert build_mod.note_brief("c1", _L1_BRIEF, org_id="org1") is True
@@ -423,14 +408,6 @@ def test_note_brief_lands_on_the_committed_artifact(_graph_store, monkeypatch):
     assert g.nodes["brief:c1"].kind == "brief"
     assert any(e.kind == "derived_from" and e.to_id == "finding:rcpt1"
                for e in g.edges.values())
-
-
-def test_note_brief_is_a_noop_when_the_flag_is_off(_graph_store, monkeypatch):
-    from aughor.ontology import context_graph_build as build_mod
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: False)
-    before = _graph_store.graph_path("org1", "c1", "main").read_bytes()
-    assert build_mod.note_brief("c1", _L1_BRIEF, org_id="org1") is False
-    assert _graph_store.graph_path("org1", "c1", "main").read_bytes() == before
 
 
 def test_only_the_connection_scoped_brief_is_projected(monkeypatch):

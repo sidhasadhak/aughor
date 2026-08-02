@@ -30,7 +30,6 @@ from aughor.kernel.ledger import Ledger
 @pytest.fixture
 def on(monkeypatch):
     """Enable the flag for a test (env is read live, no caching)."""
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "1")
 
 
 def _rows(trace_id):
@@ -52,16 +51,6 @@ def test_migration_creates_table():
 
 
 # ── flag OFF: byte-identical (no rows) ────────────────────────────────────────
-
-def test_flag_off_writes_nothing(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_TASK_TABLE", "0")
-    with tel.span("trace-off", "decompose", {"iteration": 1}):
-        with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"}):
-            pass
-    assert _rows("trace-off") == []
-
-
-# ── flag ON: node span row ────────────────────────────────────────────────────
 
 def test_node_span_records_row(on):
     with tel.span("trace-node", "decompose", {"iteration": 3, "hypothesis_id": "h1"}):

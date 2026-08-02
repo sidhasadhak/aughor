@@ -10,12 +10,12 @@ rendered under the flag off and on and the two grounding contributions compared.
 changes the prompt for too few cases, the grid is refused and says which. L3 spent 2.5 hours
 and 868 requests to measure `closed_loop` across a corpus where it was a **no-op on 90% of
 cases** — `retrieve_trusted` has no flag gate, so the trusted block was present in both cells.
-L6 would have been worse: `ada.evidence_stubs` gates `_format_full_evidence`, whose only caller
+L6 would have been worse: `ada.evidence_stubs` (since deleted, 2026-08-01) gated `_format_full_evidence`, whose only caller
 is the ADA graph's `synthesize_report`, so at `DEPTH=quick` it is unreachable — inert on
 **100%** of the corpus. Both are seconds to detect and hours to discover the expensive way.
 
 Note the check covers PLAN-TIME grounding, which is where retrieval-shaped flags live. A flag
-that acts later in the run (mid-synthesis, like `ada.evidence_stubs`) is invisible to it, so a
+that acts later in the run (mid-synthesis, as evidence_stubs did) is invisible to it, so a
 clean pre-check is necessary, not sufficient — set `ALLOW_INERT=1` only when you have
 established by another route that the flag actually engages on this path.
 

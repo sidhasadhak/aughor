@@ -53,15 +53,14 @@ def test_auto_eligible_flag_env_semantics(monkeypatch):
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
-    # `ai_sql` is the exemplar deliberately: it is INTENTIONALLY off (per-row LLM
-    # calls) and will never graduate, so this test never needs re-pointing again
-    # (its previous exemplar, specialist_packs, graduated 2026-07-31).
-    monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-    assert flag_enabled("ai_sql") is False
-    monkeypatch.setenv("AUGHOR_AI_SQL", "1")
-    assert flag_enabled("ai_sql") is True
-    monkeypatch.setenv("AUGHOR_AI_SQL", "garbage")
-    assert flag_enabled("ai_sql") is False
+    # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
+    # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
+    monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+    assert flag_enabled("semops.champion_validate") is False
+    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
+    assert flag_enabled("semops.champion_validate") is True
+    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "garbage")
+    assert flag_enabled("semops.champion_validate") is False
 
 
 def test_specialist_packs_is_default_on(monkeypatch):

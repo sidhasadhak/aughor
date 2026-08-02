@@ -42,7 +42,6 @@ from aughor.evals.evaluator import EvalCase, EvalObservation
 SUITE_NAME = "session log — observationally free on the answer path (CR0)"
 
 #: The flag this suite is evidence for.
-FLAG = "obs.session_log"
 
 #: E1's pre-registered overhead bar (docs/WAVE_E_SESSIONS_EVALS_ARC.md): the
 #: per-span write must clear p95 < 5 ms or the sink must go async before shipping.
@@ -95,7 +94,7 @@ _FRAMES = (
 )
 
 
-def _drive_door(*, flag_on: bool, frames: tuple = _FRAMES,
+def _drive_door(*, frames: tuple = _FRAMES,
                 explode_after: int | None = None) -> list[str]:
     """Run the REAL door wrapper over a synthetic stream and return what it yielded.
 
@@ -103,7 +102,6 @@ def _drive_door(*, flag_on: bool, frames: tuple = _FRAMES,
     case. The wrapper re-raises, and the frames delivered up to that point are
     returned.
     """
-    from aughor.kernel.flags import flag_overrides
     from aughor.routers.investigations import stream_with_session_log
 
     async def _run() -> list[str]:
@@ -114,16 +112,15 @@ def _drive_door(*, flag_on: bool, frames: tuple = _FRAMES,
                 yield frame
 
         out: list[str] = []
-        with flag_overrides({FLAG: flag_on}):
-            try:
-                async for event in stream_with_session_log(
-                        _source(), question="cr0 receipt probe", conn_id="cr0-conn"):
-                    out.append(event)
-            except RuntimeError as exc:
-                # Only OUR synthetic crash may be absorbed — the evidence the
-                # scenario asserts on is in the ledger, not the raise.
-                if "synthetic mid-stream crash" not in str(exc):
-                    raise
+        try:
+            async for event in stream_with_session_log(
+                    _source(), question="cr0 receipt probe", conn_id="cr0-conn"):
+                out.append(event)
+        except RuntimeError as exc:
+            # Only OUR synthetic crash may be absorbed — the evidence the
+            # scenario asserts on is in the ledger, not the raise.
+            if "synthetic mid-stream crash" not in str(exc):
+                raise
         return out
 
     return asyncio.run(_run())
@@ -135,57 +132,32 @@ def _rows(ledger: Any) -> list[dict]:
 
 # ── the invariants ───────────────────────────────────────────────────────────────
 
-@scenario("flag_off_is_inert")
-def _flag_off_is_inert() -> Comparison:
-    """Off means OFF: the wrapper yields the stream untouched and writes nothing.
+@scenario("frames_are_delivered_untouched")
+def _frames_are_delivered_untouched() -> Comparison:
+    """The claim that outlived the flag: recording never changes the answer.
 
-    This is the byte-identity claim's trivial half, re-derived rather than
-    trusted — a fresh clone behaves this way today, and the graduation must not
-    change what OFF means.
+    The wrapper sniffs frames to correlate the run but yields the ORIGINAL strings —
+    compared byte-for-byte here, so a future edit that mutates a frame in passing
+    fails this receipt rather than shipping.
     """
     with _temp_ledger() as ledger:
-        delivered = _drive_door(flag_on=False)
-        rows = _rows(ledger)
-    return Comparison(
-        scenario="flag_off_is_inert",
-        expected={"frames": list(_FRAMES), "rows_written": 0},
-        observed={"frames": delivered, "rows_written": len(rows)},
-        oracle="declared (the flag's own contract: off = byte-identical, no rows)",
-        note="with the flag off the wrapper is a pass-through and the store is untouched",
-    )
-
-
-@scenario("frames_identical_on_vs_off")
-def _frames_identical_on_vs_off() -> Comparison:
-    """THE graduation claim: the answer output is byte-identical flag-on vs
-    flag-off; the only diff is rows in the store.
-
-    The wrapper sniffs frames to correlate the run but yields the original
-    strings — proven here by comparing the delivered lists byte-for-byte, so a
-    future edit that mutates a frame in passing fails the receipt rather than
-    shipping.
-    """
-    with _temp_ledger() as ledger:
-        off = _drive_door(flag_on=False)
-        rows_off = len(_rows(ledger))
-        on = _drive_door(flag_on=True)
+        delivered = _drive_door(frames=_FRAMES)
         rows = _rows(ledger)
 
     kinds = [r["kind"] for r in rows]
     final = next((r for r in rows if r["kind"] == "final_response"), {})
     traces = {r["trace_id"] for r in rows}
     return Comparison(
-        scenario="frames_identical_on_vs_off",
-        expected={"identical": True, "rows_off": 0, "kinds_on": ["user_request", "final_response"],
-                  "one_trace": True, "final_ok": True,
-                  "final_carries_answer": True},
-        observed={"identical": off == on == list(_FRAMES), "rows_off": rows_off,
-                  "kinds_on": kinds, "one_trace": len(traces) == 1,
+        scenario="frames_are_delivered_untouched",
+        expected={"identical": True, "kinds": ["user_request", "final_response"],
+                  "one_trace": True, "final_ok": True, "final_carries_answer": True},
+        observed={"identical": delivered == list(_FRAMES), "kinds": kinds,
+                  "one_trace": len(traces) == 1,
                   "final_ok": bool(final.get("ok")),
                   "final_carries_answer": (final.get("payload") or {}).get("headline")
                   == "Revenue fell 12% in March"},
-        oracle="declared (CR0 gate: byte-identical answers; the only diff is rows)",
-        note="same synthetic run, flag off then on: identical frames out, rows only when on",
+        oracle="declared (the CR0 gate, now unconditional: recording never edits an answer)",
+        note="one synthetic run: identical frames out, and the run reconstructible from rows",
     )
 
 
@@ -196,7 +168,7 @@ def _crashed_run_leaves_evidence() -> Comparison:
     ones missing from it. (Entry-side tool_call evidence for hangs is pinned by
     tests/integration/test_session_log.py; this pins the door.)"""
     with _temp_ledger() as ledger:
-        delivered = _drive_door(flag_on=True, explode_after=2)
+        delivered = _drive_door( explode_after=2)
         rows = _rows(ledger)
 
     by_kind = {r["kind"]: r for r in rows}
@@ -230,7 +202,7 @@ def _store_failure_never_reaches_the_answer() -> Comparison:
 
         Ledger.session_event_insert = _explode  # type: ignore[method-assign]
         try:
-            delivered = _drive_door(flag_on=True)
+            delivered = _drive_door()
         finally:
             Ledger.session_event_insert = original  # type: ignore[method-assign]
 
@@ -245,27 +217,34 @@ def _store_failure_never_reaches_the_answer() -> Comparison:
 
 @scenario("content_capture_stays_off")
 def _content_capture_stays_off() -> Comparison:
-    """Graduating the metadata log must not drag prompt CONTENT along: with
-    `obs.session_log` on and `obs.prompt_capture` off, capture returns nothing;
-    with both on it caps and MARKS truncation. The two flags stay separate."""
-    from aughor.kernel.flags import flag_overrides
+    """Permanent metadata recording must not drag prompt CONTENT along: with no
+    capture WINDOW open, capture returns nothing; inside a window it caps and MARKS
+    truncation, and the window closes itself once its budget is spent. Content is
+    never a standing state."""
+    from aughor.obs import prompt_window
     from aughor.obs.session_log import capture_prompt
 
-    with flag_overrides({FLAG: True, "obs.prompt_capture": False}):
-        metadata_only = capture_prompt(system="s" * 10, user="u" * 10, output="o" * 10)
-    with flag_overrides({FLAG: True, "obs.prompt_capture": True}):
-        captured = capture_prompt(system="s" * 3000, user="short", output=None)
+    prompt_window.close_window()
+    metadata_only = capture_prompt(system="s" * 10, user="u" * 10, output="o" * 10)
+
+    prompt_window.open_window(calls=1, minutes=5, opened_by="receipt")
+    captured = capture_prompt(system="s" * 3000, user="short", output=None)
+    after_budget = capture_prompt(system="s" * 10, user="u" * 10, output=None)
+    window_closed = not prompt_window.active()
+    prompt_window.close_window()
 
     return Comparison(
         scenario="content_capture_stays_off",
         expected={"metadata_only": {}, "captured_keys": ["system_prompt",
                   "system_prompt_truncated", "user_prompt"],
-                  "system_capped": True, "truncation_marked": True},
+                  "system_capped": True, "truncation_marked": True,
+                  "after_budget": {}, "window_closed": True},
         observed={"metadata_only": metadata_only, "captured_keys": sorted(captured),
                   "system_capped": len(captured.get("system_prompt", "")) <= 2000,
-                  "truncation_marked": captured.get("system_prompt_truncated") is True},
-        oracle="declared (obs.prompt_capture is a separate opt-in with its own blast radius)",
-        note="the graduation flips metadata only; content capture stays off and independent",
+                  "truncation_marked": captured.get("system_prompt_truncated") is True,
+                  "after_budget": after_budget, "window_closed": window_closed},
+        oracle="declared (content capture is a bounded, self-expiring window, not a flag)",
+        note="metadata is always recorded; content needs a window that closes itself",
     )
 
 

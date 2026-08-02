@@ -36,6 +36,8 @@ from aughor.ontology.finding_consolidation import consolidate
 SUITE_NAME = "context graph — finding consolidation (N3)"
 
 #: The flag this suite is evidence for.
+#: The flag this suite once gated on. HARDWIRED 2026-08-02 — kept as the name the
+#: tombstone test asserts is gone, so the deletion cannot be quietly undone.
 FLAG = "graph.consolidate"
 
 Scenario = Callable[[], Comparison]

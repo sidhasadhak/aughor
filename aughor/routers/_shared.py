@@ -245,20 +245,18 @@ async def run_birth(
         _emit("intelligence", "failed", error=str(exc)[:300])
 
     # R14 — mine query popularity while the understanding is fresh (deterministic,
-    # sqlglot only). Own flag; a mining hiccup never dents the rite.
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("obs.popularity"):
-        _emit("popularity", "started")
-        try:
-            from aughor.sql.popularity import refresh_popularity
-            sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
-            _emit("popularity", "done", n_queries=sig.n_queries,
-                  tables=len(sig.table_counts))
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "birth popularity step is best-effort",
-                     counter="obs.popularity", conn_id=conn_id)
-            _emit("popularity", "failed", error=str(exc)[:300])
+    # sqlglot only). A mining hiccup never dents the rite.
+    _emit("popularity", "started")
+    try:
+        from aughor.sql.popularity import refresh_popularity
+        sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
+        _emit("popularity", "done", n_queries=sig.n_queries,
+              tables=len(sig.table_counts))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "birth popularity step is best-effort",
+                 counter="obs.popularity", conn_id=conn_id)
+        _emit("popularity", "failed", error=str(exc)[:300])
 
     _emit("exploration", "started")
     exploration_ok = False
@@ -398,19 +396,16 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
         _schemas = schemas_of_connection(conn_id)
         targets = list(_schemas) if len(_schemas) >= 2 else [None]
 
-    # R12 — when the birth job is on (and the Curator agent is enabled for this
-    # workspace), a kick elevates to the full birth rite: eager intelligence first,
-    # then the exploration handoff, one supervised kernel job per target schema.
-    # Off → exploration alone, exactly as before.
+    # R12 — when the Curator agent is enabled for this workspace, a kick elevates to
+    # the full birth rite: eager intelligence first, then the exploration handoff,
+    # one supervised kernel job per target schema. Otherwise exploration alone.
     birth = False
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("birth.job"):
-        try:
-            from aughor.kernel.agents import is_enabled
-            from aughor.workspace.store import workspace_for_connection
-            birth = is_enabled("curator", workspace_for_connection(conn_id))
-        except Exception:
-            birth = True   # governance lookup hiccup → the flag still decides
+    try:
+        from aughor.kernel.agents import is_enabled
+        from aughor.workspace.store import workspace_for_connection
+        birth = is_enabled("curator", workspace_for_connection(conn_id))
+    except Exception:
+        birth = True   # governance lookup hiccup → run the rite rather than skip it
 
     started = False
     for sch in targets:

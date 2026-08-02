@@ -26,7 +26,6 @@ from aughor.kernel.lifecycle import history
 
 @pytest.fixture
 def _on(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "1")
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
@@ -54,20 +53,6 @@ def test_canvas_update_records_a_revision(_on, monkeypatch, tmp_path):
     assert revs[0].state == "draft"
 
 
-def test_canvas_update_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    cv = _canvas_store(monkeypatch, tmp_path)
-    from aughor.canvas.models import CanvasScope
-
-    c = cv.create_canvas("v1", [CanvasScope(connection_id="c1")])
-    updated = cv.update_canvas(c.id, name="v2")
-    assert updated.name == "v2"
-    assert history("canvas", f"canvas:{c.id}") == []
-
-
-# ── dashboard card ────────────────────────────────────────────────────────────
-
 def _dash_store(monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_DASHBOARD_DB", str(tmp_path / "dash.db"))
     from aughor.dashboard import store as ds
@@ -89,19 +74,6 @@ def test_card_update_records_a_revision_but_create_does_not(_on, monkeypatch, tm
     assert revs[0].body["sql"] == "SELECT 2"
     assert revs[0].state == "draft"
 
-
-def test_card_upsert_is_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    ds = _dash_store(monkeypatch, tmp_path)
-    from aughor.dashboard.models import DashboardCard
-
-    card = ds.upsert_card(DashboardCard(connection_id="c1", title="v1"))
-    ds.upsert_card(card.model_copy(update={"title": "v2"}))
-    assert history("dashboard", f"dashboard:{card.id}") == []
-
-
-# ── eval suite corpus ─────────────────────────────────────────────────────────
 
 def _evals_store(monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
@@ -132,15 +104,3 @@ def test_corpus_mutations_record_revisions_and_predelete_state_survives(_on, mon
     assert doomed["id"] in {cs["id"] for cs in revs[1].body["cases"]}
 
 
-def test_corpus_mutations_are_unaffected_when_the_flag_is_off(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")   # escape hatch; default-ON
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    ev = _evals_store(monkeypatch, tmp_path)
-
-    suite = ev.create_suite("s")
-    sid = suite["id"]
-    ev.add_cases(sid, [{"question": "q1"}])
-    case = ev.list_cases(sid)[0]
-    assert ev.delete_case(case["id"]) is True
-    assert ev.list_cases(sid) == []
-    assert history("evalsuite", f"evalsuite:{sid}") == []

@@ -777,8 +777,7 @@ export interface paths {
          *     priors, dialect rules, trusted templates, and the active agent/pack brief.
          *
          *     The input-side twin of the Trust Receipt. Read-only, deterministic (re-derives
-         *     the same blocks the answer path assembles from the same producers). 404 when
-         *     the flag is off, so the default path is byte-identical.
+         *     the same blocks the answer path assembles from the same producers).
          */
         get: operations["ask_context_endpoint_ask_context_get"];
         put?: never;
@@ -3695,9 +3694,8 @@ export interface paths {
          * Get Context Graph
          * @description Wave C4 — the connection knowledge graph for the anti-hairball surface: the full
          *     nodes + edges + provenance, PLUS a level-1 domain aggregation (cross-domain joins
-         *     collapsed to counts) and the typed staleness state. 404 when ``graph.surface`` is off
-         *     (byte-identical default). Builds on demand when a graph is not yet committed and
-         *     ``graph.build`` is on.
+         *     collapsed to counts) and the typed staleness state. Builds on demand when a graph is
+         *     not yet committed.
          */
         get: operations["get_context_graph_graph_get"];
         put?: never;
@@ -3726,7 +3724,7 @@ export interface paths {
          *     missing what the platform has already learned.
          *
          *     Costs an in-memory projection (no LLM, no warehouse), which is why it is a separate call
-         *     rather than part of every `/graph` read. 404 when ``graph.surface`` is off.
+         *     rather than part of every `/graph` read.
          */
         get: operations["get_graph_content_drift_graph_drift_get"];
         put?: never;
@@ -3748,8 +3746,7 @@ export interface paths {
          * Get Context Graph Tour
          * @description Wave C5 — the connection tour: a reading order computed from graph TOPOLOGY (hub entry →
          *     BFS → metrics capstone), a curriculum rather than a listicle. Deterministic by default;
-         *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order. 404 when
-         *     ``graph.tour`` is off (byte-identical).
+         *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order.
          */
         get: operations["get_context_graph_tour_graph_tour_get"];
         put?: never;
@@ -4200,8 +4197,7 @@ export interface paths {
         /**
          * Annotate
          * @description Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
-         *     affordance). Merged onto reads by K3 when `kinetic.overlay` is on; never mutates source. Flag-gated
-         *     on `kinetic.overlay` → 404 when off.
+         *     affordance). Merged onto reads by K3; never mutates source.
          */
         post: operations["annotate_kinetic_actions_annotate_post"];
         delete?: never;
@@ -4408,9 +4404,8 @@ export interface paths {
         };
         /**
          * Learning Trusted
-         * @description The trusted assets themselves — curated queries and replayable plan-as-programs injected
-         *     authoritatively into prompts, now inspectable. Programs return metadata only (the serialized program
-         *     body is omitted from the list view). Scoped to the current org, optionally to one connection.
+         * @description The trusted assets themselves — curated queries injected authoritatively into prompts,
+         *     now inspectable. Scoped to the current org, optionally to one connection.
          */
         get: operations["learning_trusted_learning_trusted_get"];
         put?: never;
@@ -5076,6 +5071,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/obs/prompt-capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prompt Capture Status
+         * @description Is anything being recorded right now, and for how much longer?
+         */
+        get: operations["prompt_capture_status_obs_prompt_capture_get"];
+        put?: never;
+        /**
+         * Prompt Capture Open
+         * @description Open a capture window. Both bounds are clamped (see ``MAX_CALLS`` /
+         *     ``MAX_MINUTES``) and reported back, so an operator always knows what they got
+         *     rather than what they asked for.
+         */
+        post: operations["prompt_capture_open_obs_prompt_capture_post"];
+        /**
+         * Prompt Capture Close
+         * @description Close the window now. Idempotent.
+         */
+        delete: operations["prompt_capture_close_obs_prompt_capture_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology": {
         parameters: {
             query?: never;
@@ -5181,8 +5206,8 @@ export interface paths {
         /**
          * Get Column Config
          * @description The persisted per-column config, grouped per table. Readable regardless of
-         *     the `ontology.column_config` flag (the flag gates runtime consumption, not the
-         *     artifact); `enabled` tells the caller whether edits will take effect.
+         *     the config store; `enabled` is kept in the payload as a stable contract for the
+         *     editor UI, and is always true now that per-column config is unconditional.
          */
         get: operations["get_column_config_ontology_column_config_get"];
         /**
@@ -6348,55 +6373,6 @@ export interface paths {
          *     (default off → 404).
          */
         post: operations["query_federated_answer_query_federated_answer_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/query/plan-answer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Query Plan Answer
-         * @description Plan+run a program from a natural-language question (Rec 4, Stage 3).
-         *
-         *     One LLM call emits the typed program; deterministic `validate_program` → `run_program` after. A planning
-         *     or validation failure returns an error result (never a 500). Flag-gated on `plan.program` (default off →
-         *     404).
-         */
-        post: operations["query_plan_answer_query_plan_answer_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/query/plan-run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Query Plan Run
-         * @description Run a HAND-AUTHORED typed program over ONE connection (Rec 4, Stage 2).
-         *
-         *     Deterministic: `validate_program` → `run_program`, no LLM. Each DATA step runs through the guard battery
-         *     and each step's result is mirrored to the ledger as a named artifact; the final result plus the program,
-         *     the artifact ids, per-step warnings, and any validation issues are returned (inspectable). Flag-gated on
-         *     `plan.program` (default off → 404).
-         */
-        post: operations["query_plan_run_query_plan_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9686,23 +9662,28 @@ export interface components {
             /** Unit */
             unit?: string | null;
         };
-        /** _PlanAnswerRequest */
-        _PlanAnswerRequest: {
-            /** Conn Id */
-            conn_id: string;
-            /** Question */
-            question: string;
-        };
-        /** _PlanRunRequest */
-        _PlanRunRequest: {
-            /** Conn Id */
-            conn_id: string;
-            /** Investigation Id */
-            investigation_id?: string | null;
-            /** Program */
-            program: {
-                [key: string]: unknown;
-            };
+        /** _OpenCaptureRequest */
+        _OpenCaptureRequest: {
+            /**
+             * Calls
+             * @default 20
+             */
+            calls: number;
+            /**
+             * Minutes
+             * @default 15
+             */
+            minutes: number;
+            /**
+             * Opened By
+             * @default
+             */
+            opened_by: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** _PostprocRequest */
         _PostprocRequest: {
@@ -19454,6 +19435,79 @@ export interface operations {
             };
         };
     };
+    prompt_capture_status_obs_prompt_capture_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    prompt_capture_open_obs_prompt_capture_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_OpenCaptureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prompt_capture_close_obs_prompt_capture_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_ontology_ontology_get: {
         parameters: {
             query?: {
@@ -21614,72 +21668,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_FederatedAnswerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    query_plan_answer_query_plan_answer_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PlanAnswerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    query_plan_run_query_plan_run_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PlanRunRequest"];
             };
         };
         responses: {

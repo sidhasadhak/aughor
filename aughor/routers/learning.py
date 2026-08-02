@@ -25,7 +25,6 @@ def learning_summary(connection_id: Optional[str] = None):
     (the non-circular calibration signal), and trusted-asset counts. Scoped to the current org, optionally
     to one connection."""
     from aughor.semantic.ambiguity_ledger import ledger_stats
-    from aughor.semantic.trusted_programs import list_trusted_programs
     from aughor.semantic.trusted_queries import list_trusted
     from aughor.feedback import verdict_stats
 
@@ -37,22 +36,17 @@ def learning_summary(connection_id: Optional[str] = None):
         "verdicts": verdict_stats(connection_id),      # {counts, acceptance_rate, ...}
         "trusted": {
             "queries": len(list_trusted(cid)),
-            "programs": len(list_trusted_programs(cid, org_id=org)),
         },
     }
 
 
 @router.get("/learning/trusted")
 def learning_trusted(connection_id: Optional[str] = None):
-    """The trusted assets themselves — curated queries and replayable plan-as-programs injected
-    authoritatively into prompts, now inspectable. Programs return metadata only (the serialized program
-    body is omitted from the list view). Scoped to the current org, optionally to one connection."""
-    from aughor.semantic.trusted_programs import list_trusted_programs
+    """The trusted assets themselves — curated queries injected authoritatively into prompts,
+    now inspectable. Scoped to the current org, optionally to one connection."""
     from aughor.semantic.trusted_queries import list_trusted
 
-    org = current_org_id()
     cid = connection_id or ""
     return {
         "queries": [q.model_dump() for q in list_trusted(cid)],
-        "programs": [p.model_dump(exclude={"program"}) for p in list_trusted_programs(cid, org_id=org)],
     }

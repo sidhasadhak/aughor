@@ -26,7 +26,7 @@ from aughor.evals.experiments import Cell, MeasurementIntegrityError
 from aughor.kernel.flags import clear_flag, flag_enabled
 from aughor.llm import provider as P
 
-FLAG = "deep_analysis.evidence_stubs"
+FLAG = "closed_loop"   # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
 OTHER = "deep_analysis.evidence_dedup"
 
 

@@ -11,23 +11,23 @@ from aughor.routers.query import _PostprocRequest, query_postproc
 
 class TestFeatureFlags:
     def test_override_wins_then_env_fallback(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-        clear_flag("ai_sql")
-        assert flag_enabled("ai_sql") is False          # no override, env unset
-        set_flag("ai_sql", True)
-        assert flag_enabled("ai_sql") is True            # runtime override wins
-        set_flag("ai_sql", False)
-        monkeypatch.setenv("AUGHOR_AI_SQL", "1")
-        assert flag_enabled("ai_sql") is False           # override still wins over env
-        clear_flag("ai_sql")
-        assert flag_enabled("ai_sql") is True             # cleared → env decides
-        monkeypatch.delenv("AUGHOR_AI_SQL", raising=False)
-        clear_flag("ai_sql")
+        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+        clear_flag("semops.champion_validate")
+        assert flag_enabled("semops.champion_validate") is False   # no override, env unset
+        set_flag("semops.champion_validate", True)
+        assert flag_enabled("semops.champion_validate") is True    # runtime override wins
+        set_flag("semops.champion_validate", False)
+        monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
+        assert flag_enabled("semops.champion_validate") is False   # override still wins over env
+        clear_flag("semops.champion_validate")
+        assert flag_enabled("semops.champion_validate") is True    # cleared → env decides
+        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+        clear_flag("semops.champion_validate")
 
     def test_list_flags_shape(self):
         f = list_flags()
-        assert "ai_sql" in f and "snapshot_receipts" in f
-        assert {"value", "source", "env_var", "label", "description"} <= set(f["ai_sql"])
+        assert "semops.champion_validate" in f and "snapshot_receipts" in f
+        assert {"value", "source", "env_var", "label", "description"} <= set(f["semops.champion_validate"])
 
 
 class TestPostprocEndpoint:

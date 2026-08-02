@@ -41,7 +41,6 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   focusTraceId?: string | null;
 }) {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
-  const [notRecorded, setNotRecorded] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [tab, setTab] = useState<"waterfall" | "feedback">("waterfall");
@@ -54,7 +53,6 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
     getTraces(focusInvestigationId ? { investigation_id: focusInvestigationId } : { limit: 50 })
       .then(d => {
         setTraces(d.traces);
-        setNotRecorded(d.measured ? null : d.reason);
         if (d.traces.length > 0) {
           setSelected(prev => (prev && d.traces.some(t => t.trace_id === prev)
             ? prev : d.traces[0].trace_id));
@@ -122,13 +120,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             traces for deep analysis <code style={{ fontSize: 10 }}>{focusInvestigationId}</code>
           </div>
         )}
-        {notRecorded ? (
-          <div style={{ padding: 16, fontSize: 12, color: "var(--t3)" }}>
-            Not recorded — {notRecorded}. Enable{" "}
-            <code style={{ fontSize: 11 }}>obs.session_log</code> to make every run
-            reconstructible here.
-          </div>
-        ) : traces.length === 0 ? (
+        {traces.length === 0 ? (
           <div style={{ padding: 16, fontSize: 12, color: "var(--t3)" }}>
             Recording is on — the next question asked will appear here as a trace.
           </div>

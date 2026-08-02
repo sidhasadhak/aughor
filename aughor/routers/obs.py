@@ -8,10 +8,9 @@ writes).
 
 Two honesty rules every response follows:
 
-- **The empty state names the flag.** A quiet store with recording off answers
-  ``measured: false`` + ``enable_flag`` (H3's pattern), never an empty list
-  that reads as "nothing happened". A quiet store with recording ON answers a
-  confident empty — a different claim.
+- **A quiet store is a confident empty.** Recording is permanent (the flag was
+  hardwired 2026-08-01), so nothing recorded means nothing happened — the answer
+  says so plainly instead of pointing at a switch that no longer exists.
 - **The kind vocabulary comes from the data.** `/activity` reports the kinds
   actually present in the store, so a filter UI can never advertise event
   kinds nothing emits.
@@ -30,9 +29,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from aughor.kernel.ledger import Ledger
-from aughor.obs import session_log
+from aughor.obs import prompt_window, session_log
 from aughor.org.context import current_org_id
 
 logger = logging.getLogger(__name__)
@@ -41,17 +41,8 @@ router = APIRouter(tags=["obs"])
 _POLL_SECONDS = 1.0          # tail cadence (indexed seq > ? query)
 _HEARTBEAT_EVERY = 25        # SSE comment keep-alive, in tail ticks
 
-#: Payload keys that exist only when `obs.prompt_capture` was on for the call.
+#: Payload keys that exist only when a prompt-capture window was open for the call.
 _CONTENT_KEYS = ("system_prompt", "user_prompt", "response")
-
-
-def _not_recorded() -> dict:
-    """H3's honest-empty shape, verbatim — the one place it's built here."""
-    return {
-        "measured": False,
-        "reason": "the session log is off and this store has never recorded a run",
-        "enable_flag": "obs.session_log",
-    }
 
 
 def _mark_content(event: dict) -> dict:
@@ -75,7 +66,6 @@ def list_traces(limit: int = 50, investigation_id: Optional[str] = None,
     """
     org_id = current_org_id() or None
     ledger = Ledger.default()
-    recording = session_log.enabled()
 
     if investigation_id or agent_id:
         rows = ledger.session_events(
@@ -89,17 +79,13 @@ def list_traces(limit: int = 50, investigation_id: Optional[str] = None,
         if investigation_id and investigation_id not in trace_ids:
             if ledger.session_events(trace_id=investigation_id, limit=1):
                 trace_ids.append(investigation_id)
-        if not trace_ids and not recording:
-            return {**_not_recorded(), "recording": False, "traces": []}
         trace_ids = trace_ids[: max(1, int(limit))]
         summaries = [s for s in session_log.recent_sessions(org_id=org_id, limit=1000)
                      if s["trace_id"] in set(trace_ids)]
-        return {"measured": True, "recording": recording, "traces": summaries}
+        return {"measured": True, "recording": True, "traces": summaries}
 
     summaries = session_log.recent_sessions(org_id=org_id, limit=max(1, min(int(limit), 200)))
-    if not summaries and not recording:
-        return {**_not_recorded(), "recording": False, "traces": []}
-    return {"measured": True, "recording": recording, "traces": summaries}
+    return {"measured": True, "recording": True, "traces": summaries}
 
 
 @router.get("/traces/{trace_id}")
@@ -114,9 +100,6 @@ def get_trace(trace_id: str):
     """
     events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
     if not events:
-        if not session_log.enabled():
-            return {**_not_recorded(), "recording": False,
-                    "trace_id": trace_id, "events": [], "spans": []}
         raise HTTPException(status_code=404, detail="No events for this trace")
 
     spans: dict[str, dict] = {}
@@ -173,7 +156,7 @@ def get_trace(trace_id: str):
 
     return {
         "measured": True,
-        "recording": session_log.enabled(),
+        "recording": True,
         "trace_id": trace_id,
         "question": question,
         "investigation_id": inv_id,
@@ -184,6 +167,39 @@ def get_trace(trace_id: str):
         "events": events,
         "spans": roots,
     }
+
+
+# ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
+# Storing model-call CONTENT is the most sensitive write this product makes, so it is
+# never a standing setting: an operator opens a window bounded by a call budget AND a
+# clock, and it closes itself. See aughor/obs/prompt_window.py.
+
+class _OpenCaptureRequest(BaseModel):
+    calls: int = prompt_window.DEFAULT_CALLS
+    minutes: int = prompt_window.DEFAULT_MINUTES
+    opened_by: str = ""
+    reason: str = ""
+
+
+@router.get("/obs/prompt-capture")
+def prompt_capture_status():
+    """Is anything being recorded right now, and for how much longer?"""
+    return prompt_window.status()
+
+
+@router.post("/obs/prompt-capture")
+def prompt_capture_open(body: _OpenCaptureRequest):
+    """Open a capture window. Both bounds are clamped (see ``MAX_CALLS`` /
+    ``MAX_MINUTES``) and reported back, so an operator always knows what they got
+    rather than what they asked for."""
+    return prompt_window.open_window(calls=body.calls, minutes=body.minutes,
+                                     opened_by=body.opened_by, reason=body.reason)
+
+
+@router.delete("/obs/prompt-capture")
+def prompt_capture_close():
+    """Close the window now. Idempotent."""
+    return prompt_window.close_window()
 
 
 # ── CR2: the activity stream ─────────────────────────────────────────────────────
@@ -203,16 +219,12 @@ def activity(kind: Optional[str] = None, agent_id: Optional[str] = None,
     rows = ledger.session_events(
         kind=kind, agent_id=agent_id, conn_id=conn_id, errors_only=errors_only,
         org_id=org_id, since_seq=since_seq, limit=max(1, min(int(limit), 500)))
-    recording = session_log.enabled()
-
     all_recent = ledger.session_events(org_id=org_id, limit=2000)
     kinds: dict[str, int] = {}
     for r in all_recent:
         kinds[r["kind"]] = kinds.get(r["kind"], 0) + 1
-    if not all_recent and not recording:
-        return {**_not_recorded(), "recording": False, "events": [], "kinds": {}}
 
-    return {"measured": True, "recording": recording,
+    return {"measured": True, "recording": True,
             "events": [_mark_content(e) for e in rows], "kinds": kinds}
 
 
@@ -231,7 +243,7 @@ async def activity_stream(request: Request, kind: Optional[str] = None,
         if last == 0:
             head = ledger.session_events(org_id=org_id, limit=1)
             last = head[0]["seq"] if head else 0
-        yield f"data: {json.dumps({'kind': 'stream.open', 'seq': last, 'recording': session_log.enabled()})}\n\n"
+        yield f"data: {json.dumps({'kind': 'stream.open', 'seq': last, 'recording': True})}\n\n"
         tick = 0
         while True:
             if await request.is_disconnected():
