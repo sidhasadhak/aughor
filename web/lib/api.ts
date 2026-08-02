@@ -1095,8 +1095,7 @@ export interface ConnectionGraph {
   staleness: CGStaleness;
 }
 
-/** The connection knowledge graph for the anti-hairball surface (Wave C4). 404 when
- *  `graph.surface` is off. */
+/** The connection knowledge graph for the anti-hairball surface (Wave C4). */
 export async function getConnectionGraph(connectionId: string, schemaName?: string): Promise<ConnectionGraph> {
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
@@ -1127,7 +1126,7 @@ export interface ConnectionTour {
   steps: TourStep[];
 }
 
-/** The topology-ordered connection tour (Wave C5). 404 when `graph.tour` is off. */
+/** The topology-ordered connection tour (Wave C5). */
 export async function getConnectionTour(connectionId: string, schemaName?: string): Promise<ConnectionTour> {
   const base = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`

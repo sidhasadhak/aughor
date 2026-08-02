@@ -3694,9 +3694,8 @@ export interface paths {
          * Get Context Graph
          * @description Wave C4 — the connection knowledge graph for the anti-hairball surface: the full
          *     nodes + edges + provenance, PLUS a level-1 domain aggregation (cross-domain joins
-         *     collapsed to counts) and the typed staleness state. 404 when ``graph.surface`` is off
-         *     (byte-identical default). Builds on demand when a graph is not yet committed and
-         *     ``graph.build`` is on.
+         *     collapsed to counts) and the typed staleness state. Builds on demand when a graph is
+         *     not yet committed.
          */
         get: operations["get_context_graph_graph_get"];
         put?: never;
@@ -3725,7 +3724,7 @@ export interface paths {
          *     missing what the platform has already learned.
          *
          *     Costs an in-memory projection (no LLM, no warehouse), which is why it is a separate call
-         *     rather than part of every `/graph` read. 404 when ``graph.surface`` is off.
+         *     rather than part of every `/graph` read.
          */
         get: operations["get_graph_content_drift_graph_drift_get"];
         put?: never;
@@ -3747,8 +3746,7 @@ export interface paths {
          * Get Context Graph Tour
          * @description Wave C5 — the connection tour: a reading order computed from graph TOPOLOGY (hub entry →
          *     BFS → metrics capstone), a curriculum rather than a listicle. Deterministic by default;
-         *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order. 404 when
-         *     ``graph.tour`` is off (byte-identical).
+         *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order.
          */
         get: operations["get_context_graph_tour_graph_tour_get"];
         put?: never;
@@ -5209,8 +5207,8 @@ export interface paths {
         /**
          * Get Column Config
          * @description The persisted per-column config, grouped per table. Readable regardless of
-         *     the `ontology.column_config` flag (the flag gates runtime consumption, not the
-         *     artifact); `enabled` tells the caller whether edits will take effect.
+         *     the config store; `enabled` is kept in the payload as a stable contract for the
+         *     editor UI, and is always true now that per-column config is unconditional.
          */
         get: operations["get_column_config_ontology_column_config_get"];
         /**

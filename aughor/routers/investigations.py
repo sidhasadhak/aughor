@@ -3532,15 +3532,13 @@ async def _stream_overview(question: str, conn_id: str, req) -> AsyncGenerator[s
         _priors = await asyncio.to_thread(load_priors, cid)
         # R14 — fold mined query popularity into the same table prior (the boost is
         # saturating + capped, so a hot table nudges, never buries a notable fact).
-        from aughor.kernel.flags import flag_enabled as _flag_on
-        if _flag_on("obs.popularity"):
-            try:
-                from aughor.sql.popularity import merge_popularity_into_priors
-                _priors = await asyncio.to_thread(merge_popularity_into_priors, _priors, cid)
-            except Exception as _pop_exc:
-                from aughor.kernel.errors import tolerate as _tolerate
-                _tolerate(_pop_exc, "popularity prior fold is best-effort",
-                          counter="obs.popularity", conn_id=cid or None)
+        try:
+            from aughor.sql.popularity import merge_popularity_into_priors
+            _priors = await asyncio.to_thread(merge_popularity_into_priors, _priors, cid)
+        except Exception as _pop_exc:
+            from aughor.kernel.errors import tolerate as _tolerate
+            _tolerate(_pop_exc, "popularity prior fold is best-effort",
+                      counter="obs.popularity", conn_id=cid or None)
         rep = await asyncio.to_thread(build_overview, db, cid, tables,
                                       schema=eff_schema, entity_hint="rows", limit=8, priors=_priors)
     except Exception as exc:

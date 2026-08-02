@@ -2,8 +2,6 @@
 step connects to a prior), not a notability listicle. All deterministic — no LLM."""
 from __future__ import annotations
 
-import pytest
-from fastapi import HTTPException
 
 from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
 from aughor.ontology.graph_tour import build_tour
@@ -82,18 +80,9 @@ def test_empty_graph_is_an_empty_tour():
 
 # ── endpoint ─────────────────────────────────────────────────────────────────
 
-def test_tour_endpoint_404_when_flag_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_GRAPH_TOUR", "0")
-    from aughor.routers.ontology import get_context_graph_tour
-    with pytest.raises(HTTPException) as ei:
-        get_context_graph_tour("c", None, False)
-    assert ei.value.status_code == 404
-
-
 def test_tour_endpoint_serves_the_ordered_curriculum(monkeypatch, tmp_path):
     from aughor.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setenv("AUGHOR_GRAPH_TOUR", "1")
     store.save_graph(_star(org="default"))
 
     from aughor.routers.ontology import get_context_graph_tour

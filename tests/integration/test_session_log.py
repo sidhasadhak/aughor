@@ -105,13 +105,18 @@ def test_quick_ask_is_reconstructible_from_session_events(
 
     _ask(client, builtin_conn_id, "which group leads?")
 
-    events = _all_events()
-    assert events, "the quick path wrote no session events"
+    all_events = _all_events()
+    assert all_events, "the quick path wrote no session events"
 
-    # Exactly one run, and every event correlates to it — the property that did
-    # not exist before E1 (the quick path had no trace id at all).
-    traces = {e["trace_id"] for e in events}
-    assert len(traces) == 1, f"expected one trace, got {traces}"
+    # The ask mints exactly ONE run — the property that did not exist before E1 (the
+    # quick path had no trace id at all). Identified by its own user_request rather
+    # than by owning the whole store: a background scheduler tick landing mid-test
+    # would otherwise read as "the ask minted two traces", which is a different and
+    # false claim (it has flaked exactly that way twice).
+    opens = [e for e in all_events if e["kind"] == session_log.USER_REQUEST]
+    assert len(opens) == 1, f"expected one ask run, got {[e['trace_id'] for e in opens]}"
+    trace = opens[0]["trace_id"]
+    events = [e for e in all_events if e["trace_id"] == trace]
 
     kinds = [e["kind"] for e in events]
     assert kinds[0] == session_log.USER_REQUEST, f"run does not open with the request: {kinds}"

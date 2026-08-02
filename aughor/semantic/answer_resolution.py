@@ -573,18 +573,16 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                 value_samples = {}
         # R11 — a per-column-config `index: false` retires a column's persisted
         # sample immediately (the capture gate honours the config only on the
-        # next profile rebuild, and old-fingerprint entries linger). Flag-gated;
-        # any hiccup keeps the unfiltered map.
+        # next profile rebuild, and old-fingerprint entries linger). Any hiccup
+        # keeps the unfiltered map.
         if value_samples:
             try:
-                from aughor.kernel.flags import flag_enabled
-                if flag_enabled("ontology.column_config"):
-                    from aughor.ontology.column_config import load_index_disabled
-                    _idx_off = load_index_disabled(connection_id)
-                    if _idx_off:
-                        value_samples = {
-                            k: v for k, v in value_samples.items() if k not in _idx_off
-                        }
+                from aughor.ontology.column_config import load_index_disabled
+                _idx_off = load_index_disabled(connection_id)
+                if _idx_off:
+                    value_samples = {
+                        k: v for k, v in value_samples.items() if k not in _idx_off
+                    }
             except Exception as _idx_exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_idx_exc, "column-config sample retire-filter is best-effort",

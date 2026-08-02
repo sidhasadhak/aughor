@@ -79,7 +79,6 @@ def test_graph_writes_no_op_while_frozen(tmp_path, monkeypatch):
     from tests.unit.test_context_graph import _build, _L1_FINDING
 
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setattr(build_mod, "flag_enabled", lambda name: True)
     store.save_graph(_build())
     before = store.graph_path("org1", "c1", "main").read_bytes()
 

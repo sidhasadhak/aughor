@@ -117,8 +117,7 @@ async def test_run_birth_schema_scoped_open(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_run_birth_mines_popularity_when_flag_on(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_OBS_POPULARITY", "1")
+async def test_run_birth_mines_popularity(monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "pop.db"))
     db = _FakeDB()
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
@@ -141,23 +140,7 @@ async def test_run_birth_mines_popularity_when_flag_on(monkeypatch, tmp_path):
 
 
 @pytest.mark.anyio
-async def test_run_birth_skips_popularity_when_flag_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBS_POPULARITY", "0")   # escape hatch; default-ON since batch C
-    db = _FakeDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
-
-    async def _fake_spawn(conn_id, **kw):
-        return {"ok": True, "reason": None, "job_id": "j"}
-
-    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
-    summary = await _shared.run_birth("connNoPop")
-    assert _step(summary, "popularity") == []              # byte-identical rite when off
-
-
-# ── kickoff elevation: flag off → explorer, flag on → birth ──────────────────
-
-@pytest.mark.anyio
-async def test_kickoff_spawns_explorer_when_flag_off(monkeypatch):
+async def test_kickoff_elevates_to_birth(monkeypatch):
     calls = {"birth": 0, "explore": 0}
 
     async def _fake_birth(conn_id, **kw):
@@ -170,28 +153,6 @@ async def test_kickoff_spawns_explorer_when_flag_off(monkeypatch):
 
     monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
     monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
-    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "0")   # escape hatch; default-ON since batch C
-
-    assert _shared.kickoff_exploration("conn-off") is True
-    await asyncio.sleep(0)                        # let the created task run
-    assert calls == {"birth": 0, "explore": 1}
-
-
-@pytest.mark.anyio
-async def test_kickoff_elevates_to_birth_when_flag_on(monkeypatch):
-    calls = {"birth": 0, "explore": 0}
-
-    async def _fake_birth(conn_id, **kw):
-        calls["birth"] += 1
-        return {"ok": True, "job_id": "b"}
-
-    async def _fake_spawn(conn_id, **kw):
-        calls["explore"] += 1
-        return {"ok": True, "reason": None, "job_id": "e"}
-
-    monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
-    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
-    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "1")
 
     assert _shared.kickoff_exploration("conn-on") is True
     await asyncio.sleep(0)
@@ -201,7 +162,7 @@ async def test_kickoff_elevates_to_birth_when_flag_on(monkeypatch):
 
 # ── canvas create wires the birth kickoff (flag-gated, best-effort) ──────────
 
-def test_canvas_create_triggers_birth_when_flag_on(client, monkeypatch):
+def test_canvas_create_triggers_birth(client, monkeypatch):
     calls = []
 
     async def _fake_birth(conn_id, **kw):
@@ -209,7 +170,6 @@ def test_canvas_create_triggers_birth_when_flag_on(client, monkeypatch):
         return {"ok": True, "job_id": "b"}
 
     monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
-    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "1")
 
     r = client.post("/canvases", json={"name": "Birth Canvas", "connection_id": "fixture",
                                        "tables": ["kpi_daily"]})
@@ -227,17 +187,3 @@ def test_canvas_create_triggers_birth_when_flag_on(client, monkeypatch):
     assert calls[0]["tables_filter"] == ["kpi_daily"]
 
 
-def test_canvas_create_unchanged_when_flag_off(client, monkeypatch):
-    calls = []
-
-    async def _fake_birth(conn_id, **kw):
-        calls.append(conn_id)
-        return {"ok": True, "job_id": "b"}
-
-    monkeypatch.setattr(_shared, "spawn_birth", _fake_birth)
-    monkeypatch.setenv("AUGHOR_BIRTH_JOB", "0")   # escape hatch; default-ON since batch C
-
-    r = client.post("/canvases", json={"name": "Plain Canvas", "connection_id": "fixture"})
-    assert r.status_code == 201
-    time.sleep(0.2)
-    assert calls == []

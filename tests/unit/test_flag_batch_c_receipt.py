@@ -37,12 +37,17 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_all_batch_c_flags_are_registered_and_default_on():
+def test_batch_c_behaviour_is_unconditional_or_still_default_on():
+    """Batch C's graph and birth bundles were HARDWIRED 2026-08-02 — their flags are
+    gone and the behaviour is permanent. The two migration flips still hold flags
+    (they owe a legacy-path deletion first), and those must stay default-on."""
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     for flag in FLAGS:
-        assert flag in FLAG_ENV, flag
-        assert FLAG_DEFAULT.get(flag) is True, flag
+        if flag in FLAG_ENV:
+            assert FLAG_DEFAULT.get(flag) is True, flag
+        else:
+            assert flag not in FLAG_DEFAULT, f"{flag} is deleted; it must not linger"
 
 
 def test_the_queue_and_migrations_are_empty():

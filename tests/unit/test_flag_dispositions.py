@@ -85,6 +85,10 @@ def test_deleted_flags_stay_deleted():
                       "obs.session_log", "obs.task_table", "ask.stream_text",
                       "ask.context_receipt", "capabilities.receipt", "learning.receipt",
                       "deep_analysis.progress_events", "llm.structured_salvage",
-                      "llm.bounded_repair"):
+                      "llm.bounded_repair",
+                      # Wave 2b — the graph and ontology bundles.
+                      "graph.build", "graph.freshness", "graph.surface", "graph.tour",
+                      "graph.export", "graph.consolidate", "ontology.autodoc",
+                      "ontology.column_config", "obs.popularity", "birth.job"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone

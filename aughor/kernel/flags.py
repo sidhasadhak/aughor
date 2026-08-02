@@ -34,6 +34,10 @@ FLAG_ENV = {
     # obs.session_log · obs.task_table · ask.stream_text · ask.context_receipt ·
     # capabilities.receipt · learning.receipt · deep_analysis.progress_events ·
     # llm.structured_salvage · llm.bounded_repair.
+    # HARDWIRED 2026-08-02 (flag endgame Wave 2, graph/ontology group) — same rule,
+    # same deletion: graph.build · graph.freshness · graph.surface · graph.tour ·
+    # graph.export · graph.consolidate · ontology.autodoc · ontology.column_config ·
+    # obs.popularity · birth.job. (graph.readback stays — it is an EXPERIMENT.)
     # "explorer.synthesis_incremental" (AUGHOR_SYNTHESIS_INCREMENTAL) was DELETED
     # 2026-08-01 (flag endgame, verdict sheet Wave 1): mid-run synthesis spent extra
     # model calls for a "more alive" cadence the chat UI now provides for free, and
@@ -46,9 +50,6 @@ FLAG_ENV = {
     "report.argument_style": "AUGHOR_REPORT_ARGUMENT_STYLE",
     "chart.exhibit_grammar": "AUGHOR_CHART_EXHIBIT_GRAMMAR",
     "intake.loss_signals": "AUGHOR_INTAKE_LOSS_SIGNALS",
-    "ontology.autodoc": "AUGHOR_ONTOLOGY_AUTODOC",
-    "ontology.column_config": "AUGHOR_ONTOLOGY_COLUMN_CONFIG",
-    "birth.job": "AUGHOR_BIRTH_JOB",
     "deep_analysis.parallel_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES",
     "deep_analysis.parallel_phases": "AUGHOR_DEEP_ANALYSIS_PARALLEL_PHASES",
     "deep_analysis.why_where_interaction": "AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION",
@@ -96,7 +97,6 @@ FLAG_ENV = {
     # content this product writes is a control that depends on somebody remembering to
     # close it. Replaced by a self-expiring WINDOW (aughor/obs/prompt_window.py,
     # POST/GET/DELETE /obs/prompt-capture) bounded by a call budget AND a clock.
-    "obs.popularity": "AUGHOR_OBS_POPULARITY",
     "explore.wandering_detector": "AUGHOR_EXPLORE_WANDERING_DETECTOR",
     "schema.two_tier_catalog": "AUGHOR_SCHEMA_TWO_TIER_CATALOG",
     "deep_analysis.evidence_dedup": "AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP",
@@ -126,13 +126,7 @@ FLAG_ENV = {
     "automations.source_probes": "AUGHOR_AUTOMATIONS_SOURCE_PROBES",  # Wave A3: source-version change detection
     "automations.proposals": "AUGHOR_AUTOMATIONS_PROPOSALS",  # Wave A4: resolve-once proposal inbox + standing grants
     "automations.adopt_legacy": "AUGHOR_AUTOMATIONS_ADOPT_LEGACY",  # Wave A5: run monitors+briefs through the engine
-    "graph.build": "AUGHOR_GRAPH_BUILD",  # Wave C1: project the ontology into the committed connection knowledge graph
     "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
-    "graph.freshness": "AUGHOR_GRAPH_FRESHNESS",  # Wave C3: change-classified, token-proportional graph refresh + staleness
-    "graph.surface": "AUGHOR_GRAPH_SURFACE",  # Wave C4: serve + render the connection knowledge graph (anti-hairball surface)
-    "graph.tour": "AUGHOR_GRAPH_TOUR",  # Wave C5: the deterministic, LLM-narrated connection tour (a curriculum from topology)
-    "graph.export": "AUGHOR_GRAPH_EXPORT",  # Wave C6: export the graph as a self-contained, offline-consumable skills pack
-    "graph.consolidate": "AUGHOR_GRAPH_CONSOLIDATE",  # Wave N3: consolidate + age findings BEFORE the cap
     "govern.clearances": "AUGHOR_GOVERN_CLEARANCES",  # Wave G2: governed tags gate retrieval and action
     "govern.usage_caps": "AUGHOR_GOVERN_USAGE_CAPS",  # Wave G4: org/user spend caps, pre-flight only
     "freshness.resolved_rebuild": "AUGHOR_FRESHNESS_RESOLVED_REBUILD",  # Wave V2: rebuild on inputs+logic, not on a timer
@@ -308,7 +302,6 @@ FLAG_DEFAULT = {
     # It adds no LLM call, no warehouse query and nothing on the answer path — the extra
     # cost is one bounded read of a local store. It does NOT rewrite any committed artifact;
     # an existing graph changes only when something rebuilds it.
-    "graph.consolidate": True,
     # Wave CR0 (2026-07-29) — graduated on a DETERMINISTIC observationally-free claim,
     # receipt `45dcc137f55b`, from run `43bf2bc7182d` of the suite
     # `aughor/evals/session_log_receipt.py` (7/7 stable passes, 0 errors, 0 flaky, bar 1.0,
@@ -441,15 +434,6 @@ FLAG_DEFAULT = {
     # popularity signal are byte-identical no-ops. `plan.program` did NOT flip: its
     # /ask auto-depth hook (`_program_eligible`, mirroring `_federation_eligible`)
     # moved it to EXPERIMENT instead.
-    "graph.build": True,               # receipt 1a773d95d0b3 — a projection of the ontology; None without one
-    "graph.freshness": True,           # receipt 506ba8c6a163 — change-classified refresh; never raises into a live path
-    "graph.surface": True,             # receipt 049ac074f300 — the panel appears; content waits for a built ontology
-    "graph.tour": True,                # receipt 68328602e77f — deterministic order; narration only on explicit request
-    "graph.export": True,              # receipt adeca7f0fe7d — an empty graph is refused, never shipped
-    "birth.job": True,                 # receipt 189fc985e2a0 — kick-scoped AND Curator-governed; no ambient behaviour
-    "ontology.autodoc": True,          # receipt 4847eceb9a1f — compiled doc tree; a build artifact, no model
-    "ontology.column_config": True,    # receipt 743f540b4d72 — empty store ⇒ byte-identical; human edits always win
-    "obs.popularity": True,            # receipt d315c314e558 — nothing mined ⇒ priors untouched
     # MIGRATION flips, not graduations: resolve_live proven equal to the per-node
     # consult over real stores (one context per run — AL-05's whole point); the
     # remaining obligation on both is deleting the legacy path once soaked.
@@ -499,29 +483,9 @@ FLAG_META = {
         "label": "Proposal inbox + standing grants",
         "description": "Make an agent's action proposal DURABLE and resolve-once instead of dying with the HTTP response: a proposed declared action is staged, survives a restart, and is accepted or rejected exactly once (a conditional UPDATE on a pending row — the first responder wins; a second accept is a no-op, never a second dispatch; idempotent by (run_id, call_id) so a replayed run cannot duplicate). Accepting IS the human approval act, so it executes bypassing the approval gate but NEVER the submission criteria. Accepting can also mint a TARGET-BOUND standing grant — 'allow this action → this exact target value', eligible only for a single-parameter action, owned by the automation that minted it (revoked with it), cited by id in the audit ledger on every auto-allowed run — so an UNATTENDED automation can run one pre-authorized target without a blanket allow, and still cannot pass a value the criteria reject. Forced off ⇒ no proposal is staged, no grant is consulted (the executor is byte-identical), and every /kinetic-actions/inbox and /grants route 404s. Default-ON since flag strategy batch B (2026-07-31, receipt `f6c0b3a73690`); force off with AUGHOR_AUTOMATIONS_PROPOSALS=0 or a runtime override.",
     },
-    "graph.build": {
-        "label": "Build the connection knowledge graph",
-        "description": "Project the already-built structural ontology plus the narrative stores (glossary, governed metrics, crystallized ambiguity resolutions, discovered findings) into ONE typed, committed, provenance-complete graph per (org, connection, schema) — the read-back artifact every question will pass through in C2. Deterministic projection: no LLM, no SQL; node summaries/tags are a later narrow emission. Every edge carries real provenance or is not constructible (J4) — a `joins_on` edge carries the join guard's MEASURED value-domain overlap (already probed at ontology-build time; value-disjoint coincidences were dropped upstream), and the self-reported model confidences (EvidenceClaim.confidence, pack_deltas.confidence) are banned as edge evidence. The graph is a git-reviewable file under data/context_graph/, version-bumped on rebuild. Forced off = byte-identical: the projection is never invoked and nothing is written (C1 builds the artifact; nothing reads it back until C2). Default-ON since flag strategy batch C (2026-07-31, receipt `1a773d95d0b3`); force off with AUGHOR_GRAPH_BUILD=0 or a runtime override.",
-    },
     "graph.readback": {
         "label": "Grep-the-graph-first read-back",
         "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers and exploration findings) and the `resolves` readings, so a question about a table Aughor already analysed inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
-    },
-    "graph.freshness": {
-        "label": "Graph freshness — change-classified refresh + staleness",
-        "description": "Keep the connection knowledge graph fresh at cost proportional to the change, and surface how stale it is. Two fingerprints are split: STRUCTURAL (tables + columns + types) and DATA (row counts, from the ontology fingerprint). The classifier reads SKIP (structure and data unchanged, or a comment-only change → no work), a data-only reload (row counts moved, structure identical → the graph is marked DIRTY but NOT rebuilt — a nightly load is not a schema change), PARTIAL (columns changed on known tables → rebuild, naming the tables), or FULL (tables added/removed → rebuild). Typed staleness states fresh|dirty|stale|unknown drive a UI banner and can gate a briefing built on a stale graph. The read-back slice honours a token-proportional budget. This freshness vocabulary is written to be lifted by Wave V (one dialect for graphs, briefings, profiles, caches). Deterministic; no LLM. Forced off ⇒ refresh_context_graph is a no-op (byte-identical). A rebuild still requires `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `506ba8c6a163`); force off with AUGHOR_GRAPH_FRESHNESS=0 or a runtime override.",
-    },
-    "graph.surface": {
-        "label": "Connection knowledge graph surface",
-        "description": "Serve and render the connection knowledge graph as a three-level, anti-hairball surface: domain cluster cards with aggregated cross-domain join counts (level 1) → the tables inside a domain, with their verified joins (level 2) → a table detail panel showing columns, the measured value-domain overlap on each join, the glossary terms, and the PAST FINDINGS that touch the table (level 3 — the dossier system makes those $0). Aggregation at every zoom level makes the hairball structurally impossible rather than stylistically discouraged. Exposes GET /graph (the graph JSON: nodes + edges + provenance) and a Knowledge Graph panel. Forced off ⇒ the route 404s and the panel is hidden (byte-identical). Requires a graph built by `graph.build`; the endpoint builds on demand when that flag is on. This is the J6 seam — an entity page is this surface's table-detail view. Default-ON since flag strategy batch C (2026-07-31, receipt `049ac074f300`); force off with AUGHOR_GRAPH_SURFACE=0 or a runtime override.",
-    },
-    "graph.tour": {
-        "label": "Connection tour — a curriculum from graph topology",
-        "description": "A guided tour of a connection, ordered by TOPOLOGY not notability, so it teaches rather than lists. The reading order is computed deterministically from the graph: the highest-join-degree table is the entry (the hub every other table reaches), a breadth-first walk introduces each table right after one it joins to, standalone tables follow the connected core, and the governed metrics come last as the capstone (each tied to the table it derives from). Every step after the first names the prior step it builds on. The LLM only narrates the connective tissue over that already-fixed sequence — a single narrow emission, never the ordering. Exposes GET /graph/tour. Forced off ⇒ the route 404s (byte-identical). Turns the ephemeral 7-lens interesting-facts listicle into an ordered curriculum. Default-ON since flag strategy batch C (2026-07-31, receipt `68328602e77f`); force off with AUGHOR_GRAPH_TOUR=0 or a runtime override.",
-    },
-    "graph.export": {
-        "label": "Graph distribution — the committed artifact + skills pack",
-        "description": "Export a connection's knowledge graph as a self-contained pack a teammate consumes with NO LLM, no API key and no Aughor running — generation paid once, consumption free. Writes graph.json (the C1 nodes/edges/provenance re-emitted as id-sorted, pretty-printed, greppable lists inside an envelope carrying the source spine, the graph version and C3's typed freshness state), two markdown skills that run the C2 read-back protocol offline (freshness-check → grep labels/summaries/tags → pull the 1-hop subgraph → answer only from that subgraph, citing tables), a README, and an install.sh that SYMLINKS the skills into agent platforms. The staleness state travels with the data because a consumer offline cannot re-derive it, and a freshness it cannot determine ships as `unknown`, never as a cheerful `fresh`. NO coercive hook injection (the forbidden anti-pattern): install.sh only links files — it registers no hook, no daemon, nothing that speaks for the user, and no skill instructs an agent to hide the freshness state or refuse the reader. Exporting a connection with no committed graph is refused rather than shipping an empty pack that answers confidently from nothing. Forced off ⇒ export_pack returns None and nothing is written (byte-identical). Requires a graph built by `graph.build`. Default-ON since flag strategy batch C (2026-07-31, receipt `adeca7f0fe7d`); force off with AUGHOR_GRAPH_EXPORT=0 or a runtime override.",
     },
     "govern.usage_caps": {
         "label": "Org and per-user usage caps",
@@ -530,10 +494,6 @@ FLAG_META = {
     "govern.clearances": {
         "label": "Clearance enforcement on governed tags",
         "description": "Let governed tags on catalogs, schemas, tables and artifacts gate who may read them. A tag is a namespaced key-value fact recorded with WHO set it and when — `pii=true`, `tier=restricted` — and a small, explicit set of keys is access-controlling while every other tag stays purely descriptive, so adding a `domain=finance` label never silently becomes a lock. A principal holds clearances; a securable whose tags demand one the principal lacks is withheld. This is a THIRD authorization axis composing with AND alongside the licensing capability (what the org's PLAN unlocks) and the RBAC permission (what this USER may do): a role says analysts may run analyses, a clearance says not over the salary table, and neither expresses the other. An untagged securable is always allowed — governance is opt-in per object, because defaulting to deny would make enabling this a platform-wide outage rather than a policy. A refusal NAMES the tag that blocked it and the clearance that would unblock it, and is never an empty result: a silently trimmed answer teaches its reader the data does not exist, which is the pinned anti-pattern (see docs/GENIE_DOCS_TEARDOWN_2026-07-26.md). Nothing infers a tag, and a write with no author is refused outright — J4's provenance discipline reaching past the context graph. Forced off ⇒ every decision is ALLOW with no requirements, so the check can be wired in unconditionally and the off state is byte-identical to not calling it. Default-ON since flag strategy batch B (2026-07-31, receipt `94d8869fa9ca`); force off with AUGHOR_GOVERN_CLEARANCES=0 or a runtime override.",
-    },
-    "graph.consolidate": {
-        "label": "Consolidate the finding corpus before the cap",
-        "description": "Spend the graph's 100-finding budget on distinct LIVE knowledge instead of 100 newest receipts. The projection appends one finding per answered question and evicts newest-first, so on the reference connection the committed artifact carried 77 distinct subjects — 59 of them still reachable — out of 274 that exist across 794 receipts. With this on, repeated subjects (same question over the same tables) fold together BEFORE the cap applies, and findings grounded in tables that are no longer in the ontology sort last so the cap evicts what can no longer be verified before it evicts live knowledge. Measured on the reference connection: 100 live distinct subjects instead of 59, same node budget. The platform never picks a winner: a repeat whose SQL is unchanged is simply superseded by the newest reading (the data moved), but a repeat that reached a DIFFERENT conclusion by a DIFFERENT query is marked `contested` and carries the alternative conclusions inline — settling it is a human's decision through the answer-consistency review, not a matter of which run was most recent. Nothing is deleted: every input finding leaves as a survivor, a superseded id, or a contested variant, and the counts are asserted to balance. Deterministic, read-only, no LLM: the added cost is one bounded read of a local store, and nothing runs on the answer path. Default-ON since Wave N3, graduated on run `3dec60f4a580` of the deterministic suite `aughor/evals/consolidation.py` (8/8, bar 1.0). Turning it OFF is byte-identical to the pre-N3 projection — the finding payload carries exactly {generated_at, sql, tables} and the loader is called exactly as before. Flipping this rewrites nothing on its own: a committed graph changes only when something rebuilds it.",
     },
     "freshness.resolved_rebuild": {
         "label": "Staleness-resolved rebuild — inputs + logic, not a timer",
@@ -554,10 +514,6 @@ FLAG_META = {
     "ask.overview": {
         "label": "Interesting-facts overview tour (the default first-look)",
         "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — as a first-look tour rather than a deep analysis of one metric: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
-    },
-    "obs.popularity": {
-        "label": "Query popularity as a shared notability signal",
-        "description": "Mine real query history (the SQL-examples store + task_history span inputs) into a persisted per-table and per-column usage counter, and let one signal feed four consumers: column-config default protection (a queried column is never default-hidden), doc-tree table facts + ranking, the overview's learned-prior boost, and a most-queried-tables block in /suggestions. Mining runs inside the R12 birth job; deterministic (sqlglot, no model). Forced off = byte-identical. Default-ON since flag strategy batch C (2026-07-31, receipt `d315c314e558`); force off with AUGHOR_OBS_POPULARITY=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R14).",
     },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
@@ -630,18 +586,6 @@ FLAG_META = {
     "starters.library": {
         "label": "Named starter questions",
         "description": "Surface a library of named, deterministic starters (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep analysis or the wide explore wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Default-ON since flag strategy batch A (2026-07-31, receipt `3155c4d9de61` — deterministic payload, purely additive `starters` key on /suggestions); force off with AUGHOR_STARTERS_LIBRARY=0 or a runtime override for LLM-generated-only suggestions — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
-    },
-    "ontology.autodoc": {
-        "label": "Compile ontology docs as a build artifact",
-        "description": "After the ontology is built, project it into a persisted, Merkle-checksummed doc tree (column→table→schema→connection) with per-table analyst questions — understanding compiled once and re-read cheaply, rebuilt incrementally as the schema moves. Deterministic (no model); also available on demand via the `aughor ontology-docs` CLI. When an embedder + Qdrant are available the compiled table docs are ALSO embedded into the knowledge store with FQN provenance (R8a), so retrieval can ground on understanding, not just uploads — best-effort, degrades to the YAML artifact alone. Forced off ⇒ the doc tree is never compiled. Default-ON since flag strategy batch C (2026-07-31, receipt `4847eceb9a1f`); force off with AUGHOR_ONTOLOGY_AUTODOC=0 or a runtime override. See docs/DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md (R8).",
-    },
-    "birth.job": {
-        "label": "Connection/canvas birth as one observable job",
-        "description": "Run the 'understand this data' rite as ONE supervised kernel job at connection creation, upload re-arm, and canvas creation: eager intelligence first (profiles → ontology → doc tree → column config), then the exploration handoff — each step a birth.step event on the event spine, governed by the Curator agent's charter. Forced off: exploration alone kicks off and intelligence stays lazy (built on the first question), exactly as before. Default-ON since flag strategy batch C (2026-07-31, receipt `189fc985e2a0`); force off with AUGHOR_BIRTH_JOB=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R12).",
-    },
-    "ontology.column_config": {
-        "label": "Per-column visibility / sampling / indexing config",
-        "description": "A persisted, human-editable per-column config with three flags: visible (render the column into agent prompt schemas at all — hiding prunes noise columns from the context), sample (enumerate the column's values in the schema context), and index (build the offline value index over it). Deterministic defaults come from the profiler — entity dimensions index+sample, dead all-null columns and free-text blobs hide; a human edit always wins and survives schema rebuilds. No model in the loop. Forced off ⇒ the config is never consulted for prompts, sampling or indexing. Default-ON since flag strategy batch C (2026-07-31, receipt `743f540b4d72`); force off with AUGHOR_ONTOLOGY_COLUMN_CONFIG=0 or a runtime override. See docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R11).",
     },
     "deep_analysis.parallel_lenses": {
         "label": "Parallel deep-analysis lenses",

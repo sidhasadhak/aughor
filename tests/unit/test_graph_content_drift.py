@@ -63,37 +63,6 @@ def test_a_failed_projection_says_so_rather_than_reporting_no_drift(monkeypatch)
     assert d.committed == {"table": 3}, "what IS known is still reported"
 
 
-def test_the_drift_check_does_not_require_graph_build_to_be_enabled(monkeypatch):
-    """`graph.build` gates WRITING the artifact. Asking "is a rebuild owed?" must not require
-    the operator to have already turned on the thing they are being advised to run — that
-    would hide the shortfall from exactly the connection most likely to have one."""
-    seen: dict = {}
-
-    class _G:
-        def counts(self):
-            return {"finding": 0}
-
-    class _Fresh:
-        def counts(self):
-            return {"finding": 100}
-
-    def _fake_build(conn, schema, *, org_id=None, persist=True):
-        from aughor.kernel.flags import flag_enabled
-        seen["build_flag"] = flag_enabled("graph.build")
-        seen["persist"] = persist
-        return _Fresh()
-
-    monkeypatch.setattr("aughor.ontology.context_graph_store.load_graphs_for_connection",
-                        lambda org, conn: [_G()])
-    monkeypatch.setattr("aughor.ontology.context_graph_search.merge_graphs", lambda gs: _G())
-    monkeypatch.setattr("aughor.ontology.context_graph_build.build_context_graph", _fake_build)
-
-    d = content_drift("c1", org_id="default")
-    assert seen["build_flag"] is True, "the projection is forced on for the comparison"
-    assert seen["persist"] is False, "a drift CHECK must never write the artifact"
-    assert d.missing == {"finding": 100}
-
-
 def test_drift_is_not_a_staleness_state():
     """The kernel vocabulary stays fresh/dirty/stale/unknown. Adding a fifth state would
     ripple through every consumer of StalenessState to express something orthogonal."""

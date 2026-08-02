@@ -137,19 +137,11 @@ def test_readback_slice_respects_its_token_budget(monkeypatch, tmp_path):
 
 # ── refresh (deterministic; reindex off so no Qdrant/Ollama) ──────────────────
 
-def test_refresh_gated_off_is_noop(monkeypatch):
-    from aughor.ontology.graph_freshness import refresh_context_graph
-    monkeypatch.setenv("AUGHOR_GRAPH_FRESHNESS", "0")
-    assert refresh_context_graph("any-conn") is None
-
-
 def test_refresh_builds_then_skips(monkeypatch):
     """First refresh (no committed graph) is FULL and rebuilds; a second with the same
     ontology is SKIP and does no work — refresh cost proportional to change."""
     from aughor.ontology.store import save_ontology
     from aughor.ontology.graph_freshness import refresh_context_graph
-    monkeypatch.setenv("AUGHOR_GRAPH_FRESHNESS", "1")
-    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "1")
 
     onto = _onto([_order({"id": "INTEGER", "revenue": "DECIMAL"})], data_fp="d1")
     save_ontology("c", "main", "d1", onto)
@@ -167,20 +159,3 @@ def test_refresh_builds_then_skips(monkeypatch):
     assert forced is not None and forced.verdict.change == "skip" and forced.rebuilt
 
 
-def test_forced_refresh_bypasses_the_freshness_flag_but_not_the_build_flag(monkeypatch):
-    """`graph.freshness` gates change CLASSIFICATION, and a forced caller isn't asking
-    for one — but the WRITE is still gated by `graph.build`, so flag-off stays
-    byte-identical."""
-    from aughor.ontology.store import save_ontology
-    from aughor.ontology.graph_freshness import refresh_context_graph
-    monkeypatch.setenv("AUGHOR_GRAPH_FRESHNESS", "0")
-    save_ontology("cf", "main", "d1",
-                  _onto([_order({"id": "INTEGER"})], data_fp="d1"))
-
-    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "0")
-    off = refresh_context_graph("cf", "main", org_id="o", reindex=False, force=True)
-    assert off is not None and not off.rebuilt        # ran, but wrote nothing
-
-    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "1")
-    on = refresh_context_graph("cf", "main", org_id="o", reindex=False, force=True)
-    assert on is not None and on.rebuilt

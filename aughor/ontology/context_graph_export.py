@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.ontology.context_graph import ContextGraph
 
 # Bumped when the on-disk pack shape changes incompatibly. A consumer reads this FIRST
@@ -63,10 +62,6 @@ class ExportedPack:
     @property
     def graph_json(self) -> Path:
         return self.root / "graph.json"
-
-
-def export_enabled() -> bool:
-    return flag_enabled("graph.export")
 
 
 def _now() -> str:
@@ -386,9 +381,6 @@ def export_pack(
     The freshness state is computed from the live ontology unless ``staleness`` is given;
     if it cannot be determined the pack ships ``unknown`` — never a cheerful default.
     """
-    if not export_enabled():
-        return None
-
     org = org_id or _current_org()
     cg = graph if graph is not None else _load_graph(org, connection_id, schema_name)
     if cg is None or not cg.nodes:

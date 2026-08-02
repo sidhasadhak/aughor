@@ -65,27 +65,23 @@ def _intelligence(conn, base: str) -> str:
         tp, cp = get_or_build_profiles(conn, cid, tables, fk_hints)
         # R11 — refresh the persisted per-column {visible,sample,index} config from
         # the fresh profiles (defaults recomputed, human edits win) and honour
-        # `sample=false` when enumerating values. Flag-gated + best-effort: a config
-        # hiccup must never break the schema build.
+        # `sample=false` when enumerating values. Best-effort: a config hiccup must
+        # never break the schema build.
         _sample_off: set[str] = set()
-        from aughor.kernel.flags import flag_enabled
-        if flag_enabled("ontology.column_config"):
-            try:
-                from aughor.ontology.column_config import ensure_column_configs, sample_disabled
-                # R14 — mined query counts protect actually-queried columns from
-                # the default-hide policy. Empty until the popularity store fills.
-                _col_pop: dict[str, int] = {}
-                if flag_enabled("obs.popularity"):
-                    from aughor.sql.popularity import load_popularity
-                    _col_pop = load_popularity(cid).get("column", {})
-                _col_cfg = ensure_column_configs(
-                    cid, getattr(conn, "_schema_name", None) or "default", cp,
-                    column_popularity=_col_pop or None)
-                _sample_off = {f"{t}.{c}" for (t, c) in sample_disabled(_col_cfg)}
-            except Exception as _cc_exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(_cc_exc, "column-config refresh is best-effort",
-                         counter="ontology.column_config", conn_id=cid or None)
+        try:
+            from aughor.ontology.column_config import ensure_column_configs, sample_disabled
+            # R14 — mined query counts protect actually-queried columns from
+            # the default-hide policy. Empty until the popularity store fills.
+            from aughor.sql.popularity import load_popularity
+            _col_pop: dict[str, int] = load_popularity(cid).get("column", {})
+            _col_cfg = ensure_column_configs(
+                cid, getattr(conn, "_schema_name", None) or "default", cp,
+                column_popularity=_col_pop or None)
+            _sample_off = {f"{t}.{c}" for (t, c) in sample_disabled(_col_cfg)}
+        except Exception as _cc_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_cc_exc, "column-config refresh is best-effort",
+                     counter="ontology.column_config", conn_id=cid or None)
         base = inject_value_annotations(base, cp, sample_disabled=_sample_off)
         annotation = render_profile_annotations(tp, cp)
         if annotation:
@@ -146,28 +142,27 @@ def _intelligence(conn, base: str) -> str:
             graph = overlay_human_overrides(graph, cid, graph.schema_name)
             conn._ontology = graph
             # R8 — compile the ontology into a persisted, Merkle-checksummed doc-tree artifact
-            # (understanding as a build artifact). Flag-gated (default-off) + best-effort: a
-            # doc-tree hiccup must never break the schema build. Reuses tp for row-count/date facts.
-            if flag_enabled("ontology.autodoc"):
+            # (understanding as a build artifact). Best-effort: a doc-tree hiccup must
+            # never break the schema build. Reuses tp for row-count/date facts.
+            try:
+                from aughor.ontology.doctree import build_and_persist, table_stats_from_profiles
+                _tree = build_and_persist(cid, graph.schema_name, graph=graph,
+                                          table_stats=table_stats_from_profiles(tp))
+                # R8a — embed the compiled docs into the knowledge store with FQN
+                # provenance (the retrieval consumer). Its own best-effort gate: no
+                # embedder/Qdrant → the YAML artifact alone, exactly as before.
                 try:
-                    from aughor.ontology.doctree import build_and_persist, table_stats_from_profiles
-                    _tree = build_and_persist(cid, graph.schema_name, graph=graph,
-                                              table_stats=table_stats_from_profiles(tp))
-                    # R8a — embed the compiled docs into the knowledge store with FQN
-                    # provenance (the retrieval consumer). Its own best-effort gate: no
-                    # embedder/Qdrant → the YAML artifact alone, exactly as before.
-                    try:
-                        from aughor.knowledge.indexer import index_doc_tree
-                        index_doc_tree(_tree, connection_id=cid,
-                                       schema=graph.schema_name or "default")
-                    except Exception as _idx_exc:
-                        from aughor.kernel.errors import tolerate
-                        tolerate(_idx_exc, "doc-tree knowledge embedding is best-effort",
-                                 counter="ontology.autodoc", conn_id=cid or None)
-                except Exception as _doc_exc:
+                    from aughor.knowledge.indexer import index_doc_tree
+                    index_doc_tree(_tree, connection_id=cid,
+                                   schema=graph.schema_name or "default")
+                except Exception as _idx_exc:
                     from aughor.kernel.errors import tolerate
-                    tolerate(_doc_exc, "ontology doc-tree build is best-effort",
+                    tolerate(_idx_exc, "doc-tree knowledge embedding is best-effort",
                              counter="ontology.autodoc", conn_id=cid or None)
+            except Exception as _doc_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_doc_exc, "ontology doc-tree build is best-effort",
+                         counter="ontology.autodoc", conn_id=cid or None)
             onto_block = render_ontology_annotations(graph)
             if onto_block:
                 base += "\n\n" + onto_block

@@ -194,22 +194,10 @@ def _wire(monkeypatch, *, on: bool, calls: list):
                 for i in range(20)]
 
     monkeypatch.setattr(build_mod, "load_investigation_findings", _loader)
-    monkeypatch.setattr(build_mod, "flag_enabled",
-                        lambda name: on if name == "graph.consolidate" else False)
     return build_mod
 
 
-def test_flag_off_reads_exactly_as_before(monkeypatch):
-    """Byte-identical: the previous call, cap and all — no over-fetch, no consolidation."""
-    calls: list = []
-    build_mod = _wire(monkeypatch, on=False, calls=calls)
-    out = build_mod._consolidated_investigation_findings("c1", "org1", None)
-    assert calls == [None]                       # the loader's own default cap
-    assert len(out) == 20                        # untouched
-    assert all("supersedes" not in f and "stale" not in f for f in out)
-
-
-def test_flag_on_overfetches_and_consolidates(monkeypatch):
+def test_consolidation_overfetches_and_folds_repeats(monkeypatch):
     """Consolidation only pays off if it can see the repeats, and they live behind the cap."""
     calls: list = []
     build_mod = _wire(monkeypatch, on=True, calls=calls)
@@ -219,21 +207,19 @@ def test_flag_on_overfetches_and_consolidates(monkeypatch):
     assert sum(f.get("supersedes", 0) for f in out) == 17
 
 
-def test_flag_on_still_honours_the_cap(monkeypatch):
+def test_consolidation_still_honours_the_cap(monkeypatch):
     """The artifact's size budget is not negotiable — consolidation changes WHAT it keeps."""
     from aughor.ontology import context_graph_build as build_mod
 
     monkeypatch.setattr(build_mod, "load_investigation_findings",
                         lambda c, o=None, *, limit=None: [
                             _f(f"r{i}", question=f"q{i}") for i in range(500)])
-    monkeypatch.setattr(build_mod, "flag_enabled",
-                        lambda name: name == "graph.consolidate")
     out = build_mod._consolidated_investigation_findings("c1", "org1", None)
     assert len(out) == build_mod.MAX_RECEIPT_FINDINGS
 
 
 def test_projection_omits_consolidation_keys_when_absent():
-    """A graph built with the flag off serializes exactly as it did before N3."""
+    """A finding carrying no consolidation metadata serializes to the plain payload."""
     from aughor.ontology.context_graph import finding_node_data
 
     assert set(finding_node_data(_f("a"))) == {"sql", "tables", "generated_at"}

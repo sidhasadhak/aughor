@@ -220,12 +220,8 @@ def get_context_graph(
 ):
     """Wave C4 — the connection knowledge graph for the anti-hairball surface: the full
     nodes + edges + provenance, PLUS a level-1 domain aggregation (cross-domain joins
-    collapsed to counts) and the typed staleness state. 404 when ``graph.surface`` is off
-    (byte-identical default). Builds on demand when a graph is not yet committed and
-    ``graph.build`` is on."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("graph.surface"):
-        raise HTTPException(status_code=404, detail="graph.surface disabled")
+    collapsed to counts) and the typed staleness state. Builds on demand when a graph is
+    not yet committed."""
     from aughor.org.context import current_org_id
     from aughor.ontology.context_graph_search import merge_graphs
     from aughor.ontology.context_graph_store import load_graphs_for_connection
@@ -281,11 +277,8 @@ def get_graph_content_drift(
     missing what the platform has already learned.
 
     Costs an in-memory projection (no LLM, no warehouse), which is why it is a separate call
-    rather than part of every `/graph` read. 404 when ``graph.surface`` is off.
+    rather than part of every `/graph` read.
     """
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("graph.surface"):
-        raise HTTPException(status_code=404, detail="graph.surface disabled")
     from aughor.ontology.graph_freshness import content_drift
     from aughor.org.context import current_org_id
 
@@ -301,11 +294,7 @@ def get_context_graph_tour(
 ):
     """Wave C5 — the connection tour: a reading order computed from graph TOPOLOGY (hub entry →
     BFS → metrics capstone), a curriculum rather than a listicle. Deterministic by default;
-    ``narrate=true`` adds a one-time LLM narration over the already-fixed order. 404 when
-    ``graph.tour`` is off (byte-identical)."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("graph.tour"):
-        raise HTTPException(status_code=404, detail="graph.tour disabled")
+    ``narrate=true`` adds a one-time LLM narration over the already-fixed order."""
     cg = _load_graph_or_404(connection_id, schema_name)
     from aughor.ontology.graph_tour import build_tour, narrate_tour
     tour = build_tour(cg)
@@ -796,9 +785,8 @@ def get_column_config(
     schema_name: Optional[str] = Query(default=None),
 ):
     """The persisted per-column config, grouped per table. Readable regardless of
-    the `ontology.column_config` flag (the flag gates runtime consumption, not the
-    artifact); `enabled` tells the caller whether edits will take effect."""
-    from aughor.kernel.flags import flag_enabled
+    the config store; `enabled` is kept in the payload as a stable contract for the
+    editor UI, and is always true now that per-column config is unconditional."""
     from aughor.ontology.column_config import load_column_configs
     effective = _resolve_schema(connection_id, schema_name)
     tables: dict[str, dict[str, dict]] = {}
@@ -807,7 +795,7 @@ def get_column_config(
     return {
         "connection_id": connection_id,
         "schema": effective,
-        "enabled": flag_enabled("ontology.column_config"),
+        "enabled": True,
         "tables": tables,
     }
 
