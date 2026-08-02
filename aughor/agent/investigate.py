@@ -1597,8 +1597,6 @@ def _chart_ratio_primary(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
-# A pie/donut stays legible for only a handful of parts; past this a ranked bar reads better.
-_PIE_MAX_SLICES = 6
 # Column-name signals used to keep the intent resolver honest about a finding's ACTUAL shape.
 _FINDING_DATE_RE = re.compile(
     r"(?:^|_)(?:date|month|week|day|year|quarter|period|created|updated|timestamp)s?(?:_|$)|_at$|_ts$", re.I)
@@ -1611,24 +1609,20 @@ def _chart_type_for_finding(finding: dict, intent: str) -> str:
     mislabelled intent degrades to 'auto' (frontend inference) instead of forcing a wrong chart. See
     docs/CHART_SELECTION_GUIDE.md. Intents:
       trend        → line — but only when a date/period column is actually present, else 'auto'.
-      composition  → a donut for a few parts-of-a-whole, a ranked bar once there are too many slices.
+      composition  → a ranked bar, never a donut (see below).
       ranking      → sorted horizontal bar — but a CHANGE/contribution finding keeps 'auto' so the
                      frontend's sign-aware diverging bar isn't flattened.
       relationship → scatter.
     Anything else keeps the finding's own chart_type (or 'auto')."""
     cols = [str(c) for c in (finding.get("columns") or [])]
-    n = len([r for r in (finding.get("rows") or []) if r])
     has_date = any(_FINDING_DATE_RE.search(c) for c in cols)
     has_change = any(_FINDING_CHANGE_RE.search(c) for c in cols)
     if intent == "composition":
         # Chart grammar: a composition is a RANKED BAR, never a donut — the reference
         # reports use three forms (ranked h-bar, labeled scatter, table) and zero pies;
         # a 60.7/39.3 split reads faster as two sorted bars with data labels than as
-        # arc angles. Flag-off keeps the legacy pie byte-identical.
-        from aughor.kernel.flags import flag_enabled as _fe
-        if _fe("chart.exhibit_grammar"):
-            return "bar_horizontal"
-        return "pie" if 2 <= n <= _PIE_MAX_SLICES else "bar_horizontal"
+        # arc angles, so a composition never becomes a pie.
+        return "bar_horizontal"
     if intent == "relationship":
         return "scatter"
     if intent == "trend":
@@ -3286,17 +3280,14 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # Loss-intent questions get a deterministic directive naming the loss signals THIS
     # schema carries (contra-revenue / capacity columns) — a revenue ranking cannot find
     # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund
-    # leakage. Prepended so it is the topmost instruction the intake sees. Flag-gated;
-    # '' when the question/schema don't apply, so the prompt is byte-identical otherwise.
+    # leakage. Prepended so it is the topmost instruction the intake sees. The detector
+    # returns '' when the question/schema don't apply, so the prompt is unchanged then.
     # The detected signals are kept (stored on _ada_intake below) so the cross-section
     # can forward-chain the loss lenses the primary metric doesn't cover.
-    _loss_sig = None
-    from aughor.kernel.flags import flag_enabled as _loss_flag
-    if _loss_flag("intake.loss_signals"):
-        from aughor.agent.loss_signals import detect_loss_signals, directive_from_signals
-        _loss_sig = detect_loss_signals(question, schema)
-        if _loss_sig:
-            prompt = directive_from_signals(_loss_sig) + "\n" + prompt
+    from aughor.agent.loss_signals import detect_loss_signals, directive_from_signals
+    _loss_sig = detect_loss_signals(question, schema)
+    if _loss_sig:
+        prompt = directive_from_signals(_loss_sig) + "\n" + prompt
 
     try:
         intake: IntakeOutput = _provider("coder").complete(
@@ -5107,9 +5098,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
 
     # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
     # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
-    from aughor.kernel.flags import flag_enabled as _flag_enabled
-    _decision_grade = _flag_enabled("lens.decision_grade")
-    _exhibit_grammar = _flag_enabled("chart.exhibit_grammar")
     def _polish_xsec_finding(f):
         """The per-finding presentation passes, factored so the grain-correct repair can
         re-run them on a finding whose ROWS it just replaced (chart/keys/exhibit computed
@@ -5131,22 +5119,20 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _tag_currency_columns(f, metric_sql)
         # R15 — decision-grade opportunity framing: benchmark-gap × volume, computed
         # deterministically from this finding's own segment rows (no model, no extra
-        # query). Flag-gated; a grid the lens can't read honestly annotates nothing.
-        if _decision_grade:
-            from aughor.agent.opportunity import annotate_opportunity, metric_lower_is_better
-            # Orient the benchmark: for a cost-like metric (refund rate, cancellations)
-            # the laggard is the HIGHEST segment, so benchmarking upward would invert the
-            # claim. The renderers already derive this to pick a red ramp; the math is the
-            # consumer the signal never reached.
-            annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
-                                 is_percent=_metric_is_pct,
-                                 lower_is_better=metric_lower_is_better(metric_label, metric_sql))
+        # query). A grid the lens can't read honestly annotates nothing.
+        from aughor.agent.opportunity import annotate_opportunity, metric_lower_is_better
+        # Orient the benchmark: for a cost-like metric (refund rate, cancellations)
+        # the laggard is the HIGHEST segment, so benchmarking upward would invert the
+        # claim. The renderers already derive this to pick a red ramp; the math is the
+        # consumer the signal never reached.
+        annotate_opportunity(f, metric_label=metric_label, is_ratio=is_ratio,
+                             is_percent=_metric_is_pct,
+                             lower_is_better=metric_lower_is_better(metric_label, metric_sql))
         # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
         # reference lines (segment-weighted average; the R15 best-peer benchmark),
         # computed from this finding's own rows. No model, no extra query; fail-open.
-        if _exhibit_grammar:
-            from aughor.agent.exhibit import exhibit_for_cross_section
-            exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
+        from aughor.agent.exhibit import exhibit_for_cross_section
+        exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
 
     for f in findings:
         _polish_xsec_finding(f)
@@ -5292,7 +5278,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _why_phase = _run_composition_lens(state, conn, _why_event_dims)
         if _why_phase:
             result_phases = result_phases + [_why_phase]
-    # Loss-playbook lenses (flag intake.loss_signals) — mirror of the multilens path, so
+    # Loss-playbook lenses — mirror of the multilens path, so
     # the leakage/utilization stories run whichever cross-section variant is live. Only
     # on the ROOT invocation: the multilens node calls this function once per partitioned
     # lens (dims_override set) and appends the loss phases itself at merge time — running
@@ -6286,12 +6272,10 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         ]
         summary = empty_summary
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
-    from aughor.kernel.flags import flag_enabled as _fe
-    _grammar = _fe("chart.exhibit_grammar")
     # R15 on the lens path. The utilization lens plans exactly R15's grid (segment,
     # metric_total, n) and then ASKED THE MODEL to "size the opportunity as gap ×
     # volume" — the one number the whole lens exists for, left to prose. Compute it.
-    _opp = opportunity if (opportunity and _fe("lens.decision_grade")) else None
+    _opp = opportunity or None
     for _f in findings:
         _normalize_pct_key_numbers(_f)
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
@@ -6308,9 +6292,8 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
                                  volume_is_money=bool(_opp.get("volume_is_money")))
         # Chart-grammar exhibit: severity ramp on the share ranking; the benchmark
         # lens also draws the peer median its whole point is to compare against.
-        if _grammar:
-            from aughor.agent.exhibit import exhibit_for_lens
-            exhibit_for_lens(_f, peer_median=peer_median_ref)
+        from aughor.agent.exhibit import exhibit_for_lens
+        exhibit_for_lens(_f, peer_median=peer_median_ref)
     _ph = _phase_result(
         phase_id, title, emoji,
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
@@ -6351,7 +6334,7 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
 
 
 def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
-    """Forward-chained LOSS lenses (flag `intake.loss_signals`): one investigation
+    """Forward-chained LOSS lenses: one investigation
     carries ONE primary metric, so a 'losing money' run that (correctly) picked
     utilization leaves the leakage story untold — and vice versa. Every signal class
     the intake detected but the primary metric doesn't cover gets its own phase via
@@ -6359,9 +6342,6 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
     chart types and the exhibit grammar through `_lens_phase_from_run`. Deterministic
     gating; fail-open — a lens that can't run contributes nothing."""
     try:
-        from aughor.kernel.flags import flag_enabled as _fe
-        if not _fe("intake.loss_signals"):
-            return []
         intake_data = state.get("_ada_intake") or {}
         sig = intake_data.get("loss_signals") or {}
         if not sig:
@@ -6637,7 +6617,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
                 merged.append(_ph)
                 _extras.append(label)
 
-    # Loss-playbook lenses (flag intake.loss_signals): the leakage/utilization phases the
+    # Loss-playbook lenses: the leakage/utilization phases the
     # primary metric left uncovered — independent of the WHY chain, appended last so the
     # narrative reads scan → causes → the other loss stories.
     for _lp in _run_loss_lens_phases(state, conn):
@@ -6945,8 +6925,8 @@ def ada_synthesize(state: AgentState) -> dict:
     import concurrent.futures as _cf
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
-    # R16 P2 — the narrator's system prompt lives with the other prompts; under
-    # `report.argument_style` it carries the report-style writing contract.
+    # R16 P2 — the narrator's system prompt lives with the other prompts and carries
+    # the report-style writing contract.
     from aughor.agent.prompts_investigate import synthesis_system_prompt
     _synth_system = synthesis_system_prompt()
     # R6 — stream the report prose (executive_summary) to the client as the narrator

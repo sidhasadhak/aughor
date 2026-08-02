@@ -1510,17 +1510,15 @@ async def _stream_chat(
         # server-side from the same `conn:schema` cache entry the Briefing rendered (never
         # posted up by the client, so it can't drift from what's on screen or be spoofed).
         # Best-effort and empty when no brief is cached: no context beats invented context.
-        from aughor.kernel.flags import flag_enabled as _flag
-        if _flag("ask.brief_context"):
-            try:
-                from aughor.knowledge.brief_context import brief_block_for_scope
-                _brief_sec = brief_block_for_scope(connection_id, canvas_scope_schema, canvas_id)
-                if _brief_sec:
-                    prompt = _brief_sec + "\n" + prompt
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "brief grounding is best-effort; answering without the brief",
-                         counter="chat.brief_section")
+        try:
+            from aughor.knowledge.brief_context import brief_block_for_scope
+            _brief_sec = brief_block_for_scope(connection_id, canvas_scope_schema, canvas_id)
+            if _brief_sec:
+                prompt = _brief_sec + "\n" + prompt
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "brief grounding is best-effort; answering without the brief",
+                     counter="chat.brief_section")
         # Playbook context — when org playbook items match this question, give them
         # to the model AND surface them to the user (emitted below) so they can
         # keep / modify / remove them.
@@ -1705,12 +1703,12 @@ async def _stream_chat(
         # are the RAW (pre-grounding) headline; the terminal grounded `headline` event below is
         # authoritative and overwrites the stream (self-healing, mirroring the `narrative` stream).
         # Flag off = the exact pre-streaming blocking call, byte-identical.
-        from aughor.kernel.flags import flag_enabled as _hl_stream_flag
-        # Chart-grammar: under `chart.exhibit_grammar` the system prompt no longer offers
-        # the combo chart (one measure per exhibit; the renderer's deterministic dual-axis
-        # gate is the only door). Flag off = the legacy prompt byte-for-byte.
+        # Chart-grammar: the system prompt no longer offers the combo chart (one measure
+        # per exhibit; the renderer's deterministic dual-axis gate is the only door).
+        # The legacy vocabulary still exists for the benchmark and custom-agent quality
+        # paths, which were never gated by this and keep `CHAT_SQL_SYSTEM`.
         from aughor.agent.prompts import chat_sql_system as _chat_sql_system
-        _chat_system = _chat_sql_system(_hl_stream_flag("chart.exhibit_grammar"))
+        _chat_system = _chat_sql_system(exhibit_grammar=True)
         import queue as _hq_mod
         import threading as _hthreading
         import time as _htime
@@ -2093,12 +2091,12 @@ async def _stream_chat(
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         # Chart-grammar exhibit for the quick answer — computed from the result grid alone
         # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
-        # chart_config so no new event/persistence surface is needed; flag off = absent.
-        if _hl_stream_flag("chart.exhibit_grammar"):
-            from aughor.agent.exhibit import quick_exhibit
-            _exh = quick_exhibit(result.columns, result.rows, answer.chart_type)
-            if _exh:
-                answer.chart_config = {**(answer.chart_config or {}), "exhibit": _exh}
+        # chart_config so no new event/persistence surface is needed; absent when the
+        # grid has no exhibit to compute.
+        from aughor.agent.exhibit import quick_exhibit
+        _exh = quick_exhibit(result.columns, result.rows, answer.chart_type)
+        if _exh:
+            answer.chart_config = {**(answer.chart_config or {}), "exhibit": _exh}
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
         _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)
@@ -3626,10 +3624,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
     # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn
     # already answering a clarification), ask ONE targeted question instead of guessing.
-    # Budget is one ask/turn — the user's answer comes back with skip_clarify set.
-    # Flag `ask.clarify` (env AUGHOR_ASK_CLARIFY) is the rare DEFAULT-ON flag.
-    from aughor.kernel.flags import flag_enabled
-
+    # Budget is one ask/turn — the user's answer comes back with skip_clarify set, which
+    # is the per-turn bypass a caller actually uses.
     # Overview / "interesting facts about this schema" — the widest-scope ask. Checked
     # BEFORE the clarify gate on purpose: an under-specified "tell me about this data" is
     # exactly the case where an overview IS the answer, not a clarifying question.
@@ -3638,8 +3634,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield _ev
         return
 
-    if (req.depth == "auto" and not req.escalate and not req.insight_id and not req.skip_clarify
-            and flag_enabled("ask.clarify")):
+    if (req.depth == "auto" and not req.escalate and not req.insight_id
+            and not req.skip_clarify):
         from aughor.agent.clarify import assess_clarification
         decision = assess_clarification(req.question)
         if decision.should_ask:

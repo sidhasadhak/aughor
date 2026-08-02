@@ -46,7 +46,7 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_all_nine_flags_are_registered_and_default_on():
+def test_every_flag_this_suite_backs_is_registered_and_default_on():
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     for flag in FLAGS:

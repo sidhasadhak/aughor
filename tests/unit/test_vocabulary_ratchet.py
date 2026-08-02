@@ -140,20 +140,28 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
 #: `blueprint`, `foundry`, `mindsdb` and `tableau` are at ZERO — they stay listed so
 #: the ratchet keeps them there.
 BASELINE: dict[str, int] = {
-    "ada": 664,
+    # 664 → 654. Wave 2d deleted ten FLAG_META descriptions and their guard comments,
+    # most of them ada-era prose. Counted over `git ls-files` only — a box that has run
+    # the eval suite feeds the scanner untracked MLflow yaml under evals/bakeoff_out/,
+    # which is what CI's fresh checkout will never see.
+    "ada": 654,
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,
     "control_room": 27,
     "copilotkit": 5,
-    "databricks": 54,
+    # 54 → 49: mostly already true on main (the study references moved to docs/, which is
+    # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
+    "databricks": 49,
     "digest": 166,
     "expertise": 43,
     "fleet": 58,
     "foundry": 0,
     "genie": 23,
     "hire": 27,
-    "insight": 1967,
+    # 1967 → 1960: already true on main after #248; locked in here rather than left as
+    # headroom for the next regression.
+    "insight": 1960,
     "investigation_in_web": 659,
     "kinetic": 402,
     "mindsdb": 0,
@@ -161,10 +169,10 @@ BASELINE: dict[str, int] = {
     "persona": 321,
     "reforce": 1,
     "soma": 26,
-    # 88 → 87: the explore log line that announced steering said "specialist pack";
-    # it now says "pack", which is what the glossary calls the thing. Lowered here so
-    # the gain is locked in rather than left as headroom for the next new occurrence.
-    "specialist": 87,
+    # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";
+    # it now says "pack", which is what the glossary calls the thing. Lowered again after
+    # #248 so the gain is locked in rather than left as headroom for the next occurrence.
+    "specialist": 86,
     "tableau": 0,
 }
 

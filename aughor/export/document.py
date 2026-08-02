@@ -187,9 +187,7 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
         _date(inv.get("completed_at") or inv.get("started_at")),
         f"{len(answers)} questions explored" if answers else "",
     ) if m]
-    from aughor.kernel.flags import flag_enabled
-    _argument = flag_enabled("report.argument_style")
-    _exhibits = _exhibit_argument if _argument else _chart_or_table
+    _exhibits = _exhibit_argument
     _money_sym = money_symbol
 
     blocks: list[Block] = []
@@ -247,13 +245,10 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     if glance:
         blocks.append(Block("prose", text="   ·   ".join(str(g) for g in glance), tag="At a glance"))
 
-    # R16 P1 (flag `report.argument_style`) — compose the body the way an analyst
-    # argues: intake machinery out (it stays in the Trust Receipt), key numbers
-    # bold inline in prose instead of tile rows, one informative exhibit per
-    # claim, and the R15 opportunity number promoted to a Financial impact
-    # section. Flag off → the legacy composition, byte-identical.
-    from aughor.kernel.flags import flag_enabled
-    _argument = flag_enabled("report.argument_style")
+    # R16 P1 — the body is composed the way an analyst argues: intake machinery out
+    # (it stays in the Trust Receipt), key numbers bold inline in prose instead of
+    # tile rows, one informative exhibit per claim, and the R15 opportunity number
+    # promoted to a Financial impact section.
     _money_sym = money_symbol
     _nm = lambda s: (s or "").replace("*", "")  # noqa: E731 — strip model markdown
     opportunities: list[dict] = []
@@ -261,7 +256,7 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     for ph in rep.get("phases") or []:
         if ph.get("status") == "skipped" or not ph.get("findings"):
             continue
-        if _argument and (ph.get("phase_id") or "") == "intake":
+        if (ph.get("phase_id") or "") == "intake":
             continue
         blocks.append(_h(str(ph.get("phase_name") or ph.get("phase_id") or "Phase").strip()))
         # The deterministic synthesis fallback STITCHES phase summaries into the executive
@@ -280,7 +275,7 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
                 tag=(f.get("stat_note") or "") if f.get("is_significant") else "",
             ))
             kns = f.get("key_numbers") or []
-            if kns and _argument:
+            if kns:
                 # Numbers live in the sentence, not in tiles. The R15 opportunity
                 # key number is held back for its own Financial impact section.
                 opportunities += [k for k in kns
@@ -292,13 +287,6 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
                         f"**{_nm(k.get('label', ''))}: {_nm(k.get('value', ''))}**"
                         + (f" ({_nm(k.get('delta'))})" if k.get("delta") else "")
                         for k in inline)))
-            elif kns:
-                # Strip any **markdown** the model wrapped a figure in — the export renders these as
-                # plain text, so "**57.8%**" would otherwise print literal asterisks.
-                blocks.append(Block("keynums", keynums=[
-                    KeyNumber(_nm(k.get("label", "")), _nm(k.get("value", "")), _nm(k.get("delta")) or None, _nm(k.get("context")) or None)
-                    for k in kns
-                ]))
             # A suppressed finding's rows ARE the corrupt artifact (a fanned/conditioned
             # ratio) — its interpretation sentence already says so; rendering the rows as a
             # clean table prints exactly the numbers we suppressed ("intercontinental 55.73"
@@ -319,18 +307,13 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
             # prints "74.5%" in the PDF exactly as on screen, and the chart-grammar `exhibit`
             # (severity ramp · reference lines · point labels). Both absent → unchanged output.
             _u, _x = f.get("column_units"), f.get("exhibit")
-            if _argument:
-                blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
-                                                f.get("title") or "", units=_u, exhibit=_x,
-                                                money_symbol=_money_sym))
-            else:
-                blocks.extend(_chart_or_table(f.get("columns"), f.get("rows"), f.get("chart_type"),
-                                              f.get("title") or "", units=_u, exhibit=_x,
-                                              money_symbol=_money_sym))
+            blocks.extend(_exhibit_argument(f.get("columns"), f.get("rows"), f.get("chart_type"),
+                                            f.get("title") or "", units=_u, exhibit=_x,
+                                            money_symbol=_money_sym))
 
     # R16 P1 — the decision paragraph: gap-to-benchmark × volume, in prose,
     # right where a reader decides (before Recommendations).
-    if _argument and opportunities:
+    if opportunities:
         blocks.append(_h("Financial impact"))
         for k in opportunities:
             line = f"**{_nm(k.get('label', ''))}: {_nm(k.get('value', ''))}**"

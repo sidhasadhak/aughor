@@ -26,8 +26,12 @@ from aughor.evals.experiments import Cell, MeasurementIntegrityError
 from aughor.kernel.flags import clear_flag, flag_enabled
 from aughor.llm import provider as P
 
-FLAG = "closed_loop"   # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
-OTHER = "deep_analysis.evidence_dedup"
+# Two registered flags, only ever cleared between tests — nothing here depends on what
+# they DO. Both are EXPERIMENT-dispositioned so they outlive the endgame's hardwiring
+# waves; the two predecessors were re-pointed for exactly that reason (evidence_stubs
+# deleted 2026-08-01, evidence_dedup hardwired by Wave 2d).
+FLAG = "closed_loop"
+OTHER = "graph.readback"
 
 
 @pytest.fixture(autouse=True)

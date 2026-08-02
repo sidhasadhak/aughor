@@ -200,16 +200,6 @@ def focused_schema(schema: str, *, sql: str = "", error: str = "",
     return out, info
 
 
-def enabled() -> bool:
-    """Flag ``schema.two_tier_catalog``. Fail-safe → off, so a flag-store hiccup can never
-    narrow a repair prompt."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("schema.two_tier_catalog")
-    except Exception:
-        return False
-
-
 def for_repair_from_state(state, sql: str, error: str) -> str:
     """:func:`for_repair` reading the schema off the graph state — the shape both repair
     call sites use, defined ONCE so the investigate and explore paths cannot drift."""
@@ -221,15 +211,17 @@ def for_repair_from_state(state, sql: str, error: str) -> str:
 
 
 def for_repair(schema: str, sql: str, error: str) -> str:
-    """The schema block for a SQL repair prompt — two-tier when the flag is on and the
-    schema is large enough, otherwise exactly what was passed in.
+    """The schema block for a SQL repair prompt — two-tier when the schema is large
+    enough, otherwise exactly what was passed in.
 
     One call site shape for both the investigate and the explore repair paths, so the two
     cannot drift (the guard battery being ~5 re-assembled sites by path is a known
     fragmentation problem in this repo; this does not add a sixth).
+
+    Still fail-safe in the direction that matters: any error narrowing the schema returns
+    the FULL schema, because a repair prompt missing the table the error names is
+    unfixable, while an over-large one merely costs tokens.
     """
-    if not enabled():
-        return schema
     try:
         out, info = focused_schema(schema, sql=sql, error=error)
         if info["focused"]:

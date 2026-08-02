@@ -62,7 +62,7 @@ const priceRating: Row[] = Array.from({ length: 18 }, (_, i) => ({
 const autoCols = ["order_date", "orders"];
 const autoRows = MONTHS.map((m, i) => [m, 800 + i * 120 + (i % 2) * 60]);
 
-// ── Chart-grammar exhibits (flag chart.exhibit_grammar) — the report-chart semantics ──
+// ── Chart-grammar exhibits — the report-chart semantics ──
 // Severity-ramped rate ranking + reference lines (the "lowest load factors" exhibit).
 const loadFactors: Row[] = ([
   ["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7], ["GVA-EZE", 68.1],

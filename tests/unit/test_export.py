@@ -102,11 +102,11 @@ def test_render_chart_none_when_not_chartable():
 # ── document model ──────────────────────────────────────────────────────────
 
 def test_ada_doc_has_rich_structure():
-    """The DEFAULT export shape. `keynums` left this set when `report.argument_style`
-    graduated to default-ON (2026-07-22 audit): the argument style deliberately drops
-    stat-tile rows and bolds key numbers inline in the prose instead. The legacy shape —
-    including its keynums block — is still asserted in test_export_argument_style.py
-    under an explicit operator override."""
+    """The export shape. `keynums` left this set when `report.argument_style` graduated
+    to default-ON (2026-07-22 audit) and Wave 2d made it unconditional: the argument
+    style drops stat-tile rows and bolds key numbers inline in the prose instead. With
+    the flag gone there is no legacy composition left to assert against — the `keynums`
+    assertion below now pins that nothing reintroduces tile rows."""
     doc = build_export_doc(_ada_inv())
     kinds = {b.kind for b in doc.blocks}
     assert {"heading", "chart", "recs"} <= kinds

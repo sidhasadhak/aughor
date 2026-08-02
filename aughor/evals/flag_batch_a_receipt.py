@@ -1,5 +1,13 @@
 """Flag strategy batch A — deterministic evidence for nine construction-decidable flags.
 
+**Wave 2d (2026-08-02) hardwired four of the nine** — ``preflight.parallel``,
+``deep_analysis.evidence_dedup``, ``schema.two_tier_catalog`` and
+``explore.wandering_detector`` are now unconditional product behaviour and their flags
+are deleted. Their scenarios are KEPT below: every claim here is about what the code
+does, not about what a switch does, so they still guard the behaviour the graduation
+bought. They are simply no longer listed in :data:`FLAGS`, which enumerates flags this
+suite is evidence FOR. The suite name is unchanged on purpose — see :data:`SUITE_NAME`.
+
 **The batch claim.** `docs/FLAG_STRATEGY_2026-07-31.md` §4A: each of these nine flags is
 deterministic and its graduation claim is decidable by CONSTRUCTION — no model in the
 loop, no sampling, so (per the L4/N3/CR0/Wave-H carve-out) no A/B grid and no noise
@@ -50,21 +58,26 @@ from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluat
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
+#: DO NOT rename. `ensure_suite` matches on this string, so changing it forks the
+#: lineage: a store that already holds this suite would get a SECOND row with the same
+#: target, and the receipts FLAG_DEFAULT still cites for the surviving flags
+#: (9bf08c312faa · 2574532bcbde · b167bb891764 · 1bc0e4690955 · 3155c4d9de61) stay
+#: attached to the old row. "nine" is the historical batch size and stays accurate as
+#: history — Wave 2d hardwired four of the nine, which narrows FLAGS, not the identity.
 SUITE_NAME = "flag strategy batch A — nine construction-decidable graduations"
 
 #: The flags this suite is evidence for (each minted its own graduation decision).
+#: Wave 2d hardwired four of the original nine (preflight.parallel ·
+#: deep_analysis.evidence_dedup · schema.two_tier_catalog · explore.wandering_detector).
+#: Their scenarios stay below — the claims were about product behaviour, not about a
+#: switch — but they are no longer evidence FOR a flag, so they are not listed here.
 FLAGS = (
-    "preflight.parallel", "deep_analysis.evidence_dedup", "schema.two_tier_catalog",
-    "explore.wandering_detector", "monitors.guarded", "consistency.divergence",
+    "monitors.guarded", "consistency.divergence",
     "ops.metered_monitors", "evals.experiments", "starters.library",
 )
 
 #: The scenario-name prefix that backs each flag — the receipt's flag→cases map.
 SCENARIO_PREFIX = {
-    "preflight.parallel": "preflight_parallel",
-    "deep_analysis.evidence_dedup": "evidence_dedup",
-    "schema.two_tier_catalog": "two_tier_catalog",
-    "explore.wandering_detector": "wandering_detector",
     "monitors.guarded": "monitors_guarded",
     "consistency.divergence": "consistency_divergence",
     "ops.metered_monitors": "metered_monitors",
@@ -101,15 +114,14 @@ def _preflight_parallel__context_reaches_pooled_workers() -> Comparison:
     is asserted: the pooled run sees the same context and returns the same values in
     the same fixed assembly order as the serial run."""
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
-    from aughor.kernel.flags import flag_enabled, flag_overrides
     from aughor.kernel.parallel_safety import fanout_region
     from aughor.org.context import current_org_id, using_org
 
     def probe(tag: str):
         # Deterministic, context-reading stand-ins for the four retrievals.
-        return (tag, flag_enabled("preflight.parallel"), current_org_id())
+        return (tag, current_org_id())
 
-    with flag_overrides({"preflight.parallel": True}), using_org("default"):
+    with using_org("default"):
         serial = [probe(t) for t in ("schema", "kb", "causal", "priors")]
         with fanout_region("deep_analysis.preflight"), ContextThreadPoolExecutor(max_workers=4) as pool:
             futs = [pool.submit(probe, t) for t in ("schema", "kb", "causal", "priors")]
@@ -166,14 +178,13 @@ def _big_schema(*tables: str) -> str:
 
 @scenario("two_tier_catalog__a_small_schema_returns_byte_identical")
 def _two_tier_catalog__a_small_schema_returns_byte_identical() -> Comparison:
-    """Below FOCUS_MIN_CHARS the full schema is returned untouched even with the flag
-    on — the safe-direction floor."""
+    """Below FOCUS_MIN_CHARS the full schema is returned untouched — the safe-direction
+    floor, and since Wave 2d the only thing keeping a small database's repair prompt
+    byte-identical."""
     from aughor.agent.schema_focus import for_repair
-    from aughor.kernel.flags import flag_overrides
 
     small = _big_schema("orders", "customers")
-    with flag_overrides({"schema.two_tier_catalog": True}):
-        out = for_repair(small, "SELECT * FROM orders", "no such column: x")
+    out = for_repair(small, "SELECT * FROM orders", "no such column: x")
     return Comparison(
         scenario="two_tier_catalog__a_small_schema_returns_byte_identical",
         expected={"identical": True}, observed={"identical": out == small},
@@ -188,13 +199,11 @@ def _two_tier_catalog__the_error_named_table_is_autoloaded() -> Comparison:
     (a binder error is unfixable without it), and the focused output is never larger
     than the input."""
     from aughor.agent import schema_focus as SF
-    from aughor.kernel.flags import flag_overrides
 
     big = _big_schema(*[f"t{i}" for i in range(1, 41)], "orders", "customers")
     assert len(big) > SF.FOCUS_MIN_CHARS
-    with flag_overrides({"schema.two_tier_catalog": True}):
-        out = SF.for_repair(big, "SELECT * FROM orders",
-                            'no such column: signup_date on table "customers"')
+    out = SF.for_repair(big, "SELECT * FROM orders",
+                        'no such column: signup_date on table "customers"')
     return Comparison(
         scenario="two_tier_catalog__the_error_named_table_is_autoloaded",
         expected={"referenced_table_full": True, "error_table_full": True,

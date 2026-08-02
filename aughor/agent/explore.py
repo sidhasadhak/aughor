@@ -486,16 +486,6 @@ def _rescope_sql_to_schema(sql: str, allowed: str, conn: "DatabaseConnection") -
     return out if ok else None
 
 
-def _wandering_enabled() -> bool:
-    """Flag `explore.wandering_detector`. Fail-safe → off, so a flag-store hiccup can
-    never veto a query."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("explore.wandering_detector")
-    except Exception:
-        return False
-
-
 def _wandering_veto(state: AgentState, subq: "SubQuestion", sql: str):
     """A synthetic result when ``sql`` repeats a query this run already executed, else None.
 
@@ -505,8 +495,6 @@ def _wandering_veto(state: AgentState, subq: "SubQuestion", sql: str):
     exactly as it would have, because a detector that can suppress real evidence is worse
     than the redundancy it saves.
     """
-    if not _wandering_enabled():
-        return None
     try:
         from aughor.agent import wandering
         from aughor.stats import bump
@@ -532,10 +520,10 @@ def _wandering_veto(state: AgentState, subq: "SubQuestion", sql: str):
 def _focus_schema_for_repair(state, sql: str, error: str) -> str:
     """The schema block for a SQL repair prompt (Wave R3b).
 
-    Identity when `schema.two_tier_catalog` is off — which is the default — so the repair
-    prompt is byte-identical to before. On: a manifest of every table plus full DDL for
-    the ones this query and its error involve. Thin wrapper so both repair paths share one
-    definition and cannot drift apart.
+    A manifest of every table plus full DDL for the ones this query and its error
+    involve. Below the size threshold the full schema is returned untouched, so a small
+    database sees the same prompt it always did. Thin wrapper so both repair paths share
+    one definition and cannot drift apart.
     """
     from aughor.agent.schema_focus import for_repair_from_state
     return for_repair_from_state(state, sql, error)
@@ -1319,8 +1307,6 @@ def plan_and_execute_wave(state: AgentState, conn: "DatabaseConnection") -> dict
 def _wandering_stop(state: AgentState) -> bool:
     """Whether the wandering detector says to synthesize now. Fail-safe → False, so the
     loop keeps its pre-R3 behaviour if anything here misbehaves."""
-    if not _wandering_enabled():
-        return False
     try:
         from aughor.agent import wandering
         from aughor.stats import bump

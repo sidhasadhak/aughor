@@ -17,8 +17,8 @@ fetched — no model, no extra query — and attaches it as one additive payload
     }
 
 The web renderer (web/components/charts/exhibit.ts) treats an absent spec as
-"render exactly as before", so everything here is gated by the emitters behind
-flag ``chart.exhibit_grammar`` — off by default, byte-identical payloads.
+"render exactly as before", so the payload IS the gate: the spec is carried as an
+additive ``exhibit`` field and is simply absent when there is nothing to compute.
 
 Honesty rules: a reference line that sits far outside the plotted values is
 dropped (it would distort the axis instead of adding context); the severity

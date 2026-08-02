@@ -160,7 +160,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   never a confident wrong ranking. What the checksum rejects is suppressed **terminally**: the artifact reaches
   no reader surface — not a tile, chart, export table, or the synthesis prose (rows are redacted from the
   narrator's evidence, so it can't cite a value it was told is corrupt), and the one caveat renders once.
-- **Loss-lens decision-grade opportunity** (`aughor/agent/opportunity.py`, flag `lens.decision_grade`) — a
+- **Loss-lens decision-grade opportunity** (`aughor/agent/opportunity.py`) — a
   "where are we losing money?" (or its optimisation flip side — "where can we improve / what's underutilised")
   is answered with a **gap × volume opportunity computed deterministically**, not written by the model:
   the utilization lens's "long-haul flies 74.5% vs short-haul's 77.2% → ~1,812 empty seats" and the leakage
@@ -308,7 +308,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   chart/table and the same Evidence / Investigate actions the ledger row offers (one shared `<FindingDetail>`).
 - **Ask this briefing** — a side panel holding ONE conversation pinned to insights mode (`depth:"quick"`, honoured by the
   router with no model call), scoped to the brief's connection AND schema, and grounded server-side in the same cached
-  brief the page is rendering (flag `ask.brief_context`). Deep analysis escalates to the full Ask surface.
+  brief the page is rendering. Deep analysis escalates to the full Ask surface.
 - **The brief is about the DATASET** — the per-schema `BusinessProfile` characterization leads the narrator prompt and the
   org block is explicitly the reader ("ORGANIZATION reading this brief"), so a workspace holding several unrelated
   datasets never attributes one schema's activity to the company that owns another.
@@ -571,7 +571,8 @@ Studied Palantir Foundry's AI FDE and adopted its *human-in-command* posture as 
 (all flag-gated + additive — default behaviour unchanged; see `docs/`). The close-the-loop and
 premise-validation env vars below are registered in the runtime flag system (`kernel/flags.py`:
 `closed_loop`, `ada.premise_check`) so they're also toggleable at runtime from Settings → System,
-like `ask.clarify` (the ask-vs-guess gate, the one default-ON flag) and `ada.causal_drill`:
+like `ada.causal_drill`. (The ask-vs-guess gate is no longer among them — Wave 2d of the flag
+endgame made it unconditional; `skip_clarify` on a single turn is the remaining bypass.)
 
 - **Close the loop** (`AUGHOR_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
   read back into the planner as priors, so a corrected mistake isn't repeated (+0.70 accuracy on a repeat set).

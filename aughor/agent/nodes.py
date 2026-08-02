@@ -64,16 +64,6 @@ def _gate(name: str, allow: bool, *, reason: str = "") -> bool:
         return allow
 
 
-def _preflight_parallel_enabled() -> bool:
-    """Flag `preflight.parallel` (env AUGHOR_PREFLIGHT_PARALLEL or ledger override) — run the
-    independent plan-time retrievals concurrently. Off by default; fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("preflight.parallel")
-    except Exception:
-        return False
-
-
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
@@ -544,8 +534,8 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     known_pitfalls = state.get("pitfalls", [])
 
     # ── Pre-flight retrievals (P-B) — four INDEPENDENT, deterministic, non-LLM lookups. They
-    #    share no inputs beyond the hypothesis/question and touch no DB connection, so under
-    #    `preflight.parallel` they run concurrently; the result is byte-identical either way. ──
+    #    share no inputs beyond the hypothesis/question and touch no DB connection, so they
+    #    run concurrently; the result is byte-identical to running them one at a time. ──
     def _get_schema() -> str:
         from aughor.semantic.retriever import retrieve_relevant_schema
         # Scoped to this run: the index holds every connection's tables in one collection,
@@ -582,25 +572,19 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         except Exception:
             return "", False
 
-    if _preflight_parallel_enabled():
-        from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
-        with _fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as _pool:
-            _f_schema = _pool.submit(_get_schema)
-            _f_kb = _pool.submit(_get_kb)
-            _f_causal = _pool.submit(_get_causal)
-            _f_priors = _pool.submit(_get_priors)
-            # .result() re-raises a retrieval error exactly as the serial path would (schema/KB
-            # were unguarded before; causal/priors return their fallback), so behavior is identical.
-            schema_for_hypothesis = _f_schema.result()
-            kb_patterns = _f_kb.result()
-            causal_section = _f_causal.result()
-            priors_section, priors_fired = _f_priors.result()
-    else:
-        schema_for_hypothesis = _get_schema()
-        kb_patterns = _get_kb()
-        causal_section = _get_causal()
-        priors_section, priors_fired = _get_priors()
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+    with _fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as _pool:
+        _f_schema = _pool.submit(_get_schema)
+        _f_kb = _pool.submit(_get_kb)
+        _f_causal = _pool.submit(_get_causal)
+        _f_priors = _pool.submit(_get_priors)
+        # .result() re-raises a retrieval error exactly as the serial path would (schema/KB
+        # were unguarded before; causal/priors return their fallback), so behavior is identical.
+        schema_for_hypothesis = _f_schema.result()
+        kb_patterns = _f_kb.result()
+        causal_section = _f_causal.result()
+        priors_section, priors_fired = _f_priors.result()
 
     prior_analyses = state.get("prior_analyses", [])
     prior_analyses_text = (
@@ -1478,10 +1462,10 @@ def _format_prior_context(history: list[QueryResult], current_hypothesis_id: str
 def _focus_schema_for_repair(state, sql: str, error: str) -> str:
     """The schema block for a SQL repair prompt (Wave R3b).
 
-    Identity when `schema.two_tier_catalog` is off — which is the default — so the repair
-    prompt is byte-identical to before. On: a manifest of every table plus full DDL for
-    the ones this query and its error involve. Thin wrapper so both repair paths share one
-    definition and cannot drift apart.
+    A manifest of every table plus full DDL for the ones this query and its error
+    involve. Below the size threshold the full schema is returned untouched, so a small
+    database sees the same prompt it always did. Thin wrapper so both repair paths share
+    one definition and cannot drift apart.
     """
     from aughor.agent.schema_focus import for_repair_from_state
     return for_repair_from_state(state, sql, error)
@@ -1545,16 +1529,13 @@ def _evidence_renderer(history: list[QueryResult], hypotheses: list):
     spread across two hypothesis sections is still a repeat, and a per-section renderer
     would miss exactly those.
 
-    Returns the plain full renderer unless a policy is both enabled and worth applying —
-    so with no flags set this is the pre-R3 function with an extra indirection.
+    Returns the plain full renderer unless the collapse is worth applying — a small block
+    is rendered exactly as it always was.
     """
     plain = lambda results: [format_result_for_llm(r) for r in results]  # noqa: E731
     try:
         from aughor.agent import evidence_budget as EB
 
-        collapse = EB.enabled("ada.evidence_dedup")
-        if not collapse:
-            return plain
         # Safe direction: a small block is not what strains a window, and trimming it
         # could only lose ground. Measure the real thing, not an estimate.
         if sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS:
@@ -1568,7 +1549,7 @@ def _evidence_renderer(history: list[QueryResult], hypotheses: list):
             try:
                 parts, info = EB.render_history(
                     results, full_renderer=format_result_for_llm,
-                    collapse_duplicates=collapse, seen=seen)
+                    collapse_duplicates=True, seen=seen)
             except Exception:
                 # Synthesis is where the answer gets written. A trimming helper that can
                 # raise HERE loses a whole investigation to save some tokens, so the

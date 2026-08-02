@@ -145,7 +145,6 @@ def test_lens_wiring_reaches_run_analysis_phase_with_the_guard(monkeypatch):
         captured[kw["phase_id"]] = kw
         return type("R", (), {"ok": False, "error_phase": None})()
 
-    monkeypatch.setenv("AUGHOR_INTAKE_LOSS_SIGNALS", "1")
     monkeypatch.setattr(inv, "run_analysis_phase", _fake_phase)
     state = {
         "question": "Where are we losing money?",

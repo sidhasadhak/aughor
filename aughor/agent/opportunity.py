@@ -20,7 +20,7 @@ floor (the opportunity itself ≥0.5% of the material total — the reference
 case is a 3.5% rate gap that matters precisely because the volume is large);
 the context sentence always carries the hedge — a ceiling computed from peers,
 not a forecast, and the directional read is the reader's (for a cost-like
-metric, "higher" is worse). Gated by ``lens.decision_grade``.
+metric, "higher" is worse).
 """
 from __future__ import annotations
 

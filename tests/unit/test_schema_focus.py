@@ -140,35 +140,33 @@ def test_the_manifest_still_names_the_tables_that_were_narrowed_away():
 
 # ── the wiring ────────────────────────────────────────────────────────────────
 
-def test_for_repair_is_identity_when_forced_off(monkeypatch):
-    # Explicit =0 — the escape hatch; default-ON since flag strategy batch A.
-    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "0")
-    assert SF.for_repair(BIG, "SELECT * FROM orders", "boom") == BIG
-
-
-def test_for_repair_focuses_when_the_flag_is_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "1")
+def test_for_repair_focuses_a_large_schema():
     out = SF.for_repair(BIG, "SELECT * FROM orders", "boom")
     assert out != BIG and "orders_col1" in out and "ALL TABLES" in out
 
 
+def test_for_repair_is_identity_below_the_size_threshold():
+    """The safe direction the batch-A receipt (`3b3ce99e3f9b`) actually bought: a small
+    schema is returned untouched. With no flag left to force identity, this threshold is
+    the only thing keeping a small database's repair prompt byte-identical."""
+    small = "TABLE orders (orders_col1 INT)"
+    assert SF.for_repair(small, "SELECT * FROM orders", "boom") == small
+
+
 def test_for_repair_never_raises(monkeypatch):
     """A repair prompt is on the recovery path. A helper that can raise there converts a
-    recoverable SQL error into a failed run."""
-    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "1")
+    recoverable SQL error into a failed run — and it falls back to the FULL schema,
+    because a prompt missing the table the error names cannot be repaired at all."""
     monkeypatch.setattr(SF, "focused_schema",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert SF.for_repair(BIG, "SELECT * FROM orders", "boom") == BIG
 
 
 @pytest.mark.parametrize("mod", ["aughor.agent.nodes", "aughor.agent.explore"])
-def test_both_repair_paths_share_one_definition(mod, monkeypatch):
+def test_both_repair_paths_share_one_definition(mod):
     """The guard battery in this repo is ~5 re-assembled sites split by path. This does not
     add a sixth: both call the same function."""
     import importlib
 
     m = importlib.import_module(mod)
-    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "0")   # escape hatch: identity
-    assert m._focus_schema_for_repair({"schema_context": BIG}, "SELECT * FROM orders", "e") == BIG
-    monkeypatch.setenv("AUGHOR_SCHEMA_TWO_TIER_CATALOG", "1")
     assert m._focus_schema_for_repair({"schema_context": BIG}, "SELECT * FROM orders", "e") != BIG

@@ -10,17 +10,7 @@ from __future__ import annotations
 from aughor.agent.prompts_investigate import synthesis_system_prompt as _synthesis_system_prompt
 
 
-def test_flag_off_prompt_is_the_legacy_one(monkeypatch):
-    # Explicit `=0`, not delenv — the flag is default-ON since the 2026-07-22 audit, so this
-    # now tests the operator escape hatch rather than the absence of a setting.
-    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "0")
-    p = _synthesis_system_prompt()
-    assert p.startswith("You are a senior data analyst")
-    assert "WRITING STYLE" not in p                     # byte-identical legacy prompt
-
-
-def test_flag_on_appends_the_writing_contract(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "1")
+def test_the_prompt_carries_the_writing_contract():
     p = _synthesis_system_prompt()
     assert p.startswith("You are a senior data analyst")   # the base contract survives
     assert "argue like an analyst" in p

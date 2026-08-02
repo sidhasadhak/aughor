@@ -94,6 +94,11 @@ def test_deleted_flags_stay_deleted():
                       "govern.clearances", "govern.usage_caps", "rbac.row_policy",
                       "freshness.resolved_rebuild", "kinetic.actions", "kinetic.overlay",
                       "lifecycle.publish", "lifecycle.freeze", "automations.engine",
-                      "automations.source_probes", "automations.proposals"):
+                      "automations.source_probes", "automations.proposals",
+                      # Wave 2d — the ask/deep answer path.
+                      "ask.clarify", "ask.brief_context", "deep_analysis.evidence_dedup",
+                      "intake.loss_signals", "report.argument_style",
+                      "chart.exhibit_grammar", "lens.decision_grade", "preflight.parallel",
+                      "schema.two_tier_catalog", "explore.wandering_detector"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone

@@ -14,7 +14,7 @@ schema text for the loss SIGNALS the data actually carries (contra-revenue colum
 capacity columns), and emit a directive block for the intake prompt that (a) names
 the signals, (b) demands the leakage/utilization lenses when they exist, and (c)
 forbids the profitability verdict that profit-less data cannot support. No model in
-the detector; flag-gated at the caller (``intake.loss_signals``)."""
+the detector."""
 from __future__ import annotations
 
 import re

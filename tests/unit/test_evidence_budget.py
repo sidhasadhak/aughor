@@ -65,19 +65,21 @@ def test_a_failed_duplicate_is_kept_in_full():
     assert info["duplicates"] == 0 and "no such column: x" in parts[1]
 
 
-# ── the wiring: byte-identical unless asked, and on a big enough block ────────
+# ── the wiring: nothing collapses without a repeat, or on a small block ───────
 
-def test_synthesis_evidence_is_byte_identical_with_no_flag(monkeypatch):
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", raising=False)
+def test_a_history_without_repeats_renders_every_table_in_full():
+    """The lossless half of the batch-A receipt (`0c96518ab1c4`): with nothing to collapse,
+    the block is what it always was. (This test used to `delenv` and call itself the
+    flag-off case — but the flag was default-ON, so unset resolved ON and it was asserting
+    this property all along.)"""
     history = _big_history()
     hyps = [_hyp(f"H{i}") for i in range(1, 13)]
     out = _format_full_evidence(history, hyps)
     assert out.count("seg29") == len(history)            # every table rendered in full
 
 
-def test_a_small_block_is_left_alone_even_with_the_flag_on(monkeypatch):
+def test_a_small_block_is_left_alone():
     """Safe direction: a block this size is not what strains a window."""
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", "1")
     history = [_result("H1", "SELECT a FROM t", n_rows=3)]
     assert sum(len(format_result_for_llm(r)) for r in history) < EB.MIN_BLOCK_CHARS
     out = _format_full_evidence(history, [_hyp("H1")])
@@ -85,10 +87,9 @@ def test_a_small_block_is_left_alone_even_with_the_flag_on(monkeypatch):
     assert "seg2" in out and "identical to the query" not in out
 
 
-def test_dedup_sees_across_hypothesis_sections(monkeypatch):
+def test_dedup_sees_across_hypothesis_sections():
     """A repeat spread across two sections is still a repeat; a per-section renderer would
     miss exactly those."""
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", "1")
     history = _big_history() + [_result("H6", "SELECT i, segment, value FROM t1_0")]
     hyps = [_hyp(f"H{i}") for i in range(1, 13)]
     out = _format_full_evidence(history, hyps)
@@ -98,7 +99,6 @@ def test_dedup_sees_across_hypothesis_sections(monkeypatch):
 def test_a_policy_error_falls_back_to_rendering_everything_full(monkeypatch):
     """Synthesis is where the answer is written. A helper that can raise here loses a whole
     investigation to save some tokens."""
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_EVIDENCE_DEDUP", "1")
     monkeypatch.setattr(EB, "render_history",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     history = _big_history()
