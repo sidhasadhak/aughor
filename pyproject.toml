@@ -135,3 +135,9 @@ ignore = ["E402", "E701", "E702", "E731", "E741"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["aughor"]
+
+[tool.vercel]
+# Stated explicitly because autodetection cannot choose: every FastAPI router test
+# builds its own `app` for its TestClient, so a dozen files under tests/ look like
+# candidate entrypoints. The served application is the one in aughor/api.py.
+entrypoint = "aughor.api:app"
