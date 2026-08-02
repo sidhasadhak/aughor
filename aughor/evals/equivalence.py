@@ -49,9 +49,10 @@ from aughor.trust import BLOCK, Check
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
 SUITE_NAME = "automations — deterministic equivalence (L4)"
 
-#: The flags this suite is evidence for. Both are claims about exactness, so both are
-#: graduated from the same run.
-FLAGS = ("automations.engine", "automations.adopt_legacy", "automations.source_probes")
+#: The flag this suite is still evidence for. `automations.engine` and
+#: `automations.source_probes` were HARDWIRED 2026-08-02; `adopt_legacy` remains the one
+#: decision this suite backs — whether the legacy monitor/briefing loops stand down.
+FLAGS = ("automations.adopt_legacy",)
 
 
 @dataclass
@@ -218,10 +219,8 @@ def _alerts_for(conn_id: str) -> list:
 # batch A) and a kernel loop captured by the process, run_monitor_job submits the tick as
 # an async background job — the legacy half then reads its alert store before the job has
 # run and reports zero alerts, which is an artifact of the bridge, not of either loop.
-_LEGACY_FLAGS = {"automations.engine": False, "automations.adopt_legacy": False,
-                 "ops.metered_monitors": False}
-_ADOPTED_FLAGS = {"automations.engine": True, "automations.adopt_legacy": True,
-                  "ops.metered_monitors": False}
+_LEGACY_FLAGS = {"automations.adopt_legacy": False, "ops.metered_monitors": False}
+_ADOPTED_FLAGS = {"automations.adopt_legacy": True, "ops.metered_monitors": False}
 
 
 def _run_legacy(monitor) -> list:
@@ -402,8 +401,7 @@ def _tick(automation) -> str:
     from aughor.automations.engine import run_automation
     from aughor.kernel.flags import flag_overrides
 
-    flags = {**_ADOPTED_FLAGS, "automations.source_probes": True}
-    with flag_overrides(flags):
+    with flag_overrides(_ADOPTED_FLAGS):
         run = run_automation(automation, persist=False, dispatch=_inert_dispatch)
     return run.outcome
 

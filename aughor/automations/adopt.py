@@ -89,8 +89,7 @@ def list_adopted_automations() -> list[Automation]:
 def adoption_active() -> bool:
     """True when adopted legacy objects should run through the engine — and, equivalently, when the
     legacy schedulers must stand down. Requires BOTH flags: ``adopt_legacy`` alone does nothing
-    unless the engine (the heartbeat that will drive the adopted objects) is also on, so the flag
-    can never silently stop monitors/briefs by standing the legacy loops down with nothing to
-    replace them."""
+    The heartbeat that drives the adopted objects is always running now, so this flag alone
+    decides whether the legacy loops stand down."""
     from aughor.kernel.flags import flag_enabled
-    return flag_enabled("automations.engine") and flag_enabled("automations.adopt_legacy")
+    return flag_enabled("automations.adopt_legacy")

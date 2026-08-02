@@ -306,10 +306,9 @@ def visible_value_dictionaries(
     precisely what G5 closed one layer up. New retrieval that skips the trim silently
     re-opens it, which is why the scoping doc pins this as a gate.
     """
-    from aughor.govern import tags as _tags
 
     dicts = value_dictionaries(connection_id)
-    if not _tags.enabled() or not dicts:
+    if not dicts:
         return dicts, ""
 
     from aughor.govern.retrieval_trim import (

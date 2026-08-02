@@ -19,13 +19,6 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
 
 
-def _require(flag: str) -> None:
-    from aughor.kernel.flags import flag_enabled
-
-    if not flag_enabled(flag):
-        raise HTTPException(status_code=404, detail=f"{flag} disabled")
-
-
 class RevisionOut(BaseModel):
     version: int
     state: str
@@ -84,7 +77,6 @@ def get_history(kind: str, natural_key: str = Query(...)):
     ``published_version`` vs ``editor_version`` is save≠publish made visible: when they
     differ, an editor has unpublished work and a viewer is still on the older content.
     """
-    _require("lifecycle.publish")
     from aughor.kernel.lifecycle import history, resolve
 
     revs = history(kind, natural_key)
@@ -102,7 +94,6 @@ def get_history(kind: str, natural_key: str = Query(...)):
 def get_diff(kind: str, natural_key: str = Query(...),
              from_version: int = Query(...), to_version: int = Query(...)):
     """The changelog between two versions — moves reported as moves."""
-    _require("lifecycle.publish")
     from aughor.kernel.lifecycle import diff_versions
 
     d = diff_versions(kind, natural_key, from_version, to_version)
@@ -119,7 +110,6 @@ def get_diff(kind: str, natural_key: str = Query(...),
 def post_publish(kind: str, natural_key: str = Query(...),
                  version: Optional[int] = Query(default=None)):
     """Publish a version (default: the latest draft), making it what viewers resolve."""
-    _require("lifecycle.publish")
     from aughor.kernel.lifecycle import publish
 
     rev = publish(kind, natural_key, version=version)
@@ -132,7 +122,6 @@ def post_publish(kind: str, natural_key: str = Query(...),
 def post_revert(kind: str, natural_key: str = Query(...), to_version: int = Query(...),
                 publish_now: bool = Query(default=False)):
     """Restore an earlier version's content as a NEW version (history is never rewound)."""
-    _require("lifecycle.publish")
     from aughor.kernel.lifecycle import revert
 
     rev = revert(kind, natural_key, to_version, publish_now=publish_now)
@@ -148,7 +137,6 @@ def get_freeze(kind: str, natural_key: str = Query(...)):
     A drifted detect-only pin is reported as ``drifted`` with its reason rather than as
     ``ok`` — the badge has to be able to say "this lags".
     """
-    _require("lifecycle.freeze")
     from aughor.kernel.freeze import frozen, verify
 
     pin = frozen(kind, natural_key)
@@ -168,7 +156,6 @@ def post_freeze(kind: str, body: FreezeIn, natural_key: str = Query(...)):
     lock icon on a guarantee that does not exist, so the refusal and its reason travel to the
     caller instead.
     """
-    _require("lifecycle.freeze")
     from aughor.kernel.freeze import FreezeRefused, freeze
 
     try:
@@ -177,7 +164,7 @@ def post_freeze(kind: str, body: FreezeIn, natural_key: str = Query(...)):
     except FreezeRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if pin is None:
-        raise HTTPException(status_code=404, detail="lifecycle.freeze disabled")
+        raise HTTPException(status_code=409, detail="nothing about this artifact can be pinned")
     return FreezeOut(frozen=True, version=pin.version, mode=pin.mode, as_of=pin.as_of,
                      data_version=pin.data_version, status="ok",
                      reason="pinned", describe=pin.describe())
@@ -186,7 +173,6 @@ def post_freeze(kind: str, body: FreezeIn, natural_key: str = Query(...)):
 @router.delete("/{kind}/freeze", response_model=FreezeOut)
 def delete_freeze(kind: str, natural_key: str = Query(...)):
     """Unfreeze — return the artifact to following live data."""
-    _require("lifecycle.freeze")
     from aughor.kernel.freeze import unfreeze
 
     unfreeze(kind, natural_key)
@@ -201,7 +187,6 @@ def get_frozen_content(kind: str, natural_key: str = Query(...)):
     This route deliberately has no live fall-back: a frozen label over live numbers is worse
     than an error, because the reader cannot tell the difference.
     """
-    _require("lifecycle.freeze")
     from aughor.kernel.freeze import FrozenDataGoneError, read_frozen
 
     try:

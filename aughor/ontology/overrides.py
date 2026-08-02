@@ -319,11 +319,7 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
             elif ov.target_kind == "metric":
                 touched = _apply_metric(graph, ov)
             elif ov.target_kind == "action":
-                # Wave K substrate — flag-gated so off = byte-identical (empty kinetic_actions).
-                from aughor.kernel.flags import flag_enabled
-                if not flag_enabled("kinetic.actions"):
-                    report.skipped.append(f"action:{ov.target_id} — kinetic.actions off")
-                    continue
+                # Wave K substrate — only human-DECLARED actions exist to overlay.
                 touched = _apply_action(graph, ov)
             else:
                 touched = []

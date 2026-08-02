@@ -39,7 +39,6 @@ def mem_cache(monkeypatch):
 
 def _enable(monkeypatch, *, roles, policies=None):
     """Turn the policy gate fully on and pin the caller's roles — same shape as test_row_policy._enable."""
-    monkeypatch.setenv("AUGHOR_RBAC_ROW_POLICY", "1")
     monkeypatch.setattr(_authz, "require_identity_enabled", lambda: True)
     monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: True)
     monkeypatch.setattr(_resolver, "resolve_roles", lambda principal: list(roles))
@@ -79,7 +78,6 @@ def test_cache_key_partitions_on_tenancy():
 # ── result_cache_tenancy(): when it engages ──────────────────────────────────
 
 def test_tenancy_none_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_RBAC_ROW_POLICY", raising=False)
     assert _fingerprint(org="o1", user="u1") is None          # legacy key → byte-identical to today
 
 
@@ -168,7 +166,6 @@ def test_owner_rows_do_not_leak_to_a_filtered_viewer(monkeypatch, mem_cache):
 
 
 def test_flag_off_cache_is_shared_byte_identical(monkeypatch, mem_cache):
-    monkeypatch.delenv("AUGHOR_RBAC_ROW_POLICY", raising=False)
     sql = "SELECT id FROM orders"
     # Both principals resolve tenancy=None → legacy shared key → the pre-policy behaviour is unchanged.
     ta = _fingerprint(org="o1", user="u1")

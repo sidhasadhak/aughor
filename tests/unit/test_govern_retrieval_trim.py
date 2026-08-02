@@ -170,24 +170,10 @@ def test_blank_clearances_are_ignored():
 
 # ── the read-back wiring ────────────────────────────────────────────────────────────
 
-def test_readback_trim_is_a_no_op_when_governance_is_off(monkeypatch):
-    """Byte-identical with the flag off — the retrieval path must not change at all."""
-    from aughor.govern import tags as T
-    from aughor.ontology import context_graph_readback as RB
-
-    monkeypatch.setattr(T, "enabled", lambda: False)
-    nodes = [_node("table:orders")]
-    edges = [_edge("table:orders", "table:orders")]
-    out_nodes, out_edges, notice = RB._trim_by_clearance(
-        nodes, edges, connection_id="c", schema_name="s")
-    assert out_nodes is nodes and out_edges is edges and notice == ""
-
-
 def test_readback_trim_withholds_and_sweeps(monkeypatch):
     from aughor.govern import tags as T
     from aughor.ontology import context_graph_readback as RB
 
-    monkeypatch.setattr(T, "enabled", lambda: True)
     monkeypatch.setattr(
         T, "check",
         lambda securable, held, bypass=False: (
@@ -209,7 +195,6 @@ def test_a_fully_trimmed_slice_still_returns_the_notice(monkeypatch):
     from aughor.govern import tags as T
     from aughor.ontology import context_graph_readback as RB
 
-    monkeypatch.setattr(T, "enabled", lambda: True)
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))
     out_nodes, _, notice = RB._trim_by_clearance(
@@ -264,7 +249,6 @@ def test_readback_trims_a_node_by_its_source_table(monkeypatch):
     from aughor.govern import tags as T
     from aughor.ontology import context_graph_readback as RB
 
-    monkeypatch.setattr(T, "enabled", lambda: True)
     monkeypatch.setattr(
         T, "check",
         lambda securable, held, bypass=False: (
@@ -285,7 +269,6 @@ def test_a_table_node_with_no_source_tables_is_kept(monkeypatch):
     from aughor.govern import tags as T
     from aughor.ontology import context_graph_readback as RB
 
-    monkeypatch.setattr(T, "enabled", lambda: True)
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))
     node = SimpleNamespace(id="table:Ghost", kind="table", label="Ghost", data={})

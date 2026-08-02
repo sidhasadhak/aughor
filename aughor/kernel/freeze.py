@@ -34,7 +34,6 @@ from typing import Any, Literal, Optional, Sequence
 
 from aughor.db.paths import state_dir
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.util.json_store import KeyedJsonStore
 
 #: ``reproducible`` — the pinned data version can be replayed (AT VERSION).
@@ -68,10 +67,6 @@ class FrozenDataGoneError(RuntimeError):
     def __init__(self, message: str, *, as_of: str = "", reason: str = ""):
         super().__init__(message)
         self.as_of, self.reason = as_of, reason
-
-
-def freeze_enabled() -> bool:
-    return flag_enabled("lifecycle.freeze")
 
 
 def _now() -> str:
@@ -126,10 +121,8 @@ def freeze(
 
     Raises :class:`FreezeRefused` when no data version can be computed — the connection
     cannot be pinned, so accepting the freeze would mean showing a lock that guarantees
-    nothing. Returns ``None`` when the flag is off.
+    nothing.
     """
-    if not freeze_enabled():
-        return None
 
     from aughor.db.connection import open_connection_for
     from aughor.db.snapshot import as_of_supported, data_version
@@ -174,8 +167,6 @@ def freeze(
 
 def unfreeze(kind: str, natural_key: str) -> bool:
     """Return an artifact to following live. True when a pin was removed."""
-    if not freeze_enabled():
-        return False
     had = _store.get(_key(kind, natural_key)) is not None
     _store.invalidate_prefix(_key(kind, natural_key))
     return had
@@ -183,8 +174,6 @@ def unfreeze(kind: str, natural_key: str) -> bool:
 
 def frozen(kind: str, natural_key: str) -> Optional[Freeze]:
     """The pin on this artifact, or None when it is live."""
-    if not freeze_enabled():
-        return None
     raw = _store.get(_key(kind, natural_key))
     return _as_freeze(kind, natural_key, raw) if raw else None
 

@@ -22,7 +22,6 @@ def client():
 
 @pytest.fixture
 def _pub(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "1")
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
@@ -31,8 +30,6 @@ def _frz(monkeypatch, tmp_path):
     from aughor.kernel import freeze as fz
     from aughor.util.json_store import KeyedJsonStore
 
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "1")
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "1")
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
     monkeypatch.setattr(fz, "_store",
                         KeyedJsonStore(tmp_path / "freeze.json", max_entries=50))
@@ -50,29 +47,6 @@ def _storage(monkeypatch, *, token, as_of=False):
 
 
 # ── Flags off: the default surface is unchanged ────────────────────────────────
-
-@pytest.mark.parametrize("method,path", [
-    ("get", f"/lifecycle/{KIND}/history"),
-    ("get", f"/lifecycle/{KIND}/diff"),
-    ("post", f"/lifecycle/{KIND}/publish"),
-    ("post", f"/lifecycle/{KIND}/revert"),
-    ("get", f"/lifecycle/{KIND}/freeze"),
-    ("delete", f"/lifecycle/{KIND}/freeze"),
-    ("get", f"/lifecycle/{KIND}/frozen-content"),
-])
-def test_every_route_404s_when_its_flag_is_off(client, method, path, monkeypatch):
-    # Explicit =0 — both flags are default-ON since flag strategy batch B; "off" is
-    # the operator escape hatch, not the ambient state.
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "0")
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "0")
-    r = getattr(client, method)(
-        path, params={"natural_key": NK, "from_version": 1, "to_version": 2, "to_version_": 1},
-    )
-    assert r.status_code == 404, (path, r.status_code, r.text)
-    assert "disabled" in r.text
-
-
-# ── History exposes save≠publish ──────────────────────────────────────────────
 
 def test_history_reports_published_and_editor_versions_separately(client, _pub):
     from aughor.kernel.lifecycle import publish, save_draft

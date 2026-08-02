@@ -78,12 +78,6 @@ def test_matching_grant_is_exact_value_equality(proposals_on):
     assert grants.matching_grant("refund", {"order_id": "8821"}, connection_id="other") is None
 
 
-def test_standing_grant_id_is_empty_when_the_flag_is_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    grants.mint_from_action(_single(), {"order_id": "8821"}, connection_id="c-off")
-    assert grants.standing_grant_id(_single(), {"order_id": "8821"}, "c-off") == ""
-
-
 def test_standing_grant_id_bumps_use(proposals_on):
     grants.mint_from_action(_single(), {"order_id": "8821"}, connection_id="c-bump")
     gid = grants.standing_grant_id(_single(), {"order_id": "8821"}, "c-bump")
@@ -153,17 +147,6 @@ def test_a_grant_bypasses_approval_but_not_criteria(proposals_on, approval_on):
     assert r.message == msg
     assert calls == []
 
-
-def test_the_executor_is_byte_identical_when_the_flag_is_off(monkeypatch, approval_on):
-    """No grant is consulted when proposals are off — a HIGH action gates exactly as pre-A4."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    grants.mint_from_action(_single(), {"order_id": "8821"}, connection_id="c-flagoff")
-    r = execute_kinetic_action(_single(), {"order_id": "8821"}, scope="c-flagoff",
-                               dispatch=lambda a, p, s="": {"ok": True})
-    assert r.status == "approval_required"       # the grant existed but was never consulted
-
-
-# ── revoke + purge ────────────────────────────────────────────────────────────────
 
 def test_revoke(proposals_on):
     g = grants.mint_from_action(_single(), {"order_id": "8821"}, connection_id="c-rev")

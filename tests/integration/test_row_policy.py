@@ -1,8 +1,9 @@
 """End-to-end RBAC row-policy (Rec 7) through the DuckDB connection chokepoint (`_run`).
 
 A real two-org DuckDB table; the policy, identity gate, and role are controlled per test. Asserts a viewer is
-scoped to its org, an owner is unrestricted, un-policied tables are untouched, the feature is byte-identical
-off, it fails CLOSED on an injection error, and internal (no-user-context) queries are never filtered.
+scoped to its org, an owner is unrestricted, un-policied tables are untouched, it fails CLOSED on an injection
+error, and internal (no-user-context) queries are never filtered — the gate that keeps a deployment without
+identity unaffected now that the flag is gone.
 """
 from __future__ import annotations
 
@@ -30,7 +31,6 @@ def _orders(tmp_path, name):
 
 def _enable(monkeypatch, *, roles, policies=None):
     """Turn the feature on and pin the caller's roles/identity for the test."""
-    monkeypatch.setenv("AUGHOR_RBAC_ROW_POLICY", "1")
     monkeypatch.setattr(_authz, "require_identity_enabled", lambda: True)
     monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: True)
     monkeypatch.setattr(_resolver, "resolve_roles", lambda principal: list(roles))
@@ -72,23 +72,6 @@ def test_unpolicied_table_untouched(monkeypatch, tmp_path):
     try:
         res = open_connection_for(cid).execute("q", "SELECT k FROM ref ORDER BY k")
         assert _ids(res) == ["a", "b"]
-    finally:
-        reset_user_id(ut); reset_org_id(ot)
-
-
-def test_forced_off_is_byte_identical(monkeypatch, tmp_path):
-    # Explicit =0 — rbac.row_policy graduated default-ON in flag strategy batch B; "off"
-    # is the operator escape hatch. An unset env now applies the policy (filters rows).
-    monkeypatch.setenv("AUGHOR_RBAC_ROW_POLICY", "0")   # escape hatch: no filtering
-    monkeypatch.setattr(_authz, "require_identity_enabled", lambda: True)
-    monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: True)
-    monkeypatch.setattr(_resolver, "resolve_roles", lambda p: ["viewer"])
-    monkeypatch.setattr(rp, "ROW_POLICIES", {"viewer": {"orders": "org_id = '{org_id}'"}})
-    cid = _orders(tmp_path, "rp4")
-    ot, ut = set_org_id("o1"), set_user_id("u1")
-    try:
-        res = open_connection_for(cid).execute("q", "SELECT id FROM orders ORDER BY id")
-        assert _ids(res) == ["1", "2", "3"]            # flag off → no filtering
     finally:
         reset_user_id(ut); reset_org_id(ot)
 

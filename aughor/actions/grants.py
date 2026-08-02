@@ -202,11 +202,8 @@ def bump_use(grant_id: str) -> None:
 def standing_grant_id(action, coerced_params: dict, connection_id: str) -> str:
     """The executor's one-call hook: the id of a matching grant (and bump its use), or ``''``.
 
-    Returns ``''`` unconditionally when ``automations.proposals`` is off, so the executor is
-    byte-identical for every install that has not opted into the inbox/grants plane."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("automations.proposals"):
-        return ""
+    Returns ``''`` when no grant matches, so the executor is byte-identical for every
+    install that has never minted one."""
     g = matching_grant(action.id, coerced_params, connection_id=connection_id)
     if g is None:
         return ""

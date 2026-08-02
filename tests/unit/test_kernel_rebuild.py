@@ -26,31 +26,12 @@ def _isolated_store(monkeypatch, tmp_path):
                                                      max_entries=50))
 
 
-@pytest.fixture
-def _on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_FRESHNESS_RESOLVED_REBUILD", "1")
-
-
 def _probe(monkeypatch, version, how="1 table(s) probed"):
     """Stand in for the live source probe (hermetic: no DB, no connection)."""
     monkeypatch.setattr(rb, "inputs_version", lambda conn, tables=None: (version, how))
 
 
 # ── The flag contract ─────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("ttl_expired", [True, False])
-def test_flag_off_returns_the_callers_ttl_decision_unchanged(monkeypatch, ttl_expired):
-    """Byte-identical when off: a caller can consult resolve() unconditionally."""
-    monkeypatch.setenv("AUGHOR_FRESHNESS_RESOLVED_REBUILD", "0")   # escape hatch; default-ON
-    called = []
-    monkeypatch.setattr(rb, "inputs_version",
-                        lambda *a, **k: called.append(1) or ("v", "probed"))
-
-    d = rb.resolve("art", connection_id="c", ttl_expired=ttl_expired)
-    assert d.should_rebuild is ttl_expired
-    assert d.resolved is False
-    assert not called, "the flag being off must not cost a probe"
-
 
 def test_force_short_circuits_before_any_probe(monkeypatch):
     monkeypatch.setattr(rb, "inputs_version",
@@ -61,7 +42,7 @@ def test_force_short_circuits_before_any_probe(monkeypatch):
 
 # ── THE GATE ──────────────────────────────────────────────────────────────────
 
-def test_gate_cost_half_ttl_lapsed_but_nothing_moved(_on, monkeypatch):
+def test_gate_cost_half_ttl_lapsed_but_nothing_moved(monkeypatch):
     """The briefing's 2h TTL would rebuild here — an LLM call for an identical answer."""
     _probe(monkeypatch, "v1")
     first = rb.resolve("brief:c", connection_id="c", ttl_expired=False)
@@ -76,7 +57,7 @@ def test_gate_cost_half_ttl_lapsed_but_nothing_moved(_on, monkeypatch):
     assert "TTL had lapsed but nothing moved" in later.reason
 
 
-def test_gate_correctness_half_source_moved_inside_the_ttl(_on, monkeypatch):
+def test_gate_correctness_half_source_moved_inside_the_ttl(monkeypatch):
     """The TTL would serve this brief for up to two hours after the data changed."""
     _probe(monkeypatch, "v1")
     rb.record("brief:c", rb.resolve("brief:c", connection_id="c", ttl_expired=False))
@@ -89,7 +70,7 @@ def test_gate_correctness_half_source_moved_inside_the_ttl(_on, monkeypatch):
     assert "source data moved" in d.reason
 
 
-def test_logic_change_rebuilds_even_when_the_source_is_identical(_on, monkeypatch):
+def test_logic_change_rebuilds_even_when_the_source_is_identical(monkeypatch):
     """The other input: the producer's own version. Same data, new narrative shape."""
     _probe(monkeypatch, "v1")
     rb.record("brief:c", rb.resolve("brief:c", connection_id="c", logic="1"))
@@ -102,7 +83,7 @@ def test_logic_change_rebuilds_even_when_the_source_is_identical(_on, monkeypatc
 # ── Failing open, loudly ──────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("ttl_expired", [True, False])
-def test_unversionable_inputs_fail_open_to_the_ttl(_on, monkeypatch, ttl_expired):
+def test_unversionable_inputs_fail_open_to_the_ttl(monkeypatch, ttl_expired):
     """A table with no change signal must not read as 'unchanged' — that would serve a
     stale artifact forever. Fall back to the timer and SAY so."""
     _probe(monkeypatch, None, how="no table could be versioned: t (no signal column)")
@@ -115,7 +96,7 @@ def test_unversionable_inputs_fail_open_to_the_ttl(_on, monkeypatch, ttl_expired
     assert d.saved_a_rebuild is False, "an unresolved decision must never claim a saving"
 
 
-def test_probe_exception_fails_open_and_is_counted(_on, monkeypatch):
+def test_probe_exception_fails_open_and_is_counted(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("warehouse down")
 
@@ -127,7 +108,7 @@ def test_probe_exception_fails_open_and_is_counted(_on, monkeypatch):
 
 # ── record / forget semantics ─────────────────────────────────────────────────
 
-def test_record_is_a_noop_without_a_resolved_version(_on, monkeypatch):
+def test_record_is_a_noop_without_a_resolved_version(monkeypatch):
     """Recording an unresolved decision would consume a change: the next check would
     compare against inputs whose output was never produced."""
     _probe(monkeypatch, None, how="unversionable")
@@ -135,13 +116,13 @@ def test_record_is_a_noop_without_a_resolved_version(_on, monkeypatch):
     assert rb.last_built_as_of("art") == ""
 
 
-def test_record_stamps_the_as_of_source_view(_on, monkeypatch):
+def test_record_stamps_the_as_of_source_view(monkeypatch):
     _probe(monkeypatch, "v1")
     rb.record("art", rb.resolve("art", connection_id="c"), as_of="2026-07-26T00:00:00+00:00")
     assert rb.last_built_as_of("art") == "2026-07-26T00:00:00+00:00"
 
 
-def test_forget_makes_the_next_check_rebuild(_on, monkeypatch):
+def test_forget_makes_the_next_check_rebuild(monkeypatch):
     _probe(monkeypatch, "v1")
     rb.record("art", rb.resolve("art", connection_id="c"))
     assert rb.resolve("art", connection_id="c").should_rebuild is False
@@ -152,7 +133,7 @@ def test_forget_makes_the_next_check_rebuild(_on, monkeypatch):
 
 # ── No silent caps ────────────────────────────────────────────────────────────
 
-def test_probe_cap_is_reported_not_hidden(_on, monkeypatch):
+def test_probe_cap_is_reported_not_hidden(monkeypatch):
     """A bitten cap must name what it skipped — silent truncation reads as full coverage."""
     tables = [f"t{i}" for i in range(rb.MAX_PROBE_TABLES + 7)]
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: tables)
@@ -169,7 +150,7 @@ def test_probe_cap_is_reported_not_hidden(_on, monkeypatch):
     assert version and f"7 skipped (cap {rb.MAX_PROBE_TABLES})" in how
 
 
-def test_partial_coverage_is_reported(_on, monkeypatch):
+def test_partial_coverage_is_reported(monkeypatch):
     """Some tables versionable, some not: usable signal, but say what you cannot see."""
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: ["a", "b"])
     monkeypatch.setattr(
@@ -187,7 +168,7 @@ def test_partial_coverage_is_reported(_on, monkeypatch):
     assert version and "1 unversionable" in how
 
 
-def test_no_versionable_table_yields_none_not_a_hash_of_nothing(_on, monkeypatch):
+def test_no_versionable_table_yields_none_not_a_hash_of_nothing(monkeypatch):
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: ["a"])
     monkeypatch.setattr("aughor.automations.probes.current_version",
                         lambda conn, db, t, **k: (None, "no signal column"))
@@ -202,7 +183,7 @@ def test_no_versionable_table_yields_none_not_a_hash_of_nothing(_on, monkeypatch
     assert version is None and "no table could be versioned" in how
 
 
-def test_no_tables_known_is_unresolvable(_on, monkeypatch):
+def test_no_tables_known_is_unresolvable(monkeypatch):
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: [])
 
     class _DB:
@@ -215,18 +196,7 @@ def test_no_tables_known_is_unresolvable(_on, monkeypatch):
 
 # ── The briefing integration ──────────────────────────────────────────────────
 
-def test_briefing_ttl_path_is_unchanged_when_the_flag_is_off(monkeypatch):
-    """The flag-off decision must be exactly the original `age < TTL` expression."""
-    monkeypatch.setenv("AUGHOR_FRESHNESS_RESOLVED_REBUILD", "0")   # escape hatch; default-ON
-    from aughor.knowledge import briefing
-
-    fresh = {"generated_at": briefing._now_iso()}
-    assert briefing._brief_rebuild_decision("k", "c", fresh) == (False, None)
-    stale = {"generated_at": "2020-01-01T00:00:00+00:00"}
-    assert briefing._brief_rebuild_decision("k", "c", stale) == (True, None)
-
-
-def test_briefing_serves_a_ttl_expired_brief_when_nothing_moved(_on, monkeypatch):
+def test_briefing_serves_a_ttl_expired_brief_when_nothing_moved(monkeypatch):
     """The cost half, through the real briefing entry point."""
     from aughor.knowledge import briefing
 

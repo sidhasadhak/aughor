@@ -150,13 +150,13 @@ def test_merge_never_raises_on_bad_result():
 # ── wiring: the merge rides a real execute_guarded result ────────────────────────
 
 def test_end_to_end_through_execute_guarded(monkeypatch):
-    # Locks the WIRING (the org-stamp bug the demo caught would have failed here): a saved edit
-    # merges onto a REAL execute_guarded result when the flag is on, and off = byte-identical.
+    # Locks the WIRING (the org-stamp bug the demo caught would have failed here): a saved
+    # edit merges onto a REAL execute_guarded result. The merge is permanent now, so the
+    # second half asserts the other side of the data gate: no edits ⇒ no annotations.
     import duckdb
     from pathlib import Path
     from aughor.db.connection import DuckDBConnection
     from aughor.sql.executor import execute_guarded
-    import aughor.kernel.flags as F
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")
@@ -167,15 +167,12 @@ def test_end_to_end_through_execute_guarded(monkeypatch):
     conn._conn.execute("INSERT INTO orders VALUES ('1000','shipped'),('8821','returned')")
     OV.save_edit(_cell_edit())
 
-    monkeypatch.setenv("AUGHOR_KINETIC_OVERLAY", "1")
-    F.clear_flag("kinetic.overlay")
     r = execute_guarded(conn, "SELECT order_id, status FROM orders", query_id="p1")
     assert len(r.annotations) == 1 and r.annotations[0]["row_index"] == 1
 
-    monkeypatch.setenv("AUGHOR_KINETIC_OVERLAY", "0")
-    F.clear_flag("kinetic.overlay")
+    OV.purge_connections(["conn-k3"])
     r2 = execute_guarded(conn, "SELECT order_id, status FROM orders", query_id="p2")
-    assert r2.annotations == []          # flag off ⇒ byte-identical
+    assert r2.annotations == []          # no edits ⇒ nothing merged
 
 
 # ── the K2 → K3 seam: an annotate action writes an overlay edit ──────────────────

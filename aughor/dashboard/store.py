@@ -173,10 +173,8 @@ def _record_revision(card: Optional[DashboardCard]) -> None:
     if card is None:
         return
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+    from aughor.kernel.lifecycle import save_draft
 
-    if not lifecycle_enabled():
-        return
     try:
         save_draft("dashboard", f"dashboard:{card.id}",
                    {"title": card.title, "kind": card.kind, "sql": card.sql,

@@ -32,12 +32,6 @@ def _isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
-@pytest.fixture
-def _on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "1")
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_PUBLISH", "1")
-
-
 class _Conn:
     def close(self):
         pass
@@ -58,17 +52,7 @@ def _saved(body=None):
 
 # ── The flag contract ─────────────────────────────────────────────────────────
 
-def test_flag_off_freezes_nothing(monkeypatch):
-    # Explicit =0 — default-ON since flag strategy batch B.
-    monkeypatch.setenv("AUGHOR_LIFECYCLE_FREEZE", "0")
-    assert fz.freeze(KIND, NK, version=1, connection_id="c") is None
-    assert fz.frozen(KIND, NK) is None
-    assert fz.unfreeze(KIND, NK) is False
-
-
-# ── THE GATE ──────────────────────────────────────────────────────────────────
-
-def test_gate_unpinnable_connection_refuses_the_freeze(_on, monkeypatch):
+def test_gate_unpinnable_connection_refuses_the_freeze(monkeypatch):
     """No data version ⇒ nothing to pin ⇒ refuse NOW, with the reason. A lock icon that
     guarantees nothing is worse than no lock."""
     _storage(monkeypatch, token=None)
@@ -77,7 +61,7 @@ def test_gate_unpinnable_connection_refuses_the_freeze(_on, monkeypatch):
     assert fz.frozen(KIND, NK) is None, "a refused freeze must leave the artifact live"
 
 
-def test_gate_unopenable_connection_refuses_the_freeze(_on, monkeypatch):
+def test_gate_unopenable_connection_refuses_the_freeze(monkeypatch):
     def boom(_):
         raise RuntimeError("no such connection")
 
@@ -86,7 +70,7 @@ def test_gate_unopenable_connection_refuses_the_freeze(_on, monkeypatch):
         fz.freeze(KIND, NK, version=1, connection_id="nope")
 
 
-def test_gate_gone_data_errors_loudly(_on, monkeypatch):
+def test_gate_gone_data_errors_loudly(monkeypatch):
     """Frozen to a replayable snapshot, then the storage loses AS-OF: reading must raise,
     naming the as-of stamp — never quietly serve live numbers under a frozen label."""
     _saved()
@@ -105,7 +89,7 @@ def test_gate_gone_data_errors_loudly(_on, monkeypatch):
     assert "Unfreeze it" in str(ei.value)
 
 
-def test_gate_unfreeze_restores_live(_on, monkeypatch):
+def test_gate_unfreeze_restores_live(monkeypatch):
     _storage(monkeypatch, token="fp:abc")
     fz.freeze(KIND, NK, version=1, connection_id="c", tables=["t"])
     assert fz.frozen(KIND, NK) is not None
@@ -116,7 +100,7 @@ def test_gate_unfreeze_restores_live(_on, monkeypatch):
 
 # ── The two modes ─────────────────────────────────────────────────────────────
 
-def test_detect_only_never_claims_reproducibility(_on, monkeypatch):
+def test_detect_only_never_claims_reproducibility(monkeypatch):
     """The amended gate's safety property: a pin that cannot replay must not say it can."""
     _storage(monkeypatch, token="fp:abc", as_of=False)
     pin = fz.freeze(KIND, NK, version=1, connection_id="c", tables=["t"])
@@ -125,14 +109,14 @@ def test_detect_only_never_claims_reproducibility(_on, monkeypatch):
     assert "detect-only" in pin.describe()
 
 
-def test_reproducible_mode_when_storage_is_version_aware(_on, monkeypatch):
+def test_reproducible_mode_when_storage_is_version_aware(monkeypatch):
     _storage(monkeypatch, token="dl:cat:7", as_of=True)
     pin = fz.freeze(KIND, NK, version=1, connection_id="c", tables=["t"])
     assert pin.mode == "reproducible" and pin.is_reproducible
     assert "🔒 v1" in pin.describe()
 
 
-def test_detect_only_drift_is_reported_not_swallowed(_on, monkeypatch):
+def test_detect_only_drift_is_reported_not_swallowed(monkeypatch):
     """A detect-only pin's whole value is saying 'this moved'."""
     _saved()
     _storage(monkeypatch, token="fp:before", as_of=False)
@@ -148,7 +132,7 @@ def test_detect_only_drift_is_reported_not_swallowed(_on, monkeypatch):
     assert status == "drifted" and rev.version == 1
 
 
-def test_detect_only_unfingerprintable_data_is_gone_not_ok(_on, monkeypatch):
+def test_detect_only_unfingerprintable_data_is_gone_not_ok(monkeypatch):
     """If drift can no longer be ruled out, the honest answer is 'gone', not 'ok'."""
     _saved()
     _storage(monkeypatch, token="fp:before", as_of=False)
@@ -159,7 +143,7 @@ def test_detect_only_unfingerprintable_data_is_gone_not_ok(_on, monkeypatch):
     assert status == "gone" and "drift cannot be ruled out" in reason
 
 
-def test_reproducible_pin_tolerates_drift_because_it_replays(_on, monkeypatch):
+def test_reproducible_pin_tolerates_drift_because_it_replays(monkeypatch):
     """Drift is expected on a replayable pin — the read is AT the pinned version."""
     _saved()
     _storage(monkeypatch, token="dl:cat:7", as_of=True)
@@ -170,7 +154,7 @@ def test_reproducible_pin_tolerates_drift_because_it_replays(_on, monkeypatch):
     assert status == "ok"
 
 
-def test_reproducible_pin_with_a_non_replayable_token_is_gone(_on, monkeypatch):
+def test_reproducible_pin_with_a_non_replayable_token_is_gone(monkeypatch):
     """A 'reproducible' pin whose token is not a snapshot id cannot be replayed."""
     _saved()
     _storage(monkeypatch, token="dl:cat:7", as_of=True)
@@ -184,12 +168,12 @@ def test_reproducible_pin_with_a_non_replayable_token_is_gone(_on, monkeypatch):
 
 # ── Reading ───────────────────────────────────────────────────────────────────
 
-def test_read_frozen_on_a_live_artifact_raises(_on, monkeypatch):
+def test_read_frozen_on_a_live_artifact_raises(monkeypatch):
     with pytest.raises(FrozenDataGoneError, match="is not frozen"):
         fz.read_frozen(KIND, NK)
 
 
-def test_read_frozen_returns_the_pinned_version_not_the_latest(_on, monkeypatch):
+def test_read_frozen_returns_the_pinned_version_not_the_latest(monkeypatch):
     from aughor.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"sql": "PINNED"})
@@ -201,18 +185,18 @@ def test_read_frozen_returns_the_pinned_version_not_the_latest(_on, monkeypatch)
     assert rev.body == {"sql": "PINNED"} and status == "ok"
 
 
-def test_read_frozen_errors_when_the_pinned_version_left_history(_on, monkeypatch):
+def test_read_frozen_errors_when_the_pinned_version_left_history(monkeypatch):
     _storage(monkeypatch, token="fp:x", as_of=False)
     fz.freeze(KIND, NK, version=99, connection_id="c", tables=["t"])
     with pytest.raises(FrozenDataGoneError, match="no longer in the artifact history"):
         fz.read_frozen(KIND, NK)
 
 
-def test_verify_on_an_unfrozen_artifact_is_ok_not_an_error(_on):
+def test_verify_on_an_unfrozen_artifact_is_ok_not_an_error():
     assert fz.verify(KIND, NK) == ("ok", "not frozen")
 
 
-def test_freeze_records_the_as_of_and_tables(_on, monkeypatch):
+def test_freeze_records_the_as_of_and_tables(monkeypatch):
     _storage(monkeypatch, token="fp:x", as_of=False)
     pin = fz.freeze(KIND, NK, version=2, connection_id="conn-a", tables=["b", "a", "a"])
     assert pin.tables == ["a", "b"] and pin.connection_id == "conn-a"

@@ -64,10 +64,6 @@ def execute_action(
     """Run one declared action. A criterion failure returns 422 with the authored message; a
     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry);
     success returns 200 with the dispatch outcome."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("kinetic.actions"):
-        raise HTTPException(status_code=404, detail="Kinetic actions are not enabled")
-
     # The public store loader already overlays human overrides (so kinetic_actions are applied);
     # a declared action implies the ontology is cached, so the fast path is sufficient here.
     graph = _resolve_graph(connection_id, schema_name)
@@ -112,23 +108,22 @@ def propose_actions_route(
     from aughor.actions.propose import propose_actions
     proposals = propose_actions(graph, body.context, scope=connection_id)
 
-    # A4: when the inbox is on, persist each VALID proposal so a human can accept it later (durable,
-    # resolve-once). A single run_id groups this propose call; call_id = index makes a replay
-    # idempotent. Off ⇒ the response is byte-identical to K4 (live proposals, no inbox_id).
+    # A4: persist each VALID proposal so a human can accept it later (durable,
+    # resolve-once). A single run_id groups this propose call; call_id = index makes a
+    # replay idempotent.
     inbox_ids: dict[int, str] = {}
-    if flag_enabled("automations.proposals"):
-        import uuid as _uuid
-        from aughor.actions.inbox import StagedProposal, stage_proposal
-        run_id = _uuid.uuid4().hex
-        for i, p in enumerate(proposals):
-            if not p.ok:
-                continue
-            staged = stage_proposal(StagedProposal(
-                connection_id=connection_id, schema_name=schema_name or "",
-                action_id=p.action_id, params=p.params, reasoning=p.reasoning,
-                proposer=body.actor or "agent", source="agent",
-                run_id=run_id, call_id=str(i)))
-            inbox_ids[i] = staged.id
+    import uuid as _uuid
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    run_id = _uuid.uuid4().hex
+    for i, p in enumerate(proposals):
+        if not p.ok:
+            continue
+        staged = stage_proposal(StagedProposal(
+            connection_id=connection_id, schema_name=schema_name or "",
+            action_id=p.action_id, params=p.params, reasoning=p.reasoning,
+            proposer=body.actor or "agent", source="agent",
+            run_id=run_id, call_id=str(i)))
+        inbox_ids[i] = staged.id
 
     return {"proposals": [
         {"action_id": p.action_id, "status": p.status, "ok": p.ok, "params": p.params,
@@ -139,16 +134,9 @@ def propose_actions_route(
 
 # ── A4: the resolve-once proposal inbox + standing grants ─────────────────────────
 
-def _require_proposals() -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("automations.proposals"):
-        raise HTTPException(status_code=404, detail="Proposal inbox is not enabled")
-
-
 @router.get("/kinetic-actions/inbox")
 def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
     """The staged proposals for a connection (optionally filtered by status) — the review queue."""
-    _require_proposals()
     from aughor.actions.inbox import list_proposals
     return {"proposals": [p.model_dump() for p in list_proposals(connection_id, status)]}
 
@@ -158,7 +146,6 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     """Accept a staged proposal and execute it — exactly once. The accept is the approval, so the
     executor bypasses the approval gate (never the criteria). A criterion failure returns 422 with
     the authored message; a re-accept of an already-resolved proposal returns 409."""
-    _require_proposals()
     from aughor.actions.inbox import accept_proposal
     result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant)
     if result.status == "not_found":
@@ -177,7 +164,6 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
 @router.post("/kinetic-actions/inbox/{proposal_id}/reject")
 def reject_inbox(proposal_id: str, body: RejectRequest):
     """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
-    _require_proposals()
     from aughor.actions.inbox import reject_proposal
     return {"rejected": reject_proposal(proposal_id, actor=body.actor)}
 
@@ -185,7 +171,6 @@ def reject_inbox(proposal_id: str, body: RejectRequest):
 @router.get("/kinetic-actions/grants")
 def list_grants_route(connection_id: str = BUILTIN_ID):
     """The target-bound standing grants on a connection — the pre-authorizations, for review/revoke."""
-    _require_proposals()
     from aughor.actions.grants import list_grants
     return {"grants": [g.model_dump() for g in list_grants(connection_id)]}
 
@@ -193,7 +178,6 @@ def list_grants_route(connection_id: str = BUILTIN_ID):
 @router.post("/kinetic-actions/grants/{grant_id}/revoke")
 def revoke_grant_route(grant_id: str):
     """Revoke a standing grant — future unattended runs of that target hit the approval gate again."""
-    _require_proposals()
     from aughor.actions.grants import revoke_grant
     if not revoke_grant(grant_id):
         raise HTTPException(status_code=404, detail="No such grant")
@@ -203,11 +187,7 @@ def revoke_grant_route(grant_id: str):
 @router.post("/kinetic-actions/annotate")
 def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
     """Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
-    affordance). Merged onto reads by K3 when `kinetic.overlay` is on; never mutates source. Flag-gated
-    on `kinetic.overlay` → 404 when off."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("kinetic.overlay"):
-        raise HTTPException(status_code=404, detail="Overlay edits are not enabled")
+    affordance). Merged onto reads by K3; never mutates source."""
     if not body.table or not body.body:
         raise HTTPException(status_code=400, detail="table and body are required")
     from aughor.actions.overlay import OverlayEdit, save_edit

@@ -259,16 +259,13 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
     """RBAC row-level policy (Rec 7): AND the caller's per-role row filters into ``sql`` before execution.
 
     Returns ``(sql, None)`` to proceed with the (possibly rewritten) SQL, or ``(sql, blocked_result)`` to
-    refuse. Triple-gated — no-op unless ``rbac.row_policy`` is on AND identity is required AND the org has the
-    RBAC_SSO capability — and applies ONLY to an identified caller's request (a set ``current_user_id``), so
+    refuse. Double-gated — no-op unless identity is required AND the org has the RBAC_SSO
+    capability — and applies ONLY to an identified caller's request (a set ``current_user_id``), so
     internal/background/localhost queries (no user context) are never filtered. Fails CLOSED: if a policy
     applies but can't be compiled in, the query is blocked rather than run unfiltered.
 
     Injects on the DuckDB-form SQL these transpile-from-DuckDB engines receive (before translate/normalize),
     so the wrapped subqueries transpile with the rest of the statement."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("rbac.row_policy"):
-        return sql, None
     try:
         ctx = _row_policy_principal()
         if ctx is None:
@@ -293,9 +290,9 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
 def result_cache_tenancy() -> "str | None":
     """Cache-partition fingerprint for RESULT caches (see ``aughor/db/matcache.py``) under the RBAC row policy.
 
-    ``None`` → the policy is inert for this request (flag off, or identity / capability / user absent); the
-    caller uses the legacy ``(conn_id, sql)`` key, **byte-identical** to pre-policy behaviour. Every current
-    (default-off) deployment lands here, so nothing about caching changes until the policy is actually on.
+    ``None`` → the policy is inert for this request (identity / capability / user absent); the caller
+    uses the legacy ``(conn_id, sql)`` key, **byte-identical** to pre-policy behaviour. A deployment
+    without identity lands here, so nothing about caching changes until the policy actually applies.
 
     ``str``  → the policy gate is LIVE for an identified user; the token folds ``(org_id, effective roles,
     resolved row filters)`` so a cached result is only ever reused by a principal entitled to
@@ -308,9 +305,6 @@ def result_cache_tenancy() -> "str | None":
     fingerprint on *exactly* the requests that get filtered. Fails CLOSED: if the gate is live but the
     fingerprint cannot be computed, returns a per-call unique token so the entry can be neither shared nor
     reused (the cache is effectively bypassed for that call) — never the legacy key."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("rbac.row_policy"):
-        return None
     try:
         ctx = _row_policy_principal()
         if ctx is None:

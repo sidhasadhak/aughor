@@ -262,15 +262,6 @@ def test_a_change_seen_while_the_schedule_is_quiet_is_not_lost(wired, flag_on, r
     assert any("→" in d for d in next_morning.conditions_fired)
 
 
-def test_flag_off_keeps_source_conditions_loudly_unwired(wired, monkeypatch, request):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    a = upsert_automation(_automation(_uid(request),
-                                      [Condition(kind="source_change", config={"table": "orders"})]))
-    run = run_automation(a, now=NOW, dispatch=_dispatch_ok)
-    assert run.outcome == "error"
-    assert "automations.source_probes" in run.error
-
-
 def test_entity_appears_end_to_end(wired, flag_on, request):
     a = upsert_automation(_automation(_uid(request),
                                       [Condition(kind="entity_appears", config={"table": "orders"})]))

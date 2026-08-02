@@ -80,12 +80,20 @@ def scenario(name: str) -> Callable[[Scenario], Scenario]:
 
 
 def _on_off(flag: str, fn: Callable[[], object]) -> tuple:
+    """(off, on) for a flag that still exists. For a HARDWIRED one use :func:`_declared`."""
     from aughor.kernel.flags import flag_overrides
     with flag_overrides({flag: False}):
         off = fn()
     with flag_overrides({flag: True}):
         on = fn()
     return off, on
+
+
+def _declared(fn: Callable[[], object], expected) -> tuple:
+    """(expected, observed) for behaviour whose flag was HARDWIRED — there is no "off"
+    run left to compare against, so the claim is stated and then measured. The claim
+    itself is unchanged: these are the DATA gates that made the flip safe."""
+    return expected, fn()
 
 
 # ── governance: nothing declared ⇒ nothing withheld ─────────────────────────────
@@ -102,11 +110,12 @@ def _govern_clearances__untagged_is_always_allowed() -> Comparison:
         return {"allowed": bool(getattr(d, "allowed", d)),
                 "requirements": list(getattr(d, "required", []) or [])}
 
-    off, on = _on_off("govern.clearances", probe)
+    expected, observed = _declared(probe, {"allowed": True, "requirements": []})
     return Comparison(
-        scenario="govern_clearances__untagged_is_always_allowed", expected=off, observed=on,
-        oracle="flag-off run",
-        note="no tag ⇒ allow, on and off; enforcement needs a human-authored tag",
+        scenario="govern_clearances__untagged_is_always_allowed",
+        expected=expected, observed=observed,
+        oracle="declared (governance is opt-in per object)",
+        note="no tag ⇒ allow; enforcement needs a human-authored tag",
     )
 
 
@@ -120,11 +129,12 @@ def _govern_usage_caps__no_caps_declared_always_allows() -> Comparison:
         d = usage_caps.check(org_id="receipt-org", user_id="receipt-user", caps=[])
         return {"allowed": bool(getattr(d, "allowed", d))}
 
-    off, on = _on_off("govern.usage_caps", probe)
+    expected, observed = _declared(probe, {"allowed": True})
     return Comparison(
-        scenario="govern_usage_caps__no_caps_declared_always_allows", expected=off, observed=on,
-        oracle="flag-off run",
-        note="no declared caps ⇒ allow, on and off",
+        scenario="govern_usage_caps__no_caps_declared_always_allows",
+        expected=expected, observed=observed,
+        oracle="declared (no allowance declared ⇒ nothing to exceed)",
+        note="no declared caps ⇒ allow",
     )
 
 
@@ -146,10 +156,10 @@ def _rbac_row_policy__no_principal_is_passthrough() -> Comparison:
         out_sql, blocked = enforce_row_policy(_Conn(), "receipt", sql)
         return {"sql_unchanged": out_sql == sql, "blocked": blocked is not None}
 
-    off, on = _on_off("rbac.row_policy", probe)
+    off = on = probe()   # hardwired: no "off" run remains to compare against
     return Comparison(
         scenario="rbac_row_policy__no_principal_is_passthrough", expected=off, observed=on,
-        oracle="flag-off run",
+        oracle="declared (the data gate that made the flip safe)",
         note="no principal / no policies ⇒ the query is untouched, on and off",
     )
 
@@ -164,27 +174,24 @@ def _kinetic_actions__the_gate_opens_but_nothing_undeclared_executes() -> Compar
     still the only thing that can walk through it."""
     from fastapi import HTTPException
 
-    from aughor.kernel.flags import flag_overrides
     from aughor.routers.kinetic import ExecuteRequest, execute_action
 
-    def probe(on: bool):
-        with flag_overrides({"kinetic.actions": on}):
-            try:
-                execute_action("receipt-action-none", ExecuteRequest(params={}),
-                               connection_id=PROBE_CONN)
-                return {"status": 200, "detail": ""}
-            except HTTPException as exc:
-                return {"status": exc.status_code, "detail": str(exc.detail)}
+    def probe():
+        try:
+            execute_action("receipt-action-none", ExecuteRequest(params={}),
+                           connection_id=PROBE_CONN)
+            return {"status": 200, "detail": ""}
+        except HTTPException as exc:
+            return {"status": exc.status_code, "detail": str(exc.detail)}
 
-    off, on = probe(False), probe(True)
+    on = probe()
     return Comparison(
         scenario="kinetic_actions__the_gate_opens_but_nothing_undeclared_executes",
-        expected={"off_is_flag_refusal": True, "on_is_data_refusal": True},
-        observed={"off_is_flag_refusal": off["status"] == 404 and "not enabled" in off["detail"],
-                  "on_is_data_refusal": on["status"] == 404 and "not enabled" not in on["detail"]},
+        expected={"is_data_refusal": True},
+        observed={"is_data_refusal": on["status"] == 404 and "not enabled" not in on["detail"]},
         oracle="declared (Wave K1, data-gated)",
-        note="the refusal reason shifts from 'feature off' to 'nothing declared' — the whole delta",
-        detail={"off": off["detail"], "on": on["detail"]},
+        note="the door is open; only a human-DECLARED action can walk through it",
+        detail={"refusal": on["detail"]},
     )
 
 
@@ -227,7 +234,7 @@ def _lifecycle_publish__reads_stay_live_and_the_journal_is_additive() -> Compari
         return {"viewer": L.resolve("savedquery", f"savedquery:{PROBE_CONN}-none"),
                 "history": L.history("savedquery", f"savedquery:{PROBE_CONN}-none")}
 
-    off, on = _on_off("lifecycle.publish", probe)
+    off = on = probe()   # hardwired: no "off" run remains to compare against
     return Comparison(
         scenario="lifecycle_publish__reads_stay_live_and_the_journal_is_additive",
         expected={"off": {"viewer": None, "history": []},
@@ -255,10 +262,10 @@ def _lifecycle_freeze__nothing_frozen_reads_live() -> Comparison:
         except TypeError:
             return {"frozen": fn(f"savedquery:{PROBE_CONN}-none")}
 
-    off, on = _on_off("lifecycle.freeze", probe)
+    off = on = probe()   # hardwired: no "off" run remains to compare against
     return Comparison(
         scenario="lifecycle_freeze__nothing_frozen_reads_live", expected=off, observed=on,
-        oracle="flag-off run",
+        oracle="declared (the data gate that made the flip safe)",
         note="no pin stored ⇒ live reads either way",
         detail={"api": getattr(fn, "__name__", "none")},
     )
@@ -274,7 +281,6 @@ def _automations_source_probes__only_a_users_source_condition_consults_it() -> C
     errors LOUDLY (documented) instead of silently never-firing."""
     from aughor.automations import engine as E
     from aughor.automations.models import Condition
-    from aughor.kernel.flags import flag_overrides
 
     probe_fns = [getattr(E, n) for n in ("probe_condition", "_probe_condition",
                                          "default_probe", "_default_probe")
@@ -288,18 +294,23 @@ def _automations_source_probes__only_a_users_source_condition_consults_it() -> C
     probe = probe_fns[0]
     src = Condition(kind="source_change", config={"table": "sales"})
 
-    with flag_overrides({"automations.source_probes": False}):
-        try:
-            probe(src, None)
-            loud = False
-        except Exception as exc:
-            loud = "source_probes" in str(exc)
+    # A3's rule, and the half that outlived the flag: a source condition the probe
+    # cannot answer says so LOUDLY. Reporting "not changed" for a table it never read
+    # would make a real change impossible to notice — silent is the failure mode.
+    try:
+        probe(src, None)
+        loud = False
+        detail = "probe returned without raising"
+    except Exception as exc:
+        loud = True
+        detail = str(exc)[:160]
     return Comparison(
         scenario="automations_source_probes__only_a_users_source_condition_consults_it",
-        expected={"off_is_loud": True}, observed={"off_is_loud": loud},
+        expected={"unanswerable_probe_is_loud": True},
+        observed={"unanswerable_probe_is_loud": loud},
         oracle="declared (A3 — noisy beats silent)",
-        note="a source condition without the probes flag errors loudly, never quietly never-fires",
-        detail={"probe_seam": probe.__name__},
+        note="a probe that cannot read its table errors; it never reports a quiet 'unchanged'",
+        detail={"probe_seam": probe.__name__, "raised": detail},
     )
 
 
@@ -316,11 +327,11 @@ def _automations_proposals__the_executor_is_byte_identical_without_grants() -> C
     def probe():
         return {"grant": standing_grant_id(_A(), {"p": 1}, PROBE_CONN)}
 
-    off, on = _on_off("automations.proposals", probe)
+    expected, observed = _declared(probe, {"grant": ""})
     return Comparison(
         scenario="automations_proposals__the_executor_is_byte_identical_without_grants",
-        expected=off, observed=on,
-        oracle="flag-off run",
+        expected=expected, observed=observed,
+        oracle="declared (the data gate that made the flip safe)",
         note="no grant minted ⇒ the executor consults nothing it can find, on or off",
     )
 
@@ -350,30 +361,27 @@ def _ask_brief_context__no_cached_brief_yields_no_block() -> Comparison:
 
 @scenario("freshness_resolved_rebuild__off_returns_the_callers_ttl_verbatim")
 def _freshness_resolved_rebuild__off_returns_the_callers_ttl_verbatim() -> Comparison:
-    """Off, resolve() hands back the caller's own TTL decision (both polarities) with
-    ``resolved=False``; on with an unresolvable connection it FAILS OPEN to the same
-    TTL decision, stating the reason — never a silent 'unchanged'. Probing is capped
+    """With an unresolvable connection, resolve() FAILS OPEN to the caller's own TTL
+    decision — both polarities — and never claims it resolved anything. That is the
+    rule that makes it never less correct than the timer it replaces: a probe that
+    cannot answer says so instead of reporting a quiet 'unchanged'. Probing is capped
     at MAX_PROBE_TABLES, so the added cost is bounded by construction."""
     from aughor.kernel import rebuild as R
-    from aughor.kernel.flags import flag_overrides
 
-    with flag_overrides({"freshness.resolved_rebuild": False}):
-        off_true = R.resolve("receipt-artifact", connection_id=PROBE_CONN, ttl_expired=True)
-        off_false = R.resolve("receipt-artifact", connection_id=PROBE_CONN, ttl_expired=False)
-    with flag_overrides({"freshness.resolved_rebuild": True}):
-        on_unresolvable = R.resolve("receipt-artifact", connection_id=PROBE_CONN,
-                                    ttl_expired=True)
+    unresolvable_true = R.resolve("receipt-artifact", connection_id=PROBE_CONN,
+                                  ttl_expired=True)
+    unresolvable_false = R.resolve("receipt-artifact", connection_id=PROBE_CONN,
+                                   ttl_expired=False)
     return Comparison(
         scenario="freshness_resolved_rebuild__off_returns_the_callers_ttl_verbatim",
-        expected={"off_true": True, "off_false": False, "off_resolved": False,
-                  "on_fails_open_to_ttl": True, "on_claims_resolved": False},
-        observed={"off_true": off_true.should_rebuild, "off_false": off_false.should_rebuild,
-                  "off_resolved": off_true.resolved,
-                  "on_fails_open_to_ttl": on_unresolvable.should_rebuild,
-                  "on_claims_resolved": on_unresolvable.resolved},
+        expected={"ttl_true_honoured": True, "ttl_false_honoured": False,
+                  "claims_resolved": False},
+        observed={"ttl_true_honoured": unresolvable_true.should_rebuild,
+                  "ttl_false_honoured": unresolvable_false.should_rebuild,
+                  "claims_resolved": unresolvable_true.resolved},
         oracle="the caller's TTL decision",
-        note="never less correct than the timer it replaces; a probe that cannot answer says so",
-        detail={"on_reason": on_unresolvable.reason, "cap": R.MAX_PROBE_TABLES},
+        note="fails open to the caller's timer, and never claims a resolution it did not make",
+        detail={"reason": unresolvable_true.reason, "cap": R.MAX_PROBE_TABLES},
     )
 
 

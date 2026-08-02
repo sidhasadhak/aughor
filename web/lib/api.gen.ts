@@ -4197,8 +4197,7 @@ export interface paths {
         /**
          * Annotate
          * @description Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
-         *     affordance). Merged onto reads by K3 when `kinetic.overlay` is on; never mutates source. Flag-gated
-         *     on `kinetic.overlay` → 404 when off.
+         *     affordance). Merged onto reads by K3; never mutates source.
          */
         post: operations["annotate_kinetic_actions_annotate_post"];
         delete?: never;

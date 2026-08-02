@@ -295,10 +295,8 @@ def _record_revision(suite_id: str) -> None:
     revision. No-op when ``lifecycle.publish`` is off.
     """
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.lifecycle import lifecycle_enabled, save_draft
+    from aughor.kernel.lifecycle import save_draft
 
-    if not lifecycle_enabled():
-        return
     try:
         suite = get_suite(suite_id)
         if suite is None:

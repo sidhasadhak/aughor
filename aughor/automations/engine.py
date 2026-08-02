@@ -141,12 +141,6 @@ def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
         return True, f"metric({monitor.name}): {alert.severity} — {alert.message[:120]}"
 
     if cond.kind in ("source_change", "entity_appears"):
-        # A3 — gated separately from the engine so an operator can run schedule/metric
-        # automations without also enabling per-minute warehouse probes.
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("automations.source_probes"):
-            raise ProbeUnavailable(
-                f"condition kind '{cond.kind}' requires the automations.source_probes flag (off)")
         from aughor.automations.probes import evaluate_source_condition
         return evaluate_source_condition(cond, automation)
 

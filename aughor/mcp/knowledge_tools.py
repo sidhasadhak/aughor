@@ -29,9 +29,8 @@ def _trim_nodes(nodes: list, connection_id: str, schema_name: str) -> tuple[list
     Governance off (the default) returns everything untouched, so this is byte-identical
     when the flag is off — the same contract every other G5 call site has.
     """
-    from aughor.govern import tags as _tags
 
-    if not _tags.enabled() or not nodes:
+    if not nodes:
         return nodes, ""
 
     from aughor.govern.retrieval_trim import (

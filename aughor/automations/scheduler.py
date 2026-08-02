@@ -112,13 +112,9 @@ def trigger_now(automation_id: str) -> Optional[AutomationRun]:
 
 
 def start() -> None:
-    """Start the heartbeat, if the flag is on."""
+    """Start the heartbeat."""
     global _started
     if _started:
-        return
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("automations.engine"):
-        logger.debug("automation engine disabled — heartbeat not started")
         return
     try:
         _scheduler.add_job(

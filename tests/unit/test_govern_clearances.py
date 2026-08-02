@@ -163,21 +163,21 @@ def test_decision_serializes_for_a_receipt():
 
 # ── the flag ────────────────────────────────────────────────────────────────────────
 
-def test_check_is_allow_when_the_flag_is_off(monkeypatch):
-    """Off must be byte-identical to not calling it, so callers can wire it in
-    unconditionally."""
+def test_check_is_allow_for_an_untagged_securable():
+    """Governance is opt-in per object: an untagged securable is always allowed, so
+    callers can wire the check in unconditionally. This is what made hardwiring the
+    flag safe — a deployment that tags nothing sees no change."""
     from aughor.govern import tags as T
 
-    monkeypatch.setattr(T, "enabled", lambda: False)
-    d = T.check("table:c.s.salaries", [])
+    d = T.check("table:c.s.never-tagged-anything", [])
     assert d.allowed and d.requirements == []
 
 
-def test_the_flag_is_registered():
-    from aughor.kernel.flags import FLAG_ENV, FLAG_META
+def test_clearance_enforcement_is_unconditional():
+    """The flag was hardwired 2026-08-02; pinned so a re-introduced switch faces this."""
+    from aughor.kernel.flags import FLAG_ENV
 
-    assert "govern.clearances" in FLAG_ENV
-    assert "govern.clearances" in FLAG_META
+    assert "govern.clearances" not in FLAG_ENV
 
 
 # ── the store ───────────────────────────────────────────────────────────────────────
@@ -248,7 +248,6 @@ class TestTagStore:
         from aughor.govern import tag_store
         from aughor.govern import tags as T
 
-        monkeypatch.setattr(T, "enabled", lambda: True)
         tag_store.set_tag("table:c.s.e2e", "tier", "restricted", set_by="alice",
                           org_id="org-e2e")
         blocked = T.check("table:c.s.e2e", [], org_id="org-e2e")

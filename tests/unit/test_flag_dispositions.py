@@ -89,6 +89,11 @@ def test_deleted_flags_stay_deleted():
                       # Wave 2b — the graph and ontology bundles.
                       "graph.build", "graph.freshness", "graph.surface", "graph.tour",
                       "graph.export", "graph.consolidate", "ontology.autodoc",
-                      "ontology.column_config", "obs.popularity", "birth.job"):
+                      "ontology.column_config", "obs.popularity", "birth.job",
+                      # Wave 2c — govern, automations and lifecycle.
+                      "govern.clearances", "govern.usage_caps", "rbac.row_policy",
+                      "freshness.resolved_rebuild", "kinetic.actions", "kinetic.overlay",
+                      "lifecycle.publish", "lifecycle.freeze", "automations.engine",
+                      "automations.source_probes", "automations.proposals"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone
