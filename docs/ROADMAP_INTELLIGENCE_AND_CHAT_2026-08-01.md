@@ -272,6 +272,45 @@ to Aughor's picker API).
 
 ---
 
+## Parked for study — Graphify (queued 2026-08-02, not scheduled)
+
+**https://github.com/Graphify-Labs/graphify** (Apache-2.0, Python) — "turn any
+codebase, with its docs, SQL schemas, configs and PDFs, into a queryable knowledge
+graph… local deterministic AST parsing, every edge explained, no vector store",
+shipped as a `/graphify` skill for Claude Code, Cursor, Codex and Gemini CLI.
+
+**Why it earns a slot rather than a bookmark:** it made the same three bets Aughor
+made in Waves C and N, independently and at scale — a *deterministic* projection
+instead of an LLM extraction pass, an *explained edge* instead of a similarity
+score, and *no vector store* as a stated position rather than an omission. Aughor
+reached the third bet by measurement (the RRF eval that kept the α-blend, and the
+lexical floor that never degrades to an unranked fallback); Graphify appears to
+have reached it by construction. Where two systems converge on an architecture from
+different directions, the disagreements are the interesting part.
+
+**Questions to bring to the study** — the same discipline as the Neo4j/Cognee
+studies (adopt the shape, not the dependency):
+1. Its edge-provenance model vs J4's rule that an edge without real provenance is
+   not constructible. Does it have an equivalent of the measured value-overlap that
+   our `joins_on` edges carry, or is structural adjacency enough for it?
+2. Leiden community detection (a listed topic) against our deterministic
+   domain-cluster aggregation — is topological clustering better than our
+   ontology-derived domains at the level-1 anti-hairball view?
+3. Its skills-pack distribution vs Wave C6's `graph.export`: both ship a graph a
+   teammate consumes with no LLM and no server. Compare freshness honesty — C6
+   refuses to ship an empty pack and travels its staleness state because an offline
+   consumer cannot re-derive it.
+4. Whether its **codebase** graph is a real second substrate for us. Aughor graphs a
+   *connection*; graphing the platform's own source is a different artifact, and the
+   honest question is whether it would be leveraged or would stall at BUILT like the
+   features the 2026-07-12 review counted.
+
+**Pre-check before any adoption work** (the rule that has gone 6-for-6): read what
+it actually emits for one real repo before designing anything around it. The claim
+to test first is "every edge explained" — that is the one we have paid for.
+
+---
+
 ## Track D — Flag endgame: every flag becomes permanent or disappears
 
 Policy (user decision, 2026-08-01): **no flag may live in a permanent "off" or
