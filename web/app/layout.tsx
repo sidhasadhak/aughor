@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from '@vercel/analytics/next';
 import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
 // v2 Tier 2: .aug-* component overrides — loaded after globals.css so it wins the
@@ -55,6 +56,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster />
+        <Analytics />
       </body>
     </html>
   );
