@@ -1145,6 +1145,44 @@ export async function getGraphAudit(connectionId: string, schemaName?: string): 
   return res.json();
 }
 
+// ── What depends on a node (Wave P4 — GET /graph/lineage) ─────────────────────
+
+export interface GraphDependent {
+  node_id: string;
+  kind: string;
+  label: string;
+  depth: number;
+  via: string;
+  /** The expression in THIS node that references the subject — the line that would
+   *  break. Empty when the node records no expression (never a guess). */
+  site: string;
+  site_kind: "sql" | "formula" | "citation" | "";
+  site_line: number;
+}
+export interface GraphLineage {
+  connection_id: string;
+  node_id: string;
+  label: string;
+  root: string;
+  truncated: boolean;
+  counts_by_kind: Record<string, number>;
+  summary: string;
+  dependents: GraphDependent[];
+}
+
+/** What breaks if this table or metric changes — reported, never deleted (Wave P4). */
+export async function getGraphLineage(
+  connectionId: string, opts: { nodeId?: string; table?: string; schemaName?: string },
+): Promise<GraphLineage> {
+  const p = new URLSearchParams({ connection_id: connectionId });
+  if (opts.nodeId) p.set("node_id", opts.nodeId);
+  if (opts.table) p.set("table", opts.table);
+  if (opts.schemaName) p.set("schema_name", opts.schemaName);
+  const res = await fetch(`${getApiBase()}/graph/lineage?${p.toString()}`);
+  if (!res.ok) throw new Error("Lineage not available");
+  return res.json();
+}
+
 // ── The graph's review queue (Wave P5 — GET /graph/review) ────────────────────
 
 export type CGCheckKind = "probe_join" | "ask" | "review_finding" | "define" | "rebuild";

@@ -348,6 +348,53 @@ def get_graph_content_drift(
     return {"connection_id": connection_id, **drift.to_dict()}
 
 
+@router.get("/graph/lineage")
+def get_context_graph_lineage(
+    connection_id: str = BUILTIN_ID,
+    node_id: Optional[str] = Query(default=None),
+    table: Optional[str] = Query(default=None),
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P4 — what depends on this node, with the expression that would break.
+
+    The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
+    no route and no caller: the question "what breaks if this table changes" was answerable
+    and unasked. This is the seam.
+
+    Each dependent carries its **site** — the line of the finding's SQL, or the metric
+    formula, that names the thing in question. A dependency list without sites says which
+    artifacts to open; with them it says what to look at once open.
+    """
+    from aughor.govern.lineage import dependents_of
+
+    if not node_id and not table:
+        raise HTTPException(status_code=400, detail="Pass either node_id or table")
+    cg = _load_graph_or_404(connection_id, schema_name)
+
+    root = node_id
+    if not root:
+        bare = str(table or "").split(".")[-1].lower()
+        for nid, n in cg.nodes.items():
+            if n.kind != "table":
+                continue
+            names = {str(s).split(".")[-1].lower()
+                     for s in ((n.data or {}).get("source_tables") or [])}
+            if bare in names or bare == nid.split(":", 1)[-1].lower():
+                root = nid
+                break
+        if not root:
+            raise HTTPException(status_code=404,
+                                detail=f"No table `{table}` in this connection's graph")
+    elif root not in cg.nodes:
+        raise HTTPException(status_code=404, detail=f"No node `{root}` in this graph")
+
+    report = dependents_of(cg, root)
+    node = cg.nodes.get(root)
+    return {"connection_id": connection_id, "node_id": root,
+            "label": getattr(node, "label", "") or root,
+            **report.to_dict()}
+
+
 @router.get("/graph/review")
 def get_context_graph_review(
     connection_id: str = BUILTIN_ID,

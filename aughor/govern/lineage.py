@@ -42,17 +42,59 @@ MAX_DEPTH = 4
 
 @dataclass
 class Dependent:
-    """One node downstream of the thing being asked about."""
+    """One node downstream of the thing being asked about.
+
+    ``site`` is Wave P4's addition: not just *that* this finding depends on the table, but
+    **the expression that would break** — the line of its SQL that names the table, or the
+    metric formula that reads it. A dependency list without sites tells a reviewer which
+    artifacts to open; a list with them tells them what to look at once they are open, and
+    it is the difference between a report and a work item.
+    """
 
     node_id: str
     kind: str
     label: str
     depth: int
     via: str            # the edge kind that connected it
+    site: str = ""      # the expression in THIS node that references the target
+    site_kind: str = ""  # sql | formula | citation — what kind of expression `site` is
+    site_line: int = 0   # 1-based line within that expression, 0 when not applicable
 
     def to_dict(self) -> dict:
         return {"node_id": self.node_id, "kind": self.kind, "label": self.label,
-                "depth": self.depth, "via": self.via}
+                "depth": self.depth, "via": self.via, "site": self.site,
+                "site_kind": self.site_kind, "site_line": self.site_line}
+
+
+def _site_of(node, target_label: str, target_tables: list) -> tuple[str, str, int]:
+    """The expression inside ``node`` that references the target — ``(site, kind, line)``.
+
+    Deliberately literal: it reports the line of SQL that NAMES the table, found by
+    scanning the text this node already carries. No parsing, no inference — a wrong guess
+    about which expression breaks is worse than none, because a reviewer would check the
+    wrong line and conclude the dependency was fine.
+    """
+    data = (getattr(node, "data", None) or {})
+    names = {str(t).split(".")[-1].lower() for t in (target_tables or []) if t}
+    if target_label:
+        names.add(str(target_label).split(".")[-1].lower())
+    names = {n for n in names if n}
+
+    for key, kind in (("sql", "sql"), ("formula_sql", "formula")):
+        text = str(data.get(key) or "")
+        if not text:
+            continue
+        for i, line in enumerate(text.splitlines(), start=1):
+            low = line.lower()
+            if any(n in low for n in names):
+                return line.strip()[:200], kind, i
+        # Referenced by the edge but not visibly by name — report the expression itself
+        # rather than claiming a line we did not find.
+        return text.strip().splitlines()[0][:200] if text.strip() else "", kind, 0
+
+    if getattr(node, "kind", "") == "brief":
+        return "cites this finding", "citation", 0
+    return "", "", 0
 
 
 @dataclass
@@ -113,6 +155,10 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
     for depth in range(1, max_depth + 1):
         nxt: list[str] = []
         for target in frontier:
+            tnode = nodes.get(target)
+            t_label = getattr(tnode, "label", "") if tnode is not None else ""
+            t_tables = ((getattr(tnode, "data", None) or {}).get("source_tables") or []
+                        if tnode is not None else [])
             for source, kind in incoming.get(target, []):
                 if source in seen:
                     continue
@@ -120,9 +166,11 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
                 node = nodes.get(source)
                 if node is None:
                     continue
+                site, site_kind, site_line = _site_of(node, t_label, t_tables)
                 report.dependents.append(Dependent(
                     node_id=source, kind=getattr(node, "kind", ""),
-                    label=getattr(node, "label", "") or source, depth=depth, via=kind))
+                    label=getattr(node, "label", "") or source, depth=depth, via=kind,
+                    site=site, site_kind=site_kind, site_line=site_line))
                 nxt.append(source)
         frontier = nxt
         if not frontier:

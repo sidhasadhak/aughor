@@ -6,11 +6,13 @@ import {
   CGNode,
   CGStaleness,
   GraphAudit,
+  GraphLineage,
   GraphReview,
   GraphReviewItem,
   getConnectionGraph,
   getConnectionTour,
   getGraphAudit,
+  getGraphLineage,
   getGraphReview,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
@@ -312,6 +314,9 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                     ))}
                   </Section>
 
+                  {/* P4: what breaks if this table changes — reported, never deleted. */}
+                  <DependentsSection connectionId={connectionId} schema={schema} nodeId={t.id} />
+
                   <Section title="Columns">
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {cols.map((c) => (
@@ -326,6 +331,46 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Wave P4 — what depends on this node, each dependent showing the expression that would
+ * break rather than only its name.
+ *
+ * Loaded when the entity page opens (it walks the graph), and silent when nothing depends
+ * on the table: an empty "Dependents: none" section on every leaf table is noise, while
+ * the section appearing at all is itself the signal that something downstream exists.
+ */
+function DependentsSection({ connectionId, schema, nodeId }: {
+  connectionId: string; schema?: string; nodeId: string;
+}) {
+  const [lineage, setLineage] = useState<GraphLineage | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLineage(null);
+    getGraphLineage(connectionId, { nodeId, schemaName: schema })
+      .then((l) => { if (alive) setLineage(l); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [connectionId, schema, nodeId]);
+
+  if (!lineage || lineage.dependents.length === 0) return null;
+  return (
+    <Section title={`What depends on this — ${lineage.dependents.length}`}>
+      <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 4 }}>{lineage.summary}</div>
+      {lineage.dependents.map((d) => (
+        <div key={d.node_id} style={{ ...ROW, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <StatusChip hue={d.kind === "metric" ? "info" : "accent"} strength="soft">{d.kind}</StatusChip>
+          <span style={{ color: "var(--t1)", fontSize: 12 }}>{d.label}</span>
+          {d.site && (
+            <code style={{ fontSize: 11, color: "var(--t3)", background: "var(--bg-3)", borderRadius: "var(--r1)", padding: "1px 6px" }}>
+              {d.site_line > 0 ? `line ${d.site_line}: ` : ""}{d.site}
+            </code>
+          )}
+        </div>
+      ))}
+    </Section>
   );
 }
 

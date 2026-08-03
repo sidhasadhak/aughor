@@ -3762,6 +3762,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Lineage
+         * @description Wave P4 — what depends on this node, with the expression that would break.
+         *
+         *     The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
+         *     no route and no caller: the question "what breaks if this table changes" was answerable
+         *     and unasked. This is the seam.
+         *
+         *     Each dependent carries its **site** — the line of the finding's SQL, or the metric
+         *     formula, that names the thing in question. A dependency list without sites says which
+         *     artifacts to open; with them it says what to look at once open.
+         */
+        get: operations["get_context_graph_lineage_graph_lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph/review": {
         parameters: {
             query?: never;
@@ -16927,6 +16955,40 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_lineage_graph_lineage_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                node_id?: string | null;
+                table?: string | null;
                 schema_name?: string | null;
             };
             header?: never;
