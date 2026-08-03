@@ -220,6 +220,21 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                      counter="chat.receipt_metrics")
         for e in (guard_edges or []):
             lineage.append(e)
+        # Wave P1 — the graph nodes the planner was actually SHOWN before writing this
+        # SQL. `last_cited_nodes()` has been populated on every read-back since Wave C2
+        # and read by nothing but its own tests: the receipt's own flag description
+        # claimed "the block the context receipt shows names exactly what grounded the
+        # plan", which was true of the prompt and not of the receipt. One consumer closes
+        # it. Empty when the read-back experiment is off — the trace is then built from
+        # the tables and metrics this answer demonstrably used, which every answer records.
+        try:
+            from aughor.ontology.context_graph_readback import last_cited_nodes
+            for _nid in last_cited_nodes()[:12]:
+                lineage.append(("grounded_in_graph", _nid, None))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "graph citations on the Trust Receipt are best-effort; the receipt still writes without them",
+                     counter="chat.receipt_graph_citations")
         # I6 — surface ambiguity handling on the Trust Receipt: any resolution THIS question
         # matched in the Ambiguity Ledger (settled earlier by a probe / the user / a reviewer) is
         # recorded, so "this answer followed a previously-resolved reading" is inspectable — the

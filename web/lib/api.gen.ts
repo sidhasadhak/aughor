@@ -6630,6 +6630,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/receipt/{receipt_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Receipt Trace
+         * @description Wave P1 — the connection-graph subgraph this answer stands on.
+         *
+         *     A SEPARATE call, not a field on the receipt, for two reasons that both matter:
+         *
+         *     1. The receipt is **signed** over every field it carries. The trace is resolved against
+         *        the LIVE graph, so it legitimately changes between two reads of the same answer —
+         *        folding it into the signed body would either break verification or make the
+         *        signature attest to something mutable. The signed receipt states what the answer
+         *        claimed; the trace shows what those claims rest on *now*.
+         *     2. It costs a graph load. Every receipt fetch should not pay for a walk most readers
+         *        never open.
+         *
+         *     Same fail-closed RBAC as the receipt itself: an id outside the caller's org 404s
+         *     identically to one that does not exist.
+         */
+        get: operations["get_receipt_trace_receipt__receipt_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/saved-queries": {
         parameters: {
             query?: never;
@@ -22078,6 +22111,39 @@ export interface operations {
         };
     };
     get_receipt_receipt__receipt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_receipt_trace_receipt__receipt_id__trace_get: {
         parameters: {
             query?: never;
             header?: never;

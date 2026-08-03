@@ -251,6 +251,14 @@ def build_public_receipt(raw: dict, *, connection: Optional[dict] = None,
         ],
         "learning": payload.get("learning") or None,
         "activations": list(payload.get("activations") or []),
+        # Wave P1 — the connection-graph nodes the planner was shown before writing this
+        # SQL. Ids only: the labels and warrants are resolved against the LIVE graph by
+        # `answer_trace`, so a node deleted since the answer is reported as gone rather
+        # than rendered from a stale copy of itself.
+        "grounded_in_graph": [
+            e.get("ref") for e in lineage
+            if e.get("relation") == "grounded_in_graph" and e.get("ref")
+        ],
         "cost": raw.get("cost"),
     }
     if signed:

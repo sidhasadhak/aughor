@@ -3802,6 +3802,9 @@ export interface PublicReceipt {
   learning: LearningReceiptPayload | null;
   /** Self-gating capabilities whose trigger fired this run (Wave 1·E3). */
   activations: { capability: string; reason: string; count: number }[];
+  /** Wave P1 — ids of the graph nodes the planner was shown before writing the SQL.
+   *  Ids only, and signed: the labels/warrants resolve live via `getAnswerTrace`. */
+  grounded_in_graph: string[];
   cost: Record<string, number | string> | null;
   signature: string;                     // HMAC — server-issued proof
 }
@@ -3809,6 +3812,43 @@ export interface PublicReceipt {
 /** Resolve any answer's receipt id into the one signed public contract. 404 → null. */
 export async function getPublicReceipt(receiptId: string): Promise<PublicReceipt | null> {
   const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── The answer trace (Wave P1 — GET /receipt/{id}/trace) ──────────────────────
+
+export interface TracedNode {
+  id: string;
+  kind: string;
+  label: string;
+  summary: string;
+  reason: "cited" | "read" | "metric" | "finding";
+  why: string;
+  /** False ⇒ the answer named it, but the graph does not (or no longer does) hold it. */
+  present: boolean;
+  warrant: CGWarrant | null;
+}
+export interface TracedEdge {
+  id: string; kind: string; from_id: string; to_id: string;
+  label: string; warrant: CGWarrant | null;
+}
+export interface AnswerTrace {
+  receipt_id: string;
+  available: boolean;
+  reason?: string;
+  connection_id?: string;
+  graph_version?: number;
+  nodes: TracedNode[];
+  edges: TracedEdge[];
+  counts?: { nodes: number; edges: number; unresolved: number };
+  has_unresolved?: boolean;
+}
+
+/** The knowledge-graph subgraph one answer stands on. A separate call from the receipt:
+ *  the receipt is signed and immutable, the trace resolves against the live graph. */
+export async function getAnswerTrace(receiptId: string): Promise<AnswerTrace | null> {
+  const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}/trace`);
   if (!res.ok) return null;
   return res.json();
 }

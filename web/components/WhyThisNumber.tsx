@@ -12,9 +12,13 @@
  * briefing figures once those stamp one).
  */
 import { useEffect, useState } from "react";
-import { getPublicReceipt, type PublicReceipt, type PublicReceiptGuard } from "@/lib/api";
+import {
+  getAnswerTrace, getPublicReceipt,
+  type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
@@ -33,6 +37,74 @@ const MODE_LABEL: Record<string, string> = {
   quick: "Quick answer", deep: "Deep analysis", builder: "Query Builder",
   explore: "Exploration", monitor: "Monitor", brief: "Briefing",
 };
+
+/**
+ * Wave P1 — the answer's walk: the knowledge-graph nodes it stands on, grouped by WHY
+ * each one is here, plus the connections between them.
+ *
+ * Ordered strongest-first by role: what the planner was shown, then what the SQL read,
+ * then the governed metrics it used. A node the answer named but the graph does not hold
+ * is shown struck through rather than dropped — "the graph does not cover this table" is
+ * a real answer to "can I check every node", and quietly listing 3 of 4 is not.
+ */
+const REASON_TITLE: Record<TracedNode["reason"], string> = {
+  cited: "Shown to the planner before it wrote the SQL",
+  read: "Read by the SQL",
+  metric: "Governed metrics used",
+  finding: "Recorded back onto the graph",
+};
+
+function GroundingWalk({ trace }: { trace: AnswerTrace }) {
+  const order: TracedNode["reason"][] = ["cited", "read", "metric", "finding"];
+  const groups = order
+    .map((r) => ({ reason: r, nodes: trace.nodes.filter((n) => n.reason === r) }))
+    .filter((g) => g.nodes.length > 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {groups.map((g) => (
+        <div key={g.reason} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{REASON_TITLE[g.reason]}</div>
+          {g.nodes.map((n) => (
+            <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span className="aug-fs-xs" style={{
+                color: n.present ? "var(--t1)" : "var(--t4)",
+                textDecoration: n.present ? "none" : "line-through",
+              }}>
+                {n.label}
+              </span>
+              {n.present
+                ? <WarrantChip warrant={n.warrant} showDetail />
+                : <StatusChip hue="muted" strength="soft" title="This answer named it, but the knowledge graph does not hold it.">not in the graph</StatusChip>}
+              {n.summary && (
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{n.summary.slice(0, 120)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {trace.edges.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>How they connect</div>
+          {trace.edges.map((e) => {
+            const from = trace.nodes.find((n) => n.id === e.from_id);
+            const to = trace.nodes.find((n) => n.id === e.to_id);
+            return (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                  {from?.label ?? e.from_id} → {to?.label ?? e.to_id}
+                </span>
+                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
+                <WarrantChip warrant={e.warrant} showDetail />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -89,6 +161,16 @@ function Drawer({ receiptId, preloaded, onClose }: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // Wave P1 — the knowledge-graph subgraph this answer stands on. Fetched only when the
+  // drawer opens (it costs a graph load) and never blocks the receipt: an answer whose
+  // connection has no graph shows the receipt exactly as it did before this wave.
+  const [trace, setTrace] = useState<AnswerTrace | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getAnswerTrace(receiptId).then(t => { if (alive) setTrace(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, [receiptId]);
 
   // Wave S2 — a reused trusted pattern arrives in the same `guards` array as a real guard
   // (one lineage shape, one reader), but it is not a guard that FIRED and must not be
@@ -251,7 +333,15 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 </Section>
               )}
 
-              {rec.input_tables.length > 0 && (
+              {/* Wave P1 — the walk. When the connection has a knowledge graph, the bare
+                  table strings become the graph nodes this answer stands on, each with
+                  the warrant behind it and each checkable. Falls back to the plain list
+                  when there is no graph, so nothing is ever lost. */}
+              {trace?.available && trace.nodes.length > 0 ? (
+                <Section title={`What this answer stands on · ${trace.nodes.length} nodes`}>
+                  <GroundingWalk trace={trace} />
+                </Section>
+              ) : rec.input_tables.length > 0 && (
                 <Section title="Input tables">
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                     {rec.input_tables.map((t, i) => <StatusChip key={`t:${i}`} hue="muted" strength="soft">{t}</StatusChip>)}
