@@ -179,7 +179,7 @@ export interface InvestigationFinding {
   trust_caveat?: string;
   /** Authoritative per-column display unit from the backend ({"metric_total": "percent"}). */
   column_units?: Record<string, string>;
-  /** Chart-grammar exhibit spec (flag chart.exhibit_grammar) — semantic color / ref lines /
+  /** Chart-grammar exhibit spec — semantic color / ref lines /
    *  point labels. Absent → legacy rendering. */
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec;
 }

@@ -199,7 +199,7 @@ def test_empty_and_refusal_are_their_own_classes():
 
 def test_a_narrator_sentence_about_inability_is_not_a_refusal():
     """'I cannot compute a margin without cost data' is a legitimate grounded answer —
-    the exact sentence intake.loss_signals exists to produce. Matching it as a refusal
+    the exact sentence the loss-signal directive exists to produce. Matching it as a refusal
     would suppress honest output."""
     text = ('{"verdict": "low", "note": "I cannot compute a margin without cost data"}')
     assert R.classify(_retry_exc(_completion(text))).failure != R.REFUSAL

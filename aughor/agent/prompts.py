@@ -116,7 +116,7 @@ _CSS_HEAD = (
     "Return a short, specific headline (one sentence, max 14 words) naming the subject and measure — no filler openers like 'Here is' or 'This shows'. "
 )
 
-# Chart-type vocabulary. The exhibit-grammar variant (flag `chart.exhibit_grammar`) removes
+# Chart-type vocabulary. The exhibit-grammar variant removes
 # 'combo': the model never CHOOSES a dual axis — the renderer's deterministic scoreDualAxis
 # gate (unit mismatch / ≥25× scale) stays the only door to one, so two same-unit measures can
 # no longer arrive pre-shaped as a combo. See docs/CHART_SELECTION_GUIDE.md.
@@ -236,10 +236,11 @@ _CSS_TAIL = (
 
 
 def chat_sql_system(exhibit_grammar: bool = False) -> str:
-    """The quick-path SQL system prompt. `exhibit_grammar=True` (flag `chart.exhibit_grammar`)
-    swaps the chart vocabulary/rules to the one-measure-per-exhibit grammar — combo is no longer
-    offered, so a dual axis can only come from the renderer's deterministic gate. False composes
-    the exact legacy prompt byte-for-byte (`CHAT_SQL_SYSTEM`)."""
+    """The quick-path SQL system prompt. `exhibit_grammar=True` swaps the chart
+    vocabulary/rules to the one-measure-per-exhibit grammar — combo is no longer offered,
+    so a dual axis can only come from the renderer's deterministic gate. The /ask path
+    always passes True; False composes the exact legacy prompt byte-for-byte
+    (`CHAT_SQL_SYSTEM`), which the benchmark and custom-agent quality paths still use."""
     if exhibit_grammar:
         return _CSS_HEAD + _CHART_VOCAB_GRAMMAR + _CSS_MID + _CHART_MULTI_GRAMMAR + _CSS_TAIL
     return _CSS_HEAD + _CHART_VOCAB_LEGACY + _CSS_MID + _CHART_MULTI_LEGACY + _CSS_TAIL

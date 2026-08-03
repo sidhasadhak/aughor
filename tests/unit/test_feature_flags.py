@@ -2,9 +2,15 @@
 
 WS4b moved the four direct-`os.environ` flags (premise check · causal drill · ask-clarify ·
 closed loop) into FLAG_ENV so they gain the ledger override + Settings-UI toggle every other
-flag has. `ask.clarify` is the one DEFAULT-ON flag — registering it must not flip the live
-default, and an explicit falsy env var must still disable it (the old
-`os.getenv(var, "1") not in (off-list)` semantics, preserved byte-for-byte).
+flag has.
+
+The default-ON contract — an unset variable resolves ON, an explicit falsy value still
+disables, any other value stays on — is asserted against the SYNTHETIC exemplar from
+`tests/conftest.py`, not a product flag. `ask.clarify` used to play that role and was
+removed by Wave 2d of the flag endgame; the default-OFF exemplar had already been
+re-pointed twice for the same reason (ai_sql -> obs.prompt_capture ->
+semops.champion_validate). Since the endgame deletes every flag eventually, an exemplar
+that is a product flag is guaranteed to be re-pointed again.
 """
 from __future__ import annotations
 
@@ -20,7 +26,7 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-WS4B_FLAGS = ["deep_analysis.premise_check", "deep_analysis.causal_drill", "ask.clarify", "closed_loop"]
+WS4B_FLAGS = ["deep_analysis.premise_check", "deep_analysis.causal_drill", "closed_loop"]
 
 
 @pytest.fixture(autouse=True)
@@ -78,17 +84,21 @@ def test_specialist_packs_is_default_on(monkeypatch):
     assert flag_enabled("specialist_packs") is True
 
 
-def test_ask_clarify_is_default_on(monkeypatch):
-    assert FLAG_DEFAULT.get("ask.clarify") is True
-    monkeypatch.delenv("AUGHOR_ASK_CLARIFY", raising=False)
-    assert flag_enabled("ask.clarify") is True
+def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
+    """The default-ON contract, asserted against a synthetic flag so it survives the
+    endgame deleting whichever product flag last played this role."""
+    from tests.conftest import SYNTHETIC_DEFAULT_ON_VAR as VAR
+
+    assert FLAG_DEFAULT.get(synthetic_default_on) is True
+    monkeypatch.delenv(VAR, raising=False)
+    assert flag_enabled(synthetic_default_on) is True
     # explicit off-list value disables
     for off in ("0", "false", "no", "off"):
-        monkeypatch.setenv("AUGHOR_ASK_CLARIFY", off)
-        assert flag_enabled("ask.clarify") is False, off
-    # the old call site treated any NON-off value as on — preserved
-    monkeypatch.setenv("AUGHOR_ASK_CLARIFY", "garbage")
-    assert flag_enabled("ask.clarify") is True
+        monkeypatch.setenv(VAR, off)
+        assert flag_enabled(synthetic_default_on) is False, off
+    # default-on semantics: any NON-off value stays on
+    monkeypatch.setenv(VAR, "garbage")
+    assert flag_enabled(synthetic_default_on) is True
 
 
 def test_runtime_override_wins_both_directions(monkeypatch):
@@ -103,14 +113,18 @@ def test_runtime_override_wins_both_directions(monkeypatch):
     assert flag_enabled("closed_loop") is True  # env decides again
 
 
-def test_list_flags_reflects_default_on(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ASK_CLARIFY", raising=False)
+def test_list_flags_reflects_default_on(monkeypatch, synthetic_default_on):
+    from tests.conftest import SYNTHETIC_DEFAULT_ON_VAR as VAR
+
+    monkeypatch.delenv(VAR, raising=False)
     flags = list_flags()
-    assert flags["ask.clarify"]["value"] is True
+    assert flags[synthetic_default_on]["value"] is True
     # With the variable unset, this flag is on because of FLAG_DEFAULT — so the source is
     # "default". It used to report "env" (the old catch-all tail), which pointed an operator
     # at a variable nobody had set; the distinction matters more with every graduation.
-    assert flags["ask.clarify"]["source"] == "default"
-    assert flags["ask.clarify"]["env_var"] == "AUGHOR_ASK_CLARIFY"
+    assert flags[synthetic_default_on]["source"] == "default"
+    assert flags[synthetic_default_on]["env_var"] == VAR
+    # …and the disposition falls out of FLAG_DEFAULT membership, with no separate table.
+    assert flags[synthetic_default_on]["disposition"] == "default_on"
     for name in WS4B_FLAGS:
         assert name in flags

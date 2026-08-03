@@ -1,10 +1,12 @@
-"""P-B — parallelize the plan-time pre-flight retrievals (flag `preflight.parallel`).
+"""P-B — the plan-time pre-flight retrievals run concurrently.
 
 plan_queries runs four INDEPENDENT, deterministic, non-LLM retrievals before the planning call:
-relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections. Under the flag
-they run concurrently (ContextThreadPoolExecutor); off, one-at-a-time. These pin: the assembled
-planning prompt is byte-identical across the flag, the closed-loop liveness signal survives, and
-the wave actually runs concurrently.
+relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections. They run
+concurrently (ContextThreadPoolExecutor). Wave 2d deleted the flag and the serial branch, so the
+old on-vs-off byte-identity oracle has no second side — but the property it protected is still
+testable, and is pinned here by varying COMPLETION order instead: the assembled prompt must be
+byte-identical whether the four finish in order or in reverse. Also pinned: the closed-loop
+liveness signal survives, and the wave actually runs concurrently.
 """
 from __future__ import annotations
 
@@ -25,28 +27,31 @@ class _CaptureLLM:
                            query_intents=[QueryIntent(description="measure revenue")])
 
 
-def _install(monkeypatch, *, sleep=0.0):
-    """Deterministic retrievals so the ONLY variable across a flag toggle is serial-vs-parallel."""
+def _install(monkeypatch, *, sleep=0.0, delays=None):
+    """Deterministic retrievals.
+
+    `delays` gives each retrieval its own latency, so a test can make the four COMPLETE in
+    an order different from the order the prompt assembles them in — which is exactly what
+    a pooled implementation could leak if it consumed futures as they resolved.
+    """
+    d = delays or {}
+
     # **kwargs absorbs the retrieval SCOPE (connection_id / schema) the node now passes —
-    # this stub asserts on parallel-vs-serial, not on the retriever's signature.
+    # this stub asserts on assembly order, not on the retriever's signature.
     def _schema(desc, schema, **kwargs):
-        if sleep:
-            time.sleep(sleep)
+        time.sleep(d.get("schema", sleep))
         return "SCHEMA-BLOCK"
 
     def _kb(desc):
-        if sleep:
-            time.sleep(sleep)
+        time.sleep(d.get("kb", sleep))
         return "KB-BLOCK"
 
     def _causal(desc, conn_id=None):
-        if sleep:
-            time.sleep(sleep)
+        time.sleep(d.get("causal", sleep))
         return "CAUSAL"
 
     def _priors(question, connection_id):
-        if sleep:
-            time.sleep(sleep)
+        time.sleep(d.get("priors", sleep))
         return "PRIORS"
 
     monkeypatch.setattr("aughor.semantic.retriever.retrieve_relevant_schema", _schema)
@@ -70,40 +75,35 @@ def _state():
     }
 
 
-def test_preflight_parallel_prompt_is_byte_identical_to_serial(monkeypatch):
-    llm = _install(monkeypatch)
-    # Explicit =0 — the flag is default-ON since flag strategy batch A, so the serial
-    # oracle has to be forced, not inherited from an unset env.
-    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "0")
-    out_off = N.plan_queries(_state())
-    prompt_off = llm.user
+def test_preflight_prompt_is_byte_identical_regardless_of_completion_order(monkeypatch):
+    """The durable half of the batch-A receipt (`889789dda475`) — byte-identity, kept.
 
-    llm2 = _install(monkeypatch)
-    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "1")
-    out_on = N.plan_queries(_state())
-    prompt_on = llm2.user
+    The receipt claimed pooling the four retrievals changes nothing about the prompt.
+    With the serial branch gone the oracle is no longer "the same run with the flag off";
+    it is the same run whose retrievals finish in the OPPOSITE order. If assembly ever
+    followed completion order, these two prompts would differ — which is the only way
+    pooling could actually corrupt the prompt.
+    """
+    llm = _install(monkeypatch, delays={"schema": 0.0, "kb": 0.0, "causal": 0.0, "priors": 0.0})
+    out_fast = N.plan_queries(_state())
+    in_order = llm.user
 
-    assert prompt_on == prompt_off                       # the assembled planning prompt is identical
-    assert "SCHEMA-BLOCK" in prompt_on and "KB-BLOCK" in prompt_on
-    assert prompt_on.index("CAUSAL") < prompt_on.index("PRIORS")   # causal then priors, as serial
-    # closed-loop liveness (Bet 0) survives the parallel path
-    assert out_on.get("verification_checks") == ["priors_injected"] == out_off.get("verification_checks")
+    # Reverse the finishing order: priors first, schema last.
+    llm2 = _install(monkeypatch,
+                    delays={"schema": 0.20, "kb": 0.15, "causal": 0.10, "priors": 0.0})
+    out_rev = N.plan_queries(_state())
+    reversed_completion = llm2.user
+
+    assert reversed_completion == in_order, "prompt followed completion order, not assembly order"
+    assert "SCHEMA-BLOCK" in in_order and "KB-BLOCK" in in_order
+    assert in_order.index("CAUSAL") < in_order.index("PRIORS")
+    # closed-loop liveness (Bet 0) survives the parallel path, either way round
+    assert out_fast.get("verification_checks") == ["priors_injected"] == out_rev.get("verification_checks")
 
 
-def test_preflight_parallel_runs_concurrently(monkeypatch):
+def test_preflight_retrievals_run_concurrently(monkeypatch):
     _install(monkeypatch, sleep=0.2)
-    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "1")
     t0 = time.time()
     N.plan_queries(_state())
     dt = time.time() - t0
     assert dt < 0.5, f"expected concurrent (~0.2s), got {dt:.2f}s — retrievals serialized"
-
-
-def test_preflight_serial_when_forced_off(monkeypatch):
-    _install(monkeypatch, sleep=0.2)
-    # The operator escape hatch: an explicit =0 must fall back to the serial path.
-    monkeypatch.setenv("AUGHOR_PREFLIGHT_PARALLEL", "0")
-    t0 = time.time()
-    N.plan_queries(_state())
-    dt = time.time() - t0
-    assert dt >= 0.75, f"expected serial (~0.8s), got {dt:.2f}s — should not parallelize when off"

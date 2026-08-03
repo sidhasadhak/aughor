@@ -17,7 +17,7 @@ colour · reference lines · point labels) and its `column_units` must read the 
 here as on screen, or the exported PDF quietly contradicts the app. The severity
 ramp stops and the cost-metric test below are mirrored from that module verbatim;
 keep them in sync. An absent `exhibit` renders exactly as this module always did,
-so the `chart.exhibit_grammar` flag needs no check here — the payload IS the gate.
+so no flag check belongs here — the payload IS the gate.
 """
 from __future__ import annotations
 

@@ -43,7 +43,7 @@ FLAGS = (
     "kinetic.actions", "kinetic.overlay",
     "lifecycle.publish", "lifecycle.freeze",
     "automations.source_probes", "automations.proposals",
-    "ask.brief_context", "freshness.resolved_rebuild",
+    "freshness.resolved_rebuild",
     "agui.endpoint", "federation.remote_join",
     "semantic.contract_live",
 )
@@ -59,7 +59,6 @@ SCENARIO_PREFIX = {
     "lifecycle.freeze": "lifecycle_freeze",
     "automations.source_probes": "automations_source_probes",
     "automations.proposals": "automations_proposals",
-    "ask.brief_context": "ask_brief_context",
     "freshness.resolved_rebuild": "freshness_resolved_rebuild",
     "agui.endpoint": "agui_endpoint",
     "federation.remote_join": "federation_remote_join",
@@ -341,19 +340,20 @@ def _automations_proposals__the_executor_is_byte_identical_without_grants() -> C
 @scenario("ask_brief_context__no_cached_brief_yields_no_block")
 def _ask_brief_context__no_cached_brief_yields_no_block() -> Comparison:
     """The block is read server-side from the Briefing's own cache; with nothing
-    cached for the scope it is empty — no context beats invented context."""
+    cached for the scope it is empty — no context beats invented context.
+
+    Wave 2d hardwired the flag, so there is no off side to compare against. The claim
+    that survives is the one that mattered: with no Briefing rendered for the scope the
+    block is empty, so the prompt is unchanged until there is something real to add."""
     from aughor.knowledge.brief_context import brief_block_for_scope
 
-    def probe():
-        return {"block": brief_block_for_scope(PROBE_CONN, "", None) or ""}
-
-    off, on = _on_off("ask.brief_context", probe)
+    block = brief_block_for_scope(PROBE_CONN, "", None) or ""
     return Comparison(
         scenario="ask_brief_context__no_cached_brief_yields_no_block",
-        expected={"off": off, "on": on, "empty": True},
-        observed={"off": off, "on": on, "empty": (on["block"] == "")},
+        expected={"empty": True},
+        observed={"empty": (block == "")},
         oracle="declared (no brief cached)",
-        note="prompt bytes identical until a Briefing has actually rendered for the scope",
+        note="prompt bytes unchanged until a Briefing has actually rendered for the scope",
     )
 
 

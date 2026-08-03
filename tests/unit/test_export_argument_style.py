@@ -62,21 +62,7 @@ def _headings(doc):
     return [b.text for b in doc.blocks if b.kind == "heading"]
 
 
-def test_flag_off_keeps_the_legacy_composition(monkeypatch):
-    # Explicit `=0`, not delenv: the flag graduated to default-ON (2026-07-22 audit), so an
-    # unset env now means ON. What still matters — and what this now actually tests — is the
-    # operator escape hatch: forcing it off must restore the legacy composition exactly.
-    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "0")
-    doc = build_export_doc(_inv())
-    assert "Question Intake" in _headings(doc)          # machinery still in the body
-    assert "keynums" in _kinds(doc)                     # tile block still emitted
-    assert "Financial impact" not in _headings(doc)
-    # legacy always ships the data table alongside any chart
-    assert _kinds(doc).count("table") >= 2
-
-
-def test_argument_style_recomposes_the_body(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", "1")
+def test_argument_style_recomposes_the_body():
     doc = build_export_doc(_inv())
     heads = _headings(doc)
 
@@ -119,7 +105,7 @@ def test_exhibit_table_fallback_is_capped():
     assert len(out[0].rows) == 8                                             # compact, not the grid
 
 
-def test_suppressed_finding_renders_no_table_of_its_artifact_rows(monkeypatch):
+def test_suppressed_finding_renders_no_table_of_its_artifact_rows():
     """A suppressed ratio finding's rows ARE the corrupt artifact; the caveat sentence
     carries it. The export must not print them as a clean table — the fan-out repair
     shipped a suppressed 'Route Market' cut as "intercontinental 55.73" beside a "2.8%"
@@ -147,15 +133,13 @@ def test_suppressed_finding_renders_no_table_of_its_artifact_rows(monkeypatch):
             "recommendations": [], "data_gaps": [],
         },
     }
-    for flag in ("1", "0"):        # argument style on AND off
-        monkeypatch.setenv("AUGHOR_REPORT_ARGUMENT_STYLE", flag)
-        doc = build_export_doc(inv)
-        prose = " ".join((b.text or "") + " " + " ".join(
-            "".join(str(c) for c in row) for row in (b.rows or [])) for b in doc.blocks)
-        # the artifact rows are gone — not in prose, and not in any table block
-        assert "55.73" not in prose and "61.98" not in prose and "intercontinental" not in prose
-        finding_text = " ".join((b.text or "") for b in doc.blocks if b.kind == "finding")
-        assert "could not be computed reliably" in finding_text   # the suppressed caveat stays
-        assert "Corporate highest." in finding_text               # the REPAIRED finding still renders
-        # the repaired channel finding DID produce an exhibit; the suppressed one did not
-        assert any(b.kind in ("chart", "table") for b in doc.blocks)
+    doc = build_export_doc(inv)
+    prose = " ".join((b.text or "") + " " + " ".join(
+        "".join(str(c) for c in row) for row in (b.rows or [])) for b in doc.blocks)
+    # the artifact rows are gone — not in prose, and not in any table block
+    assert "55.73" not in prose and "61.98" not in prose and "intercontinental" not in prose
+    finding_text = " ".join((b.text or "") for b in doc.blocks if b.kind == "finding")
+    assert "could not be computed reliably" in finding_text   # the suppressed caveat stays
+    assert "Corporate highest." in finding_text               # the REPAIRED finding still renders
+    # the repaired channel finding DID produce an exhibit; the suppressed one did not
+    assert any(b.kind in ("chart", "table") for b in doc.blocks)

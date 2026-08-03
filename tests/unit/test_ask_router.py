@@ -319,10 +319,13 @@ def test_ask_explicit_depth_bypasses_clarify(ask_client, monkeypatch):
     assert any(e["type"] == "quick_marker" for e in evs)
 
 
-def test_ask_clarify_disabled_by_flag(ask_client, monkeypatch):
+def test_ask_skip_clarify_is_the_per_turn_bypass(ask_client, monkeypatch):
+    """`skip_clarify` is what actually turns the gate off for a turn, and it is what the
+    user's own answer to a clarification comes back carrying. Wave 2d removed the global
+    flag; this is the bypass that remains, so it is the one worth pinning."""
     _set_cap(monkeypatch, True)
-    monkeypatch.setenv("AUGHOR_ASK_CLARIFY", "0")
-    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1"})
+    r = ask_client.post("/ask", json={"question": "How is performance lately?",
+                                      "connection_id": "c1", "skip_clarify": True})
     evs = _events(r.text)
     assert not any(e["type"] == "clarify" for e in evs)
     assert any(e["type"] in ("quick_marker", "deep_marker") for e in evs)

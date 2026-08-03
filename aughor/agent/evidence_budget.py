@@ -31,16 +31,6 @@ logger = logging.getLogger(__name__)
 MIN_BLOCK_CHARS = 12_000
 
 
-def enabled(flag: str) -> bool:
-    """Flag read that fails safe to off — a flag-store hiccup must never silently trim
-    evidence out of a synthesis prompt."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled(flag)
-    except Exception:
-        return False
-
-
 def _fingerprint(result: Any) -> str:
     from aughor.agent.wandering import args_fingerprint
 

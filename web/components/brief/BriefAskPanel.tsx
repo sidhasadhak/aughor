@@ -18,8 +18,8 @@
  *   - SCOPED to the briefing's connection AND schema, so it queries the same data the brief is
  *     about (the quick path used to drop `schema` entirely).
  *   - GROUNDED in the brief on screen — assembled server-side from the same cache entry the
- *     Briefing rendered, behind the `ask.brief_context` flag. Nothing about the brief is sent
- *     from here, so the panel can't drift from what the user is reading.
+ *     Briefing rendered. Nothing about the brief is sent from here, so the panel can't drift
+ *     from what the user is reading.
  *
  * Layout follows ChatPanel's split: a fixed-width flex sibling that PUSHES the brief left
  * rather than overlaying it — a reader comparing an answer against the brief needs both.

@@ -174,22 +174,9 @@ def test_an_empty_run_is_never_terminated():
 
 # ── the wiring ────────────────────────────────────────────────────────────────
 
-def test_the_veto_honours_a_forced_off(monkeypatch):
-    """Default-ON since flag strategy batch A — what matters now is the operator
-    escape hatch: an explicit =0 must disarm a brake that can skip a query."""
+def test_the_veto_fires_on_a_repeat():
     from aughor.agent import explore
 
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "0")
-    assert explore._wandering_enabled() is False
-    state = {"query_history": [_result("Q1", "SELECT a FROM t")]}
-    subq = type("S", (), {"id": "Q2"})()
-    assert explore._wandering_veto(state, subq, "SELECT a FROM t") is None
-
-
-def test_the_veto_fires_when_enabled(monkeypatch):
-    from aughor.agent import explore
-
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "1")
     state = {"query_history": [_result("Q1", "SELECT a FROM t", rows=[[7]])]}
     subq = type("S", (), {"id": "Q2"})()
     out = explore._wandering_veto(state, subq, "select A from T")
@@ -198,10 +185,14 @@ def test_the_veto_fires_when_enabled(monkeypatch):
 
 def test_a_detector_error_lets_the_query_run(monkeypatch):
     """Fail-open in the strongest sense. A detector that can suppress real evidence on its
-    own bug is worse than the redundancy it saves."""
+    own bug is worse than the redundancy it saves.
+
+    This is the guarantee that mattered when the flag went away: with no switch left to
+    disarm the brake, the try/except IS the only thing standing between a detector bug
+    and a suppressed query.
+    """
     from aughor.agent import explore
 
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "1")
     monkeypatch.setattr(W, "check_before_dispatch",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     state = {"query_history": [_result("Q1", "SELECT a FROM t")]}
@@ -231,26 +222,21 @@ def test_a_step_with_any_fresh_evidence_still_gets_interpreted():
     assert _all_vetoed([echo, fresh]) == ""
 
 
-def test_the_stop_honours_a_forced_off_and_fires_when_on(monkeypatch):
+def test_the_stop_fires_on_a_run_that_has_stopped_learning():
     from aughor.agent import explore
 
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "0")
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")
     history = [prior] + [W.veto_result(f"Q{i}", "SELECT a FROM t", prior, v) for i in range(2, 6)]
-    assert explore._wandering_stop({"query_history": history}) is False
-
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "1")
     assert explore._wandering_stop({"query_history": history}) is True
 
 
 @pytest.mark.parametrize("route_fn", ["route_after_wave", "route_after_reason"])
-def test_both_routers_honour_the_brake(route_fn, monkeypatch):
+def test_both_routers_honour_the_brake(route_fn):
     """The sequential path and the parallel wave path each have their own loop; a brake
     wired to only one leaves the other running to the cap."""
     from aughor.agent import explore
 
-    monkeypatch.setenv("AUGHOR_EXPLORE_WANDERING_DETECTOR", "1")
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")
     history = [prior] + [W.veto_result(f"Q{i}", "SELECT a FROM t", prior, v) for i in range(2, 6)]

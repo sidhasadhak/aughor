@@ -383,7 +383,7 @@ def _lens_group_probes(conn, table: str, cols: list, tprofile) -> list:
 
 
 def _lens_named_outlier(conn, table: str, cols: list, tprofile) -> list:
-    """R15 — the named-outlier-ENTITY lens (flag ``lens.decision_grade``): surface the
+    """R15 — the named-outlier-ENTITY lens: surface the
     single most extreme entity BY ID — the `research_agent_outliers` output shape
     ("customer CU0036204: 2,423 tickets ≈ 6 flights/day"). Where the group lens cuts by
     a SMALL dimension, this cuts by the table's high-cardinality entity column (customer
@@ -697,10 +697,7 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
     candidates += _lens_distribution(by_table)
 
     # R15 — the named-outlier-entity lens rides the same probe budget (one extra
-    # probe per table). Flag read once; off = byte-identical tour.
-    from aughor.kernel.flags import flag_enabled
-    _decision_grade = flag_enabled("lens.decision_grade")
-
+    # probe per table).
     probes = 0
     touched: set = set()
     for table, tp in ranked:
@@ -714,7 +711,7 @@ def build_overview(conn, connection_id: str, tables: list, *, schema: str = "",
             touched.add(table)
             candidates += got
         probes += min(_MAX_DIMS_PER_TABLE, len(_material_dims(cols)))
-        if _decision_grade and probes < _MAX_PROBES:
+        if probes < _MAX_PROBES:
             named = _lens_named_outlier(conn, table, cols, tp)
             if named:
                 touched.add(table)

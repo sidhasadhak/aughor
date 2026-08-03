@@ -1,4 +1,4 @@
-"""Chart-grammar exhibit spec (flag `chart.exhibit_grammar`) — deterministic tests.
+"""Chart-grammar exhibit spec — deterministic tests.
 
 Covers the four legs of the grammar wave:
   W1 — the quick-path prompt no longer OFFERS combo under the flag (and the
@@ -407,31 +407,15 @@ def test_explore_export_produces_a_valid_pdf():
     assert data[:4] == b"%PDF" and fname.endswith(".pdf")
 
 
-# ── flag default ─────────────────────────────────────────────────────────────
-
-def test_exhibit_grammar_flag_defaults_on():
-    """Graduated 2026-07-22 (flag-drift audit, Batch 1). It had been on in one runtime
-    ledger for weeks while the code shipped it off, so nobody else got it. Safe to default
-    because the grammar is computed from rows already fetched — no model, no extra query."""
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV, flag_enabled
-    assert "chart.exhibit_grammar" in FLAG_ENV
-    assert FLAG_DEFAULT.get("chart.exhibit_grammar") is True
-    assert flag_enabled("chart.exhibit_grammar") is True
-
-
 # ── P2 presentation cluster (flags-on soak, 2026-07-17) ──────────────────────
 
-def test_composition_is_a_ranked_bar_under_the_grammar(monkeypatch):
+def test_composition_is_a_ranked_bar_under_the_grammar():
     """The grammar's three forms are ranked bar, scatter, table — zero donuts. A 2-part
-    composition (full 60.7 / taxes_only 39.3) reads as two sorted bars; flag-off keeps
-    the legacy pie byte-identical."""
+    composition (full 60.7 / taxes_only 39.3) reads as two sorted bars."""
     from aughor.agent.investigate import _chart_type_for_finding
     f = {"columns": ["refund_type", "pct_of_total"],
          "rows": [["full", 60.7], ["taxes_only", 39.3]]}
-    monkeypatch.setenv("AUGHOR_CHART_EXHIBIT_GRAMMAR", "1")
     assert _chart_type_for_finding(f, "composition") == "bar_horizontal"
-    monkeypatch.setenv("AUGHOR_CHART_EXHIBIT_GRAMMAR", "0")
-    assert _chart_type_for_finding(f, "composition") == "pie"
 
 
 def test_percent_axis_scale_is_decided_once_from_the_data():

@@ -105,24 +105,26 @@ def test_many_drifted_flags_are_summarised_not_dumped():
 
 # ── the audit function itself ────────────────────────────────────────────────────
 
-def test_override_drift_ignores_an_override_that_restates_the_default(monkeypatch):
+def test_override_drift_ignores_an_override_that_restates_the_default(
+        monkeypatch, synthetic_default_on):
     """Measured 2026-07-31: 15 of 16 overrides on the reference box merely restated the
     code default. An audit that counts overrides reports 16 problems where there is 1."""
     import aughor.kernel.flags as flags
 
     monkeypatch.setattr(flags, "_override",
-                        lambda name: True if name == "ask.clarify" else None)
-    # ask.clarify is default-ON, so an override forcing it ON changes nothing.
+                        lambda name: True if name == synthetic_default_on else None)
+    # The flag is default-ON, so an override forcing it ON changes nothing.
     assert flags.override_drift() == {}
 
 
-def test_override_drift_catches_a_flag_forced_against_its_default(monkeypatch):
+def test_override_drift_catches_a_flag_forced_against_its_default(
+        monkeypatch, synthetic_default_on):
     import aughor.kernel.flags as flags
 
     monkeypatch.setattr(flags, "_override",
-                        lambda name: False if name == "ask.clarify" else None)
+                        lambda name: False if name == synthetic_default_on else None)
     drift = flags.override_drift()
-    assert drift == {"ask.clarify": {"override": False, "without_override": True}}
+    assert drift == {synthetic_default_on: {"override": False, "without_override": True}}
 
 
 def test_override_drift_compares_against_auto_mode_not_flag_default(monkeypatch):

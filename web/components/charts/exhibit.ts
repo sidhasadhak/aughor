@@ -3,7 +3,7 @@
  * to steer HOW its chart encodes meaning (never WHAT data it shows).
  *
  * The spec is additive and optional: no spec → every builder renders exactly as
- * before (byte-identical), so the backend flag `chart.exhibit_grammar` can gate
+ * before (byte-identical), so the backend can gate
  * emission without any frontend flag plumbing. Grammar (mirrors the Genie report
  * study, docs/CHART_GRAMMAR_STUDY_2026-07-16):
  *   color.mode  "neutral"      one hue — color has nothing to say (default)

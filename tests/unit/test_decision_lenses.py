@@ -1,4 +1,4 @@
-"""R15 — decision-grade output lenses (flag `lens.decision_grade`).
+"""R15 — decision-grade output lenses.
 
 (1) Opportunity-cost/benchmark: gap-to-best-peer × volume as one hedged key
 number, computed deterministically from a cross-section finding's own rows.
