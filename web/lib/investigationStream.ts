@@ -464,10 +464,19 @@ export async function consumeStream(
   const ctype = res.headers.get("content-type") || "";
   if (!res.ok || !ctype.includes("text/event-stream")) {
     let detail = "";
-    try { detail = (await res.text()).slice(0, 200).trim(); } catch { /* body unreadable */ }
-    dispatch({ type: "ERROR", message: !res.ok
+    try { detail = (await res.text()).slice(0, 400).trim(); } catch { /* body unreadable */ }
+    // The demo's refusal is a PRODUCT surface, not a failure: a visitor asking a new
+    // question is exactly who this message is written for, and showing them
+    // `Request failed (HTTP 501): {"detail":…,"demo":true}` buries the one instruction
+    // that helps. Unwrap it and show the sentence on its own.
+    let demoRefusal = "";
+    try {
+      const body = JSON.parse(detail) as { detail?: string; demo?: boolean };
+      if (body?.demo && typeof body.detail === "string") demoRefusal = body.detail;
+    } catch { /* not JSON — fall through to the generic message */ }
+    dispatch({ type: "ERROR", message: demoRefusal || (!res.ok
       ? `Request failed (HTTP ${res.status})${detail ? `: ${detail}` : "."}`
-      : `Unexpected response type (${ctype || "none"}).` });
+      : `Unexpected response type (${ctype || "none"}).`) });
     return;
   }
   if (!res.body) { dispatch({ type: "ERROR", message: "No response body" }); return; }

@@ -130,6 +130,7 @@ function Backend() {
   const dirty = normalizeApiBase(draft) !== effective;
   const sourceLabel =
     source === "user" ? "your setting (this browser)" :
+    source === "demo" ? "the built-in demo — completed analyses only, no live engine" :
     source === "env" ? "NEXT_PUBLIC_API_URL at build time" :
     "the built-in default";
 
