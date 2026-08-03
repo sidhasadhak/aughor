@@ -51,7 +51,7 @@ def stub_history(monkeypatch):
     # the pack, not about whichever stores happen to exist on the box.
     import aughor.demo.pack as P
     monkeypatch.setattr(P, "_collect_curation", lambda c: {"synonyms": [{"term": "rev"}]})
-    monkeypatch.setattr(P, "_collect_graph", lambda c: {"nodes": [], "edges": []})
+    monkeypatch.setattr(P, "_collect_graph", lambda c, invs: {"nodes": [], "edges": []})
     return rows
 
 
@@ -210,3 +210,110 @@ def test_the_shipped_pack_contains_no_rate_times_count_contra_amount():
     blob = json.dumps([i.get("report") for i in read_pack(_SHIPPED).investigations], default=str)
     assert "discount * quantity" not in blob
     assert "quantity * discount" not in blob
+
+
+# ── Graph scoping ─────────────────────────────────────────────────────────────
+# Measured on the Superstore demo: the glossary store held ~230 table keys spanning
+# TPC-H, TPC-DS, an airline schema and two retail workspaces, with ZERO per-connection
+# overlays. The projection's scoping matches on table NAME, so the connection's bare
+# `orders` matched a different dataset's `orders` and 48 of 75 terms in the built graph
+# were foreign. Separately, the projection reads every receipt on the connection, so a
+# graph built beside a CURATED pack re-imported runs the curation had dropped.
+
+class _N:
+    def __init__(self, kind, data=None, summary="", source=""):
+        self.kind, self.data, self.summary = kind, data or {}, summary
+        self.provenance = type("P", (), {"source": source})()
+
+
+class _E:
+    def __init__(self, from_id, to_id):
+        self.from_id, self.to_id = from_id, to_id
+
+
+class _G:
+    def __init__(self, nodes, edges=None):
+        self.nodes, self.edges = nodes, edges or {}
+
+
+def _graph_with_foreign_terms():
+    return _G({
+        "glossary_term:orders.sales":     _N("glossary_term", {"table": "orders", "column": "sales"}),
+        "glossary_term:orders.duty_eur":  _N("glossary_term", {"table": "orders", "column": "duty_eur"}),
+        "glossary_term:orders.o_orderkey": _N("glossary_term", {"table": "orders", "column": "o_orderkey"}),
+        "table:Order": _N("table"),
+    }, {
+        "e_ok":      _E("table:Order", "glossary_term:orders.sales"),
+        "e_foreign": _E("table:Order", "glossary_term:orders.duty_eur"),
+    })
+
+
+def test_a_term_whose_column_this_connection_lacks_is_dropped(monkeypatch):
+    from aughor.demo import pack as P
+    monkeypatch.setattr(P, "_connection_columns",
+                        lambda _c: {"orders": {"sales", "discount", "profit"}})
+    g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
+    assert set(g.nodes) == {"glossary_term:orders.sales", "table:Order"}
+
+
+def test_an_edge_to_a_dropped_term_does_not_dangle(monkeypatch):
+    from aughor.demo import pack as P
+    monkeypatch.setattr(P, "_connection_columns", lambda _c: {"orders": {"sales"}})
+    g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
+    assert set(g.edges) == {"e_ok"}
+
+
+def test_an_unreadable_schema_drops_the_whole_glossary_slice(monkeypatch):
+    """Default-deny. 'Unknown' must not be treated as 'fine' — the same posture the
+    connection filter takes, for the same reason."""
+    from aughor.demo import pack as P
+    monkeypatch.setattr(P, "_connection_columns", lambda _c: None)
+    g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
+    assert not [n for n in g.nodes.values() if n.kind == "glossary_term"]
+    assert "table:Order" in g.nodes          # every other slice survives
+
+
+def test_a_finding_from_an_investigation_the_pack_dropped_does_not_travel(monkeypatch):
+    from aughor.demo import pack as P
+    monkeypatch.setattr(P, "_connection_columns", lambda _c: {})
+    g = _G({
+        "keep": _N("finding", summary="Tables losses are concentrated in East.",
+                   source="evidence_ledger"),
+        "drop": _N("finding", summary="Discount leakage is highest in Ohio, Machines.",
+                   source="evidence_ledger"),
+        "explorer": _N("finding", summary="Some explorer finding.", source="exploration"),
+    })
+    P._scope_graph_to_pack(g, "8d36d4c2",
+                           [{"headline": "Tables losses are concentrated in East."}])
+    assert set(g.nodes) == {"keep", "explorer"}, (
+        "receipt findings must follow the pack's curation; explorer findings are unaffected")
+
+
+def test_schema_columns_parses_the_rendered_schema():
+    from aughor.demo.pack import _schema_columns
+    cols = _schema_columns("TABLE: orders\n  sales DOUBLE\n  discount DOUBLE\nTABLE: returns\n  order_id VARCHAR\n")
+    assert cols == {"orders": {"sales", "discount"}, "returns": {"order_id"}}
+
+
+def test_the_shipped_pack_graph_carries_no_foreign_glossary_term():
+    """The artifact itself, not just the filter. A public pack carrying another
+    workspace's column semantics is the risk this module exists to prevent."""
+    graph = read_pack(_SHIPPED).graph
+    assert graph, "the shipped pack has no graph"
+    blob = json.dumps(graph).lower()
+    for foreign in ("duty_eur", "gmv_eur", "o_orderkey", "coupon_abuse", "luxexperience"):
+        assert foreign not in blob, f"{foreign!r} leaked into the shipped pack graph"
+
+
+def test_the_shipped_pack_graph_agrees_with_its_own_investigations():
+    """A finding node naming a run the pack dropped would reintroduce it sideways."""
+    pack = read_pack(_SHIPPED)
+    headlines = {(i.get("headline") or "").strip().lower() for i in pack.investigations}
+    nodes = pack.graph.get("nodes") if isinstance(pack.graph, dict) else None
+    nodes = list(nodes.values()) if isinstance(nodes, dict) else (nodes or [])
+    receipts = [n for n in nodes if n.get("kind") == "finding"
+                and ((n.get("provenance") or {}).get("source")) == "evidence_ledger"]
+    assert receipts, "no receipt-sourced findings — the join key would be untested"
+    for n in receipts:
+        assert (n.get("summary") or "").strip().lower() in headlines, (
+            f"graph carries {n.get('summary')!r}, from an investigation the pack dropped")
