@@ -272,6 +272,50 @@ to Aughor's picker API).
 
 ---
 
+## Track E — Scope org identity to the data being explored (found 2026-08-03)
+
+**The defect, observed not theorised.** A briefing generated for a freshly-loaded PUBLIC
+sample dataset (Tableau Superstore, US retail, unrelated to this operator) contained:
+
+    "finding": "LuxExperience has 1 regional manager in each region—Central, East, South…"
+
+The operator's company name, asserted over someone else's data. Same run rendered every
+figure in EUR on a USD dataset.
+
+**Root cause, located.** `aughor/explorer/agent.py:2259` calls `org_context()` with **no
+arguments**, so exploration resolves identity from the app-level global only.
+`workspace_for_connection` is called in exactly four places — `routers/_shared.py` (×2),
+`routers/connections.py`, `routers/investigations.py` — and **never anywhere under
+`aughor/explorer/`**. The explorer never asks which workspace it is exploring for, so a
+per-workspace override cannot reach it. `POST /exploration/{conn_id}/start` also accepts no
+`workspace_id` (unlike `/briefing`, which does), so a caller cannot supply one either.
+
+**Why the existing guard does not save it.** `knowledge/briefing.py::_dataset_subject`
+exists for precisely this — its docstring says the brief's subject is "the data being
+briefed, not the organization reading it… emphatically NOT the same when one workspace
+holds several unrelated datasets". But by briefing time the org name is already inside the
+stored FINDINGS, so the briefing faithfully quotes contamination it did not create.
+
+**Two smaller findings worth carrying:**
+
+* `orgsettings/store.py::effective_settings` skips override values that are `None` or `""`,
+  so a workspace override can never BLANK an inherited field — only substitute a different
+  non-empty one. Deliberate blanking is impossible, which is exactly what demo/multi-tenant
+  isolation needs.
+* A connection may belong to several workspaces at once; `workspace_for_connection` then
+  returns the first non-default match. Dual membership is silently permitted rather than
+  refused.
+
+**The fix:** resolve `workspace_for_connection(conn_id)` inside the explorer and pass it to
+`org_context()`; accept `workspace_id` on `/exploration/{conn_id}/start` for parity with
+`/briefing`; add a regression test asserting the org's company name never appears in
+artifacts for a connection with no business profile of its own.
+
+**Interim workaround in use (2026-08-03):** the app-level org settings were temporarily
+neutralised to bake the Superstore demo, with the real values saved for restore. That is a
+workaround for one bake, not a fix — anything else touching the platform during a bake sees
+the demo identity.
+
 ## Parked for study — Graphify (queued 2026-08-02, not scheduled)
 
 **https://github.com/Graphify-Labs/graphify** (Apache-2.0, Python) — "turn any
