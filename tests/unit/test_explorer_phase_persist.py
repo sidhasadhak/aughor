@@ -175,17 +175,51 @@ def test_manifest_coverage_skips_cells_covered_by_a_prior_run():
 
 def test_explorer_semaphore_sized_from_env(monkeypatch):
     monkeypatch.setattr(agent_mod, "_MAX_CONCURRENT_EXPLORERS", 2)
-    monkeypatch.setattr(agent_mod, "_explorer_semaphore", None)
-    sem = _get_explorer_semaphore()
-    assert isinstance(sem, asyncio.Semaphore)
-    assert sem._value == 2
-    # same instance reused on subsequent calls (shared cap, not per-explorer)
-    assert _get_explorer_semaphore() is sem
+
+    async def _check():
+        sem = _get_explorer_semaphore()
+        assert isinstance(sem, asyncio.Semaphore)
+        assert sem._value == 2
+        # same instance reused WITHIN a loop (a shared cap, not one per explorer)
+        assert _get_explorer_semaphore() is sem
+        return sem
+
+    first = asyncio.run(_check())
+    # …and a DIFFERENT instance in a new loop. A Semaphore binds to the loop it is
+    # awaited on, so reusing one across loops raises "bound to a different event loop"
+    # and, if it was left acquired, deadlocks every later awaiter.
+    second = asyncio.run(_check())
+    assert second is not first
+
+
+def test_the_semaphore_is_not_reused_across_event_loops(monkeypatch):
+    """The regression this guards: one process-global semaphore, acquired in a loop that
+    then closed, wedged the whole test suite — every later `async with sem` waited on a
+    slot no live task would ever release.
+
+    Cap pinned to 1 so a single un-released acquire exhausts it; at the default of 2,
+    `locked()` stays False after one acquire and the test would prove nothing.
+    """
+    monkeypatch.setattr(agent_mod, "_MAX_CONCURRENT_EXPLORERS", 1)
+
+    async def _acquire_and_abandon():
+        sem = _get_explorer_semaphore()
+        await sem.acquire()          # deliberately never released
+        return sem.locked()
+
+    assert asyncio.run(_acquire_and_abandon()) is True
+
+    async def _fresh_loop_is_unblocked():
+        sem = _get_explorer_semaphore()
+        assert sem.locked() is False          # a new loop, a new slot
+        async with sem:                        # must not hang
+            return True
+
+    assert asyncio.run(_fresh_loop_is_unblocked()) is True
 
 
 def test_explore_wrapper_runs_under_semaphore(monkeypatch):
     """explore() must acquire the shared slot and delegate to _explore_run."""
-    monkeypatch.setattr(agent_mod, "_explorer_semaphore", None)
     monkeypatch.setattr(agent_mod, "_MAX_CONCURRENT_EXPLORERS", 1)
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex.connection_id = "c"
@@ -196,9 +230,13 @@ def test_explore_wrapper_runs_under_semaphore(monkeypatch):
         seen["held_during_run"] = sem.locked()      # slot taken while running
         seen["domain_intel_only"] = domain_intel_only
 
+    async def _drive():
+        await ex.explore(domain_intel_only=True)
+        # slot released after the run completes — checked INSIDE the loop that owns it,
+        # because the semaphore now lives and dies with its loop.
+        return _get_explorer_semaphore().locked()
+
     ex._explore_run = fake_run
-    asyncio.run(ex.explore(domain_intel_only=True))
+    assert asyncio.run(_drive()) is False
     assert seen["held_during_run"] is True
     assert seen["domain_intel_only"] is True
-    # slot released after the run completes
-    assert _get_explorer_semaphore().locked() is False

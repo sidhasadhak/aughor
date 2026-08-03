@@ -24,6 +24,7 @@ import time
 
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
@@ -84,16 +85,31 @@ _NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative per
 # responsive. Excess explorers queue at the semaphore (phase stays PENDING) and proceed
 # as slots free. Override with AUGHOR_MAX_CONCURRENT_EXPLORERS (default 2).
 _MAX_CONCURRENT_EXPLORERS = max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_EXPLORERS", "2")))
-_explorer_semaphore: "asyncio.Semaphore | None" = None
+#: One semaphore PER EVENT LOOP, not one per process. An ``asyncio.Semaphore`` binds to
+#: the loop it is first awaited on, so a single cached object handed to a second loop
+#: raises "bound to a different event loop" — and if it was left ACQUIRED when its loop
+#: died, every later awaiter blocks forever rather than failing. Production runs one
+#: long-lived loop, so this is the same single semaphore it has always been and the cap
+#: is unchanged; a process that creates many loops (the test suite runs one
+#: ``asyncio.run`` per test) gets one each, and each dies with its loop.
+#: Weak-keyed so a finished loop's entry is collected instead of accumulating.
+_explorer_semaphores: "WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    WeakKeyDictionary())
 
 
 def _get_explorer_semaphore() -> "asyncio.Semaphore":
-    """Lazily create the shared explorer semaphore. Safe on a single-threaded event
-    loop — first caller (always inside the running loop) creates it, the rest reuse it."""
-    global _explorer_semaphore
-    if _explorer_semaphore is None:
-        _explorer_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXPLORERS)
-    return _explorer_semaphore
+    """The shared explorer slot for the RUNNING event loop.
+
+    Raises ``RuntimeError`` when called outside a running loop, deliberately: the cap
+    only means anything against the loop that will await it, and the previous
+    process-global answer was wrong often enough to deadlock the whole test suite.
+    """
+    loop = asyncio.get_running_loop()
+    sem = _explorer_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(_MAX_CONCURRENT_EXPLORERS)
+        _explorer_semaphores[loop] = sem
+    return sem
 
 # State-value vocabulary for lifecycle classification
 _TERMINAL = frozenset({

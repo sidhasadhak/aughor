@@ -83,6 +83,35 @@ def test_gate_bounds_concurrency():
     assert asyncio.run(_run()) == 2   # never more than the lane's cap in flight
 
 
+def test_a_memoized_lane_is_reusable_from_a_second_event_loop():
+    """The regression that wedged the whole suite.
+
+    Lanes are memoized process-wide, so one outlives any single event loop. When the
+    lane held ONE semaphore, the second loop to reach `gate()` either raised "bound to a
+    different event loop" or — if the first loop died still holding a slot — waited
+    forever on a release that could never come. Here the first loop deliberately abandons
+    the lane mid-gate by cancelling; the second must still be able to acquire.
+    """
+    lane = WorkspaceLane("ws-crossloop", LaneConfig(max_concurrency=1))
+
+    async def _leave_the_slot_held():
+        # Acquire the raw semaphore, NOT via gate(): gate's `finally: sem.release()` runs
+        # even on cancellation, which frees the slot and lets a stale semaphore take
+        # acquire()'s uncontended fast path — the bug would then hide. The real crash
+        # reported `[locked, waiters:1]`, i.e. a slot still held when its loop died.
+        await lane.semaphore().acquire()
+        return lane.semaphore().locked()
+
+    assert asyncio.run(_leave_the_slot_held()) is True
+
+    async def _second_loop_is_not_blocked():
+        # Must not hang: a new loop gets its own slot rather than inheriting a dead one.
+        async with lane.gate():
+            return True
+
+    assert asyncio.run(asyncio.wait_for(_second_loop_is_not_blocked(), timeout=5)) is True
+
+
 # ── registry + per-workspace resolution ──────────────────────────────────────────
 
 def test_lane_is_memoized_per_workspace():
