@@ -10,7 +10,7 @@ import {
   type DebugEvent,
 } from "./investigationStream";
 
-import { API_BASE as BASE, AUGHOR_AGUI } from "./config";
+import { getApiBase, AUGHOR_AGUI } from "./config";
 import { runAskViaAgui } from "./aguiTransport";
 
 // Re-export so existing imports from useChat keep working
@@ -93,7 +93,7 @@ export function useChat() {
     let res: Response;
     try {
       if (mode === "investigate") {
-        res = await fetch(`${BASE}/investigate`, {
+        res = await fetch(`${getApiBase()}/investigate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // history: a follow-up in a canvas composes on the previous query (parity
@@ -123,7 +123,7 @@ export function useChat() {
           abortRef.current = null;
           return;
         }
-        res = await fetch(`${BASE}/ask`, {
+        res = await fetch(`${getApiBase()}/ask`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -155,7 +155,7 @@ export function useChat() {
           signal,
         });
       } else {
-        res = await fetch(`${BASE}/chat`, {
+        res = await fetch(`${getApiBase()}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

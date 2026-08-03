@@ -19,8 +19,7 @@ import {
   type Canvas,
 } from "@/lib/api";
 
-import { API_BASE as BASE } from "@/lib/config";
-
+import { getApiBase } from "@/lib/config";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -179,7 +178,7 @@ function TableDetail({
   useEffect(() => {
     if (subtab !== "sample" || loaded) return;
     setLoading(true);
-    fetch(`${BASE}/connections/${connId}/tables/${encodeURIComponent(table.name)}/sample?limit=100`)
+    fetch(`${getApiBase()}/connections/${connId}/tables/${encodeURIComponent(table.name)}/sample?limit=100`)
       .then((r) => r.json())
       .then((d) => { setSampleCols(d.columns ?? []); setSampleRows(d.rows ?? []); setLoaded(true); })
       .catch(() => {})

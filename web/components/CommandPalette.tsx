@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { formatCount } from "@/lib/format";
 import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
-import { API_BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     setTimeout(() => inputRef.current?.focus(), 30);
 
     // Fetch recent investigations
-    fetch(`${API_BASE}/investigations`)
+    fetch(`${getApiBase()}/investigations`)
       .then(r => r.json())
       .then(d => setInvestigations(Array.isArray(d) ? d.slice(0, 20) : []))
       .catch(() => {});
@@ -171,7 +171,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     // plain /schema returns {schema: <string>} with no tables key, which left
     // the palette's table quick-jump permanently empty.
     if (selectedConn) {
-      fetch(`${API_BASE}/connections/${selectedConn}/schema/rich`)
+      fetch(`${getApiBase()}/connections/${selectedConn}/schema/rich`)
         .then(r => r.json())
         .then(d => setTables(d?.tables ?? []))
         .catch(() => {});

@@ -2,8 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { type RichSchema, refreshSchemaCache } from "@/lib/api";
-import { API_BASE } from "@/lib/config";
-
+import { getApiBase } from "@/lib/config";
 interface SchemaContextValue {
   connId: string | null;
   schema: RichSchema | null;
@@ -47,7 +46,7 @@ export function SchemaProvider({
     setError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
-    fetch(`${API_BASE}/connections/${connId}/schema/rich`, {
+    fetch(`${getApiBase()}/connections/${connId}/schema/rich`, {
       signal: controller.signal,
     })
       .then((r) => {

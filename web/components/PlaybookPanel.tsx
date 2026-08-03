@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { API_BASE as BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { pct, formatTimestamp } from "@/lib/format";
 import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
 
@@ -58,7 +58,7 @@ export function PlaybookPanel() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BASE}/playbook`);
+      const res = await fetch(`${getApiBase()}/playbook`);
       if (res.ok) setEntries(await res.json());
     } catch {}
     finally { setLoading(false); }
@@ -73,7 +73,7 @@ export function PlaybookPanel() {
     if (!entry) return;
     const updated = { ...entry, status };
     try {
-      const res = await fetch(`${BASE}/playbook/${id}`, {
+      const res = await fetch(`${getApiBase()}/playbook/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
@@ -90,7 +90,7 @@ export function PlaybookPanel() {
   const handleReseed = async () => {
     setSeeding(true);
     try {
-      const res = await fetch(`${BASE}/playbook/seed`, { method: "POST" });
+      const res = await fetch(`${getApiBase()}/playbook/seed`, { method: "POST" });
       if (res.ok) { await load(); }
     } catch {}
     finally { setSeeding(false); }

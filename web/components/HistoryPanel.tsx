@@ -5,7 +5,7 @@ import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { localizeCurrency } from "@/lib/orgSettings";
-import { API_BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 
 interface Props {
@@ -34,8 +34,8 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     Promise.all([
-      fetch(`${API_BASE}/investigations`, { signal: controller.signal }).then(r => r.json()),
-      fetch(`${API_BASE}/investigations/indexed-ids`, { signal: controller.signal }).then(r => r.json()).catch(() => ({ ids: [] })),
+      fetch(`${getApiBase()}/investigations`, { signal: controller.signal }).then(r => r.json()),
+      fetch(`${getApiBase()}/investigations/indexed-ids`, { signal: controller.signal }).then(r => r.json()).catch(() => ({ ids: [] })),
     ])
       .then(([invs, indexed]) => {
         setItems(invs);
@@ -58,7 +58,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     e.stopPropagation();
     setDeletingId(invId);
     try {
-      const res = await fetch(`${API_BASE}/investigations/${invId}`, { method: "DELETE" });
+      const res = await fetch(`${getApiBase()}/investigations/${invId}`, { method: "DELETE" });
       if (res.ok || res.status === 204) {
         setItems(prev => prev.filter(i => i.id !== invId));
       }
@@ -74,7 +74,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     }
     setClearing(true);
     try {
-      const res = await fetch(`${API_BASE}/investigations`, { method: "DELETE" });
+      const res = await fetch(`${getApiBase()}/investigations`, { method: "DELETE" });
       if (res.ok) setItems([]);
     } finally {
       setClearing(false);

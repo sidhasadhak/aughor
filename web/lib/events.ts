@@ -10,8 +10,7 @@
  * leaves, auto-reconnects with backoff and resumes from the last seen seq so
  * a dropped connection loses nothing (the journal is append-only).
  */
-import { API_BASE } from "./config";
-
+import { getApiBase, onApiBaseChange } from "./config";
 export interface KernelEvent {
   seq: number;
   at: string;
@@ -45,7 +44,7 @@ function matches(s: Subscription, ev: KernelEvent): boolean {
 
 function connect() {
   if (es || subs.size === 0 || typeof window === "undefined") return;
-  const url = `${API_BASE}/events/stream${lastSeq ? `?since_seq=${lastSeq}` : ""}`;
+  const url = `${getApiBase()}/events/stream${lastSeq ? `?since_seq=${lastSeq}` : ""}`;
   es = new EventSource(url);
   es.onmessage = (m) => {
     retryMs = 1000;
@@ -76,6 +75,26 @@ function disconnectIfIdle() {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   }
 }
+
+// Pointing the app at a different backend invalidates BOTH the open connection and the
+// resume cursor. An EventSource keeps talking to the host it was OPENED against, so without
+// this the stream would keep delivering the previous backend's journal while every fetch
+// went to the new one — nothing errors, so nothing looks wrong.
+//
+// `lastSeq` has to be dropped too, and that is the half easy to miss: it is a position in
+// the OLD host's append-only journal, and the new host's sequence numbers are unrelated.
+// Resuming from it would silently skip events (new host further along) or replay them.
+onApiBaseChange(() => {
+  lastSeq = 0;
+  retryMs = 1000;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  es?.close();
+  es = null;
+  connect();          // no-op when nobody is subscribed
+});
 
 /** Subscribe to kernel events. Returns an unsubscribe function. */
 export function subscribeKernelEvents(

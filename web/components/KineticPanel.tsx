@@ -12,11 +12,11 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { API_BASE as BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
+  const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text || `HTTP ${res.status}`);

@@ -58,7 +58,7 @@ const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
-import { API_BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import {
   getConnections,
   getWorkspaces,
@@ -739,7 +739,7 @@ function HomeScreen({
   };
 
   useEffect(() => {
-    fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
+    fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
       .then(r => r.json())
       .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 8) : []))
       .catch(() => {});
@@ -920,7 +920,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
     const load = () => {
       const ctrl = new AbortController();
       const to = setTimeout(() => ctrl.abort(), 8_000);
-      fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
+      fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
         .then(r => r.json())
         .then(d => { if (alive) setActivities(Array.isArray(d) ? d : []); })
         .catch(() => {})

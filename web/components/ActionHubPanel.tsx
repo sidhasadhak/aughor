@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { API_BASE as BASE } from "@/lib/config";
-
+import { getApiBase } from "@/lib/config";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -149,8 +148,8 @@ export function ActionHubPanel() {
 
   const reload = async () => {
     const [tr, lr] = await Promise.all([
-      fetch(`${BASE}/actions/triggers`).then(r => r.json()).catch(() => ({ triggers: [] })),
-      fetch(`${BASE}/actions/logs?limit=50`).then(r => r.json()).catch(() => ({ logs: [] })),
+      fetch(`${getApiBase()}/actions/triggers`).then(r => r.json()).catch(() => ({ triggers: [] })),
+      fetch(`${getApiBase()}/actions/logs?limit=50`).then(r => r.json()).catch(() => ({ logs: [] })),
     ]);
     setTriggers(tr.triggers ?? []);
     setLogs(lr.logs ?? []);
@@ -160,7 +159,7 @@ export function ActionHubPanel() {
 
   const handleSave = async (data: Partial<Trigger>) => {
     const method = editing ? "PUT" : "POST";
-    const url    = editing ? `${BASE}/actions/triggers/${editing.id}` : `${BASE}/actions/triggers`;
+    const url    = editing ? `${getApiBase()}/actions/triggers/${editing.id}` : `${getApiBase()}/actions/triggers`;
     const resp   = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -175,7 +174,7 @@ export function ActionHubPanel() {
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this trigger? This cannot be undone.")) return;
     try {
-      const resp = await fetch(`${BASE}/actions/triggers/${id}`, { method: "DELETE" });
+      const resp = await fetch(`${getApiBase()}/actions/triggers/${id}`, { method: "DELETE" });
       if (!resp.ok) throw new Error(`delete failed (${resp.status})`);
     } catch (e) {
       setTestResult(prev => ({ ...prev, [id]: `✗ ${e instanceof Error ? e.message : "delete failed"}` }));
@@ -186,7 +185,7 @@ export function ActionHubPanel() {
 
   const handleToggle = async (t: Trigger) => {
     try {
-      const resp = await fetch(`${BASE}/actions/triggers/${t.id}`, {
+      const resp = await fetch(`${getApiBase()}/actions/triggers/${t.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...t, enabled: !t.enabled }),
@@ -203,7 +202,7 @@ export function ActionHubPanel() {
     setTesting(id);
     setTestResult(prev => ({ ...prev, [id]: "…" }));
     try {
-      const resp = await fetch(`${BASE}/actions/triggers/${id}/test`, { method: "POST" });
+      const resp = await fetch(`${getApiBase()}/actions/triggers/${id}/test`, { method: "POST" });
       const data = await resp.json();
       setTestResult(prev => ({
         ...prev,

@@ -117,3 +117,8 @@ evals/llm_exp/
 
 # DuckDB spills temp storage here during test runs — never commit it.
 .tmp/
+
+# Vercel CLI link state (machine-local project/org ids)
+.vercel/
+.vercel
+.env*

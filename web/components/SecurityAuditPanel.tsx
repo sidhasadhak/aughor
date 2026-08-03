@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
-import { API_BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { ActivityLog } from "@/components/ActivityLog";
 import {
   getConnections,
@@ -59,7 +59,7 @@ async function fetchAuditLog(
   const qs = new URLSearchParams({ limit: String(limit) });
   if (connId) qs.set("connection_id", connId);
   if (verdict) qs.set("verdict", verdict);
-  const res = await fetch(`${API_BASE}/security/audit?${qs}`);
+  const res = await fetch(`${getApiBase()}/security/audit?${qs}`);
   if (!res.ok) throw new Error("Failed to fetch audit log");
   const data = await res.json();
   return data.records ?? [];
@@ -67,13 +67,13 @@ async function fetchAuditLog(
 
 async function fetchAuditStats(connId?: string): Promise<AuditStats> {
   const qs = connId ? `?connection_id=${connId}` : "";
-  const res = await fetch(`${API_BASE}/security/audit/stats${qs}`);
+  const res = await fetch(`${getApiBase()}/security/audit/stats${qs}`);
   if (!res.ok) throw new Error("Failed to fetch audit stats");
   return res.json();
 }
 
 async function fetchBudget(connId: string): Promise<QueryBudget> {
-  const res = await fetch(`${API_BASE}/security/budget/${connId}`);
+  const res = await fetch(`${getApiBase()}/security/budget/${connId}`);
   if (!res.ok) throw new Error("Failed to fetch budget");
   return res.json();
 }
@@ -82,7 +82,7 @@ async function saveBudget(
   connId: string,
   patch: { max_rows?: number; warn_time_ms?: number; max_time_ms?: number },
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/security/budget/${connId}`, {
+  const res = await fetch(`${getApiBase()}/security/budget/${connId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),

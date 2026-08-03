@@ -1,5 +1,5 @@
 import type { EvalBasis } from "./agentEval";
-import { API_BASE as BASE } from "./config";
+import { getApiBase } from "./config";
 import { installUpsellInterceptor } from "./upsell";
 import { installApprovalInterceptor } from "./approval";
 
@@ -26,7 +26,7 @@ export interface TestResult {
 }
 
 export async function getConnections(): Promise<Connection[]> {
-  const res = await fetch(`${BASE}/connections`);
+  const res = await fetch(`${getApiBase()}/connections`);
   if (!res.ok) throw new Error("Failed to fetch connections");
   return res.json();
 }
@@ -40,7 +40,7 @@ export interface Capabilities {
 /** The active tier + granted capabilities (defaults to enterprise = everything on). */
 export async function getCapabilities(connectionId?: string): Promise<Capabilities> {
   const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
-  const res = await fetch(`${BASE}/capabilities${q}`);
+  const res = await fetch(`${getApiBase()}/capabilities${q}`);
   if (!res.ok) return { tier: "enterprise", capabilities: [] };  // fail-open: never block UI
   return res.json();
 }
@@ -76,7 +76,7 @@ export function currencySymbol(code?: string | null): string {
 }
 export async function getBusinessProfile(connectionId: string, schema?: string): Promise<BusinessProfileResponse> {
   const q = schema ? `&schema_name=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}${q}`);
+  const res = await fetch(`${getApiBase()}/business-profile?connection_id=${encodeURIComponent(connectionId)}${q}`);
   if (!res.ok) return { available: false };
   return res.json();
 }
@@ -97,13 +97,13 @@ export interface Workspace {
 }
 
 export async function getWorkspaces(): Promise<Workspace[]> {
-  const res = await fetch(`${BASE}/workspaces`);
+  const res = await fetch(`${getApiBase()}/workspaces`);
   if (!res.ok) throw new Error("Failed to fetch workspaces");
   return res.json();
 }
 
 export async function getWorkspace(id: string): Promise<Workspace> {
-  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`);
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error("Failed to fetch workspace");
   return res.json();
 }
@@ -122,13 +122,13 @@ export interface OrgSettings {
 }
 
 export async function getOrgSettings(): Promise<OrgSettings> {
-  const res = await fetch(`${BASE}/org-settings`);
+  const res = await fetch(`${getApiBase()}/org-settings`);
   if (!res.ok) throw new Error("Failed to fetch org settings");
   return res.json();
 }
 
 export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSettings> {
-  const res = await fetch(`${BASE}/org-settings`, {
+  const res = await fetch(`${getApiBase()}/org-settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
@@ -150,7 +150,7 @@ export interface RescopeResult {
 }
 
 export async function rescopeContext(connectionId: string, keep: string[]): Promise<RescopeResult> {
-  const res = await fetch(`${BASE}/investigations/context/rescope`, {
+  const res = await fetch(`${getApiBase()}/investigations/context/rescope`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, keep }),
@@ -165,7 +165,7 @@ export async function rescopeContext(connectionId: string, keep: string[]): Prom
 /** Editable plan gate (P3): resume a paused investigation, keeping only the chosen
  * sub-questions. Returns the SSE Response so the caller can stream the resumed run. */
 export function resumeInvestigationPlan(invId: string, keepSubquestions: number[]): Promise<Response> {
-  return fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/feedback`, {
+  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ feedback: "plan approved", keep_subquestions: keepSubquestions }),
@@ -174,7 +174,7 @@ export function resumeInvestigationPlan(invId: string, keepSubquestions: number[
 
 /** Resume a clarify_pending pause with the metric reading the user chose (P4). */
 export function resumeInvestigationClarify(invId: string, clarifyChoice: string): Promise<Response> {
-  return fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/feedback`, {
+  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ feedback: "clarify answered", clarify_choice: clarifyChoice }),
@@ -183,7 +183,7 @@ export function resumeInvestigationClarify(invId: string, clarifyChoice: string)
 
 /** Reject a pending plan — cancel the paused investigation outright. */
 export async function cancelInvestigation(invId: string): Promise<void> {
-  await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
+  await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
 }
 
 /** Best-effort capture: the user drilled ("explore this fact") an overview card. Feeds the
@@ -194,7 +194,7 @@ export function recordOverviewDrill(
   opts: { canvasId?: string; lens?: string; table?: string } = {},
 ): void {
   try {
-    void fetch(`${BASE}/overview/drill`, {
+    void fetch(`${getApiBase()}/overview/drill`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -217,17 +217,17 @@ export interface ApprovalAuditEvent {
 export interface AllowlistEntry { action: string; scope: string; by?: string; at?: string; allowed?: boolean }
 
 export async function getApprovalsAudit(limit = 100): Promise<ApprovalAuditEvent[]> {
-  const res = await fetch(`${BASE}/approvals/audit?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/approvals/audit?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch approvals audit");
   return res.json();
 }
 export async function getAllowlist(): Promise<AllowlistEntry[]> {
-  const res = await fetch(`${BASE}/approvals/allowlist`);
+  const res = await fetch(`${getApiBase()}/approvals/allowlist`);
   if (!res.ok) throw new Error("Failed to fetch allowlist");
   return res.json();
 }
 export async function revokeApproval(action: string, scope: string): Promise<void> {
-  const res = await fetch(`${BASE}/approvals/revoke`, {
+  const res = await fetch(`${getApiBase()}/approvals/revoke`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, scope }),
   });
@@ -242,7 +242,7 @@ export async function recordVerdict(input: {
   headline?: string;
   note?: string;
 }): Promise<void> {
-  const res = await fetch(`${BASE}/verify/verdict`, {
+  const res = await fetch(`${getApiBase()}/verify/verdict`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -261,7 +261,7 @@ export async function recordVerdict(input: {
 
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${BASE}/org-settings/effective${q}`);
+  const res = await fetch(`${getApiBase()}/org-settings/effective${q}`);
   if (!res.ok) throw new Error("Failed to fetch effective settings");
   return res.json();
 }
@@ -271,7 +271,7 @@ export async function createWorkspace(
   connection_ids: string[] = [],
   description = "",
 ): Promise<Workspace> {
-  const res = await fetch(`${BASE}/workspaces`, {
+  const res = await fetch(`${getApiBase()}/workspaces`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, connection_ids, description }),
@@ -287,7 +287,7 @@ export async function updateWorkspace(
   id: string,
   patch: { name?: string; description?: string; connection_ids?: string[]; settings_override?: Record<string, unknown> },
 ): Promise<Workspace> {
-  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -300,7 +300,7 @@ export async function updateWorkspace(
 }
 
 export async function deleteWorkspace(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "Failed to delete workspace");
@@ -314,7 +314,7 @@ export async function addConnection(
   schema_name?: string,
   meta?: Record<string, string>,
 ): Promise<{ id: string; message: string; test_result: string }> {
-  const res = await fetch(`${BASE}/connections`, {
+  const res = await fetch(`${getApiBase()}/connections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, conn_type, dsn: dsn || "", schema_name: schema_name || null, meta: meta || {} }),
@@ -334,7 +334,7 @@ export interface ConnectorTypeInfo {
 }
 
 export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {
-  const res = await fetch(`${BASE}/connectors/types`);
+  const res = await fetch(`${getApiBase()}/connectors/types`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.types ?? [];
@@ -344,7 +344,7 @@ export async function createFederatedConnection(
   name: string,
   connectionIds: string[],
 ): Promise<{ id: string; message: string; test_result: string }> {
-  const res = await fetch(`${BASE}/connections/federate`, {
+  const res = await fetch(`${getApiBase()}/connections/federate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, connection_ids: connectionIds }),
@@ -361,7 +361,7 @@ export async function triggerSync(
   incremental = true,
 ): Promise<{ message: string }> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/sync?incremental=${incremental}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/sync?incremental=${incremental}`,
     { method: "POST" },
   );
   if (!res.ok) throw new Error("Sync trigger failed");
@@ -369,7 +369,7 @@ export async function triggerSync(
 }
 
 export async function getSyncStatus(connId: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/sync-status`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/sync-status`);
   if (!res.ok) return {};
   return res.json();
 }
@@ -391,7 +391,7 @@ export async function uploadFileToConnection(
   if (opts.schema) form.append("schema", opts.schema);
   if (opts.columnTypes && Object.keys(opts.columnTypes).length > 0)
     form.append("column_types", JSON.stringify(opts.columnTypes));
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`, {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/files`, {
     method: "POST",
     body: form,
   });
@@ -425,7 +425,7 @@ export async function bulkUploadFilesToConnection(
   for (const f of files) form.append("files", f);
   if (schema) form.append("schema", schema);
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/files/bulk`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/bulk`,
     { method: "POST", body: form },
   );
   if (!res.ok) {
@@ -460,7 +460,7 @@ export async function analyzeConnectionFile(
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/files/analyze`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/analyze`,
     { method: "POST", body: form },
   );
   if (!res.ok) {
@@ -480,7 +480,7 @@ export interface ConnectionFile {
 }
 
 export async function listConnectionFiles(connId: string): Promise<ConnectionFile[]> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/files`);
   if (!res.ok) return [];
   const data = await res.json().catch(() => ({ files: [] }));
   return data.files ?? [];
@@ -492,21 +492,21 @@ export async function deleteConnectionFile(
   schema = "main",
 ): Promise<void> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/files/${encodeURIComponent(filename)}?schema=${encodeURIComponent(schema)}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/${encodeURIComponent(filename)}?schema=${encodeURIComponent(schema)}`,
     { method: "DELETE" },
   );
   if (!res.ok) throw new Error("Delete failed");
 }
 
 export async function listConnectionSchemas(connId: string): Promise<string[]> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas`);
   if (!res.ok) return ["main"];
   const data = await res.json().catch(() => ({ schemas: ["main"] }));
   return data.schemas ?? ["main"];
 }
 
 export async function createConnectionSchema(connId: string, name: string): Promise<string> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`, {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -523,7 +523,7 @@ export async function createConnectionSchema(connId: string, name: string): Prom
  *  backing files, and derived profile/exploration. */
 export async function deleteConnectionSchema(connId: string, schema: string): Promise<void> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/schemas/${encodeURIComponent(schema)}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas/${encodeURIComponent(schema)}`,
     { method: "DELETE" },
   );
   if (!res.ok) {
@@ -535,7 +535,7 @@ export async function deleteConnectionSchema(connId: string, schema: string): Pr
 /** Remove a single table from a workspace connection — drops it + its backing file(s). */
 export async function deleteConnectionTable(connId: string, table: string, schema = "main"): Promise<void> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}?schema=${encodeURIComponent(schema)}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}?schema=${encodeURIComponent(schema)}`,
     { method: "DELETE" },
   );
   if (!res.ok) {
@@ -545,13 +545,13 @@ export async function deleteConnectionTable(connId: string, table: string, schem
 }
 
 export async function testConnection(id: string): Promise<TestResult> {
-  const res = await fetch(`${BASE}/connections/${id}/test`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/connections/${id}/test`, { method: "POST" });
   if (!res.ok) throw new Error("Test request failed");
   return res.json();
 }
 
 export async function deleteConnection(id: string): Promise<void> {
-  await fetch(`${BASE}/connections/${id}`, { method: "DELETE" });
+  await fetch(`${getApiBase()}/connections/${id}`, { method: "DELETE" });
 }
 
 // ── Rich schema types ─────────────────────────────────────────────────────────
@@ -590,7 +590,7 @@ export interface RichSchema {
 }
 
 export async function getSchemaRich(id: string): Promise<RichSchema> {
-  const res = await fetch(`${BASE}/connections/${id}/schema/rich`);
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema/rich`);
   if (!res.ok) throw new Error("Failed to fetch rich schema");
   return res.json();
 }
@@ -612,7 +612,7 @@ export async function sampleTable(
   const params = new URLSearchParams({ limit: String(limit) });
   if (schema) params.set("schema", schema);
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?${params}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?${params}`,
   );
   if (!res.ok) throw new Error(`Failed to sample table "${table}"`);
   return res.json();
@@ -632,7 +632,7 @@ export async function getTableColumns(
   const params = new URLSearchParams();
   if (schema) params.set("schema", schema);
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns?${params}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns?${params}`,
   );
   if (!res.ok) return [];
   const data = await res.json().catch(() => ({ columns: [] }));
@@ -649,7 +649,7 @@ export async function alterColumn(
   const params = new URLSearchParams();
   if (schema) params.set("schema", schema);
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/alter-column?${params}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/alter-column?${params}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -695,25 +695,25 @@ export interface CatalogTree {
 
 export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree> {
   const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${BASE}/catalog/tree${qs}`);
+  const res = await fetch(`${getApiBase()}/catalog/tree${qs}`);
   if (!res.ok) throw new Error("Failed to fetch catalog tree");
   return res.json();
 }
 
 export async function getSchema(id: string): Promise<string> {
-  const res = await fetch(`${BASE}/connections/${id}/schema`);
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema`);
   if (!res.ok) throw new Error("Failed to fetch schema");
   const data = await res.json();
   return data.schema as string;
 }
 
 export async function refreshSchemaCache(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/connections/${id}/schema/refresh`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema/refresh`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh schema cache");
 }
 
 export async function getSchemaDiagram(id: string): Promise<string> {
-  const res = await fetch(`${BASE}/connections/${id}/schema/mermaid`);
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema/mermaid`);
   if (!res.ok) throw new Error("Failed to fetch schema diagram");
   const data = await res.json();
   return data.diagram as string;
@@ -797,19 +797,19 @@ export interface ScorecardItem {
 }
 
 export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/health-scorecard`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/health-scorecard`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getMetrics(): Promise<Metric[]> {
-  const res = await fetch(`${BASE}/metrics`);
+  const res = await fetch(`${getApiBase()}/metrics`);
   if (!res.ok) throw new Error("Failed to fetch metrics");
   return res.json();
 }
 
 export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
-  const res = await fetch(`${BASE}/metrics`, {
+  const res = await fetch(`${getApiBase()}/metrics`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(m),
@@ -822,7 +822,7 @@ export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
 }
 
 export async function updateMetric(name: string, m: Metric): Promise<Metric> {
-  const res = await fetch(`${BASE}/metrics/${encodeURIComponent(name)}`, {
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(m),
@@ -838,12 +838,12 @@ export async function deleteMetric(name: string, sql?: string): Promise<void> {
   // Pass the formula to delete a single grain when a name has several definitions;
   // omit it to remove every entry sharing the name.
   const q = sql ? `?sql=${encodeURIComponent(sql)}` : "";
-  await fetch(`${BASE}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
+  await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
 }
 
 /** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate). */
 export async function transitionMetric(name: string, action: string, actor: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
-  const res = await fetch(`${BASE}/metrics/${encodeURIComponent(name)}/transition`, {
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, actor }),
   });
@@ -856,14 +856,14 @@ export async function transitionMetric(name: string, action: string, actor: stri
 
 /** B-8 — the governance audit trail for a metric (newest first). */
 export async function getMetricAudit(name: string): Promise<MetricAuditEntry[]> {
-  const res = await fetch(`${BASE}/metrics/${encodeURIComponent(name)}/audit`);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/audit`);
   if (!res.ok) return [];
   return (await res.json()).audit ?? [];
 }
 
 export async function validateMetric(name: string, connId: string): Promise<MetricValidationResult> {
   const res = await fetch(
-    `${BASE}/metrics/${encodeURIComponent(name)}/validate?conn_id=${encodeURIComponent(connId)}`,
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/validate?conn_id=${encodeURIComponent(connId)}`,
     { method: "POST" },
   );
   if (!res.ok) {
@@ -875,7 +875,7 @@ export async function validateMetric(name: string, connId: string): Promise<Metr
 
 export async function getMetricFreshness(name: string, connId: string): Promise<MetricFreshnessResult> {
   const res = await fetch(
-    `${BASE}/metrics/${encodeURIComponent(name)}/freshness?conn_id=${encodeURIComponent(connId)}`,
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/freshness?conn_id=${encodeURIComponent(connId)}`,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -978,7 +978,7 @@ export interface ConnectionSettings {
 }
 
 export async function getConnectionSettings(id: string): Promise<ConnectionSettings> {
-  const res = await fetch(`${BASE}/connections/${id}/settings`);
+  const res = await fetch(`${getApiBase()}/connections/${id}/settings`);
   if (!res.ok) return { ontology_refresh_hours: null };
   return res.json();
 }
@@ -987,7 +987,7 @@ export async function updateConnectionSettings(
   id: string,
   settings: Partial<ConnectionSettings>,
 ): Promise<ConnectionSettings> {
-  const res = await fetch(`${BASE}/connections/${id}/settings`, {
+  const res = await fetch(`${getApiBase()}/connections/${id}/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
@@ -999,7 +999,7 @@ export async function updateConnectionSettings(
 export async function rebuildOntology(connectionId: string, schemaName?: string): Promise<{ ok: boolean; generated_at: string; entities: number }> {
   const qs = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) qs.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/rebuild?${qs}`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/ontology/rebuild?${qs}`, { method: "POST" });
   if (!res.ok) throw new Error("Ontology rebuild failed");
   return res.json();
 }
@@ -1065,7 +1065,7 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
-  const res = await fetch(`${BASE}/ontology?${q}`);
+  const res = await fetch(`${getApiBase()}/ontology?${q}`);
   if (!res.ok) throw new Error("Ontology not available for this connection");
   return res.json();
 }
@@ -1100,7 +1100,7 @@ export async function getConnectionGraph(connectionId: string, schemaName?: stri
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
-  const res = await fetch(`${BASE}/graph?${q}`);
+  const res = await fetch(`${getApiBase()}/graph?${q}`);
   if (!res.ok) throw new Error("Knowledge graph not available for this connection");
   return res.json();
 }
@@ -1131,7 +1131,7 @@ export async function getConnectionTour(connectionId: string, schemaName?: strin
   const base = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
-  const res = await fetch(`${BASE}/graph/tour?${base}`);
+  const res = await fetch(`${getApiBase()}/graph/tour?${base}`);
   if (!res.ok) throw new Error("Connection tour not available");
   return res.json();
 }
@@ -1147,7 +1147,7 @@ export async function getDuplicateEntities(
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
   if (threshold != null) q.set("threshold", String(threshold));
-  const res = await fetch(`${BASE}/ontology/duplicate-entities?${q}`);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities?${q}`);
   if (!res.ok) throw new Error("Failed to load duplicate suggestions");
   return (await res.json()).clusters ?? [];
 }
@@ -1157,7 +1157,7 @@ export async function mergeOntologyEntities(
 ): Promise<{ merged_into: string; removed: string[]; entity_count: number }> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/entities/merge?${q}`, {
+  const res = await fetch(`${getApiBase()}/ontology/entities/merge?${q}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ merge_ids: mergeIds, canonical_id: canonicalId }),
@@ -1175,7 +1175,7 @@ export async function patchOntologyEntity(
   overrides: Partial<Pick<OntologyEntity, "description" | "active_filter" | "default_filters" | "exclude_when" | "lifecycle_states" | "terminal_states">>,
 ): Promise<OntologyEntity> {
   const res = await fetch(
-    `${BASE}/ontology/entities/${encodeURIComponent(entityId)}?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?connection_id=${encodeURIComponent(connectionId)}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
   );
   if (!res.ok) throw new Error("Failed to update entity");
@@ -1188,7 +1188,7 @@ export async function patchQueryTemplate(
   overrides: Partial<Pick<QueryTemplate, "description" | "sql_template" | "business_rules_enforced" | "returns">>,
 ): Promise<QueryTemplate> {
   const res = await fetch(
-    `${BASE}/ontology/actions/${encodeURIComponent(actionId)}?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/actions/${encodeURIComponent(actionId)}?connection_id=${encodeURIComponent(connectionId)}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
   );
   if (!res.ok) throw new Error("Failed to update action");
@@ -1212,7 +1212,7 @@ export interface AutonomyLevel {
 export async function getLearnedSkills(connectionId: string, schemaName?: string): Promise<QueryTemplate[]> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/skills?${q}`);
+  const res = await fetch(`${getApiBase()}/ontology/skills?${q}`);
   if (!res.ok) throw new Error("Failed to load learned skills");
   return (await res.json()).skills ?? [];
 }
@@ -1224,7 +1224,7 @@ export async function proposeLearnedSkill(
 ): Promise<QueryTemplate> {
   const q = new URLSearchParams({ inv_id: invId, connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/skills/propose?${q}`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/ontology/skills/propose?${q}`, { method: "POST" });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error((e as { detail?: string }).detail ?? "Run is not skill-worthy");
@@ -1237,7 +1237,7 @@ export async function saveLearnedSkill(
 ): Promise<{ ok: boolean; schema_name: string; id: string }> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/skills?${q}`, {
+  const res = await fetch(`${getApiBase()}/ontology/skills?${q}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(action),
@@ -1254,7 +1254,7 @@ export async function activateLearnedSkill(
 ): Promise<{ ok: boolean; usage_count: number; autonomy: AutonomyLevel }> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/skills/${encodeURIComponent(actionId)}/use?${q}`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/ontology/skills/${encodeURIComponent(actionId)}/use?${q}`, { method: "POST" });
   if (!res.ok) throw new Error("Learned skill not found");
   return res.json();
 }
@@ -1264,13 +1264,13 @@ export async function deleteLearnedSkill(
 ): Promise<void> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
-  const res = await fetch(`${BASE}/ontology/skills/${encodeURIComponent(actionId)}?${q}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/ontology/skills/${encodeURIComponent(actionId)}?${q}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete learned skill");
 }
 
 export async function getAutonomy(connectionId: string): Promise<AutonomyLevel> {
   const q = new URLSearchParams({ connection_id: connectionId });
-  const res = await fetch(`${BASE}/ontology/autonomy?${q}`);
+  const res = await fetch(`${getApiBase()}/ontology/autonomy?${q}`);
   if (!res.ok) return { connection_id: connectionId, level: 0, label: "manual" };
   return res.json();
 }
@@ -1302,7 +1302,7 @@ export interface ExplorationStatus {
 }
 
 export async function getExplorationStatus(connectionId: string): Promise<ExplorationStatus> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/status`);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/status`);
   if (!res.ok) throw new Error("Exploration status not available");
   return res.json();
 }
@@ -1416,14 +1416,14 @@ export interface DomainInsights {
 
 export async function getDomainInsights(connectionId: string, schema?: string): Promise<Record<string, DomainInsights>> {
   const params = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/domains${params}`);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/domains${params}`);
   if (!res.ok) throw new Error("Failed to fetch domain insights");
   return res.json();
 }
 
 export async function extendDomainBudget(connectionId: string, domain: string): Promise<{ ok: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/domains/${encodeURIComponent(domain)}/extend`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/domains/${encodeURIComponent(domain)}/extend`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to extend domain budget");
@@ -1431,14 +1431,14 @@ export async function extendDomainBudget(connectionId: string, domain: string): 
 }
 
 export async function getCanvasDomainInsights(canvasId: string): Promise<Record<string, DomainInsights>> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/domains`);
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/domains`);
   if (!res.ok) throw new Error("Failed to fetch canvas domain insights");
   return res.json();
 }
 
 export async function extendCanvasDomainBudget(canvasId: string, domain: string): Promise<{ ok: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/domains/${encodeURIComponent(domain)}/extend`,
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/domains/${encodeURIComponent(domain)}/extend`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to extend canvas domain budget");
@@ -1447,7 +1447,7 @@ export async function extendCanvasDomainBudget(canvasId: string, domain: string)
 
 export async function promoteCanvasInsight(canvasId: string, insightId: string): Promise<{ promoted: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/promote`,
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to promote insight");
@@ -1456,7 +1456,7 @@ export async function promoteCanvasInsight(canvasId: string, insightId: string):
 
 export async function promoteConnectionInsight(connectionId: string, insightId: string): Promise<{ promoted: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/promote`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to promote insight");
@@ -1511,7 +1511,7 @@ export async function pinInsightToDashboard(
   insightId: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
 ): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
-  const res = await fetch(`${BASE}/cards/pin-insight`, {
+  const res = await fetch(`${getApiBase()}/cards/pin-insight`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1541,7 +1541,7 @@ export async function pinQueryToDashboard(
   title: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
 ): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
-  const res = await fetch(`${BASE}/cards/pin-query`, {
+  const res = await fetch(`${getApiBase()}/cards/pin-query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1569,7 +1569,7 @@ export async function listDashboardCards(
   if (opts.connectionId) q.set("connection_id", opts.connectionId);
   if (opts.scope) q.set("scope", opts.scope);
   if (opts.scopeRef) q.set("scope_ref", opts.scopeRef);
-  const res = await fetch(`${BASE}/cards?${q.toString()}`);
+  const res = await fetch(`${getApiBase()}/cards?${q.toString()}`);
   if (!res.ok) throw new Error("Failed to list dashboard cards");
   return res.json();
 }
@@ -1578,7 +1578,7 @@ export async function listDashboardCards(
  *  `card.render`. `PUT /cards/{id}` has existed since the cockpit shipped but had no client,
  *  so every edit to a pinned chart was lost on unmount. */
 export async function updateDashboardCard(cardId: string, card: DashboardCard): Promise<DashboardCard> {
-  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, {
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(card),
@@ -1591,7 +1591,7 @@ export async function updateDashboardCard(cardId: string, card: DashboardCard): 
  *  For charts that are NOT pinned cards (ledger rows, digest tiles, KPI trends) and therefore
  *  have no `render` blob of their own. `scopeKey` matches the briefing's stamp. */
 export async function getVizConfigs(scopeKey: string): Promise<Record<string, Record<string, unknown>>> {
-  const res = await fetch(`${BASE}/viz-configs?scope_key=${encodeURIComponent(scopeKey)}`);
+  const res = await fetch(`${getApiBase()}/viz-configs?scope_key=${encodeURIComponent(scopeKey)}`);
   if (!res.ok) return {};                     // best-effort: display prefs never block a render
   return res.json();
 }
@@ -1600,7 +1600,7 @@ export async function getVizConfigs(scopeKey: string): Promise<Record<string, Re
 export async function saveVizConfig(
   scopeKey: string, targetId: string, config: Record<string, unknown>,
 ): Promise<void> {
-  await fetch(`${BASE}/viz-configs`, {
+  await fetch(`${getApiBase()}/viz-configs`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope_key: scopeKey, target_id: targetId, config }),
@@ -1610,13 +1610,13 @@ export async function saveVizConfig(
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
 export async function runDashboardCard(cardId: string): Promise<CardRunResult> {
-  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }
 
 export async function deleteDashboardCard(cardId: string): Promise<void> {
-  await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+  await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
 /** The cockpit layout (position + size per card) the reader arranged — saved SERVER-SIDE and
@@ -1625,13 +1625,13 @@ export type CockpitLayout = Record<string, { x: number; y: number; w: number; h:
 
 export async function getCockpitLayout(connectionId: string): Promise<CockpitLayout> {
   try {
-    const res = await fetch(`${BASE}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
+    const res = await fetch(`${getApiBase()}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
     return res.ok ? await res.json() : {};
   } catch { return {}; }
 }
 
 export async function saveCockpitLayout(connectionId: string, layout: CockpitLayout): Promise<void> {
-  await fetch(`${BASE}/cards/layout`, {
+  await fetch(`${getApiBase()}/cards/layout`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, layout }),
@@ -1644,7 +1644,7 @@ export async function graduateCard(
   cardId: string,
   thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
 ): Promise<{ card: DashboardCard }> {
-  const res = await fetch(`${BASE}/cards/${encodeURIComponent(cardId)}/graduate`, {
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/graduate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(thresholds),
@@ -1658,7 +1658,7 @@ export async function graduateCard(
 
 export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
   );
   if (!res.ok) throw new Error("Failed to dismiss insight");
@@ -1667,7 +1667,7 @@ export async function dismissCanvasInsight(canvasId: string, insightId: string, 
 
 export async function dismissConnectionInsight(connectionId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
   );
   if (!res.ok) throw new Error("Failed to dismiss insight");
@@ -1675,31 +1675,31 @@ export async function dismissConnectionInsight(connectionId: string, insightId: 
 }
 
 export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to resume canvas exploration");
   return res.json();
 }
 
 export async function stopCanvasExploration(canvasId: string): Promise<{ status: string }> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/stop`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/stop`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to stop canvas exploration");
   return res.json();
 }
 
 export async function restartCanvasExploration(canvasId: string): Promise<{ status: string }> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to restart canvas exploration");
   return res.json();
 }
 
 export async function getCanvasExplorationStatus(canvasId: string): Promise<ExplorationStatus> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/status`);
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/status`);
   if (!res.ok) throw new Error("Failed to fetch canvas exploration status");
   return res.json();
 }
 
 export async function triggerCanvasDomainIntelligence(canvasId: string): Promise<{ ok: boolean; reason?: string }> {
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger canvas domain intelligence");
   return res.json();
 }
@@ -1707,7 +1707,7 @@ export async function triggerCanvasDomainIntelligence(canvasId: string): Promise
 export async function getCanvasExplorationEpisodes(canvasId: string, phase = "", limit = 300): Promise<ExplorationEpisode[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (phase) params.set("phase", phase);
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/episodes?${params}`);
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/episodes?${params}`);
   if (!res.ok) return [];
   const data = await res.json();
   return Array.isArray(data) ? data : [];
@@ -1725,7 +1725,7 @@ export interface ExplorationFindings {
 
 export async function getExplorationFindings(connectionId: string, schema?: string): Promise<ExplorationFindings> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/findings${q}`);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings${q}`);
   if (!res.ok) throw new Error("Failed to fetch exploration findings");
   return res.json();
 }
@@ -1743,19 +1743,19 @@ export interface ExplorationEpisode {
 }
 
 export async function stopExploration(connectionId: string): Promise<{ ok: boolean; stopped: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to stop exploration");
   return res.json();
 }
 
 export async function resumeExploration(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/resume`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/resume`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to resume exploration");
   return res.json();
 }
 
 export async function restartExploration(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to restart exploration");
   return res.json();
 }
@@ -1777,7 +1777,7 @@ export async function retryQuery(
   hint = "",
   domain = "",
 ): Promise<RetryQueryResult> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/retry-query`, {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/retry-query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, error, hint, domain }),
@@ -1823,7 +1823,7 @@ export async function fixEpisode(
   hint = "",
   canvasId = "",
 ): Promise<FixSaveResult> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-episode`, {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/fix-episode`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql: ep.sql, error: ep.error, think: ep.think ?? "", phase: ep.phase ?? "domain_intel", hint, canvas_id: canvasId }),
@@ -1840,7 +1840,7 @@ export async function fixAll(
   hint = "",
   canvasId = "",
 ): Promise<FixAllResult> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-all`, {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/fix-all`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1858,7 +1858,7 @@ export async function getExplorationEpisodes(
   limit = 100,
 ): Promise<ExplorationEpisode[]> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connectionId)}/episodes?phase=${encodeURIComponent(phase)}&limit=${limit}`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/episodes?phase=${encodeURIComponent(phase)}&limit=${limit}`,
   );
   if (!res.ok) return [];
   return res.json();
@@ -1877,17 +1877,17 @@ export interface DevStats {
 }
 
 export async function getDevStats(): Promise<DevStats> {
-  const res = await fetch(`${BASE}/dev/stats`);
+  const res = await fetch(`${getApiBase()}/dev/stats`);
   if (!res.ok) throw new Error("Failed to fetch dev stats");
   return res.json();
 }
 
 export async function resetDevStats(): Promise<void> {
-  await fetch(`${BASE}/dev/stats/reset`, { method: "POST" });
+  await fetch(`${getApiBase()}/dev/stats/reset`, { method: "POST" });
 }
 
 export async function getConnectionFreshness(connId: string): Promise<{ freshness: string | null; source: string | null }> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/freshness`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/freshness`);
   if (!res.ok) return { freshness: null, source: null };
   return res.json();
 }
@@ -1904,7 +1904,7 @@ export async function getEntityLifecycleCounts(
   entityId: string,
 ): Promise<LifecycleCount[]> {
   const res = await fetch(
-    `${BASE}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?connection_id=${encodeURIComponent(connectionId)}`,
   );
   if (!res.ok) return [];
   return res.json();
@@ -1935,7 +1935,7 @@ export async function logOutcome(
   opts?: { metric_name?: string; metric_before?: number; metric_after?: number },
 ): Promise<RecOutcome> {
   const res = await fetch(
-    `${BASE}/investigations/${encodeURIComponent(invId)}/recommendations/${recIndex}/outcome`,
+    `${getApiBase()}/investigations/${encodeURIComponent(invId)}/recommendations/${recIndex}/outcome`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1947,7 +1947,7 @@ export async function logOutcome(
 }
 
 export async function getInvestigationOutcomes(invId: string): Promise<RecOutcome[]> {
-  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/outcomes`);
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/outcomes`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -1963,7 +1963,7 @@ export interface DocumentEntry {
 }
 
 export async function listDocuments(): Promise<DocumentEntry[]> {
-  const res = await fetch(`${BASE}/documents`);
+  const res = await fetch(`${getApiBase()}/documents`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -1971,7 +1971,7 @@ export async function listDocuments(): Promise<DocumentEntry[]> {
 export async function uploadDocument(file: File): Promise<DocumentEntry> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/documents/upload`, { method: "POST", body: form });
+  const res = await fetch(`${getApiBase()}/documents/upload`, { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Upload failed");
@@ -1980,7 +1980,7 @@ export async function uploadDocument(file: File): Promise<DocumentEntry> {
 }
 
 export async function deleteDocument(docId: string): Promise<void> {
-  const res = await fetch(`${BASE}/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Delete failed");
 }
 
@@ -2011,7 +2011,7 @@ export interface ProcessMap {
 
 export async function getProcessMap(connId: string, entityId: string): Promise<ProcessMap | null> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}`,
   );
   if (!res.ok) return null;
   return res.json();
@@ -2034,7 +2034,7 @@ export interface CausalEdge {
 
 export async function getCausalGraph(connId: string): Promise<CausalEdge[]> {
   const res = await fetch(
-    `${BASE}/connections/${encodeURIComponent(connId)}/causal-graph`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/causal-graph`,
   );
   if (!res.ok) return [];
   return res.json();
@@ -2062,7 +2062,7 @@ export interface Canvas {
 
 export async function getCanvases(workspaceId?: string): Promise<Canvas[]> {
   const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${BASE}/canvases${qs}`);
+  const res = await fetch(`${getApiBase()}/canvases${qs}`);
   if (!res.ok) throw new Error("Failed to fetch canvases");
   return res.json();
 }
@@ -2089,7 +2089,7 @@ export async function createCanvas(
   // The backend expects a single, flat scope on the request body
   // (connection_id / schema_name / tables), not a `scopes` array.
   const s = scopes[0] ?? { connection_id: "", schema_name: null, tables: [] };
-  const res = await fetch(`${BASE}/canvases`, {
+  const res = await fetch(`${getApiBase()}/canvases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -2116,7 +2116,7 @@ export async function updateCanvas(
   if (patch.name !== undefined) body.name = patch.name;
   if (patch.description !== undefined) body.description = patch.description;
   if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -2144,7 +2144,7 @@ export interface SavedQuery {
 
 export async function listSavedQueries(connectionId?: string): Promise<SavedQuery[]> {
   const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
-  const res = await fetch(`${BASE}/saved-queries${qs}`);
+  const res = await fetch(`${getApiBase()}/saved-queries${qs}`);
   if (!res.ok) throw new Error("Failed to fetch saved queries");
   return res.json();
 }
@@ -2152,7 +2152,7 @@ export async function listSavedQueries(connectionId?: string): Promise<SavedQuer
 export async function createSavedQuery(
   connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
 ): Promise<SavedQuery> {
-  const res = await fetch(`${BASE}/saved-queries`, {
+  const res = await fetch(`${getApiBase()}/saved-queries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, name, sql, spec }),
@@ -2167,7 +2167,7 @@ export async function createSavedQuery(
 export async function updateSavedQuery(
   id: string, patch: { name?: string; sql?: string; spec?: Record<string, unknown> },
 ): Promise<SavedQuery> {
-  const res = await fetch(`${BASE}/saved-queries/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -2180,7 +2180,7 @@ export async function updateSavedQuery(
 }
 
 export async function deleteSavedQuery(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete saved query");
 }
 
@@ -2194,7 +2194,7 @@ export interface MeasureGrains {
 }
 
 export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/measure-grains`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/measure-grains`);
   if (!res.ok) throw new Error("Failed to fetch measure grains");
   return res.json();
 }
@@ -2205,7 +2205,7 @@ export async function getColumnDistinct(
 ): Promise<{ values: (string | null)[]; truncated: boolean }> {
   const qs = new URLSearchParams({ table, column, limit: String(limit) });
   if (schema) qs.set("schema", schema);
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch distinct values");
   return res.json();
 }
@@ -2215,7 +2215,7 @@ export async function suggestCanvasName(
   connectionId: string,
   tables: string[],
 ): Promise<{ name: string; description: string }> {
-  const res = await fetch(`${BASE}/canvases/suggest-name`, {
+  const res = await fetch(`${getApiBase()}/canvases/suggest-name`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, tables }),
@@ -2226,14 +2226,14 @@ export async function suggestCanvasName(
 
 /** Per-Canvas plain-English instructions (distinct from connection-level). */
 export async function getCanvasInstructions(canvasId: string): Promise<string> {
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`);
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/instructions`);
   if (!res.ok) return "";
   const d = await res.json().catch(() => ({ text: "" }));
   return d.text ?? "";
 }
 
 export async function putCanvasInstructions(canvasId: string, text: string): Promise<void> {
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`, {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/instructions`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -2242,11 +2242,11 @@ export async function putCanvasInstructions(canvasId: string, text: string): Pro
 }
 
 export async function deleteCanvas(id: string): Promise<void> {
-  await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function getCanvasSchema(id: string): Promise<string> {
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/schema`);
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/schema`);
   if (!res.ok) throw new Error("Failed to fetch canvas schema");
   const data = await res.json();
   return (data as { schema: string }).schema;
@@ -2273,7 +2273,7 @@ export interface CanvasArtifact {
 }
 
 export async function getCanvasArtifacts(canvasId: string): Promise<CanvasArtifact[]> {
-  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts");
+  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts");
   if (!res.ok) throw new Error("Failed to fetch artifacts");
   const data = await res.json();
   return data.artifacts ?? [];
@@ -2283,7 +2283,7 @@ export async function createCanvasArtifact(
   canvasId: string,
   payload: Omit<CanvasArtifact, "id" | "canvas_id" | "created_at">,
 ): Promise<CanvasArtifact> {
-  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts", {
+  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -2293,14 +2293,14 @@ export async function createCanvasArtifact(
 }
 
 export async function deleteCanvasArtifact(canvasId: string, artifactId: string): Promise<void> {
-  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts/" + encodeURIComponent(artifactId), {
+  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts/" + encodeURIComponent(artifactId), {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete artifact");
 }
 
 export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
   if (!res.ok) return [];
   const data = await res.json();
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
@@ -2318,13 +2318,13 @@ export interface PlaybookRef {
 }
 
 export async function deletePlaybookEntry(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to remove playbook item");
 }
 
 /** Edit just the recommendation text of a playbook item (preserves the rest). */
 export async function editPlaybookRecommendation(id: string, recommendation: string): Promise<void> {
-  const cur = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null));
+  const cur = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null));
   if (!cur) throw new Error("Playbook item not found");
   const body = {
     trigger_metric: cur.trigger_metric, trigger_condition: cur.trigger_condition,
@@ -2333,7 +2333,7 @@ export async function editPlaybookRecommendation(id: string, recommendation: str
     typical_timeline: cur.typical_timeline ?? "", owner_role: cur.owner_role ?? "",
     tags: cur.tags ?? [], status: cur.status ?? "active", source_kb_id: cur.source_kb_id ?? null,
   };
-  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("Failed to update playbook item");
@@ -2341,12 +2341,12 @@ export async function editPlaybookRecommendation(id: string, recommendation: str
 
 /** Remove a single history line item (an investigation, or a whole chat session). */
 export async function deleteInvestigation(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
 }
 
 export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {
-  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/recents?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/recents?limit=${limit}`);
   if (!res.ok) return [];
   const data = await res.json();
   return (data as { recents: Array<{ question: string; status: string; created_at: string }> }).recents ?? [];
@@ -2371,7 +2371,7 @@ export async function runDirectQuery(
   limit = 500,
   opts: { useCache?: boolean; useBulk?: boolean } = {},
 ): Promise<DirectQueryResult> {
-  const res = await fetch(`${BASE}/query/run`, {
+  const res = await fetch(`${getApiBase()}/query/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -2423,7 +2423,7 @@ export interface SemanticOpResult {
 }
 
 export async function runSemanticOp(connId: string, sql: string, op: SemanticOpRequest): Promise<SemanticOpResult> {
-  const res = await fetch(`${BASE}/query/semantic`, {
+  const res = await fetch(`${getApiBase()}/query/semantic`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conn_id: connId, sql, ...op }),
@@ -2454,7 +2454,7 @@ export async function buildQuerySql(params: {
   order_by: string;
   limit: number;
 }): Promise<{ sql: string }> {
-  const res = await fetch(`${BASE}/query/build-sql`, {
+  const res = await fetch(`${getApiBase()}/query/build-sql`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
@@ -2482,7 +2482,7 @@ export interface DecompiledQuery {
 }
 
 export async function decompileSql(sql: string, dialect = "duckdb"): Promise<DecompiledQuery> {
-  const res = await fetch(`${BASE}/query/decompile`, {
+  const res = await fetch(`${getApiBase()}/query/decompile`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, dialect }),
@@ -2501,7 +2501,7 @@ export interface QueryValidation {
 }
 
 export async function validateQuery(connId: string, sql: string): Promise<QueryValidation> {
-  const res = await fetch(`${BASE}/query/validate`, {
+  const res = await fetch(`${getApiBase()}/query/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conn_id: connId, sql }),
@@ -2512,7 +2512,7 @@ export async function validateQuery(connId: string, sql: string): Promise<QueryV
 
 // Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
 export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<void> {
-  await fetch(`${BASE}/chat/feedback`, {
+  await fetch(`${getApiBase()}/chat/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
@@ -2538,7 +2538,7 @@ export interface EvidenceClaim {
 }
 
 export async function getEvidenceClaims(invId: string): Promise<EvidenceClaim[]> {
-  const res = await fetch(`${BASE}/investigations/${invId}/evidence`);
+  const res = await fetch(`${getApiBase()}/investigations/${invId}/evidence`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -2551,7 +2551,7 @@ export async function getRecentEvidenceClaims(
 ): Promise<EvidenceClaim[]> {
   const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
   if (canvasId) params.set("canvas_id", canvasId);
-  const res = await fetch(`${BASE}/investigations/evidence/recent?${params}`);
+  const res = await fetch(`${getApiBase()}/investigations/evidence/recent?${params}`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -2562,7 +2562,7 @@ export async function submitClaimFeedback(
   feedback: "validated" | "disputed" | "needs_context",
   note?: string,
 ): Promise<EvidenceClaim> {
-  const res = await fetch(`${BASE}/investigations/${invId}/evidence/${claimId}/feedback`, {
+  const res = await fetch(`${getApiBase()}/investigations/${invId}/evidence/${claimId}/feedback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ feedback, note }),
@@ -2642,13 +2642,13 @@ export async function getMonitors(connId?: string, workspaceId?: string): Promis
   if (connId) qs.set("conn_id", connId);
   if (workspaceId) qs.set("workspace_id", workspaceId);
   const q = qs.toString();
-  const res = await fetch(`${BASE}/monitors${q ? `?${q}` : ""}`);
+  const res = await fetch(`${getApiBase()}/monitors${q ? `?${q}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch monitors");
   return res.json();
 }
 
 export async function createMonitor(data: Partial<MonitorDef> & { conn_id: string; name: string }): Promise<MonitorDef> {
-  const res = await fetch(`${BASE}/monitors`, {
+  const res = await fetch(`${getApiBase()}/monitors`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -2658,7 +2658,7 @@ export async function createMonitor(data: Partial<MonitorDef> & { conn_id: strin
 }
 
 export async function updateMonitor(id: string, data: Partial<MonitorDef>): Promise<MonitorDef> {
-  const res = await fetch(`${BASE}/monitors/${id}`, {
+  const res = await fetch(`${getApiBase()}/monitors/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -2668,18 +2668,18 @@ export async function updateMonitor(id: string, data: Partial<MonitorDef>): Prom
 }
 
 export async function deleteMonitor(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/monitors/${id}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/monitors/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete monitor");
 }
 
 export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired: false }> {
-  const res = await fetch(`${BASE}/monitors/${id}/trigger`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/monitors/${id}/trigger`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger monitor");
   return res.json();
 }
 
 export async function getMonitorAlerts(monitorId: string, limit = 50): Promise<MonitorAlert[]> {
-  const res = await fetch(`${BASE}/monitors/${monitorId}/alerts?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/monitors/${monitorId}/alerts?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch alerts");
   return res.json();
 }
@@ -2689,19 +2689,19 @@ export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: s
   if (connId) qs.set("conn_id", connId);
   qs.set("limit", String(limit));
   if (workspaceId) qs.set("workspace_id", workspaceId);
-  const res = await fetch(`${BASE}/alerts?${qs}`);
+  const res = await fetch(`${getApiBase()}/alerts?${qs}`);
   if (!res.ok) throw new Error("Failed to fetch alerts");
   return res.json();
 }
 
 export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
-  const res = await fetch(`${BASE}/alerts/${alertId}/acknowledge`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/alerts/${alertId}/acknowledge`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to acknowledge alert");
   return res.json();
 }
 
 export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
-  const res = await fetch(`${BASE}/monitors/digest?conn_id=${connId}&period=${period}`);
+  const res = await fetch(`${getApiBase()}/monitors/digest?conn_id=${connId}&period=${period}`);
   if (!res.ok) throw new Error("Failed to fetch digest");
   return res.json();
 }
@@ -2780,14 +2780,14 @@ export type NewAutomation = {
  *  "not enabled" empty state instead of throwing. */
 export async function getAutomations(connId?: string): Promise<Automation[]> {
   const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
-  const res = await fetch(`${BASE}/automations${qs}`);
+  const res = await fetch(`${getApiBase()}/automations${qs}`);
   if (res.status === 404) return [];
   if (!res.ok) throw new Error("Failed to fetch automations");
   return (await res.json()).automations;
 }
 
 export async function createAutomation(data: NewAutomation): Promise<Automation> {
-  const res = await fetch(`${BASE}/automations`, {
+  const res = await fetch(`${getApiBase()}/automations`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ? "Invalid automation" : "Failed to create automation");
@@ -2795,7 +2795,7 @@ export async function createAutomation(data: NewAutomation): Promise<Automation>
 }
 
 export async function updateAutomation(id: string, data: NewAutomation): Promise<Automation> {
-  const res = await fetch(`${BASE}/automations/${id}`, {
+  const res = await fetch(`${getApiBase()}/automations/${id}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Failed to update automation");
@@ -2803,18 +2803,18 @@ export async function updateAutomation(id: string, data: NewAutomation): Promise
 }
 
 export async function deleteAutomation(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/automations/${id}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/automations/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete automation");
 }
 
 export async function setAutomationEnabled(id: string, enabled: boolean): Promise<Automation> {
-  const res = await fetch(`${BASE}/automations/${id}/enabled?enabled=${enabled}`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/automations/${id}/enabled?enabled=${enabled}`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to toggle automation");
   return res.json();
 }
 
 export async function pauseAutomation(id: string, until: string | null): Promise<Automation> {
-  const res = await fetch(`${BASE}/automations/${id}/pause`, {
+  const res = await fetch(`${getApiBase()}/automations/${id}/pause`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ until }),
   });
   if (!res.ok) throw new Error("Failed to pause automation");
@@ -2824,13 +2824,13 @@ export async function pauseAutomation(id: string, until: string | null): Promise
 /** Run an automation now — through the same gates the heartbeat uses, so a gated automation
  *  returns the REASON it did nothing rather than silence. */
 export async function runAutomation(id: string): Promise<AutomationRun> {
-  const res = await fetch(`${BASE}/automations/${id}/run`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/automations/${id}/run`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to run automation");
   return res.json();
 }
 
 export async function getAutomationRuns(id: string, limit = 50): Promise<AutomationRun[]> {
-  const res = await fetch(`${BASE}/automations/${id}/runs?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/automations/${id}/runs?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch runs");
   return (await res.json()).runs;
 }
@@ -2872,7 +2872,7 @@ export interface StandingGrant {
 export async function getProposals(connId: string, status?: string): Promise<StagedProposal[]> {
   const qs = new URLSearchParams({ connection_id: connId });
   if (status) qs.set("status", status);
-  const res = await fetch(`${BASE}/kinetic-actions/inbox?${qs}`);
+  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox?${qs}`);
   if (res.status === 404) return [];
   if (!res.ok) throw new Error("Failed to fetch proposals");
   return (await res.json()).proposals;
@@ -2884,7 +2884,7 @@ export type AcceptResult = { status: string; action_id: string; outcome: Record<
  *  also mints a target-bound standing grant for future unattended runs. Returns the outcome;
  *  a 409 (already resolved) or 422 (criterion failed) surfaces as a thrown Error with the body. */
 export async function acceptProposal(id: string, actor: string, mintGrant = false): Promise<AcceptResult> {
-  const res = await fetch(`${BASE}/kinetic-actions/inbox/${id}/accept`, {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox/${id}/accept`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ actor, mint_grant: mintGrant }),
   });
@@ -2894,7 +2894,7 @@ export async function acceptProposal(id: string, actor: string, mintGrant = fals
 }
 
 export async function rejectProposal(id: string, actor: string): Promise<boolean> {
-  const res = await fetch(`${BASE}/kinetic-actions/inbox/${id}/reject`, {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox/${id}/reject`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor }),
   });
   if (!res.ok) throw new Error("Failed to reject proposal");
@@ -2902,14 +2902,14 @@ export async function rejectProposal(id: string, actor: string): Promise<boolean
 }
 
 export async function getGrants(connId: string): Promise<StandingGrant[]> {
-  const res = await fetch(`${BASE}/kinetic-actions/grants?connection_id=${encodeURIComponent(connId)}`);
+  const res = await fetch(`${getApiBase()}/kinetic-actions/grants?connection_id=${encodeURIComponent(connId)}`);
   if (res.status === 404) return [];
   if (!res.ok) throw new Error("Failed to fetch grants");
   return (await res.json()).grants;
 }
 
 export async function revokeGrant(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/kinetic-actions/grants/${id}/revoke`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/kinetic-actions/grants/${id}/revoke`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to revoke grant");
 }
 
@@ -2928,7 +2928,7 @@ export interface ActionTrigger {
 }
 
 export async function getActionTriggers(): Promise<ActionTrigger[]> {
-  const res = await fetch(`${BASE}/actions/triggers`);
+  const res = await fetch(`${getApiBase()}/actions/triggers`);
   if (!res.ok) throw new Error("Failed to fetch action triggers");
   const data = await res.json();
   return data.triggers ?? [];
@@ -2945,7 +2945,7 @@ export async function sendFindingToTrigger(
   triggerId: string,
   body: { text: string; metric_name?: string; headline?: string; source_id?: string },
 ): Promise<SendFindingResult> {
-  const res = await fetch(`${BASE}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
+  const res = await fetch(`${getApiBase()}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -2973,7 +2973,7 @@ export interface BriefSubscription {
 
 export async function getBriefSubscriptions(connId?: string): Promise<BriefSubscription[]> {
   const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
-  const res = await fetch(`${BASE}/briefing/subscriptions${qs}`);
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions${qs}`);
   if (!res.ok) throw new Error("Failed to fetch brief subscriptions");
   const data = await res.json();
   return data.subscriptions ?? [];
@@ -2982,7 +2982,7 @@ export async function getBriefSubscriptions(connId?: string): Promise<BriefSubsc
 export async function createBriefSubscription(
   body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
 ): Promise<BriefSubscription> {
-  const res = await fetch(`${BASE}/briefing/subscriptions`, {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -2995,7 +2995,7 @@ export async function updateBriefSubscription(
   id: string,
   body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
 ): Promise<BriefSubscription> {
-  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -3005,7 +3005,7 @@ export async function updateBriefSubscription(
 }
 
 export async function deleteBriefSubscription(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete brief subscription");
 }
 
@@ -3018,7 +3018,7 @@ export interface BriefDeliveryResult {
 }
 
 export async function testBriefSubscription(id: string): Promise<BriefDeliveryResult> {
-  const res = await fetch(`${BASE}/briefing/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to test brief subscription");
   return res.json();
 }
@@ -3041,13 +3041,13 @@ export async function getOrgIntelligence(connectionId?: string, schema?: string)
   const qs = new URLSearchParams();
   if (connectionId) qs.set("connection_id", connectionId);
   if (schema) qs.set("schema", schema);
-  const res = await fetch(`${BASE}/org-intelligence${qs.size ? `?${qs}` : ""}`);
+  const res = await fetch(`${getApiBase()}/org-intelligence${qs.size ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch org intelligence");
   return res.json();
 }
 
 export async function deleteOrgInsight(id: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${BASE}/org-intelligence/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/org-intelligence/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete org insight");
   return res.json();
 }
@@ -3085,7 +3085,7 @@ export interface SchemaProfile {
 }
 
 export async function getSchemaProfile(connectionId: string): Promise<SchemaProfile> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connectionId)}/schema/profile`);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connectionId)}/schema/profile`);
   if (!res.ok) throw new Error("Failed to fetch schema profile");
   return res.json();
 }
@@ -3117,7 +3117,7 @@ export async function getPatterns(connectionId: string, refresh = false, schema?
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
   const qs = q.toString() ? `?${q.toString()}` : "";
-  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/patterns${qs}`;
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/patterns${qs}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch patterns");
   return res.json();
@@ -3126,7 +3126,7 @@ export async function getPatterns(connectionId: string, refresh = false, schema?
 /** Patterns scoped to a Canvas's curated tables (Hub scope consistency). */
 export async function getCanvasPatterns(canvasId: string, refresh = false): Promise<PatternsResponse> {
   const qs = refresh ? "?refresh=true" : "";
-  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/patterns${qs}`);
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/patterns${qs}`);
   if (!res.ok) throw new Error("Failed to fetch canvas patterns");
   return res.json();
 }
@@ -3182,7 +3182,7 @@ export async function generateBriefingNarrative(
   if (schema) q.set("schema", schema);
   if (workspaceId) q.set("workspace_id", workspaceId);
   const qs = q.toString() ? `?${q.toString()}` : "";
-  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to generate briefing narrative");
   return res.json();
@@ -3199,7 +3199,7 @@ export async function generateCanvasBriefingNarrative(
   if (refresh) q.set("refresh", "true");
   if (workspaceId) q.set("workspace_id", workspaceId);
   const qs = q.toString() ? `?${q.toString()}` : "";
-  const url = `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
+  const url = `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to generate canvas briefing narrative");
   return res.json();
@@ -3212,7 +3212,7 @@ export async function generateCanvasBriefingNarrative(
 export function investigationExportUrl(invId: string, fmt: "pdf" | "pptx", narrate = false): string {
   const q = new URLSearchParams({ format: fmt });
   if (narrate) q.set("narrate", "true");
-  return `${BASE}/investigations/${encodeURIComponent(invId)}/export?${q.toString()}`;
+  return `${getApiBase()}/investigations/${encodeURIComponent(invId)}/export?${q.toString()}`;
 }
 
 /** Trigger a browser download of an investigation export. The endpoint replies
@@ -3263,7 +3263,7 @@ export interface LlmConfigPatch {
 }
 
 export async function getLlmConfig(): Promise<LlmConfig> {
-  const res = await fetch(`${BASE}/llm/config`);
+  const res = await fetch(`${getApiBase()}/llm/config`);
   if (!res.ok) throw new Error("Failed to load inference config");
   return res.json();
 }
@@ -3293,13 +3293,13 @@ export async function getLlmModels(backend?: string, refresh = false): Promise<L
   const q = new URLSearchParams();
   if (backend) q.set("backend", backend);
   if (refresh) q.set("refresh", "true");
-  const res = await fetch(`${BASE}/llm/models?${q}`);
+  const res = await fetch(`${getApiBase()}/llm/models?${q}`);
   if (!res.ok) throw new Error("Failed to load model catalogue");
   return res.json();
 }
 
 export async function addLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
-  const res = await fetch(`${BASE}/llm/models`, {
+  const res = await fetch(`${getApiBase()}/llm/models`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ backend, model }),
@@ -3313,7 +3313,7 @@ export async function addLlmModel(backend: string, model: string): Promise<{ bac
 
 export async function removeLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
   const q = new URLSearchParams({ backend, model });
-  const res = await fetch(`${BASE}/llm/models?${q}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/llm/models?${q}`, { method: "DELETE" });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error((e as { detail?: string }).detail ?? "Failed to remove model");
@@ -3322,7 +3322,7 @@ export async function removeLlmModel(backend: string, model: string): Promise<{ 
 }
 
 export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
-  const res = await fetch(`${BASE}/llm/config`, {
+  const res = await fetch(`${getApiBase()}/llm/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -3358,7 +3358,7 @@ export interface LlmTestReport {
 export async function testLlmConfig(
   backend?: string, model?: string, includeAgents = false,
 ): Promise<LlmTestReport> {
-  const res = await fetch(`${BASE}/llm/config/test`, {
+  const res = await fetch(`${getApiBase()}/llm/config/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ backend, model, include_agents: includeAgents }),
@@ -3380,7 +3380,7 @@ export interface CacheProbeResult {
 
 /** Measure prefix-cache reuse for the active binding and persist the verdict (§5b.3). */
 export async function cacheProbe(role?: string, rounds?: number): Promise<CacheProbeResult> {
-  const res = await fetch(`${BASE}/llm/config/cache-probe`, {
+  const res = await fetch(`${getApiBase()}/llm/config/cache-probe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role, rounds }),
@@ -3417,38 +3417,38 @@ export interface ExplorerStatus {
 
 export async function getExplorerStatus(connectionId: string, schema?: string): Promise<ExplorerStatus> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/status${q}`);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/status${q}`);
   if (!res.ok) throw new Error("Failed to fetch explorer status");
   return res.json();
 }
 
 export async function startExplorer(connectionId: string, schema?: string): Promise<{ ok: boolean; reason?: string }> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/start${q}`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/start${q}`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to start explorer");
   return res.json();
 }
 
 export async function stopExplorer(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to stop explorer");
   return res.json();
 }
 
 export async function restartExplorer(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to restart explorer");
   return res.json();
 }
 
 export async function resetExplorer(connectionId: string): Promise<{ ok: boolean; reset: boolean }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/reset`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/reset`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to reset explorer");
   return res.json();
 }
 
 export async function triggerDomainIntelligence(connectionId: string): Promise<{ ok: boolean; reason?: string }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger domain intelligence");
   return res.json();
 }
@@ -3466,7 +3466,7 @@ export interface PlatformMetrics {
 }
 
 export async function getPlatformMetrics(): Promise<PlatformMetrics> {
-  const res = await fetch(`${BASE}/dev/stats`);
+  const res = await fetch(`${getApiBase()}/dev/stats`);
   if (!res.ok) throw new Error("Failed to fetch platform metrics");
   return res.json();
 }
@@ -3482,7 +3482,7 @@ export interface AuditStats {
 export async function getAuditStats(connectionId?: string): Promise<AuditStats> {
   const params = new URLSearchParams();
   if (connectionId) params.set("connection_id", connectionId);
-  const res = await fetch(`${BASE}/security/audit/stats?${params}`);
+  const res = await fetch(`${getApiBase()}/security/audit/stats?${params}`);
   if (!res.ok) throw new Error("Failed to fetch audit stats");
   return res.json();
 }
@@ -3569,19 +3569,19 @@ export async function getJobs(params?: { state?: string; conn_id?: string; kind?
   if (params?.conn_id) q.set("conn_id", params.conn_id);
   if (params?.kind) q.set("kind", params.kind);
   if (params?.limit) q.set("limit", String(params.limit));
-  const res = await fetch(`${BASE}/jobs${q.toString() ? `?${q}` : ""}`);
+  const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getJobLogs(jobId: string): Promise<{ seq: number; at: string; kind: string; payload: unknown }[]> {
-  const res = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/logs`);
+  const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/logs`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
-  const res = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+  const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
   if (!res.ok) return { job_id: jobId, cancelled: false };
   return res.json();
 }
@@ -3616,7 +3616,7 @@ export interface ApplyRecommendedResult {
 export async function applyRecommendedAgentModels(
   body: { workspace_id?: string; agent_ids?: string[]; overwrite?: boolean } = {},
 ): Promise<ApplyRecommendedResult | null> {
-  const res = await fetch(`${BASE}/agents/apply-recommended-models`, {
+  const res = await fetch(`${getApiBase()}/agents/apply-recommended-models`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) return null;
@@ -3625,7 +3625,7 @@ export async function applyRecommendedAgentModels(
 
 export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-  const res = await fetch(`${BASE}/agents${q}`);
+  const res = await fetch(`${getApiBase()}/agents${q}`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -3634,7 +3634,7 @@ export async function patchAgent(
   agentId: string,
   body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string; workspace_id?: string; allow_paid?: boolean },
 ): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
-  const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+  const res = await fetch(`${getApiBase()}/agents/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) return null;
@@ -3658,7 +3658,7 @@ export interface RevalidateResult {
 
 export async function revalidateInsight(connId: string, insightId: string): Promise<RevalidateResult> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/revalidate`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/revalidate`,
     { method: "POST" },
   );
   if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
@@ -3668,7 +3668,7 @@ export async function revalidateInsight(connId: string, insightId: string): Prom
 /** K3 Trust Receipt — provenance for a finding (404 if it predates tracking). */
 export async function getInsightReceipt(connId: string, insightId: string): Promise<InsightReceipt | null> {
   const res = await fetch(
-    `${BASE}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/receipt`,
+    `${getApiBase()}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/receipt`,
   );
   if (!res.ok) return null;
   return res.json();
@@ -3703,7 +3703,7 @@ export async function groundBriefingNumber(
   insightId: string,
   opts: { text?: string; schema?: string; insightIds?: string[] } = {},
 ): Promise<GroundingReceipt> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connId)}/briefing/ground`, {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/briefing/ground`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -3724,7 +3724,7 @@ export async function groundBriefingNumber(
  *  `kind` is a ROUTE SEGMENT — the `/ada/` path is a wire name, frozen. */
 export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id: string): Promise<InsightReceipt | null> {
   const res = await fetch(
-    `${BASE}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
+    `${getApiBase()}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
   );
   if (!res.ok) return null;
   return res.json();
@@ -3768,7 +3768,7 @@ export interface PublicReceipt {
 
 /** Resolve any answer's receipt id into the one signed public contract. 404 → null. */
 export async function getPublicReceipt(receiptId: string): Promise<PublicReceipt | null> {
-  const res = await fetch(`${BASE}/receipt/${encodeURIComponent(receiptId)}`);
+  const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -3798,13 +3798,13 @@ export interface MetastoreVolumeObject {
 }
 
 export async function listVolumes(catalogId: string): Promise<MetastoreVolume[]> {
-  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`);
+  const res = await fetch(`${getApiBase()}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`);
   if (!res.ok) throw new Error("Failed to list volumes");
   return (await res.json()).volumes ?? [];
 }
 
 export async function createVolume(catalogId: string, name: string): Promise<MetastoreVolume> {
-  const res = await fetch(`${BASE}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`, {
+  const res = await fetch(`${getApiBase()}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -3814,7 +3814,7 @@ export async function createVolume(catalogId: string, name: string): Promise<Met
 }
 
 export async function listVolumeObjects(volumeId: string): Promise<MetastoreVolumeObject[]> {
-  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`);
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`);
   if (!res.ok) throw new Error("Failed to list objects");
   return (await res.json()).objects ?? [];
 }
@@ -3822,30 +3822,30 @@ export async function listVolumeObjects(volumeId: string): Promise<MetastoreVolu
 export async function uploadVolumeObject(volumeId: string, file: File): Promise<MetastoreVolumeObject> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
   return res.json();
 }
 
 export function volumeObjectContentUrl(volumeId: string, objectId: string): string {
-  return `${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}/content`;
+  return `${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}/content`;
 }
 
 export async function deleteVolumeObject(volumeId: string, objectId: string): Promise<void> {
-  const res = await fetch(`${BASE}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Delete failed");
 }
 
 // ── Metastore: Grants (explicit catalog access for a workspace) ─────────────────
 
 export async function listWorkspaceGrants(workspaceId: string): Promise<string[]> {
-  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`);
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`);
   if (!res.ok) throw new Error("Failed to list grants");
   return (await res.json()).catalogs ?? [];
 }
 
 export async function grantWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
-  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`, {
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ catalog_id: catalogId }),
@@ -3855,7 +3855,7 @@ export async function grantWorkspaceCatalog(workspaceId: string, catalogId: stri
 }
 
 export async function revokeWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
-  const res = await fetch(`${BASE}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants/${encodeURIComponent(catalogId)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants/${encodeURIComponent(catalogId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Revoke failed");
   return (await res.json()).catalogs ?? [];
 }
@@ -3897,7 +3897,7 @@ export function lookupGlossaryTable(
 }
 
 export async function getGlossary(): Promise<Glossary> {
-  const res = await fetch(`${BASE}/glossary`);
+  const res = await fetch(`${getApiBase()}/glossary`);
   if (!res.ok) return { tables: {} };
   return res.json();
 }
@@ -3910,7 +3910,7 @@ export async function updateTableGlossary(
   schema?: string | null,
 ): Promise<void> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}${q}`, {
+  const res = await fetch(`${getApiBase()}/glossary/${encodeURIComponent(table)}${q}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save table comment");
@@ -3924,7 +3924,7 @@ export async function updateColumnGlossary(
   schema?: string | null,
 ): Promise<void> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${BASE}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}${q}`, {
+  const res = await fetch(`${getApiBase()}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}${q}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error("Failed to save column comment");
@@ -3941,7 +3941,7 @@ export interface PlaybookVersion {
 }
 
 export async function getPlaybookVersions(entryId: string): Promise<PlaybookVersion[]> {
-  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(entryId)}/versions`);
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(entryId)}/versions`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -3954,7 +3954,7 @@ export async function applyPostproc(
   columns: string[], rows: unknown[][], op: PostprocOp, valueCol: string,
   window = 3, agg: "mean" | "sum" | "min" | "max" = "mean",
 ): Promise<{ columns: string[]; rows: unknown[][] }> {
-  const res = await fetch(`${BASE}/query/postproc`, {
+  const res = await fetch(`${getApiBase()}/query/postproc`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ columns, rows, op, value_col: valueCol, window, agg }),
   });
@@ -3985,13 +3985,13 @@ export interface SystemFlag {
 }
 
 export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
-  const res = await fetch(`${BASE}/system/flags`);
+  const res = await fetch(`${getApiBase()}/system/flags`);
   if (!res.ok) return {};
   return res.json();
 }
 
 export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
-  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+  const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
   });
   if (!res.ok) return null;
@@ -3999,7 +3999,7 @@ export async function setSystemFlag(name: string, value: boolean): Promise<Syste
 }
 /** Set a capability's tri-state — "auto" clears the override so it follows the Auto-mode master. */
 export async function setCapabilityState(name: string, state: CapabilityState): Promise<SystemFlag | null> {
-  const res = await fetch(`${BASE}/system/flags/${encodeURIComponent(name)}`, {
+  const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }),
   });
   if (!res.ok) return null;
@@ -4031,28 +4031,28 @@ export interface RoleAssignment {
 
 /** The caller's effective identity, roles and permissions (for gating admin UI). */
 export async function getMyAccess(): Promise<MyAccess | null> {
-  const res = await fetch(`${BASE}/rbac/me`);
+  const res = await fetch(`${getApiBase()}/rbac/me`);
   if (!res.ok) return null;
   return res.json();
 }
 
 /** The built-in role catalogue + the permissions each grants. */
 export async function getRoleCatalogue(): Promise<RoleInfo[]> {
-  const res = await fetch(`${BASE}/rbac/roles`);
+  const res = await fetch(`${getApiBase()}/rbac/roles`);
   if (!res.ok) return [];
   return res.json();
 }
 
 /** The org's role roster. Returns null when the caller can't manage roles (403). */
 export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
-  const res = await fetch(`${BASE}/rbac/assignments`);
+  const res = await fetch(`${getApiBase()}/rbac/assignments`);
   if (res.status === 403) return null;
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function assignRole(userId: string, role: string): Promise<RoleAssignment | null> {
-  const res = await fetch(`${BASE}/rbac/assignments`, {
+  const res = await fetch(`${getApiBase()}/rbac/assignments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, role }),
@@ -4063,7 +4063,7 @@ export async function assignRole(userId: string, role: string): Promise<RoleAssi
 
 export async function revokeRole(userId: string, role: string): Promise<boolean> {
   const q = `user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`;
-  const res = await fetch(`${BASE}/rbac/assignments?${q}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/rbac/assignments?${q}`, { method: "DELETE" });
   if (!res.ok) return false;
   const data = await res.json();
   return !!data.removed;
@@ -4087,7 +4087,7 @@ export interface PackSummary {
 }
 
 export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {
-  const res = await fetch(`${BASE}/packs`);
+  const res = await fetch(`${getApiBase()}/packs`);
   if (!res.ok) return { enabled: false, packs: [] };
   return res.json();
 }
@@ -4100,7 +4100,7 @@ export interface BindingCandidateDTO {
 export async function proposePackBindings(
   packId: string, connectionId: string, schema?: string, businessModel = "",
 ): Promise<{ fully_groundable: boolean; groundable_roles: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
-  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
   });
@@ -4111,7 +4111,7 @@ export async function proposePackBindings(
 export async function bindPack(
   packId: string, connectionId: string, bindings: Record<string, unknown>, schema?: string, version = 1,
 ): Promise<{ verified: boolean; missing?: string[]; dry_run_errors?: string[] }> {
-  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/bind`, {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/bind`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, bindings, schema, version }),
   });
@@ -4124,7 +4124,7 @@ export async function evaluatePack(
 ): Promise<{ can_activate: boolean; pass_rate: number | null; reasons: string[];
             results: { question: string; passed: boolean; detail: string }[];
             deployed: boolean; verified: boolean }> {
-  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/evaluate`, {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/evaluate`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema }),
   });
@@ -4137,13 +4137,13 @@ export interface PackDeltaDTO {
 }
 
 export async function getPackDeltas(packId: string, status = "proposed"): Promise<PackDeltaDTO[]> {
-  const res = await fetch(`${BASE}/packs/${encodeURIComponent(packId)}/deltas?status=${status}`);
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/deltas?status=${status}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "dismissed"): Promise<boolean> {
-  const res = await fetch(`${BASE}/packs/deltas/${deltaId}/status`, {
+  const res = await fetch(`${getApiBase()}/packs/deltas/${deltaId}/status`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
   });
   return res.ok;
@@ -4184,7 +4184,7 @@ export interface AgentRevision {
 export async function listAgentRevisions(
   agentId: string,
 ): Promise<{ current_rev: string; eval_basis: EvalBasis; revisions: AgentRevision[] }> {
-  const res = await fetch(`${BASE}/agents/custom/${agentId}/revisions`);
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/revisions`);
   if (!res.ok) return { current_rev: "", eval_basis: "none", revisions: [] };
   return res.json();
 }
@@ -4194,7 +4194,7 @@ export async function restoreAgentRevision(
   version: number,
 ): Promise<UserAgent | null> {
   const res = await fetch(
-    `${BASE}/agents/custom/${agentId}/revisions/${version}/restore`,
+    `${getApiBase()}/agents/custom/${agentId}/revisions/${version}/restore`,
     { method: "POST" },
   );
   if (!res.ok) return null;
@@ -4202,7 +4202,7 @@ export async function restoreAgentRevision(
 }
 
 export async function listUserAgents(): Promise<UserAgent[]> {
-  const res = await fetch(`${BASE}/agents/custom`);
+  const res = await fetch(`${getApiBase()}/agents/custom`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -4211,7 +4211,7 @@ export async function createUserAgent(body: {
   name: string; instructions?: string; connection_id?: string; schema_scope?: string;
   doc_ids?: string[]; pack_ids?: string[];
 }): Promise<UserAgent> {
-  const res = await fetch(`${BASE}/agents/custom`, {
+  const res = await fetch(`${getApiBase()}/agents/custom`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -4235,7 +4235,7 @@ export interface AgentTemplate {
 }
 
 export async function listAgentTemplates(): Promise<AgentTemplate[]> {
-  const res = await fetch(`${BASE}/agents/templates`);
+  const res = await fetch(`${getApiBase()}/agents/templates`);
   if (!res.ok) return [];
   return (await res.json()).templates ?? [];
 }
@@ -4243,7 +4243,7 @@ export async function listAgentTemplates(): Promise<AgentTemplate[]> {
 export async function createUserAgentFromTemplate(body: {
   pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
 }): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
-  const res = await fetch(`${BASE}/agents/custom/from-template`, {
+  const res = await fetch(`${getApiBase()}/agents/custom/from-template`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -4255,7 +4255,7 @@ export async function patchUserAgent(agentId: string, body: {
   name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
   doc_ids?: string[]; pack_ids?: string[]; enabled?: boolean;
 }): Promise<UserAgent> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -4264,7 +4264,7 @@ export async function patchUserAgent(agentId: string, body: {
 }
 
 export async function deleteUserAgent(agentId: string): Promise<boolean> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}`, {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "DELETE",
   });
   return res.ok;
@@ -4289,7 +4289,7 @@ export interface AgentEvalResult {
 }
 
 export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`);
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -4297,7 +4297,7 @@ export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> 
 export async function createAgentGolden(agentId: string, body: {
   question: string; reference_sql: string;
 }): Promise<AgentGolden> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens`, {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -4307,13 +4307,13 @@ export async function createAgentGolden(agentId: string, body: {
 
 export async function deleteAgentGolden(agentId: string, goldenId: string): Promise<boolean> {
   const res = await fetch(
-    `${BASE}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}`,
+    `${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}`,
     { method: "DELETE" });
   return res.ok;
 }
 
 export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResult> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/evaluate`, {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/evaluate`, {
     method: "POST",
   });
   if (!res.ok) throw new Error((await res.text()) || `evaluate failed (${res.status})`);
@@ -4367,7 +4367,7 @@ export interface AgentObservability {
 }
 
 export async function getAgentObservability(agentId: string): Promise<AgentObservability | null> {
-  const res = await fetch(`${BASE}/agents/custom/${encodeURIComponent(agentId)}/observability`);
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -4389,7 +4389,7 @@ export interface TrustedAssets {
 /** The Memory-layer headline (org-wide, or one connection). Null on failure — the panel degrades. */
 export async function getLearningSummary(connectionId?: string): Promise<LearningSummary | null> {
   const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
-  const res = await fetch(`${BASE}/learning/summary${q}`);
+  const res = await fetch(`${getApiBase()}/learning/summary${q}`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -4397,7 +4397,7 @@ export async function getLearningSummary(connectionId?: string): Promise<Learnin
 /** The trusted assets themselves — curated queries. */
 export async function getTrustedAssets(connectionId?: string): Promise<TrustedAssets | null> {
   const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
-  const res = await fetch(`${BASE}/learning/trusted${q}`);
+  const res = await fetch(`${getApiBase()}/learning/trusted${q}`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -4416,7 +4416,7 @@ export interface GroundingReceipt {
  *  affordance simply hides. Fetched lazily on demand: it runs real retrievers. */
 export async function getGroundingContext(connectionId: string, question: string): Promise<GroundingReceipt | null> {
   const qs = `?connection=${encodeURIComponent(connectionId)}&question=${encodeURIComponent(question)}`;
-  const res = await fetch(`${BASE}/ask/context${qs}`);
+  const res = await fetch(`${getApiBase()}/ask/context${qs}`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -4515,13 +4515,13 @@ export interface EvalEvaluator {
 }
 
 export async function getEvalSuites(): Promise<EvalSuite[]> {
-  const res = await fetch(`${BASE}/evals/suites`);
+  const res = await fetch(`${getApiBase()}/evals/suites`);
   if (!res.ok) throw new Error("Failed to fetch eval suites");
   return (await res.json()).suites;
 }
 
 export async function getEvalSuite(id: string): Promise<EvalSuite & { cases: EvalCase[] }> {
-  const res = await fetch(`${BASE}/evals/suites/${id}`);
+  const res = await fetch(`${getApiBase()}/evals/suites/${id}`);
   if (!res.ok) throw new Error("Failed to fetch suite");
   return res.json();
 }
@@ -4530,7 +4530,7 @@ export async function createEvalSuite(body: {
   name: string; description?: string; target?: string;
   connection_id?: string; config?: Record<string, unknown>;
 }): Promise<EvalSuite> {
-  const res = await fetch(`${BASE}/evals/suites`, {
+  const res = await fetch(`${getApiBase()}/evals/suites`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -4540,7 +4540,7 @@ export async function createEvalSuite(body: {
 }
 
 export async function deleteEvalSuite(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/evals/suites/${id}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/evals/suites/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete suite");
 }
 
@@ -4548,7 +4548,7 @@ export async function addEvalCases(
   suiteId: string,
   cases: Array<{ question?: string; artifact?: string; expected?: Record<string, unknown>; tags?: string[] }>,
 ): Promise<{ added: number }> {
-  const res = await fetch(`${BASE}/evals/suites/${suiteId}/cases`, {
+  const res = await fetch(`${getApiBase()}/evals/suites/${suiteId}/cases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cases }),
@@ -4558,7 +4558,7 @@ export async function addEvalCases(
 }
 
 export async function deleteEvalCase(caseId: string): Promise<void> {
-  const res = await fetch(`${BASE}/evals/cases/${caseId}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/evals/cases/${caseId}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete case");
 }
 
@@ -4566,7 +4566,7 @@ export async function runEvalSuite(
   suiteId: string,
   opts: { iterations?: number; evaluators?: string[] | null; persist?: boolean } = {},
 ): Promise<EvalRunSummary> {
-  const res = await fetch(`${BASE}/evals/suites/${suiteId}/run`, {
+  const res = await fetch(`${getApiBase()}/evals/suites/${suiteId}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -4589,19 +4589,19 @@ export async function getEvalRuns(suiteId?: string, limit = 50): Promise<EvalRun
   const qs = new URLSearchParams();
   if (suiteId) qs.set("suite_id", suiteId);
   qs.set("limit", String(limit));
-  const res = await fetch(`${BASE}/evals/runs?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/evals/runs?${qs.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch runs");
   return (await res.json()).runs;
 }
 
 export async function getEvalRun(runId: string): Promise<EvalRun & { results: EvalResult[] }> {
-  const res = await fetch(`${BASE}/evals/runs/${runId}`);
+  const res = await fetch(`${getApiBase()}/evals/runs/${runId}`);
   if (!res.ok) throw new Error("Failed to fetch run");
   return res.json();
 }
 
 export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; deterministic_count: number }> {
-  const res = await fetch(`${BASE}/evals/evaluators`);
+  const res = await fetch(`${getApiBase()}/evals/evaluators`);
   if (!res.ok) throw new Error("Failed to fetch evaluators");
   return res.json();
 }
@@ -4686,13 +4686,13 @@ export async function getTraces(params?: {
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.investigation_id) qs.set("investigation_id", params.investigation_id);
   if (params?.agent_id) qs.set("agent_id", params.agent_id);
-  const res = await fetch(`${BASE}/traces?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/traces?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch traces (${res.status})`);
   return res.json();
 }
 
 export async function getTrace(traceId: string): Promise<TraceDetail | null> {
-  const res = await fetch(`${BASE}/traces/${encodeURIComponent(traceId)}`);
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to fetch trace (${res.status})`);
   return res.json();
@@ -4712,7 +4712,7 @@ export async function getActivity(params?: {
   if (params?.errors_only) qs.set("errors_only", "true");
   if (params?.since_seq != null) qs.set("since_seq", String(params.since_seq));
   if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${BASE}/activity?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/activity?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
   return res.json();
 }
@@ -4783,7 +4783,7 @@ export async function getFleetOverview(params?: {
   const qs = new URLSearchParams();
   if (params?.window_minutes) qs.set("window_minutes", String(params.window_minutes));
   if (params?.spark_hours) qs.set("spark_hours", String(params.spark_hours));
-  const res = await fetch(`${BASE}/control-room/fleet?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/control-room/fleet?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch fleet overview (${res.status})`);
   return res.json();
 }
@@ -4806,7 +4806,7 @@ export interface NeedsHuman {
 }
 
 export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
-  const res = await fetch(`${BASE}/control-room/needs-human?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/control-room/needs-human?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch needs-human (${res.status})`);
   return res.json();
 }
@@ -4817,7 +4817,7 @@ export async function getAllAutomationRuns(params?: {
   const qs = new URLSearchParams();
   if (params?.conn_id) qs.set("conn_id", params.conn_id);
   if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${BASE}/automations/runs?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/automations/runs?${qs.toString()}`);
   if (res.status === 404) return []; // automations.engine off
   if (!res.ok) throw new Error(`Failed to fetch automation runs (${res.status})`);
   return (await res.json()).runs;
@@ -4844,7 +4844,7 @@ export interface InvestigationGraph {
 }
 
 export async function getInvestigationGraph(invId: string): Promise<InvestigationGraph | null> {
-  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/graph`);
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/graph`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to fetch investigation graph (${res.status})`);
   return res.json();
@@ -4864,7 +4864,7 @@ export async function getVerdicts(connectionId?: string, limit = 50): Promise<Fi
   const qs = new URLSearchParams();
   if (connectionId) qs.set("connection_id", connectionId);
   qs.set("limit", String(limit));
-  const res = await fetch(`${BASE}/verify/verdicts?${qs.toString()}`);
+  const res = await fetch(`${getApiBase()}/verify/verdicts?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch verdicts (${res.status})`);
   return res.json();
 }
@@ -4882,7 +4882,7 @@ export interface InvestigationListRow {
 }
 
 export async function getInvestigationsList(limit = 50): Promise<InvestigationListRow[]> {
-  const res = await fetch(`${BASE}/investigations?limit=${limit}`);
+  const res = await fetch(`${getApiBase()}/investigations?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch investigations (${res.status})`);
   return res.json();
 }

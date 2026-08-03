@@ -5,6 +5,7 @@ import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, setCapabilit
 import { Button } from "@/components/ui/button";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
+import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 
 function fmt(n: number | undefined | null): string {
@@ -63,6 +64,115 @@ function Section({ title, children }: SectionProps) {
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Which backend this browser talks to.
+ *
+ * The UI can be served from anywhere while the engine runs on the user's own machine, so
+ * the base URL is a per-browser setting rather than something baked into the build. The
+ * panel states where the current value came from, because "why is it reading the wrong
+ * data" is otherwise an invisible question.
+ */
+function Backend() {
+  const [draft, setDraft] = useState("");
+  const [effective, setEffective] = useState("");
+  const [source, setSource] = useState<string>("default");
+  const [probe, setProbe] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const sync = useCallback(() => {
+    const now = getApiBase();
+    setEffective(now);
+    setDraft(now);
+    setSource(getApiBaseSource());
+    setProbe(null);
+  }, []);
+
+  useEffect(() => { sync(); }, [sync]);
+
+  // Probe the URL the user TYPED, not the one in force — the whole point is to find out
+  // whether it works before committing the app to it.
+  const test = useCallback(async (url: string) => {
+    const clean = normalizeApiBase(url);
+    if (!clean) { setProbe({ ok: false, text: "Not a valid http(s) URL" }); return false; }
+    setBusy(true);
+    try {
+      const res = await fetch(`${clean}/health`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) { setProbe({ ok: false, text: `Reached it, but it answered ${res.status}` }); return false; }
+      const body = await res.json().catch(() => null);
+      setProbe({ ok: true, text: body?.status === "ok" ? "Connected" : "Reached it, but it is not an Aughor backend" });
+      return body?.status === "ok";
+    } catch {
+      // Most often: nothing listening, or the browser blocked it. Say both — a user on
+      // Safari hitting the mixed-content block would otherwise read this as "server down".
+      setProbe({ ok: false, text: "Could not reach it — is the backend running, and does it allow this origin?" });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const save = useCallback(async () => {
+    const clean = normalizeApiBase(draft);
+    if (!clean) { setProbe({ ok: false, text: "Not a valid http(s) URL" }); return; }
+    // Saved whether or not the probe succeeds: a user may legitimately point at a backend
+    // they are about to start. But never saved unparseable — the settings screen that would
+    // undo the mistake is itself reached through the app.
+    setApiBase(clean);
+    sync();
+    await test(clean);
+  }, [draft, sync, test]);
+
+  const reset = useCallback(() => { setApiBase(null); sync(); }, [sync]);
+
+  const dirty = normalizeApiBase(draft) !== effective;
+  const sourceLabel =
+    source === "user" ? "your setting (this browser)" :
+    source === "env" ? "NEXT_PUBLIC_API_URL at build time" :
+    "the built-in default";
+
+  return (
+    <Section title="Backend">
+      <div className="py-2">
+        <p className="aug-fs-xs text-zinc-500 mb-2">
+          Where this browser sends every request. Stored per browser — your data never leaves
+          the machine running the backend.
+        </p>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") void save(); }}
+            spellCheck={false}
+            placeholder={API_BASE_DEFAULT}
+            aria-label="Backend URL"
+            className="flex-1 bg-white/[0.04] rounded-[var(--r2)] px-2 py-1 aug-fs-xs
+                       text-zinc-200 outline-none focus:bg-white/[0.07]"
+          />
+          <Button size="xs" variant="secondary" disabled={busy || !dirty} onClick={() => void save()}>
+            {busy ? "checking…" : "Save"}
+          </Button>
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => void test(draft)}>
+            Test
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="aug-fs-xs text-zinc-500">
+            In force: <span className="text-zinc-300">{effective}</span> — from {sourceLabel}.
+          </span>
+          {source === "user" && (
+            <Button size="xs" variant="ghost" onClick={reset}>Reset to default</Button>
+          )}
+        </div>
+        {probe && (
+          <p className={`aug-fs-xs mt-1 ${probe.ok ? "text-emerald-400" : "text-amber-400"}`}>
+            {probe.text}
+          </p>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -136,6 +246,9 @@ export function SystemPanel() {
           {resetting ? "Resetting…" : "Reset counters"}
         </button>
       </div>
+
+      {/* Which backend this browser talks to */}
+      <Backend />
 
       {/* Capabilities — Auto-mode master + the self-gating guards (Wave 1 · E3) */}
       <Capabilities />
