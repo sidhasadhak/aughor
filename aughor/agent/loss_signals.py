@@ -49,6 +49,28 @@ CAPACITY_RE = re.compile(
     r"\b([a-z0-9_]*(?:total_seats|capacity|occupancy|utilization|utilisation"
     r"|load_factor|slots_available)[a-z0-9_]*)\b", re.I)
 
+# A DIRECT loss measure — profit/margin/cost, the thing a "losing money" question is
+# literally about. Contra-revenue and capacity are PROXIES for it; when the real measure
+# is present in the schema the proxies are contributing factors, not substitutes.
+#
+# Found live 2026-08-03 on Tableau Superstore, which has a `profit` column: the directive
+# asserted "without cost data profit is NOT computable", the intake dutifully chose
+# `realized discount leakage rate` instead, and the report abstained — "no profit, cost,
+# or margin measure was tested" — on a question whose answer was one GROUP BY away
+# (-$31,001.78 across 247 discounted rows vs +$13,276.30 across 72 at full price). The
+# same question reworded to name profit answered it correctly, which is what proved the
+# steer rather than a capability limit was at fault.
+#
+# `gross_profit`, `net_margin`, `unit_cost` and `cogs` all match. `cost` counts because
+# the clause this replaces justified itself on cost specifically ("without cost data profit
+# is NOT computable") — so a cost column is precisely what falsifies that premise.
+# `profit_center`, `cost_type`, `margin_id` do NOT match: a dimension named after a measure
+# is not a measure of it, and treating one as such would tell the intake to aggregate a
+# label.
+DIRECT_LOSS_MEASURE_RE = re.compile(
+    r"\b([a-z0-9_]*(?:profit|margin|cogs|cost|net_?income|earnings)"
+    r"(?:_amount|_usd|_eur|_total|_pct|_rate)?)\b(?!_(?:center|centre|id|code|name|type))", re.I)
+
 # Lifecycle/status columns — whether a unit actually consumed (or offered) capacity.
 # Anchored on word parts so `real_estate` doesn't read as a state column.
 LIFECYCLE_COL_RE = re.compile(r"(^|_)(status|state|lifecycle)($|_)", re.I)
@@ -152,13 +174,14 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
     schema_text = strip_value_samples(schema_text or "")
     contra = sorted({m.group(1).lower() for m in CONTRA_REVENUE_RE.finditer(schema_text or "")})
     capacity = sorted({m.group(1).lower() for m in CAPACITY_RE.finditer(schema_text or "")})
-    if not contra and not capacity:
+    direct = sorted({m.group(1).lower() for m in DIRECT_LOSS_MEASURE_RE.finditer(schema_text or "")})
+    if not contra and not capacity and not direct:
         return None
     # Qualified, because the lifecycle rule filters a specific table at its own grain.
     lifecycle = sorted({f"{t}.{c}" for t, c in _table_columns(schema_text)
                         if LIFECYCLE_COL_RE.search(c)})
     return {"contra_revenue": contra[:12], "capacity": capacity[:8],
-            "lifecycle": lifecycle[:4]}
+            "lifecycle": lifecycle[:4], "direct_measure": direct[:6]}
 
 
 # ── Leakage direction ─────────────────────────────────────────────────────────
@@ -458,10 +481,26 @@ def directive_from_signals(sig: dict | None) -> str:
     if not sig:
         return ""
     lines = ["LOSS-SIGNAL DIRECTIVE (deterministic scan of THIS schema — these columns exist):"]
+    direct = sig.get("direct_measure") or []
+    if direct:
+        lines.append(f"  DIRECT loss measures: {', '.join(direct)}.")
     if sig.get("contra_revenue"):
         lines.append(f"  Contra-revenue signals: {', '.join(sig['contra_revenue'])}.")
     if sig.get("capacity"):
         lines.append(f"  Capacity/utilization signals: {', '.join(sig['capacity'])}.")
+    if direct:
+        # The schema carries the measure the question is literally about, so the proxies
+        # are contributing factors rather than stand-ins. Stating this FIRST matters: the
+        # ranked list below is read as a priority order, and a proxy listed above the real
+        # measure is how a "why is X losing money" question gets answered with a discount
+        # rate and then abstains for want of a profit measure that was there all along.
+        lines.append(
+            f"  This schema HAS a direct loss measure ({', '.join(direct)}). Test it FIRST "
+            "and make it the reported metric: aggregate it per segment and by the "
+            "contra-revenue dimensions below, so the answer states where money is "
+            "actually lost and how much. Leakage and utilization are then CONTRIBUTING "
+            "FACTORS explaining that loss — never substitutes for measuring it. Do NOT "
+            "report that profit or margin could not be computed while these columns exist.")
     lines.append(
         "  A 'losing money' / 'where can we do better' question is NOT a revenue ranking "
         "— segment revenue is never "
@@ -473,10 +512,15 @@ def directive_from_signals(sig: dict | None) -> str:
         "the share of fares that are merely refundABLE; "
         "(2) UTILIZATION — sold units vs capacity per segment, and the gap to the best "
         "segment as units × revenue-per-unit, when capacity columns exist; "
-        "(3) the below-benchmark revenue ranking is CONTEXT, never the whole answer. "
-        "HONESTY: without cost data profit is NOT computable — never conclude segments are "
-        "'profitable' or that there are 'no losses'; quantify leakage and utilization "
-        "opportunity, or state plainly that only revenue was measurable.")
+        "(3) the below-benchmark revenue ranking is CONTEXT, never the whole answer. ")
+    if not direct:
+        # Only true when the scan found no profit/margin/cost column. Asserted
+        # unconditionally it becomes a false premise that suppresses the real answer.
+        lines.append(
+            "  HONESTY: this schema carries NO profit, margin or cost column, so profit is "
+            "NOT computable here — never conclude segments are 'profitable' or that there "
+            "are 'no losses'; quantify leakage and utilization opportunity, or state "
+            "plainly that only revenue was measurable.")
     return "\n".join(lines) + "\n"
 
 def loss_signal_directive(question: str, schema_text: str) -> str:

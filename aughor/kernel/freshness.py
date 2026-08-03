@@ -282,7 +282,10 @@ class LogicVersionSpec:
         return getattr(import_module(self.module), self.attr)
 
 
-#: The six ad-hoc encodings of "my logic changed, recompute", in one place. Values are
+#: Every ad-hoc encoding of "my logic changed, recompute", in one place. (It said "six"
+#: while holding nine — a count in prose goes stale the first time someone appends, and
+#: the ratchet below already asserts completeness, so the number is not restated here.)
+#: Values are
 #: NOT changed here — changing one would trigger the very rebuild storm V1 exists to
 #: avoid. This is an inventory, not a migration.
 LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
@@ -307,6 +310,10 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
         LogicVersionSpec("briefing", "aughor.knowledge.briefing", "BRIEFING_LOGIC_VERSION",
                          "the narrative's shape; bumping it regenerates cached briefs whose "
                          "source data never moved (Wave V2's logic half)."),
+        LogicVersionSpec("demo_pack", "aughor.demo.pack", "PACK_VERSION",
+                         "the frozen-intelligence pack envelope; a reader refuses a pack "
+                         "newer than it understands rather than mis-reading it. Sibling of "
+                         "graph_pack and ontology_bundle, which make the same promise."),
     )
 }
 
