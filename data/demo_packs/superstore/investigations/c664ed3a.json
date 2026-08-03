@@ -1,0 +1,40 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T13:45:57.839154+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Most profitable region by total profit.",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "c664ed3a",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "Which region is the most profitable?",
+  "report": {
+    "approach": [
+      "Sum profit for each region.",
+      "Rank regions from highest to lowest total profit.",
+      "Return every region tied for first place."
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "region"
+    ],
+    "headline": "Most profitable region by total profit.",
+    "insight": null,
+    "intent": "You want to see which region has the highest total profit.",
+    "overview_report": null,
+    "rows": [
+      [
+        "West"
+      ]
+    ],
+    "sql": "WITH ranked AS (SELECT region, RANK() OVER (ORDER BY SUM(profit) DESC) AS rnk FROM orders GROUP BY region) SELECT region FROM ranked WHERE rnk = 1",
+    "tables_used": [
+      "orders"
+    ]
+  },
+  "started_at": "2026-08-03T13:45:57.839154+00:00",
+  "status": "complete"
+}

@@ -1,0 +1,58 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T17:24:15.670491+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Total profit by product category",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "33db0df9",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "What is total profit by category?",
+  "report": {
+    "approach": [
+      "Group order lines by product category.",
+      "Sum profit within each category.",
+      "Round total profit to two decimal places.",
+      "Sort categories from highest to lowest profit."
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "category",
+      "total_profit"
+    ],
+    "headline": "Total profit by product category",
+    "insight": {
+      "anomalies": [
+        "Furniture's total profit of **18451.27** is markedly below the other categories."
+      ],
+      "confidence": "High",
+      "narrative": "Technology leads total profit at **145454.95**, followed by Office Supplies at **122490.8**, while Furniture trails sharply at **18451.27**. Furniture is the clear low-profit outlier; profitability is concentrated in Technology and Office Supplies, with high confidence based on the complete three-category ranking.",
+      "trend": "Profit declines from Technology to Office Supplies to Furniture, with a steep drop for Furniture."
+    },
+    "intent": "You want to see how total profit compares across product categories.",
+    "overview_report": null,
+    "rows": [
+      [
+        "Technology",
+        "145454.95"
+      ],
+      [
+        "Office Supplies",
+        "122490.8"
+      ],
+      [
+        "Furniture",
+        "18451.27"
+      ]
+    ],
+    "sql": "SELECT category, ROUND(SUM(profit), 2) AS total_profit FROM orders GROUP BY category ORDER BY total_profit DESC",
+    "tables_used": [
+      "orders"
+    ]
+  },
+  "started_at": "2026-08-03T17:24:15.670491+00:00",
+  "status": "complete"
+}

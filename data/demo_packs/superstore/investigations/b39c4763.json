@@ -1,0 +1,93 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T13:45:47.498384+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Average profit by discount level",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "b39c4763",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "How does discount level affect profit?",
+  "report": {
+    "approach": [
+      "Group order lines by their discount level.",
+      "Calculate average profit within each discount level.",
+      "Sort results by discount level for comparison."
+    ],
+    "chart_type": "scatter",
+    "columns": [
+      "discount_level",
+      "average_profit"
+    ],
+    "headline": "Average profit by discount level",
+    "insight": {
+      "anomalies": [
+        "Average profit rebounds sharply from **-310.70** at **0.50** to **-43.08** at **0.60**."
+      ],
+      "confidence": "Moderate, based on average profit by discount level in the provided results sample.",
+      "narrative": "Average profit is positive through a **0.20** discount, peaking at **96.06** at **0.10**, then turns negative at **0.30** (**-45.68**) and remains negative at higher discounts. The clearest anomaly is the sharp rebound to **-43.08** at **0.60** after **-310.70** at **0.50**; overall, deeper discounts are associated with lower profit, with moderate confidence.",
+      "trend": "Profit generally declines as discount levels increase, becoming negative from **0.30** onward."
+    },
+    "intent": "You want to see how average profit varies across discount levels.",
+    "overview_report": null,
+    "rows": [
+      [
+        "0.0",
+        "66.9"
+      ],
+      [
+        "0.1",
+        "96.06"
+      ],
+      [
+        "0.15",
+        "27.29"
+      ],
+      [
+        "0.2",
+        "24.7"
+      ],
+      [
+        "0.3",
+        "-45.68"
+      ],
+      [
+        "0.32",
+        "-88.56"
+      ],
+      [
+        "0.4",
+        "-111.93"
+      ],
+      [
+        "0.45",
+        "-226.65"
+      ],
+      [
+        "0.5",
+        "-310.7"
+      ],
+      [
+        "0.6",
+        "-43.08"
+      ],
+      [
+        "0.7",
+        "-95.87"
+      ],
+      [
+        "0.8",
+        "-101.8"
+      ]
+    ],
+    "sql": "SELECT ROUND(discount, 2) AS discount_level, ROUND(AVG(profit), 2) AS average_profit FROM orders GROUP BY discount ORDER BY discount_level",
+    "tables_used": [
+      "orders"
+    ]
+  },
+  "started_at": "2026-08-03T13:45:47.498384+00:00",
+  "status": "complete"
+}

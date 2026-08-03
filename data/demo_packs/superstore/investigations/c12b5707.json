@@ -1,0 +1,277 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T17:51:25.788748+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Discounted Tables are loss-making; the 0.40 discount level is the largest loss concentration.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "c12b5707",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Analyse Tables sub-category profit by discount level \u2014 is discounting driving the loss?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "The immediate commercial risk is concentrated in discounted Tables, especially the 0.40 discount level. Pause or tightly govern these discount levels while validating whether pricing, product cost, order mix, or another unobserved factor creates the losses.",
+    "comparison_basis": "",
+    "confidence": "MEDIUM",
+    "confidence_justification": "The discounted versus non-discounted contrast is large and consistent with the exact-discount results: every record at 0.40 and 0.50 is loss-making. Confidence is not HIGH because the analysis is cross-sectional and contains no product cost, sales, quantity, promotion, or order-level mix controls to establish causality or fully attribute the loss.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Product identifier and product-level cost data are needed to test whether specific Tables products or unit economics explain the losses.",
+      "Sales, quantity, and unit-price fields are needed to separate discount depth from order value and volume effects.",
+      "Promotion or campaign identifiers linked to orders are needed to determine which discount programs generated the loss-making lines.",
+      "Order-level customer, geography, shipping, and fulfillment-cost fields are needed to control for mix and delivery-cost differences between discounted and non-discounted Tables.",
+      "Inventory, clearance status, and sell-through data are needed to assess whether loss-making discounts served a measured inventory objective.",
+      "Temporal order-date data is needed to test whether the loss pattern is persistent, campaign-specific, or transient."
+    ],
+    "executive_summary": "Discounting is strongly associated with Tables losses, but this cross-sectional evidence does not prove that discounting alone causes them. Discounted Tables generated **-$31,001.78** profit across **247** records, versus **+$13,276.30** across **72** non-discounted records. At discount **0.40**, all **75** records were loss-making and generated **-$16,187.40** profit, the largest exact-discount loss concentration. Discount **0.50** was also uniformly loss-making across **36** records, with **-$8,615.39** profit.",
+    "headline": "Discounted Tables are loss-making; the 0.40 discount level is the largest loss concentration.",
+    "metric": "profit",
+    "metric_definition": "profit \u2014 computed as `SUM(profit)`; on orders; over data spanning 2015-01-03 \u2192 2018-12-30.",
+    "observation_period": "2015-01-03 \u2192 2018-12-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "segment",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_0",
+            "interpretation": "Discounted Tables are the lowest segment at **-$31,001.78** total profit across 247 records, versus +$13,276.30 across 72 non-discounted records. The total and per-record lenses agree: discounted orders average -$125.51 per record versus +$184.39 without a discount, indicating that discounting is driving the net Tables loss.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "247 records",
+                "delta": null,
+                "label": "Discounted (True) total profit",
+                "value": "-$31,001.78"
+              },
+              {
+                "context": "vs +$184.39 for non-discounted records",
+                "delta": null,
+                "label": "Discounted (True) average profit per record",
+                "value": "-$125.51"
+              },
+              {
+                "context": "72 records",
+                "delta": null,
+                "label": "Non-discounted (False) total profit",
+                "value": "+$13,276.30"
+              }
+            ],
+            "row_count": 2,
+            "rows": [
+              [
+                "False",
+                "13276.299699999992",
+                "72",
+                "184.39"
+              ],
+              [
+                "True",
+                "-31001.780800000022",
+                "247",
+                "-125.51"
+              ]
+            ],
+            "sql": "SELECT (orders.discount > 0) AS segment, SUM(orders.profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(orders.profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record FROM orders WHERE orders.sub_category = 'Tables' GROUP BY 1 ORDER BY 1",
+            "stat_note": "Discounted profit is $44,278.08 lower in total than non-discounted profit.",
+            "title": "By segment",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "discount",
+              "profit",
+              "records",
+              "profit per record",
+              "loss_line_count"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc",
+              "ref_lines": [
+                {
+                  "kind": "global_avg",
+                  "label": "Avg (all segments)",
+                  "value": -55.56821316614423
+                }
+              ]
+            },
+            "finding_id": "xsec_1",
+            "interpretation": "Among the discount levels shown, 0.40 is lowest at **-$16,187.40** total profit; it represents 52.2% of the $31,001.78 discounted loss and all 75 records lose money. The lowest average is at 0.50 (-$239.32 per record), slightly worse than 0.45 (-$226.65) and 0.40 (-$215.83), so 0.40 drives the largest loss through volume while 0.50 is least efficient per record.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "75 records; 100.0% loss-making",
+                "delta": null,
+                "label": "0.40 discount total profit",
+                "value": "-$16,187.40"
+              },
+              {
+                "context": "lowest average; total profit -$8,615.39 across 36 records",
+                "delta": null,
+                "label": "0.50 discount average profit per record",
+                "value": "-$239.32"
+              },
+              {
+                "context": "total profit +$13,276.30; 0.0% loss-making",
+                "delta": null,
+                "label": "0.00 discount average profit per record",
+                "value": "+$184.39"
+              }
+            ],
+            "row_count": 6,
+            "rows": [
+              [
+                "0.4",
+                "-16187.396800000002",
+                "75",
+                "-215.83",
+                "75"
+              ],
+              [
+                "0.5",
+                "-8615.3873",
+                "36",
+                "-239.32",
+                "36"
+              ],
+              [
+                "0.3",
+                "-3402.3276000000005",
+                "54",
+                "-63.01",
+                "50"
+              ],
+              [
+                "0.45",
+                "-2493.1111",
+                "11",
+                "-226.65",
+                "11"
+              ],
+              [
+                "0.2",
+                "-303.5580000000001",
+                "71",
+                "-4.28",
+                "31"
+              ],
+              [
+                "0.0",
+                "13276.299699999992",
+                "72",
+                "184.39",
+                "0"
+              ]
+            ],
+            "sql": "SELECT orders.discount AS discount, SUM(orders.profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(orders.profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(orders.profit) / NULLIF(SUM(SUM(orders.profit)) OVER (), 0), 1) AS pct_of_total, SUM(CASE WHEN orders.profit < 0 THEN 1 ELSE 0 END) AS loss_line_count, ROUND(100.0 * SUM(CASE WHEN orders.profit < 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) AS loss_line_pct FROM orders WHERE orders.sub_category = 'Tables' GROUP BY 1 ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "All shown discount levels of 0.30 or higher have negative total profit and at least 92.6% loss-making records; the 0.20 level is near break-even at -$4.28 per record.",
+            "title": "Tables Profit by Exact Discount Level",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "**$16,187.40** of Tables loss is concentrated at the 0.40 discount level, where every one of 75 records is loss-making."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "This is a driver/relationship question: assess SUM(profit) across discount levels, with a primary contrast between discounted and non-discounted order lines, rather than as a time trend. The requested Tables sub-category should be applied as a drill-down/filter using orders.sub_category = 'Tables'; discount itself should be used as the analysis grouping variable, despite being numeric rather than listed as a categorical dimension. No PROFILE CONTEXT date range or completeness information was supplied, so exact full-data observation dates and valid PoP/YoY windows are unknowable from the schema; date fields are left blank rather than inventing dates. There is no transaction-status column in orders, so no status filter is applied.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "profit (SUM(profit))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "orders"
+              ],
+              [
+                "Dimensions",
+                "orders.ship_mode, orders.segment, orders.country, orders.city, orders.state, orders.region, orders.category, orders.sub_category"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning profit across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Immediately review and restrict the **0.40 discount level** for Tables until a profitability guardrail is approved. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Targets the largest observed loss concentration of **-$16,187.40** across **75** records.",
+        "owner": "Merchandising and Pricing",
+        "timeline": "Immediate"
+      },
+      {
+        "action": "Review the **0.50 discount level** for Tables and require margin approval before further use. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Targets **-$8,615.39** of observed loss across **36** records, all of which are loss-making.",
+        "owner": "Merchandising and Pricing",
+        "timeline": "Immediate"
+      },
+      {
+        "action": "Establish a **Tables discount-profitability audit** by product and order line before reinstating restricted discount levels. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Will determine whether the observed discounted loss pattern is attributable to discount depth, product cost, sales mix, quantity, or another factor.",
+        "owner": "Finance Analytics and Merchandising",
+        "timeline": "Next pricing review"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-03T17:48:51.404079+00:00",
+  "status": "complete"
+}
