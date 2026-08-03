@@ -314,6 +314,10 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
                          "the frozen-intelligence pack envelope; a reader refuses a pack "
                          "newer than it understands rather than mis-reading it. Sibling of "
                          "graph_pack and ontology_bundle, which make the same promise."),
+        LogicVersionSpec("demo_recording", "aughor.demo.record_api", "RECORDING_VERSION",
+                         "the frozen API-response recording the hosted demo serves; the "
+                         "route handler refuses a recording newer than it understands "
+                         "rather than answering from a format it cannot read."),
     )
 }
 
