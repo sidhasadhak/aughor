@@ -6,9 +6,12 @@ import {
   CGNode,
   CGStaleness,
   GraphAudit,
+  GraphReview,
+  GraphReviewItem,
   getConnectionGraph,
   getConnectionTour,
   getGraphAudit,
+  getGraphReview,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
@@ -49,7 +52,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
   const [view, setView] = useState<View>({ level: "domains" });
   // Map = the node-link canvas (default — a knowledge graph should look like one);
   // Explore = the C4 anti-hairball card drill-down; Tour = the C5 topology walk.
-  const [mode, setMode] = useState<"map" | "cards" | "tour">("map");
+  const [mode, setMode] = useState<"map" | "cards" | "tour" | "review">("map");
   // Wave C5 — the topology-ordered tour, lazily fetched on first open.
   const [tour, setTour] = useState<ConnectionTour | null>(null);
   const [tourError, setTourError] = useState<string | null>(null);
@@ -57,6 +60,9 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
   // chip does not cover). A second call because it costs an in-memory re-projection; the
   // graph renders whether or not it arrives.
   const [audit, setAudit] = useState<GraphAudit | null>(null);
+  // Wave P5 — what the graph knows it cannot vouch for, fetched with the graph so the tab
+  // can carry its count without a second click to discover there is nothing to do.
+  const [review, setReview] = useState<GraphReview | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,12 +70,14 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
     setTour(null);
     setTourError(null);
     setAudit(null);
+    setReview(null);
     setMode("map");
     getConnectionGraph(connectionId, schema)
       .then((g) => { setGraph(g); setView({ level: "domains" }); })
       .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
       .finally(() => setLoading(false));
     getGraphAudit(connectionId, schema).then(setAudit).catch(() => setAudit(null));
+    getGraphReview(connectionId, schema).then(setReview).catch(() => setReview(null));
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
@@ -145,6 +153,10 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                 style={{ fontSize: 12, color: mode === "cards" ? "var(--t1)" : "var(--t3)" }}>Explore</Button>
         <Button variant="ghost" onClick={openTour}
                 style={{ fontSize: 12, color: mode === "tour" ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
+        <Button variant="ghost" onClick={() => setMode("review")}
+                style={{ fontSize: 12, color: mode === "review" ? "var(--t1)" : "var(--t3)" }}>
+          Review{review && review.total > 0 ? ` · ${review.total}` : ""}
+        </Button>
         <Button variant="ghost" onClick={load} style={{ color: "var(--t3)", fontSize: 12 }}>↻ Refresh</Button>
       </div>
 
@@ -171,7 +183,12 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
           </>
         )}
 
-        {!loading && !error && graph && mode !== "map" && (mode === "tour" ? (
+        {!loading && !error && graph && mode === "review" && (
+          <ReviewView review={review} onAsk={onInvestigate}
+                      onOpenTable={(id) => { setMode("cards"); setView({ level: "detail", tableId: id }); }} />
+        )}
+
+        {!loading && !error && graph && mode !== "map" && mode !== "review" && (mode === "tour" ? (
           <TourView tour={tour} error={tourError} />
         ) : (
           <>
@@ -308,6 +325,89 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
           </>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Wave P5 — the review queue: what the graph knows it cannot vouch for, before anyone
+// asks a question. Every item names what is in doubt, why it matters in consequences
+// rather than mechanism, and the one check that would settle it.
+const REVIEW_HUE: Record<GraphReviewItem["type"], ChipHue> = {
+  graph_behind: "caution",
+  unprobed_join: "caution",
+  contested_finding: "accent",
+  ungrounded_finding: "muted",
+  undocumented_hub: "info",
+  isolated_table: "muted",
+};
+const REVIEW_LABEL: Record<GraphReviewItem["type"], string> = {
+  graph_behind: "Graph is behind",
+  unprobed_join: "Unprobed join",
+  contested_finding: "Contested",
+  ungrounded_finding: "Ungrounded",
+  undocumented_hub: "Undocumented hub",
+  isolated_table: "Isolated",
+};
+const CHECK_LABEL: Record<GraphReviewItem["check"], string> = {
+  probe_join: "Measure this join",
+  ask: "Ask about it",
+  review_finding: "Settle this",
+  define: "Define it",
+  rebuild: "Rebuild the graph",
+};
+
+function ReviewView({ review, onAsk, onOpenTable }: {
+  review: GraphReview | null;
+  onAsk?: (q: string) => void;
+  onOpenTable?: (tableId: string) => void;
+}) {
+  if (!review) return <p style={{ color: "var(--t3)", fontSize: 13 }}>Checking the graph…</p>;
+  if (review.total === 0) {
+    return (
+      <p style={{ color: "var(--t3)", fontSize: 13, maxWidth: 620 }}>
+        Nothing to review. Every join in this graph has been measured, every table is
+        connected and defined, and no finding is contested.
+      </p>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 760 }}>
+      <p style={{ color: "var(--t3)", fontSize: 12 }}>
+        {review.total} thing{review.total !== 1 ? "s" : ""} this graph cannot vouch for,
+        most consequential first — ranked by how much depends on each, never by a guessed
+        severity.
+      </p>
+      {review.items.map((it) => (
+        <div key={it.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <StatusChip hue={REVIEW_HUE[it.type]} strength="soft">{REVIEW_LABEL[it.type]}</StatusChip>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{it.question}</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--t3)" }}>{it.why}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Every check routes to something that already exists — the Ask surface for
+                the ones a question settles, the entity page for the ones a human reads.
+                An item whose check has no home would be a to-do list, not a queue. */}
+            {onAsk && (it.check === "ask" || it.check === "probe_join" || it.check === "define") && (
+              <Button variant="ghost" onClick={() => onAsk(it.question)}
+                      style={{ fontSize: 12, padding: 0, color: "var(--t2)" }}>
+                {CHECK_LABEL[it.check]} →
+              </Button>
+            )}
+            {onOpenTable && it.subject_id.startsWith("table:") && (
+              <Button variant="ghost" onClick={() => onOpenTable(it.subject_id)}
+                      style={{ fontSize: 12, padding: 0, color: "var(--t3)" }}>
+                Open {it.subject_label}
+              </Button>
+            )}
+            {it.depends > 0 && (
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+                {formatCount(it.depends)} thing{it.depends !== 1 ? "s" : ""} depend on this
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -348,6 +348,41 @@ def get_graph_content_drift(
     return {"connection_id": connection_id, **drift.to_dict()}
 
 
+@router.get("/graph/review")
+def get_context_graph_review(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Wave P5 — what the graph knows it cannot vouch for.
+
+    The proactive half of "check every node": rather than waiting for a question and
+    explaining it afterwards, the graph reports the nodes worth checking BEFORE one is
+    asked — unprobed joins, isolated tables, findings that disagree, undocumented hubs.
+
+    Deterministic and LLM-free. Ranked by how many other nodes depend on the thing in
+    doubt, never by an invented severity score.
+    """
+    from aughor.ontology.graph_questions import queue_summary, review_queue
+    from aughor.org.context import current_org_id
+
+    cg = _load_graph_or_404(connection_id, schema_name)
+    drift = None
+    try:
+        from aughor.ontology.graph_freshness import content_drift
+        drift = content_drift(connection_id, cg.schema_name or schema_name,
+                              org_id=current_org_id()).to_dict()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "drift is one input to the review queue; the structural checks still run",
+                 counter="context_graph.review_drift")
+
+    items = review_queue(cg, drift=drift, limit=limit)
+    return {"connection_id": connection_id, "schema_name": cg.schema_name,
+            "graph_version": cg.version,
+            "items": [i.to_dict() for i in items], **queue_summary(items)}
+
+
 @router.get("/graph/tour")
 def get_context_graph_tour(
     connection_id: str = BUILTIN_ID,

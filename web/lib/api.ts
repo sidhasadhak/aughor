@@ -1145,6 +1145,42 @@ export async function getGraphAudit(connectionId: string, schemaName?: string): 
   return res.json();
 }
 
+// ── The graph's review queue (Wave P5 — GET /graph/review) ────────────────────
+
+export type CGCheckKind = "probe_join" | "ask" | "review_finding" | "define" | "rebuild";
+export interface GraphReviewItem {
+  id: string;
+  type: "graph_behind" | "unprobed_join" | "contested_finding" | "ungrounded_finding"
+      | "undocumented_hub" | "isolated_table";
+  question: string;
+  why: string;
+  subject_id: string;
+  subject_label: string;
+  check: CGCheckKind;
+  /** How many other nodes depend on the thing in doubt — the ranking key, shown so the
+   *  reader can see why an item is near the top. Never an invented severity score. */
+  depends: number;
+  detail: Record<string, unknown>;
+}
+export interface GraphReview {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  items: GraphReviewItem[];
+  total: number;
+  by_type: Record<string, number>;
+}
+
+/** What the graph knows it cannot vouch for — deterministic, ranked by consequence. */
+export async function getGraphReview(connectionId: string, schemaName?: string): Promise<GraphReview> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/review?${q}`);
+  if (!res.ok) throw new Error("Graph review not available");
+  return res.json();
+}
+
 // ── The connection tour (Wave C5 — GET /graph/tour) ───────────────────────────
 
 export interface TourStep {

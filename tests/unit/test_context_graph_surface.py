@@ -90,3 +90,33 @@ def test_graph_audit_reports_the_warrant_mix_with_both_freshness_axes(monkeypatc
     # both freshness axes travel with the mix; neither may be silently omitted
     assert "staleness" in out
     assert "drift" in out
+
+
+def test_graph_review_route_serves_the_queue(monkeypatch, tmp_path):
+    """Wave P5 — the fixture graph has a fully-measured join, so the queue is about what
+    is genuinely open, not manufactured work."""
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    g = _graph()
+    # An unprobed name-matched join: the item the queue exists to surface.
+    from aughor.ontology.context_graph import GraphEdge, GraphNode, Provenance
+    g.add_node(GraphNode(id="table:Product", kind="table", label="Product",
+                         summary="things sold",
+                         provenance=Provenance(source="ontology.entity"),
+                         data={"source_tables": ["products"]}))
+    g.add_edge(GraphEdge(id="table:Order--joins_on-->table:Product", kind="joins_on",
+                         from_id="table:Order", to_id="table:Product",
+                         provenance=Provenance(source="join_guard",
+                                               note="unprobed join_confidence=inferred")))
+    store.save_graph(g)
+
+    from aughor.routers.ontology import get_context_graph_review
+    out = get_context_graph_review("c", "main")
+
+    assert out["total"] >= 1
+    kinds = {i["type"] for i in out["items"]}
+    assert "unprobed_join" in kinds
+    item = next(i for i in out["items"] if i["type"] == "unprobed_join")
+    assert item["check"] == "probe_join"
+    assert item["question"] and item["why"]        # every item states both
+    assert out["by_type"]["unprobed_join"] >= 1

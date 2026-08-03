@@ -3762,6 +3762,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Review
+         * @description Wave P5 — what the graph knows it cannot vouch for.
+         *
+         *     The proactive half of "check every node": rather than waiting for a question and
+         *     explaining it afterwards, the graph reports the nodes worth checking BEFORE one is
+         *     asked — unprobed joins, isolated tables, findings that disagree, undocumented hubs.
+         *
+         *     Deterministic and LLM-free. Ranked by how many other nodes depend on the thing in
+         *     doubt, never by an invented severity score.
+         */
+        get: operations["get_context_graph_review_graph_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph/tour": {
         parameters: {
             query?: never;
@@ -16901,6 +16928,39 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_review_graph_review_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                limit?: number;
             };
             header?: never;
             path?: never;
