@@ -1,0 +1,1529 @@
+{
+  "counts": {
+    "brief": 1,
+    "domain": 2,
+    "edges": 39,
+    "finding": 19,
+    "glossary_term": 25,
+    "metric": 2,
+    "table": 3
+  },
+  "edges": [
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:pinned__1",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:pinned__1"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:pinned__2",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:pinned__2"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:pinned__4",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:pinned__4"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:synth__concentration__0",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:synth__concentration__0"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:synth__confound__1",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:synth__confound__1"
+    },
+    {
+      "from_id": "brief:8d36d4c2",
+      "id": "brief:8d36d4c2--derived_from-->finding:synth__share__4",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:synth__share__4"
+    },
+    {
+      "from_id": "finding:085c5d51d06c",
+      "id": "finding:085c5d51d06c--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:59cfadcd93fa",
+      "id": "finding:59cfadcd93fa--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:739a2cbcf9f5",
+      "id": "finding:739a2cbcf9f5--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:8266be2e7494",
+      "id": "finding:8266be2e7494--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:8266be2e7494",
+      "id": "finding:8266be2e7494--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:92c968cc4ac9",
+      "id": "finding:92c968cc4ac9--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6",
+      "id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6",
+      "id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6",
+      "id": "finding:Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6--grounded_in-->table:RegionalManager",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:RegionalManager"
+    },
+    {
+      "from_id": "finding:e1bd39ba88ee",
+      "id": "finding:e1bd39ba88ee--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__0",
+      "id": "finding:pinned__0--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__1",
+      "id": "finding:pinned__1--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__2",
+      "id": "finding:pinned__2--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__3",
+      "id": "finding:pinned__3--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__3",
+      "id": "finding:pinned__3--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:pinned__4",
+      "id": "finding:pinned__4--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__4",
+      "id": "finding:pinned__4--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:pinned__5",
+      "id": "finding:pinned__5--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__5",
+      "id": "finding:pinned__5--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__concentration__0",
+      "id": "finding:synth__concentration__0--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:synth__concentration__0",
+      "id": "finding:synth__concentration__0--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__confound__1",
+      "id": "finding:synth__confound__1--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:synth__confound__1",
+      "id": "finding:synth__confound__1--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__share__2",
+      "id": "finding:synth__share__2--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:synth__share__2",
+      "id": "finding:synth__share__2--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__share__3",
+      "id": "finding:synth__share__3--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:synth__share__3",
+      "id": "finding:synth__share__3--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__share__4",
+      "id": "finding:synth__share__4--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "metric:aov",
+      "id": "metric:aov--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "metric:revenue",
+      "id": "metric:revenue--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "table:Order",
+      "id": "table:Order--joins_on-->table:Return",
+      "kind": "joins_on",
+      "label": "has return",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Return"
+    }
+  ],
+  "exported_at": "2026-08-03T21:30:30.273344+00:00",
+  "format": 1,
+  "freshness": {
+    "degraded": true,
+    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Aughor could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
+    "reason": "",
+    "state": "unknown"
+  },
+  "generator": "aughor",
+  "nodes": [
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:23:47.120747+00:00",
+        "scope": "8d36d4c2",
+        "theme": "Basket Growth Meets Return Risk"
+      },
+      "id": "brief:8d36d4c2",
+      "kind": "brief",
+      "label": "Basket Growth Meets Return Risk",
+      "provenance": {
+        "measured": null,
+        "note": "synthesis of 8 cited findings",
+        "source": "briefing"
+      },
+      "summary": "Superstore\u2019s clearest growth lever is larger baskets: in the March 2015 surge, average order value rose from $321.95 to $2,217.86 while units per order increased from 7.46 to 12.41, showing customers bought more items and higher-value items at the same time [1]. This is strategically important because the broader business has sustained expansion\u2014annual sales rose from $484.2k in 2015 to $733.2k in 2018 while activity grew from 2.0k to 3.3k orders\u2014so preserving basket quality matters as much as adding volume.\n\nProfitability appears to be improving, with gross margin increasing in 14 of 20 visible weeks, but discount changes moved in the same direction in only about 47% of comparable weeks [7]. The concurrent increase in order value and units supports the view that mix and basket expansion, rather than discounting alone, are contributing to the improvement [6]. Finance should therefore prioritize identifying the products, customer groups, and selling motions behind high-value multi-unit orders before treating broader discount changes as the primary margin lever.\n\nReturns are the immediate operational risk to that growth. Standard Class accounts for the largest revenue concentration, at 59.74, yet First Class has the greatest return concentration, at 10.94 [2]; over the last 12 months, First Class also posted the highest return rate at 7.29%, ahead of Second Class at 6.79%, Standard Class at 5.82%, and Same Day at 5.56% [3]. However, another time comparison puts Same Day highest at roughly 7.2%, demonstrating that the leading problem mode changes by period rather than pointing to a stable single culprit [5][8]. Management should immediately review return reasons and delivery promises by ship mode and time period, with each region\u2019s sole regional manager accountable for execution in Central, East, South, and West [4].",
+      "tags": []
+    },
+    {
+      "data": {
+        "members": [
+          "table:Order",
+          "table:Return"
+        ]
+      },
+      "id": "domain:commerce",
+      "kind": "domain",
+      "label": "Commerce",
+      "provenance": {
+        "measured": null,
+        "note": "2 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "members": [
+          "table:RegionalManager"
+        ]
+      },
+      "id": "domain:operations",
+      "kind": "domain",
+      "label": "Operations",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:51:25.892353+00:00",
+        "sql": "SELECT (orders.discount > 0) AS segment, SUM(orders.profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(orders.profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record FROM orders WHERE orders.sub_category = 'Tables' GROUP BY 1 ORDER BY 1",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:085c5d51d06c",
+      "kind": "finding",
+      "label": "Discounted Tables are loss-making; the 0.40 discount level is the largest loss c\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Discounted Tables are loss-making; the 0.40 discount level is the largest loss concentration.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T20:46:23.808383+00:00",
+        "sql": "WITH tables_line_grain AS (SELECT region, SUM(sales * discount) AS contra_amount, SUM(sales) AS gross_amount FROM orders WHERE category = 'Furniture' AND sub_category = 'Tables' GROUP BY region) SELECT region, 100.0 * SUM(contra_amount) / NULLIF(SUM(gross_amount), 0) AS metric_total, SUM(gross_amount) AS n FROM tables_line_grain GROUP BY region ORDER BY metric_total DESC",
+        "superseded_ids": [
+          "71e6b28c1564",
+          "28f78d5234dd",
+          "b613bdedf2eb"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:59cfadcd93fa",
+      "kind": "finding",
+      "label": "Tables losses are concentrated in East and Standard Class, with East discount le\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Tables losses are concentrated in East and Standard Class, with East discount leakage highest.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:24:42.972043+00:00",
+        "sql": "SELECT region FROM orders GROUP BY region HAVING SUM(profit) = (SELECT MAX(region_profit) FROM (SELECT SUM(profit) AS region_profit FROM orders GROUP BY region) AS regional_profits)",
+        "superseded_ids": [
+          "3dc2160db3b9"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:739a2cbcf9f5",
+      "kind": "finding",
+      "label": "Most profitable region by total profit.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Most profitable region by total profit.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:24:59.165297+00:00",
+        "sql": "WITH returned_orders AS (SELECT DISTINCT order_id FROM returns WHERE returned = TRUE) SELECT o.ship_mode, ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o LEFT JOIN returned_orders r ON o.order_id = r.order_id GROUP BY o.ship_mode ORDER BY return_rate_pct DESC",
+        "superseded_ids": [
+          "be372d6463f2"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:8266be2e7494",
+      "kind": "finding",
+      "label": "Return rate by ship mode",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Return rate by ship mode",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:30:20.846901+00:00",
+        "sql": "SELECT orders.category AS category, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.category ORDER BY metric_total ASC LIMIT 15",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:92c968cc4ac9",
+      "kind": "finding",
+      "label": "Central\u2019s **7.9%** margin is lowest; the evidence does not identify its cause.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Central\u2019s **7.9%** margin is lowest; the evidence does not identify its cause.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:12:08.773523+00:00",
+        "sql": "SELECT o.ship_mode, COUNT(DISTINCT CASE WHEN r.returned = TRUE THEN o.order_id END) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate_orders_returned FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id WHERE o.order_date >= '2017-12-30' AND o.order_date <= '2018-12-30' GROUP BY o.ship_mode ORDER BY return_rate_orders_returned DESC",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6",
+      "kind": "finding",
+      "label": "First Class has the highest return rate over the last 12 months at 0.072917 of o\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "First Class has the highest return rate over the last 12 months at 0.072917 of orders marked returned, above Second Class at 0.067901, Standard Class at 0.058233, and Same Day at 0.055556.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:13:15.008382+00:00",
+        "sql": "SELECT region, COUNT(DISTINCT manager) AS manager_count FROM regional_managers GROUP BY region ORDER BY manager_count DESC, region ASC",
+        "tables": [
+          "regional_managers"
+        ]
+      },
+      "id": "finding:Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6",
+      "kind": "finding",
+      "label": "Each region\u2014Central, East, South, and West\u2014has exactly 1 regional manager overse\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Each region\u2014Central, East, South, and West\u2014has exactly 1 regional manager overseeing it (manager_count = 1 for each).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:24:15.672847+00:00",
+        "sql": "SELECT category, ROUND(SUM(profit), 2) AS total_profit FROM orders GROUP BY category ORDER BY total_profit DESC",
+        "superseded_ids": [
+          "c90340dd900b"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:e1bd39ba88ee",
+      "kind": "finding",
+      "label": "Total profit by product category",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total profit by product category",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:36:44.486698+00:00",
+        "sql": "WITH weekly AS (SELECT DATE_TRUNC('WEEK', order_date) AS week_start, SUM(sales) AS booked_gross_revenue, SUM(profit) AS booked_gross_profit FROM orders GROUP BY 1) SELECT week_start, booked_gross_revenue, booked_gross_profit, (booked_gross_revenue - LAG(booked_gross_revenue) OVER (ORDER BY week_start)) AS revenue_wow_change, (booked_gross_profit - LAG(booked_gross_profit) OVER (ORDER BY week_start)) AS profit_wow_change FROM weekly ORDER BY week_start",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:pinned__0",
+      "kind": "finding",
+      "label": "Week-over-week booked gross revenue is highly volatile, but the largest surge in\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Week-over-week booked gross revenue is highly volatile, but the largest surge in the sample occurs in 2015-03-16: gross revenue reaches 37,703.66 and gross profit is positive at 33,564.06, indicating that major revenue spikes are accompanied by gross profit growth.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:36:49.435937+00:00",
+        "sql": "WITH weekly AS (SELECT DATE_TRUNC('WEEK', order_date) AS week_start, SUM(sales) / NULLIF(COUNT(DISTINCT order_id), 0) AS aov, SUM(quantity) / NULLIF(COUNT(DISTINCT order_id), 0) AS units_per_order FROM orders GROUP BY 1) SELECT week_start, aov, units_per_order, (aov - LAG(aov) OVER (ORDER BY week_start)) AS aov_wow_change, (units_per_order - LAG(units_per_order) OVER (ORDER BY week_start)) AS units_per_order_wow_change FROM weekly ORDER BY week_start",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:pinned__1",
+      "kind": "finding",
+      "label": "AOV and units per order moved up together: from 2015-03-02 to 2015-03-16, AOV su\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "AOV and units per order moved up together: from 2015-03-02 to 2015-03-16, AOV surged from 321.95 to 2,217.86 (+1,895.91) while units per order rose from 7.46 to 12.41 (+4.95), indicating customers bought higher-value items alongside buying more units per order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:37:03.957059+00:00",
+        "sql": "WITH weekly AS (SELECT DATE_TRUNC('WEEK', order_date) AS week_start, SUM(profit) / NULLIF(SUM(sales), 0) AS gross_margin_pct, AVG(discount) AS avg_discount_rate FROM orders GROUP BY 1) SELECT week_start, gross_margin_pct, avg_discount_rate, (gross_margin_pct - LAG(gross_margin_pct) OVER (ORDER BY week_start)) AS gross_margin_wow_change, (avg_discount_rate - LAG(avg_discount_rate) OVER (ORDER BY week_start)) AS discount_wow_change FROM weekly ORDER BY week_start",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:pinned__2",
+      "kind": "finding",
+      "label": "From the visible weeks, gross profit margin is improving (14 of 20 weeks show po\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "From the visible weeks, gross profit margin is improving (14 of 20 weeks show positive gross profit margin change), but it only aligns with the sign of average discount-rate change about 9 of 19 weeks (~47%), indicating weak alignment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:37:07.924576+00:00",
+        "sql": "WITH cat_profit AS (SELECT category, sub_category, SUM(sales) AS revenue, SUM(profit) AS profit FROM orders GROUP BY 1, 2), cat_returns AS (SELECT o.category, o.sub_category, COUNT(DISTINCT o.order_id) AS eligible_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS returned_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id GROUP BY 1, 2) SELECT cp.category, cp.sub_category, cp.revenue, cp.profit, cr.return_rate FROM cat_profit AS cp JOIN cat_returns AS cr ON cp.category = cr.category AND cp.sub_category = cr.sub_category ORDER BY cp.revenue DESC",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:pinned__3",
+      "kind": "finding",
+      "label": "Technology \u2192 Phones generates the most revenue ($330,007.05) with positive profi\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Technology \u2192 Phones generates the most revenue ($330,007.05) with positive profit ($44,515.73) and a relatively high return of 0.087224.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:37:12.290850+00:00",
+        "sql": "WITH ship_returns AS (SELECT o.ship_mode, COUNT(DISTINCT o.order_id) AS eligible_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS returned_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id GROUP BY 1) SELECT ship_mode, return_rate, returned_orders, eligible_orders FROM ship_returns ORDER BY return_rate DESC, eligible_orders DESC",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:pinned__4",
+      "kind": "finding",
+      "label": "Same Day shipping has the highest return rate at 0.07197 (~7.2%), exceeding Firs\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Same Day shipping has the highest return rate at 0.07197 (~7.2%), exceeding First Class (0.068615 ~6.9%) and other modes like Second Class (0.057054) and Standard Class (0.056112), suggesting expectation/fulfillment issues are most pronounced for Same Day.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T13:37:17.061758+00:00",
+        "sql": "WITH seg_profit AS (SELECT segment, SUM(profit) / NULLIF(SUM(sales), 0) AS profit_margin_pct FROM orders GROUP BY 1), seg_returns AS (SELECT o.segment, COUNT(DISTINCT o.order_id) AS eligible_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS returned_orders, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id GROUP BY 1) SELECT sp.segment, sp.profit_margin_pct, sr.return_rate, sr.returned_orders, sr.eligible_orders FROM seg_profit AS sp JOIN seg_returns AS sr ON sp.segment = sr.segment ORDER BY sp.profit_margin_pct DESC, sr.return_rate ASC",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:pinned__5",
+      "kind": "finding",
+      "label": "Home Office has the highest profit margin (0.140343) while also showing a relati\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Home Office has the highest profit margin (0.140343) while also showing a relatively low return rate (0.053905), making it the best profitability profile among the segments with acceptable returns.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:15:23.363124+00:00",
+        "sql": "WITH phones_sales_by_ship_mode AS (SELECT o.ship_mode, SUM(o.sales) AS phones_sales FROM orders AS o WHERE o.category = 'Technology' AND o.sub_category = 'Phones' GROUP BY 1), phones_total_sales AS (SELECT SUM(o.sales) AS phones_total_sales FROM orders AS o WHERE o.category = 'Technology' AND o.sub_category = 'Phones'), phones_return_rate_by_ship_mode AS (SELECT o.ship_mode, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS phones_return_rate_pct FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id WHERE o.category = 'Technology' AND o.sub_category = 'Phones' GROUP BY 1) SELECT p0.phones_total_sales, sbsm.ship_mode, sbsm.phones_sales, sbsm.phones_sales / NULLIF(p0.phones_total_sales, 0) * 100.0 AS pct_of_phones_total_sales, rr.phones_return_rate_pct FROM phones_total_sales AS p0 JOIN phones_sales_by_ship_mode AS sbsm ON TRUE LEFT JOIN phones_return_rate_by_ship_mode AS rr ON rr.ship_mode = sbsm.ship_mode WHERE sbsm.ship_mode = 'First Class' OR sbsm.ship_mode IN ('Second Class', 'Standard Class', 'Same Day') ORDER BY CASE sbsm.ship_mode WHEN 'First Class' THEN 1 WHEN 'Second Class' THEN 2 WHEN 'Standard Class' THEN 3 WHEN 'Same Day' THEN 4 ELSE 5 END",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:synth__concentration__0",
+      "kind": "finding",
+      "label": "Combined concentration evidence shows that while the revenue is most concentrate\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Combined concentration evidence shows that while the revenue is most concentrated in Standard Class (59.74), the highest return-concentration among the classes occurs in First Class (10.94).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:15:39.402979+00:00",
+        "sql": "WITH max_dates AS (SELECT MAX(order_date) AS max_order_date FROM orders), rate_overall AS (SELECT o.ship_mode, CAST(COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS DOUBLE) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate_overall FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id WHERE o.ship_mode IN ('Same Day', 'First Class') GROUP BY o.ship_mode), rate_last_12_months AS (SELECT o.ship_mode, CAST(COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS DOUBLE) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate_last_12_months FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id CROSS JOIN max_dates AS md WHERE o.ship_mode IN ('Same Day', 'First Class') AND o.order_date >= md.max_order_date - INTERVAL '365' DAY GROUP BY o.ship_mode) SELECT COALESCE(oo.return_rate_overall, 0) AS same_day_return_rate_overall, COALESCE(fl.return_rate_last_12_months, 0) AS first_class_return_rate_last_12_months, COALESCE(of.return_rate_overall, 0) AS first_class_return_rate_overall, COALESCE(sl.return_rate_last_12_months, 0) AS same_day_return_rate_last_12_months, (COALESCE(oo.return_rate_overall, 0) > COALESCE(of.return_rate_overall, 0)) AS same_day_higher_overall_than_first_class, (COALESCE(fl.return_rate_last_12_months, 0) > COALESCE(sl.return_rate_last_12_months, 0)) AS first_class_higher_in_last_12_months_than_same_day FROM (SELECT * FROM rate_overall WHERE ship_mode = 'Same Day') AS oo CROSS JOIN (SELECT * FROM rate_last_12_months WHERE ship_mode = 'First Class') AS fl CROSS JOIN (SELECT * FROM rate_overall WHERE ship_mode = 'First Class') AS of CROSS JOIN (SELECT * FROM rate_last_12_months WHERE ship_mode = 'Same Day') AS sl",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:synth__confound__1",
+      "kind": "finding",
+      "label": "Across the combined view, Same Day is high at 0.07197 in one context but low at \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Across the combined view, Same Day is high at 0.07197 in one context but low at 0.055556 in another (while the highest rate observed is 0.072917 for First Class), showing a reversal/shift in which shipping modes are most return-prone depending on the time-context being compared.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:15:54.758591+00:00",
+        "sql": "WITH home_office_returns AS (SELECT o.order_id, o.ship_mode FROM orders AS o INNER JOIN returns AS r ON o.order_id = r.order_id WHERE o.segment = 'Home Office' AND r.returned = TRUE), first_class_returns AS (SELECT COUNT(DISTINCT order_id) AS first_class_returned_orders FROM home_office_returns WHERE ship_mode = 'First Class'), total_home_office_returns AS (SELECT COUNT(DISTINCT order_id) AS total_home_office_returned_orders FROM home_office_returns) SELECT ROUND((fc.first_class_returned_orders * 100.0) / NULLIF(th.total_home_office_returned_orders, 0), 4) AS first_class_share_of_returned_orders_pct FROM first_class_returns AS fc CROSS JOIN total_home_office_returns AS th",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:synth__share__2",
+      "kind": "finding",
+      "label": "Combining the segment identified as best on profitability with the segment ident\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Combining the segment identified as best on profitability with the segment identified as highest on return-rate yields an overall highlighted share of 22.449.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:16:32.369060+00:00",
+        "sql": "WITH weekly_margin AS (SELECT DATE_TRUNC('WEEK', o.order_date) AS week_start, SUM(o.profit) AS total_profit, SUM(o.sales) AS total_sales, SUM(o.profit) / NULLIF(SUM(o.sales), 0) AS gross_profit_margin FROM orders AS o GROUP BY 1), weekly_margin_with_change AS (SELECT wm.week_start, wm.gross_profit_margin, wm.gross_profit_margin - LAG(wm.gross_profit_margin) OVER (ORDER BY wm.week_start) AS gross_profit_margin_change FROM weekly_margin AS wm), positive_margin_weeks AS (SELECT week_start FROM weekly_margin_with_change WHERE gross_profit_margin_change > 0), returned_orders_by_week AS (SELECT DATE_TRUNC('WEEK', o.order_date) AS week_start, COUNT(DISTINCT CASE WHEN r.returned THEN o.order_id END) AS returned_orders_total, COUNT(DISTINCT CASE WHEN r.returned AND o.ship_mode = 'Same Day' THEN o.order_id END) AS returned_orders_same_day FROM orders AS o LEFT JOIN returns AS r ON o.order_id = r.order_id WHERE NOT o.order_date IS NULL GROUP BY 1) SELECT rw.week_start, CAST(rw.returned_orders_same_day AS DOUBLE) / NULLIF(rw.returned_orders_total, 0) AS same_day_return_fraction FROM returned_orders_by_week AS rw INNER JOIN positive_margin_weeks AS pmw ON rw.week_start = pmw.week_start ORDER BY rw.week_start",
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:synth__share__3",
+      "kind": "finding",
+      "label": "Across the first 20 rows, the combined signal appears only intermittently: only \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Across the first 20 rows, the combined signal appears only intermittently: only one non-NULL entry has a non-zero value (0.333333), while the remaining observed entries are 0.0.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-03T17:17:59.948240+00:00",
+        "sql": "WITH weekly AS (SELECT DATE_TRUNC('WEEK', order_date) AS week, AVG(sales) AS aov, CAST(SUM(quantity) AS DOUBLE) / NULLIF(COUNT(DISTINCT order_id), 0) AS units_per_order, SUM(profit) / NULLIF(SUM(sales), 0) AS gross_profit_margin, AVG(discount) AS discount_rate FROM orders WHERE NOT order_date IS NULL GROUP BY 1), changes AS (SELECT week, aov, units_per_order, gross_profit_margin, discount_rate, aov - LAG(aov) OVER (ORDER BY week) AS aov_change, units_per_order - LAG(units_per_order) OVER (ORDER BY week) AS units_per_order_change, gross_profit_margin - LAG(gross_profit_margin) OVER (ORDER BY week) AS gross_profit_margin_change, discount_rate - LAG(discount_rate) OVER (ORDER BY week) AS discount_rate_change FROM weekly), flagged AS (SELECT week, CASE WHEN aov_change > 0 THEN 1 WHEN aov_change < 0 THEN -1 ELSE 0 END AS sign_aov_change, CASE WHEN units_per_order_change > 0 THEN 1 WHEN units_per_order_change < 0 THEN -1 ELSE 0 END AS sign_units_per_order_change, CASE WHEN gross_profit_margin_change > 0 THEN 1 WHEN gross_profit_margin_change < 0 THEN -1 ELSE 0 END AS sign_gross_profit_margin_change, CASE WHEN discount_rate_change > 0 THEN 1 WHEN discount_rate_change < 0 THEN -1 ELSE 0 END AS sign_discount_rate_change FROM changes WHERE NOT aov_change IS NULL) SELECT (CAST(COUNT(*) FILTER(WHERE sign_aov_change = 1 AND sign_units_per_order_change = 1 AND sign_gross_profit_margin_change = 1 AND sign_discount_rate_change <> sign_gross_profit_margin_change) AS DOUBLE) / NULLIF(COUNT(*) FILTER(WHERE sign_aov_change = 1 AND sign_units_per_order_change = 1), 0)) AS share_of_weeks FROM flagged",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:synth__share__4",
+      "kind": "finding",
+      "label": "Taken together, the improvement in profitability (despite weak alignment with di\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Taken together, the improvement in profitability (despite weak alignment with discount-rate changes) coincides with a simultaneous increase in both order value and units per order\u2014captured by a combined share of 0.370968.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "category",
+        "table": "orders",
+        "values": "Office Supplies, Furniture, Technology"
+      },
+      "id": "glossary_term:orders.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "High\u2011level product category.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "city",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.city",
+      "kind": "glossary_term",
+      "label": "city",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "City of the shipment destination.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "country",
+        "table": "orders",
+        "values": "United States"
+      },
+      "id": "glossary_term:orders.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Country where the order was shipped.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "customer_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the customer who placed the order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "customer_name",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.customer_name",
+      "kind": "glossary_term",
+      "label": "customer_name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Full name of the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "discount",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.discount",
+      "kind": "glossary_term",
+      "label": "discount",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Discount rate applied to the line item (e.g., 0.1 for a 10% discount).",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "order_date",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_date",
+      "kind": "glossary_term",
+      "label": "order_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date when the order was placed by the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "order_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Identifier that groups all line items belonging to the same customer order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "Stored as BIGINT may drop leading zeros.",
+        "column": "postal_code",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.postal_code",
+      "kind": "glossary_term",
+      "label": "postal_code",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Postal code (ZIP) of the shipment destination.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "product_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the product sold.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "product_name",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.product_name",
+      "kind": "glossary_term",
+      "label": "product_name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Descriptive name of the product.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "profit",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.profit",
+      "kind": "glossary_term",
+      "label": "profit",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Profit amount derived from the order line after subtracting costs.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "quantity",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.quantity",
+      "kind": "glossary_term",
+      "label": "quantity",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Number of units of the product ordered in the line item.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "region",
+        "table": "orders",
+        "values": "West, East, Central, South"
+      },
+      "id": "glossary_term:orders.region",
+      "kind": "glossary_term",
+      "label": "region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Geographic region grouping of states within the country.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "row_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.row_id",
+      "kind": "glossary_term",
+      "label": "row_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique surrogate key for each row in the table.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "sales",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.sales",
+      "kind": "glossary_term",
+      "label": "sales",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Sales amount (revenue) generated by the order line.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "segment",
+        "table": "orders",
+        "values": "Consumer, Corporate, Home Office"
+      },
+      "id": "glossary_term:orders.segment",
+      "kind": "glossary_term",
+      "label": "segment",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Market segment to which the customer belongs.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "ship_date",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.ship_date",
+      "kind": "glossary_term",
+      "label": "ship_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date when the order was shipped to the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "ship_mode",
+        "table": "orders",
+        "values": "Standard Class, Second Class, First Class, Same Day"
+      },
+      "id": "glossary_term:orders.ship_mode",
+      "kind": "glossary_term",
+      "label": "ship_mode",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Shipping service level selected for the order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "state",
+        "table": "orders",
+        "values": "California, New York, Texas, Pennsylvania, Washington, Illinois, Ohio, Florida, Michigan, North Carolina, Virginia, Arizona, Georgia, Tennessee, Colorado, Indiana, Kentucky, Massachusetts, New Jersey, Oregon, Wisconsin, Maryland, Delaware, Minnesota, Connecticut, Oklahoma, Missouri, Alabama, Arkansas, Rhode Island, Utah, Mississippi, Louisiana, South Carolina, Nevada, Nebraska, New Mexico, Iowa, New Hampshire, Kansas, Idaho, Montana, South Dakota, Vermont, District of Columbia, Maine, North Dakota, West Virginia, Wyoming"
+      },
+      "id": "glossary_term:orders.state",
+      "kind": "glossary_term",
+      "label": "state",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "State or province of the shipment destination.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "sub_category",
+        "table": "orders",
+        "values": "Binders, Paper, Furnishings, Phones, Storage, Art, Accessories, Chairs, Appliances, Labels, Tables, Envelopes, Bookcases, Fasteners, Supplies, Machines, Copiers"
+      },
+      "id": "glossary_term:orders.sub_category",
+      "kind": "glossary_term",
+      "label": "sub_category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "More specific product grouping within the category.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "manager",
+        "table": "regional_managers",
+        "values": "Chuck Magee, Anna Andreadi, Kelly Williams, Cassandra Brandow"
+      },
+      "id": "glossary_term:regional_managers.manager",
+      "kind": "glossary_term",
+      "label": "manager",
+      "provenance": {
+        "measured": null,
+        "note": "defined on regional_managers",
+        "source": "glossary"
+      },
+      "summary": "Name of the regional manager.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "region",
+        "table": "regional_managers",
+        "values": "Central, West, East, South"
+      },
+      "id": "glossary_term:regional_managers.region",
+      "kind": "glossary_term",
+      "label": "region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on regional_managers",
+        "source": "glossary"
+      },
+      "summary": "Geographic region assigned to the manager.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "order_id",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the order being returned.",
+      "tags": []
+    },
+    {
+      "data": {
+        "caveats": "",
+        "column": "returned",
+        "table": "returns",
+        "values": "True"
+      },
+      "id": "glossary_term:returns.returned",
+      "kind": "glossary_term",
+      "label": "returned",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Indicates whether the order was returned by the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "formula_sql": "AVG(sales)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": true
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=True",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "formula_sql": "SUM(sales)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": true
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=True",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 21,
+        "columns": [
+          "category",
+          "city",
+          "country",
+          "customer_id",
+          "customer_name",
+          "discount",
+          "order_date",
+          "order_id",
+          "postal_code",
+          "product_id",
+          "product_name",
+          "profit",
+          "quantity",
+          "region",
+          "row_id",
+          "sales",
+          "segment",
+          "ship_date",
+          "ship_mode",
+          "state",
+          "sub_category"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_id",
+        "source_tables": [
+          "orders"
+        ]
+      },
+      "id": "table:Order",
+      "kind": "table",
+      "label": "Order",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 2,
+        "columns": [
+          "manager",
+          "region"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "manager",
+        "source_tables": [
+          "regional_managers"
+        ]
+      },
+      "id": "table:RegionalManager",
+      "kind": "table",
+      "label": "Regional Manager",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=True",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 2,
+        "columns": [
+          "order_id",
+          "returned"
+        ],
+        "domain": "Commerce",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_id",
+        "source_tables": [
+          "returns"
+        ]
+      },
+      "id": "table:Return",
+      "kind": "table",
+      "label": "Return",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    }
+  ],
+  "source": {
+    "connection_id": "8d36d4c2",
+    "graph_generated_at": "2026-08-03T21:30:29.870526+00:00",
+    "graph_version": 1,
+    "org_id": "default",
+    "schema_name": "default",
+    "structural_fingerprint": "e6ece5cd06433f36"
+  }
+}

@@ -2,7 +2,7 @@
   "connection_id": "8d36d4c2",
   "counts": {
     "curation_sections": 4,
-    "graph": false,
+    "graph": true,
     "investigations": 8
   },
   "version": 1

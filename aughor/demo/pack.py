@@ -36,6 +36,7 @@ Deterministic; no model call.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -120,7 +121,118 @@ def _collect_curation(connection_id: str) -> dict:
         return {}
 
 
-def _collect_graph(connection_id: str) -> Optional[dict]:
+def _schema_columns(schema_text: str) -> dict:
+    """``{table: {column, …}}`` from a connection's rendered schema.
+
+    `get_schema()` emits ``TABLE: name`` over indented ``col TYPE`` lines. Parsed here
+    rather than imported from the agent package: a demo exporter should not depend on the
+    reasoning stack to answer "does this column exist".
+    """
+    out: dict = {}
+    table = None
+    for line in (schema_text or "").splitlines():
+        head = re.match(r"\s*TABLE:\s+([A-Za-z0-9_.\"]+)", line)
+        if head:
+            table = head.group(1).strip('"').split(".")[-1].lower()
+            out.setdefault(table, set())
+            continue
+        if table and line[:1] in (" ", "\t"):
+            col = re.match(r"\s+([A-Za-z0-9_]+)\s+\S", line)
+            if col:
+                out[table].add(col.group(1).lower())
+    return out
+
+
+def _connection_columns(connection_id: str) -> Optional[dict]:
+    """The columns this connection actually exposes, or None when they can't be read.
+
+    None is meaningfully different from ``{}``: it means "unknown", and the caller must
+    then drop the glossary slice wholesale rather than ship terms it cannot vouch for.
+    """
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(connection_id)
+        try:
+            cols = _schema_columns(db.get_schema())
+        finally:
+            close = getattr(db, "close", None)
+            if callable(close):
+                close()
+        return cols or None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection schema unreadable — the pack drops the glossary slice",
+                 counter="demo_pack.schema_unreadable")
+        return None
+
+
+def _scope_graph_to_pack(graph, connection_id: str, investigations: list[dict]):
+    """Narrow a connection's graph to what this pack may carry. Returns the graph.
+
+    Two slices need it, for two different reasons.
+
+    **Glossary terms — a leak.** ``ContextGraph`` documents the glossary as "read-time-
+    scoped to the connection during projection", but that scoping matches on TABLE NAME,
+    and a table name is not unique across connections. Measured on the Superstore demo:
+    the glossary store held ~230 table keys spanning TPC-H, TPC-DS, an airline schema and
+    two retail workspaces, with **zero** per-connection overlays — so the connection's
+    bare ``orders`` matched a different dataset's ``orders`` and **48 of 75** terms in the
+    built graph were foreign (``duty_eur``, ``gmv_eur``, ``o_orderkey``, ``coupon_abuse``).
+    A public pack carrying another workspace's column semantics is the exact risk this
+    module's connection filter exists to prevent, so the same default-deny applies: a term
+    survives only if its column genuinely exists on this connection, and if the column set
+    cannot be read, the whole slice goes.
+
+    **Findings — a curation leak.** The projection reads every receipt on the connection,
+    so a graph built beside a CURATED pack re-imports the investigations that curation
+    deliberately dropped. Joined on the headline, which is exactly what the finding node's
+    summary holds. Explorer-sourced findings are unaffected: they come from the connection's
+    own exploration store, not from the investigation set the pack narrows.
+    """
+    nodes = getattr(graph, "nodes", None)
+    if not isinstance(nodes, dict):
+        return graph
+
+    columns = _connection_columns(connection_id)
+    kept_headlines = {(i.get("headline") or "").strip().lower()
+                      for i in (investigations or []) if i.get("headline")}
+
+    drop: set = set()
+    for node_id, node in nodes.items():
+        kind = getattr(node, "kind", None)
+        data = getattr(node, "data", None) or {}
+        if kind == "glossary_term":
+            if columns is None:
+                drop.add(node_id)
+                continue
+            table = str(data.get("table") or "").split(".")[-1].lower()
+            column = str(data.get("column") or "").lower()
+            if column not in columns.get(table, set()):
+                drop.add(node_id)
+        elif kind == "finding":
+            # Only receipt-sourced findings track the pack's investigation set.
+            source = (getattr(node, "provenance", None) and
+                      getattr(node.provenance, "source", "")) or ""
+            if source == "evidence_ledger":
+                summary = (getattr(node, "summary", "") or "").strip().lower()
+                if summary not in kept_headlines:
+                    drop.add(node_id)
+
+    if not drop:
+        return graph
+    for node_id in drop:
+        nodes.pop(node_id, None)
+    # An edge to a removed node is a dangling reference; the pack must not carry one.
+    edges = getattr(graph, "edges", None)
+    if isinstance(edges, dict):
+        for edge_id in [e_id for e_id, e in edges.items()
+                        if getattr(e, "from_id", None) in drop
+                        or getattr(e, "to_id", None) in drop]:
+            edges.pop(edge_id, None)
+    return graph
+
+
+def _collect_graph(connection_id: str, investigations: list[dict]) -> Optional[dict]:
     """The context-graph pack payload, or None when the connection has no graph.
 
     `build_pack_payload` takes the graph itself, not a connection — the graph is stored
@@ -139,6 +251,7 @@ def _collect_graph(connection_id: str) -> Optional[dict]:
         graph = graphs[0] if len(graphs) == 1 else merge_graphs(graphs)
         if graph is None:
             return None
+        graph = _scope_graph_to_pack(graph, connection_id, investigations)
         # Staleness travels WITH the data: a consumer reading the pack offline cannot
         # re-derive it, which is the same reason context_graph_export carries it.
         return build_pack_payload(graph)
@@ -160,12 +273,15 @@ def export_pack(connection_id: str, out_dir: str | Path, *,
     if not connection_id:
         raise PackError("connection_id is required — a pack is always scoped to one")
 
+    # Collected first: the graph is narrowed to the investigations that actually travel,
+    # so a curated pack cannot re-import the runs curation dropped via its finding nodes.
+    invs = _collect_investigations(connection_id, investigation_ids)
     pack = Pack(
         version=PACK_VERSION,
         connection_id=connection_id,
-        investigations=_collect_investigations(connection_id, investigation_ids),
+        investigations=invs,
         curation=_collect_curation(connection_id),
-        graph=_collect_graph(connection_id),
+        graph=_collect_graph(connection_id, invs),
     )
     write_pack(pack, out_dir)
     return pack
