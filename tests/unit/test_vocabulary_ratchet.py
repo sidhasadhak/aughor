@@ -34,6 +34,14 @@ _SKIP_FILES = {
     # This file NAMES every retired term — in the table below and in its own failure
     # messages. Counting itself made all 21 baselines look breached on the first run.
     "tests/unit/test_vocabulary_ratchet.py",
+    # A frozen RECORDING of real API responses, not authored prose. The ratchet governs
+    # the vocabulary we write; this file is the backend's wire format and the model's own
+    # output, captured verbatim — scanning it measures neither. Renaming a term inside it
+    # would also make it stop matching the API it mirrors, which is the same reason
+    # `web/lib/api.gen.ts` is exempt. (It moved four baselines on first commit: `insight`
+    # +41 from finding payloads, `investigation_in_web` +41 from route names, and
+    # `tableau` +2 from the dataset's actual title, "Tableau Sample Superstore".)
+    "web/public/demo-api.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 

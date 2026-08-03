@@ -23,9 +23,28 @@ export const API_BASE_DEFAULT =
 
 const STORAGE_KEY = "aughor.apiBase";
 
+/**
+ * Demo posture. A hosted deployment with no backend resolves to `http://localhost:8000`,
+ * which is the VISITOR's machine — so every list comes back empty and the app looks broken
+ * when it is in fact working exactly as designed. With this set, the frontend serves a
+ * frozen recording of one connection's read surface from `/demo-api` instead, and a visitor
+ * sees real completed work with no backend, no key and no spend.
+ *
+ * A deployment env var rather than a runtime flag, deliberately: `DEMO_PACK_DESIGN.md`
+ * calls out "demo mode leaking into normal use" as a risk and prescribes exactly this —
+ * "an explicit deployment env var, not a new registry flag". Unset (every local dev run,
+ * every self-hosted install), nothing here changes.
+ */
+export const DEMO_PACK =
+  typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEMO_PACK === "1";
+
+/** Same-origin base the recording is served from. Relative on purpose — the deployment's
+ *  own host answers it, so there is no URL to configure and no CORS to arrange. */
+export const DEMO_API_BASE = "/demo-api";
+
 /** Where the effective value came from — the Settings UI says this out loud, because
  *  "why is it talking to the wrong backend" is otherwise an invisible question. */
-export type ApiBaseSource = "user" | "env" | "default";
+export type ApiBaseSource = "user" | "env" | "default" | "demo";
 
 function readStored(): string | null {
   // Guarded for SSR and for browsers that throw on localStorage (Safari private mode).
@@ -59,11 +78,17 @@ export function normalizeApiBase(raw: string): string | null {
 /** The API base in force right now. Call this — never capture it at module load, or the
  *  value freezes and a later change is silently ignored. */
 export function getApiBase(): string {
-  return readStored() || API_BASE_DEFAULT;
+  // A stored override still wins in demo mode: "connect your own backend" is the demo's
+  // one call to action, so it must not be the one thing the demo posture blocks.
+  const stored = readStored();
+  if (stored) return stored;
+  if (DEMO_PACK) return DEMO_API_BASE;
+  return API_BASE_DEFAULT;
 }
 
 export function getApiBaseSource(): ApiBaseSource {
   if (readStored()) return "user";
+  if (DEMO_PACK) return "demo";
   if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) return "env";
   return "default";
 }
