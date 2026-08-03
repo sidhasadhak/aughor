@@ -5,14 +5,17 @@ import {
   ConnectionTour,
   CGNode,
   CGStaleness,
+  GraphAudit,
   getConnectionGraph,
   getConnectionTour,
+  getGraphAudit,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
-import { formatCount, pct } from "@/lib/format";
+import { formatCount } from "@/lib/format";
 import { GraphCanvas } from "@/components/GraphCanvas";
+import { GraphAuditBar, WarrantChip } from "@/components/graph/WarrantChip";
 
 // The connection knowledge graph, rendered as a three-level ANTI-HAIRBALL surface:
 // domain cluster cards (cross-domain joins collapsed to counts) → the tables inside a
@@ -50,17 +53,23 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
   // Wave C5 — the topology-ordered tour, lazily fetched on first open.
   const [tour, setTour] = useState<ConnectionTour | null>(null);
   const [tourError, setTourError] = useState<string | null>(null);
+  // Wave P2 — the honesty scorecard (warrant mix + the CONTENT drift axis the staleness
+  // chip does not cover). A second call because it costs an in-memory re-projection; the
+  // graph renders whether or not it arrives.
+  const [audit, setAudit] = useState<GraphAudit | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     setTour(null);
     setTourError(null);
+    setAudit(null);
     setMode("map");
     getConnectionGraph(connectionId, schema)
       .then((g) => { setGraph(g); setView({ level: "domains" }); })
       .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
       .finally(() => setLoading(false));
+    getGraphAudit(connectionId, schema).then(setAudit).catch(() => setAudit(null));
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
@@ -90,7 +99,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
       .filter((e) => e.kind === "joins_on" && (e.from_id === tableId || e.to_id === tableId))
       .map((e) => {
         const otherId = e.from_id === tableId ? e.to_id : e.from_id;
-        return { other: node(otherId)?.label || otherId, overlap: e.provenance.measured, note: e.provenance.note };
+        return { other: node(otherId)?.label || otherId, warrant: e.warrant, note: e.provenance.note };
       });
 
   const findingsFor = (tableId: string): CGNode[] =>
@@ -115,8 +124,18 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--bg-3)" }}>
         <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Knowledge Graph</span>
         {graph && (
-          <StatusChip hue={STALE_HUE[graph.staleness]} strength="soft" title={`Graph freshness: ${graph.staleness}`}>
-            {STALE_LABEL[graph.staleness]}
+          // P2: a Fresh badge is about the SCHEMA only. When the content axis says the
+          // graph is missing what the platform has since learned, the badge must not
+          // stand alone saying "Fresh" — that reading is the exact blindness
+          // `content_drift` was written to prevent.
+          <StatusChip
+            hue={audit?.drift?.drifted ? "caution" : STALE_HUE[graph.staleness]}
+            strength="soft"
+            title={audit?.drift?.drifted
+              ? `Schema freshness: ${graph.staleness}. ${audit.drift.reason}`
+              : `Graph freshness: ${graph.staleness}`}
+          >
+            {audit?.drift?.drifted ? "Rebuild owed" : STALE_LABEL[graph.staleness]}
           </StatusChip>
         )}
         <div style={{ flex: 1 }} />
@@ -143,6 +162,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
               <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
             </MiniStatRow>
+            <GraphAuditBar audit={audit} />
             <GraphCanvas
               graph={graph}
               onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
@@ -163,6 +183,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
               <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
             </MiniStatRow>
+            <GraphAuditBar audit={audit} />
 
             {/* Breadcrumb */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 12, color: "var(--t3)" }}>
@@ -244,13 +265,13 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                     </div>
                   </div>
 
-                  <Section title="Verified joins — measured value-domain overlap">
+                  {/* P2: every join states its warrant. A measured overlap and a bare
+                      name match used to look the same here. */}
+                  <Section title="Joins — and how each one is known">
                     {joins.length === 0 ? <Muted>No joins.</Muted> : joins.map((j, i) => (
                       <div key={i} style={ROW}>
                         <span style={{ color: "var(--t1)", fontSize: 12 }}>→ {j.other}</span>
-                        {j.overlap != null
-                          ? <StatusChip hue={j.overlap >= 0.5 ? "positive" : "caution"} strength="soft" title={j.note}>overlap {pct(j.overlap)}</StatusChip>
-                          : <StatusChip hue="muted" strength="soft" title={j.note}>unprobed</StatusChip>}
+                        <WarrantChip warrant={j.warrant} showDetail />
                       </div>
                     ))}
                   </Section>
@@ -258,7 +279,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                   <Section title="Past findings on this table">
                     {findings.length === 0 ? <Muted>None yet.</Muted> : findings.map((f) => (
                       <div key={f.id} style={{ ...ROW, alignItems: "flex-start" }}>
-                        <StatusChip hue="accent" strength="soft" title={`source: ${f.provenance.source}`}>{f.provenance.source}</StatusChip>
+                        <WarrantChip warrant={f.warrant} />
                         <span style={{ color: "var(--t2)", fontSize: 12 }}>{f.summary}</span>
                       </div>
                     ))}
@@ -268,6 +289,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                     {terms.length === 0 ? <Muted>None.</Muted> : terms.map((tm) => (
                       <div key={tm.id} style={{ ...ROW, alignItems: "flex-start" }}>
                         <span style={{ color: "var(--t1)", fontWeight: 600, fontSize: 12 }}>{tm.label}</span>
+                        <WarrantChip warrant={tm.warrant} />
                         <span style={{ color: "var(--t3)", fontSize: 12 }}>{tm.summary}</span>
                       </div>
                     ))}

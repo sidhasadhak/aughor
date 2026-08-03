@@ -460,7 +460,18 @@ def seed_verified_cache(cache_key: str, joins: list, verifications: list) -> tup
             fk_d = int(rec.get("fk_distinct") or 0)
             orphans = int(rec.get("orphan_count") or 0)
             # containment of the FK side ≈ (distinct − orphaned) / distinct
-            ov = (max(0, fk_d - orphans) / fk_d) if fk_d > 0 else (1.0 if rec.get("verified") else 0.0)
+            if fk_d > 0:
+                ov = max(0, fk_d - orphans) / fk_d
+            elif rec.get("verified"):
+                # Verified upstream but WITHOUT the counts that would make it a
+                # measurement. `1.0` here read downstream as "100% of key values
+                # overlap" — a probe result the record does not contain. `-1.0` is the
+                # established "couldn't probe" sentinel, so the edge still counts as
+                # verified (below) while the renderer stops reporting a number nobody
+                # measured (P2).
+                ov = -1.0
+            else:
+                ov = 0.0
             vj = VerifiedJoin(t1, c1, t2, c2, overlap=ov, match=j.get("match", "exact"))
             (verified if rec.get("verified") or ov >= _THRESHOLD else rejected).append(vj)
         sig = tuple(sorted((j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")) for j in (joins or [])))
@@ -474,12 +485,21 @@ def seed_verified_cache(cache_key: str, joins: list, verifications: list) -> tup
 
 def render_verified_joins(verified: list, rejected: list) -> str:
     """The data-catalog block: the value-verified FK joins to USE, plus an explicit
-    DO-NOT-JOIN list for the name-shape coincidences that hold disjoint values."""
+    DO-NOT-JOIN list for the name-shape coincidences that hold disjoint values.
+
+    Accepted joins carry their MEASURED overlap (Wave P2). They used to render as a bare
+    ``✓`` while only rejections showed a number — so the prompt stated its evidence
+    exactly when refusing and withheld it when asserting, which is the asymmetry
+    backwards: a join asserted at 62% overlap and one asserted at 100% are different
+    claims, and the model could not tell them apart. An unprobed edge says ``not probed``
+    rather than borrowing the confidence of the ones that were.
+    """
     lines: list = []
     if verified:
         lines.append("FOREIGN KEY JOINS (value-verified — use these exact keys to join the tables above):")
         for v in verified:
-            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}")
+            warrant = f"{v.overlap:.0%} value overlap" if v.overlap >= 0 else "declared, not probed"
+            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}  ({warrant})")
     if rejected:
         lines.append("")
         lines.append("DO NOT JOIN (these column pairs share a name but hold DISJOINT values — "

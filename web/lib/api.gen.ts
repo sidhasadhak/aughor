@@ -3706,6 +3706,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Audit
+         * @description Wave P2 — the graph's honesty scorecard: how much of it is measured, and how much
+         *     is a name match.
+         *
+         *     One call, because the three honesty signals are only meaningful together: the warrant
+         *     mix says how *well-founded* the graph is, `staleness` says whether the SCHEMA still
+         *     matches, and `drift` says whether the graph still holds what the platform has since
+         *     learned. A surface showing any one alone can read as reassurance — a Fresh badge over
+         *     a graph of unprobed name matches is exactly the shape this wave refuses.
+         */
+        get: operations["get_context_graph_audit_graph_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph/drift": {
         parameters: {
             query?: never;
@@ -16773,6 +16800,38 @@ export interface operations {
         };
     };
     get_context_graph_graph_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_audit_graph_audit_get: {
         parameters: {
             query?: {
                 connection_id?: string;

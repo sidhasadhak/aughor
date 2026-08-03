@@ -238,6 +238,7 @@ def get_context_graph(
     payload = cg.model_dump()
     payload["counts"] = cg.counts()
     payload.update(_graph_domain_aggregation(cg))
+    _stamp_warrants(payload, cg)
     try:
         from aughor.ontology.graph_freshness import staleness_of
         # Compare against the ontology for the GRAPH's own schema (the committed graph may
@@ -246,6 +247,67 @@ def get_context_graph(
     except Exception:
         payload["staleness"] = "unknown"
     return payload
+
+
+def _stamp_warrants(payload: dict, cg) -> None:
+    """Wave P2 — attach the derived warrant class to every node and edge in a response.
+
+    Derived at READ time and never written to the artifact: the committed graph stays the
+    structural truth, and a graph built before this wave gets its warrants for free. Best
+    effort — a surface that cannot classify still renders the graph.
+    """
+    try:
+        from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
+        for nid, raw in (payload.get("nodes") or {}).items():
+            node = cg.nodes.get(nid)
+            if node is not None:
+                raw["warrant"] = warrant_of_node(node).to_dict()
+        for eid, raw in (payload.get("edges") or {}).items():
+            edge = cg.edges.get(eid)
+            if edge is not None:
+                raw["warrant"] = warrant_of_edge(edge).to_dict()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "warrant stamping is a read-time annotation; the graph renders without it",
+                 counter="context_graph.warrant_stamp")
+
+
+@router.get("/graph/audit")
+def get_context_graph_audit(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P2 — the graph's honesty scorecard: how much of it is measured, and how much
+    is a name match.
+
+    One call, because the three honesty signals are only meaningful together: the warrant
+    mix says how *well-founded* the graph is, `staleness` says whether the SCHEMA still
+    matches, and `drift` says whether the graph still holds what the platform has since
+    learned. A surface showing any one alone can read as reassurance — a Fresh badge over
+    a graph of unprobed name matches is exactly the shape this wave refuses.
+    """
+    from aughor.ontology.graph_warrant import audit
+    from aughor.org.context import current_org_id
+
+    org = current_org_id()
+    cg = _load_graph_or_404(connection_id, schema_name)
+    out = {"connection_id": connection_id, "schema_name": cg.schema_name,
+           "graph_version": cg.version, **audit(cg)}
+    try:
+        from aughor.ontology.graph_freshness import staleness_of
+        out["staleness"] = staleness_of(connection_id, cg.schema_name or schema_name, org_id=org)
+    except Exception:
+        out["staleness"] = "unknown"
+    try:
+        from aughor.ontology.graph_freshness import content_drift
+        out["drift"] = content_drift(connection_id, cg.schema_name or schema_name,
+                                     org_id=org).to_dict()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "content drift is a second axis; the audit still reports the warrant mix",
+                 counter="context_graph.audit_drift")
+        out["drift"] = None
+    return out
 
 
 def _load_graph_or_404(connection_id: str, schema_name: Optional[str]):

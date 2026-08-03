@@ -1073,13 +1073,18 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
 // ── Connection knowledge graph (Wave C4 — GET /graph) ─────────────────────────
 
 export interface CGProvenance { source: string; measured: number | null; note: string }
+/** Wave P2 — how we know it, derived at read time from provenance (never stored). */
+export type CGWarrantClass = "measured" | "human" | "declared" | "derived" | "inferred";
+export interface CGWarrant { warrant: CGWarrantClass; detail: string; label: string }
 export interface CGNode {
   id: string; kind: string; label: string; summary: string;
   tags: string[]; provenance: CGProvenance; data: Record<string, unknown>;
+  warrant?: CGWarrant;
 }
 export interface CGEdge {
   id: string; kind: string; from_id: string; to_id: string;
   provenance: CGProvenance; label: string;
+  warrant?: CGWarrant;
 }
 export interface CGDomain { label: string; tables: string[]; table_count: number }
 export interface CGDomainEdge { from: string; to: string; count: number }
@@ -1102,6 +1107,41 @@ export async function getConnectionGraph(connectionId: string, schemaName?: stri
     : `connection_id=${encodeURIComponent(connectionId)}`;
   const res = await fetch(`${getApiBase()}/graph?${q}`);
   if (!res.ok) throw new Error("Knowledge graph not available for this connection");
+  return res.json();
+}
+
+// ── The graph's honesty scorecard (Wave P2 — GET /graph/audit) ────────────────
+
+export interface CGContentDrift {
+  drifted: boolean;
+  reason: string;
+  missing: Record<string, number>;
+  [k: string]: unknown;
+}
+export interface GraphAudit {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  order: CGWarrantClass[];
+  labels: Record<CGWarrantClass, string>;
+  meanings: Record<CGWarrantClass, string>;
+  nodes: Record<CGWarrantClass, number>;
+  edges: Record<CGWarrantClass, number>;
+  edges_by_kind: Record<string, Record<CGWarrantClass, number>>;
+  totals: { nodes: number; edges: number };
+  edge_grounded_share: number;
+  staleness: CGStaleness;
+  drift: CGContentDrift | null;
+}
+
+/** Warrant mix + staleness + content drift in one call — the three honesty signals
+ *  are only meaningful together (Wave P2). */
+export async function getGraphAudit(connectionId: string, schemaName?: string): Promise<GraphAudit> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/audit?${q}`);
+  if (!res.ok) throw new Error("Graph audit not available");
   return res.json();
 }
 

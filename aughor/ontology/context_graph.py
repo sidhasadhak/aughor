@@ -401,7 +401,13 @@ def _project_glossary_terms(cg: ContextGraph, ontology, merged_glossary: Optiona
                                           note=f"defined on {_bare(table)}"),
                     data={"table": _bare(table), "column": str(col),
                           "values": (cmeta or {}).get("values", ""),
-                          "caveats": (cmeta or {}).get("caveats", "")},
+                          "caveats": (cmeta or {}).get("caveats", ""),
+                          # P2: whether the autodoc seeded this table's entry, so the
+                          # warrant class can tell a written definition from a generated
+                          # one. Table-level (the merge carries no per-column marker), so
+                          # it reads "this description may be machine-written" — the
+                          # honest direction: it only ever WEAKENS a claim.
+                          "auto_generated": bool((meta or {}).get("auto_generated"))},
                 )
                 cg.add_node(node)
                 # defines: term → metric when the column name matches a metric exactly.
