@@ -8,8 +8,7 @@
 
 import type { AnswerReport, ExplorationReport, Hypothesis, InvestigationPhase, OverviewReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import type { PlaybookRef, FindingDossier } from "@/lib/api";
-import { API_BASE } from "./config";
-
+import { getApiBase } from "./config";
 // Re-export so existing imports keep working
 export type { InvestigationPhase as InvPhase };
 
@@ -675,7 +674,7 @@ async function recoverAfterDrop(invId: string | null, dispatch: (a: ChatAction) 
     await new Promise(r => setTimeout(r, 4000));
     let d: { status?: string; report?: unknown } | null = null;
     try {
-      const r = await fetch(`${API_BASE}/investigations/${encodeURIComponent(invId)}`);
+      const r = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}`);
       if (!r.ok) continue;
       d = await r.json();
     } catch { continue; }   // transient — keep polling

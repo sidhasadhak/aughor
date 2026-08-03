@@ -8,14 +8,14 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { API_BASE as BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { getSchemaRich, type RichSchema } from "@/lib/api";
 import { MetricsPanel } from "@/components/MetricsPanel";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
+  const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text || `HTTP ${res.status}`);

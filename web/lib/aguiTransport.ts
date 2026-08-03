@@ -17,8 +17,7 @@
  * event, RunError→error, RunFinished{result}→done (carrying the receipt).
  */
 import { consumeStream, type ChatAction, type DebugEvent } from "./investigationStream";
-import { API_BASE as BASE } from "./config";
-
+import { getApiBase } from "./config";
 /** The logical inputs of a unified `/ask` turn — mapped into an AG-UI RunAgentInput below. */
 export interface AguiAskInput {
   question: string;
@@ -216,7 +215,7 @@ export async function runAskViaAgui(
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}/agui/run`, {
+    res = await fetch(`${getApiBase()}/agui/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify(runInput),

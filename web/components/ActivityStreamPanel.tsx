@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { getActivity, type SessionEvent } from "@/lib/api";
-import { API_BASE } from "@/lib/config";
+import { getApiBase, onApiBaseChange } from "@/lib/config";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
 
@@ -39,6 +39,18 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
   const lastSeq = useRef(0);
   const esRef = useRef<EventSource | null>(null);
 
+  // Re-open the tail when the user points the app at a different backend. Held in state
+  // so it is a dependency of the streaming effect below: React then tears the old
+  // EventSource down and opens a new one, which is the only thing that actually moves a
+  // live stream — an open connection keeps talking to the host it was opened against.
+  // The cursor resets with it: `since_seq` indexes the OLD host's journal, and the new
+  // host's numbering is unrelated, so carrying it over would skip or replay rows.
+  const [apiBase, setApiBaseState] = useState(getApiBase);
+  useEffect(() => onApiBaseChange(next => {
+    lastSeq.current = 0;
+    setApiBaseState(next);
+  }), []);
+
   const load = useCallback(() => {
     getActivity({ kind: kindFilter ?? undefined, errors_only: errorsOnly, limit: 100 })
       .then(d => {
@@ -57,7 +69,7 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
     if (kindFilter) qs.set("kind", kindFilter);
     if (errorsOnly) qs.set("errors_only", "true");
     qs.set("since_seq", String(lastSeq.current));
-    const es = new EventSource(`${API_BASE}/activity/stream?${qs.toString()}`);
+    const es = new EventSource(`${getApiBase()}/activity/stream?${qs.toString()}`);
     esRef.current = es;
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
@@ -74,7 +86,7 @@ export function ActivityStreamPanel({ onOpenTrace }: { onOpenTrace?: (traceId: s
     };
     const iv = setInterval(() => { if (!esRef.current || esRef.current.readyState === 2) load(); }, 15_000);
     return () => { es.close(); esRef.current = null; clearInterval(iv); };
-  }, [load, kindFilter, errorsOnly]);
+  }, [load, kindFilter, errorsOnly, apiBase]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>

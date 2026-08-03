@@ -12,8 +12,7 @@
  * action for its scope; the user then retries and it proceeds.
  */
 
-import { API_BASE as BASE } from "./config";
-
+import { getApiBase } from "./config";
 export interface ApprovalInfo {
   action: string;   // e.g. "connection.delete"
   scope: string;    // e.g. the connection id
@@ -36,7 +35,7 @@ function emit(info: ApprovalInfo) {
 
 /** Allowlist an action for a scope (approve). After this, retrying the action proceeds. */
 export async function approveAction(action: string, scope: string): Promise<void> {
-  const res = await fetch(`${BASE}/approvals/allow`, {
+  const res = await fetch(`${getApiBase()}/approvals/allow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, scope }),

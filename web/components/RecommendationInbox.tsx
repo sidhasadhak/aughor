@@ -10,8 +10,7 @@ import {
 import type { InvestigationSummary } from "@/lib/types";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 
-import { API_BASE as BASE } from "@/lib/config";
-
+import { getApiBase } from "@/lib/config";
 // Status display config
 const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
   accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"          },
@@ -35,7 +34,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
 
   useEffect(() => {
     if (open && triggers.length === 0) {
-      fetch(`${BASE}/actions/triggers`).then(r => r.json())
+      fetch(`${getApiBase()}/actions/triggers`).then(r => r.json())
         .then(d => setTriggers((d.triggers ?? []).filter((t: Trigger) => t.enabled)))
         .catch(() => {});
     }
@@ -45,7 +44,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
     setFiring(triggerId);
     setOpen(false);
     try {
-      await fetch(`${BASE}/investigations/${invId}/recommendations/${index}/execute`, {
+      await fetch(`${getApiBase()}/investigations/${invId}/recommendations/${index}/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trigger_id: triggerId }),
@@ -273,7 +272,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
     async function load() {
       setLoading(true);
       try {
-        const invRes = await fetch(`${BASE}/investigations?limit=20${workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : ""}`);
+        const invRes = await fetch(`${getApiBase()}/investigations?limit=20${workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : ""}`);
         const invs: InvestigationSummary[] = await invRes.json();
         const complete = invs.filter(i => i.status === "complete" && i.kind === "investigation");
 
@@ -282,7 +281,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
           complete.map(async inv => {
             try {
               const [detailRes, outcomesData] = await Promise.all([
-                fetch(`${BASE}/investigations/${encodeURIComponent(inv.id)}`),
+                fetch(`${getApiBase()}/investigations/${encodeURIComponent(inv.id)}`),
                 getInvestigationOutcomes(inv.id),
               ]);
               const detail = await detailRes.json();

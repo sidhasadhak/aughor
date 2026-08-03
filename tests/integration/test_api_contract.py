@@ -2,7 +2,7 @@
 
 The blank-canvas class taught us that wiring drift (renamed/removed endpoints,
 calls to paths that never existed) fails silently at runtime. This test parses
-every `${BASE}/...` template in web/lib/*.ts, normalises `${param}` segments to
+every `${getApiBase()}/...` template in the frontend, normalises `${param}` segments to
 wildcards, and asserts each path matches a route in the live OpenAPI schema —
 so drift becomes a CI failure, not a blank panel.
 
@@ -15,11 +15,12 @@ from pathlib import Path
 
 WEB = Path(__file__).parent.parent.parent / "web"
 
-# Frontend API calls reach the backend through several base constants — `${BASE}`,
-# `${API_BASE}` (lib/api.ts), and `${BASE_API}` (CatalogScreen). Match all of them
-# so the contract isn't blind to whole files (CatalogScreen/ActionHub) just because
-# they picked a different alias. `${BASE}/exploration/${encodeURIComponent(id)}/...`
-_CALL_RE = re.compile(r"\$\{(?:BASE|API_BASE|BASE_API)\}(/[^\s`\"']*)")
+# Every frontend API call goes through `getApiBase()`. It used to be a const imported
+# under three different aliases (`${BASE}`, `${API_BASE}`, `${BASE_API}`), which meant this
+# regex had to know all three or go blind to whole files; the base became a function call
+# when it was made runtime-configurable, and one spelling is now the only spelling.
+# Example: `${getApiBase()}/exploration/${encodeURIComponent(id)}/...`
+_CALL_RE = re.compile(r"\$\{getApiBase\(\)\}(/[^\s`\"']*)")
 
 # Scan lib AND components: a fetch that drifts to a removed route is the
 # blank-canvas bug class, and components call the API directly too (the original

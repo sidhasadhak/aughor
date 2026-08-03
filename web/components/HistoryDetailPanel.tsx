@@ -12,7 +12,7 @@ import { ThinkingTrace } from "@/components/ThinkingTrace";
 import { SourcePanel, type SourcePanelData } from "@/components/ChatMessage";
 import { formatTimestamp } from "@/lib/format";
 import type { Hypothesis, QueryCitation, Report, AnswerReport, ExplorationReport, SubQuestion, SubQuestionAnswer, InvestigationState } from "@/lib/types";
-import { API_BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { ExportButton } from "@/components/ExportButton";
@@ -93,7 +93,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
     setSourcePanel(null);  // a stale drawer must not survive switching investigations
     if (!invId) { setInv(null); setEvidence([]); setActiveTab("report"); return; }
     setLoading(true);
-    fetch(`${API_BASE}/investigations/${invId}`)
+    fetch(`${getApiBase()}/investigations/${invId}`)
       .then(r => r.json())
       .then(setInv)
       .catch(() => setInv(null))

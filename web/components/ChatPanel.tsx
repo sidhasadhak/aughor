@@ -19,7 +19,7 @@ import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { WhyThisNumber } from "./WhyThisNumber";
 
-import { API_BASE as BASE } from "@/lib/config";
+import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 
 const FALLBACK_STARTERS = [
@@ -534,9 +534,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // R5 — composer-open prewarm (the Databricks preload analog): warm the profile
     // cache + entity-value samples before the first question. Fire-and-forget; the
     // backend job is supervised, idempotent, and Curator-governance-gated.
-    fetch(`${BASE}/connections/${encodeURIComponent(connectionId)}/prewarm`, { method: "POST" })
+    fetch(`${getApiBase()}/connections/${encodeURIComponent(connectionId)}/prewarm`, { method: "POST" })
       .catch(() => {});
-    fetch(`${BASE}/suggestions?connection_id=${encodeURIComponent(connectionId)}`)
+    fetch(`${getApiBase()}/suggestions?connection_id=${encodeURIComponent(connectionId)}`)
       .then(r => r.json())
       .then(data => {
         const suggestions: Starter[] = (data.suggestions ?? []).map((s: { text: string; mode: string }) => ({
@@ -560,7 +560,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   useEffect(() => {
     if (!restoreSessionId) return;
-    fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
+    fetch(`${getApiBase()}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
       .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
         if (!turns.length) return;
@@ -681,7 +681,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // (the same counter overview drills + query popularity feed). Fire-and-forget.
   const handleThumbs = useCallback((turnId: string, verdict: "helpful" | "unhelpful") => {
     setThumbsDone(prev => new Map(prev).set(turnId, verdict));
-    fetch(`${BASE}/chat/feedback`, {
+    fetch(`${getApiBase()}/chat/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conn_id: connectionId, turn_id: turnId, verdict }),
@@ -691,7 +691,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // ── Feedback submission ───────────────────────────────────────────────────────
   async function handleFeedbackSubmit(invId: string, feedback: string) {
     try {
-      await fetch(`${BASE}/investigations/${invId}/feedback`, {
+      await fetch(`${getApiBase()}/investigations/${invId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ feedback }),

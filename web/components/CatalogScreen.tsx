@@ -155,8 +155,7 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 
 // ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
 
-import { API_BASE as BASE_API } from "@/lib/config";
-
+import { getApiBase } from "@/lib/config";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -229,14 +228,14 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
   useEffect(() => {
     if (isSyncable || isKnowledge) {
       const endpoint = isKnowledge
-        ? `${BASE_API}/connections/${connId}/knowledge-sync/status`
-        : `${BASE_API}/connections/${connId}/sync-status`;
+        ? `${getApiBase()}/connections/${connId}/knowledge-sync/status`
+        : `${getApiBase()}/connections/${connId}/sync-status`;
       fetch(endpoint).then(r => r.json())
         .then(d => setStatus(d.last_sync ? `Last sync: ${formatTimestamp(d.last_sync)}` : "Never synced"))
         .catch(() => setStatus(null));
     }
     if (isFileUpload) {
-      fetch(`${BASE_API}/connections/${connId}/files`).then(r => r.json())
+      fetch(`${getApiBase()}/connections/${connId}/files`).then(r => r.json())
         .then(d => setFiles(d.files ?? []))
         .catch(() => {});
     }
@@ -245,8 +244,8 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
   const handleSync = async () => {
     setSyncing(true);
     const endpoint = isKnowledge
-      ? `${BASE_API}/connections/${connId}/knowledge-sync`
-      : `${BASE_API}/connections/${connId}/sync`;
+      ? `${getApiBase()}/connections/${connId}/knowledge-sync`
+      : `${getApiBase()}/connections/${connId}/sync`;
     try {
       await fetch(endpoint, { method: "POST" });
       setStatus("Sync triggered — running in background…");
@@ -261,9 +260,9 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     const form = new FormData();
     form.append("file", file);
     try {
-      const resp = await fetch(`${BASE_API}/connections/${connId}/files`, { method: "POST", body: form });
+      const resp = await fetch(`${getApiBase()}/connections/${connId}/files`, { method: "POST", body: form });
       if (resp.ok) {
-        const fresh = await fetch(`${BASE_API}/connections/${connId}/files`).then(r => r.json());
+        const fresh = await fetch(`${getApiBase()}/connections/${connId}/files`).then(r => r.json());
         setFiles(fresh.files ?? []);
       }
     } catch { /* silent */ }
@@ -271,14 +270,14 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
   };
 
   const handleDelete = async (filename: string) => {
-    await fetch(`${BASE_API}/connections/${connId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    await fetch(`${getApiBase()}/connections/${connId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
     setFiles(f => f.filter(x => x.filename !== filename));
   };
 
   const handleRestoreSamples = async () => {
     setRestoreMsg("Restoring…");
     try {
-      const r = await fetch(`${BASE_API}/connections/${connId}/restore-samples`, { method: "POST" });
+      const r = await fetch(`${getApiBase()}/connections/${connId}/restore-samples`, { method: "POST" });
       setRestoreMsg(r.ok ? "Sample data restored — refresh to see it." : "Restore failed.");
     } catch {
       setRestoreMsg("Restore failed.");

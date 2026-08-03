@@ -8,8 +8,7 @@ import {
   type ChatTurn,
   type DebugEvent,
 } from "./investigationStream";
-import { API_BASE as BASE } from "./config";
-
+import { getApiBase } from "./config";
 export interface ThreadRunOpts {
   connectionId: string;
   /** Scope a non-canvas investigation to a specific schema (multi-schema connections). */
@@ -58,7 +57,7 @@ export function useInvestigationThread() {
 
     let res: Response;
     try {
-      res = await fetch(`${BASE}/investigate`, {
+      res = await fetch(`${getApiBase()}/investigate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
