@@ -27,6 +27,7 @@ import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
+from weakref import WeakKeyDictionary
 
 logger = logging.getLogger(__name__)
 
@@ -80,20 +81,31 @@ def _int_env(name: str, default: int) -> int:
 
 
 class WorkspaceLane:
-    """The live lane for one workspace — its config + a lazily-created concurrency semaphore.
+    """The live lane for one workspace — its config + a per-loop concurrency semaphore.
 
-    The semaphore is created on first use inside the running event loop (asyncio.Semaphore
-    must bind to a loop), mirroring the explorer's existing lazy pattern."""
+    Lanes are memoized process-wide in :data:`_lanes`, so a lane object outlives any one
+    event loop. Its semaphore therefore cannot be a single instance: an
+    ``asyncio.Semaphore`` binds to the loop it is first awaited on, and a lane handed to
+    a later loop would raise "bound to a different event loop" — or, if the semaphore was
+    still acquired when its loop died, silently block every later caller inside
+    :meth:`gate` forever. Keyed by running loop instead (same reasoning, and the same fix,
+    as ``_get_explorer_semaphore`` in aughor/explorer/agent.py)."""
 
     def __init__(self, workspace_id: str, config: LaneConfig):
         self.workspace_id = workspace_id
         self.config = config
-        self._sem: "asyncio.Semaphore | None" = None
+        self._sems: "WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+            WeakKeyDictionary())
 
     def semaphore(self) -> "asyncio.Semaphore":
-        if self._sem is None:
-            self._sem = asyncio.Semaphore(self.config.max_concurrency)
-        return self._sem
+        """This lane's slot-holder for the RUNNING loop. Only called from :meth:`gate`,
+        which is async, so a running loop is always present."""
+        loop = asyncio.get_running_loop()
+        sem = self._sems.get(loop)
+        if sem is None:
+            sem = asyncio.Semaphore(self.config.max_concurrency)
+            self._sems[loop] = sem
+        return sem
 
     @asynccontextmanager
     async def gate(self):
