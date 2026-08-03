@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from aughor.agent.loss_signals import (
     LOSS_INTENT_RE,
+    classify_contra_columns,
+    contra_amount_directive,
+    contra_amount_fix,
+    contra_rate_columns,
+    gross_columns,
+    locate_columns,
     detect_loss_signals,
     directive_from_signals,
     lens_specs,
@@ -331,3 +337,112 @@ def test_a_dimension_named_after_a_measure_is_not_one():
         "TABLE: ledger\n  profit_center VARCHAR\n  cost_type VARCHAR\n  refund_amount DOUBLE\n")
     assert sig is not None
     assert sig["direct_measure"] == []
+
+
+# ── Contra-revenue units: an AMOUNT, or a RATE wearing the same name? ─────────
+# Live defect (inv f916ff3a, Tableau Superstore): `discount` is a fraction 0.00–0.80, the
+# lens demanded `SUM(<contra amount>)`, and the planner wrote `SUM(discount * quantity)` —
+# a rate times a unit count. $313.75 reported as "0.15% of gross", i.e. negligible, on a
+# sub-category that swings +$13,276 → −$31,002 once discounted.
+
+def test_a_fraction_valued_contra_column_is_a_rate_not_an_amount():
+    kinds = classify_contra_columns({"orders.discount": (0.0, 0.8)})
+    assert kinds == {"orders.discount": "rate"}
+    assert contra_rate_columns(kinds) == ["discount"]
+
+
+def test_a_currency_valued_contra_column_stays_an_amount():
+    """The safe default. A wrong 'rate' call would rewrite a real money column."""
+    kinds = classify_contra_columns({"sales.refund_amount": (0.0, 5120.44)})
+    assert kinds == {"sales.refund_amount": "amount"}
+    assert contra_rate_columns(kinds) == []
+
+
+def test_a_percentage_stored_0_to_100_is_a_rate_when_the_name_says_so():
+    """Magnitude alone reads as an amount here; only the name disambiguates it."""
+    assert classify_contra_columns({"o.discount_pct": (0.0, 85.0)}) == {"o.discount_pct": "rate"}
+    # …and the same magnitude WITHOUT a rate-ish name is left as an amount.
+    assert classify_contra_columns({"o.refund": (0.0, 85.0)}) == {"o.refund": "amount"}
+
+
+def test_an_all_zero_contra_column_is_left_alone():
+    """It carries nothing, so rewriting it changes no total and risks a wrong base."""
+    assert classify_contra_columns({"o.discount": (0.0, 0.0)}) == {"o.discount": "amount"}
+
+
+# The SQL the live run actually produced. Pinned verbatim as a regex-rot guard: this
+# module's matching is textual, so a refactor that stops recognising this exact shape
+# would silently go back to shipping $313.75.
+_LIVE_LEAKAGE_SQL = (
+    "WITH contra_by_region AS (SELECT orders.region, "
+    "SUM(orders.discount * orders.quantity) AS contra_amount FROM orders "
+    "WHERE orders.sub_category = 'Tables' GROUP BY orders.region), "
+    "gross_by_region AS (SELECT orders.region, SUM(orders.sales) AS gross_amount "
+    "FROM orders WHERE orders.sub_category = 'Tables' GROUP BY orders.region) "
+    "SELECT gross_by_region.region, 100.0 * contra_by_region.contra_amount / "
+    "NULLIF(gross_by_region.gross_amount, 0) AS metric_total FROM gross_by_region "
+    "JOIN contra_by_region ON gross_by_region.region = contra_by_region.region"
+)
+
+
+def test_the_guard_repairs_the_sql_that_actually_shipped():
+    fixed = contra_amount_fix(_LIVE_LEAKAGE_SQL, ["discount"])
+    assert fixed is not None
+    sql, note = fixed
+    assert "orders.discount * orders.quantity" not in sql
+    # The gross is borrowed from the query's OWN denominator, so numerator and
+    # denominator stay on one base.
+    assert "SUM(orders.sales * orders.discount)" in sql
+    assert "RATE" in note and "quantity" in note
+
+
+def test_the_guard_repairs_a_bare_summed_rate():
+    fixed = contra_amount_fix(
+        "SELECT SUM(discount) AS c, SUM(sales) AS g FROM orders", ["discount"])
+    assert fixed is not None
+    assert "SUM(sales * discount)" in fixed[0]
+
+
+def test_the_guard_leaves_an_already_correct_amount_alone():
+    """`sales * discount` IS the amount. Rewriting it would be a second bug."""
+    assert contra_amount_fix(
+        "SELECT SUM(o.sales * o.discount) / SUM(o.sales) FROM orders o", ["discount"]) is None
+
+
+def test_the_guard_refuses_rather_than_inventing_a_base():
+    """No gross in the query means no defensible multiplier. A wrong denominator would
+    trade a visible error for an invisible one."""
+    assert contra_amount_fix("SELECT SUM(discount * quantity) FROM orders", ["discount"]) is None
+
+
+def test_the_guard_is_inert_when_no_column_was_probed_as_a_rate():
+    assert contra_amount_fix(_LIVE_LEAKAGE_SQL, []) is None
+
+
+def test_the_directive_names_the_rate_and_the_expression_that_fixes_it():
+    d = contra_amount_directive({"orders.discount": "rate"}, ["sales"])
+    assert "discount" in d and "RATE" in d
+    assert "<gross revenue> * <rate>" in d
+    assert "sales" in d
+    # It must warn off the exact substitution the planner reached for.
+    assert "quantity" in d
+
+
+def test_the_directive_is_silent_when_every_contra_column_is_money():
+    assert contra_amount_directive({"o.refund_amount": "amount"}, ["sales"]) == ""
+
+
+def test_gross_columns_reads_revenue_names_off_the_schema():
+    cols = gross_columns("TABLE: orders\n  sales DOUBLE\n  discount DOUBLE\n  quantity INTEGER\n")
+    assert "sales" in cols and "discount" not in cols and "quantity" not in cols
+
+
+def test_locate_columns_qualifies_a_bare_signal_name():
+    """`detect_loss_signals` reports bare names; a probe needs the table. Both live schema
+    formats must resolve, since the deep path and the intake path emit different ones."""
+    indented = "TABLE: orders\n  discount DOUBLE\n  sales DOUBLE\n"
+    markdown = "## orders\n| column | type |\n| discount | DOUBLE |\n| sales | DOUBLE |\n"
+    for text in (indented, markdown):
+        assert locate_columns(text, ["discount"]) == [("orders", "discount")]
+    assert locate_columns(indented, []) == []
+    assert locate_columns(indented, ["nope"]) == []

@@ -792,7 +792,12 @@ def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset(),
     numbers. Without this, two queries over the SAME dimension but a different measure
     (e.g. a z-score-by-tier and a PoP-change-by-tier) tie on {tier} and the finding can bind
     to the wrong measure, so a z-score card inherits the PoP finding's figures (its title is
-    then overwritten to the query's, masking the swap)."""
+    then overwritten to the query's, masking the swap).
+
+    Three passes, strongest evidence first: shared dimension token, then numeric grounding
+    for whatever the tokens left unbound, then position. The middle pass matters because
+    zero token overlap is not a rare edge — it is the NORM when the narrator names findings
+    by value and the planner names queries by dimension."""
     n, m = len(queries), len(narrator_findings)
     aligned = [None] * n
     by_token = [False] * n
@@ -817,6 +822,30 @@ def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset(),
             aligned[qi] = narrator_findings[fi]
             by_token[qi] = True
             used.add(fi)
+    # NUMERIC pass — for queries the token pass left unbound. The candidate list above
+    # is filtered to pairs sharing at least one title token, so `gmat` is consulted only
+    # as a tie-break and is DISCARDED in exactly the case it would settle: when the token
+    # sets are disjoint. They are disjoint whenever the narrator titles a finding by its
+    # VALUES ("Leakage rate is concentrated in East and Central") while the query names
+    # its DIMENSION ("leakage rate by region") — no shared token, so binding fell through
+    # to position, and the narrator's order is not the planner's.
+    #
+    # Live (inv f916ff3a, the leakage phase): position bound the region rows to the
+    # discount-band interpretation and vice versa, shipping a band chart under the
+    # "East and Central" heading. The grounding matrix had the answer the whole time —
+    # the correct pairing scored 0.20/0.17 and the positional one scored 0.00/0.00.
+    # A binding whose text cites NO number present in its own rows is the signal.
+    if gmat:
+        for _g, qi, fi in sorted(
+                ((gmat[qi][fi], qi, fi) for qi in range(n) for fi in range(m)
+                 if aligned[qi] is None and fi not in used and gmat[qi][fi] > 0.0),
+                key=lambda c: (-c[0], c[1], c[2])):
+            if aligned[qi] is None and fi not in used:
+                aligned[qi] = narrator_findings[fi]
+                # Evidence-grounded, so the query that produced the rows names them —
+                # the same authority a shared token confers, for a stronger reason.
+                by_token[qi] = True
+                used.add(fi)
     # Positional fallback: fill a leftover query from the SAME-index narrator finding
     # only when that finding is still unused. Never clamp to the last one (old bug).
     for qi in range(n):
@@ -6333,6 +6362,44 @@ def _probe_lifecycle_values(conn, cols: list) -> dict:
     return out
 
 
+def _probe_contra_ranges(conn, cols: list, schema_text: str) -> dict:
+    """Observed ``(min, max)`` of each detected contra-revenue column — read-only,
+    bounded, fail-open. Returns ``{"table.col": (min, max)}``.
+
+    The detector matches contra columns by NAME, which cannot say whether `discount`
+    holds $12.40 or 0.20. The lens then demands `SUM(<contra amount>)`, so on a rate
+    column the planner is being asked for money that isn't there and invents a factor —
+    live, `SUM(discount * quantity)`, off by 225× and read as "leakage is negligible".
+    The range settles it from the data, the way the lifecycle probe settles which values
+    count. Same contract as that probe: anything unreadable simply contributes nothing.
+    """
+    from aughor.agent.loss_signals import locate_columns
+
+    # The detector returns bare column names; the probe needs a table to read from.
+    out: dict = {}
+    for table, col in locate_columns(schema_text, cols)[:8]:
+        key = f"{table}.{col}"
+        if key in out:
+            continue
+        try:
+            r = conn.execute_bounded(
+                "loss_contra_range_probe",
+                f'SELECT MIN("{col}") AS lo, MAX("{col}") AS hi FROM {table} '
+                f'WHERE "{col}" IS NOT NULL', 1)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, f"contra range probe '{key}' best-effort; skipped",
+                     counter="deep_analysis.loss_contra_probe")
+            continue
+        row = (r.rows or [None])[0]
+        if row and row[0] is not None and row[1] is not None:
+            # Stored as the driver returned them. `classify_contra_columns` owns the
+            # numeric reading and skips anything non-numeric, so there is nothing to
+            # convert — and therefore nothing to swallow — here.
+            out[key] = (row[0], row[1])
+    return out
+
+
 def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list[dict]:
     """Forward-chained LOSS lenses: one investigation
     carries ONE primary metric, so a 'losing money' run that (correctly) picked
@@ -6382,6 +6449,30 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
         question = state["question"]
         schema = _with_ledger(state, intake_data.get("filtered_schema")
                               or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+        # Pin the contra columns' UNITS before planning, for the same reason the lifecycle
+        # values are pinned: the planner is about to be asked for `SUM(<contra amount>)`
+        # and cannot see whether the column it was handed holds currency or a fraction.
+        from aughor.agent.loss_signals import (classify_contra_columns,
+                                               contra_amount_directive, contra_amount_fix,
+                                               contra_rate_columns, gross_columns)
+        _contra_ranges = _probe_contra_ranges(conn, sig.get("contra_revenue") or [], schema)
+        _contra_kinds = classify_contra_columns(_contra_ranges)
+        _rate_cols = contra_rate_columns(_contra_kinds)
+        _contra_directive = contra_amount_directive(_contra_kinds, gross_columns(schema))
+        _lens_logger.info("[ada] loss-lens contra units: probed=%d rates=%s",
+                          len(_contra_ranges), _rate_cols or "none")
+
+        def _contra_transform(_sql: str, _rates=tuple(_rate_cols)) -> str:
+            """Belt-and-braces on the rate/amount confusion. The lifecycle rule taught that
+            a planner obeys the constraint beside this one and ignores this one, and a
+            contra amount that is silently 225× too small reads as good news."""
+            _fixed = contra_amount_fix(_sql, _rates)
+            if not _fixed:
+                return _sql
+            _stats.inc("deep_analysis.contra_amount_repaired")
+            _lens_logger.info("[ada] loss-lens contra repair: %s", _fixed[1])
+            return _fixed[0]
+
         phases: list[dict] = []
         for spec in specs:
             try:
@@ -6398,6 +6489,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     # the leakage spec for what handing it to the wrong lens costs.
                     plan_system=(spec["plan_system"]
                                  + (f"\n{_lifecycle}" if spec.get("lifecycle_filter") else "")
+                                 + (f"\n{_contra_directive}" if spec["kind"] == "leakage" else "")
                                  + _ADA_SQL_GROUNDING),
                     plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
                                f"{spec['plan_ask']}"),
@@ -6410,7 +6502,8 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     exec_error_msg=f"{spec['kind']} query failed.",
                     question=question, connection_id=state.get("connection_id", ""),
                     grounding_block=intake_data.get("data_understanding_block"),
-                    sql_transform=(_lc_transform if spec.get("lifecycle_filter") else None),
+                    sql_transform=(_contra_transform if (spec["kind"] == "leakage" and _rate_cols)
+                                   else (_lc_transform if spec.get("lifecycle_filter") else None)),
                 )
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate

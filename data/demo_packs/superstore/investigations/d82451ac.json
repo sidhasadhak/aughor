@@ -1,0 +1,40 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T13:45:34.568878+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Sub-category with the largest total loss",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "d82451ac",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "Which sub-category loses the most money?",
+  "report": {
+    "approach": [
+      "Sum profit for each sub-category.",
+      "Rank sub-categories from lowest total profit.",
+      "Return every sub-category tied for the largest loss."
+    ],
+    "chart_type": "auto",
+    "columns": [
+      "sub_category"
+    ],
+    "headline": "Sub-category with the largest total loss",
+    "insight": null,
+    "intent": "You want to identify the sub-category with the most negative total profit.",
+    "overview_report": null,
+    "rows": [
+      [
+        "Tables"
+      ]
+    ],
+    "sql": "WITH ranked AS (SELECT sub_category, RANK() OVER (ORDER BY SUM(profit) ASC) AS rnk FROM orders GROUP BY sub_category) SELECT sub_category FROM ranked WHERE rnk = 1",
+    "tables_used": [
+      "orders"
+    ]
+  },
+  "started_at": "2026-08-03T13:45:34.568878+00:00",
+  "status": "complete"
+}

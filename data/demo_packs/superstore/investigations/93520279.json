@@ -1,0 +1,574 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T17:30:20.742238+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Central\u2019s **7.9%** margin is lowest; the evidence does not identify its cause.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "93520279",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Why do some regions have much lower profit margins than others?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "The actionable issue is the concentration of negative margin outcomes in Tables and several states alongside Central\u2019s **7.9%** regional margin. Management should isolate the Central state-by-category mix and the commercial economics of Tables before treating any proposed cause as established.",
+    "comparison_basis": "",
+    "confidence": "LOW",
+    "confidence_justification": "The regional ranking is definitive: Central is at **7.9%** versus **11.9%**, **13.5%**, and **14.9%** in the other regions. However, no region-by-state, region-by-category, discount, cost, return, or fulfillment analysis was provided, so the observed negative state and sub-category margins cannot be attributed quantitatively to Central\u2019s result.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "A region-by-state-by-category-by-sub-category profit and sales extract is needed to determine whether the negative state and product results explain Central\u2019s **7.9%** margin.",
+      "Discount, unit cost, freight or fulfillment cost, and promotional funding data are needed to test whether pricing or variable costs drive negative margins in Tables and loss-making states.",
+      "Returns, refunds, cancellations, and warranty data linked to orders are needed to test whether post-sale leakage contributes to regional margin differences.",
+      "Customer segment and product-level order economics by region are needed to test whether customer or product mix explains the regional spread.",
+      "Historical order data is needed to determine whether the regional and sub-category margin results are persistent or transient."
+    ],
+    "executive_summary": "Central has the lowest regional profit margin at **7.9%**, versus **11.9%** in South, **13.5%** in East, and **14.9%** in West. Furniture is the weakest category at **2.5%**, while Tables is loss-making at **-8.6%**; Bookcases and Supplies are also negative at **-3.0%** and **-2.5%**. Among states, Ohio records the lowest margin at **-21.7%**, followed by Colorado at **-20.3%**, Tennessee at **-17.4%**, Illinois at **-15.7%**, and Texas at **-15.1%**. The data analysed identifies where margins are lowest but does not reveal whether Central\u2019s regional result is caused by product mix, discounting, fulfillment costs, customer mix, or another operational factor.",
+    "headline": "Central\u2019s **7.9%** margin is lowest; the evidence does not identify its cause.",
+    "metric": "profit margin",
+    "metric_definition": "profit margin \u2014 computed as `SUM(profit) / NULLIF(SUM(sales), 0)`; a value-weighted ratio \u2014 SUM(numerator) \u00f7 SUM(denominator), not a count-based rate; (a value-weighted and a count-based reading can differ materially; this reading was chosen automatically); on orders; over data spanning 2015-01-03 \u2192 2018-12-30.",
+    "observation_period": "2015-01-03 \u2192 2018-12-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "profit margin": "percent"
+            },
+            "columns": [
+              "category",
+              "profit margin"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              },
+              "order": "asc"
+            },
+            "finding_id": "xsec_0",
+            "interpretation": "Furniture has the lowest profit margin at **2.5%**, far below Office Supplies (17.0%) and Technology (17.4%), making it a clear margin problem rather than simply the lowest-ranked category. Furniture generated only $18,451.27 of profit on $741,999.80 of sales, whereas Technology generated $145,454.95 on $836,154.03.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "$18,451.27 profit on $741,999.80 sales",
+                "delta": null,
+                "label": "Furniture profit margin",
+                "value": "2.5%"
+              },
+              {
+                "context": "$145,454.95 profit on $836,154.03 sales",
+                "delta": null,
+                "label": "Technology profit margin",
+                "value": "17.4%"
+              },
+              {
+                "context": "$122,490.80 profit on $719,047.03 sales",
+                "delta": null,
+                "label": "Office Supplies profit margin",
+                "value": "17.0%"
+              }
+            ],
+            "row_count": 3,
+            "rows": [
+              [
+                "Furniture",
+                "0.024866951334588872"
+              ],
+              [
+                "Office Supplies",
+                "0.17035158390028599"
+              ],
+              [
+                "Technology",
+                "0.17395712076891998"
+              ]
+            ],
+            "sql": "SELECT orders.category AS category, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.category ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Profit Margin by Category",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "profit margin": "percent"
+            },
+            "columns": [
+              "sub_category",
+              "profit margin"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              },
+              "order": "asc"
+            },
+            "finding_id": "xsec_1",
+            "interpretation": "Tables has the lowest profit margin at **-8.6%**, with Bookcases (-3.0%) and Supplies (-2.5%) also loss-making; these are genuine adverse results for a profit-margin metric. Tables lost $17,725.48 on $206,965.53 of sales, while the highest displayed sub-category, Accessories, earned a 25.1% margin; the result set is capped, so additional higher-margin sub-categories exist beyond those displayed.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "-$17,725.48 profit on $206,965.53 sales",
+                "delta": null,
+                "label": "Tables profit margin",
+                "value": "-8.6%"
+              },
+              {
+                "context": "-$3,472.56 profit on $114,880.00 sales",
+                "delta": null,
+                "label": "Bookcases profit margin",
+                "value": "-3.0%"
+              },
+              {
+                "context": "$41,936.64 profit on $167,380.32 sales; highest displayed",
+                "delta": null,
+                "label": "Accessories profit margin",
+                "value": "25.1%"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Tables",
+                "-0.08564460433923848"
+              ],
+              [
+                "Bookcases",
+                "-0.03022768203205451"
+              ],
+              [
+                "Supplies",
+                "-0.02547695227218468"
+              ],
+              [
+                "Machines",
+                "0.01788618360909618"
+              ],
+              [
+                "Chairs",
+                "0.08095673289142752"
+              ],
+              [
+                "Storage",
+                "0.09506113035847773"
+              ],
+              [
+                "Phones",
+                "0.13489326988749759"
+              ],
+              [
+                "Furnishings",
+                "0.1424035793665881"
+              ],
+              [
+                "Binders",
+                "0.1485736062550223"
+              ],
+              [
+                "Appliances",
+                "0.16867516872463853"
+              ],
+              [
+                "Art",
+                "0.2407108325474088"
+              ],
+              [
+                "Accessories",
+                "0.2505469950176574"
+              ],
+              [
+                "Fasteners",
+                "0.3139650429193064"
+              ],
+              [
+                "Copiers",
+                "0.37195584600425774"
+              ],
+              [
+                "Envelopes",
+                "0.42267581842200763"
+              ]
+            ],
+            "sql": "SELECT orders.sub_category AS sub_category, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.sub_category ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "The query returned 15 rows at its LIMIT; this is the low-margin tail, with more sub-categories beyond the displayed results.",
+            "title": "Profit Margin by Sub-Category",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "profit margin": "percent"
+            },
+            "columns": [
+              "region",
+              "profit margin"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              },
+              "order": "asc"
+            },
+            "finding_id": "xsec_2",
+            "interpretation": "Central has the lowest profit margin at **7.9%**, versus 11.9% in South, 13.5% in East, and 14.9% in West. Because Central\u2019s $39,706.36 profit is generated from substantial sales of $501,239.89, this is a material regional margin gap rather than a small-sample fluctuation.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "$39,706.36 profit on $501,239.89 sales",
+                "delta": null,
+                "label": "Central profit margin",
+                "value": "7.9%"
+              },
+              {
+                "context": "$108,418.45 profit on $725,457.82 sales",
+                "delta": null,
+                "label": "West profit margin",
+                "value": "14.9%"
+              },
+              {
+                "context": "Lowest versus highest regional margin",
+                "delta": null,
+                "label": "Central-to-West gap",
+                "value": "7.0 percentage points"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "Central",
+                "0.07921628591177551"
+              ],
+              [
+                "South",
+                "0.11934341609004487"
+              ],
+              [
+                "East",
+                "0.13483398568882154"
+              ],
+              [
+                "West",
+                "0.14944831420727214"
+              ]
+            ],
+            "sql": "SELECT orders.region AS region, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.region ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Profit Margin by Region",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "profit margin": "percent"
+            },
+            "columns": [
+              "state",
+              "profit margin"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              },
+              "order": "asc"
+            },
+            "finding_id": "xsec_3",
+            "interpretation": "Ohio has the lowest profit margin at **-21.7%**, followed closely by Colorado (-20.3%), Tennessee (-17.4%), Illinois (-15.7%), and Texas (-15.1%); negative profit margins are clearly adverse. Texas is particularly consequential because its -$25,729.36 loss is on $170,188.05 of sales, while Ohio lost $16,971.38 on $78,258.14 of sales; the scan is capped to the bottom 15 states, so higher-margin states are not shown.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "-$16,971.38 profit on $78,258.14 sales",
+                "delta": null,
+                "label": "Ohio profit margin",
+                "value": "-21.7%"
+              },
+              {
+                "context": "-$25,729.36 profit on $170,188.05 sales",
+                "delta": null,
+                "label": "Texas profit margin",
+                "value": "-15.1%"
+              },
+              {
+                "context": "-$12,607.89 profit on $80,166.10 sales",
+                "delta": null,
+                "label": "Illinois profit margin",
+                "value": "-15.7%"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Ohio",
+                "-0.21686405359821034"
+              ],
+              [
+                "Colorado",
+                "-0.20330864300423968"
+              ],
+              [
+                "Tennessee",
+                "-0.1742128929958063"
+              ],
+              [
+                "Illinois",
+                "-0.1572720494414466"
+              ],
+              [
+                "Texas",
+                "-0.15118192455324614"
+              ],
+              [
+                "North Carolina",
+                "-0.13472097019514948"
+              ],
+              [
+                "Pennsylvania",
+                "-0.13354823353086456"
+              ],
+              [
+                "Arizona",
+                "-0.09715788512108484"
+              ],
+              [
+                "Oregon",
+                "-0.06829558003918272"
+              ],
+              [
+                "Florida",
+                "-0.037992185369136594"
+              ],
+              [
+                "Wyoming",
+                "0.0625"
+              ],
+              [
+                "West Virginia",
+                "0.15367656783135397"
+              ],
+              [
+                "California",
+                "0.16688540795754495"
+              ],
+              [
+                "Idaho",
+                "0.1886424965190989"
+              ],
+              [
+                "Nevada",
+                "0.19826323612588412"
+              ]
+            ],
+            "sql": "SELECT orders.state AS state, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.state ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "The query returned 15 rows at its LIMIT; these are the lowest-margin states, and additional states with higher margins are outside the displayed tail.",
+            "title": "Profit Margin by State",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "profit margin": "percent"
+            },
+            "columns": [
+              "city",
+              "profit margin"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              },
+              "order": "asc"
+            },
+            "finding_id": "xsec_4",
+            "interpretation": "Abilene has the lowest displayed profit margin at **-270.0%**, but it is based on one order and only $1.39 of sales, so it is not a reliable driver-level signal. Several other extreme city ratios also come from one to six orders; Lancaster is more material among the named cities, at -73.2% on 46 orders and $9,891.46 of sales, though the city scan is limited to the bottom-ranked tail.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": "-$3.76 profit on $1.39 sales; n=1",
+                "delta": null,
+                "label": "Abilene profit margin",
+                "value": "-270.0%"
+              },
+              {
+                "context": "-$7,239.07 profit on $9,891.46 sales; n=46",
+                "delta": null,
+                "label": "Lancaster profit margin",
+                "value": "-73.2%"
+              },
+              {
+                "context": "-$520.10 profit on $606.11 sales; n=6",
+                "delta": null,
+                "label": "Waco profit margin",
+                "value": "-85.8%"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Abilene",
+                "-2.7"
+              ],
+              [
+                "Mesquite",
+                "-1.6802178415279587"
+              ],
+              [
+                "Oswego",
+                "-1.665106311611352"
+              ],
+              [
+                "Romeoville",
+                "-1.65"
+              ],
+              [
+                "Missouri City",
+                "-1.5"
+              ],
+              [
+                "Deer Park",
+                "-1.4999999999999998"
+              ],
+              [
+                "Littleton",
+                "-1.3666666666666667"
+              ],
+              [
+                "Tyler",
+                "-1.2779404733789161"
+              ],
+              [
+                "Champaign",
+                "-1.2"
+              ],
+              [
+                "Waco",
+                "-0.85810463891536"
+              ],
+              [
+                "Elyria",
+                "-0.7666666666666667"
+              ],
+              [
+                "Lancaster",
+                "-0.7318500476774722"
+              ],
+              [
+                "Ormond Beach",
+                "-0.7000000000000001"
+              ],
+              [
+                "Pensacola",
+                "-0.6666666666666666"
+              ],
+              [
+                "Skokie",
+                "-0.6097934012151215"
+              ]
+            ],
+            "sql": "SELECT orders.city AS city, SUM(profit) / NULLIF(SUM(sales), 0) AS metric_total, COUNT(*) AS n, SUM(profit) AS numerator_total, SUM(sales) AS denominator_total FROM orders GROUP BY orders.city ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "The query returned 15 rows at its LIMIT, representing only the lowest-margin city tail. Most named extreme ratios have very small order counts and sales bases, so they require validation before action.",
+            "title": "Profit Margin by City",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "**Ohio\u2019s -21.7% profit margin** is the lowest meaningful geographic result shown, and loss-making states\u2014especially Texas, Ohio, Illinois, and Pennsylvania\u2014likely contribute to Central\u2019s comparatively low 7.9% regional margin."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "The question asks why regions differ in profit margin, so this is a cross-sectional regional driver investigation rather than a time-trend question. Profit margin is calculated as aggregate profit divided by aggregate sales and must be re-aggregated as SUM(profit)/SUM(sales) within each region or drill-down segment; it must not be averaged across rows or segments. The profile context provides no dataset date range or reporting grain, so the full available orders date range should be used, but exact observation, prior-period, and YoY dates cannot be determined from the supplied schema/sample rows. No transaction status/state column exists in orders, so no status filter is applicable. Returns can be joined through orders.order_id = returns.order_id if return behavior is investigated as a potential margin driver, but returns status should not be applied to the core metric unless a net-of-returns definition is explicitly requested.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "profit margin (SUM(profit) / NULLIF(SUM(sales), 0))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "orders"
+              ],
+              [
+                "Dimensions",
+                "orders.region, orders.category, orders.sub_category, orders.segment, orders.state, orders.city, orders.ship_mode, orders.product_name"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning profit margin across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Drill down **Central** by state, category, and sub-category to quantify which combinations create the **7.9%** margin outcome. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Identify and isolate the primary regional margin driver.",
+        "owner": "Commercial Analytics",
+        "timeline": "1\u20133 days investigation"
+      },
+      {
+        "action": "Audit **Tables** pricing, discounts, product cost, shipping cost, and return activity because its margin is **-8.6%**. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Identify and isolate the cause of negative Tables profitability.",
+        "owner": "Category Management and Finance",
+        "timeline": "1\u20133 days investigation"
+      },
+      {
+        "action": "Review commercial terms in **Ohio**, **Colorado**, and **Tennessee**, where margins are **-21.7%**, **-20.3%**, and **-17.4%** respectively, before expanding comparable sales activity. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Identify and isolate state-specific margin leakage.",
+        "owner": "Regional Sales and Finance",
+        "timeline": "1\u20133 days investigation"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-03T17:28:47.147498+00:00",
+  "status": "complete"
+}

@@ -184,6 +184,210 @@ def detect_loss_signals(question: str, schema_text: str) -> dict | None:
             "lifecycle": lifecycle[:4], "direct_measure": direct[:6]}
 
 
+# ── Contra-revenue: an AMOUNT, or a RATE wearing the same name? ───────────────
+# `CONTRA_REVENUE_RE` matches on the column NAME, and a name carries no units. The
+# leakage lens then asks the planner for `SUM(<contra amount>)` — so when the matched
+# column holds a RATE the planner has been told to sum money that does not exist, and
+# it will manufacture something plausible-looking rather than refuse.
+#
+# Found live 2026-08-03 on Tableau Superstore (inv f916ff3a). The schema offers
+# `discount DOUBLE`, holding a fraction 0.00–0.80. The detector reported
+# `contra_revenue: ['discount']`, and with no amount column in reach the planner wrote
+# `SUM(orders.discount * orders.quantity)` — a rate times a unit count, which is not
+# money in any unit. It totalled **$313.75** against a true contra-revenue of **$70,722**
+# and the report stated it as "0.15% of gross sales", i.e. discounting is negligible — on
+# a sub-category that swings from +$13,276 undiscounted to −$31,002 discounted. A 225×
+# understatement that inverts the finding the lens exists to produce.
+#
+# The kind is NOT decidable from the name (`discount` is a rate here and a currency
+# amount in plenty of schemas), but it IS decidable from the data. So it is probed and
+# settled, never guessed — the same move `lifecycle_directive` makes for values, and for
+# the same reason: what the planner cannot see, it invents.
+
+#: Names that declare themselves a rate. A range probe already catches the 0–1 case; this
+#: covers a percentage stored 0–100, where the magnitude alone looks like an amount.
+_RATE_NAME_RE = re.compile(r"(^|_)(rate|pct|percent|percentage|ratio|share|frac\w*)($|_)", re.I)
+
+#: Names that declare themselves money. Used to pick the gross a rate multiplies against.
+_GROSS_NAME_RE = re.compile(
+    r"(^|_)(sales|revenue|amount|amt|gross|price|turnover|billings|value|total)($|_)", re.I)
+
+
+def _as_float(v):
+    """``float(v)`` or None. Returning None rather than raising keeps the callers free of
+    an except/continue, which reads as a swallowed failure and is counted as one."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).strip())
+    except ValueError:
+        return None
+
+
+def locate_columns(schema_text: str, names) -> list:
+    """``[(table, column)]`` for each named column, as THIS schema declares it.
+
+    `detect_loss_signals` reports bare column names — enough to name a signal in a prompt,
+    not enough to read one. A caller that wants to probe the column needs the table, and
+    the schema parser that knows both live formats belongs to this module rather than to
+    whoever is probing.
+    """
+    wanted = {str(n).lower() for n in (names or [])}
+    if not wanted:
+        return []
+    seen: set = set()
+    out: list = []
+    for table, col in _table_columns(schema_text or ""):
+        key = (table, col)
+        if col.lower() in wanted and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def classify_contra_columns(ranges: dict) -> dict:
+    """``{column: 'rate' | 'amount'}`` from each contra column's OBSERVED range.
+
+    `ranges` maps a column reference to its probed ``(min, max)``. A column whose values
+    all fall inside [-1, 1] is a fraction, not currency — summing it produces a number
+    with no unit. A ``_pct``/``_rate``-named column bounded by 100 is the same thing
+    scaled. Everything else is treated as an amount, which is the safe default: it leaves
+    the existing behaviour untouched, and a wrong 'rate' call would rewrite real money.
+    """
+    out: dict = {}
+    for col, bounds in (ranges or {}).items():
+        pair = list(bounds) if isinstance(bounds, (list, tuple)) else []
+        lo, hi = (_as_float(pair[0]), _as_float(pair[1])) if len(pair) == 2 else (None, None)
+        if lo is None or hi is None:
+            continue          # not a numeric range: nothing to classify from
+        leaf = str(col).split(".")[-1].strip('"')
+        named_rate = bool(_RATE_NAME_RE.search(leaf))
+        if hi == 0 and lo == 0:
+            out[col] = "amount"          # carries nothing; rewriting it changes no total
+        elif -1.0 <= lo and hi <= 1.0:
+            out[col] = "rate"
+        elif named_rate and 0 <= lo and hi <= 100.0:
+            out[col] = "rate"
+        else:
+            out[col] = "amount"
+    return out
+
+
+def gross_columns(schema_text: str) -> list:
+    """Money columns a rate can multiply against — the candidate gross for a leakage
+    amount. Name-based and ADVISORY: it only seeds the prompt hint, while
+    `contra_amount_fix` takes the gross from the query's own denominator, where it is
+    guaranteed to be the base the rate is already a share of."""
+    return sorted({c for _t, c in _table_columns(schema_text or "")
+                   if _GROSS_NAME_RE.search(c)})
+
+
+def contra_rate_columns(kinds: dict) -> list:
+    """Just the leaf names classified as rates — what the directive and guard key on."""
+    return sorted({str(c).split(".")[-1].strip('"')
+                   for c, k in (kinds or {}).items() if k == "rate"})
+
+
+def contra_amount_directive(kinds: dict, gross_cols: list | None = None) -> str:
+    """Tell the planner, in the prompt, that a detected contra column is a RATE and what
+    to multiply it by ('' when every contra column is already an amount).
+
+    The prompt is the belt; `contra_amount_fix` is the enforcement. Both exist because the
+    lifecycle rule taught that a planner will obey the constraint beside this one and
+    ignore this one — and a silently wrong amount is indistinguishable from a small one.
+    """
+    rates = contra_rate_columns(kinds)
+    if not rates:
+        return ""
+    gross = [str(g).split(".")[-1].strip('"') for g in (gross_cols or [])]
+    gross_hint = (f" The gross/revenue column{'s' if len(gross) > 1 else ''} available "
+                  f"{'are' if len(gross) > 1 else 'is'}: {', '.join(gross)}." if gross else "")
+    return (
+        "CONTRA-REVENUE UNITS (probed from THIS data — not a guess):\n"
+        f"  {', '.join(rates)} hold a RATE (a fraction), NOT a currency amount. "
+        "Summing a rate — or multiplying it by a COUNT such as quantity, orders or "
+        "records — yields a number in no unit at all, and it will look like a small "
+        "amount of money rather than an error.\n"
+        f"  The contra AMOUNT is `<gross revenue> * <rate>`.{gross_hint} Use that "
+        "expression as the numerator wherever a contra amount is required, and keep the "
+        "same gross column as the rate's denominator so the ratio stays a true share.\n")
+
+
+#: `SUM( <ref> )` or `SUM( <ref> * <ref> )` — no nested parens, no literals. Deliberately
+#: narrow: the guard rewrites only the shapes it can read completely.
+_SUM_INNER_RE = re.compile(r"\bSUM\s*\(\s*([^()]*?)\s*\)", re.I)
+_COL_REF = r'[A-Za-z_][\w."]*'
+_ONE_REF_RE = re.compile(rf"^({_COL_REF})$")
+_TWO_REF_RE = re.compile(rf"^({_COL_REF})\s*\*\s*({_COL_REF})$")
+
+
+def _leaf(ref: str) -> str:
+    return str(ref).split(".")[-1].strip('"').lower()
+
+
+def contra_amount_fix(sql: str, rate_cols, gross_hint: str = "") -> tuple | None:
+    """Repair a contra-revenue aggregate that sums a RATE. Returns ``(sql, note)`` or None.
+
+    Fires only on the unambiguous shapes — `SUM(rate)` and `SUM(rate * x)` where `x` is
+    not itself a money column — and rewrites the numerator to `SUM(gross * rate)`.
+
+    The gross is taken from the QUERY'S OWN text: a leakage query already divides by one
+    (`SUM(sales)` as the denominator), so using it keeps numerator and denominator on the
+    same base and needs no configuration. When the SQL offers no gross to borrow, this
+    returns None rather than inventing a base — a wrong denominator would trade a visible
+    error for an invisible one.
+    """
+    s = sql or ""
+    rates = {_leaf(c) for c in (rate_cols or [])}
+    if not s or not rates:
+        return None
+
+    # Candidate gross: a plain SUM over a single column that is neither a rate nor a
+    # count. Prefer an explicitly revenue-named one; the hint wins when supplied.
+    grosses: list[str] = []
+    for m in _SUM_INNER_RE.finditer(s):
+        one = _ONE_REF_RE.match(m.group(1).strip())
+        if one and _leaf(one.group(1)) not in rates:
+            grosses.append(one.group(1))
+    gross = (gross_hint
+             or next((g for g in grosses if _GROSS_NAME_RE.search(_leaf(g))), "")
+             or (grosses[0] if grosses else ""))
+    if not gross:
+        return None
+
+    repaired: list[str] = []
+
+    def _sub(m):
+        inner = m.group(1).strip()
+        one = _ONE_REF_RE.match(inner)
+        if one and _leaf(one.group(1)) in rates:
+            repaired.append(inner)
+            return f"SUM({gross} * {one.group(1)})"
+        two = _TWO_REF_RE.match(inner)
+        if two:
+            a, b = two.group(1), two.group(2)
+            a_rate, b_rate = _leaf(a) in rates, _leaf(b) in rates
+            # One side is the rate and the other is not already money → the other side is
+            # the bogus factor (quantity, order count). Two rates multiplied is not a
+            # shape this understands, so it is left alone.
+            if a_rate != b_rate:
+                rate_ref, other = (a, b) if a_rate else (b, a)
+                if not _GROSS_NAME_RE.search(_leaf(other)):
+                    repaired.append(inner)
+                    return f"SUM({gross} * {rate_ref})"
+        return m.group(0)
+
+    fixed = _SUM_INNER_RE.sub(_sub, s)
+    if not repaired:
+        return None
+    note = (f"Corrected the contra-revenue amount: `{repaired[0]}` sums a discount RATE, "
+            f"which is a fraction rather than currency — multiplying it by a count gives a "
+            f"figure in no unit. The leaked amount is `{_leaf(gross)} × rate`.")
+    return fixed, note
+
+
 # ── Leakage direction ─────────────────────────────────────────────────────────
 # A leakage rate must RISE as money is lost. Bound to `SUM(net)/SUM(gross)` it measures
 # the opposite — revenue RETAINED — and every reading of the report inverts with it: the
@@ -371,7 +575,12 @@ def lens_specs(sig: dict | None, primary_metric_blob: str) -> list[dict]:
                 "column with a HANDFUL of distinct values naming a class of business (cabin, "
                 "fare brand, tier, channel, region). NEVER group the claim by a "
                 "high-cardinality identifier (booking id, customer, SKU) — no single one of "
-                "thousands is material enough to act on. For each group: 100.0 * SUM(<contra "
+                "thousands is material enough to act on. <contra amount> must be CURRENCY: "
+                "when the only contra column available is a RATE or fraction (a discount "
+                "rate, a markdown percentage), the amount is `<gross amount> * <rate>` — "
+                "never the bare rate, and never the rate multiplied by a COUNT such as "
+                "quantity or order count, which yields a figure in no unit at all. "
+                "For each group: 100.0 * SUM(<contra "
                 "amount>) / NULLIF(SUM(<gross amount>), 0) AS metric_total, plus SUM(<gross "
                 "amount>) AS n — n MUST be the same gross that is the rate's denominator, "
                 "never a row count: the opportunity is money, so the volume has to be the "

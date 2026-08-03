@@ -8,6 +8,7 @@ do the one thing it must never do. So the refusal is tested before anything else
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -155,3 +156,57 @@ def test_write_pack_is_deterministic(tmp_path):
     write_pack(p, tmp_path / "two")
     assert (tmp_path / "one" / "curation.json").read_bytes() == \
            (tmp_path / "two" / "curation.json").read_bytes()
+
+
+# ── The SHIPPED pack ──────────────────────────────────────────────────────────
+# The design names a lossy re-bake as the second-worst risk: a pack regenerated after a
+# schema change silently drops findings, and it would still open and still render. The
+# round-trip gate is only a mitigation if it runs over the artifact that actually ships,
+# so these tests read the committed pack rather than a fixture.
+
+_SHIPPED = Path(__file__).resolve().parents[2] / "data" / "demo_packs" / "superstore"
+
+
+def test_the_shipped_pack_round_trips():
+    pack = read_pack(_SHIPPED)
+    assert pack.investigations, "the shipped pack carries no investigations"
+    assert pack_round_trips(_SHIPPED), (
+        "the shipped demo pack no longer round-trips — a re-bake would lose content")
+
+
+def test_the_shipped_pack_carries_exactly_one_connection():
+    """The safety property, asserted on the artifact itself and not just the exporter.
+    A public pack built from a store holding other workspaces' real business data is one
+    stray id away from a leak."""
+    pack = read_pack(_SHIPPED)
+    owners = {i.get("connection_id") for i in pack.investigations}
+    assert owners == {pack.connection_id}, f"pack mixes connections: {owners}"
+
+
+def test_the_shipped_pack_ships_no_unfinished_run():
+    pack = read_pack(_SHIPPED)
+    assert all(i.get("status") == "complete" for i in pack.investigations)
+
+
+def test_the_shipped_pack_measures_profit_not_a_proxy_for_it():
+    """The pack is a showroom, so its own contents are the claim. Two pre-fix artifacts
+    answered 'where are we losing money' with a discount-leakage RATE while `orders.profit`
+    sat in the schema, and one abstained outright — curated out deliberately. This asserts
+    they stay out: a deep analysis in the pack must report a direct loss measure.
+    """
+    pack = read_pack(_SHIPPED)
+    deep = [i for i in pack.investigations if (i.get("kind") or "") != "chat"]
+    assert deep, "the pack carries no deep analysis"
+    for inv in deep:
+        metric = ((inv.get("report") or {}).get("metric") or "").lower()
+        assert any(w in metric for w in ("profit", "margin", "cost")), (
+            f"{inv['id']} reports {metric!r} — a proxy, not the loss measure the question asks about")
+
+
+def test_the_shipped_pack_contains_no_rate_times_count_contra_amount():
+    """`SUM(discount * quantity)` multiplies a rate by a unit count. It shipped once,
+    understating contra-revenue 140× and reading as 'leakage is negligible'. Pinned here
+    because the pack is the artifact a visitor actually reads."""
+    blob = json.dumps([i.get("report") for i in read_pack(_SHIPPED).investigations], default=str)
+    assert "discount * quantity" not in blob
+    assert "quantity * discount" not in blob

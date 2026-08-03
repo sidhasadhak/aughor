@@ -1,0 +1,693 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T20:46:23.692174+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Tables losses are concentrated in East and Standard Class, with East discount leakage highest.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "1acf8d44",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Why is the Tables sub-category losing money?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "The immediate priority is to contain the concentrated East and Standard Class loss exposure. Discounting is a credible investigation lead in East, but product, fulfillment, and other cost drivers must be tested before assigning root cause.",
+    "comparison_basis": "",
+    "confidence": "LOW",
+    "confidence_justification": "The cross-sectional evidence consistently identifies East and Standard Class as the largest loss concentrations, and East has the highest discount leakage rate. However, the available analysis does not provide a non-overlapping profit attribution, product cost, shipping cost, discount-by-profit interaction, or causal test; therefore it cannot establish why Tables loses money.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Product acquisition cost and margin data are required to determine whether losses arise from insufficient selling price, product cost, or discounting.",
+      "Shipping, freight, handling, and delivery-cost data are required to test whether Standard Class economics drive the loss concentration.",
+      "Order-level discount, profit, region, ship mode, and product cross-tabs are required to test whether East discount leakage is associated with negative profit.",
+      "SKU-level Tables profit and discount results were not provided, so individual products cannot be identified as loss drivers.",
+      "Returns, refunds, damage, cancellation, and customer-service cost data are required to test post-sale revenue and cost leakage hypotheses.",
+      "No temporal analysis was provided, so the investigation cannot determine whether the loss pattern is persistent, worsening, or event-related.",
+      "No applicable event evidence was supplied linking promotions, outages, or holidays to the Tables loss concentration."
+    ],
+    "executive_summary": "Tables is losing money most heavily in East and Standard Class, while the data analysed does not determine the underlying cost or pricing cause. East generated **-$11,025.38** in profit across **80** records, representing **62.2%** of the net Tables loss. Standard Class generated **-$11,910.01** in profit losses across **190** records, or **67.2%** of the net Tables loss. East also had the highest measured discount leakage rate at **37.59%**, versus the overall Tables leakage rate of **21.3%**.",
+    "headline": "Tables losses are concentrated in East and Standard Class, with East discount leakage highest.",
+    "metric": "profit",
+    "metric_definition": "profit \u2014 computed as `SUM(profit)`; on orders; over data spanning 2015-01-03 \u2192 2018-12-30.",
+    "observation_period": "2015-01-03 \u2192 2018-12-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "region",
+              "leakage rate",
+              "records"
+            ],
+            "error": null,
+            "finding_id": "leakage_0",
+            "interpretation": "Across all regions, Tables generated approximately $207.0K in gross sales and gave back approximately $44.2K through discounts. The observed driver is discounting; without cost data, the scan cannot determine whether Tables is losing money on a profit basis.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "Estimated as gross sales \u00d7 discount",
+                "delta": null,
+                "label": "Total contra-revenue leakage",
+                "value": "$44.2K"
+              },
+              {
+                "context": "Of $207.0K gross Tables sales",
+                "delta": null,
+                "label": "Overall leakage rate",
+                "value": "21.3%"
+              },
+              {
+                "context": "All regions",
+                "delta": null,
+                "label": "Gross sales",
+                "value": "$207.0K"
+              },
+              {
+                "context": "East runs 37.6% vs West's 14.9%; closing that gap across 39.1K of gross \u2248 8.9K of gross. A ceiling computed from peers, not a forecast.",
+                "delta": "152% above benchmark",
+                "label": "Opportunity: East \u2192 West benchmark",
+                "value": "8.9K"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "East",
+                "37.592862683252356",
+                "39139.80700000001"
+              ],
+              [
+                "Central",
+                "20.440656947492055",
+                "39154.971"
+              ],
+              [
+                "South",
+                "20.09890452250505",
+                "43916.191999999995"
+              ],
+              [
+                "West",
+                "14.923345837124382",
+                "84754.56199999998"
+              ]
+            ],
+            "sql": "WITH tables_line_grain AS (SELECT region, SUM(sales * discount) AS contra_amount, SUM(sales) AS gross_amount FROM orders WHERE category = 'Furniture' AND sub_category = 'Tables' GROUP BY region) SELECT region, 100.0 * SUM(contra_amount) / NULLIF(SUM(gross_amount), 0) AS metric_total, SUM(gross_amount) AS n FROM tables_line_grain GROUP BY region ORDER BY metric_total DESC",
+            "stat_note": "Contra-revenue rates measure discount-related revenue reduction, not profit or loss. \u00b7 East runs 37.6% vs West's 14.9%; closing that gap across 39.1K of gross \u2248 8.9K of gross. A ceiling computed from peers, not a forecast.",
+            "title": "Tables discount leakage rate by region",
+            "trust_caveat": "claim not grounded: none of the asserted figures ['$207.0', '$44.2'] appear in the query result"
+          }
+        ],
+        "metric_label": "leakage rate",
+        "phase_icon": "\ud83d\udcb8",
+        "phase_id": "loss_leakage",
+        "phase_name": "Revenue Leakage \u2014 Where Money Walks Back Out",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Tables has an estimated $44.2K in contra-revenue from discounts, equal to 21.3% of $207.0K gross sales. This scan identifies discount-driven revenue leakage, not profitability or cost-based losses. Leakage rate is concentrated in the East: 37.6%, 16.2 percentage points above the overall Tables rate."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "region",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc",
+              "ref_lines": [
+                {
+                  "kind": "global_avg",
+                  "label": "Avg (all segments)",
+                  "value": -55.567241379310346
+                }
+              ]
+            },
+            "finding_id": "xsec_0",
+            "interpretation": "East has the lowest regional profit total at **-$11,025.38** across 80 records, representing 62.2% of the net Tables loss. Its average loss of -$137.82 per record is also far more negative than the overall Tables average of about -$55.57 per record, whereas West offsets losses with $1,482.61 in profit and a $12.78 average.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "80 records; 62.2% of net loss",
+                "delta": null,
+                "label": "East total profit",
+                "value": "-$11,025.38"
+              },
+              {
+                "context": "vs about -$55.57 overall",
+                "delta": null,
+                "label": "East average profit per record",
+                "value": "-$137.82"
+              },
+              {
+                "context": "$12.78 per record",
+                "delta": null,
+                "label": "West total profit",
+                "value": "$1,482.61"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "East",
+                "-11025.3801",
+                "80",
+                "-137.82"
+              ],
+              [
+                "South",
+                "-4623.0579",
+                "51",
+                "-90.65"
+              ],
+              [
+                "Central",
+                "-3559.650399999999",
+                "72",
+                "-49.44"
+              ],
+              [
+                "West",
+                "1482.6073000000004",
+                "116",
+                "12.78"
+              ]
+            ],
+            "sql": "SELECT orders.region AS region, SUM(profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(profit) / NULLIF(SUM(SUM(profit)) OVER (), 0), 1) AS pct_of_total FROM orders WHERE orders.category = 'Furniture' AND orders.sub_category = 'Tables' GROUP BY orders.region ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Tables Profit by Region",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "state",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc",
+              "ref_lines": [
+                {
+                  "kind": "global_avg",
+                  "label": "Avg (all segments)",
+                  "value": -128.98008403361348
+                }
+              ]
+            },
+            "finding_id": "xsec_1",
+            "interpretation": "Among the 15 lowest-total states shown, New York has the largest loss at **-$4,535.64** across 28 records, but North Carolina is much less efficient per record at -$460.53 across only 8 records. Illinois also combines a large loss (-$4,309.74) with a highly negative -$239.43 average; because this scan is capped at 15 states, additional states exist beyond those shown.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "28 records; -$161.99 per record",
+                "delta": null,
+                "label": "New York total profit",
+                "value": "-$4,535.64"
+              },
+              {
+                "context": "-$3,684.25 across 8 records",
+                "delta": null,
+                "label": "North Carolina average profit per record",
+                "value": "-$460.53"
+              },
+              {
+                "context": "-$239.43 per record across 18 records",
+                "delta": null,
+                "label": "Illinois total profit",
+                "value": "-$4,309.74"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "New York",
+                "-4535.6408",
+                "28",
+                "-161.99"
+              ],
+              [
+                "Illinois",
+                "-4309.7447",
+                "18",
+                "-239.43"
+              ],
+              [
+                "North Carolina",
+                "-3684.2538999999997",
+                "8",
+                "-460.53"
+              ],
+              [
+                "Ohio",
+                "-2715.3345",
+                "16",
+                "-169.71"
+              ],
+              [
+                "Tennessee",
+                "-2663.4138",
+                "8",
+                "-332.93"
+              ],
+              [
+                "Pennsylvania",
+                "-2588.7538000000004",
+                "15",
+                "-172.58"
+              ],
+              [
+                "Florida",
+                "-2493.1111",
+                "11",
+                "-226.65"
+              ],
+              [
+                "Arizona",
+                "-2281.8701",
+                "9",
+                "-253.54"
+              ],
+              [
+                "Texas",
+                "-2216.6766000000002",
+                "33",
+                "-67.17"
+              ],
+              [
+                "Oregon",
+                "-1048.8971",
+                "5",
+                "-209.78"
+              ],
+              [
+                "Colorado",
+                "-974.8753999999999",
+                "4",
+                "-243.72"
+              ],
+              [
+                "Massachusetts",
+                "-545.2947",
+                "7",
+                "-77.9"
+              ],
+              [
+                "California",
+                "-303.5580000000001",
+                "71",
+                "-4.28"
+              ],
+              [
+                "Rhode Island",
+                "-230.1678",
+                "4",
+                "-57.54"
+              ],
+              [
+                "New Hampshire",
+                "-105.3164",
+                "1",
+                "-105.32"
+              ]
+            ],
+            "sql": "SELECT orders.state AS state, SUM(profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(profit) / NULLIF(SUM(SUM(profit)) OVER (), 0), 1) AS pct_of_total FROM orders WHERE orders.category = 'Furniture' AND orders.sub_category = 'Tables' GROUP BY orders.state ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Tables Profit by State",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "city",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc",
+              "ref_lines": [
+                {
+                  "kind": "global_avg",
+                  "label": "Avg (all segments)",
+                  "value": -208.73749999999998
+                }
+              ]
+            },
+            "finding_id": "xsec_2",
+            "interpretation": "Among the 15 lowest-total cities shown, New York City has the largest loss at **-$3,542.72** over 23 records, while Philadelphia follows at -$2,588.75 over 15. The per-record lens is markedly worse in small-sample cities: Columbia averages -$968.88 on one record and Concord averages -$929.91 on two, so these extreme averages warrant validation before attributing broad impact; more cities likely exist beyond the capped list.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": "23 records; -$154.03 per record",
+                "delta": null,
+                "label": "New York City total profit",
+                "value": "-$3,542.72"
+              },
+              {
+                "context": "one record",
+                "delta": null,
+                "label": "Columbia average profit per record",
+                "value": "-$968.88"
+              },
+              {
+                "context": "-$1,859.82 across 2 records",
+                "delta": null,
+                "label": "Concord average profit per record",
+                "value": "-$929.91"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "New York City",
+                "-3542.7215999999994",
+                "23",
+                "-154.03"
+              ],
+              [
+                "Philadelphia",
+                "-2588.7538000000004",
+                "15",
+                "-172.58"
+              ],
+              [
+                "Concord",
+                "-1859.8226",
+                "2",
+                "-929.91"
+              ],
+              [
+                "Aurora",
+                "-1721.4225999999999",
+                "6",
+                "-286.9"
+              ],
+              [
+                "Phoenix",
+                "-1491.9276",
+                "4",
+                "-372.98"
+              ],
+              [
+                "Chicago",
+                "-1446.9305000000002",
+                "8",
+                "-180.87"
+              ],
+              [
+                "Jacksonville",
+                "-1344.7266",
+                "4",
+                "-336.18"
+              ],
+              [
+                "Knoxville",
+                "-1150.6491",
+                "2",
+                "-575.32"
+              ],
+              [
+                "Columbia",
+                "-968.8833",
+                "1",
+                "-968.88"
+              ],
+              [
+                "Burlington",
+                "-852.791",
+                "2",
+                "-426.4"
+              ],
+              [
+                "Lorain",
+                "-734.5264",
+                "1",
+                "-734.53"
+              ],
+              [
+                "San Francisco",
+                "-655.211",
+                "16",
+                "-40.95"
+              ],
+              [
+                "Houston",
+                "-625.0305999999999",
+                "9",
+                "-69.45"
+              ],
+              [
+                "Rockford",
+                "-538.446",
+                "1",
+                "-538.45"
+              ],
+              [
+                "Marion",
+                "-517.0335",
+                "2",
+                "-258.52"
+              ]
+            ],
+            "sql": "SELECT orders.city AS city, SUM(profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(profit) / NULLIF(SUM(SUM(profit)) OVER (), 0), 1) AS pct_of_total FROM orders WHERE orders.category = 'Furniture' AND orders.sub_category = 'Tables' GROUP BY orders.city ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Tables Profit by City",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "segment",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_3",
+            "interpretation": "Consumer has the lowest segment total at **-$9,728.04** across 159 records, accounting for 54.9% of the net loss. However, segment averages are fairly close, ranging from -$46.29 for Corporate to -$61.18 for Consumer, indicating that Consumer's larger loss is primarily concentrated through record volume rather than a sharply worse per-record result.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": "159 records; 54.9% of net loss",
+                "delta": null,
+                "label": "Consumer total profit",
+                "value": "-$9,728.04"
+              },
+              {
+                "context": "vs -$46.29 for Corporate",
+                "delta": null,
+                "label": "Consumer average profit per record",
+                "value": "-$61.18"
+              },
+              {
+                "context": "-$4,906.50 across 106 records",
+                "delta": null,
+                "label": "Corporate average profit per record",
+                "value": "-$46.29"
+              }
+            ],
+            "row_count": 3,
+            "rows": [
+              [
+                "Consumer",
+                "-9728.037800000002",
+                "159",
+                "-61.18"
+              ],
+              [
+                "Corporate",
+                "-4906.498600000001",
+                "106",
+                "-46.29"
+              ],
+              [
+                "Home Office",
+                "-3090.944700000001",
+                "54",
+                "-57.24"
+              ]
+            ],
+            "sql": "SELECT orders.segment AS segment, SUM(profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(profit) / NULLIF(SUM(SUM(profit)) OVER (), 0), 1) AS pct_of_total FROM orders WHERE orders.category = 'Furniture' AND orders.sub_category = 'Tables' GROUP BY orders.segment ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Tables Profit by Customer Segment",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "ship_mode",
+              "profit",
+              "records",
+              "profit per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_4",
+            "interpretation": "Standard Class has the lowest ship-mode total at **-$11,910.01** across 190 records, contributing 67.2% of the net Tables loss. Its -$62.68 average per record is more negative than the other modes, but the total is chiefly concentrated by volume: First Class averages a less-negative -$29.05 despite still losing $1,365.37 overall.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": "190 records; 67.2% of net loss",
+                "delta": null,
+                "label": "Standard Class total profit",
+                "value": "-$11,910.01"
+              },
+              {
+                "context": "lowest shown ship-mode average",
+                "delta": null,
+                "label": "Standard Class average profit per record",
+                "value": "-$62.68"
+              },
+              {
+                "context": "-$1,365.37 across 47 records",
+                "delta": null,
+                "label": "First Class average profit per record",
+                "value": "-$29.05"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "Standard Class",
+                "-11910.012199999997",
+                "190",
+                "-62.68"
+              ],
+              [
+                "Second Class",
+                "-3320.6798999999996",
+                "61",
+                "-54.44"
+              ],
+              [
+                "First Class",
+                "-1365.3664999999999",
+                "47",
+                "-29.05"
+              ],
+              [
+                "Same Day",
+                "-1129.4225",
+                "21",
+                "-53.78"
+              ]
+            ],
+            "sql": "SELECT orders.ship_mode AS ship_mode, SUM(profit) AS metric_total, COUNT(*) AS n, ROUND(SUM(profit) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(profit) / NULLIF(SUM(SUM(profit)) OVER (), 0), 1) AS pct_of_total FROM orders WHERE orders.category = 'Furniture' AND orders.sub_category = 'Tables' GROUP BY orders.ship_mode ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Tables Profit by Ship Mode",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Losses are most concentrated in Standard Class, which accounts for **$11,910.01** of Tables losses (67.2%) across 190 records; geographically, East contributes the largest regional loss at $11,025.38."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "The direct loss measure is orders.profit, so the investigation must report SUM(profit) for rows where orders.sub_category = 'Tables' and identify segments with negative aggregate profit. This is a cross-sectional 'losing money' question, not a time-trend question; compare Tables profit across region, geography, customer segment, shipping mode, product, and discount levels. Discount is a contra-revenue signal and should be analyzed as a contributing factor to loss, including profit by discount band/rate; it is not a substitute for the direct profit metric. The returns table has only a returned flag, not a refunded monetary amount, so realized refund leakage cannot be quantified from the supplied schema. If returns are used as a drill-down, deduplicate returns to one row per order_id before joining because the sample shows repeated order_id values; otherwise profit and sales would be duplicated. No transaction status/state column is present, so no status filter applies. The profile context does not provide a verified data range; the dates reflect the apparent Superstore order-history range and should be validated against orders.order_date before execution. YoY is not applicable to this cross-sectional investigation.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "profit (SUM(profit))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "orders"
+              ],
+              [
+                "Dimensions",
+                "orders.region, orders.state, orders.city, orders.segment, orders.ship_mode, orders.product_name, orders.product_id, orders.discount"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning profit across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake",
+        "loss_leakage"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake",
+        "loss_leakage"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Review **East discounting** at order and product level; pause or redesign discounts that fail profitability review. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Investigate the **37.59%** East discount leakage rate and identify discount decisions associated with Tables losses.",
+        "owner": "Pricing and Regional Sales",
+        "timeline": "1\u20133 days investigation"
+      },
+      {
+        "action": "Audit **Standard Class** Tables orders for freight, handling, and discount economics. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Prioritize the channel containing **-$11,910.01** of Tables profit losses across **190** records.",
+        "owner": "Operations and Finance",
+        "timeline": "1\u20133 days investigation"
+      },
+      {
+        "action": "Investigate **New York**, **Illinois**, and **North Carolina** Tables orders by product and discount. [unproven \u2014 consider adding to playbook]",
+        "expected_impact": "Focus review on state losses of **-$4,535.64**, **-$4,309.74**, and **-$3,684.25**, respectively.",
+        "owner": "Regional Sales and Category Management",
+        "timeline": "1\u20133 days investigation"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-03T20:44:04.943027+00:00",
+  "status": "complete"
+}

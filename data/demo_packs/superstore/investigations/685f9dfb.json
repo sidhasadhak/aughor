@@ -1,0 +1,63 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-03T17:24:59.162854+00:00",
+  "connection_id": "8d36d4c2",
+  "headline": "Return rate by ship mode",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "685f9dfb",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "What is the return rate by ship mode?",
+  "report": {
+    "approach": [
+      "Deduplicate returned orders to prevent repeated return records inflating results.",
+      "Match returned orders to order records using order ID.",
+      "Calculate returned distinct orders as a percentage of all distinct orders.",
+      "Group results by shipping mode and rank highest return rates first."
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "ship_mode",
+      "return_rate_pct"
+    ],
+    "headline": "Return rate by ship mode",
+    "insight": {
+      "anomalies": [
+        "Same Day\u2019s **7.2%** return rate is the highest among ship modes."
+      ],
+      "confidence": "High",
+      "narrative": "Same Day has the highest return rate at **7.2%**, followed by First Class at **6.86%**; Standard Class is lowest at **5.61%**. Return rates decline steadily from faster to slower shipping modes, with no material anomaly beyond Same Day\u2019s modestly higher rate; confidence is high.",
+      "trend": "Return rates decrease from Same Day to Standard Class."
+    },
+    "intent": "You want to see how return rates compare across shipping modes.",
+    "overview_report": null,
+    "rows": [
+      [
+        "Same Day",
+        "7.2"
+      ],
+      [
+        "First Class",
+        "6.86"
+      ],
+      [
+        "Second Class",
+        "5.71"
+      ],
+      [
+        "Standard Class",
+        "5.61"
+      ]
+    ],
+    "sql": "WITH returned_orders AS (SELECT DISTINCT order_id FROM returns WHERE returned = TRUE) SELECT o.ship_mode, ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct FROM orders o LEFT JOIN returned_orders r ON o.order_id = r.order_id GROUP BY o.ship_mode ORDER BY return_rate_pct DESC",
+    "tables_used": [
+      "orders",
+      "returns"
+    ]
+  },
+  "started_at": "2026-08-03T17:24:59.162854+00:00",
+  "status": "complete"
+}
