@@ -10,6 +10,7 @@ from __future__ import annotations
 from aughor.agent.loss_signals import (
     LOSS_INTENT_RE,
     detect_loss_signals,
+    directive_from_signals,
     lens_specs,
     lifecycle_directive,
     loss_signal_directive,
@@ -269,3 +270,64 @@ def test_lifecycle_detection_parses_the_data_catalog_format():
     assert "tickets.segment_status" in sig["lifecycle"]
     # The markdown header row is not a column.
     assert all(not c.endswith(".Column") for c in sig["lifecycle"])
+
+
+# ── the direct loss measure beats the proxy ───────────────────────────────────
+# Found live 2026-08-03 on Tableau Superstore. "Why is the Tables sub-category losing
+# money?" chose `realized discount leakage rate`, reported LOW confidence and abstained —
+# "no profit, cost, or margin measure was tested" — while `orders.profit` sat in the
+# schema. The same question reworded to name profit answered correctly (-$31,001.78 across
+# 247 discounted rows vs +$13,276.30 across 72 at full price), which is what proved the
+# directive's steer rather than a capability limit was at fault.
+#
+# The cause was a clause asserted unconditionally: "without cost data profit is NOT
+# computable". True for the airline schema it was written against, false for any schema
+# carrying a profit column, and stated as fact either way.
+
+_SCHEMA_WITH_PROFIT = """TABLE: orders
+  sales DOUBLE
+  discount DOUBLE
+  profit DOUBLE
+  sub_category VARCHAR
+"""
+
+_SCHEMA_WITHOUT_PROFIT = """TABLE: bookings
+  fare DOUBLE
+  refund_amount DOUBLE
+  total_seats INTEGER
+"""
+
+
+def test_a_profit_column_is_detected_as_a_direct_loss_measure():
+    sig = detect_loss_signals("Why is the Tables sub-category losing money?", _SCHEMA_WITH_PROFIT)
+    assert sig is not None
+    assert "profit" in sig["direct_measure"]
+
+
+def test_the_directive_orders_the_real_measure_ahead_of_the_proxy():
+    d = directive_from_signals(
+        detect_loss_signals("Why is Tables losing money?", _SCHEMA_WITH_PROFIT))
+    assert "Test it FIRST" in d
+    # …and must not tell the intake the thing it can plainly see is unavailable.
+    assert "NOT computable" not in d
+    assert "profit" in d
+
+
+def test_the_honesty_clause_survives_where_it_is_actually_true():
+    """The clause is right for a schema with no profit/cost column — it is only a false
+    premise when asserted over one that has it. Deleting it outright would reintroduce the
+    'no losses' conclusion it was written to prevent."""
+    d = directive_from_signals(
+        detect_loss_signals("Where are we losing money?", _SCHEMA_WITHOUT_PROFIT))
+    assert "NOT computable" in d
+    assert "Test it FIRST" not in d
+
+
+def test_a_dimension_named_after_a_measure_is_not_one():
+    """`profit_center` is a label to group BY, not a number to aggregate. Harvesting it as
+    a measure hands the intake a column it cannot sum."""
+    sig = detect_loss_signals(
+        "Where are we losing money?",
+        "TABLE: ledger\n  profit_center VARCHAR\n  cost_type VARCHAR\n  refund_amount DOUBLE\n")
+    assert sig is not None
+    assert sig["direct_measure"] == []
