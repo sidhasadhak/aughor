@@ -225,7 +225,6 @@ def test_p1_pin_runs_the_governed_formula_against_the_real_db(monkeypatch, gt_db
         sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "1")
     monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))
@@ -247,7 +246,6 @@ def test_p1_pin_fails_closed_when_governed_formula_does_not_run(monkeypatch, gt_
         sql="SUM(nonexistent_col) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "1")
     monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))

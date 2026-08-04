@@ -3706,6 +3706,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Audit
+         * @description Wave P2 — the graph's honesty scorecard: how much of it is measured, and how much
+         *     is a name match.
+         *
+         *     One call, because the three honesty signals are only meaningful together: the warrant
+         *     mix says how *well-founded* the graph is, `staleness` says whether the SCHEMA still
+         *     matches, and `drift` says whether the graph still holds what the platform has since
+         *     learned. A surface showing any one alone can read as reassurance — a Fresh badge over
+         *     a graph of unprobed name matches is exactly the shape this wave refuses.
+         */
+        get: operations["get_context_graph_audit_graph_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph/drift": {
         parameters: {
             query?: never;
@@ -3735,6 +3762,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Lineage
+         * @description Wave P4 — what depends on this node, with the expression that would break.
+         *
+         *     The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
+         *     no route and no caller: the question "what breaks if this table changes" was answerable
+         *     and unasked. This is the seam.
+         *
+         *     Each dependent carries its **site** — the line of the finding's SQL, or the metric
+         *     formula, that names the thing in question. A dependency list without sites says which
+         *     artifacts to open; with them it says what to look at once open.
+         */
+        get: operations["get_context_graph_lineage_graph_lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/graph/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Review
+         * @description Wave P5 — what the graph knows it cannot vouch for.
+         *
+         *     The proactive half of "check every node": rather than waiting for a question and
+         *     explaining it afterwards, the graph reports the nodes worth checking BEFORE one is
+         *     asked — unprobed joins, isolated tables, findings that disagree, undocumented hubs.
+         *
+         *     Deterministic and LLM-free. Ranked by how many other nodes depend on the thing in
+         *     doubt, never by an invented severity score.
+         */
+        get: operations["get_context_graph_review_graph_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph/tour": {
         parameters: {
             query?: never;
@@ -3749,6 +3831,33 @@ export interface paths {
          *     ``narrate=true`` adds a one-time LLM narration over the already-fixed order.
          */
         get: operations["get_context_graph_tour_graph_tour_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/graph/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Trust
+         * @description Wave P3 — what standing each node has earned.
+         *
+         *     A read-time SIDECAR: nothing here is written to the committed artifact, so a
+         *     conclusion about a node can never outlive the evidence for it.
+         *
+         *     On a warehouse where nobody has recorded a verdict, every node reads `unchecked` —
+         *     that is the honest report, not an empty feature, and `human_signal: false` says so
+         *     in one field rather than leaving a reader to infer it from a row of zeros.
+         */
+        get: operations["get_context_graph_trust_graph_trust_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6595,6 +6704,39 @@ export interface paths {
          *     caller's org (fail-closed, no existence leak).
          */
         get: operations["get_receipt_receipt__receipt_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/receipt/{receipt_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Receipt Trace
+         * @description Wave P1 — the connection-graph subgraph this answer stands on.
+         *
+         *     A SEPARATE call, not a field on the receipt, for two reasons that both matter:
+         *
+         *     1. The receipt is **signed** over every field it carries. The trace is resolved against
+         *        the LIVE graph, so it legitimately changes between two reads of the same answer —
+         *        folding it into the signed body would either break verification or make the
+         *        signature attest to something mutable. The signed receipt states what the answer
+         *        claimed; the trace shows what those claims rest on *now*.
+         *     2. It costs a graph load. Every receipt fetch should not pay for a walk most readers
+         *        never open.
+         *
+         *     Same fail-closed RBAC as the receipt itself: an id outside the caller's org 404s
+         *     identically to one that does not exist.
+         */
+        get: operations["get_receipt_trace_receipt__receipt_id__trace_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -16804,11 +16946,110 @@ export interface operations {
             };
         };
     };
+    get_context_graph_audit_graph_audit_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_graph_content_drift_graph_drift_get: {
         parameters: {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_lineage_graph_lineage_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                node_id?: string | null;
+                table?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_review_graph_review_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -16842,6 +17083,38 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 narrate?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_trust_graph_trust_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;
@@ -22019,6 +22292,39 @@ export interface operations {
         };
     };
     get_receipt_receipt__receipt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                receipt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_receipt_trace_receipt__receipt_id__trace_get: {
         parameters: {
             query?: never;
             header?: never;

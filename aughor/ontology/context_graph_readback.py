@@ -53,6 +53,24 @@ def last_cited_nodes() -> list[str]:
     return list(_last_cited.get())
 
 
+def publish_cited_nodes(node_ids: list[str]) -> None:
+    """Republish citations produced in ANOTHER context onto this one.
+
+    A ``ContextVar.set`` inside ``contextvars.copy_context().run(...)`` — which is exactly
+    what ``ContextThreadPoolExecutor.submit`` does — never propagates back to the
+    submitter. The deep-analysis path builds its priors in that pool, so the citations it
+    produced were invisible to the receipt writer on the request context: the read-back
+    fired, the receipt recorded nothing, and the failure was silent because an empty list
+    is also what "the flag is off" looks like.
+
+    A worker reads :func:`last_cited_nodes` inside its own context and hands the ids back
+    through its return value; the submitter calls this. Explicit and one-directional —
+    nothing here reaches across a context boundary by itself.
+    """
+    if node_ids:
+        _last_cited.set(list(node_ids))
+
+
 def _clip(text: str, cap: int = _TEXT_CAP) -> str:
     t = " ".join((text or "").split())
     return t if len(t) <= cap else t[: cap - 1] + "…"
@@ -83,6 +101,7 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
            max_chars: int = _SECTION_CAP) -> GraphPrior:
     from aughor.ontology.context_graph_search import merge_graphs, one_hop, search_graph
     from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
 
     cg = merge_graphs(load_graphs_for_connection(org_id, connection_id))
     if cg is None or not cg.nodes:
@@ -120,26 +139,25 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
         cited += [t.id for t in tables[:8]]
 
     if joins:
-        lines.append("\nVerified joins (measured value-domain overlap — real, probed "
-                     "confidence, not a guess):")
+        lines.append("\nJoins between these entities — each states the evidence behind it, "
+                     "so a measured join and a name match are not read as equal claims:")
         for e in joins[:_MAX_JOINS]:
             frm = by_id.get(e.from_id)
             to = by_id.get(e.to_id)
             if not (frm and to):
                 continue
-            m = e.provenance.measured
-            conf = f"overlap {m:.0%}" if m is not None else "unprobed"
-            lines.append(f"  • {frm.label} → {to.label}  ({conf}, "
-                         f"{e.provenance.note.split()[-1] if e.provenance.note else ''})  [{e.id}]")
+            v = warrant_of_edge(e)
+            lines.append(f"  • {frm.label} → {to.label}  "
+                         f"[{v.warrant}: {v.detail}]  [{e.id}]")
             cited.append(e.id)
 
     if findings:
         lines.append("\nFindings already established on these entities (from prior "
                      "investigations — do NOT re-derive; build on them):")
         for f in findings[:_MAX_FINDINGS]:
-            src = f.provenance.source
+            v = warrant_of_node(f)
             lines.append(f'  • "{_clip(f.summary or f.label)}"  [{f.id}] '
-                         f"(source: {src})")
+                         f"({v.warrant}: {v.detail})")
             cited.append(f.id)
 
     if terms or resolves:

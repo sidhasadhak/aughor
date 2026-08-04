@@ -47,3 +47,76 @@ def test_graph_domain_aggregation_collapses_cross_domain_edges():
     # one aggregated edge per domain pair (never a per-table hairball)
     assert len(agg["domain_edges"]) == 1
     assert agg["domain_edges"][0]["count"] == 1
+
+
+# ── Wave P2 — the warrant class on the surface, and the audit scorecard ──────────
+
+def test_graph_endpoint_stamps_a_warrant_on_every_node_and_edge(monkeypatch, tmp_path):
+    """Derived at READ time: the artifact on disk is untouched, but no surface has to
+    re-derive 'how do we know this' from a source name it cannot rank."""
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_graph())
+
+    from aughor.routers.ontology import get_context_graph
+    payload = get_context_graph("c", "main")
+
+    assert all("warrant" in n for n in payload["nodes"].values())
+    assert all("warrant" in e for e in payload["edges"].values())
+    join = next(e for e in payload["edges"].values() if e["kind"] == "joins_on")
+    assert join["warrant"]["warrant"] == "measured"      # value_overlap=1.0 was probed
+    assert join["warrant"]["label"] == "Measured"
+
+    # …and the artifact itself never gained the field (structural truth stays structural).
+    on_disk = store.load_graph("default", "c", "main")
+    assert on_disk is not None
+    assert "warrant" not in on_disk.edges[join["id"]].model_dump()
+
+
+def test_graph_audit_reports_the_warrant_mix_with_both_freshness_axes(monkeypatch, tmp_path):
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_graph())
+
+    from aughor.routers.ontology import get_context_graph_audit
+    out = get_context_graph_audit("c", "main")
+
+    assert out["totals"]["edges"] >= 1
+    assert out["edges"]["measured"] >= 1
+    # every class present even at zero — a scorecard that hid its empty weak classes
+    # would read as "nothing weak here"
+    assert set(out["edges"]) == set(out["order"])
+    assert 0.0 <= out["edge_grounded_share"] <= 1.0
+    # both freshness axes travel with the mix; neither may be silently omitted
+    assert "staleness" in out
+    assert "drift" in out
+
+
+def test_graph_review_route_serves_the_queue(monkeypatch, tmp_path):
+    """Wave P5 — the fixture graph has a fully-measured join, so the queue is about what
+    is genuinely open, not manufactured work."""
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    g = _graph()
+    # An unprobed name-matched join: the item the queue exists to surface.
+    from aughor.ontology.context_graph import GraphEdge, GraphNode, Provenance
+    g.add_node(GraphNode(id="table:Product", kind="table", label="Product",
+                         summary="things sold",
+                         provenance=Provenance(source="ontology.entity"),
+                         data={"source_tables": ["products"]}))
+    g.add_edge(GraphEdge(id="table:Order--joins_on-->table:Product", kind="joins_on",
+                         from_id="table:Order", to_id="table:Product",
+                         provenance=Provenance(source="join_guard",
+                                               note="unprobed join_confidence=inferred")))
+    store.save_graph(g)
+
+    from aughor.routers.ontology import get_context_graph_review
+    out = get_context_graph_review("c", "main")
+
+    assert out["total"] >= 1
+    kinds = {i["type"] for i in out["items"]}
+    assert "unprobed_join" in kinds
+    item = next(i for i in out["items"] if i["type"] == "unprobed_join")
+    assert item["check"] == "probe_join"
+    assert item["question"] and item["why"]        # every item states both
+    assert out["by_type"]["unprobed_join"] >= 1

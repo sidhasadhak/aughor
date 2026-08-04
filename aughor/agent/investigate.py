@@ -663,7 +663,6 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
             try:
                 from aughor.semops.operators import apply_step, detect_text_columns
                 if step.column in detect_text_columns(r):
-                    from aughor.kernel.flags import flag_enabled
                     op = apply_step(
                         r, step.operator, step.column,
                         predicate=(step.predicate or ""),
@@ -671,7 +670,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                         criterion=(getattr(step, "criterion", "") or ""),
                         k=getattr(step, "k", 10),
                         instruction=(getattr(step, "instruction", "") or ""),
-                        validate=flag_enabled("semops.guarded_extract"),
+                        validate=True,
                     )
                     r = op.result
                     _s.inc("deep_analysis.semantic_steps_applied")
@@ -3050,14 +3049,9 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     """Pin the intake's ``metric_sql`` to the connection's GOVERNED definition when one matches, so the
     scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio),
     and crystallizes the definition resolution to the Ambiguity Ledger so it compounds per connection
-    (P4). Returns a transparency note (or None when nothing was pinned). Flag-gated
-    (``ada.pin_canonical_metric``); deterministic; fail-open on every uncertainty."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.pin_canonical_metric"):
-            return None
-    except Exception:
-        return None
+    (P4). Returns a transparency note (or None when nothing was pinned). Deterministic;
+    fail-open on every uncertainty — the pin only happens when a governed formula exists
+    AND substitutes cleanly, which is the trigger that made a flag redundant."""
     llm_sql = (getattr(intake, "metric_sql", "") or "").strip()
     if not llm_sql:
         return None
@@ -3162,13 +3156,14 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     """P4 burn-down: when this metric's definition was already resolved (by a user clarify) on this
     connection, HARD-BIND the resolved reading's SQL — so the user's choice is honored on EVERY
     subsequent run (never re-asked, and P1's silent pin can't override a 'use the parsed reading'
-    choice). Returns a transparency note when it binds, else None. Flag-gated (`ada.clarify_gate`);
-    fail-open: only binds a substitutable formula that actually runs over the metric table."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.clarify_gate"):
-            return None
-    except Exception:
+    choice). Returns a transparency note when it binds, else None. Fail-open: only binds a
+    substitutable formula that actually runs over the metric table.
+
+    Flag-gated on ``deep_analysis.clarify_gate`` (default ON). The substitutability check
+    is the DATA trigger; the flag is the DEPLOYMENT posture — a headless consumer cannot
+    answer an interrupt, and this path is one that pauses the run."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("deep_analysis.clarify_gate"):
         return None
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
@@ -3195,12 +3190,11 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     their probed previews) so the run can PAUSE and ask, instead of silently choosing one. Returns None
     (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
     the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
-    Deterministic; fail-open on every uncertainty."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.clarify_gate"):
-            return None
-    except Exception:
+    Deterministic; fail-open on every uncertainty. Flag-gated on
+    ``deep_analysis.clarify_gate`` (default ON) — this is the path that PAUSES the run,
+    so a headless deployment must be able to opt out of being interrupted."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("deep_analysis.clarify_gate"):
         return None
     parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
     label = (getattr(intake, "metric_label", "") or "").strip()
@@ -4817,15 +4811,9 @@ def _premise_direction(question: str) -> "Optional[str]":
     return None
 
 
-def _premise_enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("deep_analysis.premise_check")
-
-
 def _causal_drill_enabled() -> bool:
-    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off; mirrors
-    `_premise_enabled`. When on, the cross-section scan floats causal dimensions to the front (so they
+    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off.
+    When on, the cross-section scan floats causal dimensions to the front (so they
     survive the query cap) and, after localising WHERE, auto-drills the event-only dims to WHY (a
     composition/share-of-returns lens) instead of stopping and merely recommending it."""
     from aughor.kernel.flags import flag_enabled
@@ -4975,7 +4963,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # questioning the data: challenge the question's own assumption before decomposing it.
     premise_check_section = ""
     _premise_dir = _premise_direction(question)
-    if _premise_dir and _premise_enabled():
+    # The premise check runs whenever the question ASSERTS a direction — `_premise_direction`
+    # returning non-None IS the trigger, which is why Wave 3 could drop the flag that used
+    # to sit in front of it.
+    if _premise_dir:
         premise_check_section = (
             "\nPREMISE CHECK — write this query FIRST, before the per-dimension scan:\n"
             f"  The question ASSERTS {metric_label} is \"{_premise_dir}\" for its subject. Validate that "
@@ -6731,18 +6722,19 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
 
 
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
-def _adversarial_should_run(synth, *, high_stakes: bool) -> bool:
+def _adversarial_should_run(synth) -> bool:
     """Whether the refuter should spend its ONE skeptic LLM call on this verdict. The
-    caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection / abstention).
-    ``high_stakes`` (``ada.adversarial_high_stakes``) is the deterministic materiality gate: fire
-    ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
-    AND the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path place
-    without paying an LLM call on the many MEDIUM/LOW verdicts. Confidence-triggered activation.
-    (The always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
+    caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection /
+    abstention); this is the deterministic materiality gate on top: fire ONLY when the
+    verdict is asserted with **HIGH** confidence. That is the costly-if-wrong minority AND
+    the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path
+    place without paying an LLM call on the many MEDIUM/LOW verdicts.
+
+    The ``high_stakes`` parameter went with its flag (Wave 3): the caller passed a literal
+    True, so the False arm was unreachable and the flag it named no longer existed. (The
+    always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
     strategy §4G.)"""
-    if high_stakes:
-        return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
-    return False
+    return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
 
 
 def _apply_adversarial_refutation(synth, verdict) -> None:
@@ -7127,17 +7119,16 @@ def ada_synthesize(state: AgentState) -> dict:
     # T4-3 / P5: confidence-tiered adversarial verification. Spend ONE skeptic LLM call
     # to try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before
     # shipping — the few high-stakes conclusions, never per finding. A surviving refutation records the
-    # objection and caps a HIGH confidence to MEDIUM. One materiality-gated tier
-    # (`ada.adversarial_high_stakes`, auto-eligible): only a HIGH-confidence decision-changing verdict,
-    # where being wrong is costly and the cap bites. (The always-challenge full tier was deleted
-    # 2026-07-31 — flag strategy §4G.)
-    from aughor.kernel.flags import flag_enabled as _flag_enabled
-    _adv_high_stakes = _flag_enabled("deep_analysis.adversarial_high_stakes")
-    if synth and _adv_high_stakes:
+    # objection and caps a HIGH confidence to MEDIUM. ONE materiality-gated tier: only a
+    # HIGH-confidence decision-changing verdict, where being wrong is costly and the cap
+    # bites. That materiality test is the gate — a flag on top of it only ever answered a
+    # question the trigger had already answered. (The always-challenge full tier was
+    # deleted 2026-07-31 — flag strategy §4G.)
+    if synth:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
             if is_decision_changing_verdict(synth.headline, synth.executive_summary) \
-                    and _adversarial_should_run(synth, high_stakes=_adv_high_stakes):
+                    and _adversarial_should_run(synth):
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)

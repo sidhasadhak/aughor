@@ -57,7 +57,6 @@ def _governed_refund_rate() -> CanonicalMetric:
 
 
 def _pin_on(monkeypatch, metrics):
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "1")
     monkeypatch.setattr(
         "aughor.semantic.canonical.resolve_canonical_metrics",
         lambda *a, **k: list(metrics),
@@ -146,17 +145,6 @@ def test_pin_fails_closed_when_probe_errors(monkeypatch):
     assert intake.metric_sql == original           # unchanged — never make a run worse
 
 
-def test_pin_noop_when_flag_off(monkeypatch):
-    # ada.pin_canonical_metric is auto-elevated by default (2026-07-13 graduation); off = explicit "0"
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "0")
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
-                        lambda *a, **k: [_governed_refund_rate()])
-    intake = _intake()
-    original = intake.metric_sql
-    assert I._pin_canonical_metric(intake, "conn1", "schema", _StubConn(ok=True)) is None
-    assert intake.metric_sql == original
-
-
 def test_pin_noop_when_already_governed(monkeypatch):
     # LLM already emitted the governed formula (modulo whitespace) → nothing to pin, no note.
     _pin_on(monkeypatch, [_governed_refund_rate()])
@@ -205,7 +193,6 @@ def test_ada_intake_pins_governed_metric_end_to_end(monkeypatch):
 
 def test_ada_intake_leaves_metric_untouched_when_flag_off(monkeypatch):
     # Byte-identical default: no governed pin without the flag.
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", raising=False)
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_intake()))
     import aughor.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")

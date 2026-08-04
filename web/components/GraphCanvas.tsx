@@ -48,6 +48,7 @@ import {
 } from "d3-force";
 import type { CGEdge, CGNode, ConnectionGraph } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { WarrantChip } from "@/components/graph/WarrantChip";
 
 const KIND_COLOR: Record<string, { bg: string; border: string }> = {
   domain:        { bg: "rgba(100,116,139,0.18)", border: "#64748b" },
@@ -309,9 +310,16 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
       .filter((e) => idset.has(e.from_id) && idset.has(e.to_id))
       .map((e) => {
         const measured = e.provenance?.measured;
+        // P2: a join with a measured overlap shows the number; one without shows its
+        // warrant class instead of nothing, so an unprobed edge is visibly weaker on the
+        // map rather than merely unlabelled (which reads as "no detail", not "no proof").
+        const label = e.kind !== "joins_on" ? undefined
+          : typeof measured === "number" ? `${Math.round(measured * 100)}%`
+          : e.warrant?.warrant === "declared" ? "declared"
+          : e.warrant ? "unprobed" : undefined;
         return {
           id: e.id, source: e.from_id, target: e.to_id,
-          label: e.kind === "joins_on" && typeof measured === "number" ? `${Math.round(measured * 100)}%` : undefined,
+          label,
           style: { stroke: EDGE_COLOR[e.kind] ?? "#475569", strokeWidth: e.kind === "joins_on" ? 1.6 : 1, opacity: 0.6 },
           labelStyle: { fill: "var(--t2, #94a3b8)", fontSize: 9 },
           labelBgStyle: { fill: "transparent" },
@@ -384,8 +392,13 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
             () => onAsk(questionFor(selected)), true)}
           {selected.length === 1 && selected[0].kind === "table" && onOpenTable &&
             action("Open detail", () => onOpenTable(selected[0].id))}
+          {/* P2: the warrant class, not the raw source name a reader cannot rank. The
+              source stays in the tooltip for anyone who wants the store it came from. */}
+          {selected.length === 1 && selected[0].warrant &&
+            <WarrantChip warrant={selected[0].warrant} showDetail />}
           {selected.length === 1 && selected[0].provenance &&
-            <span style={{ fontSize: 10, color: "var(--t4, #64748b)" }}>
+            <span style={{ fontSize: 10, color: "var(--t4, #64748b)" }}
+                  title={selected[0].provenance.note}>
               source: {selected[0].provenance.source}
             </span>}
         </div>

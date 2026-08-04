@@ -188,3 +188,146 @@ class TestKnowledgeConnectorCredentials:
                 assert "per-user" in src or "per_user" in src, (
                     f"{mod.__name__} mentions OAuth without saying whose credential it "
                     f"uses — the ambiguity is the bug")
+
+
+# ── Wave P4 — each dependent carries the expression that would break ──────────────
+
+def _graph_with_sql_finding():
+    from aughor.ontology.context_graph import (
+        ContextGraph, GraphEdge, GraphNode, Provenance,
+    )
+    # org "default" — the route resolves the caller's org, so a fixture under another
+    # org would 404 for a reason unrelated to what the test is checking.
+    cg = ContextGraph(org_id="default", connection_id="c")
+    cg.add_node(GraphNode(id="table:Order", kind="table", label="Order",
+                          provenance=Provenance(source="ontology.entity"),
+                          data={"source_tables": ["orders"]}))
+    cg.add_node(GraphNode(
+        id="finding:f1", kind="finding", label="32% never ship",
+        summary="32% of orders never reach a terminal state",
+        provenance=Provenance(source="dossier"),
+        data={"sql": "SELECT status, COUNT(*)\nFROM orders\nWHERE created_at > '2026-01-01'\nGROUP BY 1",
+              "tables": ["orders"]}))
+    cg.add_edge(GraphEdge(id="finding:f1--grounded_in-->table:Order", kind="grounded_in",
+                          from_id="finding:f1", to_id="table:Order",
+                          provenance=Provenance(source="dossier")))
+    cg.add_node(GraphNode(
+        id="metric:revenue", kind="metric", label="Revenue",
+        provenance=Provenance(source="ontology.metric"),
+        data={"formula_sql": "SUM(o.total_amount)\nFROM orders o", "tables": ["orders"]}))
+    cg.add_edge(GraphEdge(id="metric:revenue--derived_from-->table:Order", kind="derived_from",
+                          from_id="metric:revenue", to_id="table:Order",
+                          provenance=Provenance(source="ontology.metric")))
+    return cg
+
+
+def test_dependents_carry_the_line_that_names_the_table():
+    """Not just WHICH artifacts break — the expression to look at once one is open."""
+    from aughor.govern.lineage import dependents_of
+
+    report = dependents_of(_graph_with_sql_finding(), "table:Order")
+    by_id = {d.node_id: d for d in report.dependents}
+
+    f = by_id["finding:f1"]
+    assert f.site == "FROM orders"          # the line that references the table
+    assert f.site_kind == "sql"
+    assert f.site_line == 2                 # 1-based, within the finding's own SQL
+
+    m = by_id["metric:revenue"]
+    assert m.site_kind == "formula"
+    assert "orders" in m.site
+
+
+def test_a_dependent_with_no_expression_reports_no_site_rather_than_a_guess():
+    """A wrong guess about which line breaks is worse than none: a reviewer would check
+    the wrong expression and conclude the dependency was fine."""
+    from aughor.ontology.context_graph import (
+        ContextGraph, GraphEdge, GraphNode, Provenance,
+    )
+    from aughor.govern.lineage import dependents_of
+
+    cg = ContextGraph(org_id="o", connection_id="c")
+    cg.add_node(GraphNode(id="table:Order", kind="table", label="Order",
+                          provenance=Provenance(source="ontology.entity"),
+                          data={"source_tables": ["orders"]}))
+    cg.add_node(GraphNode(id="finding:bare", kind="finding", label="no sql recorded",
+                          provenance=Provenance(source="exploration"), data={}))
+    cg.add_edge(GraphEdge(id="finding:bare--grounded_in-->table:Order", kind="grounded_in",
+                          from_id="finding:bare", to_id="table:Order",
+                          provenance=Provenance(source="exploration")))
+    [d] = dependents_of(cg, "table:Order").dependents
+    assert d.site == "" and d.site_kind == "" and d.site_line == 0
+
+
+def test_lineage_route_answers_by_table_name(monkeypatch, tmp_path):
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_graph_with_sql_finding())
+
+    from aughor.routers.ontology import get_context_graph_lineage
+    out = get_context_graph_lineage("c", None, "orders")
+
+    assert out["node_id"] == "table:Order"
+    assert out["counts_by_kind"] == {"finding": 1, "metric": 1}
+    assert "reported, not removed" in out["summary"]
+    assert any(d["site_line"] == 2 for d in out["dependents"])
+
+
+def test_lineage_route_requires_a_subject(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
+    store.save_graph(_graph_with_sql_finding())
+
+    from aughor.routers.ontology import get_context_graph_lineage
+    try:
+        get_context_graph_lineage("c", None, None)
+    except HTTPException as exc:
+        assert exc.status_code == 400
+    else:
+        raise AssertionError("a lineage call with no subject must not return a walk")
+
+
+def test_a_site_never_points_at_a_different_table_or_a_function():
+    """Substring matching sent reviewers to the wrong line: `sales` matched
+    `sales_summary` (a different table) and `date` matched `date_trunc(` (a function).
+    A site that points at the wrong expression is worse than none — the reviewer checks
+    it, finds it fine, and concludes the dependency was fine."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT a, b\nFROM sales_summary s\nJOIN sales x ON 1=1"})
+    site, kind, line = _site_of(n, "", ["sales"])
+    assert line == 3 and site == "JOIN sales x ON 1=1"
+
+    n2 = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT date_trunc('month', o.ts)\nFROM orders"})
+    assert _site_of(n2, "", ["date"])[2] == 0        # the function is not the table
+    assert _site_of(n2, "", ["orders"])[2] == 2
+
+
+def test_a_label_that_is_not_an_identifier_yields_no_site():
+    """`"Rev. ".split(".")[-1]` is `" "`, which is truthy and matched every line."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={"sql": "SELECT a, b"})
+    assert _site_of(n, "Rev. ", []) == ("", "", 0)
+
+
+def test_a_schema_qualified_reference_still_finds_its_line():
+    """Real SQL writes `FROM schema.table`. A word-boundary rule that also refused a
+    preceding dot found NOTHING on every schema-qualified warehouse — every site reported
+    line 0 — and the unit fixtures could not see it because they all used bare names. Only
+    a run against the committed graph exposed it."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT region, COUNT(*)\nFROM luxexperience.customers\nGROUP BY 1"})
+    site, kind, line = _site_of(n, "Customer", ["customers"])
+    assert line == 2 and "luxexperience.customers" in site
+
+    # …and the qualified source_tables spelling resolves too
+    assert _site_of(n, "", ["luxexperience.customers"])[2] == 2

@@ -60,6 +60,37 @@ def get_receipt(receipt_id: str) -> dict:
     return receipt
 
 
+@router.get("/receipt/{receipt_id}/trace")
+def get_receipt_trace(receipt_id: str) -> dict:
+    """Wave P1 — the connection-graph subgraph this answer stands on.
+
+    A SEPARATE call, not a field on the receipt, for two reasons that both matter:
+
+    1. The receipt is **signed** over every field it carries. The trace is resolved against
+       the LIVE graph, so it legitimately changes between two reads of the same answer —
+       folding it into the signed body would either break verification or make the
+       signature attest to something mutable. The signed receipt states what the answer
+       claimed; the trace shows what those claims rest on *now*.
+    2. It costs a graph load. Every receipt fetch should not pay for a walk most readers
+       never open.
+
+    Same fail-closed RBAC as the receipt itself: an id outside the caller's org 404s
+    identically to one that does not exist.
+    """
+    from aughor.ontology.answer_trace import trace_from_receipt
+
+    receipt = get_receipt(receipt_id)          # re-uses the 404 + org check above
+    trace = trace_from_receipt(receipt)
+    if trace is None:
+        # No graph for this connection, or nothing in it that this answer touched. Say so
+        # rather than returning an empty walk, which reads as "nothing grounded this".
+        return {"receipt_id": receipt_id, "available": False,
+                "reason": "This connection has no knowledge graph covering the tables "
+                          "this answer read.",
+                "nodes": [], "edges": []}
+    return {"receipt_id": receipt_id, "available": True, **trace}
+
+
 def _health_caveats(conn_id, raw: dict) -> list:
     """Wave Q4 — the data-quality caveats for the tables this answer read.
 

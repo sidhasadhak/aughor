@@ -42,7 +42,6 @@ def _governed():
 
 
 def _pin_on(monkeypatch, metrics):
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "1")
     monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
                         lambda *a, **k: list(metrics))
 

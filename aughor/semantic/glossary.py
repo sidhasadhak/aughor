@@ -204,6 +204,15 @@ def load_merged_glossary(path: Path | None = None,
         # Layer 3 (strongest): manual YAML overrides everything
         if table in manual_tables:
             entry = _deep_merge(entry, manual_tables[table])
+        # The merged entry's `auto_generated` must name the layer that WON, not the layer
+        # it started from. `_deep_merge` only overrides keys the override supplies, so a
+        # hand-written entry that does not bother to say `auto_generated: false` used to
+        # inherit `true` from the auto layer underneath it — and any reader treating the
+        # flag as "this text is machine-written" (the P2 warrant class does) would then
+        # report authored definitions as generated. The RAW store is untouched: autoseed
+        # still reads it to decide what to re-seed.
+        if table in manual_tables or table in dbt_tables:
+            entry.pop("auto_generated", None)
         merged_tables[table] = entry
 
     result = dict(yaml_data)

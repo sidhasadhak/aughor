@@ -26,7 +26,9 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-WS4B_FLAGS = ["deep_analysis.premise_check", "deep_analysis.causal_drill", "closed_loop"]
+# `deep_analysis.premise_check` left this list 2026-08-04: flag endgame Wave 3
+# unwrapped it (its trigger was always the gate). Two registered exemplars remain.
+WS4B_FLAGS = ["deep_analysis.causal_drill", "closed_loop"]
 
 
 @pytest.fixture(autouse=True)
@@ -42,19 +44,20 @@ def test_ws4b_flags_registered_with_meta():
         assert FLAG_META.get(name, {}).get("label"), f"{name} needs Settings-UI copy"
 
 
-def test_auto_eligible_flag_env_semantics(monkeypatch):
-    # 2026-07-13 capability graduation: `capabilities.auto` defaults ON, so an unset
-    # auto-eligible guard is ELEVATED (its deterministic trigger gates per run). An
-    # explicit env value always wins — the kill switch survives graduation.
-    monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
-    monkeypatch.delenv("AUGHOR_PREMISE_CHECK", raising=False)
-    assert flag_enabled("deep_analysis.premise_check") is True
-    monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "1")
-    assert flag_enabled("deep_analysis.premise_check") is True
-    monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "garbage")
-    assert flag_enabled("deep_analysis.premise_check") is False
-    monkeypatch.setenv("AUGHOR_PREMISE_CHECK", "0")
-    assert flag_enabled("deep_analysis.premise_check") is False
+def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
+    """Wave 3 rot guard. Auto-mode elevated an unset flag to enabled from a SECOND source
+    of truth (a master env var) beside the one that actually decided (the runtime
+    trigger). The tier is empty and the elevation branch is gone; this fails if either
+    comes back, because a re-elevated flag would silently resolve on unrelated state."""
+    from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV, flag_state
+
+    assert AUTO_ELIGIBLE == frozenset()
+    assert "capabilities.auto" not in FLAG_ENV
+
+    # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
+    monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
+    assert flag_enabled("semops.champion_validate") is False
+    assert flag_state("semops.champion_validate") == "off"
 
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):

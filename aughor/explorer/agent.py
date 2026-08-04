@@ -573,6 +573,8 @@ class SchemaExplorer:
         loop = asyncio.get_running_loop()
         self._last_query_at = time.monotonic()
         self._status.queries_executed += 1
+        if schema:
+            sql = self._repair_contra_amount(sql)
         self._last_executed_sql = sql
         try:
             if schema:
@@ -597,6 +599,75 @@ class SchemaExplorer:
         except Exception as e:
             self._episodes.add(think=think, sql=sql, observation=f"EXCEPTION: {e}")
             return None
+
+    def _contra_units(self, cp: dict, schema_text: str) -> None:
+        """Settle whether each contra-revenue column holds a RATE or an AMOUNT, once.
+
+        Reuses the profiles Phase 2 already computed — `ColumnProfile.value_range` is the
+        measured (min, max) — so this costs no warehouse query. The classification itself
+        lives in `loss_signals`, which is the one module allowed to decide it; duplicating
+        the rule here is how the two paths would drift apart.
+
+        Sets `_contra_rate_cols` (leaf names) and `_contra_directive` (the prompt text).
+        Both empty when nothing is a rate, which is the common case and byte-identical to
+        the behaviour before this guard existed.
+        """
+        self._contra_rate_cols: list = []
+        self._contra_directive: str = ""
+        try:
+            from aughor.agent.loss_signals import (contra_amount_directive,
+                                                   contra_kinds_from_ranges,
+                                                   contra_rate_columns, gross_columns)
+            ranges = {}
+            for table, cols in (cp or {}).items():
+                for col, prof in (cols or {}).items():
+                    vr = getattr(prof, "value_range", None)
+                    if isinstance(vr, (list, tuple)) and len(vr) == 2:
+                        ranges[f"{table}.{col}"] = tuple(vr)
+            kinds = contra_kinds_from_ranges(schema_text or "", ranges)
+            self._contra_rate_cols = contra_rate_columns(kinds)
+            self._contra_directive = contra_amount_directive(
+                kinds, gross_columns(schema_text or ""))
+            if self._contra_rate_cols:
+                logger.info("[explorer:%s] contra units probed: rates=%s",
+                            self.connection_id, self._contra_rate_cols)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "contra-unit classification is best-effort; the explorer "
+                          "proceeds without the rate guard",
+                     counter="explorer.contra_units")
+
+    def _repair_contra_amount(self, sql: str) -> str:
+        """Braces to `_contra_directive`'s belt: rewrite a generated aggregate that sums a
+        contra RATE as if it were money.
+
+        The deep-analysis path has carried this pair since PR #255; the explorer writes its
+        own SQL in Phase 8 and consulted neither, so it reproduced the exact defect the
+        guard exists to stop — `SUM(Discount * Quantity)` on Tableau Superstore, where
+        `Discount` is a fraction 0.00–0.80. A rate times a unit count is a number in no
+        unit at all, and it reads as a small amount of money rather than an error.
+
+        Applied only to model-written SQL (the `schema`-bearing branch of `_run`); the
+        explorer's own profiling and join probes are built from parsed metadata and have
+        nothing to guard.
+        """
+        rates = getattr(self, "_contra_rate_cols", None)
+        if not rates or not sql:
+            return sql
+        try:
+            from aughor.agent.loss_signals import contra_amount_fix
+            fixed = contra_amount_fix(sql, tuple(rates))
+            if not fixed:
+                return sql
+            from aughor.stats import stats as _s
+            _s.inc("explorer.contra_amount_repaired")
+            logger.info("[explorer:%s] contra repair: %s", self.connection_id, fixed[1])
+            return fixed[0]
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "contra-amount repair is best-effort; the original SQL runs",
+                     counter="explorer.contra_repair")
+            return sql
 
     @staticmethod
     def _kb_context(query: str, top_k: int = 3) -> str:
@@ -2077,6 +2148,11 @@ class SchemaExplorer:
 
         llm = get_provider("coder")
         sql_writer = SqlWriter(self._conn)
+        # Settle contra-revenue UNITS before a single question is generated. Phase 2 has
+        # already measured every column's range, so this is free — and it must happen
+        # before generation, because the directive it produces is the belt and
+        # `_repair_contra_amount` (wired at the guarded execute seam) is the braces.
+        self._contra_units(cp, getattr(sql_writer, "schema", "") or "")
 
         def _last_episode_error() -> str:
             """Read the observation from the most recent episode — used to get SQL errors."""
@@ -2787,6 +2863,12 @@ class SchemaExplorer:
                         "refund metric whose refunds live on status='RETURNED' orders, producing a false "
                         "'no refunds' finding. If you want another metric, ask it as a SEPARATE question "
                         "with its own correct filter."
+                        # Belt. `_repair_contra_amount` at the execute seam is the braces —
+                        # both, because the lifecycle rule taught that a planner obeys the
+                        # constraint beside this one and ignores this one, and a contra
+                        # amount that is silently 225x too small reads as good news.
+                        + ("\n7. " + self._contra_directive.replace("\n", "\n   ")
+                           if getattr(self, "_contra_directive", "") else "")
                     )
                     time_window_block = ""
                     # The window must reflect THIS domain's dataset, not the connection's

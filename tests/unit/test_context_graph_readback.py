@@ -106,7 +106,10 @@ def test_readback_surfaces_the_unread_finding(monkeypatch, tmp_path):
     assert p.fired
     assert "32% of orders never reach a terminal state" in p.section  # the finding text
     assert "[finding:f1]" in p.section                                # cited by node id
-    assert "overlap 97%" in p.section                                 # measured join, as a number
+    # P2: the join states its warrant class AND the number behind it — a measured join
+    # and a name match must not read as the same claim.
+    assert "97% of key values overlap" in p.section
+    assert "[measured:" in p.section
     assert "finding:f1" in p.cited_node_ids
     assert "finding:f1" in last_cited_nodes()                         # contextvar for the receipt
 

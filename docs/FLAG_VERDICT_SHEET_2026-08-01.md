@@ -174,8 +174,26 @@ Every deleted flag gets a tombstone comment (the registry's existing convention)
 - **Wave 2 — hardwire the 56 receipted default-ONs**, split by area (trust/obs,
   graph, govern/automations/lifecycle, ask/deep, semantic/capability). Includes the
   two legacy-path deletions (CanonicalMetric, per-node consult).
-- **Wave 3 — unwrap the 10 auto guards** (triggers become unconditional code),
-  delete the auto machinery + capabilities.auto.
+- **Wave 3 — unwrap the 10 auto guards** ✅ **DONE 2026-08-04** (commit `eae66a8`).
+  Triggers are unconditional code; `capabilities.auto`, the elevation branch in
+  `_env_resolved`, `_auto_mode_active`, `flag_state`'s `"auto"` arm and the Capabilities
+  settings section are gone. `AUTO_ELIGIBLE` stays declared and EMPTY so the disposition
+  ratchet keeps proving nothing rejoins the tier; `CAPABILITY_TRIGGER` is kept because the
+  Activation Receipt still reports why a capability fired, which never depended on a flag.
+  **Registry 40 → 30, zero undispositioned.**
+  ⚠️ **Nine of ten, not ten.** `deep_analysis.clarify_gate` was RESTORED (default-ON)
+  after the adversarial review: its trigger answers a DATA question ("do the two readings
+  diverge?") while the flag answers a DEPLOYMENT one ("may this run be interrupted?").
+  Unwrapped, a divergent ratio metric pauses the run and returns **with no report**, so a
+  headless consumer that never POSTs `/feedback` got a truncated run where it previously
+  got an answer. The other nine only added cost when elevated; this one blocks. **The
+  general test for the remaining waves: does the off-path merely skip work, or does the
+  on-path require a human?**
+  Also surfaced: three `ada.*` aliases in `RENAMED` outlived their deleted targets (dead
+  weight — note that a stale env var yields `False`, not `UnknownFlagError`, which comes
+  only from `flag_overrides()`), and `test_caps_at_max_probes` had pinned
+  `join.key_reconciliation` OFF to isolate its probe budget, so the budget it reported was
+  fiction — the real worst case is 48 calls, now asserted as an absolute number.
 - **Wave 4 — the two turn-ONs** (adopt_legacy + delete legacy schedulers;
   explorer.continuous).
 - **Wave 5 — experiment keeps**: hardwire the nine; federation auto-hook after its

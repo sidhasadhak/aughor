@@ -1073,13 +1073,18 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
 // ── Connection knowledge graph (Wave C4 — GET /graph) ─────────────────────────
 
 export interface CGProvenance { source: string; measured: number | null; note: string }
+/** Wave P2 — how we know it, derived at read time from provenance (never stored). */
+export type CGWarrantClass = "measured" | "human" | "declared" | "derived" | "inferred";
+export interface CGWarrant { warrant: CGWarrantClass; detail: string; label: string }
 export interface CGNode {
   id: string; kind: string; label: string; summary: string;
   tags: string[]; provenance: CGProvenance; data: Record<string, unknown>;
+  warrant?: CGWarrant;
 }
 export interface CGEdge {
   id: string; kind: string; from_id: string; to_id: string;
   provenance: CGProvenance; label: string;
+  warrant?: CGWarrant;
 }
 export interface CGDomain { label: string; tables: string[]; table_count: number }
 export interface CGDomainEdge { from: string; to: string; count: number }
@@ -1102,6 +1107,161 @@ export async function getConnectionGraph(connectionId: string, schemaName?: stri
     : `connection_id=${encodeURIComponent(connectionId)}`;
   const res = await fetch(`${getApiBase()}/graph?${q}`);
   if (!res.ok) throw new Error("Knowledge graph not available for this connection");
+  return res.json();
+}
+
+// ── The graph's honesty scorecard (Wave P2 — GET /graph/audit) ────────────────
+
+export interface CGContentDrift {
+  drifted: boolean;
+  reason: string;
+  missing: Record<string, number>;
+  [k: string]: unknown;
+}
+export interface GraphAudit {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  order: CGWarrantClass[];
+  labels: Record<CGWarrantClass, string>;
+  meanings: Record<CGWarrantClass, string>;
+  nodes: Record<CGWarrantClass, number>;
+  edges: Record<CGWarrantClass, number>;
+  edges_by_kind: Record<string, Record<CGWarrantClass, number>>;
+  totals: { nodes: number; edges: number; joins: number };
+  /** The headline: how many `joins_on` edges were probed against the data. Joins are
+   *  where a warrant is a real choice and a wrong one fabricates rows. */
+  joins_measured_share: number;
+  /** The whole-graph share, kept for completeness — never the headline, because
+   *  provenance links can never be measured and dominate the denominator. */
+  edge_grounded_share: number;
+  staleness: CGStaleness;
+  drift: CGContentDrift | null;
+}
+
+/** Warrant mix + staleness + content drift in one call — the three honesty signals
+ *  are only meaningful together (Wave P2). */
+export async function getGraphAudit(connectionId: string, schemaName?: string): Promise<GraphAudit> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/audit?${q}`);
+  if (!res.ok) throw new Error("Graph audit not available");
+  return res.json();
+}
+
+// ── Node standing (Wave P3 — GET /graph/trust) ────────────────────────────────
+
+export type CGStanding = "confirmed" | "contested" | "disputed" | "corroborated" | "unchecked";
+export interface NodeTrust {
+  node_id: string;
+  standing: CGStanding;
+  findings: number;
+  contested: number;
+  stale: number;
+  accepts: number;
+  rejects: number;
+  detail: string;
+  meaning: string;
+}
+export interface TrustSidecar {
+  connection_id: string;
+  nodes: Record<string, NodeTrust>;
+  meanings: Record<CGStanding, string>;
+  by_standing: Record<CGStanding, number>;
+  scored_nodes: number;
+  verdicts_seen: number;
+  /** False ⇒ nobody has recorded a verdict on this connection yet. Stated as a field so
+   *  a reader does not have to infer it from a row of zeros. */
+  human_signal: boolean;
+}
+
+/** What standing each node has earned — a read-time sidecar, never stored (Wave P3). */
+export async function getGraphTrust(connectionId: string, schemaName?: string): Promise<TrustSidecar> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/trust?${q}`);
+  if (!res.ok) throw new Error("Trust sidecar not available");
+  return res.json();
+}
+
+// ── What depends on a node (Wave P4 — GET /graph/lineage) ─────────────────────
+
+export interface GraphDependent {
+  node_id: string;
+  kind: string;
+  label: string;
+  depth: number;
+  via: string;
+  /** The expression in THIS node that references the subject — the line that would
+   *  break. Empty when the node records no expression (never a guess). */
+  site: string;
+  site_kind: "sql" | "formula" | "citation" | "";
+  site_line: number;
+}
+export interface GraphLineage {
+  connection_id: string;
+  node_id: string;
+  label: string;
+  root: string;
+  truncated: boolean;
+  counts_by_kind: Record<string, number>;
+  summary: string;
+  dependents: GraphDependent[];
+}
+
+/** What breaks if this table or metric changes — reported, never deleted (Wave P4). */
+export async function getGraphLineage(
+  connectionId: string, opts: { nodeId?: string; table?: string; schemaName?: string },
+): Promise<GraphLineage> {
+  const p = new URLSearchParams({ connection_id: connectionId });
+  if (opts.nodeId) p.set("node_id", opts.nodeId);
+  if (opts.table) p.set("table", opts.table);
+  if (opts.schemaName) p.set("schema_name", opts.schemaName);
+  const res = await fetch(`${getApiBase()}/graph/lineage?${p.toString()}`);
+  if (!res.ok) throw new Error("Lineage not available");
+  return res.json();
+}
+
+// ── The graph's review queue (Wave P5 — GET /graph/review) ────────────────────
+
+export type CGCheckKind = "probe_join" | "ask" | "review_finding" | "define" | "rebuild";
+export interface GraphReviewItem {
+  id: string;
+  type: "graph_behind" | "unprobed_join" | "contested_finding" | "ungrounded_finding"
+      | "undocumented_hub" | "isolated_table";
+  question: string;
+  why: string;
+  subject_id: string;
+  subject_label: string;
+  check: CGCheckKind;
+  /** How many other nodes depend on the thing in doubt — the ranking key, shown so the
+   *  reader can see why an item is near the top. Never an invented severity score. */
+  depends: number;
+  detail: Record<string, unknown>;
+}
+export interface GraphReview {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  items: GraphReviewItem[];
+  /** How many items are in `items` (after the server's limit). */
+  total: number;
+  /** How many existed BEFORE the limit — a queue that renders 50 over a warehouse with
+   *  300 would under-report the very thing it exists to report. */
+  total_found: number;
+  truncated: boolean;
+  by_type: Record<string, number>;
+}
+
+/** What the graph knows it cannot vouch for — deterministic, ranked by consequence. */
+export async function getGraphReview(connectionId: string, schemaName?: string): Promise<GraphReview> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/review?${q}`);
+  if (!res.ok) throw new Error("Graph review not available");
   return res.json();
 }
 
@@ -3762,6 +3922,9 @@ export interface PublicReceipt {
   learning: LearningReceiptPayload | null;
   /** Self-gating capabilities whose trigger fired this run (Wave 1·E3). */
   activations: { capability: string; reason: string; count: number }[];
+  /** Wave P1 — ids of the graph nodes the planner was shown before writing the SQL.
+   *  Ids only, and signed: the labels/warrants resolve live via `getAnswerTrace`. */
+  grounded_in_graph: string[];
   cost: Record<string, number | string> | null;
   signature: string;                     // HMAC — server-issued proof
 }
@@ -3769,6 +3932,43 @@ export interface PublicReceipt {
 /** Resolve any answer's receipt id into the one signed public contract. 404 → null. */
 export async function getPublicReceipt(receiptId: string): Promise<PublicReceipt | null> {
   const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── The answer trace (Wave P1 — GET /receipt/{id}/trace) ──────────────────────
+
+export interface TracedNode {
+  id: string;
+  kind: string;
+  label: string;
+  summary: string;
+  reason: "cited" | "read" | "metric" | "finding";
+  why: string;
+  /** False ⇒ the answer named it, but the graph does not (or no longer does) hold it. */
+  present: boolean;
+  warrant: CGWarrant | null;
+}
+export interface TracedEdge {
+  id: string; kind: string; from_id: string; to_id: string;
+  label: string; warrant: CGWarrant | null;
+}
+export interface AnswerTrace {
+  receipt_id: string;
+  available: boolean;
+  reason?: string;
+  connection_id?: string;
+  graph_version?: number;
+  nodes: TracedNode[];
+  edges: TracedEdge[];
+  counts?: { nodes: number; edges: number; unresolved: number };
+  has_unresolved?: boolean;
+}
+
+/** The knowledge-graph subgraph one answer stands on. A separate call from the receipt:
+ *  the receipt is signed and immutable, the trace resolves against the live graph. */
+export async function getAnswerTrace(receiptId: string): Promise<AnswerTrace | null> {
+  const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}/trace`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -3976,7 +4176,9 @@ export interface SystemFlag {
   // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
   state?: CapabilityState;          // effective tri-state
   override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
-  auto_eligible?: boolean;          // a self-gating guard the master Auto-mode can run
+  /** Always false since flag endgame Wave 3 dissolved the Auto-mode tier. Retained
+   *  for payload compatibility; nothing sets it true. */
+  auto_eligible?: boolean;
   trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
   // The disposition ratchet (flag strategy §5.1) — every flag declares its kind, so the
   // Settings UI can group by it instead of rendering one flat toggle list:

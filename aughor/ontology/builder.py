@@ -1008,8 +1008,12 @@ def apply_join_verifications(graph: "OntologyGraph", verified: list, rejected: l
     (fail-open — never demote what we couldn't check). Rebuilds ``relationship_index`` from the
     survivors. Mutates + returns ``graph``; pure w.r.t. the DB (the caller does the probing)."""
     ov_by_edge: dict = {}
+    verified_edges: set = set()
     for vj in (verified or []):
-        ov_by_edge[_edge_key(vj.t1, vj.c1, vj.t2, vj.c2)] = vj.overlap
+        k = _edge_key(vj.t1, vj.c1, vj.t2, vj.c2)
+        ov_by_edge[k] = vj.overlap
+        if getattr(vj, "verified_upstream", False):
+            verified_edges.add(k)
     rejected_edges = {_edge_key(vj.t1, vj.c1, vj.t2, vj.c2) for vj in (rejected or [])}
 
     survivors: dict = {}
@@ -1022,6 +1026,12 @@ def apply_join_verifications(graph: "OntologyGraph", verified: list, rejected: l
         ov = ov_by_edge.get(k)
         if ov is not None and ov >= 0:
             rel.value_overlap = ov
+            rel.join_confidence = "verified"
+        elif k in verified_edges:
+            # Checked upstream, but the record carried no containment counts. The edge is
+            # verified — `value_overlap` stays None, so nothing downstream reports a
+            # measurement that was never taken (the graph renders it "verified upstream —
+            # no overlap recorded here" rather than demoting it to a name match).
             rel.join_confidence = "verified"
         survivors[rid] = rel
 

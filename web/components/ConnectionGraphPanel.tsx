@@ -1,18 +1,28 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ConnectionGraph,
   ConnectionTour,
   CGNode,
   CGStaleness,
+  GraphAudit,
+  GraphLineage,
+  TrustSidecar,
+  GraphReview,
+  GraphReviewItem,
   getConnectionGraph,
   getConnectionTour,
+  getGraphAudit,
+  getGraphLineage,
+  getGraphReview,
+  getGraphTrust,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
-import { formatCount, pct } from "@/lib/format";
+import { formatCount } from "@/lib/format";
 import { GraphCanvas } from "@/components/GraphCanvas";
+import { GraphAuditBar, StandingChip, WarrantChip } from "@/components/graph/WarrantChip";
 
 // The connection knowledge graph, rendered as a three-level ANTI-HAIRBALL surface:
 // domain cluster cards (cross-domain joins collapsed to counts) → the tables inside a
@@ -35,7 +45,9 @@ function bare(t: string): string {
   return String(t).split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
 }
 
-export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
+// The Ask seam is renamed at the door: the panel's own vocabulary is 'ask', and the
+// prop name is the workspace's older spelling of the same callback.
+export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAsk }: {
   connectionId: string; schema?: string;
   /** The workspace Ask seam — a graph selection becomes a question on the full Ask surface. */
   onInvestigate?: (q: string) => void;
@@ -46,21 +58,50 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
   const [view, setView] = useState<View>({ level: "domains" });
   // Map = the node-link canvas (default — a knowledge graph should look like one);
   // Explore = the C4 anti-hairball card drill-down; Tour = the C5 topology walk.
-  const [mode, setMode] = useState<"map" | "cards" | "tour">("map");
+  const [mode, setMode] = useState<"map" | "cards" | "tour" | "review">("map");
   // Wave C5 — the topology-ordered tour, lazily fetched on first open.
   const [tour, setTour] = useState<ConnectionTour | null>(null);
   const [tourError, setTourError] = useState<string | null>(null);
+  // Wave P2 — the honesty scorecard (warrant mix + the CONTENT drift axis the staleness
+  // chip does not cover). A second call because it costs an in-memory re-projection; the
+  // graph renders whether or not it arrives.
+  const [audit, setAudit] = useState<GraphAudit | null>(null);
+  // Wave P5 — what the graph knows it cannot vouch for, fetched with the graph so the tab
+  // can carry its count without a second click to discover there is nothing to do.
+  const [review, setReview] = useState<GraphReview | null>(null);
+  // Wave P3 — what standing each node has earned. A read-time sidecar: it annotates the
+  // graph on screen and is never written back into the committed artifact.
+  const [trust, setTrust] = useState<TrustSidecar | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  // Identifies the in-flight load, so a response from a superseded one is discarded.
+  const loadToken = useRef(0);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     setTour(null);
     setTourError(null);
+    setAudit(null);
+    setReview(null);
+    setReviewError(null);
+    setTrust(null);
     setMode("map");
+    // Every response is checked against the token that requested it. Without this,
+    // switching connections mid-flight renders B's graph beside A's audit, drift reason
+    // and standing chips — four independent fetches, four chances to mismatch.
+    const token = ++loadToken.current;
+    const fresh = () => token === loadToken.current;
     getConnectionGraph(connectionId, schema)
-      .then((g) => { setGraph(g); setView({ level: "domains" }); })
-      .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
-      .finally(() => setLoading(false));
+      .then((g) => { if (fresh()) { setGraph(g); setView({ level: "domains" }); } })
+      .catch((e) => { if (fresh()) setError(e?.message || "Failed to load the knowledge graph"); })
+      .finally(() => { if (fresh()) setLoading(false); });
+    getGraphAudit(connectionId, schema)
+      .then((a) => { if (fresh()) setAudit(a); }).catch(() => { if (fresh()) setAudit(null); });
+    getGraphReview(connectionId, schema)
+      .then((r) => { if (fresh()) setReview(r); })
+      .catch((e) => { if (fresh()) setReviewError(e?.message || "Review unavailable"); });
+    getGraphTrust(connectionId, schema)
+      .then((t) => { if (fresh()) setTrust(t); }).catch(() => { if (fresh()) setTrust(null); });
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
@@ -90,7 +131,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
       .filter((e) => e.kind === "joins_on" && (e.from_id === tableId || e.to_id === tableId))
       .map((e) => {
         const otherId = e.from_id === tableId ? e.to_id : e.from_id;
-        return { other: node(otherId)?.label || otherId, overlap: e.provenance.measured, note: e.provenance.note };
+        return { other: node(otherId)?.label || otherId, warrant: e.warrant, note: e.provenance.note };
       });
 
   const findingsFor = (tableId: string): CGNode[] =>
@@ -115,8 +156,18 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--bg-3)" }}>
         <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Knowledge Graph</span>
         {graph && (
-          <StatusChip hue={STALE_HUE[graph.staleness]} strength="soft" title={`Graph freshness: ${graph.staleness}`}>
-            {STALE_LABEL[graph.staleness]}
+          // P2: a Fresh badge is about the SCHEMA only. When the content axis says the
+          // graph is missing what the platform has since learned, the badge must not
+          // stand alone saying "Fresh" — that reading is the exact blindness
+          // `content_drift` was written to prevent.
+          <StatusChip
+            hue={audit?.drift?.drifted ? "caution" : STALE_HUE[graph.staleness]}
+            strength="soft"
+            title={audit?.drift?.drifted
+              ? `Schema freshness: ${graph.staleness}. ${audit.drift.reason}`
+              : `Graph freshness: ${graph.staleness}`}
+          >
+            {audit?.drift?.drifted ? "Rebuild owed" : STALE_LABEL[graph.staleness]}
           </StatusChip>
         )}
         <div style={{ flex: 1 }} />
@@ -126,6 +177,10 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                 style={{ fontSize: 12, color: mode === "cards" ? "var(--t1)" : "var(--t3)" }}>Explore</Button>
         <Button variant="ghost" onClick={openTour}
                 style={{ fontSize: 12, color: mode === "tour" ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
+        <Button variant="ghost" onClick={() => setMode("review")}
+                style={{ fontSize: 12, color: mode === "review" ? "var(--t1)" : "var(--t3)" }}>
+          Review{review && review.total > 0 ? ` · ${review.total}` : ""}
+        </Button>
         <Button variant="ghost" onClick={load} style={{ color: "var(--t3)", fontSize: 12 }}>↻ Refresh</Button>
       </div>
 
@@ -143,15 +198,22 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
               <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
             </MiniStatRow>
+            <GraphAuditBar audit={audit} />
             <GraphCanvas
               graph={graph}
               onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
-              onAsk={onInvestigate}
+              onAsk={onAsk}
             />
           </>
         )}
 
-        {!loading && !error && graph && mode !== "map" && (mode === "tour" ? (
+        {!loading && !error && graph && mode === "review" && (
+          <ReviewView review={review} error={reviewError} onAsk={onAsk}
+                      isTableNode={(id) => !!graph?.nodes[id] && graph.nodes[id].kind === "table"}
+                      onOpenTable={(id) => { setMode("cards"); setView({ level: "detail", tableId: id }); }} />
+        )}
+
+        {!loading && !error && graph && mode !== "map" && mode !== "review" && (mode === "tour" ? (
           <TourView tour={tour} error={tourError} />
         ) : (
           <>
@@ -163,6 +225,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
               <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
             </MiniStatRow>
+            <GraphAuditBar audit={audit} />
 
             {/* Breadcrumb */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontSize: 12, color: "var(--t3)" }}>
@@ -238,19 +301,30 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>{t.label}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>{t.label}</span>
+                      {/* P3 standing sits beside P2's warrant deliberately: a table can be
+                          measured (how we know it) and still unchecked (nobody confirmed
+                          the answers built on it). One score would hide that gap. */}
+                      <StandingChip trust={trust?.nodes?.[t.id]} />
+                    </div>
                     <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>
                       {((t.data.source_tables as string[]) || []).join(", ")} · {formatCount(cols.length)} columns
                     </div>
+                    {trust?.nodes?.[t.id] && (
+                      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
+                        {trust.nodes[t.id].detail}
+                      </div>
+                    )}
                   </div>
 
-                  <Section title="Verified joins — measured value-domain overlap">
+                  {/* P2: every join states its warrant. A measured overlap and a bare
+                      name match used to look the same here. */}
+                  <Section title="Joins — and how each one is known">
                     {joins.length === 0 ? <Muted>No joins.</Muted> : joins.map((j, i) => (
                       <div key={i} style={ROW}>
                         <span style={{ color: "var(--t1)", fontSize: 12 }}>→ {j.other}</span>
-                        {j.overlap != null
-                          ? <StatusChip hue={j.overlap >= 0.5 ? "positive" : "caution"} strength="soft" title={j.note}>overlap {pct(j.overlap)}</StatusChip>
-                          : <StatusChip hue="muted" strength="soft" title={j.note}>unprobed</StatusChip>}
+                        <WarrantChip warrant={j.warrant} showDetail />
                       </div>
                     ))}
                   </Section>
@@ -258,7 +332,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                   <Section title="Past findings on this table">
                     {findings.length === 0 ? <Muted>None yet.</Muted> : findings.map((f) => (
                       <div key={f.id} style={{ ...ROW, alignItems: "flex-start" }}>
-                        <StatusChip hue="accent" strength="soft" title={`source: ${f.provenance.source}`}>{f.provenance.source}</StatusChip>
+                        <WarrantChip warrant={f.warrant} />
                         <span style={{ color: "var(--t2)", fontSize: 12 }}>{f.summary}</span>
                       </div>
                     ))}
@@ -268,10 +342,14 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
                     {terms.length === 0 ? <Muted>None.</Muted> : terms.map((tm) => (
                       <div key={tm.id} style={{ ...ROW, alignItems: "flex-start" }}>
                         <span style={{ color: "var(--t1)", fontWeight: 600, fontSize: 12 }}>{tm.label}</span>
+                        <WarrantChip warrant={tm.warrant} />
                         <span style={{ color: "var(--t3)", fontSize: 12 }}>{tm.summary}</span>
                       </div>
                     ))}
                   </Section>
+
+                  {/* P4: what breaks if this table changes — reported, never deleted. */}
+                  <DependentsSection connectionId={connectionId} schema={schema} nodeId={t.id} />
 
                   <Section title="Columns">
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -286,6 +364,160 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
           </>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Wave P4 — what depends on this node, each dependent showing the expression that would
+ * break rather than only its name.
+ *
+ * Loaded when the entity page opens (it walks the graph), and silent when nothing depends
+ * on the table: an empty "Dependents: none" section on every leaf table is noise, while
+ * the section appearing at all is itself the signal that something downstream exists.
+ */
+function DependentsSection({ connectionId, schema, nodeId }: {
+  connectionId: string; schema?: string; nodeId: string;
+}) {
+  const [lineage, setLineage] = useState<GraphLineage | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLineage(null);
+    getGraphLineage(connectionId, { nodeId, schemaName: schema })
+      .then((l) => { if (alive) setLineage(l); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [connectionId, schema, nodeId]);
+
+  if (!lineage || lineage.dependents.length === 0) return null;
+  return (
+    <Section title={`What depends on this — ${lineage.dependents.length}`}>
+      <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 4 }}>{lineage.summary}</div>
+      {lineage.dependents.map((d) => (
+        <div key={d.node_id} style={{ ...ROW, alignItems: "center", flexWrap: "nowrap" }}>
+          <StatusChip hue={d.kind === "metric" ? "info" : "accent"} strength="soft">{d.kind}</StatusChip>
+          <span style={{ color: "var(--t1)", fontSize: 12, whiteSpace: "nowrap",
+                         overflow: "hidden", textOverflow: "ellipsis", maxWidth: 340,
+                         flexShrink: 0 }}
+                title={d.label}>{d.label}</span>
+          {d.site && (
+            // One line, ellipsised, full text on hover. Sites run to 200 characters of
+            // SQL; rendered in full they wrapped to their own row and the list stopped
+            // being scannable — which defeats the point, since this section exists to be
+            // skimmed for the one artifact worth opening.
+            <code
+              title={`${d.site_line > 0 ? `line ${d.site_line}: ` : ""}${d.site}`}
+              style={{
+                fontSize: 11, color: "var(--t3)", background: "var(--bg-3)",
+                borderRadius: "var(--r1)", padding: "1px 6px",
+                maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis",
+                whiteSpace: "nowrap", flexShrink: 1, minWidth: 0,
+              }}
+            >
+              {d.site_line > 0 ? `line ${d.site_line}: ` : ""}{d.site}
+            </code>
+          )}
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+// Wave P5 — the review queue: what the graph knows it cannot vouch for, before anyone
+// asks a question. Every item names what is in doubt, why it matters in consequences
+// rather than mechanism, and the one check that would settle it.
+const REVIEW_HUE: Record<GraphReviewItem["type"], ChipHue> = {
+  graph_behind: "caution",
+  unprobed_join: "caution",
+  contested_finding: "accent",
+  ungrounded_finding: "muted",
+  undocumented_hub: "info",
+  isolated_table: "muted",
+};
+const REVIEW_LABEL: Record<GraphReviewItem["type"], string> = {
+  graph_behind: "Graph is behind",
+  unprobed_join: "Unprobed join",
+  contested_finding: "Contested",
+  ungrounded_finding: "Ungrounded",
+  undocumented_hub: "Undocumented hub",
+  isolated_table: "Isolated",
+};
+const CHECK_LABEL: Record<GraphReviewItem["check"], string> = {
+  probe_join: "Measure this join",
+  ask: "Ask about it",
+  review_finding: "Settle this",
+  define: "Define it",
+  rebuild: "Rebuild the graph",
+};
+
+function ReviewView({ review, error, onAsk, isTableNode, onOpenTable }: {
+  review: GraphReview | null;
+  error: string | null;
+  onAsk?: (q: string) => void;
+  /** True when the id names a table NODE — not an edge id that merely starts "table:". */
+  isTableNode: (id: string) => boolean;
+  onOpenTable?: (tableId: string) => void;
+}) {
+  // A failed fetch used to render as "Checking the graph…" forever — the same
+  // indistinguishable-states bug the Fresh badge had.
+  if (error) return <p style={{ color: "var(--t3)", fontSize: 13 }}>{error}</p>;
+  if (!review) return <p style={{ color: "var(--t3)", fontSize: 13 }}>Checking the graph…</p>;
+  if (review.total === 0) {
+    return (
+      <p style={{ color: "var(--t3)", fontSize: 13, maxWidth: 620 }}>
+        Nothing to review. Every join in this graph has been measured, every table is
+        connected and defined, and no finding is contested.
+      </p>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 760 }}>
+      <p style={{ color: "var(--t3)", fontSize: 12 }}>
+        {review.truncated
+          ? `${review.total} of ${review.total_found} things this graph cannot vouch for`
+          : `${review.total} thing${review.total !== 1 ? "s" : ""} this graph cannot vouch for`}
+        , most consequential first — ranked by how much depends on each, never by a guessed
+        severity.
+      </p>
+      {review.items.map((it) => (
+        <div key={it.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {/* Guarded: `type` is a plain string server-side, and an unknown value would
+                index StatusChip's hue map with undefined and unmount the panel. */}
+            <StatusChip hue={REVIEW_HUE[it.type] || "muted"} strength="soft">
+              {REVIEW_LABEL[it.type] || it.type.replace(/_/g, " ")}
+            </StatusChip>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{it.question}</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--t3)" }}>{it.why}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Every check routes to something that already exists — the Ask surface for
+                the ones a question settles, the entity page for the ones a human reads.
+                An item whose check has no home would be a to-do list, not a queue. */}
+            {onAsk && (it.check === "ask" || it.check === "probe_join" || it.check === "define") && (
+              <Button variant="ghost" onClick={() => onAsk(it.question)}
+                      style={{ fontSize: 12, padding: 0, color: "var(--t2)" }}>
+                {CHECK_LABEL[it.check] || "Check this"} →
+              </Button>
+            )}
+            {/* An unprobed_join's subject_id is an EDGE id
+                ("table:orders--joins_on-->table:customers"), which ALSO starts with
+                "table:" — the prefix test sent the queue's top-ranked item to a
+                "Table not found." page. Test for the node itself. */}
+            {onOpenTable && isTableNode(it.subject_id) && (
+              <Button variant="ghost" onClick={() => onOpenTable(it.subject_id)}
+                      style={{ fontSize: 12, padding: 0, color: "var(--t3)" }}>
+                Open {it.subject_label}
+              </Button>
+            )}
+            {it.depends > 0 && (
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+                {formatCount(it.depends)} thing{it.depends !== 1 ? "s" : ""} depend on this
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

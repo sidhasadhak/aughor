@@ -99,9 +99,21 @@ def _is_local_url(url: str) -> bool:
 
 
 def _is_cloud_ollama(model: str) -> bool:
-    # Ollama Cloud models carry a ``:cloud`` tag and egress to a multiplexed hosted
-    # service — they are *not* local even when reached via a localhost Ollama daemon.
-    return model.lower().endswith(":cloud")
+    """Does this Ollama id egress to Ollama Cloud? Reads the TAG, not the whole string.
+
+    Cloud models are *not* local even when reached through a localhost daemon, so this
+    decides `privacy_class` — the field that tells an operator whether their prompts left
+    the machine. Getting it wrong in the permissive direction reports egress as on-device,
+    which is the one error a governance surface must not make.
+
+    An `endswith(":cloud")` test read only the bare `:cloud` tag and missed every SIZED
+    cloud tag — `gemma4:31b-cloud`, `gpt-oss:120b-cloud`, `qwen3.5:397b-cloud`. Three of
+    the five ollama ids this repo ships were therefore reported `privacy_class: local`
+    with `cost: flat` while their prompts went to a hosted service (found 2026-08-04 when
+    a sized cloud tag became the shipped default).
+    """
+    tag = model.lower().rsplit(":", 1)[-1] if ":" in model else ""
+    return tag == "cloud" or tag.endswith("-cloud")
 
 
 def _cache_mode(backend: str, model: str, base_url: str) -> CacheMode:

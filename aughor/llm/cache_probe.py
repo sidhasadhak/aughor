@@ -3,7 +3,7 @@
 PLATFORM_ARCHITECTURE.md §5b.3 (Layer B): exploiting a stable prompt prefix only pays
 off if the serving backend reuses the prefix KV-cache *across separate requests*. That is
 certain for local Ollama, automatic on OpenAI-style providers — and **unverified** for the
-shipped default `qwen3-coder-next:cloud` (Ollama Cloud multiplexes requests across workers,
+shipped default `gemma4:31b-cloud` (Ollama Cloud multiplexes requests across workers,
 so a warm cache may not survive between calls). We refuse to *assume*; we measure.
 
 The experiment (run over the real provider, so it measures the real binding):

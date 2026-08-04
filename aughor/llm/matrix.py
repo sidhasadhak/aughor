@@ -64,6 +64,7 @@ class VouchedModel:
 # preserves today's blanket "a run pin never reaches `fast`" behaviour exactly.
 
 _VERIFIED_2026_07_24 = "2026-07-24"
+_VERIFIED_2026_08_04 = "2026-08-04"
 _VERIFIED_2026_08_01 = "2026-08-01"
 
 VOUCHED: tuple[VouchedModel, ...] = (
@@ -146,13 +147,28 @@ VOUCHED: tuple[VouchedModel, ...] = (
                  True, "5 RPM / 20 req-DAY — real, but unusable for a brief"),
     VouchedModel("gemini", "gemini-pro-latest", _VERIFIED_2026_07_24, False),
 
-    # ── Ollama ── local, so "the catalogue" is whatever this machine has pulled. Three
-    # were present on 2026-07-24; the other two are shipped suggestions that simply are
-    # not pulled here. Absent from a local install is NOT evidence an id is wrong, so
-    # they are recorded unverified rather than removed.
-    VouchedModel("ollama", "qwen3-coder-next:cloud", _VERIFIED_2026_07_24, False),
-    VouchedModel("ollama", "kimi-k2.6:cloud", _VERIFIED_2026_07_24, False),
-    VouchedModel("ollama", "qwen3.5:397b-cloud", _VERIFIED_2026_07_24, False),
+    # ── Ollama ── local, so "the catalogue" is whatever this machine has pulled. Absent
+    # from a local install is NOT evidence an id is wrong, so unpulled ids are recorded
+    # unverified rather than removed.
+    #
+    # ⚠️ 2026-08-04 — THE VOUCH METHOD HAS A BLIND SPOT, and it cost three weeks. These
+    # ids were vouched because they appeared in `ollama list` / `/v1/models`. For a
+    # `:cloud` id that is presence in a LOCAL registry, which says nothing about whether
+    # the remote still serves it: `qwen3-coder-next:cloud` was RETIRED on 2026-07-15 and
+    # is STILL listed on the verifying machine today. It was vouched on 2026-07-24 — nine
+    # days after it died. Two others turn out to need a paid subscription. So for a cloud
+    # id, "listed" is not evidence; only a completion is. Each entry below now records
+    # what was actually attempted.
+    VouchedModel("ollama", "gemma4:31b-cloud", _VERIFIED_2026_08_04, True,
+                 "completion + json_schema structured output both verified 2026-08-04, "
+                 "no subscription required — the shipped default"),
+    VouchedModel("ollama", "qwen3-coder-next:cloud", "", False,
+                 "RETIRED by Ollama 2026-07-15 — errors on every call. Still appears in "
+                 "`ollama list`, which is exactly why the 2026-07-24 vouch was wrong"),
+    VouchedModel("ollama", "kimi-k2.6:cloud", "", False,
+                 "listed, but answers 'this model requires a subscription' (2026-08-04)"),
+    VouchedModel("ollama", "qwen3.5:397b-cloud", "", False,
+                 "listed, but answers 'this model requires a subscription' (2026-08-04)"),
     VouchedModel("ollama", "glm-5.2:cloud", "", False, "not pulled on the verifying machine"),
     VouchedModel("ollama", "gpt-oss:120b-cloud", "", False, "not pulled on the verifying machine"),
 

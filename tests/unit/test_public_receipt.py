@@ -118,3 +118,42 @@ def test_query_run_blocked_sql_has_no_receipt(client):
     r = client.post("/query/run", json={"conn_id": "fixture", "sql": "DELETE FROM customers"})
     assert r.status_code == 200
     assert r.json().get("receipt_id") is None
+
+
+# ── Wave P1 — the answer trace (a SEPARATE, live call beside the signed receipt) ──
+
+def test_trace_route_inherits_the_receipts_fail_closed_rbac(client, monkeypatch):
+    """The trace reads the same connection's graph, so it must not become a side door
+    around the receipt's org gate."""
+    led = Ledger.default()
+    rid = _write(led, "chat:secretconn:trace", conn_id="secretconn")
+    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"other_conn"})
+    assert client.get(f"/receipt/{rid}/trace").status_code == 404
+    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
+    assert client.get(f"/receipt/{rid}/trace").status_code == 200
+
+
+def test_trace_route_says_unavailable_rather_than_returning_an_empty_walk(client):
+    """A connection with no knowledge graph must not render as 'nothing grounded this'."""
+    led = Ledger.default()
+    rid = _write(led, "chat:nograph:trace", conn_id="conn-with-no-graph")
+    body = client.get(f"/receipt/{rid}/trace").json()
+    assert body["available"] is False
+    assert body["reason"]                      # names WHY, never a bare empty list
+    assert body["nodes"] == [] and body["edges"] == []
+
+
+def test_graph_citations_ride_the_signed_receipt(client):
+    """Node IDS are immutable lineage and belong inside the signature; their labels and
+    warrants are resolved live by the trace call instead."""
+    led = Ledger.default()
+    rid = led.artifact_write(
+        "chat_answer", "chat:c1:cited",
+        {"question": "q", "headline": "h", "sql": "SELECT 1", "tables": ["customers"]},
+        conn_id="c1",
+        lineage=[("input", "table:customers", None),
+                 ("grounded_in_graph", "table:Customer", None),
+                 ("grounded_in_graph", "finding:abc", None)])
+    rec = client.get(f"/receipt/{rid}").json()
+    assert rec["grounded_in_graph"] == ["table:Customer", "finding:abc"]
+    assert verify(rec)

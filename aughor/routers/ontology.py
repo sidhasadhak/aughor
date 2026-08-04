@@ -238,6 +238,7 @@ def get_context_graph(
     payload = cg.model_dump()
     payload["counts"] = cg.counts()
     payload.update(_graph_domain_aggregation(cg))
+    _stamp_warrants(payload, cg)
     try:
         from aughor.ontology.graph_freshness import staleness_of
         # Compare against the ontology for the GRAPH's own schema (the committed graph may
@@ -246,6 +247,81 @@ def get_context_graph(
     except Exception:
         payload["staleness"] = "unknown"
     return payload
+
+
+def _stamp_warrants(payload: dict, cg) -> None:
+    """Wave P2 — attach the derived warrant class to every node and edge in a response.
+
+    Derived at READ time and never written to the artifact: the committed graph stays the
+    structural truth, and a graph built before this wave gets its warrants for free. Best
+    effort — a surface that cannot classify still renders the graph.
+    """
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
+    except Exception as exc:
+        tolerate(exc, "warrant stamping is a read-time annotation; the graph renders without it",
+                 counter="context_graph.warrant_stamp")
+        return
+    # Per ITEM, not per pass: one node that raises used to leave every node after it in
+    # dict order unstamped, with no error and nothing to distinguish it from "warrants
+    # unavailable".
+    for nid, raw in (payload.get("nodes") or {}).items():
+        node = cg.nodes.get(nid)
+        if node is None:
+            continue
+        try:
+            raw["warrant"] = warrant_of_node(node).to_dict()
+        except Exception as exc:
+            tolerate(exc, f"warrant for node {nid} could not be derived",
+                     counter="context_graph.warrant_stamp")
+    for eid, raw in (payload.get("edges") or {}).items():
+        edge = cg.edges.get(eid)
+        if edge is None:
+            continue
+        try:
+            raw["warrant"] = warrant_of_edge(edge).to_dict()
+        except Exception as exc:
+            tolerate(exc, f"warrant for edge {eid} could not be derived",
+                     counter="context_graph.warrant_stamp")
+
+
+@router.get("/graph/audit")
+def get_context_graph_audit(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P2 — the graph's honesty scorecard: how much of it is measured, and how much
+    is a name match.
+
+    One call, because the three honesty signals are only meaningful together: the warrant
+    mix says how *well-founded* the graph is, `staleness` says whether the SCHEMA still
+    matches, and `drift` says whether the graph still holds what the platform has since
+    learned. A surface showing any one alone can read as reassurance — a Fresh badge over
+    a graph of unprobed name matches is exactly the shape this wave refuses.
+    """
+    from aughor.ontology.graph_warrant import audit
+    from aughor.org.context import current_org_id
+
+    org = current_org_id()
+    cg = _load_graph_or_404(connection_id, schema_name)
+    out = {"connection_id": connection_id, "schema_name": cg.schema_name,
+           "graph_version": cg.version, **audit(cg)}
+    try:
+        from aughor.ontology.graph_freshness import staleness_of
+        out["staleness"] = staleness_of(connection_id, cg.schema_name or schema_name, org_id=org)
+    except Exception:
+        out["staleness"] = "unknown"
+    try:
+        from aughor.ontology.graph_freshness import content_drift
+        out["drift"] = content_drift(connection_id, cg.schema_name or schema_name,
+                                     org_id=org).to_dict()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "content drift is a second axis; the audit still reports the warrant mix",
+                 counter="context_graph.audit_drift")
+        out["drift"] = None
+    return out
 
 
 def _load_graph_or_404(connection_id: str, schema_name: Optional[str]):
@@ -284,6 +360,110 @@ def get_graph_content_drift(
 
     drift = content_drift(connection_id, schema_name, org_id=current_org_id())
     return {"connection_id": connection_id, **drift.to_dict()}
+
+
+@router.get("/graph/lineage")
+def get_context_graph_lineage(
+    connection_id: str = BUILTIN_ID,
+    node_id: Optional[str] = Query(default=None),
+    table: Optional[str] = Query(default=None),
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P4 — what depends on this node, with the expression that would break.
+
+    The lineage walker (`govern/lineage.py`) has been built and tested since Wave G7 with
+    no route and no caller: the question "what breaks if this table changes" was answerable
+    and unasked. This is the seam.
+
+    Each dependent carries its **site** — the line of the finding's SQL, or the metric
+    formula, that names the thing in question. A dependency list without sites says which
+    artifacts to open; with them it says what to look at once open.
+    """
+    from aughor.govern.lineage import dependents_of
+
+    if not node_id and not table:
+        raise HTTPException(status_code=400, detail="Pass either node_id or table")
+    cg = _load_graph_or_404(connection_id, schema_name)
+
+    root = node_id
+    if not root:
+        bare = str(table or "").split(".")[-1].lower()
+        for nid, n in cg.nodes.items():
+            if n.kind != "table":
+                continue
+            names = {str(s).split(".")[-1].lower()
+                     for s in ((n.data or {}).get("source_tables") or [])}
+            if bare in names or bare == nid.split(":", 1)[-1].lower():
+                root = nid
+                break
+        if not root:
+            raise HTTPException(status_code=404,
+                                detail=f"No table `{table}` in this connection's graph")
+    elif root not in cg.nodes:
+        raise HTTPException(status_code=404, detail=f"No node `{root}` in this graph")
+
+    report = dependents_of(cg, root)
+    node = cg.nodes.get(root)
+    return {"connection_id": connection_id, "node_id": root,
+            "label": getattr(node, "label", "") or root,
+            **report.to_dict()}
+
+
+@router.get("/graph/review")
+def get_context_graph_review(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Wave P5 — what the graph knows it cannot vouch for.
+
+    The proactive half of "check every node": rather than waiting for a question and
+    explaining it afterwards, the graph reports the nodes worth checking BEFORE one is
+    asked — unprobed joins, isolated tables, findings that disagree, undocumented hubs.
+
+    Deterministic and LLM-free. Ranked by how many other nodes depend on the thing in
+    doubt, never by an invented severity score.
+    """
+    from aughor.ontology.graph_questions import queue_summary, review_queue_with_total
+    from aughor.org.context import current_org_id
+
+    cg = _load_graph_or_404(connection_id, schema_name)
+    drift = None
+    try:
+        from aughor.ontology.graph_freshness import content_drift
+        drift = content_drift(connection_id, cg.schema_name or schema_name,
+                              org_id=current_org_id()).to_dict()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "drift is one input to the review queue; the structural checks still run",
+                 counter="context_graph.review_drift")
+
+    items, found = review_queue_with_total(cg, drift=drift, limit=limit)
+    return {"connection_id": connection_id, "schema_name": cg.schema_name,
+            "graph_version": cg.version,
+            "items": [i.to_dict() for i in items],
+            **queue_summary(items, total_found=found)}
+
+
+@router.get("/graph/trust")
+def get_context_graph_trust(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P3 — what standing each node has earned.
+
+    A read-time SIDECAR: nothing here is written to the committed artifact, so a
+    conclusion about a node can never outlive the evidence for it.
+
+    On a warehouse where nobody has recorded a verdict, every node reads `unchecked` —
+    that is the honest report, not an empty feature, and `human_signal: false` says so
+    in one field rather than leaving a reader to infer it from a row of zeros.
+    """
+    from aughor.ontology.graph_trust import trust_for_connection
+    from aughor.org.context import current_org_id
+
+    cg = _load_graph_or_404(connection_id, schema_name)
+    return trust_for_connection(connection_id, cg, org_id=current_org_id()).to_dict()
 
 
 @router.get("/graph/tour")

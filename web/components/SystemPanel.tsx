@@ -251,8 +251,10 @@ export function SystemPanel() {
       {/* Which backend this browser talks to */}
       <Backend />
 
-      {/* Capabilities — Auto-mode master + the self-gating guards (Wave 1 · E3) */}
-      <Capabilities />
+      {/* The Capabilities section (Auto-mode master + self-gating guards) was removed
+          2026-08-04: flag endgame Wave 3 made all ten guards unconditional, so there was
+          nothing left for the operator to set. Their triggers still report on the
+          Activation Receipt. */}
 
       {/* Feature flags */}
       <FeatureFlags />
@@ -359,8 +361,7 @@ function FeatureFlags() {
     setBusy("");
   };
 
-  // Auto-eligible guards + the Auto-mode master live in the Capabilities section instead.
-  const entries = Object.entries(flags).filter(([name, f]) => !f.auto_eligible && name !== "capabilities.auto");
+  const entries = Object.entries(flags);
   if (entries.length === 0) return null;
 
   // The disposition ratchet (flag strategy §5.1): group by declared KIND instead of one
@@ -467,10 +468,16 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
 }
 
 /** Group E as one control: the four parallelism flags set together, matched to rate limits.
- *  These are backend FLAG KEYS — wire names, frozen (renaming one strands the operator's
- *  env var and persisted override; that only happens via the backend's alias layer). */
-const PERF_FLAGS = ["explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
-                    "ada.parallel_why_lenses"] as const;
+ *
+ *  These must be the CANONICAL backend keys. Three of them were the retired `ada.*`
+ *  aliases, and the alias layer does not reach either side of this control: `list_flags()`
+ *  keys its response canonically, so `flags["ada.parallel_lenses"]` read `undefined` and
+ *  the profile always rendered "Conservative"; and `set_system_flag` rejects any name not
+ *  literally in `FLAG_ENV`, so three of every four writes 404'd. The control looked wired
+ *  and did nothing. */
+const PERF_FLAGS = ["explore.parallel_subq", "deep_analysis.parallel_lenses",
+                    "deep_analysis.parallel_phases",
+                    "deep_analysis.parallel_why_lenses"] as const;
 
 function PerformanceProfile({ flags, refresh }: {
   flags: Record<string, SystemFlag>; refresh: () => Promise<void>;
@@ -479,14 +486,14 @@ function PerformanceProfile({ flags, refresh }: {
   const vals = PERF_FLAGS.map(n => !!flags[n]?.value);
   const current = vals.every(v => v) ? "fast"
     : vals.every(v => !v) ? "conservative"
-    : (flags["ada.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
+    : (flags["deep_analysis.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
     : "custom";
 
   const apply = async (profile: "conservative" | "balanced" | "fast") => {
     setBusy(true);
     for (const n of PERF_FLAGS) {
       const state = profile === "fast" ? "on"
-        : profile === "balanced" && n === "ada.parallel_why_lenses" ? "on"
+        : profile === "balanced" && n === "deep_analysis.parallel_why_lenses" ? "on"
         : "auto";                                  // auto = clear the override → code default (off)
       await setCapabilityState(n, state as CapabilityState);
     }
@@ -519,7 +526,7 @@ function PerformanceProfile({ flags, refresh }: {
   );
 }
 
-/** The pill switch shared by Feature flags and the Capabilities Auto-mode master. */
+/** The pill switch used by the Feature flags list. */
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -533,70 +540,6 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
   );
 }
 
-function TriState({ value, disabled, onChange }: { value: CapabilityState; disabled: boolean; onChange: (s: CapabilityState) => void }) {
-  const opts: CapabilityState[] = ["auto", "on", "off"];
-  return (
-    <div className="inline-flex shrink-0 overflow-hidden rounded-[var(--r2)]" style={{ border: "1px solid var(--b1)" }}>
-      {opts.map(o => (
-        <Button key={o} size="xs" variant={value === o ? "secondary" : "ghost"} disabled={disabled}
-          onClick={() => onChange(o)} className="h-6 rounded-none px-2 capitalize">
-          {o}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
-function Capabilities() {
-  const [flags, setFlags] = useState<Record<string, SystemFlag>>({});
-  const [busy, setBusy] = useState("");
-
-  useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
-
-  const patch = (u: SystemFlag | null, name: string) => { if (u) setFlags(f => ({ ...f, [name]: u })); setBusy(""); };
-  // The master flips EVERY auto-eligible guard's effective state, so re-fetch all flags (not just the master).
-  const setMaster = async (v: boolean) => { setBusy("capabilities.auto"); await setSystemFlag("capabilities.auto", v); setFlags(await getSystemFlags()); setBusy(""); };
-  const setOne = async (name: string, s: CapabilityState) => { setBusy(name); patch(await setCapabilityState(name, s), name); };
-
-  const master = flags["capabilities.auto"];
-  const caps = Object.entries(flags).filter(([, f]) => f.auto_eligible).sort((a, b) => a[1].label.localeCompare(b[1].label));
-  if (!master && caps.length === 0) return null;
-  const autoOn = !!master?.value;
-
-  return (
-    <Section title="Capabilities">
-      {master && (
-        <div className="flex items-start justify-between gap-4 py-2 border-b border-white/5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-200">Auto-mode</span>
-              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>master</span>
-            </div>
-            <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">
-              Run the deterministic guards below on their own triggers with one switch — each one set to Auto activates only when its trigger fires.
-            </p>
-          </div>
-          <Toggle checked={autoOn} disabled={busy === "capabilities.auto"} onChange={setMaster} />
-        </div>
-      )}
-      {caps.map(([name, f]) => {
-        const setting: CapabilityState = f.override === true ? "on" : f.override === false ? "off" : "auto";
-        const active = !!f.value;
-        return (
-          <div key={name} className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-200">{f.label}</span>
-                <span className="text-[9.5px]" style={{ color: active ? "var(--grn2)" : "var(--t4)" }}>{active ? "active" : "inactive"}</span>
-              </div>
-              {f.trigger && <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug">Fires when {f.trigger}.</p>}
-            </div>
-            <TriState value={setting} disabled={busy === name} onChange={s => setOne(name, s)} />
-          </div>
-        );
-      })}
-    </Section>
-  );
-}
 
 

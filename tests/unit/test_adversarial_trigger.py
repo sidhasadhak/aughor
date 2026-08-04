@@ -27,15 +27,20 @@ def test_ordinary_driver_verdict_is_not_decision_changing():
     assert is_decision_changing_verdict("Fragrance refunds are driven by scent intensity (66%)", "") is False
 
 
-def test_the_full_tier_stays_deleted_and_the_auto_tier_remains():
+def test_the_full_tier_stays_deleted_and_high_stakes_is_unconditional():
     """`ada.adversarial_verify` (challenge EVERY decision-changing verdict) was deleted
-    2026-07-31 (flag strategy §4G) — superseded by the materiality-gated auto tier. A
-    re-registration would silently resurrect an LLM call per decision-changing verdict."""
+    2026-07-31 (flag strategy §4G) — superseded by the materiality-gated tier. A
+    re-registration would silently resurrect an LLM call per decision-changing verdict.
+
+    Its successor `deep_analysis.adversarial_high_stakes` was itself deleted 2026-08-04
+    (Wave 3): the materiality test — a HIGH-confidence decision-changing verdict where
+    the cap bites — was always the real gate, so the tier is now unconditional. What must
+    NOT come back is the always-challenge tier, and neither name may re-register."""
     from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV
 
     assert "deep_analysis.adversarial_verify" not in FLAG_ENV
-    assert "deep_analysis.adversarial_high_stakes" in FLAG_ENV
-    assert "deep_analysis.adversarial_high_stakes" in AUTO_ELIGIBLE
+    assert "deep_analysis.adversarial_high_stakes" not in FLAG_ENV
+    assert AUTO_ELIGIBLE == frozenset(), "the auto tier is dissolved; nothing may rejoin it"
 
 
 def test_refuter_alias_is_public_and_callable():

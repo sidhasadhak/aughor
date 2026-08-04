@@ -28,8 +28,13 @@ answer that reads as "nothing else depends on this".
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
+
+#: A site name must be a plain SQL identifier — optionally schema-qualified — before
+#: it is used as a search key.
+_IDENT_ONLY = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)*")
 
 #: Edge kinds that mean "the source is derived from the target". Walked in reverse: given
 #: a table, find what points AT it.
@@ -42,17 +47,80 @@ MAX_DEPTH = 4
 
 @dataclass
 class Dependent:
-    """One node downstream of the thing being asked about."""
+    """One node downstream of the thing being asked about.
+
+    ``site`` is Wave P4's addition: not just *that* this finding depends on the table, but
+    **the expression that would break** — the line of its SQL that names the table, or the
+    metric formula that reads it. A dependency list without sites tells a reviewer which
+    artifacts to open; a list with them tells them what to look at once they are open, and
+    it is the difference between a report and a work item.
+    """
 
     node_id: str
     kind: str
     label: str
     depth: int
     via: str            # the edge kind that connected it
+    site: str = ""      # the expression in THIS node that references the target
+    site_kind: str = ""  # sql | formula | citation — what kind of expression `site` is
+    site_line: int = 0   # 1-based line within that expression, 0 when not applicable
 
     def to_dict(self) -> dict:
         return {"node_id": self.node_id, "kind": self.kind, "label": self.label,
-                "depth": self.depth, "via": self.via}
+                "depth": self.depth, "via": self.via, "site": self.site,
+                "site_kind": self.site_kind, "site_line": self.site_line}
+
+
+def _site_of(node, target_label: str, target_tables: list) -> tuple[str, str, int]:
+    """The expression inside ``node`` that references the target — ``(site, kind, line)``.
+
+    Deliberately literal: it reports the line of SQL that NAMES the table, found by
+    scanning the text this node already carries. No parsing, no inference — a wrong guess
+    about which expression breaks is worse than none, because a reviewer would check the
+    wrong line and conclude the dependency was fine.
+    """
+    data = (getattr(node, "data", None) or {})
+    # Both the QUALIFIED name and the bare one. Real SQL writes `FROM schema.table`, and
+    # searching only the bare part while also refusing a preceding dot found nothing on
+    # every schema-qualified warehouse — every site reported line 0, which the unit tests
+    # could not see because their fixtures used bare names.
+    names: set[str] = set()
+    for t in (target_tables or []):
+        full = str(t).strip().strip('"').lower()
+        if full:
+            names.add(full)
+            names.add(full.split(".")[-1])
+    if target_label:
+        names.add(str(target_label).split(".")[-1].strip().lower())
+    # Only real identifiers (optionally schema-qualified). A label like "Rev. " leaves " "
+    # after the split, and a bare substring test on that matches EVERY line — the site
+    # would then point a reviewer at line 1 of an unrelated query.
+    names = {n for n in names if n and _IDENT_ONLY.fullmatch(n)}
+    if not names:
+        return "", "", 0
+    # Word-boundary match, not substring: `sales` must not match `sales_summary` (a
+    # different table) and `date` must not match `date_trunc(` (a function). A site that
+    # points at the wrong expression is worse than no site — a reviewer would check it,
+    # find it fine, and conclude the dependency was fine. Longest name first so
+    # `schema.table` wins over the bare `table` on the same line.
+    pattern = re.compile(r"(?<!\w)(" + "|".join(re.escape(n) for n in
+                                                sorted(names, key=lambda n: (-len(n), n)))
+                         + r")(?![\w(])", re.IGNORECASE)
+
+    for key, kind in (("sql", "sql"), ("formula_sql", "formula")):
+        text = str(data.get(key) or "")
+        if not text:
+            continue
+        for i, line in enumerate(text.splitlines(), start=1):
+            if pattern.search(line):
+                return line.strip()[:200], kind, i
+        # Referenced by the edge but not visibly by name — report the expression itself
+        # rather than claiming a line we did not find.
+        return text.strip().splitlines()[0][:200] if text.strip() else "", kind, 0
+
+    if getattr(node, "kind", "") == "brief":
+        return "cites this finding", "citation", 0
+    return "", "", 0
 
 
 @dataclass
@@ -113,6 +181,10 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
     for depth in range(1, max_depth + 1):
         nxt: list[str] = []
         for target in frontier:
+            tnode = nodes.get(target)
+            t_label = getattr(tnode, "label", "") if tnode is not None else ""
+            t_tables = ((getattr(tnode, "data", None) or {}).get("source_tables") or []
+                        if tnode is not None else [])
             for source, kind in incoming.get(target, []):
                 if source in seen:
                     continue
@@ -120,9 +192,11 @@ def dependents_of(graph, node_id: str, *, max_depth: int = MAX_DEPTH) -> Lineage
                 node = nodes.get(source)
                 if node is None:
                     continue
+                site, site_kind, site_line = _site_of(node, t_label, t_tables)
                 report.dependents.append(Dependent(
                     node_id=source, kind=getattr(node, "kind", ""),
-                    label=getattr(node, "label", "") or source, depth=depth, via=kind))
+                    label=getattr(node, "label", "") or source, depth=depth, via=kind,
+                    site=site, site_kind=site_kind, site_line=site_line))
                 nxt.append(source)
         frontier = nxt
         if not frontier:

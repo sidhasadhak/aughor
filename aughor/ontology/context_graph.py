@@ -401,7 +401,13 @@ def _project_glossary_terms(cg: ContextGraph, ontology, merged_glossary: Optiona
                                           note=f"defined on {_bare(table)}"),
                     data={"table": _bare(table), "column": str(col),
                           "values": (cmeta or {}).get("values", ""),
-                          "caveats": (cmeta or {}).get("caveats", "")},
+                          "caveats": (cmeta or {}).get("caveats", ""),
+                          # P2: whether the autodoc seeded this table's entry, so the
+                          # warrant class can tell a written definition from a generated
+                          # one. Table-level (the merge carries no per-column marker), so
+                          # it reads "this description may be machine-written" — the
+                          # honest direction: it only ever WEAKENS a claim.
+                          "auto_generated": bool((meta or {}).get("auto_generated"))},
                 )
                 cg.add_node(node)
                 # defines: term → metric when the column name matches a metric exactly.
@@ -440,7 +446,11 @@ def _project_resolutions(cg: ContextGraph, resolutions: list) -> None:
             subject = str(getattr(res, "subject", "") or "").strip()
             if not subject:
                 continue
-            source_tier = getattr(res, "resolution_source", "") or "probe"
+            # No default tier. `or "probe"` claimed the warehouse had been queried whenever
+            # the ledger row left the column empty — and P2 reads `resolution_source=probe`
+            # as a MEASUREMENT, so the harmless-looking default published a probe nobody
+            # ran. An unrecorded origin stays unrecorded.
+            source_tier = str(getattr(res, "resolution_source", "") or "").strip()
             # Point at what the resolution actually resolves: a glossary term, else a
             # metric of that name, else the table. If none exists in this graph the
             # resolution node is still emitted (findable in C2) but carries no dangling
@@ -515,6 +525,10 @@ def finding_node_data(f: dict) -> dict:
     """
     data = {"sql": f.get("sql", ""), "tables": list(f.get("tables") or []),
             "generated_at": f.get("generated_at", "")}
+    # P3: the id a human verdict is filed under, when the source records one. Emitted only
+    # when present, so a graph built from sources without it serializes as before.
+    if f.get("investigation_id"):
+        data["investigation_id"] = str(f["investigation_id"])
     if f.get("supersedes"):
         data["supersedes"] = int(f["supersedes"])
         data["superseded_ids"] = list(f.get("superseded_ids") or [])

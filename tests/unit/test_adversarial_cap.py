@@ -70,26 +70,15 @@ def test_idempotent_note_no_double_insert():
 
 # ── The deterministic materiality gate ────────────────────────────────────────────
 
-def test_high_stakes_tier_runs_only_on_high_confidence():
-    # The always-challenge full tier was deleted 2026-07-31 (flag strategy §4G);
-    # the materiality gate is the one tier left.
-    assert I._adversarial_should_run(_synth("HIGH"), high_stakes=True)
-    assert not I._adversarial_should_run(_synth("MEDIUM"), high_stakes=True)
-    assert not I._adversarial_should_run(_synth("LOW"), high_stakes=True)
-
-
-def test_no_tier_never_runs():
-    assert not I._adversarial_should_run(_synth("HIGH"), high_stakes=False)
+def test_the_materiality_gate_runs_only_on_high_confidence():
+    """The always-challenge full tier was deleted 2026-07-31 (flag strategy §4G) and the
+    `high_stakes` parameter went with its flag in Wave 3 — the caller passed a literal
+    True, so the False arm was unreachable. Confidence IS the gate now, and it is the one
+    thing that must keep the refuter off the many MEDIUM/LOW verdicts."""
+    assert I._adversarial_should_run(_synth("HIGH"))
+    assert not I._adversarial_should_run(_synth("MEDIUM"))
+    assert not I._adversarial_should_run(_synth("LOW"))
+    assert not I._adversarial_should_run(_synth(""))
 
 
 # ── Flag registration ─────────────────────────────────────────────────────────────
-
-def test_high_stakes_flag_registered_and_auto_elevated(monkeypatch):
-    from aughor.kernel.flags import FLAG_ENV, FLAG_META, flag_enabled
-    assert "deep_analysis.adversarial_high_stakes" in FLAG_ENV and "deep_analysis.adversarial_high_stakes" in FLAG_META
-    # Auto-eligible + master default-ON (2026-07-13 graduation): unset ⇒ elevated; "0" kills.
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES", raising=False)
-    monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
-    assert flag_enabled("deep_analysis.adversarial_high_stakes") is True
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES", "0")
-    assert flag_enabled("deep_analysis.adversarial_high_stakes") is False

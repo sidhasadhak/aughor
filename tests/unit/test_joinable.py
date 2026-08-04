@@ -96,3 +96,70 @@ def test_seed_verified_cache_from_phase4_results():
     # a later catalog build hits the seeded cache (no conn needed)
     sig = tuple(sorted((j["t1"], j["c1"], j["t2"], j["c2"]) for j in joins))
     assert ("connZ", sig) in jg._VERIFIED_JOIN_CACHE
+
+
+# ── Wave P2: the verification and the number are separate claims ─────────────────
+
+def test_a_verified_edge_without_counts_keeps_its_verification_but_reports_no_number():
+    """Two failure modes, one line apart. Turning a countless verification into
+    `overlap=1.0` published "100% of key values overlap" — a probe result the record does
+    not contain. Turning it into `-1.0` alone then LOST the verification downstream, so an
+    explorer-checked FK was demoted to "name match, not probed". The verification travels
+    on its own field."""
+    from aughor.sql import join_guard as jg
+    from aughor.ontology.builder import apply_join_verifications
+    from aughor.ontology.models import OntologyGraph, OntologyRelationship
+
+    jg._VERIFIED_JOIN_CACHE.clear()
+    try:
+        joins = [{"t1": "orders", "c1": "customer_id", "t2": "customers", "c2": "id"}]
+        # A verification WITHOUT fk_distinct — the shape that produced the fake 1.0.
+        verified, rejected = jg.seed_verified_cache(
+            "k", joins, [{"from_table": "orders", "from_col": "customer_id",
+                          "to_table": "customers", "to_col": "id", "verified": True}])
+        assert len(verified) == 1 and not rejected
+        vj = verified[0]
+        assert vj.overlap == -1.0            # no number is invented
+        assert vj.verified_upstream is True  # …but the check itself is not lost
+
+        # The prompt says so in words rather than borrowing another edge's confidence.
+        text = jg.render_verified_joins(verified, rejected)
+        assert "declared, not probed" in text
+        assert "100%" not in text
+
+        # And the ontology still stamps the edge verified, with no fabricated overlap.
+        g = OntologyGraph(connection_id="c", schema_name="s", schema_fingerprint="f")
+        g.relationships = {"r": OntologyRelationship(
+            id="r", from_entity="Order", to_entity="Customer", cardinality="N:1",
+            join_sql="", from_table="orders", from_col="customer_id",
+            to_table="customers", to_col="id", join_confidence="inferred")}
+        g.entities = {}
+        apply_join_verifications(g, verified, rejected)
+        rel = g.relationships["r"]
+        assert rel.join_confidence == "verified"
+        assert rel.value_overlap is None
+
+        # …which the warrant class reports honestly: checked, but not measured here.
+        from aughor.ontology.graph_warrant import warrant_for
+        from aughor.ontology.context_graph import Provenance
+        v = warrant_for(Provenance(source="join_guard",
+                                   note=f"unprobed join_confidence={rel.join_confidence}"))
+        assert v.warrant == "declared"
+    finally:
+        jg._VERIFIED_JOIN_CACHE.clear()
+
+
+def test_a_verification_with_counts_still_reports_the_measured_number():
+    from aughor.sql import join_guard as jg
+
+    jg._VERIFIED_JOIN_CACHE.clear()
+    try:
+        joins = [{"t1": "orders", "c1": "customer_id", "t2": "customers", "c2": "id"}]
+        verified, _ = jg.seed_verified_cache(
+            "k2", joins, [{"from_table": "orders", "from_col": "customer_id",
+                           "to_table": "customers", "to_col": "id", "verified": True,
+                           "fk_distinct": 100, "orphan_count": 2}])
+        assert verified[0].overlap == 0.98
+        assert "98% value overlap" in jg.render_verified_joins(verified, [])
+    finally:
+        jg._VERIFIED_JOIN_CACHE.clear()

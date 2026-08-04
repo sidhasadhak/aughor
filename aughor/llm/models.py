@@ -31,8 +31,13 @@ logger = logging.getLogger(__name__)
 #: Curated fallbacks. Deliberately short — this is the offline floor, not an
 #: attempt to mirror a catalogue that changes weekly.
 KNOWN_MODELS: dict[str, tuple[str, ...]] = {
-    "ollama": ("qwen3-coder-next:cloud", "kimi-k2.6:cloud", "gpt-oss:120b-cloud",
-               "glm-5.2:cloud", "qwen3.5:397b-cloud"),
+    # Ordered by what a fresh install can actually USE. `qwen3-coder-next:cloud` was
+    # dropped 2026-08-04: Ollama retired it on 2026-07-15 and it now errors on every
+    # call. `kimi-k2.6:cloud` and `qwen3.5:397b-cloud` are kept but demoted — both
+    # answer "this model requires a subscription", so they are real ids that most
+    # installs cannot run.
+    "ollama": ("gemma4:31b-cloud", "gpt-oss:120b-cloud", "glm-5.2:cloud",
+               "kimi-k2.6:cloud", "qwen3.5:397b-cloud"),
     "lmstudio": ("local-model",),
     "groq": ("llama-3.3-70b-versatile", "llama-3.1-8b-instant",
              "mixtral-8x7b-32768"),

@@ -560,7 +560,7 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         except Exception:
             return ""
 
-    def _get_priors() -> tuple[str, bool]:
+    def _get_priors() -> tuple[str, bool, list]:
         # P1 close-the-loop: read past human corrections for this database BACK into planning,
         # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
         # nothing relevant is stored or the flag is off, so the default path is unchanged.
@@ -568,9 +568,13 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
             from aughor.feedback.priors import build_corrections_section
             _p = build_corrections_section(state.get("question") or h.description,
                                            state.get("connection_id") or "")
-            return _p, bool(_p)
+            # Wave P1: the graph citations are set on a CONTEXTVAR, and this closure runs
+            # inside a copied context — so they must be read here and returned, or the
+            # receipt on the request context never sees them.
+            from aughor.ontology.context_graph_readback import last_cited_nodes
+            return _p, bool(_p), last_cited_nodes()
         except Exception:
-            return "", False
+            return "", False, []
 
     from aughor.kernel.concurrency import ContextThreadPoolExecutor
     from aughor.kernel.parallel_safety import fanout_region as _fanout_region
@@ -584,7 +588,15 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         schema_for_hypothesis = _f_schema.result()
         kb_patterns = _f_kb.result()
         causal_section = _f_causal.result()
-        priors_section, priors_fired = _f_priors.result()
+        priors_section, priors_fired, _cited_nodes = _f_priors.result()
+    # Republish the worker's citations onto the request context so the Trust Receipt can
+    # attribute them (Wave P1). Outside the `with`, i.e. after the pool has drained.
+    if _cited_nodes:
+        try:
+            from aughor.ontology.context_graph_readback import publish_cited_nodes
+            publish_cited_nodes(_cited_nodes)
+        except Exception:
+            pass
 
     prior_analyses = state.get("prior_analyses", [])
     prior_analyses_text = (
