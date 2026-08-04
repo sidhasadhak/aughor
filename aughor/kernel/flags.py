@@ -119,8 +119,13 @@ FLAG_ENV = {
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     # "search.rrf" (AUGHOR_SEARCH_RRF) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): the RRF fusion was MEASURED worse than the α-blend default on the
-    # real KB corpus (MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957 — the since-removed
-    # evals/rrf_retrieval_eval.py). hybrid_rerank now α-blends unconditionally.
+    # real KB corpus (MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957). The instrument was
+    # `aughor/evals/rrf_retrieval_eval.py`, removed with the flag because it toggled the
+    # flag to build its two arms and cannot run without it. It is RECOVERABLE at
+    # `git show e094603:aughor/evals/rrf_retrieval_eval.py` (branch
+    # worktree-flag-experiment-queue) — naming the commit rather than only the deletion
+    # is what keeps a settled decision re-checkable by somebody who doubts it later.
+    # hybrid_rerank now α-blends unconditionally.
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
     "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
     "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
