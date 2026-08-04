@@ -1,0 +1,468 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T21:52:07.724538+00:00",
+  "connection_id": "914df862",
+  "headline": "Womenswear and size-related returns drive the majority of non-restocked refund value leakage.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "988a755e",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "How much refunded stock is never resold?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "Non-restocked refund value is heavily concentrated in womenswear and driven primarily by size and fit issues, indicating a need for improved sizing guidance to reduce inventory leakage. The current data is subject to fan-out inflation and requires a grain-correct recompute to determine precise financial impact.",
+    "comparison_basis": "",
+    "confidence": "LOW",
+    "confidence_justification": "The metric is aggregated across a fan-out join, which inflates the total magnitude and potentially biases the ranking. The findings are directional only.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Inventory availability data to confirm if non-restocked items are truly unsellable or simply delayed in processing.",
+      "Grain-correct join logic to eliminate fan-out inflation in the refund_eur aggregation."
+    ],
+    "executive_summary": "\u26a0 A trust check flagged the evidence and the figures below are NOT reliable: The metric is aggregated across a fan-out join (a one-to-many join multiplies the rows being summed), so the magnitudes below are likely inflated and the ranking may be volume-weighted rather than reflecting the true per-group total \u2014 treat these numbers as directional only. Do not read the numbers or ranking as fact until they are recomputed. Non-restocked refund value is most concentrated in the womenswear category, which accounts for **54.6%** of the total impact. Returns attributed to 'size_fit' are the largest driver of this leakage, totaling **316,075 EUR** or **40.9%** of the total. Mytheresa exhibits the highest average value per non-restocked return at **411.57 EUR**. These figures are directional due to fan-out join inflation and require a grain-correct recompute for financial accuracy.",
+    "headline": "Womenswear and size-related returns drive the majority of non-restocked refund value leakage.",
+    "metric": "non-restocked refunded value",
+    "metric_definition": "non-restocked refunded value \u2014 computed as `SUM(r.refund_eur)`; on luxexperience.returns; over data spanning 2020-07-04 \u2192 2025-07-26.",
+    "observation_period": "2020-07-04 \u2192 2025-07-26",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "non-restocked refunded value": "currency:EUR"
+            },
+            "columns": [
+              "category",
+              "non-restocked refunded value",
+              "records",
+              "non-restocked refunded value per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_0",
+            "interpretation": "Non-restocked refund value is heavily concentrated in womenswear, which accounts for **54.6%** of the total. While womenswear has the highest total, its average per record of **244.71 EUR** is consistent with the overall distribution, suggesting the volume of returns is the primary driver of the total rather than individual item value.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Womenswear Total",
+                "value": "422,363 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Womenswear Average",
+                "value": "244.71 EUR"
+              }
+            ],
+            "row_count": 10,
+            "rows": [
+              [
+                "womenswear",
+                "422363.0",
+                "1726",
+                "244.71"
+              ],
+              [
+                "shoes",
+                "96537.0",
+                "376",
+                "256.75"
+              ],
+              [
+                "menswear",
+                "72293.0",
+                "310",
+                "233.2"
+              ],
+              [
+                "bags",
+                "67659.0",
+                "232",
+                "291.63"
+              ],
+              [
+                "outerwear",
+                "44854.0",
+                "177",
+                "253.41"
+              ],
+              [
+                "accessories",
+                "26676.0",
+                "112",
+                "238.18"
+              ],
+              [
+                "jewelry_watches",
+                "13718.0",
+                "45",
+                "304.84"
+              ],
+              [
+                "kidswear",
+                "13620.0",
+                "46",
+                "296.09"
+              ],
+              [
+                "life",
+                "8037.0",
+                "24",
+                "334.88"
+              ],
+              [
+                "beauty",
+                "7105.0",
+                "21",
+                "338.33"
+              ]
+            ],
+            "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT r.category AS category, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY r.category ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Non-Restocked Refunded Value by Return Category",
+            "trust_caveat": "The metric is aggregated across a fan-out join (a one-to-many join multiplies the rows being summed), so the magnitudes below are likely inflated and the ranking may be volume-weighted rather than reflecting the true per-group total \u2014 treat these numbers as directional only."
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "non-restocked refunded value": "currency:EUR"
+            },
+            "columns": [
+              "platform",
+              "non-restocked refunded value",
+              "records",
+              "non-restocked refunded value per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_1",
+            "interpretation": "Mytheresa and NET-A-PORTER represent the largest shares of non-restocked refunds at **35.3%** and **30.4%** respectively. Mytheresa shows a notably higher average per record of **411.57 EUR**, significantly above the other platforms, indicating that its high total is driven by both volume and higher-value items.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Mytheresa Total",
+                "value": "272,874 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Mytheresa Average",
+                "value": "411.57 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "YOOX Average",
+                "value": "150.22 EUR"
+              },
+              {
+                "context": "Mytheresa runs 411.57 vs THE OUTNET's 129.59 per record; closing that gap across 663 records \u2248 187.0K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+                "delta": "218% above benchmark",
+                "label": "Opportunity: Mytheresa \u2192 THE OUTNET benchmark",
+                "value": "187.0K"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "Mytheresa",
+                "272874.0",
+                "663",
+                "411.57"
+              ],
+              [
+                "NET-A-PORTER",
+                "234662.0",
+                "741",
+                "316.68"
+              ],
+              [
+                "YOOX",
+                "102751.0",
+                "684",
+                "150.22"
+              ],
+              [
+                "THE OUTNET",
+                "85917.0",
+                "663",
+                "129.59"
+              ],
+              [
+                "MR PORTER",
+                "76658.0",
+                "318",
+                "241.06"
+              ]
+            ],
+            "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT r.platform AS platform, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY r.platform ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "Mytheresa runs 411.57 vs THE OUTNET's 129.59 per record; closing that gap across 663 records \u2248 187.0K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+            "title": "Non-Restocked Refunded Value by Platform",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "non-restocked refunded value": "currency:EUR"
+            },
+            "columns": [
+              "reason",
+              "non-restocked refunded value",
+              "records",
+              "non-restocked refunded value per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_2",
+            "interpretation": "Returns due to 'size_fit' are the largest contributor to non-restocked refunds, totaling **316,075 EUR** and representing **40.9%** of the total. The average per record across all reasons is relatively stable, ranging from **242.39 EUR** to **265.89 EUR**, suggesting that the reason for return does not significantly skew the value of the items being discarded.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Size/Fit Total",
+                "value": "316,075 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Size/Fit Average",
+                "value": "242.39 EUR"
+              },
+              {
+                "context": "changed_mind runs 265.89 vs size_fit's 242.39 per record; closing that gap across 615 records \u2248 14.5K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+                "delta": "10% above benchmark",
+                "label": "Opportunity: changed_mind \u2192 size_fit benchmark",
+                "value": "14.5K"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "size_fit",
+                "316075.0",
+                "1304",
+                "242.39"
+              ],
+              [
+                "not_as_expected",
+                "174108.0",
+                "673",
+                "258.7"
+              ],
+              [
+                "changed_mind",
+                "163525.0",
+                "615",
+                "265.89"
+              ],
+              [
+                "quality",
+                "74281.0",
+                "296",
+                "250.95"
+              ],
+              [
+                "late_delivery",
+                "44873.0",
+                "181",
+                "247.92"
+              ]
+            ],
+            "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT r.reason AS reason, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY r.reason ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "changed_mind runs 265.89 vs size_fit's 242.39 per record; closing that gap across 615 records \u2248 14.5K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+            "title": "Non-Restocked Refunded Value by Return Reason",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "non-restocked refunded value": "currency:EUR"
+            },
+            "columns": [
+              "condition",
+              "non-restocked refunded value",
+              "records",
+              "non-restocked refunded value per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_3",
+            "interpretation": "Query executed.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 1,
+            "rows": [
+              [
+                "reject",
+                "772862.0",
+                "3069",
+                "251.83"
+              ]
+            ],
+            "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT rl.condition AS condition, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY rl.condition ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Non-Restocked Refunded Value by Return Condition",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "non-restocked refunded value": "currency:EUR"
+            },
+            "columns": [
+              "carrier",
+              "non-restocked refunded value",
+              "records",
+              "non-restocked refunded value per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_4",
+            "interpretation": "DHL is the carrier associated with the highest total of non-restocked refunds at **293,580 EUR**. The average per record across all carriers is tightly clustered between **237.72 EUR** and **273.30 EUR**, indicating no significant variance in the value of items handled by different carriers.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "DHL Total",
+                "value": "293,580 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "DHL Average",
+                "value": "237.72 EUR"
+              },
+              {
+                "context": "FedEx runs 273.30 vs DHL's 237.72 per record; closing that gap across 617 records \u2248 22.0K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+                "delta": "15% above benchmark",
+                "label": "Opportunity: FedEx \u2192 DHL benchmark",
+                "value": "22.0K"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "DHL",
+                "293580.0",
+                "1235",
+                "237.72"
+              ],
+              [
+                "UPS",
+                "202690.0",
+                "769",
+                "263.58"
+              ],
+              [
+                "FedEx",
+                "168624.0",
+                "617",
+                "273.3"
+              ],
+              [
+                "DPD",
+                "107968.0",
+                "448",
+                "241.0"
+              ]
+            ],
+            "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT rl.carrier AS carrier, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY rl.carrier ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "FedEx runs 273.30 vs DHL's 237.72 per record; closing that gap across 617 records \u2248 22.0K non-restocked refunded value. A ceiling computed from peers, not a forecast.",
+            "title": "Non-Restocked Refunded Value by Return Carrier",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "\u26a0 The metric is aggregated across a fan-out join (a one-to-many join multiplies the rows being summed), so the magnitudes below are likely inflated and the ranking may be volume-weighted rather than reflecting the true per-group total \u2014 treat these numbers as directional only. Non-restocked refund value is most concentrated in **womenswear**, which accounts for over half of the total impact, while Mytheresa exhibits the highest average value per non-restocked return at **411.57 EUR**."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "Interpret 'refunded stock never resold' as the refund value of returned items with luxexperience.return_logistics.restocked = FALSE, joining luxexperience.returns r to luxexperience.return_logistics rl on r.return_id = rl.return_id. The metric is therefore SUM(r.refund_eur) with the scope filter rl.restocked = FALSE. The schema has no inventory transaction or subsequent-sale linkage, so it cannot prove that a restocked item was later resold, nor prove that a non-restocked item was never sold through another channel; restocked is the closest available proxy for resale eligibility/disposition. This is a cross-sectional disposition question rather than a period-over-period trend. No status column exists in luxexperience.returns; no transaction-status filter is applicable. The supplied profile context contains no explicit date-range coverage; the full-history window is inferred from the available dated operational examples and FY2025 context and should be validated before execution.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "non-restocked refunded value (SUM(r.refund_eur))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.returns"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.returns.platform, luxexperience.returns.category, luxexperience.returns.reason, luxexperience.return_logistics.condition, luxexperience.return_logistics.carrier, luxexperience.return_logistics.refund_method, luxexperience.order_items.brand, luxexperience.order_items.brand_tier"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning non-restocked refunded value across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Implement enhanced size and fit guidance on product pages to reduce 'size_fit' returns.",
+        "expected_impact": "Reduction in non-restocked refund volume.",
+        "owner": "Product/UX Team",
+        "timeline": "Q4"
+      },
+      {
+        "action": "Perform a grain-correct recompute of the non-restocked refund metric to eliminate fan-out inflation.",
+        "expected_impact": "Accurate financial quantification of inventory leakage.",
+        "owner": "Data Engineering",
+        "timeline": "2 weeks"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T21:49:44.070282+00:00",
+  "status": "complete"
+}

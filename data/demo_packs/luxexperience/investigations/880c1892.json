@@ -1,0 +1,673 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T22:11:27.506054+00:00",
+  "connection_id": "914df862",
+  "headline": "Revenue leakage is concentrated in Luxury segment returns, while shipping costs are geographically centralized in Italy.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "880c1892",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Where are we losing money?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "Revenue leakage is primarily driven by product-related returns in the luxury segment, while shipping costs are geographically concentrated in Italy; addressing sizing guidance is the most immediate lever to improve net revenue.",
+    "comparison_basis": "",
+    "confidence": "HIGH",
+    "confidence_justification": "The data clearly identifies 'Size/Fit' as the dominant return reason and 'Luxury' as the highest leakage segment, while shipping costs are consistently stable per record but highly concentrated by origin.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Missing gross_margin_pct or margin columns prevents calculation of true profitability impact.",
+      "No session or user-level data to correlate size/fit returns with specific product categories or sizing charts."
+    ],
+    "executive_summary": "The business faces a **27.7%** revenue leakage rate, with the 'Luxury' segment experiencing a disproportionately high **30.5%** contra-revenue rate. Product-related returns, specifically 'Size/Fit' issues, account for **\u20ac5.30M** in contra-revenue. Shipping costs are stable at approximately **\u20ac31.30** per record, but are heavily concentrated in Italy, which represents **34.7%** of total shipping expenditure.",
+    "headline": "Revenue leakage is concentrated in Luxury segment returns, while shipping costs are geographically centralized in Italy.",
+    "metric": "Shipping cost (direct loss measure)",
+    "metric_definition": "Shipping cost (direct loss measure) \u2014 computed as `SUM(s.shipping_cost_eur)`; on luxexperience.shipments; over data spanning 2020-07-01 \u2192 2025-06-30.",
+    "observation_period": "2020-07-01 \u2192 2025-06-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "segment",
+              "leakage rate",
+              "records"
+            ],
+            "error": null,
+            "finding_id": "leakage_0",
+            "interpretation": "The 'Luxury' segment is the primary driver of leakage, with a contra-revenue rate of 30.5%, significantly exceeding the 'Off-price' segment rate of 22.09%. Both segments contribute to the overall leakage volume.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Luxury Leakage Rate",
+                "value": "30.5%"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Off-price Leakage Rate",
+                "value": "22.1%"
+              },
+              {
+                "context": "luxury runs 30.5% vs off_price's 22.1%; closing that gap across 30.70M EUR \u2248 2.58M EUR. A ceiling computed from peers, not a forecast.",
+                "delta": "38% above benchmark",
+                "label": "Opportunity: luxury \u2192 off_price benchmark",
+                "value": "2.58M"
+              }
+            ],
+            "row_count": 2,
+            "rows": [
+              [
+                "luxury",
+                "30.50444788355196",
+                "30698533.0"
+              ],
+              [
+                "off_price",
+                "22.093266637768302",
+                "14739011.0"
+              ]
+            ],
+            "sql": "WITH gross_by_order AS (SELECT o.order_id, o.segment, o.gmv_eur FROM luxexperience.orders AS o), refunds_by_order AS (SELECT r.order_id, SUM(r.refund_eur) AS refunds_eur FROM luxexperience.returns AS r GROUP BY r.order_id) SELECT g.segment, 100.0 * SUM(COALESCE(rf.refunds_eur, 0)) / NULLIF(SUM(g.gmv_eur), 0) AS metric_total, SUM(g.gmv_eur) AS n FROM gross_by_order AS g LEFT JOIN refunds_by_order AS rf ON g.order_id = rf.order_id GROUP BY g.segment ORDER BY metric_total DESC",
+            "stat_note": "luxury runs 30.5% vs off_price's 22.1%; closing that gap across 30.70M EUR \u2248 2.58M EUR. A ceiling computed from peers, not a forecast.",
+            "title": "Refund leakage rate by customer segment",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "columns": [
+              "reason",
+              "total_contra_revenue_eur",
+              "leakage rate"
+            ],
+            "error": null,
+            "finding_id": "leakage_1",
+            "interpretation": "Leakage is heavily concentrated in product-related issues. 'Size/Fit' is the dominant reason for returns, accounting for the highest contra-revenue rate (63.56% of its associated gross volume), followed closely by 'Not as expected' and 'Changed mind'.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Top Leakage Reason (Size/Fit) Rate",
+                "value": "63.6%"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Total Contra-Revenue (All Reasons)",
+                "value": "\u20ac12,620,747"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "size_fit",
+                "5303896.0",
+                "63.55916492836212"
+              ],
+              [
+                "not_as_expected",
+                "2794413.0",
+                "61.552967266987395"
+              ],
+              [
+                "changed_mind",
+                "2545233.0",
+                "61.017491597977326"
+              ],
+              [
+                "quality",
+                "1260284.0",
+                "60.40471625766871"
+              ],
+              [
+                "late_delivery",
+                "716921.0",
+                "57.89637748398387"
+              ]
+            ],
+            "sql": "WITH refunds_by_reason_order AS (SELECT r.reason, r.order_id, SUM(r.refund_eur) AS refunds_eur FROM luxexperience.returns AS r GROUP BY r.reason, r.order_id), gross_by_reason_order AS (SELECT rf.reason, rf.order_id, o.gmv_eur FROM refunds_by_reason_order AS rf JOIN luxexperience.orders AS o ON o.order_id = rf.order_id) SELECT rf.reason, SUM(rf.refunds_eur) AS total_contra_revenue_eur, 100.0 * SUM(rf.refunds_eur) / NULLIF(SUM(g.gmv_eur), 0) AS metric_total FROM refunds_by_reason_order AS rf JOIN gross_by_reason_order AS g ON rf.reason = g.reason AND rf.order_id = g.order_id GROUP BY rf.reason ORDER BY metric_total DESC",
+            "stat_note": null,
+            "title": "Refund leakage by return reason",
+            "trust_caveat": null
+          }
+        ],
+        "metric_label": "leakage rate",
+        "phase_icon": "\ud83d\udcb8",
+        "phase_id": "loss_leakage",
+        "phase_name": "Revenue Leakage \u2014 Where Money Walks Back Out",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "The business is experiencing a 27.7% revenue leakage rate, totaling over \u20ac12.6M in contra-revenue. The 'Luxury' segment exhibits the highest leakage rate at 30.5%. Across all segments, 'Size/Fit' issues are the most significant driver of these returns, indicating a systemic challenge in product representation or sizing guidance."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Shipping cost (direct loss measure)": "currency:EUR"
+            },
+            "columns": [
+              "origin_country",
+              "Shipping cost (direct loss measure)",
+              "records",
+              "Shipping cost (direct loss measure) per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_0",
+            "interpretation": "Shipping costs are heavily concentrated in Italy, which accounts for 34.7% of the total cost. Across all origin countries, the average cost per record is tightly clustered between **31.20 EUR and 31.57 EUR**, indicating that the high total cost in Italy is driven by volume rather than inefficiency.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Italy Total Cost",
+                "value": "1,174,515.0 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Italy Avg/Record",
+                "value": "31.43 EUR"
+              }
+            ],
+            "row_count": 7,
+            "rows": [
+              [
+                "Italy",
+                "1174515.0",
+                "37372",
+                "31.43"
+              ],
+              [
+                "United States",
+                "525761.0",
+                "16759",
+                "31.37"
+              ],
+              [
+                "Hong Kong",
+                "517902.0",
+                "16582",
+                "31.23"
+              ],
+              [
+                "Japan",
+                "375432.0",
+                "12034",
+                "31.2"
+              ],
+              [
+                "China",
+                "302692.0",
+                "9668",
+                "31.31"
+              ],
+              [
+                "Germany",
+                "295947.0",
+                "9446",
+                "31.33"
+              ],
+              [
+                "United Kingdom",
+                "190745.0",
+                "6042",
+                "31.57"
+              ]
+            ],
+            "sql": "SELECT s.origin_country AS origin_country, SUM(s.shipping_cost_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(s.shipping_cost_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(s.shipping_cost_eur) / NULLIF(SUM(SUM(s.shipping_cost_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.shipments AS s GROUP BY s.origin_country ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost by Origin Country",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Shipping cost (direct loss measure)": "currency:EUR"
+            },
+            "columns": [
+              "destination_country",
+              "Shipping cost (direct loss measure)",
+              "records",
+              "Shipping cost (direct loss measure) per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_1",
+            "interpretation": "Shipping costs are distributed across destination countries with Canada and the United States representing the highest totals. The average cost per record remains consistent across all destinations, ranging from **30.95 EUR to 31.94 EUR**, showing no significant outliers in per-shipment efficiency.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Canada Total Cost",
+                "value": "462,052.0 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "United States Total Cost",
+                "value": "454,984.0 EUR"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Canada",
+                "462052.0",
+                "14703",
+                "31.43"
+              ],
+              [
+                "United States",
+                "454984.0",
+                "14464",
+                "31.46"
+              ],
+              [
+                "Ireland",
+                "259679.0",
+                "8186",
+                "31.72"
+              ],
+              [
+                "United Kingdom",
+                "254693.0",
+                "8129",
+                "31.33"
+              ],
+              [
+                "Denmark",
+                "97440.0",
+                "3076",
+                "31.68"
+              ],
+              [
+                "Germany",
+                "95994.0",
+                "3016",
+                "31.83"
+              ],
+              [
+                "Norway",
+                "95835.0",
+                "3071",
+                "31.21"
+              ],
+              [
+                "Portugal",
+                "95795.0",
+                "3045",
+                "31.46"
+              ],
+              [
+                "Spain",
+                "94944.0",
+                "3068",
+                "30.95"
+              ],
+              [
+                "Austria",
+                "94852.0",
+                "3044",
+                "31.16"
+              ],
+              [
+                "Italy",
+                "94631.0",
+                "2963",
+                "31.94"
+              ],
+              [
+                "Greece",
+                "94233.0",
+                "2983",
+                "31.59"
+              ],
+              [
+                "Switzerland",
+                "94102.0",
+                "2975",
+                "31.63"
+              ],
+              [
+                "Belgium",
+                "93686.0",
+                "3028",
+                "30.94"
+              ],
+              [
+                "France",
+                "93574.0",
+                "2995",
+                "31.24"
+              ]
+            ],
+            "sql": "SELECT s.destination_country AS destination_country, SUM(s.shipping_cost_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(s.shipping_cost_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(s.shipping_cost_eur) / NULLIF(SUM(SUM(s.shipping_cost_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.shipments AS s GROUP BY s.destination_country ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost by Destination Country",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Shipping cost (direct loss measure)": "currency:EUR"
+            },
+            "columns": [
+              "ship_region",
+              "Shipping cost (direct loss measure)",
+              "records",
+              "Shipping cost (direct loss measure) per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_2",
+            "interpretation": "Europe and the US are the primary regions for shipping costs, together comprising 63.4% of the total. The average cost per record is remarkably stable across all regions, varying only slightly between **30.96 EUR and 31.53 EUR**.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Europe Total Cost",
+                "value": "1,229,546.0 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Europe Avg/Record",
+                "value": "31.36 EUR"
+              }
+            ],
+            "row_count": 6,
+            "rows": [
+              [
+                "Europe",
+                "1229546.0",
+                "39202",
+                "31.36"
+              ],
+              [
+                "US",
+                "917036.0",
+                "29167",
+                "31.44"
+              ],
+              [
+                "UK",
+                "514372.0",
+                "16315",
+                "31.53"
+              ],
+              [
+                "Asia",
+                "420003.0",
+                "13565",
+                "30.96"
+              ],
+              [
+                "MiddleEast",
+                "176256.0",
+                "5619",
+                "31.37"
+              ],
+              [
+                "RoW",
+                "125781.0",
+                "4035",
+                "31.17"
+              ]
+            ],
+            "sql": "SELECT o.ship_region AS ship_region, SUM(s.shipping_cost_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(s.shipping_cost_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(s.shipping_cost_eur) / NULLIF(SUM(SUM(s.shipping_cost_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON s.order_id = o.order_id GROUP BY o.ship_region ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost by Ship Region",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Shipping cost (direct loss measure)": "currency:EUR"
+            },
+            "columns": [
+              "platform",
+              "Shipping cost (direct loss measure)",
+              "records",
+              "Shipping cost (direct loss measure) per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_3",
+            "interpretation": "Shipping costs are spread across platforms, with YOOX and THE OUTNET generating the highest totals. Per-record costs are uniform across all platforms, consistently falling between **31.29 EUR and 31.43 EUR**.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "YOOX Total Cost",
+                "value": "930,653.0 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "YOOX Avg/Record",
+                "value": "31.29 EUR"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "YOOX",
+                "930653.0",
+                "29741",
+                "31.29"
+              ],
+              [
+                "THE OUTNET",
+                "800668.0",
+                "25489",
+                "31.41"
+              ],
+              [
+                "NET-A-PORTER",
+                "707959.0",
+                "22628",
+                "31.29"
+              ],
+              [
+                "Mytheresa",
+                "589516.0",
+                "18774",
+                "31.4"
+              ],
+              [
+                "MR PORTER",
+                "354198.0",
+                "11271",
+                "31.43"
+              ]
+            ],
+            "sql": "SELECT s.platform AS platform, SUM(s.shipping_cost_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(s.shipping_cost_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(s.shipping_cost_eur) / NULLIF(SUM(SUM(s.shipping_cost_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.shipments AS s GROUP BY s.platform ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost by Platform",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Shipping cost (direct loss measure)": "currency:EUR"
+            },
+            "columns": [
+              "warehouse",
+              "Shipping cost (direct loss measure)",
+              "records",
+              "Shipping cost (direct loss measure) per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_4",
+            "interpretation": "Bologna Interporto is the largest contributor to shipping costs, representing 34.7% of the total. Despite the variance in total costs across warehouses, the average cost per record is highly consistent, ranging from **31.20 EUR to 31.57 EUR**.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Bologna Interporto Total Cost",
+                "value": "1,174,515.0 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Bologna Interporto Avg/Record",
+                "value": "31.43 EUR"
+              }
+            ],
+            "row_count": 8,
+            "rows": [
+              [
+                "Bologna Interporto",
+                "1174515.0",
+                "37372",
+                "31.43"
+              ],
+              [
+                "New Jersey DC",
+                "525761.0",
+                "16759",
+                "31.37"
+              ],
+              [
+                "Hong Kong Hub",
+                "517902.0",
+                "16582",
+                "31.23"
+              ],
+              [
+                "Tokyo Hub",
+                "375432.0",
+                "12034",
+                "31.2"
+              ],
+              [
+                "Shanghai DC",
+                "302692.0",
+                "9668",
+                "31.31"
+              ],
+              [
+                "London Westgate",
+                "190745.0",
+                "6042",
+                "31.57"
+              ],
+              [
+                "Munich Hub",
+                "148082.0",
+                "4730",
+                "31.31"
+              ],
+              [
+                "Leipzig DC",
+                "147865.0",
+                "4716",
+                "31.35"
+              ]
+            ],
+            "sql": "SELECT s.warehouse AS warehouse, SUM(s.shipping_cost_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(s.shipping_cost_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(s.shipping_cost_eur) / NULLIF(SUM(SUM(s.shipping_cost_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.shipments AS s GROUP BY s.warehouse ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost by Warehouse",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Shipping costs are primarily driven by high volume in specific locations like **Italy (34.7% of total)**, as the average cost per record remains tightly clustered and stable across all dimensions."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "The schema does not contain the cited gross_margin_pct or margin columns, nor does it list luxexperience.financial_summary; therefore the available direct loss measure is shipments.shipping_cost_eur. Investigate total shipping cost by shipment-level dimensions and, via the verified shipments.order_id = orders.order_id join, by order segment and ship region. No shipment status column exists, so include all shipment rows. The supplied PROFILE CONTEXT contains no authoritative date-range or period-completeness information; the observation dates are provisional bounds inferred only from displayed samples and must be validated before time-based comparisons. Because the question asks where money is being lost, use a cross-sectional analysis rather than a period trend. Refund leakage (SUM(returns.refund_eur) relative to an appropriately de-duplicated GMV denominator) should be a contributing diagnostic, not a substitute for this direct cost measure.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "Shipping cost (direct loss measure) (SUM(s.shipping_cost_eur))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.shipments"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.shipments.platform, luxexperience.shipments.warehouse, luxexperience.shipments.origin_country, luxexperience.shipments.destination_country, luxexperience.shipments.service_level, luxexperience.shipments.carrier, luxexperience.orders.segment, luxexperience.orders.ship_region"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning Shipping cost (direct loss measure) across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake",
+        "loss_leakage"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake",
+        "loss_leakage"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Implement enhanced sizing guidance and virtual fitting tools for the Luxury segment to reduce 'Size/Fit' returns.",
+        "expected_impact": "Reduction in the \u20ac5.30M contra-revenue associated with size/fit issues.",
+        "owner": "Product/UX Team",
+        "timeline": "30-60 days"
+      },
+      {
+        "action": "Audit shipping logistics in Bologna Interporto to identify consolidation or carrier optimization opportunities.",
+        "expected_impact": "Potential reduction in the \u20ac1.17M shipping cost base.",
+        "owner": "Logistics/Operations",
+        "timeline": "30 days"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T22:08:54.718653+00:00",
+  "status": "complete"
+}

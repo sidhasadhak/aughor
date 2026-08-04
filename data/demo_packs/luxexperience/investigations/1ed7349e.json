@@ -1,0 +1,523 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T22:06:10.458871+00:00",
+  "connection_id": "914df862",
+  "headline": "Partially returned orders explain 93.5% of the refund reporting gap",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "1ed7349e",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "When an order is only partly returned, does our payment system still record the whole order as refunded? Quantify how much of the gap between the 19.17M EUR the payment system reports as refunded and the 12.62M EUR the returns system reports is explained by partially-returned orders.",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "Fixing refund recording for partially returned orders would close the vast majority of the payment\u2011returns discrepancy.",
+    "comparison_basis": "",
+    "confidence": "HIGH",
+    "confidence_justification": "The cross\u2011sectional scan directly quantified the share of the gap explained by partially returned orders (93.5%) with clear numbers from the payment and returns systems.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Item\u2011level refund allocation linking payment refunds to specific returned items",
+      "Timestamp alignment between payment and returns systems to verify timing of partial refunds"
+    ],
+    "executive_summary": "The payment system reports **19.17M EUR** refunded while the returns system reports **12.62M EUR**, leaving a **+6.55M EUR** gap. Partially returned orders explain **93.5%** of this gap, accounting for **+6.12M EUR** of the overstatement. Although these orders represent only **~22%** of all records, their high average refund (**439.91 EUR**) drives the discrepancy.",
+    "headline": "Partially returned orders explain 93.5% of the refund reporting gap",
+    "metric": "Payment-system refunded amount",
+    "metric_definition": "Payment-system refunded amount \u2014 computed as `SUM(luxexperience.payments.amount_eur)`; on luxexperience.payments; over data spanning 2020-07-01 \u2192 2025-06-29.",
+    "observation_period": "2020-07-01 \u2192 2025-06-29",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Payment-system refunded amount": "currency:EUR"
+            },
+            "columns": [
+              "segment",
+              "Payment-system refunded amount",
+              "records",
+              "Payment-system refunded amount per record",
+              "returns_reported_refunds_eur",
+              "partial_return_explained_gap_eur"
+            ],
+            "error": null,
+            "finding_id": "xsec_0",
+            "interpretation": "The payment system's reporting gap is heavily concentrated in orders with partial returns, which account for **93.5%** of the total discrepancy. While these orders represent only ~22% of the total records, they contribute **10.97M EUR** in refunded amounts with a significantly higher average of **439.91 EUR** per record compared to the 93.69 EUR average for non-partially returned orders.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Partial Return Gap Contribution",
+                "value": "93.5%"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Partial Return Avg Refund",
+                "value": "439.91 EUR"
+              }
+            ],
+            "row_count": 2,
+            "rows": [
+              [
+                "False",
+                "8197268.0",
+                "87498",
+                "93.69",
+                "7772308.0",
+                "424960.0"
+              ],
+              [
+                "True",
+                "10971712.0",
+                "24941",
+                "439.91",
+                "4848439.0",
+                "6123273.0"
+              ]
+            ],
+            "sql": "WITH payment_by_order AS (SELECT p.order_id, (EXISTS(SELECT 1 FROM luxexperience.order_items AS oi_returned WHERE oi_returned.order_id = p.order_id AND oi_returned.returned = TRUE) AND EXISTS(SELECT 1 FROM luxexperience.order_items AS oi_not_returned WHERE oi_not_returned.order_id = p.order_id AND oi_not_returned.returned = FALSE)) AS segment, SUM(CASE WHEN p.status = 'refunded' THEN p.amount_eur ELSE 0 END) AS payment_refund_eur, COUNT(*) AS payment_record_n FROM luxexperience.payments AS p GROUP BY 1, 2), returns_by_order AS (SELECT r.order_id, SUM(r.refund_eur) AS returns_refund_eur FROM luxexperience.returns AS r WHERE NOT r.refund_eur IS NULL GROUP BY 1), order_metrics AS (SELECT payment_by_order.segment, payment_by_order.payment_refund_eur, COALESCE(returns_by_order.returns_refund_eur, 0) AS returns_refund_eur, payment_by_order.payment_record_n FROM payment_by_order LEFT JOIN returns_by_order ON payment_by_order.order_id = returns_by_order.order_id), overall_gap AS (SELECT ((SELECT SUM(CASE WHEN p.status = 'refunded' THEN p.amount_eur ELSE 0 END) FROM luxexperience.payments AS p) - (SELECT SUM(r.refund_eur) FROM luxexperience.returns AS r WHERE NOT r.refund_eur IS NULL)) AS refund_reporting_gap_eur) SELECT order_metrics.segment, SUM(order_metrics.payment_refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(order_metrics.payment_refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, SUM(order_metrics.returns_refund_eur) AS returns_reported_refunds_eur, SUM(order_metrics.payment_refund_eur) - SUM(order_metrics.returns_refund_eur) AS partial_return_explained_gap_eur, ROUND(100.0 * (SUM(order_metrics.payment_refund_eur) - SUM(order_metrics.returns_refund_eur)) / NULLIF(overall_gap.refund_reporting_gap_eur, 0), 1) AS partial_return_gap_explained_pct FROM order_metrics CROSS JOIN overall_gap GROUP BY 1, overall_gap.refund_reporting_gap_eur ORDER BY 1",
+            "stat_note": null,
+            "title": "Refund reporting gap explained by partially returned orders",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Payment-system refunded amount": "currency:EUR"
+            },
+            "columns": [
+              "channel",
+              "Payment-system refunded amount",
+              "records",
+              "Payment-system refunded amount per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_1",
+            "interpretation": "Refunded amounts are lowest in the clienteling channel, which accounts for **1.58M EUR** in total refunds. The average refund per record for clienteling is **176.01 EUR**, which is consistent with the other channels (web, app, and ios_app), indicating that the lower total is driven by volume rather than an outlier in refund behavior.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Clienteling Total Refunds",
+                "value": "1.58M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Clienteling Avg Refund",
+                "value": "176.01 EUR"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "web",
+                "8008888.0",
+                "47286",
+                "169.37"
+              ],
+              [
+                "app",
+                "5711424.0",
+                "33851",
+                "168.72"
+              ],
+              [
+                "ios_app",
+                "3872015.0",
+                "22344",
+                "173.29"
+              ],
+              [
+                "clienteling",
+                "1576653.0",
+                "8958",
+                "176.01"
+              ]
+            ],
+            "sql": "WITH grouped AS (SELECT luxexperience.orders.channel AS channel, SUM(CASE WHEN luxexperience.payments.status = 'refunded' THEN luxexperience.payments.amount_eur ELSE 0 END) AS metric_total, COUNT(*) AS n FROM luxexperience.payments JOIN luxexperience.orders ON luxexperience.orders.order_id = luxexperience.payments.order_id GROUP BY luxexperience.orders.channel) SELECT channel, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM grouped ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Payment-system refunded amount by channel",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Payment-system refunded amount": "currency:EUR"
+            },
+            "columns": [
+              "ship_country",
+              "Payment-system refunded amount",
+              "records",
+              "Payment-system refunded amount per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_2",
+            "interpretation": "Among the countries shown, Denmark and Portugal have the lowest total refunded amounts at **0.49M EUR** and **0.50M EUR** respectively. Their average refund values of **154.48 EUR** and **156.84 EUR** are slightly below the broader group average, but they remain within a healthy, tight range of the other countries listed.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Denmark Total Refunds",
+                "value": "0.49M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Denmark Avg Refund",
+                "value": "154.48 EUR"
+              },
+              {
+                "context": "Canada runs 178.31 vs Denmark's 154.48 per record; closing that gap across 15,293 records \u2248 364.4K Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+                "delta": "15% above benchmark",
+                "label": "Opportunity: Canada \u2192 Denmark benchmark",
+                "value": "364.4K"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Canada",
+                "2726966.0",
+                "15293",
+                "178.31"
+              ],
+              [
+                "United States",
+                "2526884.0",
+                "15099",
+                "167.35"
+              ],
+              [
+                "United Kingdom",
+                "1508271.0",
+                "8477",
+                "177.93"
+              ],
+              [
+                "Ireland",
+                "1390507.0",
+                "8539",
+                "162.84"
+              ],
+              [
+                "Spain",
+                "561926.0",
+                "3213",
+                "174.89"
+              ],
+              [
+                "Switzerland",
+                "553162.0",
+                "3108",
+                "177.98"
+              ],
+              [
+                "Norway",
+                "550689.0",
+                "3198",
+                "172.2"
+              ],
+              [
+                "Italy",
+                "520460.0",
+                "3078",
+                "169.09"
+              ],
+              [
+                "Austria",
+                "514773.0",
+                "3197",
+                "161.02"
+              ],
+              [
+                "Belgium",
+                "508584.0",
+                "3166",
+                "160.64"
+              ],
+              [
+                "Portugal",
+                "498742.0",
+                "3180",
+                "156.84"
+              ],
+              [
+                "Denmark",
+                "492343.0",
+                "3187",
+                "154.48"
+              ],
+              [
+                "Sweden",
+                "491469.0",
+                "3086",
+                "159.26"
+              ],
+              [
+                "Germany",
+                "486820.0",
+                "3140",
+                "155.04"
+              ],
+              [
+                "Netherlands",
+                "486084.0",
+                "3108",
+                "156.4"
+              ]
+            ],
+            "sql": "WITH grouped AS (SELECT luxexperience.orders.ship_country AS ship_country, SUM(CASE WHEN luxexperience.payments.status = 'refunded' THEN luxexperience.payments.amount_eur ELSE 0 END) AS metric_total, COUNT(*) AS n FROM luxexperience.payments JOIN luxexperience.orders ON luxexperience.orders.order_id = luxexperience.payments.order_id GROUP BY luxexperience.orders.ship_country) SELECT ship_country, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM grouped ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "Canada runs 178.31 vs Denmark's 154.48 per record; closing that gap across 15,293 records \u2248 364.4K Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+            "title": "Payment-system refunded amount by shipping country",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Payment-system refunded amount": "currency:EUR"
+            },
+            "columns": [
+              "platform",
+              "Payment-system refunded amount",
+              "records",
+              "Payment-system refunded amount per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_3",
+            "interpretation": "MR PORTER has the lowest total refunded amount among the platforms at **2.12M EUR**. However, its average refund of **180.71 EUR** is healthy and sits in the middle of the platform distribution, suggesting the lower total is a function of transaction volume rather than a performance issue.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "MR PORTER Total Refunds",
+                "value": "2.12M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "MR PORTER Avg Refund",
+                "value": "180.71 EUR"
+              },
+              {
+                "context": "Mytheresa runs 300.43 vs THE OUTNET's 85.44 per record; closing that gap across 19,548 records \u2248 4.20M Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+                "delta": "252% above benchmark",
+                "label": "Opportunity: Mytheresa \u2192 THE OUTNET benchmark",
+                "value": "4.20M"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "NET-A-PORTER",
+                "5925680.0",
+                "23615",
+                "250.93"
+              ],
+              [
+                "Mytheresa",
+                "5872901.0",
+                "19548",
+                "300.43"
+              ],
+              [
+                "YOOX",
+                "2979747.0",
+                "30996",
+                "96.13"
+              ],
+              [
+                "THE OUTNET",
+                "2266372.0",
+                "26525",
+                "85.44"
+              ],
+              [
+                "MR PORTER",
+                "2124280.0",
+                "11755",
+                "180.71"
+              ]
+            ],
+            "sql": "WITH grouped AS (SELECT luxexperience.orders.platform AS platform, SUM(CASE WHEN luxexperience.payments.status = 'refunded' THEN luxexperience.payments.amount_eur ELSE 0 END) AS metric_total, COUNT(*) AS n FROM luxexperience.payments JOIN luxexperience.orders ON luxexperience.orders.order_id = luxexperience.payments.order_id GROUP BY luxexperience.orders.platform) SELECT platform, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM grouped ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "Mytheresa runs 300.43 vs THE OUTNET's 85.44 per record; closing that gap across 19,548 records \u2248 4.20M Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+            "title": "Payment-system refunded amount by platform",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "Payment-system refunded amount": "currency:EUR"
+            },
+            "columns": [
+              "payment_method",
+              "Payment-system refunded amount",
+              "records",
+              "Payment-system refunded amount per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_4",
+            "interpretation": "Bank transfers account for the lowest total refunded amount at **0.79M EUR**. The average refund per record of **173.66 EUR** is well-aligned with the other payment methods, showing no signs of underperformance.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Bank Transfer Total Refunds",
+                "value": "0.79M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Bank Transfer Avg Refund",
+                "value": "173.66 EUR"
+              },
+              {
+                "context": "apple_pay runs 176.68 vs google_pay's 167.03 per record; closing that gap across 11,291 records \u2248 109.0K Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+                "delta": "6% above benchmark",
+                "label": "Opportunity: apple_pay \u2192 google_pay benchmark",
+                "value": "109.0K"
+              }
+            ],
+            "row_count": 7,
+            "rows": [
+              [
+                "credit_card",
+                "7620819.0",
+                "44853",
+                "169.91"
+              ],
+              [
+                "paypal",
+                "3852411.0",
+                "22618",
+                "170.33"
+              ],
+              [
+                "klarna",
+                "2283738.0",
+                "13463",
+                "169.63"
+              ],
+              [
+                "apple_pay",
+                "1994859.0",
+                "11291",
+                "176.68"
+              ],
+              [
+                "amex",
+                "1509042.0",
+                "8972",
+                "168.19"
+              ],
+              [
+                "google_pay",
+                "1113454.0",
+                "6666",
+                "167.03"
+              ],
+              [
+                "bank_transfer",
+                "794657.0",
+                "4576",
+                "173.66"
+              ]
+            ],
+            "sql": "WITH grouped AS (SELECT luxexperience.payments.payment_method AS payment_method, SUM(CASE WHEN luxexperience.payments.status = 'refunded' THEN luxexperience.payments.amount_eur ELSE 0 END) AS metric_total, COUNT(*) AS n FROM luxexperience.payments GROUP BY luxexperience.payments.payment_method) SELECT payment_method, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM grouped ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": "apple_pay runs 176.68 vs google_pay's 167.03 per record; closing that gap across 11,291 records \u2248 109.0K Payment-system refunded amount. A ceiling computed from peers, not a forecast.",
+            "title": "Payment-system refunded amount by payment method",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "The payment system reporting gap is heavily concentrated in partially returned orders, which explain **93.5%** of the total discrepancy."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "This is a driver/group-comparison investigation: compare refunded payment amount for orders with both returned and non-returned items against other orders, then quantify the portion of the stated EUR 6.55M payment-versus-returns gap associated with partially returned orders. Apply luxexperience.payments.status = 'refunded' when calculating the payment-system refunded total because the question explicitly asks about refunded payments; sample statuses are captured and refunded, with refunded terminal and captured an active/settled payment state. The returns-system counterpart should be separately calculated as SUM(luxexperience.returns.refund_eur), joined at order level only after aggregating returns by order to avoid payment-to-return fanout. The requested core metric is intentionally a safe single-table aggregate, per correction: no subquery is embedded in the aggregate. Payments has no date column, so date filtering requires joining luxexperience.payments.order_id to luxexperience.orders.order_id and using luxexperience.orders.order_date. No profile date range was supplied; the selected dates are only the minimum and maximum order_date visible in the provided orders sample, not a verified full-data range. Therefore no valid prior-period or YoY comparison can be established from the supplied profile, and the dates should be replaced with verified full-data bounds before execution. A partial-return flag cannot be represented from payments alone; comparison_segment_sql uses two correlated existence checks against order_items to identify orders containing at least one returned and one non-returned item.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "Payment-system refunded amount (SUM(luxexperience.payments.amount_eur))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.payments"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.payments.payment_method, luxexperience.payments.psp, luxexperience.payments.status, luxexperience.payments.fraud_flag, luxexperience.orders.platform, luxexperience.orders.segment, luxexperience.orders.ship_country, luxexperience.orders.channel"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning Payment-system refunded amount across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Reconcile payment system refunds with returns system for partially returned orders",
+        "expected_impact": "Close up to **6.12M EUR** of the refund reporting gap (93.5% of discrepancy)",
+        "owner": "Payments & Returns Operations",
+        "timeline": "1\u20132 months"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T22:02:51.051794+00:00",
+  "status": "complete"
+}
