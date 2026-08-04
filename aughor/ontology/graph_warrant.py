@@ -236,6 +236,20 @@ def audit(graph) -> dict:
         by_edge_kind.setdefault(e.kind, {w: 0 for w in WARRANT_ORDER})[v] += 1
 
     n_total, e_total = sum(nodes.values()), sum(edges.values())
+
+    # The headline is about JOINS specifically, not all edges.
+    #
+    # An all-edge share sounds more comprehensive and is worse: `grounded_in` (a finding →
+    # the table it was computed from) and `resolves` are PROVENANCE links, and a
+    # provenance link can never be "measured" — there is no probe for "this finding came
+    # from this table". On a real graph they are 95% of the edges, so an all-edge share
+    # read 3% on a connection whose every join was measured. That is a proxy standing in
+    # for the number the reader actually wants, which is this codebase's most-repeated
+    # defect. The joins are where a warrant is a genuine choice and where a wrong one
+    # fabricates rows, so that is what the headline reports — and it is named for what it
+    # measures, so no reader has to guess its denominator.
+    joins = by_edge_kind.get("joins_on", {})
+    joins_total = sum(joins.values())
     return {
         "order": list(WARRANT_ORDER),
         "labels": dict(WARRANT_LABEL),
@@ -243,11 +257,11 @@ def audit(graph) -> dict:
         "nodes": nodes,
         "edges": edges,
         "edges_by_kind": by_edge_kind,
-        "totals": {"nodes": n_total, "edges": e_total},
-        # The single number the panel leads with: the share of EDGES (the claims that
-        # connect things, where a wrong warrant does the most damage) that were measured
-        # or asserted by a person. Nodes are mostly definitional by nature, so mixing
-        # them in would flatter the score.
+        "totals": {"nodes": n_total, "edges": e_total, "joins": joins_total},
+        "joins_measured_share": (
+            round(joins.get("measured", 0) / joins_total, 4) if joins_total else 0.0
+        ),
+        # Kept for anyone who wants the whole picture, but never the headline — see above.
         "edge_grounded_share": (
             round((edges["measured"] + edges["human"]) / e_total, 4) if e_total else 0.0
         ),

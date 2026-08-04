@@ -72,8 +72,14 @@ export function GraphAuditBar({ audit }: { audit: GraphAudit | null }) {
     <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>How we know this graph</span>
+        {/* Joins, not all edges: `grounded_in` links (a finding to the table it came
+            from) can never be measured and are ~95% of a real graph, so an all-edge
+            share read 3% on a connection whose every join WAS measured. Named for its
+            denominator so nobody has to guess it. */}
         <span style={{ fontSize: 11, color: "var(--t3)" }}>
-          {Math.round(audit.edge_grounded_share * 100)}% of {total} connections are measured or human-confirmed
+          {audit.totals.joins > 0
+            ? `${Math.round(audit.joins_measured_share * 100)}% of ${audit.totals.joins} joins are measured against your data`
+            : `${total} connections, no joins yet`}
         </span>
       </div>
 

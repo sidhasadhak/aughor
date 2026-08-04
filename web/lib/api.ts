@@ -1128,7 +1128,12 @@ export interface GraphAudit {
   nodes: Record<CGWarrantClass, number>;
   edges: Record<CGWarrantClass, number>;
   edges_by_kind: Record<string, Record<CGWarrantClass, number>>;
-  totals: { nodes: number; edges: number };
+  totals: { nodes: number; edges: number; joins: number };
+  /** The headline: how many `joins_on` edges were probed against the data. Joins are
+   *  where a warrant is a real choice and a wrong one fabricates rows. */
+  joins_measured_share: number;
+  /** The whole-graph share, kept for completeness — never the headline, because
+   *  provenance links can never be measured and dominate the denominator. */
   edge_grounded_share: number;
   staleness: CGStaleness;
   drift: CGContentDrift | null;

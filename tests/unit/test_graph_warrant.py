@@ -244,10 +244,26 @@ def test_audit_counts_every_class_and_reports_the_grounded_share():
     assert out["edges"]["declared"] == 1
     assert out["edges"]["human"] == 1
     assert out["totals"]["edges"] == 4
-    # measured + human, over all edges — nodes deliberately excluded (they are mostly
-    # definitional, and mixing them in would flatter the score).
     assert out["edge_grounded_share"] == pytest.approx(0.5)
     assert out["edges_by_kind"]["joins_on"]["measured"] == 1
+    # The HEADLINE is about joins only: 1 of 2 joins measured.
+    assert out["totals"]["joins"] == 2
+    assert out["joins_measured_share"] == pytest.approx(0.5)
+
+
+def test_the_headline_is_not_dragged_down_by_provenance_links():
+    """`grounded_in` edges can never be measured — there is no probe for "this finding
+    came from this table" — and they are ~95% of a real graph. An all-edge share read 3%
+    on a connection whose every join WAS measured: a proxy standing in for the number the
+    reader wants, which is this codebase's most-repeated defect."""
+    cg = _graph_with(
+        [("joins_on", Provenance(source="join_guard", measured=1.0,
+                                 note="value_overlap=1.000 join_confidence=verified"))]
+        + [("grounded_in", Provenance(source="dossier")) for _ in range(50)])
+    out = audit(cg)
+    assert out["joins_measured_share"] == 1.0          # every join was probed
+    assert out["edge_grounded_share"] < 0.05           # …and the all-edge number is noise
+    assert out["totals"]["joins"] == 1
 
 
 def test_audit_reports_every_class_even_at_zero():
@@ -263,5 +279,6 @@ def test_audit_reports_every_class_even_at_zero():
 
 def test_audit_of_an_empty_graph_does_not_divide_by_zero():
     out = audit(ContextGraph(org_id="o", connection_id="c"))
-    assert out["totals"] == {"nodes": 0, "edges": 0}
+    assert out["totals"] == {"nodes": 0, "edges": 0, "joins": 0}
     assert out["edge_grounded_share"] == 0.0
+    assert out["joins_measured_share"] == 0.0
