@@ -394,11 +394,26 @@ function DependentsSection({ connectionId, schema, nodeId }: {
     <Section title={`What depends on this — ${lineage.dependents.length}`}>
       <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 4 }}>{lineage.summary}</div>
       {lineage.dependents.map((d) => (
-        <div key={d.node_id} style={{ ...ROW, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div key={d.node_id} style={{ ...ROW, alignItems: "center", flexWrap: "nowrap" }}>
           <StatusChip hue={d.kind === "metric" ? "info" : "accent"} strength="soft">{d.kind}</StatusChip>
-          <span style={{ color: "var(--t1)", fontSize: 12 }}>{d.label}</span>
+          <span style={{ color: "var(--t1)", fontSize: 12, whiteSpace: "nowrap",
+                         overflow: "hidden", textOverflow: "ellipsis", maxWidth: 340,
+                         flexShrink: 0 }}
+                title={d.label}>{d.label}</span>
           {d.site && (
-            <code style={{ fontSize: 11, color: "var(--t3)", background: "var(--bg-3)", borderRadius: "var(--r1)", padding: "1px 6px" }}>
+            // One line, ellipsised, full text on hover. Sites run to 200 characters of
+            // SQL; rendered in full they wrapped to their own row and the list stopped
+            // being scannable — which defeats the point, since this section exists to be
+            // skimmed for the one artifact worth opening.
+            <code
+              title={`${d.site_line > 0 ? `line ${d.site_line}: ` : ""}${d.site}`}
+              style={{
+                fontSize: 11, color: "var(--t3)", background: "var(--bg-3)",
+                borderRadius: "var(--r1)", padding: "1px 6px",
+                maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis",
+                whiteSpace: "nowrap", flexShrink: 1, minWidth: 0,
+              }}
+            >
               {d.site_line > 0 ? `line ${d.site_line}: ` : ""}{d.site}
             </code>
           )}
