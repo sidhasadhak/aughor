@@ -4800,16 +4800,9 @@ def _premise_direction(question: str) -> "Optional[str]":
     return None
 
 
-def _premise_enabled() -> bool:
-    """Always on. Kept as a named predicate rather than inlined `True` because the call
-    sites read as a decision ("run the premise check here?") and several tests patch it
-    to exercise the skip path without needing a flag."""
-    return True
-
-
 def _causal_drill_enabled() -> bool:
-    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off; mirrors
-    `_premise_enabled`. When on, the cross-section scan floats causal dimensions to the front (so they
+    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off.
+    When on, the cross-section scan floats causal dimensions to the front (so they
     survive the query cap) and, after localising WHERE, auto-drills the event-only dims to WHY (a
     composition/share-of-returns lens) instead of stopping and merely recommending it."""
     from aughor.kernel.flags import flag_enabled
@@ -4959,7 +4952,10 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # questioning the data: challenge the question's own assumption before decomposing it.
     premise_check_section = ""
     _premise_dir = _premise_direction(question)
-    if _premise_dir and _premise_enabled():
+    # The premise check runs whenever the question ASSERTS a direction — `_premise_direction`
+    # returning non-None IS the trigger, which is why Wave 3 could drop the flag that used
+    # to sit in front of it.
+    if _premise_dir:
         premise_check_section = (
             "\nPREMISE CHECK — write this query FIRST, before the per-dimension scan:\n"
             f"  The question ASSERTS {metric_label} is \"{_premise_dir}\" for its subject. Validate that "
