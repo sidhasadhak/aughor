@@ -9,6 +9,11 @@
    "connection_id": "8d36d4c2",
    "schema_name": null
   },
+  "GET /business-profile?connection_id=8d36d4c2&schema_name=main": {
+   "available": false,
+   "connection_id": "8d36d4c2",
+   "schema_name": "main"
+  },
   "GET /canvases?workspace_id=620c2469": [],
   "GET /capabilities": {
    "capabilities": [
@@ -7790,43 +7795,7 @@
    "validated": true,
    "validation_version": 1
   },
-  "GET /org-intelligence": [
-   {
-    "angle": "a",
-    "canvas_id": "conn:conn1",
-    "connection_id": "conn1",
-    "domain": "d",
-    "id": "8865897325498171889",
-    "insight_id": "i1",
-    "novelty": 5,
-    "promoted_at": "2026-08-03T07:16:44.039212Z",
-    "promoted_by": "user",
-    "schema": "",
-    "text": "f"
-   },
-   {
-    "angle": "credit-per-dollar efficiency across revenue quartiles",
-    "canvas_id": "conn:c1c664b0",
-    "domain": "Marketing Analytics",
-    "id": "46642474094068301",
-    "insight_id": "Marketing Analytics__attribution efficiency by order value tier: how does credit weight per dollar of revenue vary across revenue quartiles, and does this reveal inefficiency in high-value orders?__7",
-    "novelty": 5,
-    "promoted_at": "2026-06-09T07:07:38.616243Z",
-    "promoted_by": "user",
-    "text": "High-revenue orders (top quartile, $237.98M total) receive only marginally more total attribution credit (2.49M) than low-revenue orders (bottom quartile, $38.79M), with credit-per-dollar dropping from 6.43e-08 in Q1 to 1.05e-08 in Q4 \u2014 indicating that while high-revenue orders dominate revenue, they receive proportionally *less* attribution credit relative to their revenue share, revealing inefficiency in credit allocation for high-value orders."
-   },
-   {
-    "angle": "Average credit weight per touchpoint type across all orders",
-    "canvas_id": "conn:c1c664b0",
-    "domain": "Marketing Analytics",
-    "id": "866384494362782181",
-    "insight_id": "Marketing Analytics__value__1",
-    "novelty": 1,
-    "promoted_at": "2026-06-09T06:55:24.355867Z",
-    "promoted_by": "user",
-    "text": "The average credit weight per touchpoint type across all orders in the last 12 months is nearly identical across types, ranging from ~1.4279e-06 (influencer) to ~1.4299e-06 (email), with over 630K\u20131.7M orders per touchpoint type."
-   }
-  ],
+  "GET /org-intelligence": [],
   "GET /org-intelligence?connection_id=8d36d4c2": [],
   "GET /org-settings": {
    "chart_palette": "accent",
@@ -7851,6 +7820,7 @@
    "website": ""
   },
   "GET /viz-configs?scope_key=8d36d4c2": {},
+  "GET /viz-configs?scope_key=8d36d4c2:main": {},
   "GET /workspaces": [
    {
     "connection_ids": [
@@ -7872,6 +7842,110 @@
     "updated_at": "2026-08-03T16:28:36.087778+00:00"
    }
   ],
+  "POST /exploration/8d36d4c2/briefing?schema=main&workspace_id=620c2469": {
+   "available": true,
+   "citations": [
+    {
+     "angle": "pinned-question",
+     "domain": "Key Questions",
+     "finding": "AOV and units per order moved up together: from 2015-03-02 to 2015-03-16, AOV surged from 321.95 to 2,217.86 (+1,895.91) while units per order rose from 7.46 to 12.41 (+4.95), indicating customers bought higher-value items alongside buying more units per order.",
+     "insight_id": "pinned__1",
+     "ref": "1"
+    },
+    {
+     "angle": "pinned-question",
+     "domain": "Key Questions",
+     "finding": "From the visible weeks, gross profit margin is improving (14 of 20 weeks show positive gross profit margin change), but it only aligns with the sign of average discount-rate change about 9 of 19 weeks (~47%), indicating weak alignment.",
+     "insight_id": "pinned__2",
+     "ref": "7"
+    },
+    {
+     "angle": "share",
+     "domain": "Synthesis",
+     "finding": "Taken together, the improvement in profitability (despite weak alignment with discount-rate changes) coincides with a simultaneous increase in both order value and units per order\u2014captured by a combined share of 0.370968.",
+     "insight_id": "synth__share__4",
+     "ref": "6"
+    },
+    {
+     "angle": "concentration",
+     "domain": "Synthesis",
+     "finding": "Combined concentration evidence shows that while the revenue is most concentrated in Standard Class (59.74), the highest return-concentration among the classes occurs in First Class (10.94).",
+     "insight_id": "synth__concentration__0",
+     "ref": "2"
+    },
+    {
+     "angle": "Ship mode return-rate comparison (share of orders returned) over the last 12 months",
+     "domain": "Commerce",
+     "finding": "First Class has the highest return rate over the last 12 months at 0.072917 of orders marked returned, above Second Class at 0.067901, Standard Class at 0.058233, and Same Day at 0.055556.",
+     "insight_id": "Commerce__Return Rate (Orders Returned) segmented by shipping mode to pinpoint fulfillment/expectation issues by delivery channel.__6",
+     "ref": "3"
+    },
+    {
+     "angle": "confound",
+     "domain": "Synthesis",
+     "finding": "Across the combined view, Same Day is high at 0.07197 in one context but low at 0.055556 in another (while the highest rate observed is 0.072917 for First Class), showing a reversal/shift in which shipping modes are most return-prone depending on the time-context being compared.",
+     "insight_id": "synth__confound__1",
+     "ref": "5"
+    },
+    {
+     "angle": "pinned-question",
+     "domain": "Key Questions",
+     "finding": "Same Day shipping has the highest return rate at 0.07197 (~7.2%), exceeding First Class (0.068615 ~6.9%) and other modes like Second Class (0.057054) and Standard Class (0.056112), suggesting expectation/fulfillment issues are most pronounced for Same Day.",
+     "insight_id": "pinned__4",
+     "ref": "8"
+    },
+    {
+     "angle": "Regional coverage and management staffing",
+     "domain": "Operations",
+     "finding": "Each region\u2014Central, East, South, and West\u2014has exactly 1 regional manager overseeing it (manager_count = 1 for each).",
+     "insight_id": "Operations__Regional coverage concentration (manager-to-region distribution) via manager headcount by region.__6",
+     "ref": "4"
+    }
+   ],
+   "currency_code": "USD",
+   "generated_at": "2026-08-04T20:32:03.810847+00:00",
+   "headline_theme": "Basket Growth Supports Margin Expansion",
+   "held_back": [],
+   "macro_context": {
+    "anchor": "main.orders",
+    "first_period": "2015-01-01",
+    "grain": "year",
+    "last_period": "2018-01-01",
+    "measure_first": "484247.4981000009",
+    "measure_growth": "grew 1.5\u00d7",
+    "measure_last": "733215.2551999999",
+    "measure_name": "sales",
+    "micro_start": "2017-12-30",
+    "n_periods": 4,
+    "rows_first": "1993",
+    "rows_growth": "grew 1.7\u00d7",
+    "rows_last": "3312",
+    "series": [
+     {
+      "measure": "484247.4981000009",
+      "period": "2015-01-01",
+      "rows": "1993"
+     },
+     {
+      "measure": "470532.50899999985",
+      "period": "2016-01-01",
+      "rows": "2102"
+     },
+     {
+      "measure": "609205.5980000008",
+      "period": "2017-01-01",
+      "rows": "2587"
+     },
+     {
+      "measure": "733215.2551999999",
+      "period": "2018-01-01",
+      "rows": "3312"
+     }
+    ]
+   },
+   "narrative": "The clearest commercial signal is a sharp expansion in basket quality and size: from March 2 to March 16, 2015, average order value rose from $321.95 to $2,217.86 while units per order increased from 7.46 to 12.41. [1] That combination is a more compelling source of profit improvement than discount management: margins improved in 14 of 20 visible weeks, yet moved in the same direction as discount changes only about 47% of the time. [7]\n\nThis matters against a business that has already scaled materially: annual sales rose from $484.2k in 2015 to $733.2k in 2018 as order activity increased from 2.0k to 3.3k. The immediate priority is to identify whether the higher-value, higher-unit baskets can be repeated without relying on broader discounting; the combined view explicitly links simultaneous growth in order value and units with improving profitability. [6] This is an opportunity to protect margin while sustaining the longer-term growth trajectory, rather than treating discount rate as the primary profit lever.\n\nReturns are the principal counterweight, and shipping policy deserves a time-sensitive review. Standard Class carries 59.74% of revenue concentration, but First Class has the greatest concentration of returns at 10.94. [2] In the last 12 months, First Class also posted the highest returned-order rate, 7.29%, versus 5.82% for Standard Class. [3] Yet another comparison places Same Day highest at 7.20%, ahead of First Class at 6.86%, indicating that return risk shifts by period rather than belonging permanently to one mode. [5] [8]\n\nManagement should therefore first diagnose return causes by shipping mode, period, and fulfillment promise before changing service mix. Each of the four regions has only one regional manager, so ownership is clear but local capacity should be tested if corrective actions require tighter fulfillment oversight. [4]",
+   "scope_key": "8d36d4c2:main"
+  },
   "POST /exploration/8d36d4c2/briefing?workspace_id=620c2469": {
    "available": true,
    "citations": [

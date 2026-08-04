@@ -38,9 +38,29 @@ RECORDING_VERSION = 1
 #: while writing this file: `/canvases?connection_id=` and
 #: `/org-settings/effective?connection_id=` are each ignored, and both routes key on
 #: `workspace_id`. Check `openapi.json` before adding a route here.
-def _routes(conn: str, workspace: str = "") -> list[tuple]:
+def _routes(conn: str, workspace: str = "",
+            schemas: tuple[str, ...] = ()) -> list[tuple]:
     ws = f"?workspace_id={workspace}" if workspace else ""
-    return [
+    # The surfaces ask schema-qualified questions once a schema is selected — which is
+    # immediately, because the briefing page mounts with the first schema chosen. The
+    # serve-side matcher compares the EXACT query string with params sorted
+    # alphabetically (`recordedKey` in web/app/demo-api/[...path]/route.ts), so every
+    # multi-param path here must list its params in that order or the recording can
+    # never be hit. The bare-path fallback does not save these: it only fires when the
+    # RECORDED key has no query string at all.
+    per_schema: list[tuple] = []
+    for s in schemas:
+        per_schema += [
+            ("GET", f"/business-profile?connection_id={conn}&schema_name={s}", None),
+            ("GET", f"/viz-configs?scope_key={conn}:{s}", None),
+            # Generates on first record (cache key is `{conn}:{schema}`, distinct from
+            # the conn-level one) — with `workspace_id` so org identity resolves to the
+            # DEMO workspace's own declared settings, then serves from cache thereafter.
+            ("POST", f"/exploration/{conn}/briefing?schema={s}&workspace_id={workspace}", None)
+            if workspace else
+            ("POST", f"/exploration/{conn}/briefing?schema={s}", None),
+        ]
+    return per_schema + [
         ("GET", "/connections", None),
         ("GET", "/workspaces", None),
         ("GET", "/capabilities", None),
@@ -120,6 +140,12 @@ def _scrub(path: str, payload: Any, conn: str, workspace: str,
                 for s in (payload.get("sections") or [])
             ],
         }
+    if path.startswith("/org-intelligence") and isinstance(payload, list):
+        # The bare route answers with every promotion the instance has ever made — in
+        # practice a unit-test fixture row and other connections' findings, none of it
+        # nameable by the term scan because none of it uses a banned term. Same narrowing
+        # as the other list routes: the demo connection's own promotions or nothing.
+        return [r for r in payload if (r or {}).get("connection_id") == conn]
     if path.startswith("/investigations") and isinstance(payload, list):
         # Connection scope is not enough here. The demo pack is CURATED — pre-fix runs and
         # the losing halves of duplicated pairs were deliberately dropped — and the list
@@ -156,7 +182,8 @@ def _contamination(recording: dict) -> list[str]:
 
 def record(base_url: str, connection_id: str, out_path: str | Path, *,
            workspace_id: str = "", investigation_ids: Optional[list[str]] = None,
-           pack_graph: Optional[dict] = None) -> dict:
+           pack_graph: Optional[dict] = None,
+           schemas: tuple[str, ...] = ()) -> dict:
     """Capture the allowlisted routes and write the recording. Raises on contamination."""
     import urllib.error
     import urllib.request
@@ -193,7 +220,7 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
 
     entries: dict = {}
     skipped: list[str] = []
-    for method, path, _ in _routes(connection_id, workspace_id):
+    for method, path, _ in _routes(connection_id, workspace_id, schemas):
         status, body = _call(method, path)
         if status != 200 or body is None:
             skipped.append(f"{_key(method, path)} → {status or 'unreachable'}")

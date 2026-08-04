@@ -317,3 +317,42 @@ def test_the_shipped_pack_graph_agrees_with_its_own_investigations():
     for n in receipts:
         assert (n.get("summary") or "").strip().lower() in headlines, (
             f"graph carries {n.get('summary')!r}, from an investigation the pack dropped")
+
+
+def test_schema_qualified_routes_match_the_serve_side_key_format():
+    """The three routes the UI asks schema-qualified — business-profile, viz-configs and
+    the briefing POST — 501'd on the hosted demo because the recording carried only their
+    bare-connection forms. The serve-side matcher (`recordedKey` in
+    web/app/demo-api/[...path]/route.ts) rebuilds `METHOD /path?a=..&b=..` with params
+    sorted ALPHABETICALLY and no URL-encoding, so the recorder must emit its keys in
+    exactly that shape or they can never be hit."""
+    from aughor.demo.record_api import _routes
+
+    keys = {f"{m} {p}" for m, p, _ in _routes("c1", "w1", schemas=("main",))}
+    assert "GET /business-profile?connection_id=c1&schema_name=main" in keys
+    assert "GET /viz-configs?scope_key=c1:main" in keys
+    assert "POST /exploration/c1/briefing?schema=main&workspace_id=w1" in keys
+    # No workspace → no dangling workspace_id param on the briefing key.
+    bare = {f"{m} {p}" for m, p, _ in _routes("c1", schemas=("main",))}
+    assert "POST /exploration/c1/briefing?schema=main" in bare
+    # Every multi-param key must already be alphabetically ordered; the matcher sorts,
+    # the recording cannot.
+    for key in keys | bare:
+        query = key.split("?", 1)[1] if "?" in key else ""
+        names = [kv.split("=", 1)[0] for kv in query.split("&") if kv]
+        assert names == sorted(names), f"params out of order in {key!r}"
+
+
+def test_org_intelligence_is_narrowed_to_the_demo_connection():
+    """The bare /org-intelligence route answers with every promotion the instance has —
+    the shipped recording was carrying a test-fixture row and another connection's
+    findings, invisible to the term scan because none of it uses a banned term."""
+    from aughor.demo.record_api import _scrub
+
+    rows = [
+        {"connection_id": "demo", "angle": "kept"},
+        {"connection_id": "someone_else", "angle": "dropped"},
+        {"angle": "no connection at all"},
+    ]
+    kept = _scrub("/org-intelligence", rows, "demo", "ws1")
+    assert kept == [{"connection_id": "demo", "angle": "kept"}]
