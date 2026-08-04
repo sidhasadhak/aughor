@@ -58,7 +58,7 @@ const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
-import { getApiBase } from "@/lib/config";
+import { getApiBase, DEMO_PACK } from "@/lib/config";
 import {
   getConnections,
   getWorkspaces,
@@ -550,9 +550,23 @@ function Sidebar({
       </div>
       <div style={{ padding: "6px 8px 10px", borderTop: "1px solid var(--b0)" }}>
         {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
+        {/* Demo posture is stated, not implied. The hosted demo names a real company, so
+            a visitor must be able to see at a glance that the operational figures are
+            synthetic — and "Local" was simply wrong there: the backend is a recording. */}
         <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
-          v2 · Local
+          {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
         </div>
+        {DEMO_PACK && (
+          <div
+            title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
+            style={{
+              fontSize: 9, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
+              padding: "6px 6px 0", marginTop: 2, borderTop: "1px solid var(--b0)",
+            }}
+          >
+            Synthetic data · illustrative only
+          </div>
+        )}
       </div>
     </nav>
   );

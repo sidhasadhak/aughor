@@ -99,6 +99,12 @@ def _routes(conn: str, workspace: str = "",
 
 #: Terms that must never appear in a public recording. Deliberately broad — every other
 #: dataset this instance has loaded, plus currency/domain tokens unique to them.
+#:
+#: "Foreign" is relative to the recording being written, not absolute: a LuxExperience
+#: recording legitimately carries `luxexperience`/`gmv_eur`/`refund_eur`, which are exactly
+#: the terms that must never reach the SUPERSTORE recording. So a caller declares what its
+#: own dataset owns via `allow_terms`, and everything else stays banned. Widening the list
+#: is safe; narrowing it per-recording is the part that needs the explicit argument.
 _FOREIGN = (
     "luxexperience", "beautycommerce", "creditcard", "swiss", "airline",
     "duty_eur", "gmv_eur", "refund_eur", "shipping_fee_eur",
@@ -175,15 +181,17 @@ def _substitute_org(routes: dict, workspace_key: str) -> None:
         routes["GET /org-settings"] = dict(effective)
 
 
-def _contamination(recording: dict) -> list[str]:
+def _contamination(recording: dict, allow_terms: tuple[str, ...] = ()) -> list[str]:
     blob = json.dumps(recording).lower()
-    return [t for t in _FOREIGN if t in blob]
+    allowed = {t.lower() for t in allow_terms}
+    return [t for t in _FOREIGN if t not in allowed and t in blob]
 
 
 def record(base_url: str, connection_id: str, out_path: str | Path, *,
            workspace_id: str = "", investigation_ids: Optional[list[str]] = None,
            pack_graph: Optional[dict] = None,
-           schemas: tuple[str, ...] = ()) -> dict:
+           schemas: tuple[str, ...] = (),
+           allow_terms: tuple[str, ...] = ()) -> dict:
     """Capture the allowlisted routes and write the recording. Raises on contamination."""
     import urllib.error
     import urllib.request
@@ -259,7 +267,7 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
         "connection_id": connection_id,
         "routes": entries,
     }
-    leaks = _contamination(recording)
+    leaks = _contamination(recording, allow_terms)
     if leaks:
         raise RecordingError(
             "refusing to write: the recording contains terms from another dataset — "
@@ -270,6 +278,94 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
     out.write_text(json.dumps(recording, indent=1, sort_keys=True) + "\n")
     recording["_skipped"] = skipped
     return recording
+
+
+#: Routes whose answer is the whole instance rather than one connection. On a merge these
+#: cannot simply coexist, so each is handled explicitly below; anything not named here is
+#: keyed by its connection id in the path and merges without conflict.
+_LIST_ROUTES = ("GET /connections", "GET /workspaces")
+
+
+def merge_recordings(primary: dict, *others: dict) -> dict:
+    """Combine per-connection recordings into one the demo can serve for BOTH.
+
+    A recording is per-connection by construction (``record`` takes one id and the scrub
+    narrows every list to it), but the SERVE side never reads ``connection_id`` — it keys
+    on the full request path, which already carries the id. So two recordings can share one
+    file, and a visitor can switch workspaces and find a second dataset that genuinely
+    works, instead of one demo replacing the other.
+
+    Three kinds of route, three rules:
+
+    * **connection-keyed** (``/exploration/{conn}/…``, ``/ontology?connection_id=…``) —
+      distinct keys, so they merge by plain union.
+    * **list routes** (``/connections``, ``/workspaces``) — concatenated and de-duplicated
+      by ``id``. Union is the point: the switcher must offer both.
+    * **instance singletons** (``/capabilities``, ``/org-settings``, ``/actions/triggers``,
+      ``/org-intelligence``, ``/catalog/tree``, ``/investigations?limit=…``) — the primary
+      wins, because there is exactly one answer and no way to express two. ``/catalog/tree``
+      is the exception that *can* merge: its sections carry per-connection entries.
+
+    Version mismatches are refused rather than coerced: two files written by different
+    builds may disagree on shape, and a silently mixed recording is the failure this
+    module exists to prevent.
+    """
+    if not primary:
+        raise RecordingError("merge needs a primary recording")
+    merged_routes: dict = dict(primary.get("routes") or {})
+    ids = [primary.get("connection_id")]
+
+    for other in others:
+        if not other:
+            continue
+        if other.get("version") != primary.get("version"):
+            raise RecordingError(
+                f"refusing to merge: version {other.get('version')} into "
+                f"{primary.get('version')} — rebuild both with one version.")
+        ids.append(other.get("connection_id"))
+        for key, payload in (other.get("routes") or {}).items():
+            if key in _LIST_ROUTES:
+                base = merged_routes.get(key)
+                if isinstance(base, list) and isinstance(payload, list):
+                    seen = {(r or {}).get("id") for r in base}
+                    merged_routes[key] = base + [r for r in payload
+                                                 if (r or {}).get("id") not in seen]
+                else:
+                    merged_routes.setdefault(key, payload)
+            elif key == "GET /catalog/tree":
+                base = merged_routes.get(key)
+                if isinstance(base, dict) and isinstance(payload, dict):
+                    merged_routes[key] = _merge_catalog(base, payload)
+                else:
+                    merged_routes.setdefault(key, payload)
+            else:
+                # Connection-keyed routes never collide. A genuine singleton collision
+                # (same key, both present) keeps the primary's answer — see docstring.
+                merged_routes.setdefault(key, payload)
+
+    return {
+        "version": primary.get("version"),
+        "connection_id": primary.get("connection_id"),
+        # Every connection the file can answer for. Informational today (the serve side
+        # keys on the path), but it is what makes a merged file self-describing.
+        "connection_ids": [i for i in ids if i],
+        "routes": merged_routes,
+    }
+
+
+def _merge_catalog(base: dict, other: dict) -> dict:
+    """Union the catalog tree's per-connection entries, matching sections by title."""
+    sections = {(s.get("title") or s.get("label") or ""): dict(s)
+                for s in (base.get("sections") or [])}
+    for s in other.get("sections") or []:
+        key = s.get("title") or s.get("label") or ""
+        if key in sections:
+            have = {(e or {}).get("conn_id") for e in (sections[key].get("entries") or [])}
+            sections[key]["entries"] = list(sections[key].get("entries") or []) + [
+                e for e in (s.get("entries") or []) if (e or {}).get("conn_id") not in have]
+        else:
+            sections[key] = dict(s)
+    return {**base, "sections": list(sections.values())}
 
 
 def summarise(recording: dict) -> str:

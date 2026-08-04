@@ -356,3 +356,82 @@ def test_org_intelligence_is_narrowed_to_the_demo_connection():
     ]
     kept = _scrub("/org-intelligence", rows, "demo", "ws1")
     assert kept == [{"connection_id": "demo", "angle": "kept"}]
+
+
+# ── Merging two per-connection recordings into one demo file ──────────────────────────
+
+
+def _rec(conn: str, extra: dict | None = None) -> dict:
+    from aughor.demo.record_api import RECORDING_VERSION
+    routes = {
+        "GET /connections": [{"id": conn, "name": conn}],
+        "GET /workspaces": [{"id": f"ws_{conn}", "connection_ids": [conn]}],
+        f"GET /exploration/{conn}/status": {"phase": "complete"},
+        "GET /capabilities": {"owner": conn},
+        "GET /catalog/tree": {"sections": [{"title": "Connections",
+                                            "entries": [{"conn_id": conn}]}]},
+    }
+    routes.update(extra or {})
+    return {"version": RECORDING_VERSION, "connection_id": conn, "routes": routes}
+
+
+def test_merged_recording_offers_both_connections_and_workspaces():
+    """The switcher must show both datasets — a merge that kept one would make the
+    second demo unreachable, which is the whole point of merging."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa", "bbb"]
+    assert [w["id"] for w in merged["routes"]["GET /workspaces"]] == ["ws_aaa", "ws_bbb"]
+    assert merged["connection_ids"] == ["aaa", "bbb"]
+    # Connection-keyed routes survive for BOTH, untouched.
+    assert merged["routes"]["GET /exploration/aaa/status"] == {"phase": "complete"}
+    assert merged["routes"]["GET /exploration/bbb/status"] == {"phase": "complete"}
+
+
+def test_merge_keeps_the_primary_answer_for_instance_singletons():
+    """/capabilities has exactly one answer and no way to express two."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    assert merged["routes"]["GET /capabilities"] == {"owner": "aaa"}
+
+
+def test_merge_unions_the_catalog_tree_entries():
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    entries = merged["routes"]["GET /catalog/tree"]["sections"][0]["entries"]
+    assert [e["conn_id"] for e in entries] == ["aaa", "bbb"]
+
+
+def test_merge_refuses_a_version_mismatch():
+    """Two builds can disagree on shape; a silently mixed recording is the failure
+    this module exists to prevent."""
+    from aughor.demo.record_api import RecordingError, merge_recordings
+
+    future = _rec("bbb")
+    future["version"] = 99
+    with pytest.raises(RecordingError, match="version"):
+        merge_recordings(_rec("aaa"), future)
+
+
+def test_merge_is_idempotent_for_a_repeated_connection():
+    """Re-merging the same recording must not duplicate its connection row."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("aaa"))
+    assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa"]
+
+
+def test_allow_terms_narrows_the_contamination_gate_per_recording():
+    """'Foreign' is relative to the dataset being recorded: LuxExperience legitimately
+    carries the very terms that must never reach the Superstore recording."""
+    from aughor.demo.record_api import _contamination
+
+    rec = {"routes": {"GET /x": {"schema": "luxexperience", "col": "gmv_eur"}}}
+    assert set(_contamination(rec)) == {"luxexperience", "gmv_eur"}
+    assert _contamination(rec, allow_terms=("luxexperience", "gmv_eur")) == []
+    # Everything not declared stays banned.
+    leaky = {"routes": {"GET /x": {"schema": "luxexperience", "other": "coupon_abuse"}}}
+    assert _contamination(leaky, allow_terms=("luxexperience",)) == ["coupon_abuse"]
