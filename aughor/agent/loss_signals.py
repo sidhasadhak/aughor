@@ -290,6 +290,34 @@ def contra_rate_columns(kinds: dict) -> list:
                    for c, k in (kinds or {}).items() if k == "rate"})
 
 
+def contra_kinds_from_ranges(schema_text: str, ranges: dict) -> dict:
+    """``{column: 'rate'|'amount'}`` for the CONTRA columns this schema declares, using
+    ranges that were already measured elsewhere.
+
+    The deep-analysis path probes contra ranges on demand
+    (`investigate._probe_contra_ranges`). The explorer cannot: it has already profiled
+    every column by the time it writes SQL, and re-probing would spend warehouse queries
+    to learn what `ColumnProfile.value_range` records. So this takes the ranges as data
+    and keeps the two halves that must not diverge — WHICH columns are contra
+    (:data:`CONTRA_REVENUE_RE`) and WHETHER each holds a rate
+    (:func:`classify_contra_columns`) — in this module, the one place that owns the
+    decision.
+
+    ``ranges`` may be keyed bare (``discount``) or qualified (``orders.discount``); both
+    match a contra name on the leaf. Columns with no measured range are skipped rather
+    than guessed, exactly as the classifier does — an unmeasured column is not evidence.
+    """
+    from aughor.db.schema_render import strip_value_samples
+
+    contra = {m.group(1).lower()
+              for m in CONTRA_REVENUE_RE.finditer(strip_value_samples(schema_text or ""))}
+    if not contra:
+        return {}
+    scoped = {col: bounds for col, bounds in (ranges or {}).items()
+              if _leaf(str(col)).lower() in contra}
+    return classify_contra_columns(scoped)
+
+
 def contra_amount_directive(kinds: dict, gross_cols: list | None = None) -> str:
     """Tell the planner, in the prompt, that a detected contra column is a RATE and what
     to multiply it by ('' when every contra column is already an amount).
