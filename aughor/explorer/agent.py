@@ -384,6 +384,16 @@ class SchemaExplorer:
             if isinstance(self._status.phase, ExplorationPhase)
             else self._status.phase
         )
+        # Mirror the LIVE runtime counters too, for the same reason. They were only
+        # copied into the persisted state in the COMPLETE block, so a failed or
+        # cancelled run — or a server restart mid-run — fell back to a state with no
+        # counters and /status reported 0 queries for a run that executed hundreds.
+        # Same last-run-wins semantics as the terminal write. (The first-finding
+        # milestone needs no mirroring — it is written to state directly at stamp time.)
+        self._state["queries_executed"] = self._status.queries_executed
+        self._state["tables_total"] = self._status.tables_total
+        self._state["columns_total"] = self._status.columns_total
+        self._state["started_at"] = self._status.started_at
         # Persist negative knowledge (columns/tables the generator invented that don't
         # exist) so a connection LEARNS them once instead of re-paying tokens to
         # re-discover the same dead names (e.g. line_total, customer_id, ecommerce.*)

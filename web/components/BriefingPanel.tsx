@@ -2337,52 +2337,83 @@ export function BriefingPanel({
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
   // the canvas's curated tables (#7) — not the underlying connection.
+  //
+  // Two failure modes these must NOT swallow (both made the buttons read as dead):
+  //  1. The backend refuses politely with HTTP 200 + {ok:false, reason} ("already
+  //     running", "phases 3-7 not complete", "connection not ready") — only thrown
+  //     errors ever reached the catch, so a refusal changed nothing on screen.
+  //  2. Nothing re-polled status after a click — the 60s fallback interval was the
+  //     only guarantee of visible change when kernel events are quiet.
+  // `pollRef` is filled by the status-poll effect below; actions call it on completion.
+  const pollRef = useRef<() => void>(() => {});
+
+  /** Surface a 200-level refusal — strictly `ok === false`, because the canvas
+   *  endpoints answer {status:"started"} with no `ok` at all (and fail by throwing).
+   *  Trigger-intel fans out per schema and reports {results:[{schema, ok, reason}]} —
+   *  show the first failing schema's reason. */
+  const surfaceRefusal = useCallback(
+    (res: { ok?: boolean; status?: string; reason?: string; results?: { schema?: string | null; ok: boolean; reason?: string }[] }, fallback: string) => {
+      if (res.ok !== false) return;
+      const failed = res.results?.find(r => !r.ok);
+      const reason = res.reason ?? failed?.reason;
+      const scope = failed?.schema ? `[${failed.schema}] ` : "";
+      setExplorerError(reason ? `${scope}${reason}` : fallback);
+    }, []);
+
   const runExplorer = useCallback(async () => {
-    if (!canvasId && !connectionId) return;
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
     setExplorerBusy(true);
     setExplorerError(null);
     try {
-      if (canvasId) await resumeCanvasExploration(canvasId);
-      else          await startExplorer(connectionId, schema);
+      const res = canvasId ? await resumeCanvasExploration(canvasId)
+                           : await startExplorer(connectionId, schema);
+      surfaceRefusal(res, "The explorer did not start");
     } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not start the explorer"); }
     setExplorerBusy(false);
-  }, [connectionId, canvasId, schema]);
+    pollRef.current();
+  }, [connectionId, canvasId, schema, surfaceRefusal]);
 
   const runTriggerIntel = useCallback(async () => {
-    if (!canvasId && !connectionId) return;
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
     setExplorerBusy(true);
     setExplorerError(null);
     try {
-      if (canvasId) await triggerCanvasDomainIntelligence(canvasId);
-      else          await triggerDomainIntelligence(connectionId);
+      const res = canvasId ? await triggerCanvasDomainIntelligence(canvasId)
+                           : await triggerDomainIntelligence(connectionId);
+      surfaceRefusal(res, "Intelligence did not trigger");
     } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not trigger intelligence"); }
     setExplorerBusy(false);
-  }, [connectionId, canvasId]);
+    pollRef.current();
+  }, [connectionId, canvasId, surfaceRefusal]);
 
   // One-click refresh: clears stale findings and re-runs the full pipeline under the
   // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
   // the temporal window. The honest way to make a stale headline reliable + up to date.
   const runRefresh = useCallback(async () => {
-    if (!canvasId && !connectionId) return;
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
     setExplorerBusy(true);
     setExplorerError(null);
     try {
-      if (canvasId) await restartCanvasExploration(canvasId);
-      else          await restartExplorer(connectionId);
+      const res = canvasId ? await restartCanvasExploration(canvasId)
+                           : await restartExplorer(connectionId);
+      surfaceRefusal(res, "The refresh did not start");
     } catch (e) { setExplorerError(e instanceof Error ? e.message : "Refresh failed"); }
     setExplorerBusy(false);
-  }, [connectionId, canvasId]);
+    pollRef.current();
+  }, [connectionId, canvasId, surfaceRefusal]);
 
   const runStop = useCallback(async () => {
-    if (!canvasId && !connectionId) return;
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
     setExplorerBusy(true);
     setExplorerError(null);
     try {
-      if (canvasId) await stopCanvasExploration(canvasId);
-      else          await stopExplorer(connectionId);
+      const res = canvasId ? await stopCanvasExploration(canvasId)
+                           : await stopExplorer(connectionId);
+      surfaceRefusal(res, "The explorer did not stop");
     } catch (e) { setExplorerError(e instanceof Error ? e.message : "Stop failed"); }
     setExplorerBusy(false);
-  }, [connectionId, canvasId]);
+    pollRef.current();
+  }, [connectionId, canvasId, surfaceRefusal]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2412,6 +2443,7 @@ export function BriefingPanel({
         .then(s => { if (mounted) setExplorerStatus(s); })
         .catch(() => { if (mounted) setExplorerStatus(null); });
     };
+    pollRef.current = poll;   // let the action handlers refresh status immediately
     poll();
     // K2: phase-change events drive this; the interval is only a slow fallback
     // (was a 3s poll — the worst offender of the seven).

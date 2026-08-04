@@ -10,7 +10,7 @@ import asyncio
 
 from aughor.explorer import agent as agent_mod
 from aughor.explorer.agent import SchemaExplorer, _get_explorer_semaphore
-from aughor.explorer.models import ExplorationPhase
+from aughor.explorer.models import ExplorationPhase, ExplorationStatus
 
 
 def _bare_explorer():
@@ -21,11 +21,10 @@ def _bare_explorer():
     ex.schema_name = None
     ex._store_key = "testconn"   # connection-level run keys state by the bare connection id
     ex._state = {"phase": "pending"}
-
-    class _Status:
-        phase = ExplorationPhase.DISTRIBUTION
-
-    ex._status = _Status()
+    # The real status object — _save_state mirrors its counters, so a stub with only
+    # .phase would no longer satisfy the contract under test.
+    ex._status = ExplorationStatus(connection_id="testconn",
+                                   phase=ExplorationPhase.DISTRIBUTION)
     return ex
 
 
@@ -40,6 +39,28 @@ def test_save_state_mirrors_live_phase(monkeypatch):
     assert captured["state"]["phase"] == ExplorationPhase.DISTRIBUTION.value
 
 
+def test_save_state_mirrors_runtime_counters(monkeypatch):
+    """Every save must carry the LIVE counters, not just the phase. They used to be
+    copied into state only in the COMPLETE block, so a failed/cancelled run — or a
+    server restart mid-run — persisted no counters at all and /status fell back to
+    `queries_executed: 0` for a run that executed hundreds (the exact shape found on
+    disk: failed runs with queries_executed/tables_total/started_at all absent)."""
+    ex = _bare_explorer()
+    ex._status.queries_executed = 221
+    ex._status.tables_total = 20
+    ex._status.columns_total = 187
+    ex._status.started_at = "2026-08-01T10:35:04+00:00"
+    captured = {}
+    monkeypatch.setattr(agent_mod._store, "save",
+                        lambda cid, state: captured.update(state=dict(state)))
+    ex._save_state()
+    st = captured["state"]
+    assert st["queries_executed"] == 221
+    assert st["tables_total"] == 20
+    assert st["columns_total"] == 187
+    assert st["started_at"] == "2026-08-01T10:35:04+00:00"
+
+
 def test_schema_scoped_run_keys_state_by_conn_and_schema(monkeypatch):
     # A per-schema run must persist state under {conn}__{schema} so each schema of a
     # multi-schema connection gets its OWN exploration state (the missimi=0 fix).
@@ -48,11 +69,8 @@ def test_schema_scoped_run_keys_state_by_conn_and_schema(monkeypatch):
     ex.connection_id = "workspace"
     ex.schema_name = "missimi"
     ex._store_key = "workspace__missimi"
-
-    class _Status:
-        phase = ExplorationPhase.DOMAIN_INTEL
-
-    ex._status = _Status()
+    ex._status = ExplorationStatus(connection_id="workspace",
+                                   phase=ExplorationPhase.DOMAIN_INTEL)
     ex._state = {"phase": "pending"}
     captured = {}
     monkeypatch.setattr(agent_mod._store, "save",

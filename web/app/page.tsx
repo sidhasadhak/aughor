@@ -1476,6 +1476,22 @@ export default function Home() {
   const selectedConn =
     activeWs && wsConnections.some(c => c.id === rawSelectedConn) ? rawSelectedConn : "";
 
+  // Converge out of the clamp: when the restored connection is NOT a member of the
+  // active workspace (e.g. localStorage still points at a demo connection that lives
+  // only in the demo workspace), the derived value above reads "" — correct as a
+  // fail-closed *transient*, but left alone it bricks the whole app: every panel keys
+  // off an empty connection and the user sees "everything wiped" until they manually
+  // reselect. Once both lists have actually loaded, fall back to the workspace's first
+  // connection. The effect also repairs the persisted LAST_CONN_KEY via the existing
+  // persistence effect, so the recovery sticks across reloads.
+  useEffect(() => {
+    if (!activeWs || connections.length === 0) return;   // still loading — keep fail-closed
+    if (wsConnections.length === 0) return;              // genuinely empty workspace
+    if (wsConnections.some(c => c.id === rawSelectedConn)) return;
+    setSelectedConn(wsConnections[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWs?.id, connections, rawSelectedConn]);
+
   // Theme effect — apply data-theme to <html>
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;

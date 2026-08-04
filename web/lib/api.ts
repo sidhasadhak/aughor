@@ -3447,7 +3447,13 @@ export async function resetExplorer(connectionId: string): Promise<{ ok: boolean
   return res.json();
 }
 
-export async function triggerDomainIntelligence(connectionId: string): Promise<{ ok: boolean; reason?: string }> {
+export async function triggerDomainIntelligence(connectionId: string): Promise<{
+  ok: boolean;
+  reason?: string;
+  /** Per-schema fan-out outcomes — a multi-schema connection reports one row per schema,
+   *  and a refused schema carries its reason here (the top-level `ok` is any-schema-ok). */
+  results?: { schema?: string | null; ok: boolean; reason?: string }[];
+}> {
   const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger domain intelligence");
   return res.json();
