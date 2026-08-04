@@ -1241,7 +1241,12 @@ export interface GraphReview {
   schema_name: string;
   graph_version: number;
   items: GraphReviewItem[];
+  /** How many items are in `items` (after the server's limit). */
   total: number;
+  /** How many existed BEFORE the limit — a queue that renders 50 over a warehouse with
+   *  300 would under-report the very thing it exists to report. */
+  total_found: number;
+  truncated: boolean;
   by_type: Record<string, number>;
 }
 

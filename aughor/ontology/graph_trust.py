@@ -89,7 +89,8 @@ class TrustSidecar:
 
     connection_id: str
     nodes: dict[str, NodeTrust] = field(default_factory=dict)
-    verdicts_seen: int = 0
+    verdicts_seen: int = 0       # verdicts read from the store
+    verdicts_matched: int = 0    # …of those, how many reached a node in this graph
 
     def get(self, node_id: str) -> Optional[NodeTrust]:
         return self.nodes.get(node_id)
@@ -100,9 +101,14 @@ class TrustSidecar:
             by[t.standing] = by.get(t.standing, 0) + 1
         return {"by_standing": by, "scored_nodes": len(self.nodes),
                 "verdicts_seen": self.verdicts_seen,
-                # Stated plainly rather than implied by a row of zeros: an operator
-                # reading "0 verdicts" learns something actionable about their process.
-                "human_signal": bool(self.verdicts_seen)}
+                "verdicts_matched": self.verdicts_matched,
+                # MATCHED, not merely seen. A verdict the graph could not attach to any
+                # node contributed nothing, and reporting it as human signal would let the
+                # summary contradict the per-node standings it sits above.
+                "human_signal": bool(self.verdicts_matched),
+                # Named so an operator can act on it: verdicts that reached nothing mean
+                # the graph is missing the findings they judged, not that nobody reviewed.
+                "verdicts_unmatched": max(0, self.verdicts_seen - self.verdicts_matched)}
 
     def to_dict(self) -> dict:
         return {"connection_id": self.connection_id,
@@ -111,19 +117,29 @@ class TrustSidecar:
                 **self.summary()}
 
 
-def _age_days(stamp: str, now: datetime) -> float:
+#: Weight given to a verdict whose timestamp cannot be read. NOT 1.0: an undated row
+#: would otherwise be scored as if cast today and could single-handedly flip a node's
+#: standing — fail-open in the wrong direction for the signal this module treats as
+#: ground truth. It still counts, at the weight of a verdict one half-life old.
+UNDATED_WEIGHT = 0.5
+
+
+def _age_days(stamp: str, now: datetime) -> Optional[float]:
+    """Age in days, or ``None`` when the timestamp is missing or unreadable."""
     if not stamp:
-        return 0.0
+        return None
     try:
         dt = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return max(0.0, (now - dt).total_seconds() / 86400.0)
     except Exception:
-        return 0.0
+        return None
 
 
-def _decay(age_days: float, half_life: float = VERDICT_HALF_LIFE_DAYS) -> float:
+def _decay(age_days: Optional[float], half_life: float = VERDICT_HALF_LIFE_DAYS) -> float:
+    if age_days is None:
+        return UNDATED_WEIGHT
     return 0.5 ** (age_days / half_life) if half_life > 0 else 1.0
 
 
@@ -148,9 +164,14 @@ def build_trust(graph, *, verdicts: Optional[list] = None,
         if n.kind == "finding":
             finding_state[n.id] = n.data or {}
 
+    # finding node → the nodes it grounds in. Built ONCE and reused for the verdict pass:
+    # re-scanning every edge per verdict is 500 verdicts × a 20k-edge graph on a real
+    # warehouse, for an index that is already in hand.
+    grounds_in: dict[str, list[str]] = {}
     for e in graph.edges.values():
         if e.kind != "grounded_in" or e.from_id not in finding_state:
             continue
+        grounds_in.setdefault(e.from_id, []).append(e.to_id)
         data = finding_state[e.from_id]
         t = sc.nodes.setdefault(e.to_id, NodeTrust(node_id=e.to_id))
         t.findings += 1
@@ -159,34 +180,43 @@ def build_trust(graph, *, verdicts: Optional[list] = None,
         if data.get("stale"):
             t.stale += 1
 
+    # A verdict is filed under an INVESTIGATION id; a finding node is keyed by the Ledger
+    # artifact id, which is a fresh uuid. The two are different namespaces and matching
+    # them by name would silently score nothing, so the projection carries the
+    # investigation id onto the node (`data["investigation_id"]`) and the join happens
+    # here. The node-id form is also accepted, for callers that already hold one.
+    by_investigation: dict[str, str] = {}
+    for nid, data in finding_state.items():
+        inv = str(data.get("investigation_id") or "")
+        if inv:
+            by_investigation.setdefault(inv, nid)
+
     # 2. Human verdicts, signed and time-decayed. `correct` counts as a rejection of the
     #    number, not a half-accept: "right direction, wrong detail" means the figure a
     #    reader would have quoted was wrong.
-    by_finding: dict[str, list] = {}
     for v in (verdicts or []):
         sc.verdicts_seen += 1
-        inv = str((v or {}).get("investigation_id") or "")
-        if inv:
-            by_finding.setdefault(inv, []).append(v)
-
-    for finding_id, rows in by_finding.items():
-        # A verdict names an investigation; the graph names a finding by the same id
-        # (`finding:<id>`), so the two meet without prose matching — the N3 rule that a
-        # headline is a title, not a conclusion, applies here too.
-        node_id = finding_id if finding_id.startswith("finding:") else f"finding:{finding_id}"
-        touched = [e.to_id for e in graph.edges.values()
-                   if e.kind == "grounded_in" and e.from_id == node_id]
-        if not touched:
+        inv = str((v or {}).get("investigation_id") or "").strip()
+        if not inv:
             continue
-        for v in rows:
-            weight = _decay(_age_days(str(v.get("created_at") or ""), now))
-            verdict = str(v.get("verdict") or "").lower()
-            for tid in touched:
-                t = sc.nodes.setdefault(tid, NodeTrust(node_id=tid))
-                if verdict == "accept":
-                    t.accepts += weight
-                elif verdict in ("reject", "correct"):
-                    t.rejects += weight
+        node_id = (by_investigation.get(inv)
+                   or (inv if inv in finding_state else None)
+                   or (f"finding:{inv}" if f"finding:{inv}" in finding_state else None))
+        touched = grounds_in.get(node_id or "", [])
+        if not touched:
+            # Counted as seen but NOT as matched. Reporting both is what keeps the summary
+            # from contradicting itself: "10 verdicts, human_signal true" over a graph
+            # where every one was discarded is the shape this wave exists to refuse.
+            continue
+        sc.verdicts_matched += 1
+        weight = _decay(_age_days(str(v.get("created_at") or ""), now))
+        verdict = str(v.get("verdict") or "").lower()
+        for tid in touched:
+            t = sc.nodes.setdefault(tid, NodeTrust(node_id=tid))
+            if verdict == "accept":
+                t.accepts += weight
+            elif verdict in ("reject", "correct"):
+                t.rejects += weight
 
     for t in sc.nodes.values():
         t.standing, t.detail = _standing(t)
@@ -202,9 +232,15 @@ def _standing(t: NodeTrust) -> tuple[str, str]:
     if t.contested:
         return "contested", (f"{t.contested} of {t.findings} findings here disagree on the "
                              f"numbers and nobody has settled it")
-    if t.rejects > t.accepts:
-        return "disputed", f"rejected in {t.rejects:.1f} weighted verdicts vs {t.accepts:.1f} accepted"
-    if t.accepts > 0 and t.accepts >= t.rejects:
+    if t.rejects > 0 and t.rejects >= t.accepts:
+        # A TIE is not a confirmation. One accept and one reject of equal age is two
+        # reviewers disagreeing, and rendering that as "a person has accepted this" —
+        # with the rejection omitted from the sentence — reports agreement where there
+        # is none.
+        verb = "disputed" if t.rejects > t.accepts else "contested"
+        return ("disputed" if t.rejects > t.accepts else "contested",
+                f"{verb}: {t.rejects:.1f} weighted rejections vs {t.accepts:.1f} accepted")
+    if t.accepts > 0:
         return "confirmed", f"accepted by a person ({t.accepts:.1f} weighted verdicts)"
     if t.findings >= CORROBORATION_MIN and not t.stale:
         return "corroborated", (f"{t.findings} separate analyses relied on this and none "

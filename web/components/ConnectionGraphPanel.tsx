@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ConnectionGraph,
   ConnectionTour,
@@ -72,6 +72,9 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
   // Wave P3 — what standing each node has earned. A read-time sidecar: it annotates the
   // graph on screen and is never written back into the committed artifact.
   const [trust, setTrust] = useState<TrustSidecar | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  // Identifies the in-flight load, so a response from a superseded one is discarded.
+  const loadToken = useRef(0);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -80,14 +83,25 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
     setTourError(null);
     setAudit(null);
     setReview(null);
+    setReviewError(null);
+    setTrust(null);
     setMode("map");
+    // Every response is checked against the token that requested it. Without this,
+    // switching connections mid-flight renders B's graph beside A's audit, drift reason
+    // and standing chips — four independent fetches, four chances to mismatch.
+    const token = ++loadToken.current;
+    const fresh = () => token === loadToken.current;
     getConnectionGraph(connectionId, schema)
-      .then((g) => { setGraph(g); setView({ level: "domains" }); })
-      .catch((e) => setError(e?.message || "Failed to load the knowledge graph"))
-      .finally(() => setLoading(false));
-    getGraphAudit(connectionId, schema).then(setAudit).catch(() => setAudit(null));
-    getGraphReview(connectionId, schema).then(setReview).catch(() => setReview(null));
-    getGraphTrust(connectionId, schema).then(setTrust).catch(() => setTrust(null));
+      .then((g) => { if (fresh()) { setGraph(g); setView({ level: "domains" }); } })
+      .catch((e) => { if (fresh()) setError(e?.message || "Failed to load the knowledge graph"); })
+      .finally(() => { if (fresh()) setLoading(false); });
+    getGraphAudit(connectionId, schema)
+      .then((a) => { if (fresh()) setAudit(a); }).catch(() => { if (fresh()) setAudit(null); });
+    getGraphReview(connectionId, schema)
+      .then((r) => { if (fresh()) setReview(r); })
+      .catch((e) => { if (fresh()) setReviewError(e?.message || "Review unavailable"); });
+    getGraphTrust(connectionId, schema)
+      .then((t) => { if (fresh()) setTrust(t); }).catch(() => { if (fresh()) setTrust(null); });
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
@@ -194,7 +208,8 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
         )}
 
         {!loading && !error && graph && mode === "review" && (
-          <ReviewView review={review} onAsk={onAsk}
+          <ReviewView review={review} error={reviewError} onAsk={onAsk}
+                      isTableNode={(id) => !!graph?.nodes[id] && graph.nodes[id].kind === "table"}
                       onOpenTable={(id) => { setMode("cards"); setView({ level: "detail", tableId: id }); }} />
         )}
 
@@ -420,11 +435,17 @@ const CHECK_LABEL: Record<GraphReviewItem["check"], string> = {
   rebuild: "Rebuild the graph",
 };
 
-function ReviewView({ review, onAsk, onOpenTable }: {
+function ReviewView({ review, error, onAsk, isTableNode, onOpenTable }: {
   review: GraphReview | null;
+  error: string | null;
   onAsk?: (q: string) => void;
+  /** True when the id names a table NODE — not an edge id that merely starts "table:". */
+  isTableNode: (id: string) => boolean;
   onOpenTable?: (tableId: string) => void;
 }) {
+  // A failed fetch used to render as "Checking the graph…" forever — the same
+  // indistinguishable-states bug the Fresh badge had.
+  if (error) return <p style={{ color: "var(--t3)", fontSize: 13 }}>{error}</p>;
   if (!review) return <p style={{ color: "var(--t3)", fontSize: 13 }}>Checking the graph…</p>;
   if (review.total === 0) {
     return (
@@ -437,14 +458,20 @@ function ReviewView({ review, onAsk, onOpenTable }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 760 }}>
       <p style={{ color: "var(--t3)", fontSize: 12 }}>
-        {review.total} thing{review.total !== 1 ? "s" : ""} this graph cannot vouch for,
-        most consequential first — ranked by how much depends on each, never by a guessed
+        {review.truncated
+          ? `${review.total} of ${review.total_found} things this graph cannot vouch for`
+          : `${review.total} thing${review.total !== 1 ? "s" : ""} this graph cannot vouch for`}
+        , most consequential first — ranked by how much depends on each, never by a guessed
         severity.
       </p>
       {review.items.map((it) => (
         <div key={it.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <StatusChip hue={REVIEW_HUE[it.type]} strength="soft">{REVIEW_LABEL[it.type]}</StatusChip>
+            {/* Guarded: `type` is a plain string server-side, and an unknown value would
+                index StatusChip's hue map with undefined and unmount the panel. */}
+            <StatusChip hue={REVIEW_HUE[it.type] || "muted"} strength="soft">
+              {REVIEW_LABEL[it.type] || it.type.replace(/_/g, " ")}
+            </StatusChip>
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{it.question}</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--t3)" }}>{it.why}</div>
@@ -455,10 +482,14 @@ function ReviewView({ review, onAsk, onOpenTable }: {
             {onAsk && (it.check === "ask" || it.check === "probe_join" || it.check === "define") && (
               <Button variant="ghost" onClick={() => onAsk(it.question)}
                       style={{ fontSize: 12, padding: 0, color: "var(--t2)" }}>
-                {CHECK_LABEL[it.check]} →
+                {CHECK_LABEL[it.check] || "Check this"} →
               </Button>
             )}
-            {onOpenTable && it.subject_id.startsWith("table:") && (
+            {/* An unprobed_join's subject_id is an EDGE id
+                ("table:orders--joins_on-->table:customers"), which ALSO starts with
+                "table:" — the prefix test sent the queue's top-ranked item to a
+                "Table not found." page. Test for the node itself. */}
+            {onOpenTable && isTableNode(it.subject_id) && (
               <Button variant="ghost" onClick={() => onOpenTable(it.subject_id)}
                       style={{ fontSize: 12, padding: 0, color: "var(--t3)" }}>
                 Open {it.subject_label}

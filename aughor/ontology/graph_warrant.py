@@ -136,26 +136,37 @@ def warrant_for(provenance, *, edge_kind: str = "", node_data: Optional[dict] = 
     note = str(getattr(provenance, "note", "") or "")
     measured = getattr(provenance, "measured", None)
 
-    # 1. A real number outranks everything — but ONLY when it is actually present.
-    if measured is not None:
+    # 1. A real number outranks everything — but ONLY when it is actually a number.
+    #    A non-numeric `measured` (a string, a bool, a sentinel) is NOT a measurement, and
+    #    an except-branch that returned "measured" anyway would be this module's own rule 1
+    #    broken in the one place it is enforced. `bool` is excluded explicitly because it
+    #    is an int subclass: `measured=True` would otherwise render as "100% overlap".
+    if measured is not None and not isinstance(measured, bool):
+        pct = None
         try:
             pct = f"{float(measured):.0%}"
         except (TypeError, ValueError):
-            return WarrantVerdict("measured", "probed against your data")
-        if source == "join_guard":
-            return WarrantVerdict("measured", f"{pct} of key values overlap")
-        return WarrantVerdict("measured", pct)
+            pct = None
+        if pct is not None:
+            if source == "join_guard":
+                return WarrantVerdict("measured", f"{pct} of key values overlap")
+            return WarrantVerdict("measured", pct)
+        # Fall through: a non-numeric value is classified by its SOURCE below, exactly as
+        # if no measurement had been recorded — which is the truth of the matter.
 
     # 2. An ambiguity resolution's tier IS its warrant.
     if source == "ambiguity_ledger":
-        tier = (note_field(note, "resolution_source") or "").lower()
+        tier = (note_field(note, "resolution_source") or "").strip().lower()
         if tier == "probe":
             return WarrantVerdict("measured", "settled by probing the data")
         if tier == "verdict":
             return WarrantVerdict("human", "settled by a reviewer's verdict")
         if tier == "user":
             return WarrantVerdict("human", "settled by a person")
-        return WarrantVerdict("human", "settled in the ambiguity ledger")
+        # An absent or unrecognised tier is NOT a probe. The ledger's rows are written by
+        # several paths and one of them can leave the column empty; defaulting an unknown
+        # origin to the strongest class would publish a measurement nobody took.
+        return WarrantVerdict("inferred", "resolved, origin not recorded")
 
     # 3. An unprobed join: the declaration tier decides. A declared foreign key is a real
     #    statement by the source system; a name match is a coincidence.

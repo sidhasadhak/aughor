@@ -286,3 +286,31 @@ def test_lineage_route_requires_a_subject(monkeypatch, tmp_path):
         assert exc.status_code == 400
     else:
         raise AssertionError("a lineage call with no subject must not return a walk")
+
+
+def test_a_site_never_points_at_a_different_table_or_a_function():
+    """Substring matching sent reviewers to the wrong line: `sales` matched
+    `sales_summary` (a different table) and `date` matched `date_trunc(` (a function).
+    A site that points at the wrong expression is worse than none — the reviewer checks
+    it, finds it fine, and concludes the dependency was fine."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT a, b\nFROM sales_summary s\nJOIN sales x ON 1=1"})
+    site, kind, line = _site_of(n, "", ["sales"])
+    assert line == 3 and site == "JOIN sales x ON 1=1"
+
+    n2 = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT date_trunc('month', o.ts)\nFROM orders"})
+    assert _site_of(n2, "", ["date"])[2] == 0        # the function is not the table
+    assert _site_of(n2, "", ["orders"])[2] == 2
+
+
+def test_a_label_that_is_not_an_identifier_yields_no_site():
+    """`"Rev. ".split(".")[-1]` is `" "`, which is truthy and matched every line."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={"sql": "SELECT a, b"})
+    assert _site_of(n, "Rev. ", []) == ("", "", 0)

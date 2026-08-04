@@ -228,6 +228,31 @@ class ContentDrift:
                 "reason": self.reason}
 
 
+# A short-lived memo for content_drift. Each call runs a FULL re-projection (ontology +
+# glossary + findings + resolutions + briefs), and the graph panel now asks for drift twice
+# on every open — once via /graph/audit, once via /graph/review. Keyed by the graph's own
+# version so a rebuild invalidates it immediately; the TTL only bounds how long a
+# SOURCE-side change (a new finding) can stay unseen, which is the same staleness the
+# feature reports anyway.
+_DRIFT_TTL_SECONDS = 20.0
+_drift_memo: dict = {}
+
+
+def _drift_cached(key: tuple, compute):
+    import time
+    hit = _drift_memo.get(key)
+    now = time.monotonic()
+    if hit is not None and (now - hit[0]) < _DRIFT_TTL_SECONDS:
+        return hit[1]
+    value = compute()
+    _drift_memo[key] = (now, value)
+    # Bounded: this is a per-request memo, not a store.
+    if len(_drift_memo) > 64:
+        for k in sorted(_drift_memo, key=lambda k: _drift_memo[k][0])[:32]:
+            _drift_memo.pop(k, None)
+    return value
+
+
 def content_drift(connection_id: str, schema_name: Optional[str] = None, *,
                   org_id: str = "") -> ContentDrift:
     """Compare the committed graph against what a rebuild would produce, right now.
@@ -248,6 +273,18 @@ def content_drift(connection_id: str, schema_name: Optional[str] = None, *,
         tolerate(exc, "reading the committed graph for a drift check is best-effort",
                  counter="context_graph.drift_read")
         committed = None
+    if committed is not None:
+        # Keyed by the committed graph's VERSION, so a rebuild invalidates immediately
+        # and two surfaces asking within the same page load pay for one projection.
+        return _drift_cached(
+            (org, connection_id, schema_name or "", getattr(committed, "version", 0)),
+            lambda: _content_drift_uncached(connection_id, schema_name, org, committed))
+    return _content_drift_uncached(connection_id, schema_name, org, committed)
+
+
+def _content_drift_uncached(connection_id: str, schema_name: Optional[str], org: str,
+                            committed) -> ContentDrift:
+    """The real comparison. Separated so :func:`content_drift` can memo it."""
     if committed is None:
         return ContentDrift(reason="no committed graph yet — a build would create one")
 

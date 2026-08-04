@@ -256,20 +256,34 @@ def _stamp_warrants(payload: dict, cg) -> None:
     structural truth, and a graph built before this wave gets its warrants for free. Best
     effort — a surface that cannot classify still renders the graph.
     """
+    from aughor.kernel.errors import tolerate
     try:
         from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
-        for nid, raw in (payload.get("nodes") or {}).items():
-            node = cg.nodes.get(nid)
-            if node is not None:
-                raw["warrant"] = warrant_of_node(node).to_dict()
-        for eid, raw in (payload.get("edges") or {}).items():
-            edge = cg.edges.get(eid)
-            if edge is not None:
-                raw["warrant"] = warrant_of_edge(edge).to_dict()
     except Exception as exc:
-        from aughor.kernel.errors import tolerate
         tolerate(exc, "warrant stamping is a read-time annotation; the graph renders without it",
                  counter="context_graph.warrant_stamp")
+        return
+    # Per ITEM, not per pass: one node that raises used to leave every node after it in
+    # dict order unstamped, with no error and nothing to distinguish it from "warrants
+    # unavailable".
+    for nid, raw in (payload.get("nodes") or {}).items():
+        node = cg.nodes.get(nid)
+        if node is None:
+            continue
+        try:
+            raw["warrant"] = warrant_of_node(node).to_dict()
+        except Exception as exc:
+            tolerate(exc, f"warrant for node {nid} could not be derived",
+                     counter="context_graph.warrant_stamp")
+    for eid, raw in (payload.get("edges") or {}).items():
+        edge = cg.edges.get(eid)
+        if edge is None:
+            continue
+        try:
+            raw["warrant"] = warrant_of_edge(edge).to_dict()
+        except Exception as exc:
+            tolerate(exc, f"warrant for edge {eid} could not be derived",
+                     counter="context_graph.warrant_stamp")
 
 
 @router.get("/graph/audit")
@@ -410,7 +424,7 @@ def get_context_graph_review(
     Deterministic and LLM-free. Ranked by how many other nodes depend on the thing in
     doubt, never by an invented severity score.
     """
-    from aughor.ontology.graph_questions import queue_summary, review_queue
+    from aughor.ontology.graph_questions import queue_summary, review_queue_with_total
     from aughor.org.context import current_org_id
 
     cg = _load_graph_or_404(connection_id, schema_name)
@@ -424,10 +438,11 @@ def get_context_graph_review(
         tolerate(exc, "drift is one input to the review queue; the structural checks still run",
                  counter="context_graph.review_drift")
 
-    items = review_queue(cg, drift=drift, limit=limit)
+    items, found = review_queue_with_total(cg, drift=drift, limit=limit)
     return {"connection_id": connection_id, "schema_name": cg.schema_name,
             "graph_version": cg.version,
-            "items": [i.to_dict() for i in items], **queue_summary(items)}
+            "items": [i.to_dict() for i in items],
+            **queue_summary(items, total_found=found)}
 
 
 @router.get("/graph/trust")

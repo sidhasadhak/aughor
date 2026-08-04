@@ -28,8 +28,12 @@ answer that reads as "nothing else depends on this".
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
+
+#: A site name must be a plain SQL identifier before it is used as a search key.
+_IDENT_ONLY = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
 
 #: Edge kinds that mean "the source is derived from the target". Walked in reverse: given
 #: a table, find what points AT it.
@@ -75,18 +79,28 @@ def _site_of(node, target_label: str, target_tables: list) -> tuple[str, str, in
     wrong line and conclude the dependency was fine.
     """
     data = (getattr(node, "data", None) or {})
-    names = {str(t).split(".")[-1].lower() for t in (target_tables or []) if t}
+    names = {str(t).split(".")[-1].strip().lower() for t in (target_tables or []) if t}
     if target_label:
-        names.add(str(target_label).split(".")[-1].lower())
-    names = {n for n in names if n}
+        names.add(str(target_label).split(".")[-1].strip().lower())
+    # Only real identifiers. A label like "Rev. " leaves " " after the split, and a bare
+    # substring test on that matches EVERY line — the site would then point a reviewer at
+    # line 1 of an unrelated query.
+    names = {n for n in names if n and _IDENT_ONLY.fullmatch(n)}
+    if not names:
+        return "", "", 0
+    # Word-boundary match, not substring: `sales` must not match `sales_summary` (a
+    # different table) and `date` must not match `date_trunc(` (a function). A site that
+    # points at the wrong expression is worse than no site — a reviewer would check it,
+    # find it fine, and conclude the dependency was fine.
+    pattern = re.compile(r"(?<![\w.])(" + "|".join(re.escape(n) for n in sorted(names))
+                         + r")(?![\w(])", re.IGNORECASE)
 
     for key, kind in (("sql", "sql"), ("formula_sql", "formula")):
         text = str(data.get(key) or "")
         if not text:
             continue
         for i, line in enumerate(text.splitlines(), start=1):
-            low = line.lower()
-            if any(n in low for n in names):
+            if pattern.search(line):
                 return line.strip()[:200], kind, i
         # Referenced by the edge but not visibly by name — report the expression itself
         # rather than claiming a line we did not find.

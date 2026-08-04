@@ -7,6 +7,8 @@ mistake `build_trusted_block` made in Wave L5.
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import datetime, timedelta, timezone
 
 from aughor.ontology.context_graph import (
@@ -158,8 +160,82 @@ def test_an_empty_graph_scores_nothing_without_raising():
     assert sc.summary()["scored_nodes"] == 0
 
 
-def test_a_malformed_verdict_timestamp_does_not_crash_the_sidecar():
-    cg = _graph([("finding:f1", {})])
-    sc = build_trust(cg, verdicts=[{"investigation_id": "f1", "verdict": "accept",
-                                    "created_at": "not-a-date"}], now=NOW)
-    assert sc.get("table:Order").accepts > 0     # undecayed rather than dropped
+
+
+
+# ── the join that could never happen ─────────────────────────────────────────────
+
+def _graph_with_investigation(inv_id):
+    cg = _graph([("finding:abc123def456", {"investigation_id": inv_id})])
+    return cg
+
+
+def test_a_verdict_reaches_the_node_through_the_investigation_id():
+    """A verdict is filed under an INVESTIGATION id; a finding node is keyed by the Ledger
+    ARTIFACT id, which is a fresh uuid. The two are different namespaces — matching them
+    by name scored nothing on every real verdict ever cast, while the summary still
+    reported human signal. The projection now carries the investigation id onto the node."""
+    cg = _graph_with_investigation("inv-42")
+    sc = build_trust(cg, verdicts=[_verdict("inv-42", "accept")], now=NOW)
+    assert sc.get("table:Order").standing == "confirmed"
+    assert sc.verdicts_matched == 1
+    assert sc.summary()["human_signal"] is True
+
+
+def test_an_unmatched_verdict_is_reported_as_unmatched_not_as_human_signal():
+    """The summary must not claim human signal over a graph that discarded every verdict."""
+    cg = _graph_with_investigation("inv-42")
+    sc = build_trust(cg, verdicts=[_verdict("some-other-investigation", "accept")], now=NOW)
+    s = sc.summary()
+    assert s["verdicts_seen"] == 1
+    assert s["verdicts_matched"] == 0
+    assert s["verdicts_unmatched"] == 1
+    assert s["human_signal"] is False
+    assert sc.get("table:Order").standing == "unchecked"
+
+
+def test_the_projection_carries_the_investigation_id_onto_the_finding_node():
+    """The rot guard for the join above: if the build stops emitting it, the human channel
+    goes quiet again and nothing else would notice."""
+    from aughor.ontology.context_graph import finding_node_data
+    from aughor.ontology.context_graph_build import _investigation_of
+
+    assert _investigation_of({"natural_key": "ada:conn-1:inv-42"}) == "inv-42"
+    assert _investigation_of({"natural_key": "chat:conn-1:turn-9"}) == "turn-9"
+    # A key of another shape yields nothing rather than a guess: a wrong id would attach
+    # one person's verdict to somebody else's finding.
+    assert _investigation_of({"natural_key": "malformed"}) == ""
+    assert _investigation_of({}) == ""
+
+    data = finding_node_data({"id": "x", "investigation_id": "inv-42"})
+    assert data["investigation_id"] == "inv-42"
+    # Absent when the source records none — a graph built without it serializes as before.
+    assert "investigation_id" not in finding_node_data({"id": "x"})
+
+
+# ── a tie is a disagreement, not an endorsement ──────────────────────────────────
+
+def test_one_accept_and_one_reject_is_not_confirmed():
+    cg = _graph_with_investigation("inv-42")
+    sc = build_trust(cg, verdicts=[_verdict("inv-42", "accept"),
+                                   _verdict("inv-42", "reject")], now=NOW)
+    t = sc.get("table:Order")
+    assert t.standing == "contested"
+    assert "rejections" in t.detail and "accepted" in t.detail
+
+
+# ── an undated verdict must not be scored as if cast today ───────────────────────
+
+def test_an_undated_verdict_carries_less_weight_than_a_fresh_one():
+    """`created_at` unreadable meant age 0 meant FULL weight — a row with a null timestamp
+    could single-handedly flip a standing. Fail-open in the wrong direction for the signal
+    this module treats as ground truth."""
+    from aughor.ontology.graph_trust import UNDATED_WEIGHT
+
+    cg = _graph_with_investigation("inv-42")
+    undated = build_trust(cg, verdicts=[{"investigation_id": "inv-42", "verdict": "accept",
+                                         "created_at": "not-a-date"}], now=NOW)
+    fresh = build_trust(cg, verdicts=[_verdict("inv-42", "accept")], now=NOW)
+    assert undated.get("table:Order").accepts == pytest.approx(UNDATED_WEIGHT)
+    assert undated.get("table:Order").accepts < fresh.get("table:Order").accepts
+    assert UNDATED_WEIGHT < 1.0

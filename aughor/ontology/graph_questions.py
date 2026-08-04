@@ -216,9 +216,29 @@ def review_queue(graph, *, drift: Optional[dict] = None, limit: int = _DEFAULT_L
     return items[:max(1, n)]
 
 
-def queue_summary(items: list[ReviewItem]) -> dict:
-    """Counts per type — the one line a panel header shows."""
+def review_queue_with_total(graph, *, drift: Optional[dict] = None,
+                            limit: int = _DEFAULT_LIMIT) -> tuple[list[ReviewItem], int]:
+    """The queue plus how many items existed before the limit — so a caller can say so."""
+    everything = review_queue(graph, drift=drift, limit=10_000_000)
+    try:
+        n = max(1, int(limit))
+    except (TypeError, ValueError):
+        n = _DEFAULT_LIMIT
+    return everything[:n], len(everything)
+
+
+def queue_summary(items: list[ReviewItem], *, total_found: Optional[int] = None) -> dict:
+    """Counts per type — the one line a panel header shows.
+
+    ``total_found`` is the count BEFORE the limit was applied. A queue that renders "50
+    things this graph cannot vouch for" over a warehouse with 300 is under-reporting the
+    very thing it exists to report, so truncation is declared rather than inferred — the
+    same rule `LineageReport.summary` follows when it says "At least".
+    """
     by_type: dict[str, int] = {}
     for i in items:
         by_type[i.type] = by_type.get(i.type, 0) + 1
-    return {"total": len(items), "by_type": by_type}
+    shown = len(items)
+    found = shown if total_found is None else int(total_found)
+    return {"total": shown, "total_found": found, "truncated": found > shown,
+            "by_type": by_type}

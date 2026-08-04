@@ -187,3 +187,74 @@ def test_the_trace_is_not_folded_into_the_signed_receipt(store, monkeypatch):
 
     receipt["grounding_trace"] = {"nodes": [], "edges": []}
     assert not verify(receipt), "a trace attached to the signed body invalidates the signature"
+
+
+# ── the seam that was structurally dead ──────────────────────────────────────────
+
+def test_citations_cross_the_executor_boundary(monkeypatch, tmp_path):
+    """A ContextVar `.set()` inside `contextvars.copy_context().run(...)` NEVER propagates
+    back to the submitter — and the deep-analysis path builds its priors in exactly such a
+    pool. The citations were therefore invisible to the receipt writer on the request
+    context: the read-back fired and the receipt recorded nothing, silently, because an
+    empty list is also what 'the flag is off' looks like.
+
+    This proves the explicit hand-back works across the real executor.
+    """
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
+    from aughor.ontology.context_graph_readback import (
+        _last_cited, last_cited_nodes, publish_cited_nodes,
+    )
+
+    _last_cited.set([])
+
+    def _worker():
+        # Stand in for build_graph_prior, which sets the contextvar inside the worker.
+        _last_cited.set(["table:Order", "finding:f1"])
+        return last_cited_nodes()
+
+    with ContextThreadPoolExecutor(max_workers=1) as pool:
+        produced = pool.submit(_worker).result()
+
+    assert produced == ["table:Order", "finding:f1"]
+    # Without the hand-back the parent context still sees nothing — the defect itself.
+    assert last_cited_nodes() == []
+    publish_cited_nodes(produced)
+    assert last_cited_nodes() == ["table:Order", "finding:f1"]
+
+
+def test_publishing_an_empty_list_does_not_erase_real_citations():
+    """The chat path sets the var directly; a later empty publish must not wipe it."""
+    from aughor.ontology.context_graph_readback import (
+        _last_cited, last_cited_nodes, publish_cited_nodes,
+    )
+    _last_cited.set(["table:Order"])
+    publish_cited_nodes([])
+    assert last_cited_nodes() == ["table:Order"]
+
+
+def test_two_schemas_with_the_same_bare_table_do_not_cross_resolve(store):
+    """`merge_graphs` unions one graph per schema, so `sales.orders` and `staging.orders`
+    both reduce to the bare key `orders`. Rendering one schema's node for the other's
+    table would show the wrong label, summary, warrant and edges."""
+    from aughor.ontology.context_graph import GraphNode, Provenance
+    g = _graph()
+    g.add_node(GraphNode(id="table:StagingOrder", kind="table", label="Staging Order",
+                         provenance=Provenance(source="ontology.entity"),
+                         data={"source_tables": ["staging.orders"]}))
+    # table:Order already backs "orders" (bare, from the fixture)
+    store.save_graph(g)
+
+    # The qualified name resolves exactly…
+    t = build_answer_trace("c", tables=["staging.orders"], org_id="default")
+    assert [n.id for n in t.nodes] == ["table:StagingOrder"]
+
+    # …and an AMBIGUOUS bare name resolves to nothing rather than to whichever node was
+    # iterated first.
+    g2 = _graph()
+    g2.add_node(GraphNode(id="table:Other", kind="table", label="Other",
+                          provenance=Provenance(source="ontology.entity"),
+                          data={"source_tables": ["orders"]}))
+    store.save_graph(g2)
+    t2 = build_answer_trace("c", tables=["orders"], org_id="default")
+    assert all(not n.present for n in t2.nodes), \
+        "an ambiguous bare table name must not silently pick a winner"

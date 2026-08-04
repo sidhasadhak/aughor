@@ -137,16 +137,40 @@ def _build(connection_id: str, tables: list, metrics: list, cited: list,
 
     trace = AnswerTrace(connection_id=connection_id, graph_version=getattr(cg, "version", 0))
 
-    # A physical table name → the entity node that materialises it. Built once: an entity
-    # can back several tables, and the answer's lineage names the PHYSICAL ones.
-    by_table: dict[str, str] = {}
+    # Table name → the entity node that materialises it. TWO maps, because
+    # `merge_graphs` unions one graph per SCHEMA: `sales.orders` and `staging.orders` both
+    # reduce to the bare key `orders`, and a single flat map would silently render one
+    # schema's node for the other's table — wrong label, wrong summary, wrong edges.
+    #
+    # `by_qualified` holds the full `schema.table` key and always wins. `by_bare` holds the
+    # unqualified key and is set to None the moment a second, DIFFERENT node claims it, so
+    # an ambiguous bare name resolves to nothing rather than to whichever node was
+    # iterated first.
+    by_qualified: dict[str, str] = {}
+    by_bare: dict[str, Optional[str]] = {}
+
+    def _claim(key: str, node_id: str) -> None:
+        if not key:
+            return
+        if key in by_bare and by_bare[key] != node_id:
+            by_bare[key] = None          # ambiguous — refuse to guess
+        else:
+            by_bare.setdefault(key, node_id)
+
     for n in cg.nodes.values():
         if n.kind != "table":
             continue
         for src in (n.data.get("source_tables") or []):
-            by_table.setdefault(_bare(src), n.id)
-        by_table.setdefault(_bare(n.id.split(":", 1)[-1]), n.id)
-        by_table.setdefault(_bare(n.label), n.id)
+            full = str(src).strip().strip('"').lower()
+            if "." in full:
+                by_qualified.setdefault(full, n.id)
+            _claim(_bare(src), n.id)
+        _claim(_bare(n.id.split(":", 1)[-1]), n.id)
+        _claim(_bare(n.label), n.id)
+
+    def _resolve_table(name: str) -> Optional[str]:
+        full = str(name).strip().strip('"').lower()
+        return by_qualified.get(full) or by_bare.get(_bare(name))
 
     by_metric: dict[str, str] = {}
     for n in cg.nodes.values():
@@ -181,7 +205,7 @@ def _build(connection_id: str, tables: list, metrics: list, cited: list,
             _add(nid, "cited")
 
     for t in tables:
-        nid = by_table.get(_bare(t))
+        nid = _resolve_table(t)
         if nid:
             _add(nid, "read")
         else:

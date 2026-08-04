@@ -395,6 +395,12 @@ class VerifiedJoin:
     c2: str
     overlap: float        # max containment fraction across both directions; -1.0 = unverifiable
     match: str = "exact"  # the name-inference confidence carried through
+    # The edge was verified upstream (an explorer FK check) even though no containment
+    # fraction reached us. Kept SEPARATE from `overlap` because the two answer different
+    # questions — "was this checked?" and "by how much do the values overlap?" — and
+    # folding the first into the second is what produced a fabricated 1.0 (see
+    # seed_verified_cache) and then, over-correcting, a lost verification.
+    verified_upstream: bool = False
 
 
 def verify_join_edges(
@@ -466,13 +472,14 @@ def seed_verified_cache(cache_key: str, joins: list, verifications: list) -> tup
                 # Verified upstream but WITHOUT the counts that would make it a
                 # measurement. `1.0` here read downstream as "100% of key values
                 # overlap" — a probe result the record does not contain. `-1.0` is the
-                # established "couldn't probe" sentinel, so the edge still counts as
-                # verified (below) while the renderer stops reporting a number nobody
-                # measured (P2).
+                # established "couldn't probe" sentinel; the verification itself travels
+                # on `verified_upstream` so the ontology can still stamp the edge
+                # `verified` without anyone inventing a number for it.
                 ov = -1.0
             else:
                 ov = 0.0
-            vj = VerifiedJoin(t1, c1, t2, c2, overlap=ov, match=j.get("match", "exact"))
+            vj = VerifiedJoin(t1, c1, t2, c2, overlap=ov, match=j.get("match", "exact"),
+                              verified_upstream=bool(rec.get("verified")))
             (verified if rec.get("verified") or ov >= _THRESHOLD else rejected).append(vj)
         sig = tuple(sorted((j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")) for j in (joins or [])))
         if cache_key:

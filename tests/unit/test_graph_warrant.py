@@ -66,9 +66,22 @@ def test_resolution_tier_decides_the_warrant(tier, expected):
     assert v.warrant == expected
 
 
-def test_unknown_resolution_tier_degrades_to_human_not_measured():
-    v = warrant_for(Provenance(source="ambiguity_ledger", note="resolution_source=mystery"))
-    assert v.warrant == "human"
+def test_an_unrecorded_resolution_tier_is_not_a_probe():
+    """The projection used to default a missing tier to `probe`, which P2 reads as a
+    MEASUREMENT — publishing a probe nobody ran. Neither end may assume it."""
+    for note in ("resolution_source=mystery", "resolution_source=", ""):
+        v = warrant_for(Provenance(source="ambiguity_ledger", note=note))
+        assert v.warrant == "inferred", f"{note!r} was reported as {v.warrant}"
+
+
+def test_a_resolution_with_no_recorded_tier_projects_as_inferred():
+    """End to end through the REAL projection — the defect lived in the default there."""
+    res = SimpleNamespace(id="r9", subject="revenue", resolved_reading="net",
+                          resolution_source="", evidence="")
+    cg = project_graph(_ontology_with_a_join(overlap=None, confidence="exact"),
+                       org_id="o", connection_id="c", resolutions=[res])
+    node = next(n for n in cg.nodes.values() if n.provenance.source == "ambiguity_ledger")
+    assert warrant_of_node(node).warrant == "inferred"
 
 
 # ── the rest of the source table ─────────────────────────────────────────────────
@@ -106,8 +119,28 @@ def test_unknown_source_degrades_to_the_weakest_class():
     assert v.warrant == "inferred"
 
 
+def test_a_non_numeric_measured_is_not_a_measurement():
+    """`measured` is the field that decides the strongest class, so a non-number in it
+    must fall through to the SOURCE — not be rescued into 'measured' by an except-branch.
+    The earlier version of this test asserted only membership in WARRANT_ORDER, which
+    every branch satisfies, so it passed ON the defect."""
+    for bad in ("n/a", "", [], {}, object()):
+        v = warrant_for(SimpleNamespace(source="join_guard", measured=bad,
+                                        note="unprobed join_confidence=inferred"))
+        assert v.warrant == "inferred", f"{bad!r} was reported as {v.warrant}"
+
+
+def test_a_boolean_measured_does_not_render_as_100_percent():
+    """`bool` is an int subclass: float(True) == 1.0 would print '100% of key values
+    overlap' for a flag."""
+    v = warrant_for(SimpleNamespace(source="join_guard", measured=True,
+                                    note="unprobed join_confidence=inferred"))
+    assert v.warrant == "inferred"
+    assert "100%" not in v.detail
+
+
 def test_never_raises_on_a_malformed_provenance():
-    v = warrant_for(SimpleNamespace(source=None, measured="not-a-number", note=None))
+    v = warrant_for(SimpleNamespace(source=None, measured=None, note=None))
     assert v.warrant in WARRANT_ORDER
 
 
@@ -220,8 +253,12 @@ def test_audit_counts_every_class_and_reports_the_grounded_share():
 def test_audit_reports_every_class_even_at_zero():
     """A scorecard that omitted the empty classes would read as 'nothing weak here'."""
     out = audit(_graph_with([("joins_on", Provenance(source="join_guard", measured=1.0))]))
-    assert set(out["edges"]) == set(WARRANT_ORDER)
+    # Pinned against the literal set, not against another field of the same response —
+    # comparing `out["edges"]` to `out["order"]` would pass on any pair built from the
+    # same constant.
+    assert set(out["edges"]) == {"measured", "human", "declared", "derived", "inferred"}
     assert out["edges"]["inferred"] == 0
+    assert out["edges"]["measured"] == 1
 
 
 def test_audit_of_an_empty_graph_does_not_divide_by_zero():

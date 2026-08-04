@@ -140,8 +140,27 @@ def load_investigation_findings(
             "generated_at": art.get("created_at", ""),
             "receipt_kind": art.get("kind", ""),
             "question": str(payload.get("question") or ""),
+            # Wave P3: the id a human VERDICT is filed under. The artifact id is a random
+            # uuid, so a verdict (keyed by investigation) and a finding node (keyed by
+            # artifact) live in different namespaces and could never meet — the trust
+            # sidecar's human channel was unreachable by construction. The natural key
+            # `<kind>:<connection>:<investigation>` is where the two join.
+            "investigation_id": _investigation_of(art),
         })
     return out
+
+
+def _investigation_of(art: dict) -> str:
+    """The investigation id inside a receipt's natural key, or ``""``.
+
+    Keys are written as ``<kind>:<connection_id>:<investigation_id>``
+    (``routers/investigations.py``), so the investigation is the last colon-separated
+    part. Returns empty rather than guessing when the key has another shape — a wrong
+    id would attach a human's verdict to somebody else's finding.
+    """
+    key = str(art.get("natural_key") or "")
+    parts = key.split(":")
+    return parts[-1].strip() if len(parts) >= 3 else ""
 
 
 def load_briefs(connection_id: str) -> list[dict]:

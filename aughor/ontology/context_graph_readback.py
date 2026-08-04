@@ -53,6 +53,24 @@ def last_cited_nodes() -> list[str]:
     return list(_last_cited.get())
 
 
+def publish_cited_nodes(node_ids: list[str]) -> None:
+    """Republish citations produced in ANOTHER context onto this one.
+
+    A ``ContextVar.set`` inside ``contextvars.copy_context().run(...)`` — which is exactly
+    what ``ContextThreadPoolExecutor.submit`` does — never propagates back to the
+    submitter. The deep-analysis path builds its priors in that pool, so the citations it
+    produced were invisible to the receipt writer on the request context: the read-back
+    fired, the receipt recorded nothing, and the failure was silent because an empty list
+    is also what "the flag is off" looks like.
+
+    A worker reads :func:`last_cited_nodes` inside its own context and hands the ids back
+    through its return value; the submitter calls this. Explicit and one-directional —
+    nothing here reaches across a context boundary by itself.
+    """
+    if node_ids:
+        _last_cited.set(list(node_ids))
+
+
 def _clip(text: str, cap: int = _TEXT_CAP) -> str:
     t = " ".join((text or "").split())
     return t if len(t) <= cap else t[: cap - 1] + "…"

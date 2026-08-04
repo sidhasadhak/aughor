@@ -207,3 +207,23 @@ def test_a_non_integer_limit_does_not_crash_a_direct_caller():
     _table(cg, "table:B", summary="y")
     _join(cg, "table:A", "table:B")
     assert len(review_queue(cg, limit=object())) == 1     # falls back to the default
+
+
+def test_the_queue_declares_truncation_rather_than_capping_silently():
+    """Rendering '50 things this graph cannot vouch for' over a warehouse with 300 would
+    under-report the very thing the queue exists to report."""
+    from aughor.ontology.graph_questions import queue_summary, review_queue_with_total
+
+    cg = ContextGraph(org_id="o", connection_id="c")
+    for i in range(12):
+        _table(cg, f"table:A{i}", summary="x")
+        _table(cg, f"table:B{i}", summary="y")
+        _join(cg, f"table:A{i}", f"table:B{i}")      # 12 unprobed joins
+    items, found = review_queue_with_total(cg, limit=5)
+    s = queue_summary(items, total_found=found)
+    assert s["total"] == 5
+    assert s["total_found"] == 12
+    assert s["truncated"] is True
+    # …and an unlimited read declares no truncation
+    items2, found2 = review_queue_with_total(cg, limit=100)
+    assert queue_summary(items2, total_found=found2)["truncated"] is False
