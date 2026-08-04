@@ -249,7 +249,7 @@ async def query_semantic(body: _SemanticOpRequest):
             out_column=body.out_column,
             max_rows=body.max_rows,
             override_cap=body.override_cap,
-            validate=flag_enabled("semops.guarded_extract"),
+            validate=True,
             validate_sample=8 if flag_enabled("semops.champion_validate") else 0,
         )
         return op, base
@@ -312,7 +312,7 @@ async def query_cross_source_join(body: _CrossSourceJoinRequest):
 
     from aughor.connectors.remote_join import cross_source_join
 
-    reconcile = flag_enabled("join.key_reconciliation")   # self-heal ill-formatted cross-source keys (Rec 3)
+    reconcile = True   # self-heal ill-formatted cross-source keys (Rec 3)
 
     def _work():
         return cross_source_join(
@@ -355,7 +355,7 @@ async def query_federated_answer(body: _FederatedAnswerRequest):
         raise HTTPException(status_code=400, detail="at least two conn_ids are required")
 
     from aughor.agent.federated_planner import answer_federated
-    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+    reconcile = body.reconcile if body.reconcile is not None else True
 
     def _work():
         return answer_federated(body.question, body.conn_ids, reconcile=reconcile)
@@ -397,7 +397,7 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest):
 
     from aughor.agent.connection_selector import select_connections
     from aughor.agent.federated_planner import answer_federated
-    reconcile = body.reconcile if body.reconcile is not None else flag_enabled("join.key_reconciliation")
+    reconcile = body.reconcile if body.reconcile is not None else True
 
     def _work():
         sel = select_connections(body.question, body.conn_ids)

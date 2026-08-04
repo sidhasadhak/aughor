@@ -80,13 +80,6 @@ def test_not_eligible_when_disqualified_even_with_flag_on(monkeypatch, kwargs):
     assert _overview_eligible(_req(**kwargs)) is False
 
 
-def test_kill_switch_env_zero_disables_even_for_overview_question(monkeypatch):
-    # ask.overview is AUTO_ELIGIBLE + capabilities.auto is default-on, so an explicit
-    # AUGHOR_ASK_OVERVIEW=0 is required to prove the operator kill switch is honored.
-    monkeypatch.setenv("AUGHOR_ASK_OVERVIEW", "0")
-    assert _overview_eligible(_req()) is False
-
-
 def test_auto_elevated_when_env_unset(monkeypatch):
     # With the env var unset, the auto-eligible flag rides capabilities.auto (default-on),
     # so a fresh overview ask is still eligible without any explicit opt-in.

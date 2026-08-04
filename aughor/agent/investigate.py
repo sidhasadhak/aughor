@@ -663,7 +663,6 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
             try:
                 from aughor.semops.operators import apply_step, detect_text_columns
                 if step.column in detect_text_columns(r):
-                    from aughor.kernel.flags import flag_enabled
                     op = apply_step(
                         r, step.operator, step.column,
                         predicate=(step.predicate or ""),
@@ -671,7 +670,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                         criterion=(getattr(step, "criterion", "") or ""),
                         k=getattr(step, "k", 10),
                         instruction=(getattr(step, "instruction", "") or ""),
-                        validate=flag_enabled("semops.guarded_extract"),
+                        validate=True,
                     )
                     r = op.result
                     _s.inc("deep_analysis.semantic_steps_applied")
@@ -3050,14 +3049,9 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     """Pin the intake's ``metric_sql`` to the connection's GOVERNED definition when one matches, so the
     scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio),
     and crystallizes the definition resolution to the Ambiguity Ledger so it compounds per connection
-    (P4). Returns a transparency note (or None when nothing was pinned). Flag-gated
-    (``ada.pin_canonical_metric``); deterministic; fail-open on every uncertainty."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.pin_canonical_metric"):
-            return None
-    except Exception:
-        return None
+    (P4). Returns a transparency note (or None when nothing was pinned). Deterministic;
+    fail-open on every uncertainty — the pin only happens when a governed formula exists
+    AND substitutes cleanly, which is the trigger that made a flag redundant."""
     llm_sql = (getattr(intake, "metric_sql", "") or "").strip()
     if not llm_sql:
         return None
@@ -3162,14 +3156,9 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     """P4 burn-down: when this metric's definition was already resolved (by a user clarify) on this
     connection, HARD-BIND the resolved reading's SQL — so the user's choice is honored on EVERY
     subsequent run (never re-asked, and P1's silent pin can't override a 'use the parsed reading'
-    choice). Returns a transparency note when it binds, else None. Flag-gated (`ada.clarify_gate`);
-    fail-open: only binds a substitutable formula that actually runs over the metric table."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.clarify_gate"):
-            return None
-    except Exception:
-        return None
+    choice). Returns a transparency note when it binds, else None. Fail-open: only binds a
+    substitutable formula that actually runs over the metric table — that substitutability
+    check is the trigger, so the gate needed no flag of its own."""
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
     if not (label and metric_table):
@@ -3196,12 +3185,6 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
     the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
     Deterministic; fail-open on every uncertainty."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("deep_analysis.clarify_gate"):
-            return None
-    except Exception:
-        return None
     parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
@@ -4818,9 +4801,10 @@ def _premise_direction(question: str) -> "Optional[str]":
 
 
 def _premise_enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("deep_analysis.premise_check")
+    """Always on. Kept as a named predicate rather than inlined `True` because the call
+    sites read as a decision ("run the premise check here?") and several tests patch it
+    to exercise the skip path without needing a flag."""
+    return True
 
 
 def _causal_drill_enabled() -> bool:
@@ -7127,13 +7111,13 @@ def ada_synthesize(state: AgentState) -> dict:
     # T4-3 / P5: confidence-tiered adversarial verification. Spend ONE skeptic LLM call
     # to try to REFUTE a DECISION-CHANGING verdict (a premise rejection or an abstention) before
     # shipping — the few high-stakes conclusions, never per finding. A surviving refutation records the
-    # objection and caps a HIGH confidence to MEDIUM. One materiality-gated tier
-    # (`ada.adversarial_high_stakes`, auto-eligible): only a HIGH-confidence decision-changing verdict,
-    # where being wrong is costly and the cap bites. (The always-challenge full tier was deleted
-    # 2026-07-31 — flag strategy §4G.)
-    from aughor.kernel.flags import flag_enabled as _flag_enabled
-    _adv_high_stakes = _flag_enabled("deep_analysis.adversarial_high_stakes")
-    if synth and _adv_high_stakes:
+    # objection and caps a HIGH confidence to MEDIUM. ONE materiality-gated tier: only a
+    # HIGH-confidence decision-changing verdict, where being wrong is costly and the cap
+    # bites. That materiality test is the gate — a flag on top of it only ever answered a
+    # question the trigger had already answered. (The always-challenge full tier was
+    # deleted 2026-07-31 — flag strategy §4G.)
+    _adv_high_stakes = True
+    if synth:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
             if is_decision_changing_verdict(synth.headline, synth.executive_summary) \

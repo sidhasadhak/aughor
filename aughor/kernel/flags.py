@@ -73,22 +73,14 @@ FLAG_ENV = {
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
     "semantic.contract_live": "AUGHOR_SEMANTIC_CONTRACT_LIVE",
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
-    "deep_analysis.premise_check": "AUGHOR_PREMISE_CHECK",
     "deep_analysis.causal_drill": "AUGHOR_CAUSAL_DRILL",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
-    "deep_analysis.adversarial_high_stakes": "AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES",
-    "deep_analysis.pin_canonical_metric": "AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC",
-    "deep_analysis.clarify_gate": "AUGHOR_CLARIFY_GATE",
-    "ask.resolve_first": "AUGHOR_ASK_RESOLVE_FIRST",
-    "ask.conversation_context": "AUGHOR_ASK_CONVERSATION_CONTEXT",
     "closed_loop": "AUGHOR_CLOSED_LOOP",
     "consistency.divergence": "AUGHOR_CONSISTENCY_DIVERGENCE",  # Wave N1: same question, two answers
-    "semops.guarded_extract": "AUGHOR_GUARDED_EXTRACT",
-    "join.key_reconciliation": "AUGHOR_JOIN_KEY_RECONCILIATION",
     "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.remote_join": "AUGHOR_FEDERATION_REMOTE_JOIN",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
@@ -97,7 +89,6 @@ FLAG_ENV = {
     # adopt-or-kill question. One brain, one answer path — the benchmarking arc measured
     # the lean path plus deterministic guards winning. /query/plan-run, /query/plan-answer,
     # program_planner.py, the trusted-programs store and the /ask auto-route hook all went.
-    "capability.contract": "AUGHOR_CAPABILITY_CONTRACT",
     # "obs.mlflow" (AUGHOR_OBS_MLFLOW) was DELETED 2026-07-31 (flag strategy §4C):
     # MLflow tracing now self-gates on AUGHOR_MLFLOW_TRACKING_URI being set, like the
     # other env-configured observability backends — a flag that is a no-op without an
@@ -115,7 +106,6 @@ FLAG_ENV = {
     # forbade graduation without the A/B that was never bought. Its lossless sibling
     # (evidence_dedup) carries the whole win.
     "evals.experiments": "AUGHOR_EVALS_EXPERIMENTS",
-    "ask.overview": "AUGHOR_ASK_OVERVIEW",
     "agents.user_defined": "AUGHOR_USER_AGENTS",
     # "search.rrf" (AUGHOR_SEARCH_RRF) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): the RRF fusion was MEASURED worse than the α-blend default on the
@@ -126,8 +116,23 @@ FLAG_ENV = {
     # worktree-flag-experiment-queue) — naming the commit rather than only the deletion
     # is what keeps a settled decision re-checkable by somebody who doubts it later.
     # hybrid_rerank now α-blends unconditionally.
+    # DELETED 2026-08-04 (flag endgame Wave 3) — the ten AUTO_ELIGIBLE self-gating
+    # guards, now unconditional. Each was redundant with its own trigger; the
+    # AUTO_ELIGIBLE tombstone carries the reasoning. Retired variables:
+    #   deep_analysis.premise_check  (AUGHOR_PREMISE_CHECK)
+    #   deep_analysis.clarify_gate  (AUGHOR_CLARIFY_GATE)
+    #   deep_analysis.adversarial_high_stakes  (AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES)
+    #   deep_analysis.pin_canonical_metric  (AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC)
+    #   join.key_reconciliation  (AUGHOR_JOIN_KEY_RECONCILIATION)
+    #   capability.contract  (AUGHOR_CAPABILITY_CONTRACT)
+    #   semops.guarded_extract  (AUGHOR_GUARDED_EXTRACT)
+    #   ask.resolve_first  (AUGHOR_ASK_RESOLVE_FIRST)
+    #   ask.overview  (AUGHOR_ASK_OVERVIEW)
+    #   ask.conversation_context  (AUGHOR_ASK_CONVERSATION_CONTEXT)
     "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
-    "capabilities.auto": "AUGHOR_CAPABILITIES_AUTO",
+    # "capabilities.auto" (AUGHOR_CAPABILITIES_AUTO) was DELETED 2026-08-04 (flag endgame
+    # Wave 3): it was a master switch over the ten AUTO_ELIGIBLE guards, and those are
+    # unconditional now, so it governed nothing. See the AUTO_ELIGIBLE tombstone.
     "monitors.guarded": "AUGHOR_MONITORS_GUARDED",
     "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
     "ops.metered_monitors": "AUGHOR_METERED_MONITORS",
@@ -156,17 +161,19 @@ FLAG_ENV = {
 #: Retired flag name → its current name. Old names keep working; they never re-register
 #: in FLAG_ENV (the ratchet asserts this, so a rename cannot be quietly reverted).
 RENAMED: dict[str, str] = {
+    # Four `ada.*` aliases left this map 2026-08-04: their targets
+    # (deep_analysis.{premise_check, clarify_gate, adversarial_high_stakes,
+    # pin_canonical_metric}) were DELETED by flag endgame Wave 3, and an alias to a
+    # flag that no longer exists resolves to nothing — it would raise UnknownFlagError
+    # for an operator whose .env still names it, which is worse than the rename it was
+    # written to smooth. A retired name is only useful while its target lives.
     # Wave W: the `ada.*` family. "ADA" expanded, in its own docstring, to words it does
     # not spell; the feature is "deep analysis" everywhere a human reads it. Call sites
     # may keep passing the old name indefinitely — `_canonical` resolves it.
-    "ada.adversarial_high_stakes": "deep_analysis.adversarial_high_stakes",
     "ada.causal_drill": "deep_analysis.causal_drill",
-    "ada.clarify_gate": "deep_analysis.clarify_gate",
     "ada.parallel_lenses": "deep_analysis.parallel_lenses",
     "ada.parallel_phases": "deep_analysis.parallel_phases",
     "ada.parallel_why_lenses": "deep_analysis.parallel_why_lenses",
-    "ada.pin_canonical_metric": "deep_analysis.pin_canonical_metric",
-    "ada.premise_check": "deep_analysis.premise_check",
     "ada.why_deepen": "deep_analysis.why_deepen",
     "ada.why_where_interaction": "deep_analysis.why_where_interaction",
 }
@@ -177,11 +184,9 @@ RETIRED_ENV: dict[str, str] = {
     # Wave W: `AUGHOR_ADA_*` → `AUGHOR_DEEP_ANALYSIS_*`. An operator's existing .env keeps
     # opting in. (The three `ada.*` flags whose env var never said ADA — PREMISE_CHECK,
     # CAUSAL_DRILL, CLARIFY_GATE — kept their variable and need no entry.)
-    "AUGHOR_ADA_ADVERSARIAL_HIGH_STAKES": "deep_analysis.adversarial_high_stakes",
     "AUGHOR_ADA_PARALLEL_LENSES": "deep_analysis.parallel_lenses",
     "AUGHOR_ADA_PARALLEL_PHASES": "deep_analysis.parallel_phases",
     "AUGHOR_ADA_PARALLEL_WHY_LENSES": "deep_analysis.parallel_why_lenses",
-    "AUGHOR_ADA_PIN_CANONICAL_METRIC": "deep_analysis.pin_canonical_metric",
     "AUGHOR_ADA_WHY_DEEPEN": "deep_analysis.why_deepen",
     "AUGHOR_ADA_WHY_WHERE_INTERACTION": "deep_analysis.why_where_interaction",
 }
@@ -224,7 +229,7 @@ FLAG_DEFAULT = {
     # decides per run; the operator can still force any flag off (env =0 / runtime override) — an
     # explicit setting always wins over these defaults. This is E3 Phase 1 ("the flag system should
     # decide, with receipts") made the default posture instead of an opt-in.
-    "capabilities.auto": True,     # master: self-gating guards elevate; their triggers gate per run
+    # "capabilities.auto" left this set 2026-08-04 with the tier it mastered (Wave 3).
     # (The 2026-07-22 flag-drift audit's Batch 1 — intake.loss_signals ·
     # report.argument_style · chart.exhibit_grammar · lens.decision_grade — lived here
     # until Wave 2d hardwired all four. The lesson that outlived them is the one that
@@ -440,17 +445,9 @@ FLAG_META = {
         "label": "Adopt monitors and briefings onto the automation engine",
         "description": "Run every enabled Monitor and Briefing subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor and briefing schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a briefing (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors and briefings. No data migration either way; flipping it off restores the legacy path.",
     },
-    "ask.overview": {
-        "label": "Interesting-facts overview tour (the default first-look)",
-        "description": "Answer the widest-possible question — \"show me interesting facts about this schema\" / \"tell me about this data\" — as a first-look tour rather than a deep analysis of one metric: a DETERMINISTIC profile of the whole dataset ranked by notability and capped for diversity. Seven lenses (scale · concentration · outlier · distribution · composition · coverage · relationship) each run a cheap grounded probe (mostly one SUMMARIZE per table, no LLM), then a diverse top-N is selected so the tour spans many tables and fact types. Fires ONLY on an overview-phrased question with no metric/entity/time window named; graduated to Auto (on by default via `capabilities.auto`) because it is bounded and deterministic. An explicit env `=0` disables it.",
-    },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
-    },
-    "capabilities.auto": {
-        "label": "Capabilities Auto-mode (self-gating guards decide per run)",
-        "description": "Master switch for Auto-mode: with it on, each SELF-GATING capability (a deterministic guard that already only fires on a runtime trigger — premise-check, clarify gate, high-stakes adversarial verify, join key-reconciliation, capability-contract repair, guarded extract) is ENABLED unless the operator explicitly turned it off, and its own trigger decides per run — so you turn on the smart guards with one switch instead of flipping each. An explicit per-capability On/Off always wins; cost-dangerous flags (federation, champion-validate) are NOT auto-eligible. Off by default = byte-identical. Wave 1 · E3 of the combined platform study.",
     },
     "ops.metered_monitors": {
         "label": "Meter background monitors and briefings through the kernel",
@@ -520,33 +517,9 @@ FLAG_META = {
         "label": "Capability plane answer path",
         "description": "Enable the end-to-end Capability-plane answer path (/query/capability-answer): a data question runs generate → validate (trust.verify) → execute → interpret through the one CapabilityPipeline template. Forced off (AL-02 live migration). Default-ON since flag strategy batch C (2026-07-31, receipt `0dd2b45930c7`); force off with AUGHOR_CAPABILITY_PIPELINE_LIVE=0 or a runtime override.",
     },
-    "deep_analysis.premise_check": {
-        "label": "Premise validation",
-        "description": "A 'why is X so high/low' deep analysis validates the premise (subject vs overall/peers) BEFORE explaining it — questioning the question itself instead of assuming it. Adds one comparison query per qualifying run. Off by default.",
-    },
     "deep_analysis.causal_drill": {
         "label": "Causal-dimension priority + WHERE→WHY drill",
         "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel deep-analysis lenses' is on, which lands the same idea in-lens). Off by default.",
-    },
-    "deep_analysis.adversarial_high_stakes": {
-        "label": "Adversarial verify — high-stakes only",
-        "description": "The materiality-gated tier of adversarial verification: challenge a decision-changing verdict (premise rejection / abstention) with one skeptic LLM call ONLY when it is asserted with HIGH confidence — the costly-if-wrong minority, and the only case where the HIGH→MEDIUM confidence cap can bite. Lets the refuter earn a place on the default path without paying an LLM call on the many MEDIUM/LOW verdicts. The always-challenge full tier (`deep_analysis.adversarial_verify`) was deleted 2026-07-31 (flag strategy §4G) — this is the one refuter gate.",
-    },
-    "deep_analysis.pin_canonical_metric": {
-        "label": "Pin the governed metric at deep-analysis intake",
-        "description": "When a deep analysis parses a metric the connection already GOVERNS (curated catalog / north-star / verified ontology), pin the intake's formula to the governed one so the cross-section scan decomposes on a stable, canonical definition instead of a run-varying LLM guess (the count-vs-value 'refund rate' class that left the breakdown un-decomposable → 'cause remains unidentified'). Deterministic, fail-open: only replaces the LLM formula when a governed metric matches the label, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over the metric table. Off by default = byte-identical.",
-    },
-    "deep_analysis.clarify_gate": {
-        "label": "Interactive metric-ambiguity clarify (deep analysis)",
-        "description": "When a deep analysis finds that a metric's GOVERNED reading and the LLM's parsed reading both run but give materially different numbers (the count-vs-value 'refund rate' class), PAUSE before the scan and ask the user which reading they meant — instead of silently choosing one. The choice binds the metric for the run and is crystallized to the Ambiguity Ledger (source=user), so the same question never re-asks on that connection. Mirrors the plan-gate interrupt/resume. Off by default; asks at most once per run, only on a real divergence.",
-    },
-    "ask.resolve_first": {
-        "label": "Ground-first answer resolution",
-        "description": "Before the model writes SQL, decide ONCE and deterministically whether the question is answerable as asked: resolve the named entity against the data (bind the real value, or — if a bounded existence probe confirms it is absent — abstain honestly with what IS present, instead of running an empty filter and narrating around the emptiness), and reconcile the requested time grain against the finest grain the measure's table supports. The single verdict is handed to the generator as hard constraints (so it can't silently downgrade grain or guess a value) and drives one coherent caveat, replacing several post-hoc guards that each re-decide the same thing. Off by default = byte-identical (no resolution runs). The ground-first direction from the 2026-07-13 design discussion.",
-    },
-    "ask.conversation_context": {
-        "label": "Conversation-aware resolution (follow-ups inherit context)",
-        "description": "Make the ground-first resolver (ask.resolve_first) conversation-aware so a follow-up doesn't lose the prior turn's grounding — including across a mode switch. When THIS turn is a follow-up (is_followup) it inherits the previous turn's entity/filter (so 'break that down by platform' keeps the earlier 'womenswear' filter), and the resolver never DEAD-ENDS a follow-up with a terminal 'not present in this data' — an entity implicit from the conversation is left to the already history-aware generator instead of a hard abstention. Only affects follow-ups; a fresh question resolves exactly as before. Requires ask.resolve_first. AUTO-ELIGIBLE since flag strategy batch B (2026-07-31): both call sites are guarded by the deterministic is_followup detector, so under Auto-mode the trigger decides per turn; an explicit On/Off always wins.",
     },
     "closed_loop": {
         "label": "Closed-loop corrections",
@@ -555,14 +528,6 @@ FLAG_META = {
     "consistency.divergence": {
         "label": "Answer-consistency review (same question, two answers)",
         "description": "Surface recurring questions this connection has answered more than one way, so a human can settle which query is correct — and then the existing verified-pattern machinery reuses it. Detection is deterministic and read-only over answer receipts the platform already stores: no LLM, no writes, and cosmetic differences (schema qualification, alias renames, ROUND) are normalised away so only a real difference in what the query COMPUTES is reported. Ranked by whether a variant RECURS, which separates a routine metric with an established answer and a challenger — a decision worth taking — from an open question being explored from new angles, where variety is the point. An optional second stage EXECUTES the variants read-only and reports whether the answers actually differ and by how much; on the reference connection that narrowed 34 textually-contested questions to 12 genuinely divergent ones, the largest pair differing by 1.84M on a revenue question because one variant counted cancelled and test orders and the other did not. The platform never picks the winner: whether a cancelled order is revenue is a business fact, and promoting the most-used variant would launder popularity into correctness — a person pins the answer and it is tagged as human-reviewed, a stronger warrant than the consistency one an eval-promoted entry carries. Default-ON since flag strategy batch A (2026-07-31, receipt `2574532bcbde` — read-only routes, nothing on the answer path); force off with AUGHOR_CONSISTENCY_DIVERGENCE=0 or a runtime override, which returns the routes to 404.",
-    },
-    "semops.guarded_extract": {
-        "label": "Guarded extraction (validate + re-extract)",
-        "description": "When the semantic extract operator pulls a typed value (year/date/email/number) out of free text, validate each value against its type and re-extract the off-type cells with targeted feedback (a bounded gleaning loop). Off-type values are surfaced and kept, never dropped. Adds a re-extract LLM call only when a typed field fails validation. Off by default — turns text extraction from regex-fragile into a guarded, self-correcting step.",
-    },
-    "join.key_reconciliation": {
-        "label": "Ill-formatted join-key reconciliation",
-        "description": "When a join's two keys have low value overlap, try deterministic normalizations (trim/case, digits-only, strip prefix, strip leading zeros) and, if one lifts overlap over a bar, surface the exact expression to join on — distinguishing 'same entity, different format' (bid_123 vs bref_123) from genuinely different entities. Only runs when a value-domain mismatch already fired (rare); deterministic, fail-open, no LLM. Off by default = byte-identical (the mismatch warning is unchanged).",
     },
     "semops.champion_validate": {
         "label": "Champion cascade on semantic filter",
@@ -575,10 +540,6 @@ FLAG_META = {
     "federation.planner": {
         "label": "Cross-source federated planner",
         "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation. ⚠️ NOT purely invocation-gated: with the flag on, a fresh /ask turn at auto depth may AUTO-FEDERATE (see _federation_eligible) — an LLM-bearing routing change, which is why this stays an EXPERIMENT (flag strategy batch B premise check) until that delta is measured.",
-    },
-    "capability.contract": {
-        "label": "Connector-capability contract",
-        "description": "When a generated query FAILS on a native-SQL warehouse (BigQuery/Snowflake/MySQL), name the exact unsupported construct (QUALIFY/ILIKE/SAFE_DIVIDE/DATE_TRUNC/…) in the SQL-repair prompt so the regeneration fixes it precisely instead of another blind dry-run. A deterministic per-dialect capability descriptor + AST check; advisory (enriches the existing repair loop only), no LLM. Off by default = no extra hint. Rec 6 of the external-sources study.",
     },
     "agents.user_defined": {
         "label": "Custom agents (your own instructions + documents)",
@@ -593,23 +554,21 @@ FLAG_META = {
 # trigger then gates it per run) — the operator turns on the smart guards with one switch instead of
 # flipping each. Cost-dangerous flags (federation.*, semops.champion_validate) are deliberately
 # NOT here: running them automatically would be expensive, so they stay manual.
-AUTO_ELIGIBLE: frozenset = frozenset({
-    "deep_analysis.premise_check", "deep_analysis.clarify_gate", "deep_analysis.adversarial_high_stakes",
-    "join.key_reconciliation", "capability.contract", "semops.guarded_extract",
-    # Graduated 2026-07-13 (agentic-platform unification): both are deterministic and fail-open —
-    # resolve() degrades to `answerable` when nothing binds; metric pinning requires a governed
-    # metric match AND a clean dry-run before it does anything.
-    "ask.resolve_first", "deep_analysis.pin_canonical_metric",
-    # Graduated 2026-07-14: the "interesting facts about this schema" tour is fully
-    # deterministic (no LLM), bounded, and fires ONLY on a metric/entity/time-free
-    # overview-phrased question — the great default first-look, on by default.
-    "ask.overview",
-    # Converted 2026-07-31 (flag strategy batch B): both call sites are guarded by
-    # `is_followup(question)` — a deterministic detector — so a fresh question is
-    # byte-identical by construction and only a follow-up turn can differ. Requires
-    # ask.resolve_first, which is already auto.
-    "ask.conversation_context",
-})
+AUTO_ELIGIBLE: frozenset = frozenset()
+# DISSOLVED 2026-08-04 (flag endgame Wave 3). The ten self-gating guards that lived here
+# — deep_analysis.{premise_check, clarify_gate, adversarial_high_stakes,
+# pin_canonical_metric} · join.key_reconciliation · capability.contract ·
+# semops.guarded_extract · ask.{resolve_first, overview, conversation_context} — are now
+# UNCONDITIONAL, because their triggers were always the real gate: an is_followup()
+# detector, a governed-metric match that must dry-run clean, a decision-changing
+# materiality test, a failing repair path. A flag on top of a deterministic trigger only
+# ever re-answers a question the trigger has already answered, and it does so from a
+# different source of truth (an env var) than the one that decides (the data).
+#
+# The set stays declared and EMPTY rather than deleted: `flag_disposition` and the
+# disposition ratchet both still reference it, and an empty set makes the elevation
+# branch inert by construction — which is what lets the ratchet keep proving that no new
+# flag quietly rejoins this tier.
 # Human description of each capability's deterministic trigger — surfaced in the flags API and (later) as
 # the "why" on an activation receipt.
 CAPABILITY_TRIGGER: dict = {
@@ -729,14 +688,6 @@ def flag_disposition(name: str) -> str:
     return "undispositioned"   # the ratchet test fails on this
 
 
-def _auto_mode_active() -> bool:
-    """Whether the master Capabilities Auto-mode switch is on (default-off → byte-identical).
-
-    Safe from recursion: `capabilities.auto` is not itself auto-eligible, so resolving it never re-enters
-    the Auto-mode elevation branch below."""
-    return flag_enabled("capabilities.auto")
-
-
 def _env_resolved(name: str) -> bool:
     """Env-var value with the flag's default semantics.
 
@@ -757,10 +708,6 @@ def _env_resolved(name: str) -> bool:
                     break
     if raw is None:
         if FLAG_DEFAULT.get(name, False):
-            return True
-        # Capabilities Auto-mode: an unset auto-eligible guard is enabled (its own trigger then decides)
-        # when the master switch is on. The master defaults off, so this is byte-identical to before.
-        if name in AUTO_ELIGIBLE and _auto_mode_active():
             return True
         return False
     if FLAG_DEFAULT.get(name, False):
@@ -895,11 +842,12 @@ def flag_enabled(name: str) -> bool:
 
 
 def flag_state(name: str) -> str:
-    """Tri-state view for the Capabilities UI: ``"on"`` | ``"off"`` | ``"auto"``.
+    """The Capabilities UI's view of a flag: ``"on"`` or ``"off"``.
 
-    ``"auto"`` means the capability is enabled ONLY because the master Auto-mode elevated this self-gating
-    guard (its deterministic trigger decides per run) — an explicit operator On/Off always resolves to
-    ``"on"``/``"off"``. A display refinement over ``flag_enabled`` (which is True for both on and auto)."""
+    Was tri-state until Wave 3 dissolved Auto-mode. ``"auto"`` meant "enabled only because
+    the master switch elevated this self-gating guard"; those guards are unconditional
+    now, so the third state has nothing left to describe. The signature is unchanged, so
+    every caller keeps working — it simply never returns ``"auto"``."""
     name = _canonical(name)
     run = _run_overrides.get()
     if run is not None and name in run:
@@ -911,8 +859,6 @@ def flag_state(name: str) -> str:
         return "on" if _env_resolved(name) else "off"
     if FLAG_DEFAULT.get(name, False):
         return "on"
-    if name in AUTO_ELIGIBLE and _auto_mode_active():
-        return "auto"
     return "off"
 
 
@@ -956,6 +902,8 @@ def list_flags() -> dict:
                      else bool(ov) if ov is not None else _env_resolved(name),
             "state": flag_state(name),
             "override": ov,                       # None (no override) | True | False — the UI's tri-state setting
+            # Always False since Wave 3 dissolved the tier. Kept in the payload so an
+            # older client reading this field still parses; it has no live producer.
             "auto_eligible": name in AUTO_ELIGIBLE,
             **({"trigger": CAPABILITY_TRIGGER[name]} if name in CAPABILITY_TRIGGER else {}),
             # "env" used to be the catch-all tail, so a flag that was on purely because of

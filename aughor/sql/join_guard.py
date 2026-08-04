@@ -354,9 +354,7 @@ def check_join_value_domains(
                 raw = max(overlaps)
                 recon = None
                 try:
-                    from aughor.kernel.flags import flag_enabled
-                    if flag_enabled("join.key_reconciliation"):
-                        recon = reconcile_join_keys(conn, t_a, c_a, t_b, c_b, raw)
+                    recon = reconcile_join_keys(conn, t_a, c_a, t_b, c_b, raw)
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(exc, "join_guard: reconciliation skipped — mismatch still surfaced",

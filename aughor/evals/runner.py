@@ -133,8 +133,14 @@ def _run_config() -> dict:
                  counter="evals.config.model")
     try:
         from aughor.kernel.flags import flag_enabled
+        # Snapshot the flags an eval's comparability actually depends on. The two named
+        # here before (`ask.resolve_first`, `capabilities.auto`) were deleted by flag
+        # endgame Wave 3 — resolution now runs unconditionally, so there is nothing to
+        # record about it. `closed_loop` and `graph.readback` are the live experiments
+        # that change what the planner is shown, which is what makes two runs
+        # incomparable if they differ.
         cfg["flags"] = {name: flag_enabled(name) for name in
-                        ("ask.resolve_first", "capabilities.auto")}
+                        ("closed_loop", "graph.readback")}
     except Exception as exc:
         tolerate(exc, "eval run config: flag snapshot unavailable",
                  counter="evals.config.flags")

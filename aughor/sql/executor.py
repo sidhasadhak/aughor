@@ -152,7 +152,6 @@ def execute_guarded(
     if schema:
         sql = preflight_harden(conn, sql, schema, counter_prefix="ada.exec")
 
-    from aughor.kernel.flags import flag_enabled
     # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
     # generation path never ran (the connection layer is already fail-closed, so this is
@@ -320,23 +319,23 @@ def execute_guarded(
 
             # Rec 6 — capability contract: when a native-dialect query FAILED, name the exact construct the
             # target dialect can't run (QUALIFY/ILIKE/SAFE_DIVIDE/…) so the regenerate targets it precisely,
-            # instead of another blind dry-run. Deterministic, flag-gated (default off = no extra hint), and
-            # only inside this already-failing repair path. Permissive for transpile-from-DuckDB dialects.
-            if flag_enabled("capability.contract"):
-                try:
-                    from aughor.sql.capability_check import capability_diagnostics
-                    _cap_dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
-                    _caps = capability_diagnostics(sql, _cap_dialect)
-                    if _caps:
-                        from aughor.kernel import metering
-                        metering.record_activation("capability.contract")   # Activation Receipt (Wave 1·E3)
-                        _cap_text = "\n".join(f"- {c}" for c in _caps)
-                        _diag = ((f"{_diag}\n" if _diag else "DIAGNOSIS:\n")
-                                 + f"UNSUPPORTED CONSTRUCTS (rewrite these for {_cap_dialect}):\n{_cap_text}\n")
-                except Exception as _cap_exc:
-                    from aughor.kernel.errors import tolerate
-                    tolerate(_cap_exc, "capability diagnostics are advisory; the fix loop proceeds",
-                             counter="capability.contract")
+            # instead of another blind dry-run. Deterministic and confined to this
+            # already-failing repair path, so it costs nothing on a healthy query.
+            # Permissive for transpile-from-DuckDB dialects.
+            try:
+                from aughor.sql.capability_check import capability_diagnostics
+                _cap_dialect = conn.dialect if getattr(conn, "writes_native_sql", False) else "duckdb"
+                _caps = capability_diagnostics(sql, _cap_dialect)
+                if _caps:
+                    from aughor.kernel import metering
+                    metering.record_activation("capability.contract")   # Activation Receipt (Wave 1·E3)
+                    _cap_text = "\n".join(f"- {c}" for c in _caps)
+                    _diag = ((f"{_diag}\n" if _diag else "DIAGNOSIS:\n")
+                             + f"UNSUPPORTED CONSTRUCTS (rewrite these for {_cap_dialect}):\n{_cap_text}\n")
+            except Exception as _cap_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_cap_exc, "capability diagnostics are advisory; the fix loop proceeds",
+                         counter="capability.contract")
 
             # Synthesise a fake "error" message so FIX_SQL_PROMPT has something
             # useful in the ERROR MESSAGE field when there was no hard error.

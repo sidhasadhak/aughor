@@ -53,15 +53,21 @@ def test_batch_b_behaviour_is_unconditional_or_still_default_on():
             assert flag not in FLAG_DEFAULT, f"{flag} is hardwired; it must not linger"
 
 
-def test_the_conversion_landed_as_auto_not_default_on():
-    """ask.conversation_context converted to a self-gating guard — its trigger decides
-    per turn under Auto-mode; it must NOT be in FLAG_DEFAULT (that would bypass the
-    trigger discipline the conversion exists for)."""
-    from aughor.kernel.flags import AUTO_ELIGIBLE, CAPABILITY_TRIGGER, FLAG_DEFAULT
+def test_the_conversion_ended_in_an_unconditional_trigger():
+    """Batch B converted ask.conversation_context from a toggle into a self-gating guard,
+    on the finding that both call sites were already gated by `is_followup(question)`.
+    Wave 3 finished the move: the flag is gone and the detector alone decides.
 
-    assert "ask.conversation_context" in AUTO_ELIGIBLE
-    assert "ask.conversation_context" in CAPABILITY_TRIGGER
+    The receipt's claim is what is pinned here — that the TRIGGER survived the flag. Its
+    description stays in CAPABILITY_TRIGGER because the Activation Receipt still reports
+    why the capability fired, which has nothing to do with whether a flag gated it."""
+    from aughor.kernel.flags import AUTO_ELIGIBLE, CAPABILITY_TRIGGER, FLAG_DEFAULT, FLAG_ENV
+
+    assert "ask.conversation_context" not in FLAG_ENV
     assert "ask.conversation_context" not in FLAG_DEFAULT
+    assert AUTO_ELIGIBLE == frozenset()
+    assert CAPABILITY_TRIGGER.get("ask.conversation_context"), \
+        "the trigger description outlives the flag — the receipt still names why it fired"
 
 
 def test_federation_planner_stays_an_experiment():

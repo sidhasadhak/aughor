@@ -1589,22 +1589,20 @@ async def _stream_chat(
         # BEFORE anything model-shaped runs. This sits ABOVE the semantic compiler
         # and the ambiguity probe deliberately: both spend an LLM call parsing/probing
         # the question, which is wasted work (cost + latency) when the verdict is
-        # an honest abstention. Off → `_resolution` stays None → byte-identical.
+        # an honest abstention. Best-effort: a resolver failure leaves `_resolution`
+        # None and the answer proceeds ungrounded rather than not at all.
         _resolution = None
         try:
-            from aughor.kernel.flags import flag_enabled as _rf_flag
-            if _rf_flag("ask.resolve_first"):
-                from aughor.semantic.answer_resolution import resolve as _resolve_answer
-                # Conversation-aware (flag ask.conversation_context): a follow-up inherits the
-                # prior turn's entity/filter so a mode switch or a "break that down" doesn't lose
-                # the earlier grounding. Empty for a fresh question → single-turn behaviour.
-                _prior_ctx = (_prior_turn_context(history)
-                              if _rf_flag("ask.conversation_context") and is_followup(question)
-                              else "")
-                _resolution = _resolve_answer(question, schema=_full_schema, db=db,
-                                              connection_id=connection_id,
-                                              eff_schema=canvas_scope_eff_schema,
-                                              prior_context=_prior_ctx)
+            from aughor.semantic.answer_resolution import resolve as _resolve_answer
+            # Conversation-aware: a follow-up inherits the prior turn's entity/filter so a
+            # mode switch or a "break that down" doesn't lose the earlier grounding. Empty
+            # for a fresh question, which is what makes this single-turn-safe — the
+            # follow-up test is the gate, not a flag.
+            _prior_ctx = _prior_turn_context(history) if is_followup(question) else ""
+            _resolution = _resolve_answer(question, schema=_full_schema, db=db,
+                                          connection_id=connection_id,
+                                          eff_schema=canvas_scope_eff_schema,
+                                          prior_context=_prior_ctx)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ground-first resolution is best-effort; answering without it",
@@ -1615,8 +1613,7 @@ async def _stream_chat(
         # the emptiness (the "Mytheresa isn't a franchise here" case). But NEVER dead-end a
         # FOLLOW-UP when conversation-context is on — the entity/reference may be implicit from
         # the conversation, so let the history-aware generator answer instead of a terminal stop.
-        from aughor.kernel.flags import flag_enabled as _cc_flag
-        _abstain_ok = not (_cc_flag("ask.conversation_context") and is_followup(question))
+        _abstain_ok = not is_followup(question)
         if _resolution is not None and _resolution.feasibility == "not_answerable" and _abstain_ok:
             _abstain = _resolution.caveat
             yield _sse("mode", {"query_mode": "final_text"})
@@ -2743,9 +2740,7 @@ async def _stream_investigation(
         # (before the expensive fan-out) so the user can review/edit the sub-question
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
-        from aughor.kernel.flags import flag_enabled as _flag_enabled
-        _clarify_gate = _flag_enabled("deep_analysis.clarify_gate")
-        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
+        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=True)
 
         # ONE structured origin finding — the single source of truth for "what known
         # result is this investigation drilling" (insight_id dossier, or an inline
@@ -3415,7 +3410,6 @@ async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
     then the merged table using the same primitives the quick path uses (columns/rows/headline/sql/
     tables_used), so it renders in the existing answer surface."""
     from aughor.agent.federated_planner import answer_federated
-    from aughor.kernel.flags import flag_enabled
 
     names = _conn_names(sel.conn_ids)
     yield _sse("route", {
@@ -3429,7 +3423,7 @@ async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
     # between selection and execution) could still raise on open — never let that break the /ask stream.
     try:
         ans = await asyncio.to_thread(
-            answer_federated, question, sel.conn_ids, reconcile=flag_enabled("join.key_reconciliation"),
+            answer_federated, question, sel.conn_ids, reconcile=True,
         )
         r = ans.result
     except Exception as exc:  # noqa: BLE001 — the stream must always end cleanly
@@ -3488,10 +3482,10 @@ def _is_overview_question(question: str) -> bool:
 def _overview_eligible(req) -> bool:
     """Whether a ``/ask`` turn is a widest-scope overview ask. A fresh auto turn (may be
     in a canvas — that's the schema scope) whose phrasing asks for an overview and names
-    no metric/entity/time window. Flag-gated on ``ask.overview`` (graduated to Auto)."""
-    from aughor.kernel.flags import flag_enabled
+    no metric/entity/time window. Self-gating: the four request predicates below plus
+    the question shape ARE the trigger, which is why it needed no flag of its own."""
     return bool(
-        flag_enabled("ask.overview") and req.depth == "auto"
+        req.depth == "auto"
         and not req.escalate and not req.insight_id and not req.history and not req.skip_clarify
         and _is_overview_question(req.question)
     )

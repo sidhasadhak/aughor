@@ -145,10 +145,15 @@ def test_bad_sql_is_fail_open():
 
 
 def test_caps_at_max_probes(monkeypatch):
-    """Guard probes at most 4 join conditions, not unbounded."""
-    # Pin reconciliation off: it is auto-elevated by default (2026-07-13 graduation) and
-    # its transform probes would ride on top of the base probe budget under test here.
-    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "0")
+    """Guard probes at most 4 join conditions, not unbounded.
+
+    The budget is now stated WITH the reconciliation multiplier rather than with
+    reconciliation pinned off. Wave 3 made key reconciliation unconditional — it was
+    already auto-elevated in production, so nothing changed except that this test could
+    no longer hide the cost. Worst case per probed condition: 2 base probes plus
+    `len(_KEY_TRANSFORMS) × 2` transform probes, and reconciliation early-returns on the
+    first transform that lifts overlap, so a healthy corpus pays far less.
+    """
     conn = _mock_conn(matched=0, total=100)  # all mismatches to maximise probe count
     sql = """
     SELECT * FROM a
@@ -159,8 +164,15 @@ def test_caps_at_max_probes(monkeypatch):
     JOIN f ON e.f_id = f.id
     """
     check_join_value_domains(conn, sql)
-    # At most 4 join CONDITIONS probed (_MAX_PROBES = 4), each in 2 directions → ≤8 calls
-    assert conn.execute.call_count <= 8
+    # At most 4 join CONDITIONS probed (_MAX_PROBES = 4). Each costs 2 base probes, and
+    # every one that fails to overlap costs up to len(_KEY_TRANSFORMS) × 2 reconciliation
+    # probes on top. The bound is what matters — that the count is a function of the
+    # CONDITION cap and not of how many joins the query wrote.
+    from aughor.sql.join_guard import _KEY_TRANSFORMS, _MAX_PROBES
+    ceiling = _MAX_PROBES * 2 * (1 + len(_KEY_TRANSFORMS))
+    assert conn.execute.call_count <= ceiling
+    # …and materially fewer than the 6 written join conditions would cost unbounded.
+    assert conn.execute.call_count < 6 * 2 * (1 + len(_KEY_TRANSFORMS))
 
 
 # ── Real-connection regression (the mock can't catch value stringification) ──
@@ -270,18 +282,6 @@ def test_reconciliation_finds_prefix_skew(monkeypatch):
     txt = warnings[0].to_prompt_text()
     assert "reconcile" in txt.lower()
     assert "regexp_replace" in txt      # the actionable normalized-join expression
-
-
-def test_reconciliation_off_when_explicitly_disabled(monkeypatch):
-    # join.key_reconciliation is auto-elevated by default (2026-07-13 graduation);
-    # the byte-identical contract now belongs to the explicit "0" kill switch.
-    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "0")
-    conn = _real_conn_skew()
-    sql = "SELECT * FROM books b JOIN reviews r ON b.bid = r.book_ref"
-    warnings = check_join_value_domains(conn, sql)
-    assert len(warnings) == 1
-    assert warnings[0].reconciliation is None                      # flag off → no attempt
-    assert "different entities" in warnings[0].to_prompt_text()    # original message unchanged
 
 
 def test_reconciliation_absent_for_genuinely_disjoint_keys(monkeypatch):

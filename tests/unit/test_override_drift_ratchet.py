@@ -127,23 +127,32 @@ def test_override_drift_catches_a_flag_forced_against_its_default(
     assert drift == {synthetic_default_on: {"override": False, "without_override": True}}
 
 
-def test_override_drift_compares_against_auto_mode_not_flag_default(monkeypatch):
+def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch):
     """The distinction that got three flags wrong when predicted by hand.
 
-    An AUTO_ELIGIBLE flag is absent from FLAG_DEFAULT, so comparing an override against
-    `FLAG_DEFAULT.get(name, False)` calls a pinned-OFF one "not drift" — yet clearing it
-    lets Auto-mode elevate it and the value changes. The comparison must be against what
-    the flag resolves to WITHOUT the override.
+    Comparing an override against ``FLAG_DEFAULT.get(name, False)`` calls a pinned-OFF
+    flag "not drift" whenever something ELSE would have turned it on — so clearing the
+    override silently changes the value the audit just declared safe.
+
+    Auto-mode used to be that something else; Wave 3 dissolved it, so the case is built
+    here from an env var instead. That is the more durable vehicle anyway: the property
+    under test is the COMPARISON BASIS, not any one tier, and writing it against a tier
+    is what made this test die with the tier.
     """
     import aughor.kernel.flags as flags
 
-    victim = next(iter(flags.AUTO_ELIGIBLE))
+    victim = "semops.champion_validate"          # a plain default-OFF flag
     assert flags.FLAG_DEFAULT.get(victim, False) is False, "picked a flag with a real default"
 
-    monkeypatch.setattr(flags, "_auto_mode_active", lambda: True)
+    # The env turns it ON; the override pins it OFF. FLAG_DEFAULT says False and the
+    # override says False, so a naive comparison sees agreement — while clearing the
+    # override would flip this process to True.
+    monkeypatch.setenv(flags.FLAG_ENV[victim], "1")
     monkeypatch.setattr(flags, "_override",
                         lambda name: False if name == victim else None)
 
     drift = flags.override_drift()
-    assert victim in drift, "a pinned-off AUTO flag is drift — auto-mode would elevate it"
+    assert victim in drift, "a pinned-off flag the env would enable IS drift"
     assert drift[victim] == {"override": False, "without_override": True}
+
+

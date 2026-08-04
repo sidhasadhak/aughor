@@ -4176,7 +4176,9 @@ export interface SystemFlag {
   // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
   state?: CapabilityState;          // effective tri-state
   override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
-  auto_eligible?: boolean;          // a self-gating guard the master Auto-mode can run
+  /** Always false since flag endgame Wave 3 dissolved the Auto-mode tier. Retained
+   *  for payload compatibility; nothing sets it true. */
+  auto_eligible?: boolean;
   trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
   // The disposition ratchet (flag strategy §5.1) — every flag declares its kind, so the
   // Settings UI can group by it instead of rendering one flat toggle list:

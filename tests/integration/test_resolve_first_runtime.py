@@ -75,12 +75,3 @@ def test_abstains_before_generation_on_absent_entity(client: TestClient, builtin
         f"coder_prompt_head={mytheresa_prompts[0][:600] if mytheresa_prompts else ''!r}"
     )
 
-
-def test_flag_off_is_unchanged(client: TestClient, builtin_conn_id: str, monkeypatch):
-    # Flag off → resolution never runs → the coder generates as usual (byte-identical path).
-    monkeypatch.setenv("AUGHOR_ASK_RESOLVE_FIRST", "0")
-    called = {"coder": False}
-    _stub_coder(monkeypatch, called)
-
-    _stream_headline(client, builtin_conn_id, "show me sales for mytheresa")
-    assert called["coder"] is True, "flag-off must reach normal generation"
