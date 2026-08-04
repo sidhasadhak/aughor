@@ -180,12 +180,20 @@ Every deleted flag gets a tombstone comment (the registry's existing convention)
   settings section are gone. `AUTO_ELIGIBLE` stays declared and EMPTY so the disposition
   ratchet keeps proving nothing rejoins the tier; `CAPABILITY_TRIGGER` is kept because the
   Activation Receipt still reports why a capability fired, which never depended on a flag.
-  **Registry 40 → 29, zero undispositioned.** Two findings the sweep surfaced: four
-  `ada.*` aliases in `RENAMED` were left pointing at deleted flags (an alias outliving its
-  target raises `UnknownFlagError` for an operator whose `.env` still names it), and
-  `test_caps_at_max_probes` had pinned `join.key_reconciliation` OFF to isolate its probe
-  budget — so the budget it reported was fiction, and the real bound (8 → 48 worst case)
-  is now asserted with the multiplier rather than suppressed.
+  **Registry 40 → 30, zero undispositioned.**
+  ⚠️ **Nine of ten, not ten.** `deep_analysis.clarify_gate` was RESTORED (default-ON)
+  after the adversarial review: its trigger answers a DATA question ("do the two readings
+  diverge?") while the flag answers a DEPLOYMENT one ("may this run be interrupted?").
+  Unwrapped, a divergent ratio metric pauses the run and returns **with no report**, so a
+  headless consumer that never POSTs `/feedback` got a truncated run where it previously
+  got an answer. The other nine only added cost when elevated; this one blocks. **The
+  general test for the remaining waves: does the off-path merely skip work, or does the
+  on-path require a human?**
+  Also surfaced: three `ada.*` aliases in `RENAMED` outlived their deleted targets (dead
+  weight — note that a stale env var yields `False`, not `UnknownFlagError`, which comes
+  only from `flag_overrides()`), and `test_caps_at_max_probes` had pinned
+  `join.key_reconciliation` OFF to isolate its probe budget, so the budget it reported was
+  fiction — the real worst case is 48 calls, now asserted as an absolute number.
 - **Wave 4 — the two turn-ONs** (adopt_legacy + delete legacy schedulers;
   explorer.continuous).
 - **Wave 5 — experiment keeps**: hardwire the nine; federation auto-hook after its

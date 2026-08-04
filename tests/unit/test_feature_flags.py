@@ -55,7 +55,6 @@ def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
     assert "capabilities.auto" not in FLAG_ENV
 
     # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
-    monkeypatch.delenv("AUGHOR_CAPABILITIES_AUTO", raising=False)
     monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
     assert flag_enabled("semops.champion_validate") is False
     assert flag_state("semops.champion_validate") == "off"

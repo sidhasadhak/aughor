@@ -468,10 +468,16 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
 }
 
 /** Group E as one control: the four parallelism flags set together, matched to rate limits.
- *  These are backend FLAG KEYS — wire names, frozen (renaming one strands the operator's
- *  env var and persisted override; that only happens via the backend's alias layer). */
-const PERF_FLAGS = ["explore.parallel_subq", "ada.parallel_lenses", "ada.parallel_phases",
-                    "ada.parallel_why_lenses"] as const;
+ *
+ *  These must be the CANONICAL backend keys. Three of them were the retired `ada.*`
+ *  aliases, and the alias layer does not reach either side of this control: `list_flags()`
+ *  keys its response canonically, so `flags["ada.parallel_lenses"]` read `undefined` and
+ *  the profile always rendered "Conservative"; and `set_system_flag` rejects any name not
+ *  literally in `FLAG_ENV`, so three of every four writes 404'd. The control looked wired
+ *  and did nothing. */
+const PERF_FLAGS = ["explore.parallel_subq", "deep_analysis.parallel_lenses",
+                    "deep_analysis.parallel_phases",
+                    "deep_analysis.parallel_why_lenses"] as const;
 
 function PerformanceProfile({ flags, refresh }: {
   flags: Record<string, SystemFlag>; refresh: () => Promise<void>;
@@ -480,14 +486,14 @@ function PerformanceProfile({ flags, refresh }: {
   const vals = PERF_FLAGS.map(n => !!flags[n]?.value);
   const current = vals.every(v => v) ? "fast"
     : vals.every(v => !v) ? "conservative"
-    : (flags["ada.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
+    : (flags["deep_analysis.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
     : "custom";
 
   const apply = async (profile: "conservative" | "balanced" | "fast") => {
     setBusy(true);
     for (const n of PERF_FLAGS) {
       const state = profile === "fast" ? "on"
-        : profile === "balanced" && n === "ada.parallel_why_lenses" ? "on"
+        : profile === "balanced" && n === "deep_analysis.parallel_why_lenses" ? "on"
         : "auto";                                  // auto = clear the override → code default (off)
       await setCapabilityState(n, state as CapabilityState);
     }

@@ -3157,8 +3157,14 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     connection, HARD-BIND the resolved reading's SQL — so the user's choice is honored on EVERY
     subsequent run (never re-asked, and P1's silent pin can't override a 'use the parsed reading'
     choice). Returns a transparency note when it binds, else None. Fail-open: only binds a
-    substitutable formula that actually runs over the metric table — that substitutability
-    check is the trigger, so the gate needed no flag of its own."""
+    substitutable formula that actually runs over the metric table.
+
+    Flag-gated on ``deep_analysis.clarify_gate`` (default ON). The substitutability check
+    is the DATA trigger; the flag is the DEPLOYMENT posture — a headless consumer cannot
+    answer an interrupt, and this path is one that pauses the run."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("deep_analysis.clarify_gate"):
+        return None
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
     if not (label and metric_table):
@@ -3184,7 +3190,12 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     their probed previews) so the run can PAUSE and ask, instead of silently choosing one. Returns None
     (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
     the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
-    Deterministic; fail-open on every uncertainty."""
+    Deterministic; fail-open on every uncertainty. Flag-gated on
+    ``deep_analysis.clarify_gate`` (default ON) — this is the path that PAUSES the run,
+    so a headless deployment must be able to opt out of being interrupted."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("deep_analysis.clarify_gate"):
+        return None
     parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
@@ -6711,18 +6722,19 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
 
 
 # ── T4-3 / P5: tiered adversarial verification ─────────────────────────────────────────
-def _adversarial_should_run(synth, *, high_stakes: bool) -> bool:
+def _adversarial_should_run(synth) -> bool:
     """Whether the refuter should spend its ONE skeptic LLM call on this verdict. The
-    caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection / abstention).
-    ``high_stakes`` (``ada.adversarial_high_stakes``) is the deterministic materiality gate: fire
-    ONLY when the verdict is asserted with **HIGH** confidence. That's the costly-if-wrong minority
-    AND the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path place
-    without paying an LLM call on the many MEDIUM/LOW verdicts. Confidence-triggered activation.
-    (The always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
+    caller has already confirmed the verdict is DECISION-CHANGING (a premise rejection /
+    abstention); this is the deterministic materiality gate on top: fire ONLY when the
+    verdict is asserted with **HIGH** confidence. That is the costly-if-wrong minority AND
+    the only case where the HIGH→MEDIUM cap can bite — so the refuter earns a default-path
+    place without paying an LLM call on the many MEDIUM/LOW verdicts.
+
+    The ``high_stakes`` parameter went with its flag (Wave 3): the caller passed a literal
+    True, so the False arm was unreachable and the flag it named no longer existed. (The
+    always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
     strategy §4G.)"""
-    if high_stakes:
-        return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
-    return False
+    return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
 
 
 def _apply_adversarial_refutation(synth, verdict) -> None:
@@ -7112,12 +7124,11 @@ def ada_synthesize(state: AgentState) -> dict:
     # bites. That materiality test is the gate — a flag on top of it only ever answered a
     # question the trigger had already answered. (The always-challenge full tier was
     # deleted 2026-07-31 — flag strategy §4G.)
-    _adv_high_stakes = True
     if synth:
         try:
             from aughor.agent.orchestrator import is_decision_changing_verdict
             if is_decision_changing_verdict(synth.headline, synth.executive_summary) \
-                    and _adversarial_should_run(synth, high_stakes=_adv_high_stakes):
+                    and _adversarial_should_run(synth):
                 from aughor.agent.explore import run_refutation
                 _verdict = run_refutation(question, synth.headline or "", _phases_summary(phases))
                 _apply_adversarial_refutation(synth, _verdict)

@@ -45,7 +45,7 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
   human decision). So the same question class never re-ambiguates: ambiguity **burns down per connection**
   instead of re-paying a probe pipeline every question. Flag-gated (`closed_loop`); `ledger_stats` reports
   the burn-down (served-from-ledger vs freshly asked).
-- **Interactive metric clarify — pause, ask, remember** (`ada.clarify_gate`) — when a metric's GOVERNED reading and
+- **Interactive metric clarify — pause, ask, remember** (`deep_analysis.clarify_gate`, default ON) — when a metric's GOVERNED reading and
   the LLM's parsed reading both run over the metric table but give **materially different numbers** (the count-vs-value
   split — e.g. a value-weighted 27.8% vs a count-based 26.2% return rate), a deep run **pauses before the scan** and
   asks which reading you meant, showing **each reading's probed value**. It is a real interrupt/resume gate — a faithful
@@ -568,11 +568,12 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 ## 14. Human-command surface (AI-FDE-derived, flag-gated)
 
 Studied Palantir Foundry's AI FDE and adopted its *human-in-command* posture as a 7-phase program
-(all flag-gated + additive — default behaviour unchanged; see `docs/`). The close-the-loop and
-premise-validation env vars below are registered in the runtime flag system (`kernel/flags.py`:
-`closed_loop`, `ada.premise_check`) so they're also toggleable at runtime from Settings → System,
-like `ada.causal_drill`. (The ask-vs-guess gate is no longer among them — Wave 2d of the flag
-endgame made it unconditional; `skip_clarify` on a single turn is the remaining bypass.)
+(additive — see `docs/`). `closed_loop` is registered in the runtime flag system
+(`kernel/flags.py`) so it is toggleable from Settings → System, like
+`deep_analysis.causal_drill`. Two former members of this list are now unconditional:
+the ask-vs-guess gate (flag endgame Wave 2d; `skip_clarify` on a single turn is the
+remaining bypass) and premise validation (Wave 3 — the question ASSERTING a direction is
+the trigger, so a flag in front of it decided nothing).
 
 - **Close the loop** (`AUGHOR_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
   read back into the planner as priors, so a corrected mistake isn't repeated (+0.70 accuracy on a repeat set).
@@ -586,8 +587,9 @@ endgame made it unconditional; `skip_clarify` on a single turn is the remaining 
 - **Declarative modes** (`AUGHOR_DECLARATIVE_MODES`) — a mode's routing/context-scope is editable YAML with a
   hardcoded fallback (`aughor/agent/modes/`).
 - **Deployment budget ceiling** (`AUGHOR_MAX_TOKEN_BUDGET`) — one hard cap floors every agent's token budget.
-- **Premise validation** (`AUGHOR_PREMISE_CHECK`) — a "why is X so high" investigation validates the premise
-  (subject vs overall/peers) *before* explaining it, instead of assuming it — questioning the question itself.
+- **Premise validation** (always on since flag endgame Wave 3) — a "why is X so high" investigation validates
+  the premise (subject vs overall/peers) *before* explaining it, instead of assuming it — questioning the
+  question itself. It fires only when the question asserts a direction, which is why it needed no flag.
 
 A delta-measurement ratchet (`evals/ratchet.py`) records accuracy + tokens/run to gate each change.
 

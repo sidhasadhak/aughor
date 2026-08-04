@@ -62,7 +62,6 @@ def _stub_coder(monkeypatch, called):
 def test_abstains_before_generation_on_absent_entity(client: TestClient, builtin_conn_id: str, monkeypatch):
     # "Mytheresa" is not a value anywhere in the ecommerce fixture → the bounded
     # existence probe confirms absence → honest abstain BEFORE the coder runs.
-    monkeypatch.setenv("AUGHOR_ASK_RESOLVE_FIRST", "1")
     called = {"coder": False}
     _stub_coder(monkeypatch, called)
 

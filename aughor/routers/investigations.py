@@ -2740,7 +2740,12 @@ async def _stream_investigation(
         # (before the expensive fan-out) so the user can review/edit the sub-question
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
-        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=True)
+        # The clarify gate ARMS an interrupt node, and an armed interrupt with nobody to
+        # answer it ends the run without a report — so this stays operator-controllable
+        # (default ON) rather than unconditional.
+        from aughor.kernel.flags import flag_enabled as _flag_enabled
+        _clarify_gate = _flag_enabled("deep_analysis.clarify_gate")
+        agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
         # result is this investigation drilling" (insight_id dossier, or an inline

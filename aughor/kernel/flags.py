@@ -116,11 +116,20 @@ FLAG_ENV = {
     # worktree-flag-experiment-queue) — naming the commit rather than only the deletion
     # is what keeps a settled decision re-checkable by somebody who doubts it later.
     # hybrid_rerank now α-blends unconditionally.
-    # DELETED 2026-08-04 (flag endgame Wave 3) — the ten AUTO_ELIGIBLE self-gating
-    # guards, now unconditional. Each was redundant with its own trigger; the
-    # AUTO_ELIGIBLE tombstone carries the reasoning. Retired variables:
+    # RESTORED 2026-08-04, after Wave 3's adversarial review. This one was NOT redundant
+    # with its trigger, and the difference is the whole lesson: the trigger answers a DATA
+    # question ("do the two readings of this metric diverge?"), while the flag answers a
+    # DEPLOYMENT question ("does this deployment want to be interrupted about it?").
+    # Unwrapped, a divergent ratio metric pauses the run — `_stream_investigation` emits
+    # `clarify_pending`, calls `pause_investigation` and returns WITH NO REPORT — so a
+    # headless or batch consumer that never POSTs /feedback got a truncated run where it
+    # previously got an answer. Nine of the ten guards only added cost when elevated; this
+    # one blocks. Default-ON (the interactive product behaviour), operator can opt out.
+    "deep_analysis.clarify_gate": "AUGHOR_CLARIFY_GATE",
+    # DELETED 2026-08-04 (flag endgame Wave 3) — the NINE AUTO_ELIGIBLE self-gating guards
+    # that WERE redundant with their own triggers, now unconditional. The AUTO_ELIGIBLE
+    # tombstone carries the reasoning. Retired variables:
     #   deep_analysis.premise_check  (AUGHOR_PREMISE_CHECK)
-    #   deep_analysis.clarify_gate  (AUGHOR_CLARIFY_GATE)
     #   deep_analysis.adversarial_high_stakes  (AUGHOR_DEEP_ANALYSIS_ADVERSARIAL_HIGH_STAKES)
     #   deep_analysis.pin_canonical_metric  (AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC)
     #   join.key_reconciliation  (AUGHOR_JOIN_KEY_RECONCILIATION)
@@ -161,12 +170,18 @@ FLAG_ENV = {
 #: Retired flag name → its current name. Old names keep working; they never re-register
 #: in FLAG_ENV (the ratchet asserts this, so a rename cannot be quietly reverted).
 RENAMED: dict[str, str] = {
-    # Four `ada.*` aliases left this map 2026-08-04: their targets
-    # (deep_analysis.{premise_check, clarify_gate, adversarial_high_stakes,
-    # pin_canonical_metric}) were DELETED by flag endgame Wave 3, and an alias to a
-    # flag that no longer exists resolves to nothing — it would raise UnknownFlagError
-    # for an operator whose .env still names it, which is worse than the rename it was
-    # written to smooth. A retired name is only useful while its target lives.
+    # Three `ada.*` aliases left this map 2026-08-04: their targets
+    # (deep_analysis.{premise_check, adversarial_high_stakes, pin_canonical_metric}) were
+    # DELETED by flag endgame Wave 3, and an alias only means something while its target
+    # lives — `_canonical` would resolve the old name to a flag no longer in FLAG_ENV, so
+    # the alias adds a second dead name beside the dead one.
+    #
+    # Note what the hazard is NOT: an operator whose `.env` still exports the retired
+    # variable gets `False`, not an exception. `UnknownFlagError` comes only from
+    # `flag_overrides()`, which env vars never reach. The real risk runs the other way —
+    # `flag_enabled` on an unregistered name silently returns False — which is why the
+    # deletion sweep greps live CALL SITES, not just the registry.
+    # (`ada.clarify_gate` stays: its target was restored, see the FLAG_ENV note.)
     # Wave W: the `ada.*` family. "ADA" expanded, in its own docstring, to words it does
     # not spell; the feature is "deep analysis" everywhere a human reads it. Call sites
     # may keep passing the old name indefinitely — `_canonical` resolves it.
@@ -230,6 +245,10 @@ FLAG_DEFAULT = {
     # explicit setting always wins over these defaults. This is E3 Phase 1 ("the flag system should
     # decide, with receipts") made the default posture instead of an opt-in.
     # "capabilities.auto" left this set 2026-08-04 with the tier it mastered (Wave 3).
+    # Default-ON, and deliberately NOT auto-elevated: pausing to ask which reading the user
+    # meant is the interactive product behaviour, and `AUGHOR_CLARIFY_GATE=0` is a real
+    # kill switch for a headless deployment that cannot answer an interrupt. See FLAG_ENV.
+    "deep_analysis.clarify_gate": True,
     # (The 2026-07-22 flag-drift audit's Batch 1 — intake.loss_signals ·
     # report.argument_style · chart.exhibit_grammar · lens.decision_grade — lived here
     # until Wave 2d hardwired all four. The lesson that outlived them is the one that
@@ -444,6 +463,10 @@ FLAG_META = {
     "automations.adopt_legacy": {
         "label": "Adopt monitors and briefings onto the automation engine",
         "description": "Run every enabled Monitor and Briefing subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor and briefing schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a briefing (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors and briefings. No data migration either way; flipping it off restores the legacy path.",
+    },
+    "deep_analysis.clarify_gate": {
+        "label": "Ask which reading was meant when a metric is ambiguous",
+        "description": "When a deep analysis finds that a metric's governed formula and its parsed reading DIVERGE materially, pause and show both readings with probed previews so the user picks — the run resumes via /feedback. Default-ON: choosing between two defensible readings is a business decision the platform must not make silently. Turn OFF (AUGHOR_CLARIFY_GATE=0) for a headless or batch deployment that cannot answer an interrupt — with it on and nobody to respond, the run emits `clarify_pending` and ends without a report. The ambiguity is detected and recorded either way; this flag only decides whether it INTERRUPTS.",
     },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
@@ -750,10 +773,15 @@ def override_drift() -> dict[str, dict]:
     overrides reports 16 problems where there is 1.
 
     The comparison is against :func:`_env_resolved`, NOT ``FLAG_DEFAULT``, and that
-    distinction is load-bearing: an ``AUTO_ELIGIBLE`` flag with no default still resolves
-    ON while Auto-mode is active, so an override pinning it ``False`` IS drift even though
-    it matches ``FLAG_DEFAULT.get(name, False)``. Predicting the effect of a clear from
-    ``FLAG_DEFAULT`` alone got three flags wrong on exactly that point.
+    distinction is load-bearing: whenever something ELSE would turn a flag on — an env var
+    today, Auto-mode elevation until Wave 3 dissolved it — an override pinning it ``False``
+    IS drift even though it matches ``FLAG_DEFAULT.get(name, False)``. Predicting the
+    effect of a clear from ``FLAG_DEFAULT`` alone got three flags wrong on exactly that.
+
+    ⚠️ It only reports overrides for REGISTERED flags. A row left behind for a deleted
+    flag is invisible here and dormant — until that name is ever re-registered, when it
+    would come back to life. A flag deletion that expects to strand overrides should clear
+    them, the same way :func:`set_flag` drops rows held under a renamed-from name.
 
     Returns ``{flag: {"override": bool, "without_override": bool}}`` — empty when this
     process resolves every flag the way a fresh clone would.

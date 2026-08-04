@@ -57,7 +57,6 @@ def _governed_refund_rate() -> CanonicalMetric:
 
 
 def _pin_on(monkeypatch, metrics):
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", "1")
     monkeypatch.setattr(
         "aughor.semantic.canonical.resolve_canonical_metrics",
         lambda *a, **k: list(metrics),
@@ -194,7 +193,6 @@ def test_ada_intake_pins_governed_metric_end_to_end(monkeypatch):
 
 def test_ada_intake_leaves_metric_untouched_when_flag_off(monkeypatch):
     # Byte-identical default: no governed pin without the flag.
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_PIN_CANONICAL_METRIC", raising=False)
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_intake()))
     import aughor.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")

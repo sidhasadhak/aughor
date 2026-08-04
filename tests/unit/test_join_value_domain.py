@@ -145,14 +145,18 @@ def test_bad_sql_is_fail_open():
 
 
 def test_caps_at_max_probes(monkeypatch):
-    """Guard probes at most 4 join conditions, not unbounded.
+    """The guard probes at most `_MAX_PROBES` join CONDITIONS, not one per written join.
 
-    The budget is now stated WITH the reconciliation multiplier rather than with
-    reconciliation pinned off. Wave 3 made key reconciliation unconditional — it was
-    already auto-elevated in production, so nothing changed except that this test could
-    no longer hide the cost. Worst case per probed condition: 2 base probes plus
-    `len(_KEY_TRANSFORMS) × 2` transform probes, and reconciliation early-returns on the
-    first transform that lifts overlap, so a healthy corpus pays far less.
+    The bound is ABSOLUTE on purpose. A first attempt derived the ceiling from
+    `_MAX_PROBES` itself, which made the test unfalsifiable: raising the cap raised the
+    ceiling with it, so deleting the cap entirely left the assertion green. A budget test
+    whose budget is computed from the thing under test measures nothing.
+
+    48 is the real worst case today: 4 conditions × 2 directions × (1 base probe + 5
+    reconciliation transforms). Reconciliation is unconditional since Wave 3 — it was
+    already elevated in production, so the only thing that changed is that this test can
+    no longer hide the cost by pinning it off. Change either constant deliberately and
+    update this number deliberately with it.
     """
     conn = _mock_conn(matched=0, total=100)  # all mismatches to maximise probe count
     sql = """
@@ -162,17 +166,17 @@ def test_caps_at_max_probes(monkeypatch):
     JOIN d ON c.d_id = d.id
     JOIN e ON d.e_id = e.id
     JOIN f ON e.f_id = f.id
-    """
+    """                     # 5 join conditions written; only _MAX_PROBES may be probed
     check_join_value_domains(conn, sql)
-    # At most 4 join CONDITIONS probed (_MAX_PROBES = 4). Each costs 2 base probes, and
-    # every one that fails to overlap costs up to len(_KEY_TRANSFORMS) × 2 reconciliation
-    # probes on top. The bound is what matters — that the count is a function of the
-    # CONDITION cap and not of how many joins the query wrote.
+    assert conn.execute.call_count <= 48, (
+        "the per-condition cap is what bounds this — an uncapped guard probes all 5 "
+        "conditions (60 calls) and an unbounded one scales with the query")
+    # Pin the constants the number above is derived from, so a change to either fails HERE
+    # with a readable reason instead of silently widening the budget.
     from aughor.sql.join_guard import _KEY_TRANSFORMS, _MAX_PROBES
-    ceiling = _MAX_PROBES * 2 * (1 + len(_KEY_TRANSFORMS))
-    assert conn.execute.call_count <= ceiling
-    # …and materially fewer than the 6 written join conditions would cost unbounded.
-    assert conn.execute.call_count < 6 * 2 * (1 + len(_KEY_TRANSFORMS))
+    assert (_MAX_PROBES, len(_KEY_TRANSFORMS)) == (4, 5), (
+        "probe budget constants moved — re-derive the 48 above: "
+        "_MAX_PROBES × 2 directions × (1 + len(_KEY_TRANSFORMS))")
 
 
 # ── Real-connection regression (the mock can't catch value stringification) ──
@@ -270,7 +274,6 @@ def _real_conn_skew():
 
 
 def test_reconciliation_finds_prefix_skew(monkeypatch):
-    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "1")
     conn = _real_conn_skew()
     sql = "SELECT * FROM books b JOIN reviews r ON b.bid = r.book_ref"
     warnings = check_join_value_domains(conn, sql)
@@ -285,7 +288,6 @@ def test_reconciliation_finds_prefix_skew(monkeypatch):
 
 
 def test_reconciliation_absent_for_genuinely_disjoint_keys(monkeypatch):
-    monkeypatch.setenv("AUGHOR_JOIN_KEY_RECONCILIATION", "1")
     conn = _real_conn()   # orders.cust ('C00x') vs campaigns.id ('CMPx') — truly different entities
     sql = "SELECT * FROM orders o JOIN campaigns c ON o.cust = c.id"
     warnings = check_join_value_domains(conn, sql)

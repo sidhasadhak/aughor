@@ -61,8 +61,8 @@ def _req(question="tell me about this data", *, depth="auto", escalate=False,
     )
 
 
-def test_eligible_for_fresh_auto_overview_when_flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_OVERVIEW", "1")
+def test_eligible_for_a_fresh_auto_overview_ask():
+    """No flag: the request predicates plus the question shape ARE the gate (Wave 3)."""
     assert _overview_eligible(_req()) is True
 
 
@@ -75,13 +75,6 @@ def test_eligible_for_fresh_auto_overview_when_flag_on(monkeypatch):
     {"skip_clarify": True},                   # already answering a clarification
     {"question": "what is total revenue by platform"},  # a specific ask, not an overview
 ])
-def test_not_eligible_when_disqualified_even_with_flag_on(monkeypatch, kwargs):
-    monkeypatch.setenv("AUGHOR_ASK_OVERVIEW", "1")
+def test_not_eligible_when_any_disqualifier_is_present(kwargs):
     assert _overview_eligible(_req(**kwargs)) is False
 
-
-def test_auto_elevated_when_env_unset(monkeypatch):
-    # With the env var unset, the auto-eligible flag rides capabilities.auto (default-on),
-    # so a fresh overview ask is still eligible without any explicit opt-in.
-    monkeypatch.delenv("AUGHOR_ASK_OVERVIEW", raising=False)
-    assert _overview_eligible(_req()) is True

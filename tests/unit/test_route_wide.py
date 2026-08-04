@@ -113,12 +113,14 @@ def ask_client(monkeypatch):
     monkeypatch.setattr(inv, "_investigation_job_streamed", fake_deep)
     monkeypatch.setattr(inv, "_stream_chat", fake_chat)
     monkeypatch.setattr(inv, "_metered_stream", lambda gen, budget=None: gen)
-    # Borderline tiebreak stays hermetic; the overview pre-gate is neutralized so a wide
-    # phrasing reaches the router (the tour path is covered elsewhere).
+    # Borderline tiebreak stays hermetic. NOTE: the overview pre-gate can no longer be
+    # switched off (Wave 3 deleted `ask.overview`); these cases reach the router because
+    # their phrasings do not match `_is_overview_question`, not because it was disabled.
+    # A future case worded as an overview WILL be intercepted — that is the product
+    # behaviour, and the fixture must not pretend otherwise.
     monkeypatch.setattr("aughor.agent.ask_router._default_classifier",
                         lambda q: ("direct", _Decision()))
     monkeypatch.setattr("aughor.licensing.has_capability", lambda *a, **k: True)
-    monkeypatch.setenv("AUGHOR_ASK_OVERVIEW", "0")
     app = FastAPI()
     app.include_router(inv.router)
     return TestClient(app), captured
