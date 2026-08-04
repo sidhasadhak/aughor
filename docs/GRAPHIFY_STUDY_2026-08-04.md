@@ -196,7 +196,48 @@ news: the spine of Wave P is a bridge, not a build.
 
 ---
 
-## 5. The five cherry-picks (= the scope of Wave P — Provenance)
+## 5. The five cherry-picks (= Wave P — Provenance) — **BUILT 2026-08-04**
+
+> **All five shipped**, in the order below, on `claude/enterprise-dw-knowledge-graph-fff87a`:
+> `c93ffbb` P2 · `07e13d5` P1 · `2378d5a` P5 · `3ed8d43` P4 · `953bc70` P3 · `e365de6`
+> vocabulary ratchet · `965f435` the defect repair described at the end of this section.
+> Full suite **5,734 passed / 0 failed**; ruff, the five frontend gates and every ratchet
+> green. Nothing pushed — local commits only.
+>
+> **Two scopes moved when measured** (the pre-check rule, now seven for seven):
+> - **P3 was rescoped by its own premise check.** It was to aggregate human verdicts and
+>   evidence-ledger feedback; the real stores hold **zero verdicts and no evidence rows**
+>   — neither file exists. Built as scoped it would have read "no signal" on every node
+>   forever. The primary signal became citation corroboration, which exists on every real
+>   connection, with the human channel wired to light up on the first verdict cast.
+> - **P1 stopped depending on `graph.readback`.** A trace built only from cited nodes is
+>   empty on every production answer, since the flag is an off-by-default experiment. It
+>   resolves the tables the SQL demonstrably read instead, so every receipt ever written
+>   already has a walk.
+>
+> **An adversarial review of the diff found 14 defects, four HIGH** — repaired in
+> `965f435`, each now pinned by a test. Two were the exact traps the new modules'
+> docstrings warn about, which is the case for running the review rather than trusting
+> the docstring:
+> 1. **The graph citations were structurally dead on the deep-analysis path.** A
+>    `ContextVar.set()` inside `contextvars.copy_context().run()` never propagates back to
+>    the submitter, and ADA builds its priors in exactly such a pool — so the receipt
+>    always read `[]`, silently, because that is also what "the flag is off" looks like.
+> 2. **P3's human channel could never fire** — a verdict is keyed by investigation, a
+>    finding node by a random Ledger artifact uuid. Different namespaces; every verdict
+>    scored nothing while the summary still claimed human signal.
+> 3. **`warrant_for` returned the strongest class from its own except-branch** — any
+>    non-numeric `measured` (including a bool, which floats to 1.0) reported as measured.
+> 4. **The resolution projection defaulted a missing tier to `probe`**, which P2 reads as
+>    a measurement: a harmless-looking `or "probe"` published a probe nobody ran.
+>
+> And one lesson worth carrying: **fixing an overclaim can overshoot into an underclaim.**
+> Replacing the fabricated `overlap=1.0` with the `-1.0` couldn't-probe sentinel also
+> dropped the *verification* for explorer-checked FKs that carry no counts, demoting a
+> real check to "name match". The verification and the number are separate claims and now
+> travel on separate fields.
+
+### The five, as scoped
 
 Ordered; each is a shape re-implemented on our stores, zero Graphify dependency. Constraints
 honored throughout: J4 (no unmeasured number on an edge), the L2 verdict (no new prompt injection
