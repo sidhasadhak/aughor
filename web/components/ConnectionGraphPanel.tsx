@@ -45,7 +45,9 @@ function bare(t: string): string {
   return String(t).split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
 }
 
-export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
+// The Ask seam is renamed at the door: the panel's own vocabulary is 'ask', and the
+// prop name is the workspace's older spelling of the same callback.
+export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAsk }: {
   connectionId: string; schema?: string;
   /** The workspace Ask seam — a graph selection becomes a question on the full Ask surface. */
   onInvestigate?: (q: string) => void;
@@ -186,13 +188,13 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
             <GraphCanvas
               graph={graph}
               onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
-              onAsk={onInvestigate}
+              onAsk={onAsk}
             />
           </>
         )}
 
         {!loading && !error && graph && mode === "review" && (
-          <ReviewView review={review} onAsk={onInvestigate}
+          <ReviewView review={review} onAsk={onAsk}
                       onOpenTable={(id) => { setMode("cards"); setView({ level: "detail", tableId: id }); }} />
         )}
 
