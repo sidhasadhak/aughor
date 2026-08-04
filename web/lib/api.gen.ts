@@ -3839,6 +3839,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/graph/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Context Graph Trust
+         * @description Wave P3 — what standing each node has earned.
+         *
+         *     A read-time SIDECAR: nothing here is written to the committed artifact, so a
+         *     conclusion about a node can never outlive the evidence for it.
+         *
+         *     On a warehouse where nobody has recorded a verdict, every node reads `unchecked` —
+         *     that is the honest report, not an empty feature, and `human_signal: false` says so
+         *     in one field rather than leaving a reader to infer it from a row of zeros.
+         */
+        get: operations["get_context_graph_trust_graph_trust_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -17056,6 +17083,38 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 narrate?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_context_graph_trust_graph_trust_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;

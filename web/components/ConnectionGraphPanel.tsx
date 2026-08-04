@@ -7,6 +7,7 @@ import {
   CGStaleness,
   GraphAudit,
   GraphLineage,
+  TrustSidecar,
   GraphReview,
   GraphReviewItem,
   getConnectionGraph,
@@ -14,13 +15,14 @@ import {
   getGraphAudit,
   getGraphLineage,
   getGraphReview,
+  getGraphTrust,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
 import { formatCount } from "@/lib/format";
 import { GraphCanvas } from "@/components/GraphCanvas";
-import { GraphAuditBar, WarrantChip } from "@/components/graph/WarrantChip";
+import { GraphAuditBar, StandingChip, WarrantChip } from "@/components/graph/WarrantChip";
 
 // The connection knowledge graph, rendered as a three-level ANTI-HAIRBALL surface:
 // domain cluster cards (cross-domain joins collapsed to counts) → the tables inside a
@@ -65,6 +67,9 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
   // Wave P5 — what the graph knows it cannot vouch for, fetched with the graph so the tab
   // can carry its count without a second click to discover there is nothing to do.
   const [review, setReview] = useState<GraphReview | null>(null);
+  // Wave P3 — what standing each node has earned. A read-time sidecar: it annotates the
+  // graph on screen and is never written back into the committed artifact.
+  const [trust, setTrust] = useState<TrustSidecar | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -80,6 +85,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
       .finally(() => setLoading(false));
     getGraphAudit(connectionId, schema).then(setAudit).catch(() => setAudit(null));
     getGraphReview(connectionId, schema).then(setReview).catch(() => setReview(null));
+    getGraphTrust(connectionId, schema).then(setTrust).catch(() => setTrust(null));
   }, [connectionId, schema]);
 
   useEffect(() => { load(); }, [load]);
@@ -278,10 +284,21 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate }: {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>{t.label}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>{t.label}</span>
+                      {/* P3 standing sits beside P2's warrant deliberately: a table can be
+                          measured (how we know it) and still unchecked (nobody confirmed
+                          the answers built on it). One score would hide that gap. */}
+                      <StandingChip trust={trust?.nodes?.[t.id]} />
+                    </div>
                     <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>
                       {((t.data.source_tables as string[]) || []).join(", ")} · {formatCount(cols.length)} columns
                     </div>
+                    {trust?.nodes?.[t.id] && (
+                      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
+                        {trust.nodes[t.id].detail}
+                      </div>
+                    )}
                   </div>
 
                   {/* P2: every join states its warrant. A measured overlap and a bare

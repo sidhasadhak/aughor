@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import type { CGWarrant, CGWarrantClass, GraphAudit } from "@/lib/api";
+import type { CGStanding, CGWarrant, CGWarrantClass, GraphAudit, NodeTrust } from "@/lib/api";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
 
 /**
@@ -105,6 +105,45 @@ export function GraphAuditBar({ audit }: { audit: GraphAudit | null }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Wave P3 — a node's standing: what has been CHECKED about it, as opposed to how it is
+ * known (the warrant class above).
+ *
+ * The two are deliberately different vocabularies shown side by side. A join can be
+ * `measured` — a real probe of your data — and still `unchecked`, because no person has
+ * confirmed that the answers built on it were right. Collapsing them into one score
+ * would hide exactly the gap a reviewer is looking for.
+ *
+ * `corroborated` is styled as information, not success: several analyses relying on a
+ * node is a fact about usage, not a verdict on correctness, and a green chip there would
+ * launder the weaker claim into the stronger one.
+ */
+const STANDING_HUE: Record<CGStanding, ChipHue> = {
+  confirmed: "positive",
+  contested: "caution",
+  disputed: "negative",
+  corroborated: "info",
+  unchecked: "muted",
+};
+
+const STANDING_LABEL: Record<CGStanding, string> = {
+  confirmed: "Confirmed",
+  contested: "Contested",
+  disputed: "Disputed",
+  corroborated: "Corroborated",
+  unchecked: "Unchecked",
+};
+
+export function StandingChip({ trust }: { trust?: NodeTrust | null }) {
+  if (!trust) return null;
+  return (
+    <StatusChip hue={STANDING_HUE[trust.standing] || "muted"} strength="soft"
+                title={`${trust.meaning} ${trust.detail}`}>
+      {STANDING_LABEL[trust.standing] || trust.standing}
+    </StatusChip>
   );
 }
 

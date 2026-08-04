@@ -430,6 +430,27 @@ def get_context_graph_review(
             "items": [i.to_dict() for i in items], **queue_summary(items)}
 
 
+@router.get("/graph/trust")
+def get_context_graph_trust(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Wave P3 — what standing each node has earned.
+
+    A read-time SIDECAR: nothing here is written to the committed artifact, so a
+    conclusion about a node can never outlive the evidence for it.
+
+    On a warehouse where nobody has recorded a verdict, every node reads `unchecked` —
+    that is the honest report, not an empty feature, and `human_signal: false` says so
+    in one field rather than leaving a reader to infer it from a row of zeros.
+    """
+    from aughor.ontology.graph_trust import trust_for_connection
+    from aughor.org.context import current_org_id
+
+    cg = _load_graph_or_404(connection_id, schema_name)
+    return trust_for_connection(connection_id, cg, org_id=current_org_id()).to_dict()
+
+
 @router.get("/graph/tour")
 def get_context_graph_tour(
     connection_id: str = BUILTIN_ID,

@@ -1145,6 +1145,42 @@ export async function getGraphAudit(connectionId: string, schemaName?: string): 
   return res.json();
 }
 
+// ── Node standing (Wave P3 — GET /graph/trust) ────────────────────────────────
+
+export type CGStanding = "confirmed" | "contested" | "disputed" | "corroborated" | "unchecked";
+export interface NodeTrust {
+  node_id: string;
+  standing: CGStanding;
+  findings: number;
+  contested: number;
+  stale: number;
+  accepts: number;
+  rejects: number;
+  detail: string;
+  meaning: string;
+}
+export interface TrustSidecar {
+  connection_id: string;
+  nodes: Record<string, NodeTrust>;
+  meanings: Record<CGStanding, string>;
+  by_standing: Record<CGStanding, number>;
+  scored_nodes: number;
+  verdicts_seen: number;
+  /** False ⇒ nobody has recorded a verdict on this connection yet. Stated as a field so
+   *  a reader does not have to infer it from a row of zeros. */
+  human_signal: boolean;
+}
+
+/** What standing each node has earned — a read-time sidecar, never stored (Wave P3). */
+export async function getGraphTrust(connectionId: string, schemaName?: string): Promise<TrustSidecar> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/trust?${q}`);
+  if (!res.ok) throw new Error("Trust sidecar not available");
+  return res.json();
+}
+
 // ── What depends on a node (Wave P4 — GET /graph/lineage) ─────────────────────
 
 export interface GraphDependent {
