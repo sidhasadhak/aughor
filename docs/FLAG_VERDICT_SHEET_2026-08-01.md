@@ -174,8 +174,18 @@ Every deleted flag gets a tombstone comment (the registry's existing convention)
 - **Wave 2 — hardwire the 56 receipted default-ONs**, split by area (trust/obs,
   graph, govern/automations/lifecycle, ask/deep, semantic/capability). Includes the
   two legacy-path deletions (CanonicalMetric, per-node consult).
-- **Wave 3 — unwrap the 10 auto guards** (triggers become unconditional code),
-  delete the auto machinery + capabilities.auto.
+- **Wave 3 — unwrap the 10 auto guards** ✅ **DONE 2026-08-04** (commit `eae66a8`).
+  Triggers are unconditional code; `capabilities.auto`, the elevation branch in
+  `_env_resolved`, `_auto_mode_active`, `flag_state`'s `"auto"` arm and the Capabilities
+  settings section are gone. `AUTO_ELIGIBLE` stays declared and EMPTY so the disposition
+  ratchet keeps proving nothing rejoins the tier; `CAPABILITY_TRIGGER` is kept because the
+  Activation Receipt still reports why a capability fired, which never depended on a flag.
+  **Registry 40 → 29, zero undispositioned.** Two findings the sweep surfaced: four
+  `ada.*` aliases in `RENAMED` were left pointing at deleted flags (an alias outliving its
+  target raises `UnknownFlagError` for an operator whose `.env` still names it), and
+  `test_caps_at_max_probes` had pinned `join.key_reconciliation` OFF to isolate its probe
+  budget — so the budget it reported was fiction, and the real bound (8 → 48 worst case)
+  is now asserted with the multiplier rather than suppressed.
 - **Wave 4 — the two turn-ONs** (adopt_legacy + delete legacy schedulers;
   explorer.continuous).
 - **Wave 5 — experiment keeps**: hardwire the nine; federation auto-hook after its
