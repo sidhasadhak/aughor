@@ -67,7 +67,15 @@ _DEFAULT_BASE_URLS = {
 }
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
-    "ollama":    {"coder": "qwen3-coder-next:cloud", "narrator": "kimi-k2.6:cloud", "fast": "qwen3-coder-next:cloud"},
+    # Both previous ollama defaults were DEAD, and neither failed in a way anything
+    # noticed (2026-08-04): `qwen3-coder-next:cloud` was RETIRED by Ollama on 2026-07-15,
+    # and `kimi-k2.6:cloud` answers "this model requires a subscription". A fresh install
+    # therefore called a model that could not serve, got empty content on every structured
+    # call, and every caller fell through its own fail-open path — an app that runs and
+    # produces nothing. `gemma4:31b-cloud` is verified 2026-08-04 on all three axes that
+    # matter: it completes, it honours a json_schema `response_format`, and it needs no
+    # paid subscription. See the matrix vouch for why `ollama list` did not catch this.
+    "ollama":    {"coder": "gemma4:31b-cloud", "narrator": "gemma4:31b-cloud", "fast": "gemma4:31b-cloud"},
     "lmstudio":  {"coder": "local-model",                      "narrator": "local-model"},
     "groq":      {"coder": "llama-3.3-70b-versatile",          "narrator": "llama-3.3-70b-versatile"},
     "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",  "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},

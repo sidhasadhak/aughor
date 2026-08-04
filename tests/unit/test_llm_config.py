@@ -5,9 +5,15 @@ import pytest
 
 from aughor.llm import provider as P
 
+# Every env var that can move what `current_config()` reports. GEMINI_API_KEY and
+# OPENROUTER_API_KEY were missing until 2026-08-04, so `test_defaults_when_empty` — which
+# asserts `keys_set` is all-False — failed for any developer whose `.env` set either. A
+# fixture named `clean_cfg` has to clear everything it claims to isolate, or it reports a
+# pass that depends on whose machine it ran on.
 _ENV_VARS = (
     "AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL", "AUGHOR_NARRATOR_MODEL",
     "AUGHOR_FAST_NARRATOR_MODEL", "GROQ_API_KEY", "TOGETHER_API_KEY", "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY", "OPENROUTER_API_KEY",
 )
 
 
@@ -27,9 +33,13 @@ def clean_cfg(tmp_path, monkeypatch):
 def test_defaults_when_empty(clean_cfg):
     c = P.current_config()
     assert c["backend"] == "ollama"
-    assert c["models"]["coder"] == "qwen3-coder-next:cloud"   # ollama built-in default
-    assert c["models"]["fast"] == "qwen3-coder-next:cloud"    # fast shares the coder default
-    assert c["models"]["narrator"] == "kimi-k2.6:cloud"       # narrator is the one exception
+    # All three roles share one ollama default since 2026-08-04. The previous pair —
+    # `qwen3-coder-next:cloud` (RETIRED 2026-07-15) and `kimi-k2.6:cloud` (subscription
+    # required) — were BOTH dead, and this assertion is what pinned the first as correct
+    # for three weeks. A default is only worth asserting if someone checked it serves.
+    assert c["models"]["coder"] == "gemma4:31b-cloud"
+    assert c["models"]["fast"] == "gemma4:31b-cloud"
+    assert c["models"]["narrator"] == "gemma4:31b-cloud"
     assert set(c["backends"]) >= {"ollama", "groq", "anthropic"}
     assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False,
                              "gemini": False, "openrouter": False}
@@ -42,7 +52,7 @@ def test_config_surfaces_per_role_capability_profile(clean_cfg):
     caps = c["capabilities"]
     assert set(caps) == {"coder", "narrator", "fast"}
     coder = caps["coder"]
-    # the shipped default (qwen3-coder-next:cloud) egresses to Ollama Cloud — flagged honestly
+    # the shipped default (gemma4:31b-cloud) egresses to Ollama Cloud — flagged honestly
     assert coder["privacy_class"] == "public_api"
     assert coder["cache_mode"] == "auto_prefix_unverified"
     assert coder["cost"] == "unknown"
@@ -110,3 +120,26 @@ def test_base_url_override_for_local_backend(clean_cfg):
     assert c["base_urls"]["ollama"] == "http://gpu-box:11434/v1"
     c = P.set_config({"base_urls": {"ollama": ""}})
     assert c["base_urls"]["ollama"] == "http://localhost:11434/v1"  # back to default
+
+
+def test_a_sized_cloud_tag_is_not_reported_as_on_device(clean_cfg):
+    """`privacy_class` tells an operator whether their prompts left the machine, so an
+    error in the permissive direction is the one this surface must never make.
+
+    A bare `endswith(":cloud")` test missed every SIZED cloud tag, and three of the five
+    ollama ids this repo ships carry one. They were reported `local` / `flat` while
+    egressing to Ollama Cloud (found 2026-08-04).
+    """
+    for model in ("gemma4:31b-cloud", "gpt-oss:120b-cloud", "qwen3.5:397b-cloud",
+                  "kimi-k2.6:cloud"):
+        c = P.set_config({"backend": "ollama", "models": {"coder": model}})
+        cap = c["capabilities"]["coder"]
+        assert cap["privacy_class"] == "public_api", f"{model} reported as on-device"
+        assert cap["cost"] == "unknown", f"{model} reported with local flat cost"
+
+
+def test_a_genuinely_local_tag_is_still_local(clean_cfg):
+    """The fix must not sweep in real on-device models — `31b` is a size, not a cloud."""
+    for model in ("qwen2.5-coder:14b", "gemma4:31b", "llama3:latest"):
+        c = P.set_config({"backend": "ollama", "models": {"coder": model}})
+        assert c["capabilities"]["coder"]["privacy_class"] == "local", model

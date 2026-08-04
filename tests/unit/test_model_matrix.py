@@ -168,7 +168,9 @@ def test_an_unverified_entry_can_never_be_reported_gone():
     """It was never claimed present. Reporting it would invent a regression out of an
     absence the matrix already documents — and a drift warning that cries wolf is a
     drift warning nobody reads."""
-    report = M.drift("ollama", ["qwen3-coder-next:cloud", "kimi-k2.6:cloud", "qwen3.5:397b-cloud"])
+    # The catalogue this machine reports. Only `gemma4:31b-cloud` is vouched for
+    # ollama now (2026-08-04); the rest carry verified_on="" by design.
+    report = M.drift("ollama", ["gemma4:31b-cloud"])
     assert report["gone"] == []                      # glm-5.2/gpt-oss are verified_on=""
 
 
