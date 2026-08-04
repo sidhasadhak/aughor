@@ -314,3 +314,20 @@ def test_a_label_that_is_not_an_identifier_yields_no_site():
 
     n = SimpleNamespace(kind="finding", data={"sql": "SELECT a, b"})
     assert _site_of(n, "Rev. ", []) == ("", "", 0)
+
+
+def test_a_schema_qualified_reference_still_finds_its_line():
+    """Real SQL writes `FROM schema.table`. A word-boundary rule that also refused a
+    preceding dot found NOTHING on every schema-qualified warehouse — every site reported
+    line 0 — and the unit fixtures could not see it because they all used bare names. Only
+    a run against the committed graph exposed it."""
+    from aughor.govern.lineage import _site_of
+    from types import SimpleNamespace
+
+    n = SimpleNamespace(kind="finding", data={
+        "sql": "SELECT region, COUNT(*)\nFROM luxexperience.customers\nGROUP BY 1"})
+    site, kind, line = _site_of(n, "Customer", ["customers"])
+    assert line == 2 and "luxexperience.customers" in site
+
+    # …and the qualified source_tables spelling resolves too
+    assert _site_of(n, "", ["luxexperience.customers"])[2] == 2
