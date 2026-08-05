@@ -25,6 +25,20 @@ if os.environ.get("VERCEL"):
     os.environ.setdefault("AUGHOR_STATE_DIR", "/tmp/aughor-state")
     os.environ.setdefault("AUGHOR_UPLOAD_DIR", "/tmp/aughor-uploads")
     Path(os.environ["AUGHOR_STATE_DIR"]).mkdir(parents=True, exist_ok=True)
+    # The Vercel-Supabase integration injects POSTGRES_URL_NON_POOLING; honour it
+    # when AUGHOR_DB_URL isn't set explicitly. NON_POOLING deliberately: the stores
+    # SET search_path per connection — session state that transaction-mode pooling
+    # (the pooled POSTGRES_URL) does not preserve.
+    if not os.environ.get("AUGHOR_DB_URL"):
+        _dsn = os.environ.get("POSTGRES_URL_NON_POOLING", "")
+        if _dsn:
+            os.environ["AUGHOR_DB_URL"] = _dsn
+    if not os.environ.get("AUGHOR_DB_URL", "").startswith(("postgres://", "postgresql://")):
+        raise RuntimeError(
+            "serverless deployment requires a Postgres AUGHOR_DB_URL (or the Vercel "
+            "Supabase integration connected to this project, which injects "
+            "POSTGRES_URL_NON_POOLING) — sqlite files cannot live on a read-only "
+            "filesystem, and /tmp state would vanish with the instance")
     # The registry's at-rest encryption key MUST come from the environment on a
     # read-only deployment — a generated key file would land in /tmp and silently
     # vanish with the instance, orphaning every encrypted DSN. Fail loud and early,

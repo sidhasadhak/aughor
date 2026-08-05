@@ -1,0 +1,25 @@
+# Platform (Python API) deploy. Root-anchored (a bare name also matches subpaths —
+# `evals` swallowed aughor/evals once). data/ ships ONLY its authored inputs
+# (glossary, KB, rules): the empty-catalogue goal means no generated stores, and
+# per-connection artifacts are keyed to local connections that don't exist there.
+# `/data/*` not `/data`: gitignore semantics cannot re-include under an excluded DIR.
+/web
+/data/*
+!/data/kb
+!/data/glossary.yaml
+!/data/global_rules.md
+!/data/events.yaml
+!/data/metrics.json
+/tests
+/evals
+/docs
+/scripts
+/scratchpad
+/.venv
+/node_modules
+/.git
+/.github
+/.pytest_cache
+/.ruff_cache
+*.duckdb
+*.db

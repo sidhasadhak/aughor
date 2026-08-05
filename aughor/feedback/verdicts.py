@@ -35,7 +35,6 @@ VERDICTS = ("accept", "correct", "reject")
 
 
 def _conn() -> sqlite3.Connection:
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     _ensure_schema(c)
