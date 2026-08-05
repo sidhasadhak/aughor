@@ -166,6 +166,38 @@ def _scrub(path: str, payload: Any, conn: str, workspace: str,
     return payload
 
 
+def record_chat_sessions(entries: dict, call, skipped: list) -> None:
+    """Record the session behind every QUICK ANSWER, so the demo can actually open one.
+
+    A quick answer is not an investigation: it is stored with ``kind='chat'`` and
+    ``GET /investigations/{id}`` **404s** for it, so the investigation-detail loop skips
+    every one silently. That is why the shipped Superstore demo lists five quick answers
+    and can open none of them — the list route carries the rows, and nothing carries their
+    content. The UI restores a turn through ``/chat-sessions/{session_id}/turns``
+    (``ChatPanel.tsx``), so that is the surface recorded here.
+
+    Session ids are read from the LIST route already captured, not from the history store:
+    the store is exactly what does not resolve a chat id, and the list is what does.
+    """
+    for key, payload in list(entries.items()):
+        if not key.startswith("GET /investigations?") or not isinstance(payload, list):
+            continue
+        for row in payload:
+            if (row or {}).get("kind") != "chat":
+                continue
+            sid = str((row or {}).get("session_id") or "")
+            if not _SAFE_SEGMENT.match(sid):     # it reaches a URL path — never interpolate junk
+                continue
+            path = f"/chat-sessions/{sid}/turns"
+            if _key("GET", path) in entries:
+                continue
+            status, body = call("GET", path)
+            if status == 200 and body is not None:
+                entries[_key("GET", path)] = body
+            else:
+                skipped.append(f"GET {path} → {status or 'unreachable'}")
+
+
 def _substitute_org(routes: dict, workspace_key: str) -> None:
     """Answer `/org-settings` with the DEMO workspace's identity, not the operator's org.
 
@@ -248,6 +280,8 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
                         f"refusing to record {path}: it belongs to {owner!r}, not "
                         f"{connection_id!r}")
                 entries[_key("GET", path)] = body
+
+    record_chat_sessions(entries, _call, skipped)
 
     _substitute_org(entries, _key("GET", f"/org-settings/effective"
                                   f"{('?workspace_id=' + workspace_id) if workspace_id else ''}"))

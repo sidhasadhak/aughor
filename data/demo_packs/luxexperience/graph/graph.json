@@ -1,13 +1,62 @@
 {
   "counts": {
+    "brief": 1,
     "domain": 3,
-    "edges": 50,
-    "finding": 19,
+    "edges": 66,
+    "finding": 31,
     "glossary_term": 119,
     "metric": 2,
     "table": 14
   },
   "edges": [
+    {
+      "from_id": "brief:914df862",
+      "id": "brief:914df862--derived_from-->finding:Catalog__logistics_cost_ratio__2",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:Catalog__logistics_cost_ratio__2"
+    },
+    {
+      "from_id": "brief:914df862",
+      "id": "brief:914df862--derived_from-->finding:General__Logistics cost efficiency by platform (shipping + duty vs GMV)__1",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:General__Logistics cost efficiency by platform (shipping + duty vs GMV)__1"
+    },
+    {
+      "from_id": "brief:914df862",
+      "id": "brief:914df862--derived_from-->finding:pinned__2",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:pinned__2"
+    },
+    {
+      "from_id": "brief:914df862",
+      "id": "brief:914df862--derived_from-->finding:pinned__4",
+      "kind": "derived_from",
+      "label": "cites",
+      "provenance": {
+        "measured": null,
+        "note": "brief cites finding",
+        "source": "briefing"
+      },
+      "to_id": "finding:pinned__4"
+    },
     {
       "from_id": "finding:2b8c1575d56f",
       "id": "finding:2b8c1575d56f--grounded_in-->table:Order",
@@ -165,6 +214,18 @@
       "to_id": "table:ReturnLogistic"
     },
     {
+      "from_id": "finding:740ee9d9d9fa",
+      "id": "finding:740ee9d9d9fa--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
       "from_id": "finding:7fd11d082eb5",
       "id": "finding:7fd11d082eb5--grounded_in-->table:OrderItem",
       "kind": "grounded_in",
@@ -189,8 +250,20 @@
       "to_id": "table:Shipment"
     },
     {
-      "from_id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8",
-      "id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8--grounded_in-->table:Brand",
+      "from_id": "finding:849608688d55",
+      "id": "finding:849608688d55--grounded_in-->table:OrderItem",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "finding:Catalog__Catalog composition by brand origin country (brand concentration / diversity signal).__6",
+      "id": "finding:Catalog__Catalog composition by brand origin country (brand concentration / diversity signal).__6--grounded_in-->table:Brand",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -201,8 +274,8 @@
       "to_id": "table:Brand"
     },
     {
-      "from_id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9",
-      "id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9--grounded_in-->table:Brand",
+      "from_id": "finding:Catalog__Catalog composition driver behind Italy\u2019s dominance: identify which focus_category pockets (e.g., womenswear, jewelry_watches, etc.) account for most Italian brands.__7",
+      "id": "finding:Catalog__Catalog composition driver behind Italy\u2019s dominance: identify which focus_category pockets (e.g., womenswear, jewelry_watches, etc.) account for most Italian brands.__7--grounded_in-->table:Brand",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -213,8 +286,44 @@
       "to_id": "table:Brand"
     },
     {
-      "from_id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1",
-      "id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1--grounded_in-->table:Customer",
+      "from_id": "finding:Catalog__Catalog concentration drill-down: tier composition behind the top focus_category concentration for Italian-origin brands__8",
+      "id": "finding:Catalog__Catalog concentration drill-down: tier composition behind the top focus_category concentration for Italian-origin brands__8--grounded_in-->table:Brand",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Brand"
+    },
+    {
+      "from_id": "finding:Catalog__Catalog mix coverage: identify where the assortment is concentrated across tier and focus_category (assortment breadth).__5",
+      "id": "finding:Catalog__Catalog mix coverage: identify where the assortment is concentrated across tier and focus_category (assortment breadth).__5--grounded_in-->table:Brand",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Brand"
+    },
+    {
+      "from_id": "finding:Catalog__logistics_cost_ratio__2",
+      "id": "finding:Catalog__logistics_cost_ratio__2--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:Customer__Customer value concentration by platform (top-customer share).__1",
+      "id": "finding:Customer__Customer value concentration by platform (top-customer share).__1--grounded_in-->table:Customer",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -225,8 +334,44 @@
       "to_id": "table:Customer"
     },
     {
-      "from_id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15",
-      "id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15--grounded_in-->table:Order",
+      "from_id": "finding:Customer__Top-customer concentration driver by tier (sub-population within MR PORTER, US).__5",
+      "id": "finding:Customer__Top-customer concentration driver by tier (sub-population within MR PORTER, US).__5--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:Customer__VIP concentration by platform (customer mix / value-signal segmentation).__6",
+      "id": "finding:Customer__VIP concentration by platform (customer mix / value-signal segmentation).__6--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:Customer__Within-platform concentration: identify the region that drives MR PORTER\u2019s top-customer rate.__4",
+      "id": "finding:Customer__Within-platform concentration: identify the region that drives MR PORTER\u2019s top-customer rate.__4--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:General__Identify whether Mytheresa\u2019s elevated financial refund rate is driven by specific categories generating disproportionately high return volume (item return rate at the order-item grain).__12",
+      "id": "finding:General__Identify whether Mytheresa\u2019s elevated financial refund rate is driven by specific categories generating disproportionately high return volume (item return rate at the order-item grain).__12--grounded_in-->table:Order",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -237,8 +382,20 @@
       "to_id": "table:Order"
     },
     {
-      "from_id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6",
-      "id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6--grounded_in-->table:Order",
+      "from_id": "finding:General__Identify whether Mytheresa\u2019s elevated financial refund rate is driven by specific categories generating disproportionately high return volume (item return rate at the order-item grain).__12",
+      "id": "finding:General__Identify whether Mytheresa\u2019s elevated financial refund rate is driven by specific categories generating disproportionately high return volume (item return rate at the order-item grain).__12--grounded_in-->table:OrderItem",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "finding:General__Logistics Cost Ratio driver analysis by segment (why THE OUTNET is highest overall).__6",
+      "id": "finding:General__Logistics Cost Ratio driver analysis by segment (why THE OUTNET is highest overall).__6--grounded_in-->table:Order",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -249,8 +406,8 @@
       "to_id": "table:Order"
     },
     {
-      "from_id": "finding:General__logistics_cost_ratio__1",
-      "id": "finding:General__logistics_cost_ratio__1--grounded_in-->table:Order",
+      "from_id": "finding:General__Logistics cost efficiency by platform (shipping + duty vs GMV)__1",
+      "id": "finding:General__Logistics cost efficiency by platform (shipping + duty vs GMV)__1--grounded_in-->table:Order",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -259,6 +416,54 @@
         "source": "dossier"
       },
       "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:General__Value-impact refunds by platform (financial refund rate), to identify where return/refund friction costs the most as a share of GMV.__7",
+      "id": "finding:General__Value-impact refunds by platform (financial refund rate), to identify where return/refund friction costs the most as a share of GMV.__7--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:General__Value-impact refunds by platform (financial refund rate), to identify where return/refund friction costs the most as a share of GMV.__7",
+      "id": "finding:General__Value-impact refunds by platform (financial refund rate), to identify where return/refund friction costs the most as a share of GMV.__7--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:a32822f5fc71",
+      "id": "finding:a32822f5fc71--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:b4d75a17bcad",
+      "id": "finding:b4d75a17bcad--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Shipment"
     },
     {
       "from_id": "finding:pinned__0",
@@ -319,6 +524,18 @@
         "source": "exploration"
       },
       "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:pinned__2",
+      "id": "finding:pinned__2--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
     },
     {
       "from_id": "finding:pinned__3",
@@ -405,8 +622,8 @@
       "to_id": "table:Return"
     },
     {
-      "from_id": "finding:synth__chain__1",
-      "id": "finding:synth__chain__1--grounded_in-->table:Customer",
+      "from_id": "finding:synth__concentration__0",
+      "id": "finding:synth__concentration__0--grounded_in-->table:Customer",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -417,8 +634,8 @@
       "to_id": "table:Customer"
     },
     {
-      "from_id": "finding:synth__chain__1",
-      "id": "finding:synth__chain__1--grounded_in-->table:Order",
+      "from_id": "finding:synth__confound__1",
+      "id": "finding:synth__confound__1--grounded_in-->table:Customer",
       "kind": "grounded_in",
       "label": "grounded in",
       "provenance": {
@@ -426,31 +643,7 @@
         "note": "finding SQL reads table",
         "source": "dossier"
       },
-      "to_id": "table:Order"
-    },
-    {
-      "from_id": "finding:synth__chain__1",
-      "id": "finding:synth__chain__1--grounded_in-->table:Shipment",
-      "kind": "grounded_in",
-      "label": "grounded in",
-      "provenance": {
-        "measured": null,
-        "note": "finding SQL reads table",
-        "source": "dossier"
-      },
-      "to_id": "table:Shipment"
-    },
-    {
-      "from_id": "finding:synth__concentration__0",
-      "id": "finding:synth__concentration__0--grounded_in-->table:Brand",
-      "kind": "grounded_in",
-      "label": "grounded in",
-      "provenance": {
-        "measured": null,
-        "note": "finding SQL reads table",
-        "source": "dossier"
-      },
-      "to_id": "table:Brand"
+      "to_id": "table:Customer"
     },
     {
       "from_id": "metric:aov",
@@ -609,7 +802,7 @@
       "to_id": "table:Return"
     }
   ],
-  "exported_at": "2026-08-04T23:06:38.798329+00:00",
+  "exported_at": "2026-08-05T07:19:12.391907+00:00",
   "format": 1,
   "freshness": {
     "degraded": true,
@@ -619,6 +812,23 @@
   },
   "generator": "aughor",
   "nodes": [
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:19:00.153022+00:00",
+        "scope": "914df862",
+        "theme": ""
+      },
+      "id": "brief:914df862",
+      "kind": "brief",
+      "label": "The MiddleEast market shows the highest average return rate at 0.4312 while simu\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "synthesis of 4 cited findings",
+        "source": "briefing"
+      },
+      "summary": "The MiddleEast market shows the highest average return rate at 0.4312 while simultaneously delivering the highest average revenue per customer at \u20ac1,664.25, highlighting elevated post\u2011purchase returns despite strong spend [1]. This juxtaposition raises profitability concerns even as revenue remains robust.\n\nMytheresa records the highest overall return rate at 0.459024, yet its customer satisfaction score (4.05) lags slightly behind NET\u2011A\u2011PORTER\u2019s 4.11, which enjoys a lower return rate (0.443489) [2]. The gap suggests that higher returns may be eroding brand perception despite comparable spend levels.\n\nSupply\u2011side concentration is evident: Italy supplies 38.57% of LuxExperience\u2019s catalog (27 brands), far outpacing France\u2019s 24.29% share [3], while THE OUTNET leads in VIP customer concentration with a tier_customer_rate of 0.100506, exceeding Mytheresa and NET\u2011A\u2011PORTER [4]. Such concentrations amplify exposure to regional or platform\u2011specific shocks.",
+      "tags": []
+    },
     {
       "data": {
         "members": [
@@ -782,6 +992,26 @@
     },
     {
       "data": {
+        "generated_at": "2026-08-05T06:48:20.582928+00:00",
+        "investigation_id": "8bb555c7",
+        "sql": "SELECT reason, ROUND(SUM(refund_eur), 2) AS sum_refund_eur FROM luxexperience.returns GROUP BY reason ORDER BY sum_refund_eur DESC LIMIT 1",
+        "tables": [
+          "returns"
+        ]
+      },
+      "id": "finding:740ee9d9d9fa",
+      "kind": "finding",
+      "label": "Top return reason by total refund amount",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top return reason by total refund amount",
+      "tags": []
+    },
+    {
+      "data": {
         "generated_at": "2026-08-04T21:49:39.034486+00:00",
         "investigation_id": "5cb898d7",
         "sql": "WITH s AS (SELECT s.order_id, MAX(s.delivery_days) AS delivery_days FROM luxexperience.shipments AS s WHERE NOT s.delivery_days IS NULL GROUP BY s.order_id) SELECT (s.delivery_days > (SELECT AVG(s2.delivery_days) FROM luxexperience.shipments AS s2 WHERE NOT s2.delivery_days IS NULL)) AS segment, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, ROUND((COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0)) / NULLIF(COUNT(*), 0), 2) AS avg_per_record FROM luxexperience.order_items AS oi JOIN s ON oi.order_id = s.order_id GROUP BY 1 ORDER BY 1",
@@ -803,116 +1033,311 @@
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:41:02.486943+00:00",
+        "generated_at": "2026-08-05T06:47:23.019844+00:00",
+        "investigation_id": "f075eb22",
+        "sql": "SELECT oi.platform, ROUND(SUM(oi.returned::int)::numeric / NULLIF(COUNT(*), 0), 2) AS return_rate FROM luxexperience.order_items oi GROUP BY oi.platform ORDER BY oi.platform;",
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:849608688d55",
+      "kind": "finding",
+      "label": "Return rate by platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Return rate by platform",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:07:42.376047+00:00",
+        "sql": "SELECT country, COUNT(DISTINCT brand_id) AS brand_count, COUNT(DISTINCT brand_id) * 1.0 / SUM(COUNT(DISTINCT brand_id)) OVER () AS brand_share FROM luxexperience.brands GROUP BY country ORDER BY brand_count DESC",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:Catalog__Catalog composition by brand origin country (brand concentration / diversity signal).__6",
+      "kind": "finding",
+      "label": "Italy leads LuxExperience\u2019s catalog by origin, contributing 27 brands (38.57% sh\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Italy leads LuxExperience\u2019s catalog by origin, contributing 27 brands (38.57% share), ahead of France with 17 brands (24.29%).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:07:50.160628+00:00",
+        "sql": "SELECT b.focus_category, COUNT(DISTINCT b.brand_id) AS italian_brand_count, COUNT(DISTINCT b.brand_id) * 1.0 / NULLIF((SELECT COUNT(DISTINCT brand_id) FROM luxexperience.brands WHERE country = 'Italy'), 0) AS italian_brand_focus_share FROM luxexperience.brands AS b WHERE b.country = 'Italy' GROUP BY b.focus_category ORDER BY italian_brand_count DESC",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:Catalog__Catalog composition driver behind Italy\u2019s dominance: identify which focus_category pockets (e.g., womenswear, jewelry_watches, etc.) account for most Italian brands.__7",
+      "kind": "finding",
+      "label": "Among Italian-origin brands, the focus categories are most concentrated in women\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Among Italian-origin brands, the focus categories are most concentrated in womenswear with 10 brands (italian_brand_focus_share 0.37037), followed by shoes with 6 brands (0.222222) and menswear with 4 brands (0.148148).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:07:58.790978+00:00",
+        "sql": "SELECT tier, COUNT(DISTINCT brand_id) AS italian_womenswear_brand_count, COUNT(DISTINCT brand_id) * 1.0 / NULLIF((SELECT COUNT(DISTINCT brand_id) FROM luxexperience.brands WHERE country = 'Italy' AND focus_category = 'womenswear'), 0) AS italian_womenswear_brand_share FROM luxexperience.brands WHERE country = 'Italy' AND focus_category = 'womenswear' GROUP BY tier ORDER BY italian_womenswear_brand_count DESC, tier",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:Catalog__Catalog concentration drill-down: tier composition behind the top focus_category concentration for Italian-origin brands__8",
+      "kind": "finding",
+      "label": "Italian-origin womenswear in the catalog is split evenly between the luxury tier\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Italian-origin womenswear in the catalog is split evenly between the luxury tier and the ultra tier, each accounting for 5 brands (each with 0.5 of the Italian womenswear brand count).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:07:29.179893+00:00",
         "sql": "SELECT tier, focus_category, COUNT(DISTINCT brand_id) AS brand_count FROM luxexperience.brands GROUP BY tier, focus_category ORDER BY brand_count DESC, tier, focus_category",
         "tables": [
           "luxexperience.brands"
         ]
       },
-      "id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8",
+      "id": "finding:Catalog__Catalog mix coverage: identify where the assortment is concentrated across tier and focus_category (assortment breadth).__5",
       "kind": "finding",
-      "label": "Across the catalog, the largest brand coverage is in womenswear with 12 brands i\u2026",
+      "label": "LuxExperience\u2019s catalog is most concentrated in womenswear, led by the ultra tie\u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "Across the catalog, the largest brand coverage is in womenswear with 12 brands in ultra and 11 in luxury (then 9 in contemporary), while most other focus categories are much thinner\u2014e.g., shoes has 7 brands in luxury and 3 in ultra/contemporary, and categories like accessories, beauty, life, and outerwear have just 1 brand each in at least one tier.",
+      "summary": "LuxExperience\u2019s catalog is most concentrated in womenswear, led by the ultra tier (12 brands) and then the luxury tier (11 brands), with contemporary womenswear at 9 brands. Outside womenswear, the largest additional pockets are luxury shoes (7 brands) and ultra womenswear-adjacent categories like jewelry_watches (4 brands) and menswear (4 brands).",
       "tags": []
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:41:11.755594+00:00",
-        "sql": "SELECT tier, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) AS womenswear_brand_count, COUNT(brand_id) AS total_brand_count, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(brand_id), 0) AS womenswear_share_of_tier FROM luxexperience.brands GROUP BY tier ORDER BY womenswear_share_of_tier DESC, womenswear_brand_count DESC",
+        "generated_at": "2026-08-05T07:06:51.183432+00:00",
+        "sql": "SELECT SUM(luxexperience.orders.shipping_fee_eur + luxexperience.orders.duty_eur) / NULLIF(SUM(luxexperience.orders.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders WHERE luxexperience.orders.order_date >= '2024-06-29' AND luxexperience.orders.order_date < '2025-06-30'",
         "tables": [
-          "luxexperience.brands"
+          "luxexperience.orders"
         ]
       },
-      "id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9",
+      "id": "finding:Catalog__logistics_cost_ratio__2",
       "kind": "finding",
-      "label": "Womenswear is most concentrated in the ultra tier, where womenswear brands make \u2026",
+      "label": "Over the last 12 months, logistics costs (shipping + duty) are 0.055822 of GMV, \u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "Womenswear is most concentrated in the ultra tier, where womenswear brands make up 0.48 of the tier (12 womenswear brands out of 25 total). Contemporary is close behind at 0.473684 (9 out of 19), while luxury trails at 0.423077 (11 out of 26).",
+      "summary": "Over the last 12 months, logistics costs (shipping + duty) are 0.055822 of GMV, i.e., about 5.58% of GMV.",
       "tags": []
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:36:42.491245+00:00",
-        "sql": "SELECT platform, top_customer_cnt, total_customer_cnt, top_customer_cnt / NULLIF(total_customer_cnt, 0) AS top_customer_share FROM (SELECT platform, COUNT(DISTINCT customer_id) AS total_customer_cnt, COUNT(DISTINCT CASE WHEN is_top_customer = TRUE THEN customer_id END) AS top_customer_cnt FROM luxexperience.customers GROUP BY platform) AS s ORDER BY top_customer_share DESC, top_customer_cnt DESC",
+        "generated_at": "2026-08-05T07:02:51.894207+00:00",
+        "sql": "SELECT platform, SUM(CASE WHEN is_top_customer = 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS top_customer_rate, COUNT(DISTINCT customer_id) AS customer_count FROM luxexperience.customers GROUP BY platform ORDER BY top_customer_rate DESC, customer_count DESC",
         "tables": [
           "luxexperience.customers"
         ]
       },
-      "id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1",
+      "id": "finding:Customer__Customer value concentration by platform (top-customer share).__1",
       "kind": "finding",
-      "label": "MR PORTER has the highest share of top customers at 0.035227, with 129 top custo\u2026",
+      "label": "MR PORTER leads customer platforms in the share of top customers at 0.035227 (to\u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "MR PORTER has the highest share of top customers at 0.035227, with 129 top customers out of 3662 total customers.",
+      "summary": "MR PORTER leads customer platforms in the share of top customers at 0.035227 (top-customer rate), with 3662 customers in the dataset for that platform.",
       "tags": []
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:39:55.420015+00:00",
-        "sql": "SELECT o.channel, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-29' AND o.platform = 'Mytheresa' AND o.ship_country = 'Ireland' GROUP BY o.channel ORDER BY logistics_cost_ratio ASC",
+        "generated_at": "2026-08-05T07:03:30.437665+00:00",
+        "sql": "SELECT c.tier, COUNT(DISTINCT CASE WHEN c.is_top_customer = 1 THEN c.customer_id END) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS top_customer_rate FROM luxexperience.customers AS c WHERE c.platform = 'MR PORTER' AND c.region = 'US' GROUP BY c.tier ORDER BY top_customer_rate DESC",
         "tables": [
-          "luxexperience.orders"
+          "luxexperience.customers"
         ]
       },
-      "id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15",
+      "id": "finding:Customer__Top-customer concentration driver by tier (sub-population within MR PORTER, US).__5",
       "kind": "finding",
-      "label": "For Mytheresa customers shipping to Ireland, the clienteling order channel has a\u2026",
+      "label": "For MR PORTER in the US, the \u201cTop Customer\u201d tier has a top_customer_rate of 1.0 \u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "For Mytheresa customers shipping to Ireland, the clienteling order channel has an exceptionally low logistics cost ratio of 0.0 (shipping + duty as a % of GMV), lower than web at 0.000779 and app at 0.001078.",
+      "summary": "For MR PORTER in the US, the \u201cTop Customer\u201d tier has a top_customer_rate of 1.0 (top_customer_rate values: 1 and 0 are the only rates returned), while all other tiers shown (Prospect, VIP, Active) have a top_customer_rate of 0.",
       "tags": []
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:38:43.600206+00:00",
-        "sql": "SELECT o.ship_country, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' AND o.platform = 'Mytheresa' GROUP BY o.ship_country HAVING SUM(o.gmv_eur) > 0 ORDER BY logistics_cost_ratio ASC",
+        "generated_at": "2026-08-05T07:03:41.194861+00:00",
+        "sql": "SELECT s.platform, s.tier, s.tier_customer_rate FROM (SELECT c.platform, c.tier, COUNT(c.customer_id) * 1.0 / NULLIF(t.platform_customer_count, 0) AS tier_customer_rate FROM luxexperience.customers AS c JOIN (SELECT platform, COUNT(customer_id) AS platform_customer_count FROM luxexperience.customers GROUP BY platform) AS t ON c.platform = t.platform WHERE c.tier = 'VIP' GROUP BY c.platform, c.tier, t.platform_customer_count) AS s ORDER BY s.tier_customer_rate DESC, s.platform ASC",
         "tables": [
-          "luxexperience.orders"
+          "luxexperience.customers"
         ]
       },
-      "id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6",
+      "id": "finding:Customer__VIP concentration by platform (customer mix / value-signal segmentation).__6",
       "kind": "finding",
-      "label": "For Mytheresa, Ireland has the lowest logistics cost ratio at 0.001041 (shipping\u2026",
+      "label": "THE OUTNET has the highest VIP customer concentration by platform at a tier_cust\u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "For Mytheresa, Ireland has the lowest logistics cost ratio at 0.001041 (shipping_fee_eur + duty_eur divided by GMV) over the last 12 months, versus 0.041972 for the next lowest high outlier country, the United Kingdom.",
+      "summary": "THE OUTNET has the highest VIP customer concentration by platform at a tier_customer_rate of 0.100506, ahead of Mytheresa at 0.097812 and NET-A-PORTER at 0.093814.",
       "tags": []
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:38:17.438042+00:00",
-        "sql": "SELECT o.platform, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio, SUM(o.gmv_eur) AS gmv_eur FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' GROUP BY o.platform ORDER BY logistics_cost_ratio ASC",
+        "generated_at": "2026-08-05T07:03:14.042245+00:00",
+        "sql": "SELECT c.platform, c.region, COUNT(DISTINCT CASE WHEN c.is_top_customer = 1 THEN c.customer_id END) AS top_customer_customers, COUNT(DISTINCT c.customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN c.is_top_customer = 1 THEN c.customer_id END) * 1.0 / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS top_customer_rate FROM luxexperience.customers AS c GROUP BY c.platform, c.region HAVING c.platform = 'MR PORTER' ORDER BY top_customer_rate DESC, top_customer_customers DESC",
         "tables": [
-          "luxexperience.orders"
+          "luxexperience.customers"
         ]
       },
-      "id": "finding:General__logistics_cost_ratio__1",
+      "id": "finding:Customer__Within-platform concentration: identify the region that drives MR PORTER\u2019s top-customer rate.__4",
       "kind": "finding",
-      "label": "Mytheresa has the lowest logistics cost ratio at 0.0381 over the last 12 months,\u2026",
+      "label": "For MR PORTER, the US shows the strongest concentration of top customers, with 5\u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "Mytheresa has the lowest logistics cost ratio at 0.0381 over the last 12 months, with logistics costs totaling 2949292 of GMV 2949292.0.",
+      "summary": "For MR PORTER, the US shows the strongest concentration of top customers, with 50 top customers out of 1248 total customers (top_customer_rate = 0.040064), ahead of MiddleEast at 0.037975 (9/237) and Asia at 0.035326 (13/368).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:06:04.963504+00:00",
+        "sql": "SELECT oi.category, CAST(COUNT(DISTINCT CASE WHEN oi.returned = 1 THEN oi.order_item_id END) AS REAL) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS item_return_rate FROM luxexperience.orders AS o JOIN luxexperience.order_items AS oi ON oi.order_id = o.order_id WHERE o.order_date >= CAST('2024-06-29' AS DATE) AND o.order_date < CAST('2025-06-30' AS DATE) AND o.platform = 'Mytheresa' GROUP BY oi.category HAVING COUNT(DISTINCT oi.order_item_id) > 0 ORDER BY item_return_rate DESC LIMIT 10",
+        "tables": [
+          "luxexperience.order_items",
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__Identify whether Mytheresa\u2019s elevated financial refund rate is driven by specific categories generating disproportionately high return volume (item return rate at the order-item grain).__12",
+      "kind": "finding",
+      "label": "Over the last 12 months on Mytheresa, the highest item return rates by category \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Over the last 12 months on Mytheresa, the highest item return rates by category are womenswear at 0.398794 and outerwear at 0.364465 (with shoes close at 0.35905), while beauty is lowest among the shown categories at 0.096385.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:05:11.467593+00:00",
+        "sql": "SELECT o.segment, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' AND o.platform = 'THE OUTNET' GROUP BY o.segment ORDER BY logistics_cost_ratio DESC LIMIT 2",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__Logistics Cost Ratio driver analysis by segment (why THE OUTNET is highest overall).__6",
+      "kind": "finding",
+      "label": "For THE OUTNET over the last 12 months, the customer segment **off_price** has t\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "For THE OUTNET over the last 12 months, the customer segment **off_price** has the highest logistics cost ratio at **0.108544** (shipping + duty as a share of GMV). The query output only includes this top segment, so the gap to the next segment cannot be determined from the provided result.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:04:38.912160+00:00",
+        "sql": "SELECT o.platform, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' GROUP BY o.platform ORDER BY logistics_cost_ratio DESC",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__Logistics cost efficiency by platform (shipping + duty vs GMV)__1",
+      "kind": "finding",
+      "label": "Over the last 12 months, THE OUTNET has the highest logistics cost ratio at 0.10\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Over the last 12 months, THE OUTNET has the highest logistics cost ratio at 0.108544, which is higher than YOOX at 0.08162 by 0.026923.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:05:20.258189+00:00",
+        "sql": "WITH order_refunds AS (SELECT order_id, platform, SUM(refund_eur) AS refund_eur FROM luxexperience.returns WHERE return_date >= '2024-06-29' AND return_date < '2025-06-30' GROUP BY order_id, platform) SELECT o.platform, SUM(o.gmv_eur) AS gmv_eur, SUM(COALESCE(r.refund_eur, 0)) AS refund_eur, SUM(COALESCE(r.refund_eur, 0)) / NULLIF(SUM(o.gmv_eur), 0) AS financial_refund_rate FROM luxexperience.orders AS o LEFT JOIN order_refunds AS r ON o.order_id = r.order_id AND o.platform = r.platform WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' GROUP BY o.platform HAVING SUM(o.gmv_eur) > 0 ORDER BY financial_refund_rate DESC",
+        "tables": [
+          "luxexperience.orders",
+          "luxexperience.returns"
+        ]
+      },
+      "id": "finding:General__Value-impact refunds by platform (financial refund rate), to identify where return/refund friction costs the most as a share of GMV.__7",
+      "kind": "finding",
+      "label": "Over the last 12 months, Mytheresa has the highest financial refund rate at 0.30\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Over the last 12 months, Mytheresa has the highest financial refund rate at 0.30972, with 913454.0 in refunds against 2949292.0 GMV; the next platform is NET-A-PORTER at 0.304554 (643720.0 refunds on 2113650.0 GMV).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T06:49:01.898540+00:00",
+        "investigation_id": "6fff130c",
+        "sql": "SELECT platform, ROUND(AVG(gmv_eur), 2) AS aov FROM luxexperience.orders GROUP BY platform ORDER BY aov DESC LIMIT 1;",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:a32822f5fc71",
+      "kind": "finding",
+      "label": "Platform with Highest Average Order Value",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Platform with Highest Average Order Value",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T06:51:43.546042+00:00",
+        "investigation_id": "b1026d87",
+        "sql": "SELECT service_level, ROUND(AVG(delivery_days), 2) AS avg_delivery_days FROM luxexperience.shipments WHERE service_level IN ('standard', 'express') GROUP BY service_level ORDER BY avg_delivery_days DESC",
+        "tables": [
+          "shipments"
+        ]
+      },
+      "id": "finding:b4d75a17bcad",
+      "kind": "finding",
+      "label": "Average delivery days for standard vs express shipping",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Average delivery days for standard vs express shipping",
       "tags": []
     },
     {
@@ -954,6 +1379,25 @@
         "source": "exploration"
       },
       "summary": "Late-delivery returns are most concentrated in womenswear: 1,595 returns are tagged with returns.reason='late_delivery' (4.76).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:02:44.915097+00:00",
+        "sql": "SELECT platform, (SUM(shipping_fee_eur) + SUM(duty_eur)) / NULLIF(SUM(gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders GROUP BY 1 ORDER BY logistics_cost_ratio ASC",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:pinned__2",
+      "kind": "finding",
+      "label": "Logistics cost ratio varies materially by platform, ranging from 0.0403 (Mythere\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Logistics cost ratio varies materially by platform, ranging from 0.0403 (Mytheresa, most efficient) to 0.0997 (The Outnet, least efficient), making Mytheresa the top performer in delivery operations among those listed.",
       "tags": []
     },
     {
@@ -1019,42 +1463,40 @@
     },
     {
       "data": {
-        "generated_at": "2026-08-04T22:42:18.050579+00:00",
-        "sql": "WITH params AS (SELECT (SELECT MAX(ship_date) FROM luxexperience.shipments) AS max_ship_date, (SELECT MAX(order_date) FROM luxexperience.orders) AS max_order_date), platform_customers AS (SELECT o.platform, COUNT(DISTINCT CASE WHEN c.is_top_customer THEN c.customer_id END) AS top_customers_count, COUNT(DISTINCT c.customer_id) AS total_customers_count FROM luxexperience.orders AS o JOIN luxexperience.customers AS c ON o.customer_id = c.customer_id CROSS JOIN params AS p WHERE o.order_date >= (p.max_order_date - INTERVAL '12' MONTH) GROUP BY o.platform), logistics_cost AS (SELECT s.platform, SUM(s.shipping_cost_eur + s.duty_eur) AS logistics_cost FROM luxexperience.shipments AS s CROSS JOIN params AS p WHERE s.ship_date >= (p.max_ship_date - INTERVAL '12' MONTH) GROUP BY s.platform), platform_gmv AS (SELECT o.platform, SUM(o.gmv_eur) AS gmv FROM luxexperience.orders AS o CROSS JOIN params AS p WHERE o.order_date >= (p.max_order_date - INTERVAL '12' MONTH) GROUP BY o.platform), platform_metrics AS (SELECT pc.platform, CAST(pc.top_customers_count AS DOUBLE) / NULLIF(pc.total_customers_count, 0) AS top_share, CAST(lc.logistics_cost AS DOUBLE) / NULLIF(pg.gmv, 0) AS logistics_ratio FROM platform_customers AS pc JOIN logistics_cost AS lc ON pc.platform = lc.platform JOIN platform_gmv AS pg ON pc.platform = pg.platform) SELECT CORR(top_share, logistics_ratio) AS correlation_top_share_vs_logistics_ratio FROM platform_metrics",
+        "generated_at": "2026-08-05T07:08:40.874407+00:00",
+        "sql": "WITH mr_porter_totals AS (SELECT COUNT(DISTINCT c.customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN c.is_top_customer THEN c.customer_id END) AS total_top_customers FROM luxexperience.customers AS c WHERE c.platform = 'MR PORTER'), mr_porter_us AS (SELECT COUNT(DISTINCT CASE WHEN c.region = 'US' THEN c.customer_id END) AS customers_in_us, COUNT(DISTINCT CASE WHEN c.region = 'US' AND c.is_top_customer THEN c.customer_id END) AS top_customers_in_us FROM luxexperience.customers AS c WHERE c.platform = 'MR PORTER'), computed AS (SELECT u.top_customers_in_us, t.total_top_customers, u.customers_in_us, t.total_customers, u.top_customers_in_us / NULLIF(t.total_top_customers, 0) AS top_customers_us_share, u.customers_in_us / NULLIF(t.total_customers, 0) AS customers_us_share FROM mr_porter_us AS u CROSS JOIN mr_porter_totals AS t) SELECT top_customers_us_share, customers_us_share, top_customers_in_us, total_top_customers, customers_in_us, total_customers FROM computed",
         "tables": [
-          "luxexperience.customers",
-          "luxexperience.orders",
-          "luxexperience.shipments"
-        ]
-      },
-      "id": "finding:synth__chain__1",
-      "kind": "finding",
-      "label": "Combining the two inputs yields the emergent composite result of -0.174013.",
-      "provenance": {
-        "measured": null,
-        "note": "finding from dossier",
-        "source": "dossier"
-      },
-      "summary": "Combining the two inputs yields the emergent composite result of -0.174013.",
-      "tags": []
-    },
-    {
-      "data": {
-        "generated_at": "2026-08-04T22:41:53.031409+00:00",
-        "sql": "WITH total_brands AS (SELECT COUNT(brand_id) AS total_brand_count FROM luxexperience.brands), brands_by_tier AS (SELECT tier, COUNT(brand_id) AS total_brand_count_in_tier, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) AS womenswear_brand_count_in_tier FROM luxexperience.brands GROUP BY tier), womenswear_totals AS (SELECT COUNT(brand_id) AS total_womenswear_brand_count FROM luxexperience.brands WHERE focus_category = 'womenswear'), calc AS (SELECT ub.total_brand_count_in_tier AS total_brand_count_in_ultra, ub.womenswear_brand_count_in_tier AS womenswear_brand_count_in_ultra, wt.total_womenswear_brand_count, cb.total_brand_count AS total_brand_count FROM brands_by_tier AS ub CROSS JOIN total_brands AS cb CROSS JOIN womenswear_totals AS wt WHERE ub.tier = 'ultra'), shares AS (SELECT CAST(womenswear_brand_count_in_ultra AS DOUBLE) / NULLIF(total_womenswear_brand_count, 0) AS womenswear_share_of_all_womenswear_in_ultra, CAST(total_brand_count_in_ultra AS DOUBLE) / NULLIF(total_brand_count, 0) AS ultra_share_of_all_brands, CAST(womenswear_brand_count_in_ultra AS DOUBLE) / NULLIF(total_brand_count_in_ultra, 0) AS womenswear_share_within_ultra FROM calc), within_tier_shares AS (SELECT MAX(CASE WHEN tier = 'ultra' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_ultra, MAX(CASE WHEN tier = 'luxury' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_luxury, MAX(CASE WHEN tier = 'contemporary' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_contemporary FROM brands_by_tier) SELECT s.womenswear_share_of_all_womenswear_in_ultra AS metric_1_womenswear_brand_count_in_ultra_over_total_womenswear_brand_count, s.ultra_share_of_all_brands AS metric_2_total_brand_count_in_ultra_over_total_brand_count, CASE WHEN s.womenswear_share_of_all_womenswear_in_ultra > s.ultra_share_of_all_brands THEN TRUE ELSE FALSE END AS confirms_metric_1_greater_than_metric_2, s.womenswear_share_within_ultra AS womenswear_share_within_ultra, w.womenswear_share_within_luxury, w.womenswear_share_within_contemporary, CASE WHEN s.womenswear_share_within_ultra > w.womenswear_share_within_luxury AND s.womenswear_share_within_ultra > w.womenswear_share_within_contemporary THEN TRUE ELSE FALSE END AS confirms_womenswear_share_within_ultra_highest FROM shares AS s CROSS JOIN within_tier_shares AS w",
-        "tables": [
-          "luxexperience.brands"
+          "luxexperience.customers"
         ]
       },
       "id": "finding:synth__concentration__0",
       "kind": "finding",
-      "label": "By combining the brand-coverage dominance of womenswear with the tier-level conc\u2026",
+      "label": "Combining the MR PORTER platform-level concentration with the US regional concen\u2026",
       "provenance": {
         "measured": null,
         "note": "finding from dossier",
         "source": "dossier"
       },
-      "summary": "By combining the brand-coverage dominance of womenswear with the tier-level concentration, the result shows womenswear is the most concentrated category specifically in the ultra tier (0.48), ahead of contemporary (0.473684) and luxury (0.423077).",
+      "summary": "Combining the MR PORTER platform-level concentration with the US regional concentration shows that the US segment\u2019s top-customer count (50) within the US total customers (1248) corresponds to an overall concentration level of 0.387597 for MR PORTER.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-05T07:09:20.112044+00:00",
+        "sql": "WITH top_customer_metric AS (SELECT c.platform, COUNT(*) AS total_customers, SUM(CASE WHEN c.is_top_customer THEN 1 ELSE 0 END) AS top_customers, CAST(SUM(CASE WHEN c.is_top_customer THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top_customer_rate FROM luxexperience.customers AS c GROUP BY c.platform), vip_tier_metric AS (SELECT c.platform, COUNT(*) AS total_customers, SUM(CASE WHEN c.tier = 'VIP' THEN 1 ELSE 0 END) AS vip_customers, CAST(SUM(CASE WHEN c.tier = 'VIP' THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS tier_customer_rate FROM luxexperience.customers AS c GROUP BY c.platform), metrics AS (SELECT tcm.platform, tcm.top_customer_rate, vtm.tier_customer_rate, ABS(tcm.top_customer_rate - vtm.tier_customer_rate) AS abs_discrepancy FROM top_customer_metric AS tcm JOIN vip_tier_metric AS vtm ON tcm.platform = vtm.platform) SELECT platform, top_customer_rate, tier_customer_rate, abs_discrepancy FROM metrics ORDER BY abs_discrepancy DESC LIMIT 1",
+        "tables": [
+          "luxexperience.customers"
+        ]
+      },
+      "id": "finding:synth__confound__1",
+      "kind": "finding",
+      "label": "Combining the leadership-by-tier pattern with the top-customer concentration con\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Combining the leadership-by-tier pattern with the top-customer concentration context shows that THE OUTNET simultaneously exhibits the highest tier_customer_rate (0.100506) and a relatively high top-customer rate (0.035069), with the combined profile reflected in the additional value 0.065437.",
       "tags": []
     },
     {
@@ -1073,7 +1515,7 @@
         "note": "defined on brands",
         "source": "glossary"
       },
-      "summary": "Name of the brand.",
+      "summary": "Official brand name as used in commerce and marketing.",
       "tags": []
     },
     {
@@ -1101,7 +1543,7 @@
         "caveats": "",
         "column": "country",
         "table": "brands",
-        "values": "Italy, France, USA, UK, Sweden, Denmark, Bulgaria, Germany, Australia, Netherlands, Spain, Belgium"
+        "values": "Italy, France, USA, UK, Sweden, Denmark, Germany, Bulgaria, Australia, Netherlands, Spain, Belgium"
       },
       "id": "glossary_term:brands.country",
       "kind": "glossary_term",
@@ -1111,7 +1553,7 @@
         "note": "defined on brands",
         "source": "glossary"
       },
-      "summary": "Country where the brand is headquartered or primarily operates.",
+      "summary": "Country where the brand is headquartered or originated.",
       "tags": []
     },
     {
@@ -1120,7 +1562,7 @@
         "caveats": "",
         "column": "focus_category",
         "table": "brands",
-        "values": "womenswear, shoes, jewelry_watches, bags, menswear, outerwear, life, beauty, accessories"
+        "values": "womenswear, shoes, jewelry_watches, menswear, bags, outerwear, beauty, life, accessories"
       },
       "id": "glossary_term:brands.focus_category",
       "kind": "glossary_term",
@@ -1130,7 +1572,7 @@
         "note": "defined on brands",
         "source": "glossary"
       },
-      "summary": "Primary product category the brand focuses on.",
+      "summary": "Primary product category the brand is known for or specializes in.",
       "tags": []
     },
     {
@@ -1149,7 +1591,7 @@
         "note": "defined on brands",
         "source": "glossary"
       },
-      "summary": "Market positioning tier of the brand.",
+      "summary": "Market positioning tier indicating brand prestige and price level.",
       "tags": []
     },
     {
@@ -1405,7 +1847,7 @@
         "caveats": "",
         "column": "country",
         "table": "customers",
-        "values": "AU, KR, GB, FR, IT, AE, US, SG, CA"
+        "values": "BR, GB, JP, US, AU, CA, DE, FR, NG, IN"
       },
       "id": "glossary_term:customers.country",
       "kind": "glossary_term",
@@ -1415,12 +1857,12 @@
         "note": "defined on customers",
         "source": "glossary"
       },
-      "summary": "Country code (ISO 2-letter) where the customer resides",
+      "summary": "Country where the customer resides, represented as ISO 3166-1 alpha-2 code",
       "tags": []
     },
     {
       "data": {
-        "auto_generated": true,
+        "auto_generated": false,
         "caveats": "",
         "column": "customer_id",
         "table": "customers",
@@ -1434,7 +1876,7 @@
         "note": "defined on customers",
         "source": "glossary"
       },
-      "summary": "Unique identifier for each customer",
+      "summary": "Surrogate key \u2014 unique identifier for every customer account",
       "tags": []
     },
     {
@@ -1681,7 +2123,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Tier grouping of the brand based on price/exclusivity.",
+      "summary": "Brand positioning tier.",
       "tags": []
     },
     {
@@ -1719,7 +2161,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Unique identifier for the order to which this item belongs",
+      "summary": "Reference to the parent order containing this item",
       "tags": []
     },
     {
@@ -1738,7 +2180,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Sequential index of this item within its order (e.g., 1 for first item, 2 for second, etc.)",
+      "summary": "Unique identifier for the order line item.",
       "tags": []
     },
     {
@@ -1757,7 +2199,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Luxury e\u2011commerce channel where the order was placed.",
+      "summary": "E-commerce platform where the order was placed.",
       "tags": []
     },
     {
@@ -1776,7 +2218,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Unique identifier for the product in this order item",
+      "summary": "Identifier for the product included in this line item",
       "tags": []
     },
     {
@@ -1795,7 +2237,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Number of units of the product purchased in this line item.",
+      "summary": "Number of units of the product purchased in this line item",
       "tags": []
     },
     {
@@ -1814,13 +2256,13 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Indicates whether the item was returned by the customer.",
+      "summary": "Indicates whether the item was returned.",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "",
+        "caveats": "Floating point type may introduce rounding errors; consider using decimal for financial calculations.",
         "column": "unit_price_eur",
         "table": "order_items",
         "values": ""
@@ -1833,7 +2275,7 @@
         "note": "defined on order_items",
         "source": "glossary"
       },
-      "summary": "Price per unit charged to the customer, in euros.",
+      "summary": "Price per unit in euros.",
       "tags": []
     },
     {
@@ -1858,10 +2300,10 @@
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Only EUR appears in the data; column may be redundant.",
+        "caveats": "",
         "column": "currency",
         "table": "orders",
-        "values": "EUR"
+        "values": "EUR, USD, CAD, GBP"
       },
       "id": "glossary_term:orders.currency",
       "kind": "glossary_term",
@@ -1871,7 +2313,7 @@
         "note": "defined on orders",
         "source": "glossary"
       },
-      "summary": "Transaction currency for the order.",
+      "summary": "Three-letter ISO currency code for the order amount",
       "tags": []
     },
     {
@@ -2127,7 +2569,7 @@
         "caveats": "",
         "column": "segment",
         "table": "orders",
-        "values": "Consumer, Corporate, Home Office"
+        "values": "off_price, luxury"
       },
       "id": "glossary_term:orders.segment",
       "kind": "glossary_term",
@@ -2137,7 +2579,7 @@
         "note": "defined on orders",
         "source": "glossary"
       },
-      "summary": "Market segment to which the customer belongs.",
+      "summary": "Market segment of the platform (off\u2011price or luxury).",
       "tags": []
     },
     {
@@ -2219,7 +2661,7 @@
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Stored as DOUBLE; floating-point precision may cause rounding issues for financial calculations.",
+        "caveats": "",
         "column": "amount_eur",
         "table": "payments",
         "values": ""
@@ -2238,10 +2680,10 @@
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Sample shows only False; True values may exist in full data but are not represented in the sample.",
+        "caveats": "All observed values are False; true values may be missing or not populated.",
         "column": "fraud_flag",
         "table": "payments",
-        "values": "False"
+        "values": "false"
       },
       "id": "glossary_term:payments.fraud_flag",
       "kind": "glossary_term",
@@ -2257,7 +2699,7 @@
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Scale and threshold for flagging not defined; interpret with caution.",
+        "caveats": "",
         "column": "fraud_score",
         "table": "payments",
         "values": ""
@@ -2270,13 +2712,13 @@
         "note": "defined on payments",
         "source": "glossary"
       },
-      "summary": "Numeric fraud risk score assigned to the payment (higher indicates higher risk).",
+      "summary": "Numeric score indicating the likelihood of fraud (higher = higher risk).",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "May be NULL or 1 for non-installment payments; not explicitly documented.",
+        "caveats": "",
         "column": "installments",
         "table": "payments",
         "values": ""
@@ -2289,7 +2731,7 @@
         "note": "defined on payments",
         "source": "glossary"
       },
-      "summary": "Number of installments for the payment (e.g., for buy-now-pay-later).",
+      "summary": "Number of installments the payment is split into (1 for a single payment).",
       "tags": []
     },
     {
@@ -2352,7 +2794,7 @@
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Overlaps with payment_method values; not all payment_methods map 1:1 to a PSP.",
+        "caveats": "",
         "column": "psp",
         "table": "payments",
         "values": "Adyen, PayPal, Klarna, Bank Transfer"
@@ -2365,7 +2807,7 @@
         "note": "defined on payments",
         "source": "glossary"
       },
-      "summary": "Payment service provider that processed the transaction.",
+      "summary": "Payment service provider that processed the payment.",
       "tags": []
     },
     {
@@ -2384,7 +2826,7 @@
         "note": "defined on payments",
         "source": "glossary"
       },
-      "summary": "Current status of the payment transaction.",
+      "summary": "Current status of the payment.",
       "tags": []
     },
     {
@@ -2507,7 +2949,7 @@
         "caveats": "",
         "column": "brand",
         "table": "products",
-        "values": ""
+        "values": "Noir, Velvet, Botanica, Hydra, Pure Glow, \u00c9clat, AuraBeaut\u00e9, Lumi\u00e8re"
       },
       "id": "glossary_term:products.brand",
       "kind": "glossary_term",
@@ -2517,7 +2959,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Brand name of the product.",
+      "summary": "Brand name under which the product is sold",
       "tags": []
     },
     {
@@ -2545,7 +2987,7 @@
         "caveats": "",
         "column": "category",
         "table": "products",
-        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+        "values": "Makeup, Fragrance, Tools, Skincare, Haircare"
       },
       "id": "glossary_term:products.category",
       "kind": "glossary_term",
@@ -2555,7 +2997,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Product category (e.g., womenswear, shoes, bags).",
+      "summary": "Product category",
       "tags": []
     },
     {
@@ -2564,7 +3006,7 @@
         "caveats": "",
         "column": "in_season",
         "table": "products",
-        "values": "True, False"
+        "values": "False, True"
       },
       "id": "glossary_term:products.in_season",
       "kind": "glossary_term",
@@ -2574,7 +3016,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Boolean flag indicating if the product is currently in season.",
+      "summary": "Flag indicating whether the product is currently in season for its assigned season.",
       "tags": []
     },
     {
@@ -2583,7 +3025,7 @@
         "caveats": "",
         "column": "platform",
         "table": "products",
-        "values": "THE OUTNET, YOOX, Mytheresa, MR PORTER, NET-A-PORTER"
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, MR PORTER, Mytheresa"
       },
       "id": "glossary_term:products.platform",
       "kind": "glossary_term",
@@ -2593,7 +3035,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "The e-commerce platform selling the product.",
+      "summary": "E\u2011commerce platform where the product is listed.",
       "tags": []
     },
     {
@@ -2612,13 +3054,13 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Unique identifier for each product.",
+      "summary": "Unique identifier for each product",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Stored as DOUBLE; may have floating-point precision issues.",
+        "caveats": "",
         "column": "retail_price_eur",
         "table": "products",
         "values": ""
@@ -2631,13 +3073,13 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Retail price in euros.",
+      "summary": "Retail price of the product in euros.",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "Season codes are not dates; join a date table for temporal analysis.",
+        "caveats": "",
         "column": "season",
         "table": "products",
         "values": "AW20, AW24, SS21, SS24, SS23, AW23, SS20, AW25, AW22, SS25, SS22, AW21"
@@ -2650,7 +3092,7 @@
         "note": "defined on products",
         "source": "glossary"
       },
-      "summary": "Fashion season code (e.g., AW20 = Autumn/Winter 2020).",
+      "summary": "Season code indicating the collection season for the product.",
       "tags": []
     },
     {
@@ -2669,13 +3111,13 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Shipping carrier used for the return shipment.",
+      "summary": "Shipping carrier used to transport the returned item.",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "May be NULL for items not yet inspected.",
+        "caveats": "",
         "column": "condition",
         "table": "return_logistics",
         "values": "resellable, minor_refurbish, reject"
@@ -2688,7 +3130,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Condition assessment of the returned item upon inspection.",
+      "summary": "Condition of the returned item upon receipt, determining its disposition.",
       "tags": []
     },
     {
@@ -2707,7 +3149,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Identifier of the original order associated with the return.",
+      "summary": "Identifier of the original order that the return pertains to.",
       "tags": []
     },
     {
@@ -2726,13 +3168,13 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "The luxury fashion platform where the order was placed.",
+      "summary": "Luxury e-commerce platform where the original order was placed.",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "May be NULL if return has not yet been received.",
+        "caveats": "May be NULL for returns that have not yet been received.",
         "column": "received_date",
         "table": "return_logistics",
         "values": ""
@@ -2745,13 +3187,13 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Date the returned item was received at the warehouse.",
+      "summary": "Date when the returned item was received at the returns center.",
       "tags": []
     },
     {
       "data": {
         "auto_generated": true,
-        "caveats": "May be NULL for refunds still pending or not yet initiated.",
+        "caveats": "May be NULL for returns where refund is pending.",
         "column": "refund_completed_date",
         "table": "return_logistics",
         "values": ""
@@ -2764,7 +3206,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Date the refund was fully processed and completed.",
+      "summary": "Date when the refund was completed.",
       "tags": []
     },
     {
@@ -2783,7 +3225,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Method used to issue the refund to the customer.",
+      "summary": "Method used to refund the customer for the returned item.",
       "tags": []
     },
     {
@@ -2802,7 +3244,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Whether the returned item was restocked for resale.",
+      "summary": "Indicates whether the item was restocked after inspection.",
       "tags": []
     },
     {
@@ -2821,7 +3263,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Identifier linking to the return request.",
+      "summary": "Identifier of the return associated with this logistics record.",
       "tags": []
     },
     {
@@ -2840,7 +3282,7 @@
         "note": "defined on return_logistics",
         "source": "glossary"
       },
-      "summary": "Unique identifier for each return logistics record.",
+      "summary": "Unique identifier for the return logistics record.",
       "tags": []
     },
     {
@@ -3001,7 +3443,7 @@
         "caveats": "",
         "column": "carrier",
         "table": "shipments",
-        "values": "DPD, DHL Express, FedEx, UPS"
+        "values": "DHL, UPS, FedEx, RoyalMail"
       },
       "id": "glossary_term:shipments.carrier",
       "kind": "glossary_term",
@@ -3011,7 +3453,7 @@
         "note": "defined on shipments",
         "source": "glossary"
       },
-      "summary": "Carrier responsible for transporting the shipment.",
+      "summary": "Name of the shipping carrier used for the shipment",
       "tags": []
     },
     {
@@ -3030,7 +3472,7 @@
         "note": "defined on shipments",
         "source": "glossary"
       },
-      "summary": "Number of calendar days between ship_date and actual delivery.",
+      "summary": "Number of days taken to deliver the shipment",
       "tags": []
     },
     {
@@ -3087,7 +3529,7 @@
         "note": "defined on shipments",
         "source": "glossary"
       },
-      "summary": "Reference to the order this shipment fulfills.",
+      "summary": "Identifier linking the shipment to its associated order",
       "tags": []
     },
     {
@@ -3163,7 +3605,7 @@
         "note": "defined on shipments",
         "source": "glossary"
       },
-      "summary": "Date the shipment was dispatched from the warehouse.",
+      "summary": "Date and time when the shipment was dispatched",
       "tags": []
     },
     {
@@ -3182,7 +3624,7 @@
         "note": "defined on shipments",
         "source": "glossary"
       },
-      "summary": "Unique identifier for the shipment.",
+      "summary": "Unique identifier for each shipment",
       "tags": []
     },
     {
@@ -3827,8 +4269,8 @@
   ],
   "source": {
     "connection_id": "914df862",
-    "graph_generated_at": "2026-08-04T22:48:24.351173+00:00",
-    "graph_version": 1,
+    "graph_generated_at": "2026-08-05T07:09:46.645036+00:00",
+    "graph_version": 9,
     "org_id": "default",
     "schema_name": "luxexperience",
     "structural_fingerprint": "7f015ef19964d3ae"

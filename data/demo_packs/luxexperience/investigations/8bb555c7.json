@@ -1,0 +1,43 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-05T06:48:20.579776+00:00",
+  "connection_id": "914df862",
+  "headline": "Top return reason by total refund amount",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "8bb555c7",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "Which return reason costs us the most?",
+  "report": {
+    "approach": [
+      "Sum refund amounts for each return reason",
+      "Order reasons by total refund descending",
+      "Select the reason with the highest total refund",
+      "Round the total refund to two decimal places"
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "reason",
+      "sum_refund_eur"
+    ],
+    "headline": "Top return reason by total refund amount",
+    "insight": null,
+    "intent": "You want to see which return reason has the highest total refund cost.",
+    "overview_report": null,
+    "rows": [
+      [
+        "size_fit",
+        "5303896.0"
+      ]
+    ],
+    "sql": "SELECT reason, ROUND(SUM(refund_eur), 2) AS sum_refund_eur FROM luxexperience.returns GROUP BY reason ORDER BY sum_refund_eur DESC LIMIT 1",
+    "tables_used": [
+      "returns"
+    ]
+  },
+  "started_at": "2026-08-05T06:48:20.579776+00:00",
+  "status": "complete"
+}

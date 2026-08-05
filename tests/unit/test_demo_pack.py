@@ -448,3 +448,49 @@ def test_allow_terms_narrows_the_contamination_gate_per_recording():
     # Everything not declared stays banned.
     leaky = {"routes": {"GET /x": {"schema": "luxexperience", "other": "coupon_abuse"}}}
     assert _contamination(leaky, allow_terms=("luxexperience",)) == ["coupon_abuse"]
+
+
+def test_quick_answers_record_their_chat_session_so_they_can_be_opened():
+    """A quick answer is stored with kind='chat' and `GET /investigations/{id}` 404s for it,
+    so the investigation-detail loop skips every one. The shipped Superstore demo listed
+    five quick answers and could open none. The UI restores a turn through
+    `/chat-sessions/{session_id}/turns`, so that is what must be recorded."""
+    from aughor.demo.record_api import record_chat_sessions
+
+    entries = {
+        "GET /investigations?workspace_id=w1": [
+            {"id": "inv1", "kind": "investigation"},
+            {"id": "c1", "kind": "chat", "session_id": "sess1"},
+        ],
+    }
+    seen, skipped = [], []
+
+    def call(method, path):
+        seen.append(f"{method} {path}")
+        return 200, [{"id": "c1", "question": "q", "headline": "h", "rows": [[1]]}]
+
+    record_chat_sessions(entries, call, skipped)
+    assert seen == ["GET /chat-sessions/sess1/turns"], "only the chat row should be fetched"
+    assert entries["GET /chat-sessions/sess1/turns"][0]["headline"] == "h"
+    assert not skipped
+
+
+def test_an_unreachable_chat_session_is_reported_not_swallowed():
+    from aughor.demo.record_api import record_chat_sessions
+
+    entries = {"GET /investigations?workspace_id=w1":
+               [{"id": "c1", "kind": "chat", "session_id": "sess1"}]}
+    skipped = []
+    record_chat_sessions(entries, lambda m, p: (404, None), skipped)
+    assert "GET /chat-sessions/sess1/turns" not in entries
+    assert skipped and "404" in skipped[0]
+
+
+def test_a_chat_session_id_that_is_not_a_safe_segment_is_skipped():
+    """Session ids reach a URL path; anything path-unsafe is dropped rather than
+    interpolated."""
+    from aughor.demo.record_api import _SAFE_SEGMENT
+
+    assert _SAFE_SEGMENT.match("sess1")
+    assert not _SAFE_SEGMENT.match("../etc/passwd")
+    assert not _SAFE_SEGMENT.match("a/b")

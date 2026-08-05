@@ -1,0 +1,67 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-05T06:47:23.015841+00:00",
+  "connection_id": "914df862",
+  "headline": "Return rate by platform",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "f075eb22",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "What is the return rate by platform?",
+  "report": {
+    "approach": [
+      "Retrieve order items with platform and returned flag",
+      "Count total items and sum of returned items per platform",
+      "Compute return rate as sum returned divided by total items",
+      "Round the result to two decimal places",
+      "Group by platform and order by platform"
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "platform",
+      "return_rate"
+    ],
+    "headline": "Return rate by platform",
+    "insight": {
+      "anomalies": [
+        "Mytheresa's return rate (**0.32**) is markedly higher than the other platforms"
+      ],
+      "confidence": "Moderate",
+      "narrative": "The highest return rate is on Mytheresa at **0.32**, while the lowest is on YOOX at **0.21**. MR PORTER, NET-A-PORTER, and THE OUTNET fall between **0.24** and **0.31**. Mytheresa's rate stands out as notably above the group average.",
+      "trend": "Return rates vary modestly across platforms with no clear directional trend"
+    },
+    "intent": "You want to see the return rate for each platform.",
+    "overview_report": null,
+    "rows": [
+      [
+        "MR PORTER",
+        "0.25"
+      ],
+      [
+        "Mytheresa",
+        "0.32"
+      ],
+      [
+        "NET-A-PORTER",
+        "0.31"
+      ],
+      [
+        "THE OUTNET",
+        "0.24"
+      ],
+      [
+        "YOOX",
+        "0.21"
+      ]
+    ],
+    "sql": "SELECT oi.platform, ROUND(SUM(oi.returned::int)::numeric / NULLIF(COUNT(*), 0), 2) AS return_rate FROM luxexperience.order_items oi GROUP BY oi.platform ORDER BY oi.platform;",
+    "tables_used": [
+      "order_items"
+    ]
+  },
+  "started_at": "2026-08-05T06:47:23.015841+00:00",
+  "status": "complete"
+}
