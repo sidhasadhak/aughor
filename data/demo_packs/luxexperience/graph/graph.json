@@ -1,0 +1,3836 @@
+{
+  "counts": {
+    "domain": 3,
+    "edges": 50,
+    "finding": 19,
+    "glossary_term": 119,
+    "metric": 2,
+    "table": 14
+  },
+  "edges": [
+    {
+      "from_id": "finding:2b8c1575d56f",
+      "id": "finding:2b8c1575d56f--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:2b8c1575d56f",
+      "id": "finding:2b8c1575d56f--grounded_in-->table:OrderItem",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "finding:2b8c1575d56f",
+      "id": "finding:2b8c1575d56f--grounded_in-->table:Payment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Payment"
+    },
+    {
+      "from_id": "finding:2b8c1575d56f",
+      "id": "finding:2b8c1575d56f--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:472dd4b2987b",
+      "id": "finding:472dd4b2987b--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:472dd4b2987b",
+      "id": "finding:472dd4b2987b--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:4c27d20eef18",
+      "id": "finding:4c27d20eef18--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:6589e85882fb",
+      "id": "finding:6589e85882fb--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:6589e85882fb",
+      "id": "finding:6589e85882fb--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:6589e85882fb",
+      "id": "finding:6589e85882fb--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:6dd1540252b6",
+      "id": "finding:6dd1540252b6--grounded_in-->table:OrderItem",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "finding:6dd1540252b6",
+      "id": "finding:6dd1540252b6--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:6dd1540252b6",
+      "id": "finding:6dd1540252b6--grounded_in-->table:ReturnLogistic",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:ReturnLogistic"
+    },
+    {
+      "from_id": "finding:7fd11d082eb5",
+      "id": "finding:7fd11d082eb5--grounded_in-->table:OrderItem",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "finding:7fd11d082eb5",
+      "id": "finding:7fd11d082eb5--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8",
+      "id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8--grounded_in-->table:Brand",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Brand"
+    },
+    {
+      "from_id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9",
+      "id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9--grounded_in-->table:Brand",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Brand"
+    },
+    {
+      "from_id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1",
+      "id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15",
+      "id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6",
+      "id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:General__logistics_cost_ratio__1",
+      "id": "finding:General__logistics_cost_ratio__1--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__0",
+      "id": "finding:pinned__0--grounded_in-->table:CustomerService",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:CustomerService"
+    },
+    {
+      "from_id": "finding:pinned__0",
+      "id": "finding:pinned__0--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__0",
+      "id": "finding:pinned__0--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:pinned__1",
+      "id": "finding:pinned__1--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:pinned__1",
+      "id": "finding:pinned__1--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:pinned__3",
+      "id": "finding:pinned__3--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__3",
+      "id": "finding:pinned__3--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:pinned__4",
+      "id": "finding:pinned__4--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__4",
+      "id": "finding:pinned__4--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:pinned__5",
+      "id": "finding:pinned__5--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:pinned__5",
+      "id": "finding:pinned__5--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:pinned__5",
+      "id": "finding:pinned__5--grounded_in-->table:Return",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "exploration"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "finding:synth__chain__1",
+      "id": "finding:synth__chain__1--grounded_in-->table:Customer",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "finding:synth__chain__1",
+      "id": "finding:synth__chain__1--grounded_in-->table:Order",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "finding:synth__chain__1",
+      "id": "finding:synth__chain__1--grounded_in-->table:Shipment",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "finding:synth__concentration__0",
+      "id": "finding:synth__concentration__0--grounded_in-->table:Brand",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "dossier"
+      },
+      "to_id": "table:Brand"
+    },
+    {
+      "from_id": "metric:aov",
+      "id": "metric:aov--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "metric:revenue",
+      "id": "metric:revenue--derived_from-->table:Order",
+      "kind": "derived_from",
+      "label": "derived from",
+      "provenance": {
+        "measured": null,
+        "note": "metric formula reads table",
+        "source": "ontology.metric"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "table:CustomerService",
+      "id": "table:CustomerService--joins_on-->table:Customer",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Customer"
+    },
+    {
+      "from_id": "table:CustomerService",
+      "id": "table:CustomerService--joins_on-->table:Order",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:CustomerService",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:CustomerService"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Order",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Order"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Payment",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Payment"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Return",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Return"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:ReturnLogistic",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:ReturnLogistic"
+    },
+    {
+      "from_id": "table:OrderItem",
+      "id": "table:OrderItem--joins_on-->table:Shipment",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Shipment"
+    },
+    {
+      "from_id": "table:Product",
+      "id": "table:Product--joins_on-->table:OrderItem",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:OrderItem"
+    },
+    {
+      "from_id": "table:Product",
+      "id": "table:Product--joins_on-->table:Price",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Price"
+    },
+    {
+      "from_id": "table:ReturnLogistic",
+      "id": "table:ReturnLogistic--joins_on-->table:Return",
+      "kind": "joins_on",
+      "label": "belongs to",
+      "provenance": {
+        "measured": 1.0,
+        "note": "value_overlap=1.000 join_confidence=verified",
+        "source": "join_guard"
+      },
+      "to_id": "table:Return"
+    }
+  ],
+  "exported_at": "2026-08-04T23:06:38.798329+00:00",
+  "format": 1,
+  "freshness": {
+    "degraded": true,
+    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Aughor could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
+    "reason": "",
+    "state": "unknown"
+  },
+  "generator": "aughor",
+  "nodes": [
+    {
+      "data": {
+        "members": [
+          "table:Brand"
+        ]
+      },
+      "id": "domain:catalog",
+      "kind": "domain",
+      "label": "Catalog",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "members": [
+          "table:Customer"
+        ]
+      },
+      "id": "domain:customer",
+      "kind": "domain",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "members": [
+          "table:Countrie",
+          "table:CustomerService",
+          "table:Date"
+        ]
+      },
+      "id": "domain:operations",
+      "kind": "domain",
+      "label": "Operations",
+      "provenance": {
+        "measured": null,
+        "note": "3 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:06:10.571015+00:00",
+        "investigation_id": "1ed7349e",
+        "sql": "WITH payment_by_order AS (SELECT p.order_id, (EXISTS(SELECT 1 FROM luxexperience.order_items AS oi_returned WHERE oi_returned.order_id = p.order_id AND oi_returned.returned = TRUE) AND EXISTS(SELECT 1 FROM luxexperience.order_items AS oi_not_returned WHERE oi_not_returned.order_id = p.order_id AND oi_not_returned.returned = FALSE)) AS segment, SUM(CASE WHEN p.status = 'refunded' THEN p.amount_eur ELSE 0 END) AS payment_refund_eur, COUNT(*) AS payment_record_n FROM luxexperience.payments AS p GROUP BY 1, 2), returns_by_order AS (SELECT r.order_id, SUM(r.refund_eur) AS returns_refund_eur FROM luxexperience.returns AS r WHERE NOT r.refund_eur IS NULL GROUP BY 1), order_metrics AS (SELECT payment_by_order.segment, payment_by_order.payment_refund_eur, COALESCE(returns_by_order.returns_refund_eur, 0) AS returns_refund_eur, payment_by_order.payment_record_n FROM payment_by_order LEFT JOIN returns_by_order ON payment_by_order.order_id = returns_by_order.order_id), overall_gap AS (SELECT ((SELECT SUM(CASE WHEN p.status = 'refunded' THEN p.amount_eur ELSE 0 END) FROM luxexperience.payments AS p) - (SELECT SUM(r.refund_eur) FROM luxexperience.returns AS r WHERE NOT r.refund_eur IS NULL)) AS refund_reporting_gap_eur) SELECT order_metrics.segment, SUM(order_metrics.payment_refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(order_metrics.payment_refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, SUM(order_metrics.returns_refund_eur) AS returns_reported_refunds_eur, SUM(order_metrics.payment_refund_eur) - SUM(order_metrics.returns_refund_eur) AS partial_return_explained_gap_eur, ROUND(100.0 * (SUM(order_metrics.payment_refund_eur) - SUM(order_metrics.returns_refund_eur)) / NULLIF(overall_gap.refund_reporting_gap_eur, 0), 1) AS partial_return_gap_explained_pct FROM order_metrics CROSS JOIN overall_gap GROUP BY 1, overall_gap.refund_reporting_gap_eur ORDER BY 1",
+        "tables": [
+          "order_items",
+          "orders",
+          "payments",
+          "returns"
+        ]
+      },
+      "id": "finding:2b8c1575d56f",
+      "kind": "finding",
+      "label": "Partially returned orders explain 93.5% of the refund reporting gap",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Partially returned orders explain 93.5% of the refund reporting gap",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:41:15.486181+00:00",
+        "investigation_id": "6a15ee37",
+        "sql": "WITH shipment_base AS (SELECT s.origin_country || ' \u2192 ' || s.destination_country AS route, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT route, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY route) SELECT route, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+        "tables": [
+          "orders",
+          "shipments"
+        ]
+      },
+      "id": "finding:472dd4b2987b",
+      "kind": "finding",
+      "label": "Shipping shortfall of 2.44M EUR is driven by systemic inefficiency in standard a\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Shipping shortfall of 2.44M EUR is driven by systemic inefficiency in standard and express service levels.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:47:02.942904+00:00",
+        "investigation_id": "fdd0d475",
+        "sql": "SELECT r.reason || ' - ' || r.category AS reason_category, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r WHERE NOT r.reason IS NULL AND NOT r.category IS NULL AND NOT r.refund_eur IS NULL GROUP BY r.reason, r.category ORDER BY metric_total DESC LIMIT 15",
+        "tables": [
+          "returns"
+        ]
+      },
+      "id": "finding:4c27d20eef18",
+      "kind": "finding",
+      "label": "Size_fit\u2011womenswear drives the highest return refund cost at **2,896,066 EUR**",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Size_fit\u2011womenswear drives the highest return refund cost at **2,896,066 EUR**",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:11:27.615727+00:00",
+        "investigation_id": "880c1892",
+        "sql": "WITH gross_by_order AS (SELECT o.order_id, o.segment, o.gmv_eur FROM luxexperience.orders AS o), refunds_by_order AS (SELECT r.order_id, SUM(r.refund_eur) AS refunds_eur FROM luxexperience.returns AS r GROUP BY r.order_id) SELECT g.segment, 100.0 * SUM(COALESCE(rf.refunds_eur, 0)) / NULLIF(SUM(g.gmv_eur), 0) AS metric_total, SUM(g.gmv_eur) AS n FROM gross_by_order AS g LEFT JOIN refunds_by_order AS rf ON g.order_id = rf.order_id GROUP BY g.segment ORDER BY metric_total DESC",
+        "tables": [
+          "orders",
+          "returns",
+          "shipments"
+        ]
+      },
+      "id": "finding:6589e85882fb",
+      "kind": "finding",
+      "label": "Revenue leakage is concentrated in Luxury segment returns, while shipping costs \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Revenue leakage is concentrated in Luxury segment returns, while shipping costs are geographically centralized in Italy.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:52:07.839263+00:00",
+        "investigation_id": "988a755e",
+        "sql": "WITH logistics_dedup AS (SELECT return_id, condition, carrier, refund_method, restocked, refund_completed_date FROM (SELECT rl.return_id, rl.condition, rl.carrier, rl.refund_method, rl.restocked, rl.refund_completed_date, ROW_NUMBER() OVER (PARTITION BY rl.return_id ORDER BY rl.return_logistics_id) AS rn FROM luxexperience.return_logistics AS rl) AS ranked_logistics WHERE rn = 1) SELECT r.category AS category, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r JOIN logistics_dedup AS rl ON rl.return_id = r.return_id JOIN luxexperience.order_items AS oi ON oi.order_item_id = r.order_item_id WHERE NOT r.refund_eur IS NULL AND NOT rl.refund_completed_date IS NULL AND rl.restocked = FALSE GROUP BY r.category ORDER BY metric_total DESC LIMIT 15",
+        "tables": [
+          "order_items",
+          "return_logistics",
+          "returns"
+        ]
+      },
+      "id": "finding:6dd1540252b6",
+      "kind": "finding",
+      "label": "Womenswear and size-related returns drive the majority of non-restocked refund v\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Womenswear and size-related returns drive the majority of non-restocked refund value leakage.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:49:39.034486+00:00",
+        "investigation_id": "5cb898d7",
+        "sql": "WITH s AS (SELECT s.order_id, MAX(s.delivery_days) AS delivery_days FROM luxexperience.shipments AS s WHERE NOT s.delivery_days IS NULL GROUP BY s.order_id) SELECT (s.delivery_days > (SELECT AVG(s2.delivery_days) FROM luxexperience.shipments AS s2 WHERE NOT s2.delivery_days IS NULL)) AS segment, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, ROUND((COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0)) / NULLIF(COUNT(*), 0), 2) AS avg_per_record FROM luxexperience.order_items AS oi JOIN s ON oi.order_id = s.order_id GROUP BY 1 ORDER BY 1",
+        "tables": [
+          "order_items",
+          "shipments"
+        ]
+      },
+      "id": "finding:7fd11d082eb5",
+      "kind": "finding",
+      "label": "Slower deliveries do not meaningfully increase item return rates.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Slower deliveries do not meaningfully increase item return rates.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:41:02.486943+00:00",
+        "sql": "SELECT tier, focus_category, COUNT(DISTINCT brand_id) AS brand_count FROM luxexperience.brands GROUP BY tier, focus_category ORDER BY brand_count DESC, tier, focus_category",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:Catalog__Catalog coverage (brand distribution) by tier and product focus category__8",
+      "kind": "finding",
+      "label": "Across the catalog, the largest brand coverage is in womenswear with 12 brands i\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Across the catalog, the largest brand coverage is in womenswear with 12 brands in ultra and 11 in luxury (then 9 in contemporary), while most other focus categories are much thinner\u2014e.g., shoes has 7 brands in luxury and 3 in ultra/contemporary, and categories like accessories, beauty, life, and outerwear have just 1 brand each in at least one tier.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:41:11.755594+00:00",
+        "sql": "SELECT tier, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) AS womenswear_brand_count, COUNT(brand_id) AS total_brand_count, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(brand_id), 0) AS womenswear_share_of_tier FROM luxexperience.brands GROUP BY tier ORDER BY womenswear_share_of_tier DESC, womenswear_brand_count DESC",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:Catalog__Concentration driver behind the womenswear dominance: identifies whether womenswear is broadly present across tiers or uniquely concentrated in a specific tier.__9",
+      "kind": "finding",
+      "label": "Womenswear is most concentrated in the ultra tier, where womenswear brands make \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Womenswear is most concentrated in the ultra tier, where womenswear brands make up 0.48 of the tier (12 womenswear brands out of 25 total). Contemporary is close behind at 0.473684 (9 out of 19), while luxury trails at 0.423077 (11 out of 26).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:36:42.491245+00:00",
+        "sql": "SELECT platform, top_customer_cnt, total_customer_cnt, top_customer_cnt / NULLIF(total_customer_cnt, 0) AS top_customer_share FROM (SELECT platform, COUNT(DISTINCT customer_id) AS total_customer_cnt, COUNT(DISTINCT CASE WHEN is_top_customer = TRUE THEN customer_id END) AS top_customer_cnt FROM luxexperience.customers GROUP BY platform) AS s ORDER BY top_customer_share DESC, top_customer_cnt DESC",
+        "tables": [
+          "luxexperience.customers"
+        ]
+      },
+      "id": "finding:Customer__Customer concentration / value-base concentration by platform (top-customer share).__1",
+      "kind": "finding",
+      "label": "MR PORTER has the highest share of top customers at 0.035227, with 129 top custo\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "MR PORTER has the highest share of top customers at 0.035227, with 129 top customers out of 3662 total customers.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:39:55.420015+00:00",
+        "sql": "SELECT o.channel, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-29' AND o.platform = 'Mytheresa' AND o.ship_country = 'Ireland' GROUP BY o.channel ORDER BY logistics_cost_ratio ASC",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__Logistics cost ratio decomposition by order channel within the already-identified lowest lane (Mytheresa \u2192 Ireland).__15",
+      "kind": "finding",
+      "label": "For Mytheresa customers shipping to Ireland, the clienteling order channel has a\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "For Mytheresa customers shipping to Ireland, the clienteling order channel has an exceptionally low logistics cost ratio of 0.0 (shipping + duty as a % of GMV), lower than web at 0.000779 and app at 0.001078.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:38:43.600206+00:00",
+        "sql": "SELECT o.ship_country, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' AND o.platform = 'Mytheresa' GROUP BY o.ship_country HAVING SUM(o.gmv_eur) > 0 ORDER BY logistics_cost_ratio ASC",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__Logistics cost ratio decomposition: identify the ship_country segments within the best-performing platform (Mytheresa) that most improve delivery cost efficiency.__6",
+      "kind": "finding",
+      "label": "For Mytheresa, Ireland has the lowest logistics cost ratio at 0.001041 (shipping\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "For Mytheresa, Ireland has the lowest logistics cost ratio at 0.001041 (shipping_fee_eur + duty_eur divided by GMV) over the last 12 months, versus 0.041972 for the next lowest high outlier country, the United Kingdom.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:38:17.438042+00:00",
+        "sql": "SELECT o.platform, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) AS logistics_cost_ratio, SUM(o.gmv_eur) AS gmv_eur FROM luxexperience.orders AS o WHERE o.order_date >= '2024-06-29' AND o.order_date < '2025-06-30' GROUP BY o.platform ORDER BY logistics_cost_ratio ASC",
+        "tables": [
+          "luxexperience.orders"
+        ]
+      },
+      "id": "finding:General__logistics_cost_ratio__1",
+      "kind": "finding",
+      "label": "Mytheresa has the lowest logistics cost ratio at 0.0381 over the last 12 months,\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Mytheresa has the lowest logistics cost ratio at 0.0381 over the last 12 months, with logistics costs totaling 2949292 of GMV 2949292.0.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:36:34.069499+00:00",
+        "sql": "WITH platform_returns AS (SELECT o.platform, COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM luxexperience.orders AS o LEFT JOIN luxexperience.returns AS r ON o.order_id = r.order_id GROUP BY 1), platform_csat AS (SELECT platform, AVG(csat) AS avg_csat FROM luxexperience.customer_service WHERE NOT csat IS NULL GROUP BY 1) SELECT pr.platform, pr.return_rate, pc.avg_csat FROM platform_returns AS pr JOIN platform_csat AS pc ON pr.platform = pc.platform ORDER BY pr.return_rate DESC",
+        "tables": [
+          "luxexperience.customer_service",
+          "luxexperience.orders",
+          "luxexperience.returns"
+        ]
+      },
+      "id": "finding:pinned__0",
+      "kind": "finding",
+      "label": "Mytheresa has the highest return rate (0.459024) and its customer satisfaction s\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Mytheresa has the highest return rate (0.459024) and its customer satisfaction score is 4.05, which is slightly lower than NET-A-PORTER\u2019s 4.11 despite NET-A-PORTER having a lower return rate (0.443489).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:14:23.458912+00:00",
+        "sql": "WITH returns_by_cat_reason AS (SELECT r.category, r.reason, COUNT(DISTINCT r.order_id) AS returned_orders FROM luxexperience.returns AS r GROUP BY 1, 2), late_delivery_orders AS (/* \u201clate deliveries\u201d aligned to returns.reason='late_delivery' */ SELECT r.category, r.reason, AVG(s.delivery_days) AS avg_delivery_days_late_delivery FROM luxexperience.returns AS r JOIN luxexperience.shipments AS s ON s.order_id = r.order_id WHERE r.reason = 'late_delivery' AND NOT s.delivery_days IS NULL GROUP BY 1, 2) SELECT rr.category, rr.reason, rr.returned_orders, l.avg_delivery_days_late_delivery FROM returns_by_cat_reason AS rr LEFT JOIN late_delivery_orders AS l ON l.category = rr.category AND l.reason = rr.reason ORDER BY rr.returned_orders DESC, avg_delivery_days_late_delivery DESC LIMIT 20",
+        "tables": [
+          "luxexperience.returns",
+          "luxexperience.shipments"
+        ]
+      },
+      "id": "finding:pinned__1",
+      "kind": "finding",
+      "label": "Late-delivery returns are most concentrated in womenswear: 1,595 returns are tag\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Late-delivery returns are most concentrated in womenswear: 1,595 returns are tagged with returns.reason='late_delivery' (4.76).",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:14:37.621227+00:00",
+        "sql": "WITH delivery_by_destination AS (/* Avoid shipment fan-out: one avg delivery per order_id, then aggregate by destination */ WITH per_order AS (SELECT o.ship_country, o.ship_region, s.order_id, AVG(s.delivery_days) AS avg_delivery_days FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id WHERE NOT s.delivery_days IS NULL GROUP BY 1, 2, 3) SELECT ship_country, ship_region, AVG(avg_delivery_days) AS avg_delivery_days FROM per_order GROUP BY 1, 2), return_rate_by_destination AS (SELECT o.ship_country, o.ship_region, COUNT(DISTINCT CASE WHEN o.status = 'returned' THEN o.order_id END) / NULLIF(COUNT(DISTINCT CASE WHEN o.status <> 'cancelled' THEN o.order_id END), 0) AS return_rate FROM luxexperience.orders AS o GROUP BY 1, 2) SELECT d.ship_country, d.ship_region, d.avg_delivery_days, r.return_rate FROM delivery_by_destination AS d LEFT JOIN return_rate_by_destination AS r ON r.ship_country = d.ship_country AND r.ship_region = d.ship_region ORDER BY d.avg_delivery_days DESC, r.return_rate DESC LIMIT 15",
+        "tables": [
+          "luxexperience.orders",
+          "luxexperience.shipments"
+        ]
+      },
+      "id": "finding:pinned__3",
+      "kind": "finding",
+      "label": "Russia shows the longest delivery time among the listed destinations (9.88), wit\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Russia shows the longest delivery time among the listed destinations (9.88), with a relatively high return rate of 0.397.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T21:14:40.645762+00:00",
+        "sql": "WITH refunds_by_returned_order AS (SELECT o.fiscal_year, r.order_id, SUM(r.refund_eur) AS refund_eur FROM luxexperience.returns AS r JOIN luxexperience.orders AS o ON o.order_id = r.order_id WHERE o.status = 'returned' GROUP BY 1, 2), returned_orders_gmv AS (SELECT o.fiscal_year, o.order_id, o.gmv_eur FROM luxexperience.orders AS o WHERE o.status = 'returned') SELECT g.fiscal_year, SUM(COALESCE(rb.refund_eur, 0)) AS total_refunds_eur, SUM(g.gmv_eur) AS total_gmv_eur, SUM(COALESCE(rb.refund_eur, 0)) / NULLIF(SUM(g.gmv_eur), 0) AS refund_coverage_pct FROM returned_orders_gmv AS g LEFT JOIN refunds_by_returned_order AS rb ON rb.fiscal_year = g.fiscal_year AND rb.order_id = g.order_id GROUP BY 1 ORDER BY 1",
+        "tables": [
+          "luxexperience.orders",
+          "luxexperience.returns"
+        ]
+      },
+      "id": "finding:pinned__4",
+      "kind": "finding",
+      "label": "Refund coverage burden (refund_eur \u00f7 orders.gmv_eur) is slightly declining overa\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "Refund coverage burden (refund_eur \u00f7 orders.gmv_eur) is slightly declining overall: from 0.700 in 2021 to about 0.689 in 2024 (then ~0.692 in 2025), so refunds are not rising faster than GMV of affected orders.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:20:01.297257+00:00",
+        "sql": "WITH rev AS (SELECT c.region, SUM(o.gmv_eur) AS total_revenue, COUNT(DISTINCT o.customer_id) AS distinct_customers, SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS avg_revenue_per_customer FROM luxexperience.orders AS o JOIN luxexperience.customers AS c ON o.customer_id = c.customer_id GROUP BY c.region), ret AS (SELECT c.region, COUNT(DISTINCT r.order_id) AS refunded_orders, COUNT(DISTINCT o.order_id) AS eligible_orders, COUNT(DISTINCT r.order_id) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM luxexperience.orders AS o JOIN luxexperience.customers AS c ON o.customer_id = c.customer_id LEFT JOIN luxexperience.returns AS r ON o.order_id = r.order_id WHERE o.status IN ('shipped', 'returned') GROUP BY c.region) SELECT r.region, r.avg_revenue_per_customer, rt.return_rate FROM rev AS r JOIN ret AS rt ON r.region = rt.region ORDER BY r.region",
+        "tables": [
+          "luxexperience.customers",
+          "luxexperience.orders",
+          "luxexperience.returns"
+        ]
+      },
+      "id": "finding:pinned__5",
+      "kind": "finding",
+      "label": "MiddleEast has the highest average return rate at 0.4312 while also delivering a\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "MiddleEast has the highest average return rate at 0.4312 while also delivering a high average revenue per customer of 1664.25\u2014indicating elevated post-purchase returns even though spend is strong.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:42:18.050579+00:00",
+        "sql": "WITH params AS (SELECT (SELECT MAX(ship_date) FROM luxexperience.shipments) AS max_ship_date, (SELECT MAX(order_date) FROM luxexperience.orders) AS max_order_date), platform_customers AS (SELECT o.platform, COUNT(DISTINCT CASE WHEN c.is_top_customer THEN c.customer_id END) AS top_customers_count, COUNT(DISTINCT c.customer_id) AS total_customers_count FROM luxexperience.orders AS o JOIN luxexperience.customers AS c ON o.customer_id = c.customer_id CROSS JOIN params AS p WHERE o.order_date >= (p.max_order_date - INTERVAL '12' MONTH) GROUP BY o.platform), logistics_cost AS (SELECT s.platform, SUM(s.shipping_cost_eur + s.duty_eur) AS logistics_cost FROM luxexperience.shipments AS s CROSS JOIN params AS p WHERE s.ship_date >= (p.max_ship_date - INTERVAL '12' MONTH) GROUP BY s.platform), platform_gmv AS (SELECT o.platform, SUM(o.gmv_eur) AS gmv FROM luxexperience.orders AS o CROSS JOIN params AS p WHERE o.order_date >= (p.max_order_date - INTERVAL '12' MONTH) GROUP BY o.platform), platform_metrics AS (SELECT pc.platform, CAST(pc.top_customers_count AS DOUBLE) / NULLIF(pc.total_customers_count, 0) AS top_share, CAST(lc.logistics_cost AS DOUBLE) / NULLIF(pg.gmv, 0) AS logistics_ratio FROM platform_customers AS pc JOIN logistics_cost AS lc ON pc.platform = lc.platform JOIN platform_gmv AS pg ON pc.platform = pg.platform) SELECT CORR(top_share, logistics_ratio) AS correlation_top_share_vs_logistics_ratio FROM platform_metrics",
+        "tables": [
+          "luxexperience.customers",
+          "luxexperience.orders",
+          "luxexperience.shipments"
+        ]
+      },
+      "id": "finding:synth__chain__1",
+      "kind": "finding",
+      "label": "Combining the two inputs yields the emergent composite result of -0.174013.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "Combining the two inputs yields the emergent composite result of -0.174013.",
+      "tags": []
+    },
+    {
+      "data": {
+        "generated_at": "2026-08-04T22:41:53.031409+00:00",
+        "sql": "WITH total_brands AS (SELECT COUNT(brand_id) AS total_brand_count FROM luxexperience.brands), brands_by_tier AS (SELECT tier, COUNT(brand_id) AS total_brand_count_in_tier, SUM(CASE WHEN focus_category = 'womenswear' THEN 1 ELSE 0 END) AS womenswear_brand_count_in_tier FROM luxexperience.brands GROUP BY tier), womenswear_totals AS (SELECT COUNT(brand_id) AS total_womenswear_brand_count FROM luxexperience.brands WHERE focus_category = 'womenswear'), calc AS (SELECT ub.total_brand_count_in_tier AS total_brand_count_in_ultra, ub.womenswear_brand_count_in_tier AS womenswear_brand_count_in_ultra, wt.total_womenswear_brand_count, cb.total_brand_count AS total_brand_count FROM brands_by_tier AS ub CROSS JOIN total_brands AS cb CROSS JOIN womenswear_totals AS wt WHERE ub.tier = 'ultra'), shares AS (SELECT CAST(womenswear_brand_count_in_ultra AS DOUBLE) / NULLIF(total_womenswear_brand_count, 0) AS womenswear_share_of_all_womenswear_in_ultra, CAST(total_brand_count_in_ultra AS DOUBLE) / NULLIF(total_brand_count, 0) AS ultra_share_of_all_brands, CAST(womenswear_brand_count_in_ultra AS DOUBLE) / NULLIF(total_brand_count_in_ultra, 0) AS womenswear_share_within_ultra FROM calc), within_tier_shares AS (SELECT MAX(CASE WHEN tier = 'ultra' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_ultra, MAX(CASE WHEN tier = 'luxury' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_luxury, MAX(CASE WHEN tier = 'contemporary' THEN CAST(womenswear_brand_count_in_tier AS DOUBLE) / NULLIF(total_brand_count_in_tier, 0) END) AS womenswear_share_within_contemporary FROM brands_by_tier) SELECT s.womenswear_share_of_all_womenswear_in_ultra AS metric_1_womenswear_brand_count_in_ultra_over_total_womenswear_brand_count, s.ultra_share_of_all_brands AS metric_2_total_brand_count_in_ultra_over_total_brand_count, CASE WHEN s.womenswear_share_of_all_womenswear_in_ultra > s.ultra_share_of_all_brands THEN TRUE ELSE FALSE END AS confirms_metric_1_greater_than_metric_2, s.womenswear_share_within_ultra AS womenswear_share_within_ultra, w.womenswear_share_within_luxury, w.womenswear_share_within_contemporary, CASE WHEN s.womenswear_share_within_ultra > w.womenswear_share_within_luxury AND s.womenswear_share_within_ultra > w.womenswear_share_within_contemporary THEN TRUE ELSE FALSE END AS confirms_womenswear_share_within_ultra_highest FROM shares AS s CROSS JOIN within_tier_shares AS w",
+        "tables": [
+          "luxexperience.brands"
+        ]
+      },
+      "id": "finding:synth__concentration__0",
+      "kind": "finding",
+      "label": "By combining the brand-coverage dominance of womenswear with the tier-level conc\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from dossier",
+        "source": "dossier"
+      },
+      "summary": "By combining the brand-coverage dominance of womenswear with the tier-level concentration, the result shows womenswear is the most concentrated category specifically in the ultra tier (0.48), ahead of contemporary (0.473684) and luxury (0.423077).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand",
+        "table": "brands",
+        "values": ""
+      },
+      "id": "glossary_term:brands.brand",
+      "kind": "glossary_term",
+      "label": "brand",
+      "provenance": {
+        "measured": null,
+        "note": "defined on brands",
+        "source": "glossary"
+      },
+      "summary": "Name of the brand.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand_id",
+        "table": "brands",
+        "values": ""
+      },
+      "id": "glossary_term:brands.brand_id",
+      "kind": "glossary_term",
+      "label": "brand_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on brands",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each brand",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "country",
+        "table": "brands",
+        "values": "Italy, France, USA, UK, Sweden, Denmark, Bulgaria, Germany, Australia, Netherlands, Spain, Belgium"
+      },
+      "id": "glossary_term:brands.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on brands",
+        "source": "glossary"
+      },
+      "summary": "Country where the brand is headquartered or primarily operates.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "focus_category",
+        "table": "brands",
+        "values": "womenswear, shoes, jewelry_watches, bags, menswear, outerwear, life, beauty, accessories"
+      },
+      "id": "glossary_term:brands.focus_category",
+      "kind": "glossary_term",
+      "label": "focus_category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on brands",
+        "source": "glossary"
+      },
+      "summary": "Primary product category the brand focuses on.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "tier",
+        "table": "brands",
+        "values": "luxury, ultra, contemporary"
+      },
+      "id": "glossary_term:brands.tier",
+      "kind": "glossary_term",
+      "label": "tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on brands",
+        "source": "glossary"
+      },
+      "summary": "Market positioning tier of the brand.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "country",
+        "table": "countries",
+        "values": "France, Denmark, Russia, Qatar, Sweden, Norway, Kuwait, Switzerland, Canada, United Kingdom, Japan, Mexico, Italy, Netherlands, South Korea, UAE, India, Thailand, Hong Kong, Greece, Germany, Brazil, Ireland, Portugal, Saudi Arabia, Belgium, Austria, Israel, United States, Australia, China, Spain, Taiwan, Singapore, Turkey"
+      },
+      "id": "glossary_term:countries.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on countries",
+        "source": "glossary"
+      },
+      "summary": "Name of the country.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Rate may not include additional taxes (VAT, GST) or special trade agreements; verify with trade compliance for specific HS codes.",
+        "column": "duty_rate",
+        "table": "countries",
+        "values": ""
+      },
+      "id": "glossary_term:countries.duty_rate",
+      "kind": "glossary_term",
+      "label": "duty_rate",
+      "provenance": {
+        "measured": null,
+        "note": "defined on countries",
+        "source": "glossary"
+      },
+      "summary": "Import duty rate applied to goods shipped to this country, expressed as a decimal (e.g., 0.05 = 5%).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Region 'UK' and 'US' are also individual countries; 'RoW' stands for Rest of World and may contain heterogeneous countries.",
+        "column": "region",
+        "table": "countries",
+        "values": "Europe, Asia, MiddleEast, RoW, UK, US"
+      },
+      "id": "glossary_term:countries.region",
+      "kind": "glossary_term",
+      "label": "region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on countries",
+        "source": "glossary"
+      },
+      "summary": "Geographic region grouping used for reporting and shipping rules.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Integer days; actual transit may vary by carrier, service level, or customs delays.",
+        "column": "ship_days_base",
+        "table": "countries",
+        "values": ""
+      },
+      "id": "glossary_term:countries.ship_days_base",
+      "kind": "glossary_term",
+      "label": "ship_days_base",
+      "provenance": {
+        "measured": null,
+        "note": "defined on countries",
+        "source": "glossary"
+      },
+      "summary": "Base number of business days required for standard shipping to this country.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "category",
+        "table": "customer_service",
+        "values": "return_refund, shipping, product_inquiry, sizing, complaint, payment"
+      },
+      "id": "glossary_term:customer_service.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Type of issue or inquiry for the ticket.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "channel",
+        "table": "customer_service",
+        "values": "email, chat, phone, whatsapp"
+      },
+      "id": "glossary_term:customer_service.channel",
+      "kind": "glossary_term",
+      "label": "channel",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Communication channel used for the ticket.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "created_date",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.created_date",
+      "kind": "glossary_term",
+      "label": "created_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Date the ticket was created.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "NULL values indicate tickets without a CSAT survey response.",
+        "column": "csat",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.csat",
+      "kind": "glossary_term",
+      "label": "csat",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Customer satisfaction score (likely on a 1-5 scale) provided after ticket resolution.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "customer_id",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the customer who submitted the ticket.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "NULL values indicate tickets not linked to a specific order.",
+        "column": "order_id",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the order related to the ticket; may be NULL if the ticket is not order-specific.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "customer_service",
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:customer_service.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "The e-commerce platform where the ticket originated.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "NULL values likely indicate tickets that are still open or unresolved.",
+        "column": "resolution_days",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.resolution_days",
+      "kind": "glossary_term",
+      "label": "resolution_days",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Number of days taken to resolve the ticket.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ticket_id",
+        "table": "customer_service",
+        "values": ""
+      },
+      "id": "glossary_term:customer_service.ticket_id",
+      "kind": "glossary_term",
+      "label": "ticket_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customer_service",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each customer service ticket.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "country",
+        "table": "customers",
+        "values": "AU, KR, GB, FR, IT, AE, US, SG, CA"
+      },
+      "id": "glossary_term:customers.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Country code (ISO 2-letter) where the customer resides",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "customer_id",
+        "table": "customers",
+        "values": ""
+      },
+      "id": "glossary_term:customers.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each customer",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": false,
+        "caveats": "",
+        "column": "region",
+        "table": "customers",
+        "values": "APAC, EMEA, NA"
+      },
+      "id": "glossary_term:customers.region",
+      "kind": "glossary_term",
+      "label": "region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on customers",
+        "source": "glossary"
+      },
+      "summary": "Geographic sales region",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "calendar_year",
+        "table": "dim_date",
+        "values": ""
+      },
+      "id": "glossary_term:dim_date.calendar_year",
+      "kind": "glossary_term",
+      "label": "calendar_year",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The calendar year associated with the date.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "date",
+        "table": "dim_date",
+        "values": ""
+      },
+      "id": "glossary_term:dim_date.date",
+      "kind": "glossary_term",
+      "label": "date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The specific calendar date.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "day_of_week",
+        "table": "dim_date",
+        "values": "Thursday, Friday, Saturday, Monday, Wednesday, Sunday, Tuesday"
+      },
+      "id": "glossary_term:dim_date.day_of_week",
+      "kind": "glossary_term",
+      "label": "day_of_week",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The name of the day of the week.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "fiscal_quarter",
+        "table": "dim_date",
+        "values": ""
+      },
+      "id": "glossary_term:dim_date.fiscal_quarter",
+      "kind": "glossary_term",
+      "label": "fiscal_quarter",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The fiscal quarter associated with the date.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "fiscal_year",
+        "table": "dim_date",
+        "values": ""
+      },
+      "id": "glossary_term:dim_date.fiscal_year",
+      "kind": "glossary_term",
+      "label": "fiscal_year",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The fiscal year associated with the date.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_holiday_peak",
+        "table": "dim_date",
+        "values": "False, True"
+      },
+      "id": "glossary_term:dim_date.is_holiday_peak",
+      "kind": "glossary_term",
+      "label": "is_holiday_peak",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "Indicates if the date falls during a peak holiday period.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_summer_sale",
+        "table": "dim_date",
+        "values": "False, True"
+      },
+      "id": "glossary_term:dim_date.is_summer_sale",
+      "kind": "glossary_term",
+      "label": "is_summer_sale",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "Indicates if the date falls during the summer sale period.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_weekend",
+        "table": "dim_date",
+        "values": "False, True"
+      },
+      "id": "glossary_term:dim_date.is_weekend",
+      "kind": "glossary_term",
+      "label": "is_weekend",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "Indicates if the date falls on a weekend.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_winter_sale",
+        "table": "dim_date",
+        "values": "False, True"
+      },
+      "id": "glossary_term:dim_date.is_winter_sale",
+      "kind": "glossary_term",
+      "label": "is_winter_sale",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "Indicates if the date falls during the winter sale period.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "month",
+        "table": "dim_date",
+        "values": ""
+      },
+      "id": "glossary_term:dim_date.month",
+      "kind": "glossary_term",
+      "label": "month",
+      "provenance": {
+        "measured": null,
+        "note": "defined on dim_date",
+        "source": "glossary"
+      },
+      "summary": "The month number of the year.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.brand",
+      "kind": "glossary_term",
+      "label": "brand",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Brand name of the product.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand_tier",
+        "table": "order_items",
+        "values": "luxury, ultra, contemporary"
+      },
+      "id": "glossary_term:order_items.brand_tier",
+      "kind": "glossary_term",
+      "label": "brand_tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Tier grouping of the brand based on price/exclusivity.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "category",
+        "table": "order_items",
+        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+      },
+      "id": "glossary_term:order_items.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Product category classification.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the order to which this item belongs",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_item_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.order_item_id",
+      "kind": "glossary_term",
+      "label": "order_item_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Sequential index of this item within its order (e.g., 1 for first item, 2 for second, etc.)",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "order_items",
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:order_items.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Luxury e\u2011commerce channel where the order was placed.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "product_id",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the product in this order item",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "quantity",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.quantity",
+      "kind": "glossary_term",
+      "label": "quantity",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Number of units of the product purchased in this line item.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "returned",
+        "table": "order_items",
+        "values": "False, True"
+      },
+      "id": "glossary_term:order_items.returned",
+      "kind": "glossary_term",
+      "label": "returned",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Indicates whether the item was returned by the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "unit_price_eur",
+        "table": "order_items",
+        "values": ""
+      },
+      "id": "glossary_term:order_items.unit_price_eur",
+      "kind": "glossary_term",
+      "label": "unit_price_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on order_items",
+        "source": "glossary"
+      },
+      "summary": "Price per unit charged to the customer, in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "channel",
+        "table": "orders",
+        "values": "web, app, store"
+      },
+      "id": "glossary_term:orders.channel",
+      "kind": "glossary_term",
+      "label": "channel",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Sales channel through which the order was placed",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Only EUR appears in the data; column may be redundant.",
+        "column": "currency",
+        "table": "orders",
+        "values": "EUR"
+      },
+      "id": "glossary_term:orders.currency",
+      "kind": "glossary_term",
+      "label": "currency",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Transaction currency for the order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "customer_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.customer_id",
+      "kind": "glossary_term",
+      "label": "customer_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Identifier for the customer who placed the order",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "duty_eur",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.duty_eur",
+      "kind": "glossary_term",
+      "label": "duty_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Import duties or taxes applied to the order in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Stored as VARCHAR despite representing a numeric quarter.",
+        "column": "fiscal_quarter",
+        "table": "orders",
+        "values": "2, 3, 1, 4"
+      },
+      "id": "glossary_term:orders.fiscal_quarter",
+      "kind": "glossary_term",
+      "label": "fiscal_quarter",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Fiscal quarter (1\u20114) of the order (stored as a string).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Stored as VARCHAR despite representing a numeric year.",
+        "column": "fiscal_year",
+        "table": "orders",
+        "values": "2022, 2023, 2024, 2021, 2025"
+      },
+      "id": "glossary_term:orders.fiscal_year",
+      "kind": "glossary_term",
+      "label": "fiscal_year",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Fiscal year to which the order belongs (stored as a string).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "gmv_eur",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.gmv_eur",
+      "kind": "glossary_term",
+      "label": "gmv_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Gross merchandise value of the order in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "group",
+        "table": "orders",
+        "values": "Richemont (YNAP), Mytheresa standalone, LuxExperience"
+      },
+      "id": "glossary_term:orders.group",
+      "kind": "glossary_term",
+      "label": "group",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Business grouping within LuxExperience to which the platform belongs.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_top_customer",
+        "table": "orders",
+        "values": "False, True"
+      },
+      "id": "glossary_term:orders.is_top_customer",
+      "kind": "glossary_term",
+      "label": "is_top_customer",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Flag indicating whether the customer is classified as a top\u2011value buyer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_date",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_date",
+      "kind": "glossary_term",
+      "label": "order_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Date the order was placed",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each order",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "parent_entity",
+        "table": "orders",
+        "values": "Richemont (via YNAP), MYT Netherlands Parent B.V., LuxExperience B.V., Neiman Marcus Group / MYT Holding"
+      },
+      "id": "glossary_term:orders.parent_entity",
+      "kind": "glossary_term",
+      "label": "parent_entity",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Ultimate parent company that owns the platform.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "parent_listing",
+        "table": "orders",
+        "values": "SWX: CFR, NYSE: MYTE, NYSE: LUXE, private"
+      },
+      "id": "glossary_term:orders.parent_listing",
+      "kind": "glossary_term",
+      "label": "parent_listing",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Stock exchange ticker or private status of the parent entity.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "orders",
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:orders.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "E\u2011commerce platform where the order originated.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "reporting_basis",
+        "table": "orders",
+        "values": "richemont_segment_not_separately_reported, filed_standalone, consolidated, subsidiary_not_separately_listed, consolidated_group_parent"
+      },
+      "id": "glossary_term:orders.reporting_basis",
+      "kind": "glossary_term",
+      "label": "reporting_basis",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "How the entity's financial results are reported in consolidated statements.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "segment",
+        "table": "orders",
+        "values": "Consumer, Corporate, Home Office"
+      },
+      "id": "glossary_term:orders.segment",
+      "kind": "glossary_term",
+      "label": "segment",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Market segment to which the customer belongs.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ship_country",
+        "table": "orders",
+        "values": "Canada, United States, Ireland, United Kingdom, Spain, Norway, Austria, Denmark, Portugal, Belgium, Germany, France, Netherlands, Switzerland, Greece, Sweden, Italy, South Korea, Japan, Thailand, Singapore, China, Hong Kong, India, Taiwan, Australia, Russia, Brazil, Mexico, UAE, Qatar, Saudi Arabia, Kuwait, Israel, Turkey"
+      },
+      "id": "glossary_term:orders.ship_country",
+      "kind": "glossary_term",
+      "label": "ship_country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Destination country of the shipment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ship_region",
+        "table": "orders",
+        "values": "Europe, US, UK, Asia, MiddleEast, RoW"
+      },
+      "id": "glossary_term:orders.ship_region",
+      "kind": "glossary_term",
+      "label": "ship_region",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "High\u2011level region grouping of the ship_country.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "shipping_fee_eur",
+        "table": "orders",
+        "values": ""
+      },
+      "id": "glossary_term:orders.shipping_fee_eur",
+      "kind": "glossary_term",
+      "label": "shipping_fee_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Shipping cost charged to the customer in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "status",
+        "table": "orders",
+        "values": "delivered, shipped, cancelled, refunded, processing, pending"
+      },
+      "id": "glossary_term:orders.status",
+      "kind": "glossary_term",
+      "label": "status",
+      "provenance": {
+        "measured": null,
+        "note": "defined on orders",
+        "source": "glossary"
+      },
+      "summary": "Current fulfillment status of the order",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Stored as DOUBLE; floating-point precision may cause rounding issues for financial calculations.",
+        "column": "amount_eur",
+        "table": "payments",
+        "values": ""
+      },
+      "id": "glossary_term:payments.amount_eur",
+      "kind": "glossary_term",
+      "label": "amount_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Payment amount in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Sample shows only False; True values may exist in full data but are not represented in the sample.",
+        "column": "fraud_flag",
+        "table": "payments",
+        "values": "False"
+      },
+      "id": "glossary_term:payments.fraud_flag",
+      "kind": "glossary_term",
+      "label": "fraud_flag",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Boolean flag indicating whether the payment was flagged as fraudulent.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Scale and threshold for flagging not defined; interpret with caution.",
+        "column": "fraud_score",
+        "table": "payments",
+        "values": ""
+      },
+      "id": "glossary_term:payments.fraud_score",
+      "kind": "glossary_term",
+      "label": "fraud_score",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Numeric fraud risk score assigned to the payment (higher indicates higher risk).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "May be NULL or 1 for non-installment payments; not explicitly documented.",
+        "column": "installments",
+        "table": "payments",
+        "values": ""
+      },
+      "id": "glossary_term:payments.installments",
+      "kind": "glossary_term",
+      "label": "installments",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Number of installments for the payment (e.g., for buy-now-pay-later).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "payments",
+        "values": ""
+      },
+      "id": "glossary_term:payments.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Identifier linking the payment attempt to a specific order",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "payment_id",
+        "table": "payments",
+        "values": ""
+      },
+      "id": "glossary_term:payments.payment_id",
+      "kind": "glossary_term",
+      "label": "payment_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each payment attempt",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "payment_method",
+        "table": "payments",
+        "values": "PayPal, Google Pay, Apple Pay, Klarna, Credit Card"
+      },
+      "id": "glossary_term:payments.payment_method",
+      "kind": "glossary_term",
+      "label": "payment_method",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Method used for the payment (e.g., PayPal, Credit Card)",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Overlaps with payment_method values; not all payment_methods map 1:1 to a PSP.",
+        "column": "psp",
+        "table": "payments",
+        "values": "Adyen, PayPal, Klarna, Bank Transfer"
+      },
+      "id": "glossary_term:payments.psp",
+      "kind": "glossary_term",
+      "label": "psp",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Payment service provider that processed the transaction.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "status",
+        "table": "payments",
+        "values": "captured, refunded, failed"
+      },
+      "id": "glossary_term:payments.status",
+      "kind": "glossary_term",
+      "label": "status",
+      "provenance": {
+        "measured": null,
+        "note": "defined on payments",
+        "source": "glossary"
+      },
+      "summary": "Current status of the payment transaction.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "effective_date",
+        "table": "price_history",
+        "values": ""
+      },
+      "id": "glossary_term:price_history.effective_date",
+      "kind": "glossary_term",
+      "label": "effective_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Date when the price became effective.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "is_markdown",
+        "table": "price_history",
+        "values": "True, False"
+      },
+      "id": "glossary_term:price_history.is_markdown",
+      "kind": "glossary_term",
+      "label": "is_markdown",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Flag indicating whether the price is a markdown (discounted) price.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "May be null when is_markdown is false.",
+        "column": "markdown_pct",
+        "table": "price_history",
+        "values": ""
+      },
+      "id": "glossary_term:price_history.markdown_pct",
+      "kind": "glossary_term",
+      "label": "markdown_pct",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Percentage discount applied to the original price when the item is on markdown.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "price_eur",
+        "table": "price_history",
+        "values": ""
+      },
+      "id": "glossary_term:price_history.price_eur",
+      "kind": "glossary_term",
+      "label": "price_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Price of the product in euros at the effective date.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "price_id",
+        "table": "price_history",
+        "values": ""
+      },
+      "id": "glossary_term:price_history.price_id",
+      "kind": "glossary_term",
+      "label": "price_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each price record.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "product_id",
+        "table": "price_history",
+        "values": ""
+      },
+      "id": "glossary_term:price_history.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on price_history",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the product to which the price applies.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.brand",
+      "kind": "glossary_term",
+      "label": "brand",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Brand name of the product.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "brand_tier",
+        "table": "products",
+        "values": "luxury, ultra, contemporary"
+      },
+      "id": "glossary_term:products.brand_tier",
+      "kind": "glossary_term",
+      "label": "brand_tier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Tier classification of the brand (luxury, ultra, contemporary).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "category",
+        "table": "products",
+        "values": "womenswear, menswear, shoes, bags, accessories, outerwear, jewelry_watches, beauty, kidswear, life"
+      },
+      "id": "glossary_term:products.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Product category (e.g., womenswear, shoes, bags).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "in_season",
+        "table": "products",
+        "values": "True, False"
+      },
+      "id": "glossary_term:products.in_season",
+      "kind": "glossary_term",
+      "label": "in_season",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Boolean flag indicating if the product is currently in season.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "products",
+        "values": "THE OUTNET, YOOX, Mytheresa, MR PORTER, NET-A-PORTER"
+      },
+      "id": "glossary_term:products.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "The e-commerce platform selling the product.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "product_id",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.product_id",
+      "kind": "glossary_term",
+      "label": "product_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each product.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Stored as DOUBLE; may have floating-point precision issues.",
+        "column": "retail_price_eur",
+        "table": "products",
+        "values": ""
+      },
+      "id": "glossary_term:products.retail_price_eur",
+      "kind": "glossary_term",
+      "label": "retail_price_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Retail price in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Season codes are not dates; join a date table for temporal analysis.",
+        "column": "season",
+        "table": "products",
+        "values": "AW20, AW24, SS21, SS24, SS23, AW23, SS20, AW25, AW22, SS25, SS22, AW21"
+      },
+      "id": "glossary_term:products.season",
+      "kind": "glossary_term",
+      "label": "season",
+      "provenance": {
+        "measured": null,
+        "note": "defined on products",
+        "source": "glossary"
+      },
+      "summary": "Fashion season code (e.g., AW20 = Autumn/Winter 2020).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "carrier",
+        "table": "return_logistics",
+        "values": "DHL, UPS, FedEx, DPD"
+      },
+      "id": "glossary_term:return_logistics.carrier",
+      "kind": "glossary_term",
+      "label": "carrier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Shipping carrier used for the return shipment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "May be NULL for items not yet inspected.",
+        "column": "condition",
+        "table": "return_logistics",
+        "values": "resellable, minor_refurbish, reject"
+      },
+      "id": "glossary_term:return_logistics.condition",
+      "kind": "glossary_term",
+      "label": "condition",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Condition assessment of the returned item upon inspection.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "return_logistics",
+        "values": ""
+      },
+      "id": "glossary_term:return_logistics.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the original order associated with the return.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "return_logistics",
+        "values": "NET-A-PORTER, YOOX, THE OUTNET, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:return_logistics.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "The luxury fashion platform where the order was placed.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "May be NULL if return has not yet been received.",
+        "column": "received_date",
+        "table": "return_logistics",
+        "values": ""
+      },
+      "id": "glossary_term:return_logistics.received_date",
+      "kind": "glossary_term",
+      "label": "received_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Date the returned item was received at the warehouse.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "May be NULL for refunds still pending or not yet initiated.",
+        "column": "refund_completed_date",
+        "table": "return_logistics",
+        "values": ""
+      },
+      "id": "glossary_term:return_logistics.refund_completed_date",
+      "kind": "glossary_term",
+      "label": "refund_completed_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Date the refund was fully processed and completed.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "refund_method",
+        "table": "return_logistics",
+        "values": "original_payment, store_credit"
+      },
+      "id": "glossary_term:return_logistics.refund_method",
+      "kind": "glossary_term",
+      "label": "refund_method",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Method used to issue the refund to the customer.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "restocked",
+        "table": "return_logistics",
+        "values": "True, False"
+      },
+      "id": "glossary_term:return_logistics.restocked",
+      "kind": "glossary_term",
+      "label": "restocked",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Whether the returned item was restocked for resale.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "return_id",
+        "table": "return_logistics",
+        "values": ""
+      },
+      "id": "glossary_term:return_logistics.return_id",
+      "kind": "glossary_term",
+      "label": "return_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Identifier linking to the return request.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "return_logistics_id",
+        "table": "return_logistics",
+        "values": ""
+      },
+      "id": "glossary_term:return_logistics.return_logistics_id",
+      "kind": "glossary_term",
+      "label": "return_logistics_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on return_logistics",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each return logistics record.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "category",
+        "table": "returns",
+        "values": "womenswear, shoes, menswear, bags, outerwear, accessories, jewelry_watches, kidswear, beauty, life"
+      },
+      "id": "glossary_term:returns.category",
+      "kind": "glossary_term",
+      "label": "category",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Product category of the returned item.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the order being returned.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_item_id",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.order_item_id",
+      "kind": "glossary_term",
+      "label": "order_item_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Identifier of the specific order item being returned.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "returns",
+        "values": "NET-A-PORTER, YOOX, THE OUTNET, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:returns.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Luxury e\u2011commerce platform where the purchase was made.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "reason",
+        "table": "returns",
+        "values": "size_fit, not_as_expected, changed_mind, quality, late_delivery"
+      },
+      "id": "glossary_term:returns.reason",
+      "kind": "glossary_term",
+      "label": "reason",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Reason given by the customer for the return.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "refund_eur",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.refund_eur",
+      "kind": "glossary_term",
+      "label": "refund_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Amount refunded to the customer in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "return_date",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.return_date",
+      "kind": "glossary_term",
+      "label": "return_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Date when the return was processed.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "return_id",
+        "table": "returns",
+        "values": ""
+      },
+      "id": "glossary_term:returns.return_id",
+      "kind": "glossary_term",
+      "label": "return_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on returns",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for a return transaction.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "carrier",
+        "table": "shipments",
+        "values": "DPD, DHL Express, FedEx, UPS"
+      },
+      "id": "glossary_term:shipments.carrier",
+      "kind": "glossary_term",
+      "label": "carrier",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Carrier responsible for transporting the shipment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "delivery_days",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.delivery_days",
+      "kind": "glossary_term",
+      "label": "delivery_days",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Number of calendar days between ship_date and actual delivery.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "destination_country",
+        "table": "shipments",
+        "values": "Canada, United States, Ireland, United Kingdom, Denmark, Norway, Spain, Portugal, Austria, Belgium, Germany, France, Netherlands, Greece, Switzerland, Italy, Sweden, South Korea, Japan, Thailand, Singapore, China, Hong Kong, India, Taiwan, Russia, Brazil, Australia, Mexico, Qatar, UAE, Saudi Arabia, Kuwait, Israel, Turkey"
+      },
+      "id": "glossary_term:shipments.destination_country",
+      "kind": "glossary_term",
+      "label": "destination_country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Country where the shipment was delivered.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "duty_eur",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.duty_eur",
+      "kind": "glossary_term",
+      "label": "duty_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Customs duty/tax amount incurred for the shipment, in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "order_id",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.order_id",
+      "kind": "glossary_term",
+      "label": "order_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Reference to the order this shipment fulfills.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "origin_country",
+        "table": "shipments",
+        "values": "Italy, United States, Hong Kong, Japan, China, Germany, United Kingdom"
+      },
+      "id": "glossary_term:shipments.origin_country",
+      "kind": "glossary_term",
+      "label": "origin_country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Country where the shipment originated.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "platform",
+        "table": "shipments",
+        "values": "YOOX, THE OUTNET, NET-A-PORTER, Mytheresa, MR PORTER"
+      },
+      "id": "glossary_term:shipments.platform",
+      "kind": "glossary_term",
+      "label": "platform",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "E-commerce platform that originated the order.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "service_level",
+        "table": "shipments",
+        "values": "standard, express"
+      },
+      "id": "glossary_term:shipments.service_level",
+      "kind": "glossary_term",
+      "label": "service_level",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Shipping service level selected for the shipment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ship_date",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.ship_date",
+      "kind": "glossary_term",
+      "label": "ship_date",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Date the shipment was dispatched from the warehouse.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "shipment_id",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.shipment_id",
+      "kind": "glossary_term",
+      "label": "shipment_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for the shipment.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "shipping_cost_eur",
+        "table": "shipments",
+        "values": ""
+      },
+      "id": "glossary_term:shipments.shipping_cost_eur",
+      "kind": "glossary_term",
+      "label": "shipping_cost_eur",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Shipping cost charged for the shipment, in euros.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "warehouse",
+        "table": "shipments",
+        "values": "Bologna Interporto, New Jersey DC, Hong Kong Hub, Tokyo Hub, Shanghai DC, London Westgate, Munich Hub, Leipzig DC"
+      },
+      "id": "glossary_term:shipments.warehouse",
+      "kind": "glossary_term",
+      "label": "warehouse",
+      "provenance": {
+        "measured": null,
+        "note": "defined on shipments",
+        "source": "glossary"
+      },
+      "summary": "Fulfillment warehouse from which the shipment was dispatched.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "country",
+        "table": "warehouses",
+        "values": "Germany, Italy, Hong Kong, United Kingdom, Japan, China, United States"
+      },
+      "id": "glossary_term:warehouses.country",
+      "kind": "glossary_term",
+      "label": "country",
+      "provenance": {
+        "measured": null,
+        "note": "defined on warehouses",
+        "source": "glossary"
+      },
+      "summary": "Country where the warehouse is physically located.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "name",
+        "table": "warehouses",
+        "values": "Munich Hub, Tokyo Hub, Hong Kong Hub, London Westgate, New Jersey DC, Bologna Interporto, Leipzig DC, Shanghai DC"
+      },
+      "id": "glossary_term:warehouses.name",
+      "kind": "glossary_term",
+      "label": "name",
+      "provenance": {
+        "measured": null,
+        "note": "defined on warehouses",
+        "source": "glossary"
+      },
+      "summary": "Human-readable name of the warehouse location.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "Pipe\u2011separated list indicates multiple platforms; not normalized to a separate junction table.",
+        "column": "platforms_served",
+        "table": "warehouses",
+        "values": "Mytheresa, NET-A-PORTER|MR PORTER, NET-A-PORTER|MR PORTER|Mytheresa|YOOX, NET-A-PORTER|MR PORTER|YOOX|Mytheresa, YOOX|NET-A-PORTER, YOOX|THE OUTNET|NET-A-PORTER|MR PORTER, NET-A-PORTER|MR PORTER|YOOX"
+      },
+      "id": "glossary_term:warehouses.platforms_served",
+      "kind": "glossary_term",
+      "label": "platforms_served",
+      "provenance": {
+        "measured": null,
+        "note": "defined on warehouses",
+        "source": "glossary"
+      },
+      "summary": "Luxury e\u2011commerce platforms that the warehouse supports, encoded as a pipe\u2011separated list.",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "region_served",
+        "table": "warehouses",
+        "values": "Europe, Asia, US, UK"
+      },
+      "id": "glossary_term:warehouses.region_served",
+      "kind": "glossary_term",
+      "label": "region_served",
+      "provenance": {
+        "measured": null,
+        "note": "defined on warehouses",
+        "source": "glossary"
+      },
+      "summary": "Geographic region that the warehouse primarily serves (e.g., Europe, Asia, US, UK).",
+      "tags": []
+    },
+    {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "warehouse_id",
+        "table": "warehouses",
+        "values": ""
+      },
+      "id": "glossary_term:warehouses.warehouse_id",
+      "kind": "glossary_term",
+      "label": "warehouse_id",
+      "provenance": {
+        "measured": null,
+        "note": "defined on warehouses",
+        "source": "glossary"
+      },
+      "summary": "Unique identifier for each warehouse.",
+      "tags": []
+    },
+    {
+      "data": {
+        "formula_sql": "AVG(total_amount)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "formula_sql": "SUM(total_amount)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 5,
+        "columns": [
+          "brand",
+          "brand_id",
+          "country",
+          "focus_category",
+          "tier"
+        ],
+        "domain": "Catalog",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "brand_id",
+        "source_tables": [
+          "brands"
+        ]
+      },
+      "id": "table:Brand",
+      "kind": "table",
+      "label": "Brand",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 4,
+        "columns": [
+          "country",
+          "duty_rate",
+          "region",
+          "ship_days_base"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "country",
+        "source_tables": [
+          "countries"
+        ]
+      },
+      "id": "table:Countrie",
+      "kind": "table",
+      "label": "Country",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 7,
+        "columns": [
+          "country",
+          "customer_id",
+          "is_top_customer",
+          "platform",
+          "region",
+          "signup_fy",
+          "tier"
+        ],
+        "domain": "Customer",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "customer_id",
+        "source_tables": [
+          "customers"
+        ]
+      },
+      "id": "table:Customer",
+      "kind": "table",
+      "label": "Customer",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "category",
+          "channel",
+          "created_date",
+          "csat",
+          "customer_id",
+          "order_id",
+          "platform",
+          "resolution_days",
+          "ticket_id"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "ticket_id",
+        "source_tables": [
+          "customer_service"
+        ]
+      },
+      "id": "table:CustomerService",
+      "kind": "table",
+      "label": "Support Ticket",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "calendar_year",
+          "date",
+          "day_of_week",
+          "fiscal_quarter",
+          "fiscal_year",
+          "is_holiday_peak",
+          "is_summer_sale",
+          "is_weekend",
+          "is_winter_sale",
+          "month"
+        ],
+        "domain": "Operations",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "date",
+        "source_tables": [
+          "dim_date"
+        ]
+      },
+      "id": "table:Date",
+      "kind": "table",
+      "label": "Date",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=reference_data grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 20,
+        "columns": [
+          "channel",
+          "currency",
+          "customer_id",
+          "duty_eur",
+          "fiscal_quarter",
+          "fiscal_year",
+          "gmv_eur",
+          "group",
+          "is_top_customer",
+          "order_date",
+          "order_id",
+          "parent_entity",
+          "parent_listing",
+          "platform",
+          "reporting_basis",
+          "segment",
+          "ship_country",
+          "ship_region",
+          "shipping_fee_eur",
+          "status"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_id",
+        "source_tables": [
+          "orders"
+        ]
+      },
+      "id": "table:Order",
+      "kind": "table",
+      "label": "Order",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "brand",
+          "brand_tier",
+          "category",
+          "order_id",
+          "order_item_id",
+          "platform",
+          "product_id",
+          "quantity",
+          "returned",
+          "unit_price_eur"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "order_item_id",
+        "source_tables": [
+          "order_items"
+        ]
+      },
+      "id": "table:OrderItem",
+      "kind": "table",
+      "label": "OrderItem",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 9,
+        "columns": [
+          "amount_eur",
+          "fraud_flag",
+          "fraud_score",
+          "installments",
+          "order_id",
+          "payment_id",
+          "payment_method",
+          "psp",
+          "status"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": true,
+        "identity_key": "payment_id",
+        "source_tables": [
+          "payments"
+        ]
+      },
+      "id": "table:Payment",
+      "kind": "table",
+      "label": "Payment",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasLifecycle",
+        "HasRating"
+      ]
+    },
+    {
+      "data": {
+        "column_count": 6,
+        "columns": [
+          "effective_date",
+          "is_markdown",
+          "markdown_pct",
+          "price_eur",
+          "price_id",
+          "product_id"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "price_id",
+        "source_tables": [
+          "price_history"
+        ]
+      },
+      "id": "table:Price",
+      "kind": "table",
+      "label": "Price",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 8,
+        "columns": [
+          "brand",
+          "brand_tier",
+          "category",
+          "in_season",
+          "platform",
+          "product_id",
+          "retail_price_eur",
+          "season"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "product_id",
+        "source_tables": [
+          "products"
+        ]
+      },
+      "id": "table:Product",
+      "kind": "table",
+      "label": "Product",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 8,
+        "columns": [
+          "category",
+          "order_id",
+          "order_item_id",
+          "platform",
+          "reason",
+          "refund_eur",
+          "return_date",
+          "return_id"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "return_id",
+        "source_tables": [
+          "returns"
+        ]
+      },
+      "id": "table:Return",
+      "kind": "table",
+      "label": "Return",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 10,
+        "columns": [
+          "carrier",
+          "condition",
+          "order_id",
+          "platform",
+          "received_date",
+          "refund_completed_date",
+          "refund_method",
+          "restocked",
+          "return_id",
+          "return_logistics_id"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": true,
+        "identity_key": "return_logistics_id",
+        "source_tables": [
+          "return_logistics"
+        ]
+      },
+      "id": "table:ReturnLogistic",
+      "kind": "table",
+      "label": "ReturnLogistic",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": [
+        "HasLifecycle"
+      ]
+    },
+    {
+      "data": {
+        "column_count": 12,
+        "columns": [
+          "carrier",
+          "delivery_days",
+          "destination_country",
+          "duty_eur",
+          "order_id",
+          "origin_country",
+          "platform",
+          "service_level",
+          "ship_date",
+          "shipment_id",
+          "shipping_cost_eur",
+          "warehouse"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "shipment_id",
+        "source_tables": [
+          "shipments"
+        ]
+      },
+      "id": "table:Shipment",
+      "kind": "table",
+      "label": "Shipment",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    },
+    {
+      "data": {
+        "column_count": 5,
+        "columns": [
+          "country",
+          "name",
+          "platforms_served",
+          "region_served",
+          "warehouse_id"
+        ],
+        "domain": null,
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "warehouse_id",
+        "source_tables": [
+          "warehouses"
+        ]
+      },
+      "id": "table:Warehouse",
+      "kind": "table",
+      "label": "Warehouse",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=business_object grain_verified=True",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    }
+  ],
+  "source": {
+    "connection_id": "914df862",
+    "graph_generated_at": "2026-08-04T22:48:24.351173+00:00",
+    "graph_version": 1,
+    "org_id": "default",
+    "schema_name": "luxexperience",
+    "structural_fingerprint": "7f015ef19964d3ae"
+  }
+}

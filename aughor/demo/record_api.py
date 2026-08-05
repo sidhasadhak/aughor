@@ -38,9 +38,29 @@ RECORDING_VERSION = 1
 #: while writing this file: `/canvases?connection_id=` and
 #: `/org-settings/effective?connection_id=` are each ignored, and both routes key on
 #: `workspace_id`. Check `openapi.json` before adding a route here.
-def _routes(conn: str, workspace: str = "") -> list[tuple]:
+def _routes(conn: str, workspace: str = "",
+            schemas: tuple[str, ...] = ()) -> list[tuple]:
     ws = f"?workspace_id={workspace}" if workspace else ""
-    return [
+    # The surfaces ask schema-qualified questions once a schema is selected — which is
+    # immediately, because the briefing page mounts with the first schema chosen. The
+    # serve-side matcher compares the EXACT query string with params sorted
+    # alphabetically (`recordedKey` in web/app/demo-api/[...path]/route.ts), so every
+    # multi-param path here must list its params in that order or the recording can
+    # never be hit. The bare-path fallback does not save these: it only fires when the
+    # RECORDED key has no query string at all.
+    per_schema: list[tuple] = []
+    for s in schemas:
+        per_schema += [
+            ("GET", f"/business-profile?connection_id={conn}&schema_name={s}", None),
+            ("GET", f"/viz-configs?scope_key={conn}:{s}", None),
+            # Generates on first record (cache key is `{conn}:{schema}`, distinct from
+            # the conn-level one) — with `workspace_id` so org identity resolves to the
+            # DEMO workspace's own declared settings, then serves from cache thereafter.
+            ("POST", f"/exploration/{conn}/briefing?schema={s}&workspace_id={workspace}", None)
+            if workspace else
+            ("POST", f"/exploration/{conn}/briefing?schema={s}", None),
+        ]
+    return per_schema + [
         ("GET", "/connections", None),
         ("GET", "/workspaces", None),
         ("GET", "/capabilities", None),
@@ -79,6 +99,12 @@ def _routes(conn: str, workspace: str = "") -> list[tuple]:
 
 #: Terms that must never appear in a public recording. Deliberately broad — every other
 #: dataset this instance has loaded, plus currency/domain tokens unique to them.
+#:
+#: "Foreign" is relative to the recording being written, not absolute: a LuxExperience
+#: recording legitimately carries `luxexperience`/`gmv_eur`/`refund_eur`, which are exactly
+#: the terms that must never reach the SUPERSTORE recording. So a caller declares what its
+#: own dataset owns via `allow_terms`, and everything else stays banned. Widening the list
+#: is safe; narrowing it per-recording is the part that needs the explicit argument.
 _FOREIGN = (
     "luxexperience", "beautycommerce", "creditcard", "swiss", "airline",
     "duty_eur", "gmv_eur", "refund_eur", "shipping_fee_eur",
@@ -120,6 +146,12 @@ def _scrub(path: str, payload: Any, conn: str, workspace: str,
                 for s in (payload.get("sections") or [])
             ],
         }
+    if path.startswith("/org-intelligence") and isinstance(payload, list):
+        # The bare route answers with every promotion the instance has ever made — in
+        # practice a unit-test fixture row and other connections' findings, none of it
+        # nameable by the term scan because none of it uses a banned term. Same narrowing
+        # as the other list routes: the demo connection's own promotions or nothing.
+        return [r for r in payload if (r or {}).get("connection_id") == conn]
     if path.startswith("/investigations") and isinstance(payload, list):
         # Connection scope is not enough here. The demo pack is CURATED — pre-fix runs and
         # the losing halves of duplicated pairs were deliberately dropped — and the list
@@ -149,14 +181,17 @@ def _substitute_org(routes: dict, workspace_key: str) -> None:
         routes["GET /org-settings"] = dict(effective)
 
 
-def _contamination(recording: dict) -> list[str]:
+def _contamination(recording: dict, allow_terms: tuple[str, ...] = ()) -> list[str]:
     blob = json.dumps(recording).lower()
-    return [t for t in _FOREIGN if t in blob]
+    allowed = {t.lower() for t in allow_terms}
+    return [t for t in _FOREIGN if t not in allowed and t in blob]
 
 
 def record(base_url: str, connection_id: str, out_path: str | Path, *,
            workspace_id: str = "", investigation_ids: Optional[list[str]] = None,
-           pack_graph: Optional[dict] = None) -> dict:
+           pack_graph: Optional[dict] = None,
+           schemas: tuple[str, ...] = (),
+           allow_terms: tuple[str, ...] = ()) -> dict:
     """Capture the allowlisted routes and write the recording. Raises on contamination."""
     import urllib.error
     import urllib.request
@@ -193,7 +228,7 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
 
     entries: dict = {}
     skipped: list[str] = []
-    for method, path, _ in _routes(connection_id, workspace_id):
+    for method, path, _ in _routes(connection_id, workspace_id, schemas):
         status, body = _call(method, path)
         if status != 200 or body is None:
             skipped.append(f"{_key(method, path)} → {status or 'unreachable'}")
@@ -232,7 +267,7 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
         "connection_id": connection_id,
         "routes": entries,
     }
-    leaks = _contamination(recording)
+    leaks = _contamination(recording, allow_terms)
     if leaks:
         raise RecordingError(
             "refusing to write: the recording contains terms from another dataset — "
@@ -243,6 +278,94 @@ def record(base_url: str, connection_id: str, out_path: str | Path, *,
     out.write_text(json.dumps(recording, indent=1, sort_keys=True) + "\n")
     recording["_skipped"] = skipped
     return recording
+
+
+#: Routes whose answer is the whole instance rather than one connection. On a merge these
+#: cannot simply coexist, so each is handled explicitly below; anything not named here is
+#: keyed by its connection id in the path and merges without conflict.
+_LIST_ROUTES = ("GET /connections", "GET /workspaces")
+
+
+def merge_recordings(primary: dict, *others: dict) -> dict:
+    """Combine per-connection recordings into one the demo can serve for BOTH.
+
+    A recording is per-connection by construction (``record`` takes one id and the scrub
+    narrows every list to it), but the SERVE side never reads ``connection_id`` — it keys
+    on the full request path, which already carries the id. So two recordings can share one
+    file, and a visitor can switch workspaces and find a second dataset that genuinely
+    works, instead of one demo replacing the other.
+
+    Three kinds of route, three rules:
+
+    * **connection-keyed** (``/exploration/{conn}/…``, ``/ontology?connection_id=…``) —
+      distinct keys, so they merge by plain union.
+    * **list routes** (``/connections``, ``/workspaces``) — concatenated and de-duplicated
+      by ``id``. Union is the point: the switcher must offer both.
+    * **instance singletons** (``/capabilities``, ``/org-settings``, ``/actions/triggers``,
+      ``/org-intelligence``, ``/catalog/tree``, ``/investigations?limit=…``) — the primary
+      wins, because there is exactly one answer and no way to express two. ``/catalog/tree``
+      is the exception that *can* merge: its sections carry per-connection entries.
+
+    Version mismatches are refused rather than coerced: two files written by different
+    builds may disagree on shape, and a silently mixed recording is the failure this
+    module exists to prevent.
+    """
+    if not primary:
+        raise RecordingError("merge needs a primary recording")
+    merged_routes: dict = dict(primary.get("routes") or {})
+    ids = [primary.get("connection_id")]
+
+    for other in others:
+        if not other:
+            continue
+        if other.get("version") != primary.get("version"):
+            raise RecordingError(
+                f"refusing to merge: version {other.get('version')} into "
+                f"{primary.get('version')} — rebuild both with one version.")
+        ids.append(other.get("connection_id"))
+        for key, payload in (other.get("routes") or {}).items():
+            if key in _LIST_ROUTES:
+                base = merged_routes.get(key)
+                if isinstance(base, list) and isinstance(payload, list):
+                    seen = {(r or {}).get("id") for r in base}
+                    merged_routes[key] = base + [r for r in payload
+                                                 if (r or {}).get("id") not in seen]
+                else:
+                    merged_routes.setdefault(key, payload)
+            elif key == "GET /catalog/tree":
+                base = merged_routes.get(key)
+                if isinstance(base, dict) and isinstance(payload, dict):
+                    merged_routes[key] = _merge_catalog(base, payload)
+                else:
+                    merged_routes.setdefault(key, payload)
+            else:
+                # Connection-keyed routes never collide. A genuine singleton collision
+                # (same key, both present) keeps the primary's answer — see docstring.
+                merged_routes.setdefault(key, payload)
+
+    return {
+        "version": primary.get("version"),
+        "connection_id": primary.get("connection_id"),
+        # Every connection the file can answer for. Informational today (the serve side
+        # keys on the path), but it is what makes a merged file self-describing.
+        "connection_ids": [i for i in ids if i],
+        "routes": merged_routes,
+    }
+
+
+def _merge_catalog(base: dict, other: dict) -> dict:
+    """Union the catalog tree's per-connection entries, matching sections by title."""
+    sections = {(s.get("title") or s.get("label") or ""): dict(s)
+                for s in (base.get("sections") or [])}
+    for s in other.get("sections") or []:
+        key = s.get("title") or s.get("label") or ""
+        if key in sections:
+            have = {(e or {}).get("conn_id") for e in (sections[key].get("entries") or [])}
+            sections[key]["entries"] = list(sections[key].get("entries") or []) + [
+                e for e in (s.get("entries") or []) if (e or {}).get("conn_id") not in have]
+        else:
+            sections[key] = dict(s)
+    return {**base, "sections": list(sections.values())}
 
 
 def summarise(recording: dict) -> str:

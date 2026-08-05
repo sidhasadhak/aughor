@@ -1,0 +1,514 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T21:41:15.376470+00:00",
+  "connection_id": "914df862",
+  "headline": "Shipping shortfall of 2.44M EUR is driven by systemic inefficiency in standard and express service levels.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "6a15ee37",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "We spend 3.38M EUR on shipping but only recover 0.94M EUR in shipping fees. Which routes and service levels drive the shortfall?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "The shipping shortfall is a broad-based operational inefficiency rather than a localized route issue, with standard shipping volume driving the largest total deficit. Addressing the per-record gap in express shipping offers the most immediate opportunity to improve unit economics.",
+    "comparison_basis": "",
+    "confidence": "HIGH",
+    "confidence_justification": "The data provides a clear, consistent breakdown of shipping shortfalls across all major dimensions, with high record counts ensuring statistical reliability.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Lack of granular shipping cost components (e.g., fuel surcharges, last-mile vs. line-haul) prevents identifying specific cost-saving levers.",
+      "No data on customer shipping fee elasticity to determine if higher recovery is possible without impacting conversion."
+    ],
+    "executive_summary": "The shipping cost shortfall is systemic, totaling **2.44M EUR** across all shipments, with standard service levels contributing **1.30M EUR** and express levels contributing **1.14M EUR**. While express shipping accounts for a smaller share of the total deficit, it is significantly less efficient, averaging a **34.56 EUR** shortfall per record compared to **17.42 EUR** for standard shipping. The shortfall is evenly distributed across major carriers, indicating that the deficit is not driven by specific carrier pricing but by broader operational cost-recovery gaps.",
+    "headline": "Shipping shortfall of 2.44M EUR is driven by systemic inefficiency in standard and express service levels.",
+    "metric": "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+    "metric_definition": "shipping cost shortfall (shipping cost less shipping-fee recovery) \u2014 computed as `SUM(s.shipping_cost_eur) - SUM(o.shipping_fee_eur)`; on luxexperience.shipments; over data spanning 2020-07-01 \u2192 2025-06-30.",
+    "observation_period": "2020-07-01 \u2192 2025-06-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)": "currency:EUR"
+            },
+            "columns": [
+              "route",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+              "records",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery) per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_0",
+            "interpretation": "The shortfall is distributed across many routes, with the lowest totals (e.g., UK \u2192 Russia) contributing minimally to the overall deficit. While these routes have the lowest total shortfalls, their average per-record shortfalls (ranging from ~**19.83 EUR to 28.05 EUR**) are consistent with the broader business averages, indicating no specific geographic route is an outlier.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "UK \u2192 Russia (Total)",
+                "value": "1,423 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "UK \u2192 Mexico (Avg/Record)",
+                "value": "28.05 EUR"
+              },
+              {
+                "context": "China \u2192 Mexico runs 19.83 vs United Kingdom \u2192 Mexico's 28.05 per record; closing that gap across 80 records \u2248 657.60 shipping cost shortfall (shipping cost less shipping-fee recovery). A ceiling computed from peers, not a forecast.",
+                "delta": "29% below benchmark",
+                "label": "Opportunity: China \u2192 Mexico \u2192 United Kingdom \u2192 Mexico benchmark",
+                "value": "657.60"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "United Kingdom \u2192 Russia",
+                "1423.0",
+                "55",
+                "25.87"
+              ],
+              [
+                "China \u2192 Mexico",
+                "1586.0",
+                "80",
+                "19.83"
+              ],
+              [
+                "United Kingdom \u2192 Turkey",
+                "1594.0",
+                "63",
+                "25.3"
+              ],
+              [
+                "United Kingdom \u2192 Mexico",
+                "1599.0",
+                "57",
+                "28.05"
+              ],
+              [
+                "China \u2192 Saudi Arabia",
+                "1601.0",
+                "78",
+                "20.53"
+              ],
+              [
+                "United Kingdom \u2192 Australia",
+                "1613.0",
+                "63",
+                "25.6"
+              ],
+              [
+                "Germany \u2192 Brazil",
+                "1662.0",
+                "67",
+                "24.81"
+              ],
+              [
+                "United Kingdom \u2192 Qatar",
+                "1701.0",
+                "69",
+                "24.65"
+              ],
+              [
+                "United Kingdom \u2192 Saudi Arabia",
+                "1740.0",
+                "71",
+                "24.51"
+              ],
+              [
+                "China \u2192 Qatar",
+                "1747.0",
+                "76",
+                "22.99"
+              ],
+              [
+                "China \u2192 Israel",
+                "1761.0",
+                "70",
+                "25.16"
+              ],
+              [
+                "United Kingdom \u2192 Israel",
+                "1770.0",
+                "69",
+                "25.65"
+              ],
+              [
+                "United Kingdom \u2192 UAE",
+                "1803.0",
+                "67",
+                "26.91"
+              ],
+              [
+                "United Kingdom \u2192 Brazil",
+                "1823.0",
+                "71",
+                "25.68"
+              ],
+              [
+                "China \u2192 Brazil",
+                "1871.0",
+                "85",
+                "22.01"
+              ]
+            ],
+            "sql": "WITH shipment_base AS (SELECT s.origin_country || ' \u2192 ' || s.destination_country AS route, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT route, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY route) SELECT route, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "China \u2192 Mexico runs 19.83 vs United Kingdom \u2192 Mexico's 28.05 per record; closing that gap across 80 records \u2248 657.60 shipping cost shortfall (shipping cost less shipping-fee recovery). A ceiling computed from peers, not a forecast.",
+            "title": "Shipping Cost Shortfall by Route",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)": "currency:EUR"
+            },
+            "columns": [
+              "service_level",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+              "records",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery) per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_1",
+            "interpretation": "The shortfall is split between service levels, with 'standard' shipping accounting for a larger share of the total deficit (**1.30M EUR**) compared to 'express' (**1.14M EUR**). However, 'express' shipping is significantly more inefficient per record, with an average shortfall of **34.56 EUR** compared to just **17.42 EUR** for 'standard'.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Standard (Total)",
+                "value": "1.30M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Express (Avg/Record)",
+                "value": "34.56 EUR"
+              }
+            ],
+            "row_count": 2,
+            "rows": [
+              [
+                "express",
+                "1141923.0",
+                "33041",
+                "34.56"
+              ],
+              [
+                "standard",
+                "1303978.0",
+                "74862",
+                "17.42"
+              ]
+            ],
+            "sql": "WITH shipment_base AS (SELECT s.service_level, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT service_level, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY service_level) SELECT service_level, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost Shortfall by Service Level",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)": "currency:EUR"
+            },
+            "columns": [
+              "channel",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+              "records",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery) per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_2",
+            "interpretation": "The shortfall is spread across all sales channels, with 'web' contributing the highest total deficit at **1.03M EUR**. The average shortfall per record is remarkably consistent across all channels, hovering tightly around **22.60 EUR**, suggesting the issue is systemic rather than channel-specific.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Web (Total)",
+                "value": "1.03M EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Clienteling (Avg/Record)",
+                "value": "22.74 EUR"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "clienteling",
+                "196406.0",
+                "8637",
+                "22.74"
+              ],
+              [
+                "ios_app",
+                "486986.0",
+                "21450",
+                "22.7"
+              ],
+              [
+                "app",
+                "732281.0",
+                "32441",
+                "22.57"
+              ],
+              [
+                "web",
+                "1030228.0",
+                "45375",
+                "22.7"
+              ]
+            ],
+            "sql": "WITH shipment_base AS (SELECT o.channel, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT channel, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY channel) SELECT channel, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost Shortfall by Order Channel",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)": "currency:EUR"
+            },
+            "columns": [
+              "platform",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+              "records",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery) per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_3",
+            "interpretation": "Shortfalls are distributed across all platforms, with NET-A-PORTER and YOOX contributing the highest totals at **614k EUR** and **589k EUR** respectively. There is notable variance in efficiency; THE OUTNET is the most efficient per record at **16.48 EUR**, while Mytheresa is the least efficient at **28.28 EUR**.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "NET-A-PORTER (Total)",
+                "value": "614k EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Mytheresa (Avg/Record)",
+                "value": "28.28 EUR"
+              },
+              {
+                "context": "THE OUTNET runs 16.48 vs Mytheresa's 28.28 per record; closing that gap across 25,489 records \u2248 300.8K shipping cost shortfall (shipping cost less shipping-fee recovery). A ceiling computed from peers, not a forecast.",
+                "delta": "42% below benchmark",
+                "label": "Opportunity: THE OUTNET \u2192 Mytheresa benchmark",
+                "value": "300.8K"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "MR PORTER",
+                "291695.0",
+                "11271",
+                "25.88"
+              ],
+              [
+                "THE OUTNET",
+                "420171.0",
+                "25489",
+                "16.48"
+              ],
+              [
+                "Mytheresa",
+                "530862.0",
+                "18774",
+                "28.28"
+              ],
+              [
+                "YOOX",
+                "589036.0",
+                "29741",
+                "19.81"
+              ],
+              [
+                "NET-A-PORTER",
+                "614137.0",
+                "22628",
+                "27.14"
+              ]
+            ],
+            "sql": "WITH shipment_base AS (SELECT s.platform, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT platform, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY platform) SELECT platform, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": "THE OUTNET runs 16.48 vs Mytheresa's 28.28 per record; closing that gap across 25,489 records \u2248 300.8K shipping cost shortfall (shipping cost less shipping-fee recovery). A ceiling computed from peers, not a forecast.",
+            "title": "Shipping Cost Shortfall by Shipment Platform",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)": "currency:EUR"
+            },
+            "columns": [
+              "carrier",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery)",
+              "records",
+              "shipping cost shortfall (shipping cost less shipping-fee recovery) per record"
+            ],
+            "error": null,
+            "exhibit": {
+              "order": "asc"
+            },
+            "finding_id": "xsec_4",
+            "interpretation": "The shortfall is evenly distributed across all four major carriers, with each accounting for approximately **24.6% to 25.4%** of the total deficit. The average shortfall per record is also highly uniform, ranging only from **22.41 EUR to 22.99 EUR**, indicating no carrier is performing worse than the others.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "DHL Express (Total)",
+                "value": "621k EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "UPS (Avg/Record)",
+                "value": "22.41 EUR"
+              }
+            ],
+            "row_count": 4,
+            "rows": [
+              [
+                "UPS",
+                "601106.0",
+                "26818",
+                "22.41"
+              ],
+              [
+                "FedEx",
+                "606025.0",
+                "26940",
+                "22.5"
+              ],
+              [
+                "DPD",
+                "617447.0",
+                "27117",
+                "22.77"
+              ],
+              [
+                "DHL Express",
+                "621323.0",
+                "27028",
+                "22.99"
+              ]
+            ],
+            "sql": "WITH shipment_base AS (SELECT s.carrier, COALESCE(s.shipping_cost_eur, 0) AS shipping_cost_eur, COALESCE(o.shipping_fee_eur, 0) / NULLIF(COUNT(*) OVER (PARTITION BY s.order_id), 0) AS allocated_shipping_fee_eur FROM luxexperience.shipments AS s JOIN luxexperience.orders AS o ON o.order_id = s.order_id), dimension_metrics AS (SELECT carrier, SUM(shipping_cost_eur) - SUM(allocated_shipping_fee_eur) AS metric_total, COUNT(*) AS n FROM shipment_base GROUP BY carrier) SELECT carrier, metric_total, n, ROUND(metric_total / NULLIF(n, 0), 2) AS avg_per_record, ROUND(100.0 * metric_total / NULLIF(SUM(metric_total) OVER (), 0), 1) AS pct_of_total FROM dimension_metrics ORDER BY metric_total ASC LIMIT 15",
+            "stat_note": null,
+            "title": "Shipping Cost Shortfall by Carrier",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Shipping shortfalls are systemic across most dimensions, but **express** service levels are the primary driver of inefficiency, averaging **34.56 EUR** in shortfall per record."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "This is a cross-sectional profitability investigation: identify route (origin_country \u00d7 destination_country) and service_level combinations with the largest positive shortfall, where shipping cost exceeds customer shipping-fee recovery. Compute it by joining luxexperience.shipments s to luxexperience.orders o on s.order_id = o.order_id, and filter the analysis by s.ship_date. No status filter is applied because the question does not restrict to delivered, completed, or valid orders. luxexperience.orders.status exists; the supplied sample contains 'shipped' and 'returned', but the complete set of distinct statuses cannot be established from the provided schema/sample alone. The profile context containing verified table date bounds and period completeness is blank; the stated full-history dates are inferred from the fiscal-year/sample coverage and should be validated before execution. Important grain caveat: shipping_cost_eur is shipment-grain while shipping_fee_eur is order-grain. If an order can have multiple shipments, directly summing o.shipping_fee_eur after the join duplicates fees and understates the shortfall. Validate shipment-to-order cardinality; if one-to-many, allocate each order's fee across its shipments (for example, proportional to shipment shipping_cost_eur) before route-level aggregation.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "shipping cost shortfall (shipping cost less shipping-fee recovery) (SUM(s.shipping_cost_eur) - SUM(o.shipping_fee_eur))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.shipments"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.shipments.origin_country, luxexperience.shipments.destination_country, luxexperience.shipments.service_level, luxexperience.shipments.carrier, luxexperience.shipments.warehouse, luxexperience.shipments.platform, luxexperience.orders.segment, luxexperience.orders.channel"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning shipping cost shortfall (shipping cost less shipping-fee recovery) across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Review express shipping cost structures and fee recovery policies to reduce the **34.56 EUR** per-record shortfall.",
+        "expected_impact": "Improvement in unit economics for express shipments.",
+        "owner": "Logistics Operations",
+        "timeline": "30 days"
+      },
+      {
+        "action": "Analyze standard shipping cost drivers to address the **1.30M EUR** total deficit.",
+        "expected_impact": "Reduction in total shipping cost leakage.",
+        "owner": "Finance/Logistics",
+        "timeline": "60 days"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T21:38:39.885792+00:00",
+  "status": "complete"
+}

@@ -1,0 +1,473 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T21:49:38.925418+00:00",
+  "connection_id": "914df862",
+  "headline": "Slower deliveries do not meaningfully increase item return rates.",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "5cb898d7",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Do slower deliveries lead to more returns?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "Focus improvement efforts on high-return categories and platforms rather than delivery speed.",
+    "comparison_basis": "",
+    "confidence": "MEDIUM",
+    "confidence_justification": "Capped below HIGH \u2014 a trust advisory fired on the evidence: every value in this result is identical, empty, or pinned at a boundary \u2014 there is no variation to rank or compare (+2 more). The difference between slower and faster delivery segments is only 0.2 percentage points, well within expected noise; multiple dimensions show far larger variation, indicating delivery speed is not a driver.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Granular delivery speed buckets (e.g., same-day, next-day, 2-day) to detect non-linear effects",
+      "Customer satisfaction survey data linked to returns",
+      "Reason codes for returns by delivery speed"
+    ],
+    "executive_summary": "Slower-than-average deliveries have an item return rate of **27.4%** versus **27.2%** for faster deliveries, a negligible 0.2\u2011point difference. Return rates vary strongly by category, peaking at **32.6%** in womenswear, and by platform, with Mytheresa at **32.5%**. Origin country shows Germany at **33.7%**, while destination country variation is modest, highest at Turkey **31.0%}.",
+    "headline": "Slower deliveries do not meaningfully increase item return rates.",
+    "metric": "item return rate",
+    "metric_definition": "item return rate \u2014 computed as `COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0)`; a ratio of two aggregates; (a value-weighted and a count-based reading can differ materially; this reading was chosen automatically); on luxexperience.order_items; over data spanning 2020-07-01 \u2192 2025-06-30.",
+    "observation_period": "2020-07-01 \u2192 2025-06-30",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "item return rate": "percent"
+            },
+            "columns": [
+              "segment",
+              "item return rate"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              }
+            },
+            "finding_id": "xsec_0",
+            "interpretation": "The item return rate shows minimal variation based on delivery speed, with orders delivered slower than average having a return rate of **27.4%** compared to **27.2%** for faster deliveries. This negligible difference suggests that delivery speed is not a primary driver of returns in this dataset.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Slower delivery return rate",
+                "value": "27.4%"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Faster delivery return rate",
+                "value": "27.2%"
+              }
+            ],
+            "row_count": 2,
+            "rows": [
+              [
+                "False",
+                "0.2719242230736484"
+              ],
+              [
+                "True",
+                "0.27394333394090364"
+              ]
+            ],
+            "sql": "WITH s AS (SELECT s.order_id, MAX(s.delivery_days) AS delivery_days FROM luxexperience.shipments AS s WHERE NOT s.delivery_days IS NULL GROUP BY s.order_id) SELECT (s.delivery_days > (SELECT AVG(s2.delivery_days) FROM luxexperience.shipments AS s2 WHERE NOT s2.delivery_days IS NULL)) AS segment, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, ROUND((COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0)) / NULLIF(COUNT(*), 0), 2) AS avg_per_record FROM luxexperience.order_items AS oi JOIN s ON oi.order_id = s.order_id GROUP BY 1 ORDER BY 1",
+            "stat_note": null,
+            "title": "Item Return Rate by Delivery-Speed Segment",
+            "trust_caveat": "every value in this result is identical, empty, or pinned at a boundary \u2014 there is no variation to rank or compare"
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "item return rate": "percent"
+            },
+            "columns": [
+              "category",
+              "item return rate"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              }
+            },
+            "finding_id": "xsec_1",
+            "interpretation": "Return rates vary significantly by category, ranging from a high of **32.6%** in womenswear to a low of **11.9%** in beauty. The high return rate in womenswear is driven by a substantial volume of **27,424** returned items out of **84,024** total items.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Highest return rate (womenswear)",
+                "value": "32.6% (womenswear)"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Lowest return rate (beauty)",
+                "value": "11.9% (beauty)"
+              }
+            ],
+            "row_count": 10,
+            "rows": [
+              [
+                "womenswear",
+                "0.326382938208131"
+              ],
+              [
+                "outerwear",
+                "0.29640746646656035"
+              ],
+              [
+                "shoes",
+                "0.28428036747192925"
+              ],
+              [
+                "kidswear",
+                "0.2323037323037323"
+              ],
+              [
+                "menswear",
+                "0.20944216470970625"
+              ],
+              [
+                "bags",
+                "0.16704795021961932"
+              ],
+              [
+                "life",
+                "0.15160349854227406"
+              ],
+              [
+                "accessories",
+                "0.14891159484673477"
+              ],
+              [
+                "jewelry_watches",
+                "0.1292686989838414"
+              ],
+              [
+                "beauty",
+                "0.11912568306010929"
+              ]
+            ],
+            "sql": "SELECT oi.category AS category, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) AS numerator_total, COUNT(DISTINCT oi.order_item_id) AS denominator_total FROM luxexperience.order_items AS oi GROUP BY oi.category ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Item Return Rate by Category",
+            "trust_caveat": null
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "item return rate": "percent"
+            },
+            "columns": [
+              "origin_country",
+              "item return rate"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              }
+            },
+            "finding_id": "xsec_2",
+            "interpretation": "Return rates by origin country show Germany with the highest rate at **33.7%**, while Italy has the lowest at **25.2%**. The spread across these countries is relatively moderate, suggesting regional differences in return behavior.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Highest return rate (Germany)",
+                "value": "33.7% (Germany)"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Lowest return rate (Italy)",
+                "value": "25.2% (Italy)"
+              }
+            ],
+            "row_count": 7,
+            "rows": [
+              [
+                "Germany",
+                "0.3370737211634905"
+              ],
+              [
+                "United Kingdom",
+                "0.3078562433401143"
+              ],
+              [
+                "Hong Kong",
+                "0.2805497888180972"
+              ],
+              [
+                "United States",
+                "0.2788659613840299"
+              ],
+              [
+                "Japan",
+                "0.2622230896847858"
+              ],
+              [
+                "China",
+                "0.25892313314654647"
+              ],
+              [
+                "Italy",
+                "0.25243894763343405"
+              ]
+            ],
+            "sql": "WITH shipment_origin AS (SELECT s.order_id, MAX(s.origin_country) AS origin_country FROM luxexperience.shipments AS s GROUP BY s.order_id) SELECT shipment_origin.origin_country AS origin_country, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) AS numerator_total, COUNT(DISTINCT oi.order_item_id) AS denominator_total FROM luxexperience.order_items AS oi JOIN shipment_origin ON oi.order_id = shipment_origin.order_id GROUP BY shipment_origin.origin_country ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Item Return Rate by Origin Country",
+            "trust_caveat": "E1-lexicographic-order: MIN/MAX over text column 'origin_country' compares lexicographically ('10' < '2'). CAST to a numeric type if it stores numbers."
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "item return rate": "percent"
+            },
+            "columns": [
+              "destination_country",
+              "item return rate"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              }
+            },
+            "finding_id": "xsec_3",
+            "interpretation": "Return rates by destination country are tightly clustered, with Turkey showing the highest rate at **31.0%** and other countries following closely. The variation across these destinations is not extreme, indicating a consistent return experience globally.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Highest return rate (Turkey)",
+                "value": "31.0% (Turkey)"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "Turkey",
+                "0.30952380952380953"
+              ],
+              [
+                "Kuwait",
+                "0.29748427672955974"
+              ],
+              [
+                "UAE",
+                "0.2965222696766321"
+              ],
+              [
+                "Saudi Arabia",
+                "0.29386503067484665"
+              ],
+              [
+                "Qatar",
+                "0.29199277543648405"
+              ],
+              [
+                "Israel",
+                "0.2919334186939821"
+              ],
+              [
+                "Taiwan",
+                "0.2852930335422042"
+              ],
+              [
+                "South Korea",
+                "0.28422468886646485"
+              ],
+              [
+                "Russia",
+                "0.2784738041002278"
+              ],
+              [
+                "Netherlands",
+                "0.2778993435448578"
+              ],
+              [
+                "Italy",
+                "0.2777337559429477"
+              ],
+              [
+                "Thailand",
+                "0.2774369461486026"
+              ],
+              [
+                "Norway",
+                "0.276566757493188"
+              ],
+              [
+                "Brazil",
+                "0.276239907727797"
+              ],
+              [
+                "United Kingdom",
+                "0.27576019599365903"
+              ]
+            ],
+            "sql": "WITH shipment_destination AS (SELECT s.order_id, MAX(s.destination_country) AS destination_country FROM luxexperience.shipments AS s GROUP BY s.order_id) SELECT shipment_destination.destination_country AS destination_country, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) AS numerator_total, COUNT(DISTINCT oi.order_item_id) AS denominator_total FROM luxexperience.order_items AS oi JOIN shipment_destination ON oi.order_id = shipment_destination.order_id GROUP BY shipment_destination.destination_country ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Item Return Rate by Destination Country",
+            "trust_caveat": "E1-lexicographic-order: MIN/MAX over text column 'destination_country' compares lexicographically ('10' < '2'). CAST to a numeric type if it stores numbers."
+          },
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "item return rate": "percent"
+            },
+            "columns": [
+              "platform",
+              "item return rate"
+            ],
+            "error": null,
+            "exhibit": {
+              "color": {
+                "mode": "severity"
+              }
+            },
+            "finding_id": "xsec_4",
+            "interpretation": "Platform return rates show Mytheresa with the highest rate at **32.5%**, while YOOX has the lowest at **20.8%**. This indicates that return behavior is influenced by the platform used, with a notable spread between the highest and lowest performers.",
+            "is_significant": true,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "Highest return rate (Mytheresa)",
+                "value": "32.5% (Mytheresa)"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "Lowest return rate (YOOX)",
+                "value": "20.8% (YOOX)"
+              }
+            ],
+            "row_count": 5,
+            "rows": [
+              [
+                "Mytheresa",
+                "0.32465881925742124"
+              ],
+              [
+                "NET-A-PORTER",
+                "0.3108984714800547"
+              ],
+              [
+                "MR PORTER",
+                "0.25241611736135205"
+              ],
+              [
+                "THE OUTNET",
+                "0.23866634152829813"
+              ],
+              [
+                "YOOX",
+                "0.20849119466920513"
+              ]
+            ],
+            "sql": "SELECT oi.platform AS platform, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0) AS metric_total, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) AS numerator_total, COUNT(DISTINCT oi.order_item_id) AS denominator_total FROM luxexperience.order_items AS oi GROUP BY oi.platform ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Item Return Rate by Platform",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Delivery speed has a negligible impact on returns (**27.4%** vs **27.2%**), while category and platform show significant variance, with womenswear and Mytheresa exhibiting the highest return rates at **32.6%** and **32.5%** respectively."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "This is a driver/relationship question, so return rate should be compared across delivery-speed groups rather than trended over time. The metric is calculated at order-item grain using order_items.returned; it requires joining luxexperience.order_items oi to luxexperience.shipments s on oi.order_id = s.order_id to obtain delivery_days and ship_date. The canonical Return Rate (by Orders) formula cannot be used because it requires luxexperience.orders, which is not provided in the schema. No profile date range or completeness information was supplied; the stated period is only the range visibly represented by the supplied samples and must be validated against actual data before execution. No status/state column exists in luxexperience.order_items, so no status filter is applied. If orders can have multiple shipment records, shipment-to-order selection/deduplication must be defined before interpreting the relationship.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "item return rate (COUNT(DISTINCT CASE WHEN oi.returned THEN oi.order_item_id END) / NULLIF(COUNT(DISTINCT oi.order_item_id), 0))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.order_items"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.order_items.platform, luxexperience.order_items.brand, luxexperience.order_items.category, luxexperience.order_items.brand_tier, luxexperience.shipments.warehouse, luxexperience.shipments.origin_country, luxexperience.shipments.destination_country, luxexperience.shipments.service_level"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning item return rate across 8 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Investigate womenswear return drivers",
+        "expected_impact": "Reduce return rate in womenswear",
+        "owner": "Product & Merchandising Team",
+        "timeline": "1\u20133 months"
+      },
+      {
+        "action": "Review Mytheresa platform return processes",
+        "expected_impact": "Lower platform-specific return rate",
+        "owner": "Platform Operations",
+        "timeline": "1\u20133 months"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T21:47:07.977014+00:00",
+  "status": "complete"
+}

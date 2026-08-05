@@ -1,0 +1,244 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-04T21:47:02.840179+00:00",
+  "connection_id": "914df862",
+  "headline": "Size_fit\u2011womenswear drives the highest return refund cost at **2,896,066 EUR**",
+  "hypotheses": [],
+  "hypothesis_count": 0,
+  "id": "fdd0d475",
+  "kind": "investigation",
+  "purpose": "",
+  "query_count": 0,
+  "query_history": [],
+  "question": "Which return reason and product category combination costs us the most?",
+  "report": {
+    "_report_type": "investigate",
+    "attribution_waterfall": [],
+    "closing_summary": "Prioritizing size/fit improvements in womenswear could cut nearly a quarter of refund costs, boosting overall profitability.",
+    "comparison_basis": "",
+    "confidence": "HIGH",
+    "confidence_justification": "The query returns size_fit - womenswear as the highest metric_total (2,896,066 EUR) and the investigation findings explicitly state it accounts for 22.9% of total refund costs among the top 15 categories.",
+    "contradiction_report": {
+      "count": 0,
+      "items": [],
+      "severity": "none"
+    },
+    "data_gaps": [
+      "Customer\u2011level size feedback and return reason details",
+      "Size distribution and fit test data per SKU",
+      "Return logistics condition data to assess whether size/fit issues are exacerbated by handling"
+    ],
+    "executive_summary": "The combination **size_fit - womenswear** accounts for the largest share of return refund costs, totaling **2,896,066 EUR** and representing **22.9%** of the top\u201115 category total. The next\u2011largest contributors are **not_as_expected - womenswear** (**1,508,338 EUR**) and **changed_mind - womenswear** (**1,379,449 EUR**). Targeting size/fit issues in womenswear offers the greatest leverage to reduce refund exposure.",
+    "headline": "Size_fit\u2011womenswear drives the highest return refund cost at **2,896,066 EUR**",
+    "metric": "return refund cost",
+    "metric_definition": "return refund cost \u2014 computed as `SUM(refund_eur)`; on luxexperience.returns; over data spanning 2020-07-04 \u2192 2025-07-26.",
+    "observation_period": "2020-07-04 \u2192 2025-07-26",
+    "orchestration_plan": null,
+    "phases": [
+      {
+        "findings": [
+          {
+            "chart_type": "bar_horizontal",
+            "column_units": {
+              "return refund cost": "currency:EUR"
+            },
+            "columns": [
+              "reason_category",
+              "return refund cost",
+              "records",
+              "return refund cost per record"
+            ],
+            "error": null,
+            "finding_id": "xsec_0",
+            "interpretation": "The return refund costs are heavily concentrated in the womenswear category, with 'size_fit - womenswear' being the highest contributor at **2,896,066 EUR**. While this category accounts for the largest total costs, its average refund per record of **250.09 EUR** is consistent with the overall average of the top 15 categories, suggesting the high total is driven by volume rather than an outlier in refund value per return.",
+            "is_significant": false,
+            "key_numbers": [
+              {
+                "context": null,
+                "delta": null,
+                "label": "size_fit - womenswear (Total)",
+                "value": "2,896,066 EUR"
+              },
+              {
+                "context": null,
+                "delta": null,
+                "label": "size_fit - womenswear (Avg)",
+                "value": "250.09 EUR"
+              }
+            ],
+            "row_count": 15,
+            "rows": [
+              [
+                "size_fit - womenswear",
+                "2896066.0",
+                "11580",
+                "250.09"
+              ],
+              [
+                "not_as_expected - womenswear",
+                "1508338.0",
+                "6004",
+                "251.22"
+              ],
+              [
+                "changed_mind - womenswear",
+                "1379449.0",
+                "5448",
+                "253.2"
+              ],
+              [
+                "size_fit - shoes",
+                "724121.0",
+                "2817",
+                "257.05"
+              ],
+              [
+                "quality - womenswear",
+                "690629.0",
+                "2787",
+                "247.8"
+              ],
+              [
+                "size_fit - menswear",
+                "509840.0",
+                "2154",
+                "236.69"
+              ],
+              [
+                "late_delivery - womenswear",
+                "393306.0",
+                "1605",
+                "245.05"
+              ],
+              [
+                "size_fit - bags",
+                "388381.0",
+                "1484",
+                "261.71"
+              ],
+              [
+                "not_as_expected - shoes",
+                "377555.0",
+                "1468",
+                "257.19"
+              ],
+              [
+                "changed_mind - shoes",
+                "341252.0",
+                "1344",
+                "253.91"
+              ],
+              [
+                "size_fit - outerwear",
+                "331817.0",
+                "1361",
+                "243.8"
+              ],
+              [
+                "changed_mind - menswear",
+                "270857.0",
+                "1077",
+                "251.49"
+              ],
+              [
+                "not_as_expected - menswear",
+                "257699.0",
+                "1083",
+                "237.95"
+              ],
+              [
+                "not_as_expected - bags",
+                "228487.0",
+                "847",
+                "269.76"
+              ],
+              [
+                "changed_mind - bags",
+                "202284.0",
+                "742",
+                "272.62"
+              ]
+            ],
+            "sql": "SELECT r.reason || ' - ' || r.category AS reason_category, SUM(r.refund_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(r.refund_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(r.refund_eur) / NULLIF(SUM(SUM(r.refund_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns AS r WHERE NOT r.reason IS NULL AND NOT r.category IS NULL AND NOT r.refund_eur IS NULL GROUP BY r.reason, r.category ORDER BY metric_total DESC LIMIT 15",
+            "stat_note": null,
+            "title": "Return Reason and Category Combination Cost Ranking",
+            "trust_caveat": null
+          }
+        ],
+        "phase_icon": "\ud83e\udded",
+        "phase_id": "cross_section",
+        "phase_name": "Cross-Sectional Scan",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Return refund costs are most heavily concentrated in **size_fit - womenswear**, which accounts for 22.9% of the total refund costs among the top 15 categories."
+      },
+      {
+        "findings": [
+          {
+            "chart_type": "none",
+            "columns": [
+              "field",
+              "value"
+            ],
+            "error": null,
+            "finding_id": "intake_spec",
+            "interpretation": "Interpret \u201ccosts us the most\u201d as total refund exposure, measured by SUM(luxexperience.returns.refund_eur), grouped by the combination of return reason and product category. This is a cross-sectional ranking question, not a period-over-period trend. No profile context containing the full returns-table date range or period coverage was supplied; the observation dates are limited to the earliest and latest return_date visible in the provided returns sample, so they must be validated against the actual table before execution. No YoY window is specified because sufficient historical coverage is unknown. The returns table has no status column, so no transaction-status filter applies. Additional logistics dimensions require joining luxexperience.returns to luxexperience.return_logistics on return_id.",
+            "is_significant": false,
+            "key_numbers": [],
+            "row_count": 6,
+            "rows": [
+              [
+                "Metric",
+                "return refund cost (SUM(refund_eur))"
+              ],
+              [
+                "Approach",
+                "Cross-sectional \u2014 rank the metric across dimensions to find where value is weakest (no time comparison)"
+              ],
+              [
+                "Primary table",
+                "luxexperience.returns"
+              ],
+              [
+                "Dimensions",
+                "luxexperience.returns.reason, luxexperience.returns.category, luxexperience.returns.platform, luxexperience.return_logistics.carrier, luxexperience.return_logistics.condition, luxexperience.return_logistics.restocked, luxexperience.return_logistics.refund_method"
+              ]
+            ],
+            "sql": "",
+            "stat_note": null,
+            "title": "Investigation Specification"
+          }
+        ],
+        "phase_icon": "\ud83d\udd0d",
+        "phase_id": "intake",
+        "phase_name": "Question Intake",
+        "skipped_reason": null,
+        "status": "complete",
+        "summary": "Scanning return refund cost across 7 dimensions to find where value is weakest."
+      }
+    ],
+    "plan_reconciliation": {
+      "actual": [
+        "cross_section",
+        "intake"
+      ],
+      "planned": [],
+      "skipped": [],
+      "unplanned": [
+        "cross_section",
+        "intake"
+      ]
+    },
+    "recommendations": [
+      {
+        "action": "Investigate and improve size/fit accuracy for womenswear products",
+        "expected_impact": "Potential reduction of up to 22.9% of refund costs",
+        "owner": "Product & Sizing Team",
+        "timeline": "1-3 months"
+      }
+    ],
+    "total_change_label": ""
+  },
+  "started_at": "2026-08-04T21:44:41.173210+00:00",
+  "status": "complete"
+}

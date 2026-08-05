@@ -317,3 +317,134 @@ def test_the_shipped_pack_graph_agrees_with_its_own_investigations():
     for n in receipts:
         assert (n.get("summary") or "").strip().lower() in headlines, (
             f"graph carries {n.get('summary')!r}, from an investigation the pack dropped")
+
+
+def test_schema_qualified_routes_match_the_serve_side_key_format():
+    """The three routes the UI asks schema-qualified — business-profile, viz-configs and
+    the briefing POST — 501'd on the hosted demo because the recording carried only their
+    bare-connection forms. The serve-side matcher (`recordedKey` in
+    web/app/demo-api/[...path]/route.ts) rebuilds `METHOD /path?a=..&b=..` with params
+    sorted ALPHABETICALLY and no URL-encoding, so the recorder must emit its keys in
+    exactly that shape or they can never be hit."""
+    from aughor.demo.record_api import _routes
+
+    keys = {f"{m} {p}" for m, p, _ in _routes("c1", "w1", schemas=("main",))}
+    assert "GET /business-profile?connection_id=c1&schema_name=main" in keys
+    assert "GET /viz-configs?scope_key=c1:main" in keys
+    assert "POST /exploration/c1/briefing?schema=main&workspace_id=w1" in keys
+    # No workspace → no dangling workspace_id param on the briefing key.
+    bare = {f"{m} {p}" for m, p, _ in _routes("c1", schemas=("main",))}
+    assert "POST /exploration/c1/briefing?schema=main" in bare
+    # Every multi-param key must already be alphabetically ordered; the matcher sorts,
+    # the recording cannot.
+    for key in keys | bare:
+        query = key.split("?", 1)[1] if "?" in key else ""
+        names = [kv.split("=", 1)[0] for kv in query.split("&") if kv]
+        assert names == sorted(names), f"params out of order in {key!r}"
+
+
+def test_org_intelligence_is_narrowed_to_the_demo_connection():
+    """The bare /org-intelligence route answers with every promotion the instance has —
+    the shipped recording was carrying a test-fixture row and another connection's
+    findings, invisible to the term scan because none of it uses a banned term."""
+    from aughor.demo.record_api import _scrub
+
+    rows = [
+        {"connection_id": "demo", "angle": "kept"},
+        {"connection_id": "someone_else", "angle": "dropped"},
+        {"angle": "no connection at all"},
+    ]
+    kept = _scrub("/org-intelligence", rows, "demo", "ws1")
+    assert kept == [{"connection_id": "demo", "angle": "kept"}]
+
+
+# ── Merging two per-connection recordings into one demo file ──────────────────────────
+
+
+def _rec(conn: str, extra: dict | None = None) -> dict:
+    from aughor.demo.record_api import RECORDING_VERSION
+    routes = {
+        "GET /connections": [{"id": conn, "name": conn}],
+        "GET /workspaces": [{"id": f"ws_{conn}", "connection_ids": [conn]}],
+        f"GET /exploration/{conn}/status": {"phase": "complete"},
+        "GET /capabilities": {"owner": conn},
+        "GET /catalog/tree": {"sections": [{"title": "Connections",
+                                            "entries": [{"conn_id": conn}]}]},
+    }
+    routes.update(extra or {})
+    return {"version": RECORDING_VERSION, "connection_id": conn, "routes": routes}
+
+
+def test_merged_recording_offers_both_connections_and_workspaces():
+    """The switcher must show both datasets — a merge that kept one would make the
+    second demo unreachable, which is the whole point of merging."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa", "bbb"]
+    assert [w["id"] for w in merged["routes"]["GET /workspaces"]] == ["ws_aaa", "ws_bbb"]
+    assert merged["connection_ids"] == ["aaa", "bbb"]
+    # Connection-keyed routes survive for BOTH, untouched.
+    assert merged["routes"]["GET /exploration/aaa/status"] == {"phase": "complete"}
+    assert merged["routes"]["GET /exploration/bbb/status"] == {"phase": "complete"}
+
+
+def test_merge_keeps_the_primary_answer_for_instance_singletons():
+    """/capabilities has exactly one answer and no way to express two."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    assert merged["routes"]["GET /capabilities"] == {"owner": "aaa"}
+
+
+def test_merge_unions_the_catalog_tree_entries():
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("bbb"))
+    entries = merged["routes"]["GET /catalog/tree"]["sections"][0]["entries"]
+    assert [e["conn_id"] for e in entries] == ["aaa", "bbb"]
+
+
+def test_merge_refuses_a_version_mismatch():
+    """Two builds can disagree on shape; a silently mixed recording is the failure
+    this module exists to prevent."""
+    from aughor.demo.record_api import RecordingError, merge_recordings
+
+    future = _rec("bbb")
+    future["version"] = 99
+    with pytest.raises(RecordingError, match="version"):
+        merge_recordings(_rec("aaa"), future)
+
+
+def test_merge_is_idempotent_for_a_repeated_connection():
+    """Re-merging the same recording must not duplicate its connection row."""
+    from aughor.demo.record_api import merge_recordings
+
+    merged = merge_recordings(_rec("aaa"), _rec("aaa"))
+    assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa"]
+
+
+def test_merge_carries_every_connections_schema_qualified_routes():
+    """The regression that started this work, at merge grain: a schema-qualified route
+    recorded for the SECOND connection must survive the merge, or LuxExperience's
+    briefing 501s on a demo that reports itself as working."""
+    from aughor.demo.record_api import merge_recordings
+
+    a = _rec("aaa", {"POST /exploration/aaa/briefing?schema=main&workspace_id=w1": {"ok": 1}})
+    b = _rec("bbb", {"POST /exploration/bbb/briefing?schema=lux&workspace_id=w2": {"ok": 2}})
+    merged = merge_recordings(a, b)
+    assert merged["routes"]["POST /exploration/aaa/briefing?schema=main&workspace_id=w1"]
+    assert merged["routes"]["POST /exploration/bbb/briefing?schema=lux&workspace_id=w2"]
+
+
+def test_allow_terms_narrows_the_contamination_gate_per_recording():
+    """'Foreign' is relative to the dataset being recorded: LuxExperience legitimately
+    carries the very terms that must never reach the Superstore recording."""
+    from aughor.demo.record_api import _contamination
+
+    rec = {"routes": {"GET /x": {"schema": "luxexperience", "col": "gmv_eur"}}}
+    assert set(_contamination(rec)) == {"luxexperience", "gmv_eur"}
+    assert _contamination(rec, allow_terms=("luxexperience", "gmv_eur")) == []
+    # Everything not declared stays banned.
+    leaky = {"routes": {"GET /x": {"schema": "luxexperience", "other": "coupon_abuse"}}}
+    assert _contamination(leaky, allow_terms=("luxexperience",)) == ["coupon_abuse"]
