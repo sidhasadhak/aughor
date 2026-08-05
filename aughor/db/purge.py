@@ -96,7 +96,9 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
         tolerate(e, "purge: matcache", counter="conn.purge.matcache")
 
     # ── File-pattern intelligence (platform-owned data/ files) ──────────────────
-    counts["exploration"] = _files(f"exploration_{safe}*.json", f"exploration_{raw}*.json")
+    # Exploration state moved into the agent's family store; its deletion is the
+    # "exploration"-labelled CONNECTION HOOK (agent/bootstrap.py), not a glob here —
+    # the platform must not import the agent store it cascades into.
     counts["episodes"]    = _files(f"episodes_{safe}*.jsonl", f"episodes_{raw}*.jsonl")
     counts["annotations"] = _files(f"annotations_{safe}.json", f"annotations_{raw}.json")
     counts["benchmarks"]  = _files(f"benchmarks_{safe}.json", f"benchmarks_{raw}.json")
@@ -226,11 +228,12 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
     for k, v in run_schema_purge_hooks(conn_id, schema).items():
         counts[k] = counts.get(k, 0) + v
 
-    # ── connection-level aggregate files (platform) — stale once any schema goes ─
-    counts["explorer_files"] = _unlink_exact(
-        f"exploration_{safe}__{ssafe}.json", f"exploration_{safe}.json",
+    # ── connection-level aggregates — stale once any schema goes ────────────────
+    # Exploration state + the bare profile are the "explorer_files"/"profile_bare"
+    # SCHEMA HOOKS (agent/bootstrap.py) — already merged above. Episodes stay
+    # platform-owned files.
+    counts["explorer_files"] = counts.get("explorer_files", 0) + _unlink_exact(
         f"episodes_{safe}__{ssafe}.jsonl", f"episodes_{safe}.jsonl",
-        f"business_profile_{safe}.json",   # the bare 'All schemas' profile
     )
 
     # ── canvases bound to this schema (platform) → their investigations + evidence ─

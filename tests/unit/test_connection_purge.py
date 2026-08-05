@@ -34,8 +34,12 @@ def isolated(tmp_path, monkeypatch):
     data = tmp_path / "data"
     data.mkdir()
     (data / "api_sync").mkdir()
+    from aughor.explorer import store as explorer_store
     monkeypatch.setattr(purge, "_DATA_DIR", data)
     monkeypatch.setattr(profile_store, "_DATA_DIR", data)
+    # The cascade now delegates exploration deletion to the store, so its dir must
+    # point at this test's data too — the old file-glob purge never read it.
+    monkeypatch.setattr(explorer_store, "_DATA_DIR", data)
     monkeypatch.setattr(briefing, "_CACHE_PATH", data / "briefing_cache.json")
     monkeypatch.setattr(patterns, "_CACHE_PATH", data / "patterns_cache.json")
     monkeypatch.setattr(connection_kb, "_DATA_DIR", data)
@@ -267,3 +271,43 @@ def test_cascade_is_idempotent(isolated):
     counts = purge.purge_connection_artifacts("never_existed")
     assert counts.get("investigations", 0) == 0
     assert counts.get("upload_dir", 0) == 0
+
+
+def test_purge_removes_store_seeded_exploration_state(isolated):
+    """The post-migration reality: exploration state that never existed as a file —
+    written through the family store — must be purged just as thoroughly. A finding
+    that survives purge in ANY home is the stale-intelligence class (the 2026-08-04
+    briefing citing a deleted table)."""
+    from aughor.db import purge
+    from aughor.explorer import store as explorer_store
+
+    def _seed(key: str, finding_id: str) -> None:
+        explorer_store.save(key, {"phase": "complete", "insights": [{"id": finding_id}]})
+
+    _seed("cat_gone", "f1")
+    _seed("cat_gone__main", "f2")
+    _seed("cat_stays", "f3")
+
+    counts = purge.purge_connection_artifacts("cat_gone")
+
+    assert counts["exploration"] == 2                       # bare + schema scope
+    assert explorer_store.get_insights("cat_gone") == []           # empty, not the old state
+    assert explorer_store.get_insights("cat_gone__main") == []
+    assert explorer_store.schema_run_keys("cat_gone") == []
+    assert [f["id"] for f in explorer_store.get_insights("cat_stays")] == ["f3"]   # sibling intact
+
+
+def test_purge_counts_a_key_once_when_it_lives_in_store_and_file(isolated):
+    """An imported entry exists as a store row AND its legacy file; purging it is
+    ONE removal — double-counting would overstate what the cascade did."""
+    import json as _json
+    from aughor.db import purge
+    from aughor.explorer import store as explorer_store
+
+    (isolated / "exploration_cat_dual.json").write_text(_json.dumps({"phase": "complete"}))
+    assert explorer_store.load("cat_dual")["phase"] == "complete"   # import into the store
+
+    counts = purge.purge_connection_artifacts("cat_dual")
+    assert counts["exploration"] == 1
+    assert not (isolated / "exploration_cat_dual.json").exists()    # file gone too
+    assert not explorer_store.has_state("cat_dual")

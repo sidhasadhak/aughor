@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Optional
 
 from aughor.db.paths import state_dir
 from aughor.business_profile.models import BusinessProfile
+from aughor.util.json_store import FileFamilyStore
 
 _DATA_DIR = state_dir()
 
@@ -31,18 +31,22 @@ def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", s)
 
 
-def _path(connection_id: str, schema_name: Optional[str] = None) -> Path:
-    base = f"business_profile_{_safe(connection_id)}"
+def _family() -> FileFamilyStore:
+    # Per call, not a module global: _DATA_DIR is the seam tests monkeypatch.
+    return FileFamilyStore(_DATA_DIR, "business_profile_")
+
+
+def _key(connection_id: str, schema_name: Optional[str] = None) -> str:
+    base = _safe(connection_id)
     if schema_name:
         base += f"__{_safe(schema_name)}"
-    return _DATA_DIR / f"{base}.json"
+    return base
 
 
 def save(connection_id: str, profile: BusinessProfile, *,
          schema_name: Optional[str] = None, model: Optional[str] = None,
          generated_at: Optional[str] = None,
          recipes: Optional[list] = None) -> None:
-    _DATA_DIR.mkdir(exist_ok=True)
     payload = {
         "connection_id": connection_id,
         "schema_name": schema_name,   # WHICH schema this profile describes (matched on read)
@@ -53,14 +57,12 @@ def save(connection_id: str, profile: BusinessProfile, *,
         # SQL-accuracy knowledge the explorer injects into Phase-8 generation.
         "recipes": recipes or [],
     }
-    _path(connection_id, schema_name).write_text(json.dumps(payload, indent=2, default=str))
+    _family().put(_key(connection_id, schema_name), json.loads(json.dumps(payload, default=str)))
 
 
-def _read(p: Path) -> Optional[dict]:
-    if not p.exists():
-        return None
+def _read(key: str) -> Optional[dict]:
     try:
-        return json.loads(p.read_text())
+        return _family().get_entry(key)
     except Exception:
         return None
 
@@ -105,11 +107,11 @@ def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[
     Each metric's ``chart_sql`` is re-anchored to the most-recent window on read (see
     ``_anchor_metric_trends``)."""
     if schema_name:
-        return _anchor_metric_trends(_read(_path(connection_id, schema_name)))
-    conn_level = _read(_path(connection_id))
+        return _anchor_metric_trends(_read(_key(connection_id, schema_name)))
+    conn_level = _read(_key(connection_id))
     if conn_level is not None:
         return _anchor_metric_trends(conn_level)
-    scoped = sorted(_DATA_DIR.glob(f"business_profile_{_safe(connection_id)}__*.json"))
+    scoped = _family().keys_with_prefix(f"{_safe(connection_id)}__")
     if len(scoped) == 1:
         return _anchor_metric_trends(_read(scoped[0]))
     return None
@@ -134,32 +136,43 @@ def load_recipes(connection_id: str, schema_name: Optional[str] = None) -> list[
 
 def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
     """Delete the scoped profile, or ALL of a connection's profiles when schema_name is
-    None (so deleting a connection clears every schema's profile, not just the default)."""
-    if schema_name:
-        targets = [_path(connection_id, schema_name)]
-    else:
-        targets = list(_DATA_DIR.glob(f"business_profile_{_safe(connection_id)}*.json"))
-    for p in targets:
-        try:
-            p.unlink()
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "profile invalidation is best-effort; a file that won't unlink is re-inferred on next access anyway",
-                     counter="profile.store.invalidate", conn_id=connection_id or None)
+    None (so deleting a connection clears every schema's profile, not just the default).
+    Removes the store row AND the legacy file — a profile that survives in either place
+    is the stale-intelligence class the purge cascade exists to prevent."""
+    try:
+        if schema_name:
+            _family().purge_entries(exact=[_key(connection_id, schema_name)])
+        else:
+            _family().purge_entries(exact=[_key(connection_id)],
+                                    key_prefix=f"{_safe(connection_id)}__")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile invalidation is best-effort; a profile that won't delete is re-inferred on next access anyway",
+                 counter="profile.store.invalidate", conn_id=connection_id or None)
+
+
+def invalidate_bare(connection_id: str) -> int:
+    """Delete ONLY the connection-level 'All schemas' profile, leaving every
+    schema-scoped sibling. The schema-purge cascade uses this: removing one schema
+    stales the aggregate but must not destroy the other schemas' profiles."""
+    try:
+        return _family().purge_entries(exact=[_key(connection_id)])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "bare-profile invalidation is best-effort; re-inferred on next access",
+                 counter="profile.store.invalidate_bare", conn_id=connection_id or None)
+        return 0
 
 
 def invalidate_all() -> int:
     """Delete EVERY stored business profile so they lazily re-infer on next access. Used
     when an app-wide setting that changes inference (e.g. the declared industry) is updated,
     so the chosen industry's curated metrics/recipes are re-captured for each dataset.
-    Returns the count removed. Best-effort per file."""
-    n = 0
-    for p in _DATA_DIR.glob("business_profile_*.json"):
-        try:
-            p.unlink()
-            n += 1
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "bulk profile reset is best-effort per file; a file that won't unlink is re-inferred on next access",
-                     counter="profile.store.invalidate_all")
-    return n
+    Returns the count removed (once per profile, wherever it lived)."""
+    try:
+        return _family().purge_entries(key_prefix="")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "bulk profile reset is best-effort; profiles that won't delete re-infer on next access",
+                 counter="profile.store.invalidate_all")
+        return 0

@@ -16,7 +16,6 @@ except ImportError:
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 
-from aughor.db.paths import state_dir
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
@@ -359,14 +358,10 @@ async def _boot_canvas_explorers() -> None:
     """Background task: resume canvas explorers from saved state (via the ONE
     kernel-supervised spawn path)."""
     from aughor.canvas.store import get_canvas
-    from aughor.explorer.store import canvas_has_state
+    from aughor.explorer.store import canvas_has_state, canvas_ids_with_state
     from aughor.routers._shared import spawn_explorer
 
-    canvas_states = [
-        p.stem.replace("exploration_canvas_", "")
-        for p in state_dir().glob("exploration_canvas_*.json")
-        if p.exists()
-    ]
+    canvas_states = canvas_ids_with_state()
     for canvas_id in canvas_states:
         if not canvas_has_state(canvas_id):
             continue
