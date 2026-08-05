@@ -92,3 +92,31 @@ def test_both_instances_see_one_anothers_writes_live(shared_ledgers):
     assert b.job_get("job-visible") is not None
     b.job_update("job-visible", error="stamped by b")
     assert a.job_get("job-visible")["error"] == "stamped by b"
+
+
+# ── slice claims: the unit-of-work lease sliced execution runs on ────────────
+
+def test_claim_contention_one_winner(shared_ledgers):
+    """Two workers race one scope through separate instances: exactly one wins —
+    the spike's HTTP-409 semantics as a kernel primitive."""
+    a, b = shared_ledgers
+    assert a.try_claim("explore:c1:angle7", "worker-a", lease_s=60) is True
+    assert b.try_claim("explore:c1:angle7", "worker-b", lease_s=60) is False
+
+
+def test_lapsed_claim_is_stolen_and_old_owner_cannot_renew(shared_ledgers):
+    a, b = shared_ledgers
+    assert a.try_claim("explore:c1:angle8", "worker-a", lease_s=-1)   # already lapsed
+    assert b.try_claim("explore:c1:angle8", "worker-b", lease_s=60) is True
+    # the previous owner must learn it lost the work — renew refuses
+    assert a.renew_claim("explore:c1:angle8", "worker-a", lease_s=60) is False
+    assert a.release_claim("explore:c1:angle8", "worker-a") is False   # not yours
+
+
+def test_reclaim_by_same_owner_and_release_frees_the_scope(shared_ledgers):
+    a, b = shared_ledgers
+    assert a.try_claim("explore:c1:angle9", "worker-a", lease_s=60) is True
+    assert a.try_claim("explore:c1:angle9", "worker-a", lease_s=60) is True   # re-entrant
+    assert a.renew_claim("explore:c1:angle9", "worker-a", lease_s=60) is True
+    assert a.release_claim("explore:c1:angle9", "worker-a") is True
+    assert b.try_claim("explore:c1:angle9", "worker-b", lease_s=60) is True   # freed

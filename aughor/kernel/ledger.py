@@ -108,6 +108,11 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_scope ON jobs(conn_id, canvas_id);
+CREATE TABLE IF NOT EXISTS claims (
+  scope       TEXT PRIMARY KEY,
+  owner       TEXT NOT NULL,
+  lease_until TEXT NOT NULL
+);
 """
 
 
@@ -605,6 +610,48 @@ class Ledger:
         return out
 
     # ── events: the append-only journal ──────────────────────────────────────
+
+    # ── slice claims (Phase 2 durable execution) ─────────────────────────────
+    # The unit-of-work lease the sliced explorer runs on: a worker claims a scope
+    # (e.g. "explore:{conn}:{angle}") before touching it, renews while working,
+    # releases when done. The 2026-08-05 durable-execution spike proved this shape
+    # (second worker refused, reclaim after expiry); this is that mechanism as a
+    # kernel primitive, one atomic statement per operation so two workers racing a
+    # claim cannot both read "free" and both proceed.
+
+    def try_claim(self, scope: str, owner: str, lease_s: float) -> bool:
+        """Claim ``scope`` for ``owner``, or steal it if the current lease lapsed.
+        Returns whether THIS owner now holds it. Atomic: the expiry check lives in
+        the upsert's WHERE, not in a read-then-write."""
+        now = datetime.now(timezone.utc)
+        until = (now + timedelta(seconds=lease_s)).isoformat()
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO claims (scope, owner, lease_until) VALUES (?,?,?) "
+                "ON CONFLICT(scope) DO UPDATE SET owner=excluded.owner, lease_until=excluded.lease_until "
+                "WHERE claims.lease_until < ? OR claims.owner = excluded.owner",
+                (scope, owner, until, now.isoformat()),
+            )
+            return cur.rowcount == 1
+
+    def renew_claim(self, scope: str, owner: str, lease_s: float) -> bool:
+        """Extend a held claim. False when the claim lapsed and someone else took it
+        — the worker must STOP, its work now belongs to the new owner."""
+        until = (datetime.now(timezone.utc) + timedelta(seconds=lease_s)).isoformat()
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE claims SET lease_until=? WHERE scope=? AND owner=?",
+                (until, scope, owner),
+            )
+            return cur.rowcount == 1
+
+    def release_claim(self, scope: str, owner: str) -> bool:
+        """Release a held claim (owner-checked — a lapsed-and-stolen claim is not
+        yours to release)."""
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM claims WHERE scope=? AND owner=?", (scope, owner))
+            return cur.rowcount == 1
 
     def emit(
         self,
