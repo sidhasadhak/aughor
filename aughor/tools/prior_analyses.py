@@ -297,8 +297,16 @@ def _search_sql_examples(question: str, connection_id: str, top_k: int) -> str:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _connection_filter(connection_id: str):
-    """Build a Qdrant FieldCondition filter for connection_id, or None if empty."""
+    """Build a Qdrant FieldCondition filter for connection_id, or None if empty.
+
+    Also None when `qdrant-client` is not installed (the `[semantic]` extra). The value
+    is moot in that case: every caller passes it straight to `vector_store.search`, which
+    answers an uninstalled client with no hits — so the filter would have nothing to
+    narrow. Returning None here keeps the three call sites free of their own guards."""
     if not connection_id:
+        return None
+    from aughor.semantic.vector_store import available
+    if not available():
         return None
     from qdrant_client.models import Filter, FieldCondition, MatchValue
     return Filter(

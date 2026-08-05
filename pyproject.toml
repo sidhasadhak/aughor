@@ -23,7 +23,9 @@ dependencies = [
     "openai>=1.50.0",
     "instructor>=1.4.0",
     "duckdb>=1.1.0",
-    "polars>=1.0.0",
+    # scipy stays: `tools/stats.py` imports it at module level and is imported at module
+    # level by agent/explore.py, nodes.py and investigate.py — it is on the ANALYSIS path,
+    # even though it is absent from the API's boot closure.
     "scipy>=1.13.0",
     "numpy>=1.26.0",
     "sqlglot>=25.0.0",
@@ -35,21 +37,49 @@ dependencies = [
     "uvicorn>=0.46.0",
     "cryptography>=48.0.0",
     "psycopg2-binary>=2.9.12",
-    "statsmodels>=0.14.6",
     "pyyaml>=6.0.3",
-    "qdrant-client>=1.9.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "python-multipart>=0.0.9",
     "apscheduler>=3.10.0",
     "pytz>=2024.1",
-    "reportlab>=4.5.1",
-    "python-pptx>=1.0.2",
-    "matplotlib>=3.11.0",
     "mcp>=1.28.0",
     "ag-ui-protocol==0.1.19",
 ]
 
 [project.optional-dependencies]
+# ── Weight moved OFF the serving path (measured 2026-08-05) ────────────────────────────
+# The development environment is ~1.1 GB, but importing `aughor.api` and diffing
+# sys.modules shows the API's boot closure is 121 MB and a clean serving install 102 MB.
+# The bulk sat in dependencies nothing on the request path imports. Splitting them out
+# makes a ~110 MB deployment real rather than theoretical, and each extra below is
+# guarded so a missing one degrades with a clear message instead of an ImportError.
+#
+#   deleted outright: statsmodels (36 MB) — imported by ZERO modules.
+#   kept:             scipy — on the analysis path via tools/stats.py.
+#
+# `polars` is 192 MB and pulls `pyarrow` (120 MB) to serve ONE call site
+# (`db/connection.py`), which already falls back to DuckDB on ImportError — so the
+# fast bulk-read path is an optimisation, not a requirement. `connectorx` (113 MB) is
+# its partner and already lives in [warehouse].
+fastread = [
+    "polars>=1.0.0",
+]
+# Semantic search / RAG. `qdrant-client` is 3 MB but drags 39 MB of grpc, and it already
+# needs a Qdrant server (`AUGHOR_QDRANT_URL`, default localhost:6333) — so a deployment
+# without that server carries 42 MB for a feature it cannot use. Every entry point in
+# `semantic/vector_store.py` checks `available()` and degrades to "empty index": reads
+# return nothing, writes no-op. A CONNECTION failure still raises, because a configured
+# index that is down is an outage worth surfacing, not a silent no-op.
+semantic = [
+    "qdrant-client>=1.9.0",
+]
+# PDF/PPTX rendering. Reached only through `from aughor.export import export_report`
+# inside a router handler, never at import time.
+export = [
+    "reportlab>=4.5.1",
+    "python-pptx>=1.0.2",
+    "matplotlib>=3.11.0",
+]
 docs = [
     "pypdf>=6.4.0",
     "python-docx>=1.0.0",

@@ -57,8 +57,12 @@ def get_cached(connection_id: str, fingerprint: str) -> list[dict] | None:
     None if not found.
 
     Returns list of {text: str, mode: str} dicts, ready for the API response.
-    Raises on Qdrant connectivity errors so the caller can decide to degrade.
+    Raises on Qdrant connectivity errors so the caller can decide to degrade — but NOT
+    when the client is simply absent (the `[semantic]` extra), which is an empty cache.
     """
+    from aughor.semantic.vector_store import available
+    if not available():
+        return None
     from qdrant_client.models import Filter, FieldCondition, MatchValue
     from aughor.semantic.vector_store import _client, collection_count
 

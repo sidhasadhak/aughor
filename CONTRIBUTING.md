@@ -22,7 +22,7 @@ test suite is fully offline and hermetic.
 git clone https://github.com/sidhasadhak/aughor.git
 cd aughor
 
-uv sync                       # backend deps into .venv
+uv sync --all-extras          # backend deps into .venv
 cd web && npm install && cd ..  # frontend deps
 
 cp .env.example .env          # then edit: pick an LLM backend and set its key
@@ -30,6 +30,12 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 ```
 
 `./start.sh` also accepts `--api-only`, `--web-only`, and `--stop`.
+
+> **Use `--all-extras` for development.** A bare `uv sync` installs the serving core only
+> (225 MB rather than 622 MB, for size-limited deployments) and omits report export,
+> semantic search and the fast bulk reader. Nothing crashes without them — each degrades
+> with a message naming the extra — but tests that exercise those paths will skip, and you
+> will wonder why a PDF export returns 501. See **Optional extras** in the README.
 
 > **Note:** the `npm install` step above is optional — `./start.sh` (a thin alias
 > for `uv run aughor up`, the [README Quick Start](README.md#quick-start) path)

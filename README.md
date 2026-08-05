@@ -62,9 +62,15 @@ No dashboards to maintain. No SQL to write. No analyst backlog.
 
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-uv sync            # 1. Python deps (DuckDB is built in)
-uv run aughor up   # 2. installs web deps on first run, starts API :8000 + web :3000
+uv sync --all-extras   # 1. Python deps (DuckDB is built in)
+uv run aughor up       # 2. installs web deps on first run, starts API :8000 + web :3000
 ```
+
+> `--all-extras` gets you everything. A bare `uv sync` installs the **serving core** only —
+> 225 MB rather than 622 MB, for deployments with a size limit — and leaves out report
+> export, semantic search and the fast bulk reader. Each is optional by design and degrades
+> with a message naming the extra to install, so nothing crashes; the features are simply
+> absent. See [Optional extras](#optional-extras).
 
 Then open **http://localhost:3000** — that's it. First boot auto-seeds a
 **synthetic demo dataset** and registers it as a connection, so there is
@@ -301,6 +307,32 @@ The defaults assume a trusted single-user machine:
 | `AUGHOR_API_KEY` | *unset — API is open* | When set, every request must send `X-Api-Key` |
 | `AUGHOR_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001,http://localhost:3210` | Allowed browser origins |
 | `AUGHOR_SECRET_KEY` | auto-generated to `data/.aughor_key` (mode `0600`) | Fernet key encrypting stored connection credentials |
+
+### Optional extras
+
+The default install is the **serving core**: everything needed to connect data, explore it
+and answer questions. Features whose dependencies are large, or that need infrastructure
+you may not run, ship as extras — so a size-limited deployment carries 225 MB instead of
+622 MB.
+
+| Extra | Adds | Weight | Without it |
+|---|---|---|---|
+| `export` | PDF and PowerPoint reports | reportlab, python-pptx, matplotlib | `/investigations/{id}/export` answers **501** naming the extra |
+| `semantic` | Semantic search over past analyses, suggestion cache | qdrant-client (+39 MB grpc) | Reads return no hits, writes no-op — as an empty index would. Also needs a Qdrant server (`AUGHOR_QDRANT_URL`) |
+| `fastread` | Faster bulk table reads | polars (+pyarrow) | Falls back to DuckDB automatically |
+| `warehouse` | Snowflake, BigQuery, MySQL, ibis | — | Those connectors are unavailable |
+| `crm`, `cloud-storage`, `knowledge-sync` | Stripe/HubSpot/Salesforce, Azure Blob, Confluence/Notion | — | Those connectors are unavailable |
+| `observability`, `evals` | Langfuse/OTel, Braintrust/autoevals | — | Tracing and eval harnesses unavailable |
+
+```bash
+uv sync --all-extras                      # everything (recommended for development)
+uv sync --extra export --extra semantic   # pick individually
+uv sync                                   # serving core only
+```
+
+Nothing here fails hard: each feature checks for its dependency and degrades with a message
+naming the install command. `tests/unit/test_serving_footprint.py` keeps it that way — it
+fails if a heavy package returns to the API's import path.
 
 ## Project status
 

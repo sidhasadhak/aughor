@@ -210,7 +210,13 @@ def test_invalid_terminal_json_falls_back_to_complete(monkeypatch):
 
 # ── Anthropic branch (instructor create_partial — exercised via _stream_on) ────
 
-def test_anthropic_branch_uses_create_partial():
+def test_anthropic_branch_uses_create_partial(monkeypatch):
+    # `max_tokens` below asserts the BUILT-IN default, which `AUGHOR_MAX_OUTPUT_TOKENS`
+    # overrides at call time. A developer who raises it in their own .env — as the
+    # briefing work required (8192, because a ~25-finding synthesis truncates at 4096) —
+    # would otherwise see this fail locally and pass in CI, where no .env exists.
+    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+
     class _Partial(_Out):
         pass
 

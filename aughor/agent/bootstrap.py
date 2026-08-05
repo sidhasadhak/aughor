@@ -231,6 +231,9 @@ def _kinetic_grants_conn(conn_id, org_id):
 def _qdrant_conn(conn_id, org_id):
     # The connection's cached investigations + SQL examples (vector points keyed by
     # connection_id). The connection-KB collection is handled by connection_kb.
+    from aughor.semantic.vector_store import available
+    if not available():
+        return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
     from aughor.semantic.vector_store import delete_by_filter
@@ -295,6 +298,9 @@ def _evidence_inv(inv_ids):
 
 
 def _qdrant_inv(inv_ids):
+    from aughor.semantic.vector_store import available
+    if not available():
+        return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
     from aughor.semantic.vector_store import delete_by_filter

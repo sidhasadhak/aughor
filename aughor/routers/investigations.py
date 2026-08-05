@@ -4206,7 +4206,7 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     `narrate=true` prepends an LLM-authored executive summary (best-effort; the
     export still succeeds if the model is slow or unavailable)."""
     from fastapi.responses import Response
-    from aughor.export import export_report
+    from aughor.export import ExportUnavailable, export_report
     from aughor.security.authz import check_owner
 
     check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org export
@@ -4221,6 +4221,11 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
         # it — the platform-side export must not import agent-side settings itself.
         _sym = _resolve_currency_symbol(inv.get("connection_id") or "", inv.get("schema_name"))
         data, filename, media_type = export_report(inv, fmt, narrate=narrate, money_symbol=_sym)
+    except ExportUnavailable as exc:
+        # A deployment without the `export` extra is a CONFIGURATION state, not a fault:
+        # say so, and name the fix. A 500 would send the operator hunting a bug.
+        logger.warning("export requested but unavailable: %s", exc)
+        raise HTTPException(status_code=501, detail=str(exc))
     except Exception:  # never leak a stack trace to the client
         logger.exception("export failed for %s", inv_id)
         raise HTTPException(status_code=500, detail="export failed")
