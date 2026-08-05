@@ -473,8 +473,26 @@ Ledger backend, not a per-store migration.
 the first draft of this plan proposed new infrastructure without checking what was already
 built.
 
-**Phase 2 — durable execution (4–8 weeks).** Leases, kernel state in Postgres, slice the
-explorer, wire the queue.
+**Phase 2 — durable execution (4–8 weeks). OPENED 2026-08-05 — its two foundations landed:**
+
+* **The Phase 1 JSON remainder went first** (it was the prerequisite): exploration +
+  business-profile state ride a `FileFamilyStore` (per-key transactional, legacy files
+  import on first touch, Postgres-capable) with purge moving *with* the data — the
+  cascade now runs through the agent's purge hooks rather than filename globs, and new
+  tests pin that store-seeded state purges as thoroughly as file-seeded did.
+* **Job ownership is a lease** (`AUGHOR_JOB_LEASE_S`, default the existing 120 s
+  staleness window; no schema change). Boot recovery fails only lapsed leases and
+  records live-lease skips as `job.foreign` — proven with two kernel instances on one
+  live Postgres, where the old blanket rule demonstrably killed a healthy peer's job.
+* **Slice claims are a kernel primitive** (`Ledger.try_claim/renew_claim/release_claim`,
+  atomic expiry-steal in the upsert's WHERE): the spike's HTTP-409 semantics, ready for
+  the explorer decomposition to build on. Contention, expiry-steal, owner-checked
+  renew/release proven on both backends.
+
+**Still ahead in Phase 2:** decompose the explorer's 8-minute loop into slice-sized
+steps at the angle level (Phase 8 already emits findings one at a time; `_save_state()`
+at 11 sites), a queue interface with an in-process default (the worker stays a
+deployment choice — §5.1), and the async LLM call (§3.5's hard requirement).
 
 **Phase 3 — packaging and cutover (2–4 weeks).** Dependency trim (do the trivial part in
 week 1), functions, Cron.
