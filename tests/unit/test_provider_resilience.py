@@ -6,8 +6,11 @@ matters: retry throttle/transient, surface real failures immediately, never hold
 """
 from __future__ import annotations
 
+import threading
+
 import pytest
 
+from aughor.llm import coordination as C
 from aughor.llm import provider as P
 
 
@@ -32,9 +35,9 @@ class _Fatal(Exception):
 def _clear_quota_cooldown():
     """The cooldown is process-global by design (it must outlive any one provider), so a
     test that trips it would otherwise leak a skipped backend into every later test."""
-    P._quota_cooldown.clear()
+    C.set_default(None)
     yield
-    P._quota_cooldown.clear()
+    C.set_default(None)
 
 
 def test_is_transient_classification():
@@ -86,11 +89,24 @@ def test_retries_bounded_by_max(monkeypatch):
     assert calls["n"] == 3                                     # initial + exactly 2 retries
 
 
+def _acquires_within(key: str, seconds: float = 0.3) -> bool:
+    """Can a slot for ``key`` be taken right now? Probed in a thread so a blocked
+    acquire fails the assertion instead of hanging the suite."""
+    got = threading.Event()
+
+    def probe():
+        with C.default().concurrency_slot(key, 1):
+            got.set()
+
+    threading.Thread(target=probe, daemon=True).start()
+    return got.wait(timeout=seconds)
+
+
 def test_semaphore_shared_per_base_url():
-    a = P._semaphore_for("http://x")
-    b = P._semaphore_for("http://x")
-    c = P._semaphore_for("http://y")
-    assert a is b and a is not c                               # one gate per endpoint
+    """One gate per endpoint — a saturated free endpoint must not block a paid one."""
+    with C.default().concurrency_slot("http://x", 1):
+        assert not _acquires_within("http://x")   # same endpoint, cap 1 ⇒ blocked
+        assert _acquires_within("http://y")       # different endpoint ⇒ its own gate
 
 
 def test_success_path_calls_once(monkeypatch):
@@ -312,7 +328,9 @@ def test_cooldown_expires_so_a_topped_up_account_recovers(monkeypatch):
     monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "0")
     P._mark_quota_exhausted("openrouter")
     assert not P._in_quota_cooldown("openrouter")
-    assert "openrouter" not in P._quota_cooldown      # expired entry is dropped
+    # expired entry is DROPPED, not merely reported false — otherwise a long-lived
+    # process accumulates one row per backend it ever throttled.
+    assert "openrouter" not in C.default()._cooldown_until
 
 
 def test_cooldown_holds_within_its_window(monkeypatch):

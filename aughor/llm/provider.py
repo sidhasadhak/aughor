@@ -205,26 +205,30 @@ def _fallback_backends() -> tuple[str, ...]:
 # trip to each one. A briefing fans out into dozens of calls: that cost a wasted probe every
 # time and turned a 9s brief into 76s. Cooldown is in-process and self-healing — the entry
 # simply expires, so a topped-up account recovers on its own without a restart.
+#
+# Held by the coordinator (aughor/llm/coordination.py) rather than a module dict, so a
+# multi-instance deployment can share it: otherwise every instance has to rediscover an
+# exhausted backend independently, which is the wasted-probe cost above paid N times over.
 _QUOTA_COOLDOWN_S = 900.0
-_quota_cooldown: dict[str, float] = {}
-_quota_lock = threading.Lock()
+
+
+def _coordinator():
+    """The pacing / concurrency / cooldown gates (see aughor/llm/coordination.py).
+
+    Resolved per call, never cached in a module constant — caching it here would pin the
+    backend chosen at import time and defeat the point of the seam.
+    """
+    from aughor.llm.coordination import default
+    return default()
 
 
 def _mark_quota_exhausted(backend: str) -> None:
-    with _quota_lock:
-        _quota_cooldown[backend] = time.monotonic() + max(
-            0.0, _float_env("AUGHOR_QUOTA_COOLDOWN_S", _QUOTA_COOLDOWN_S))
+    _coordinator().mark_cooldown(
+        backend, max(0.0, _float_env("AUGHOR_QUOTA_COOLDOWN_S", _QUOTA_COOLDOWN_S)))
 
 
 def _in_quota_cooldown(backend: str) -> bool:
-    with _quota_lock:
-        until = _quota_cooldown.get(backend)
-        if until is None:
-            return False
-        if time.monotonic() >= until:      # expired — let it prove itself again
-            del _quota_cooldown[backend]
-            return False
-        return True
+    return _coordinator().in_cooldown(backend)
 
 
 def _fallback_model_for(backend: str, role: Role) -> str:
@@ -609,10 +613,6 @@ def _extract_usage(raw) -> tuple[int, int]:
 # (b) retry transient failures with exponential backoff + jitter under an overall deadline.
 # All knobs are env-tunable; defaults are conservative and behaviour-preserving on the happy path.
 
-_SEMAPHORES: dict[str, threading.Semaphore] = {}
-_SEM_LOCK = threading.Lock()
-
-
 def _int_env(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
@@ -627,19 +627,15 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
-def _semaphore_for(base_url: str) -> threading.Semaphore:
-    """Shared per-endpoint concurrency gate (cap = AUGHOR_LLM_MAX_CONCURRENCY, default 4)."""
-    key = base_url or "default"
-    with _SEM_LOCK:
-        sem = _SEMAPHORES.get(key)
-        if sem is None:
-            sem = threading.Semaphore(max(1, _int_env("AUGHOR_LLM_MAX_CONCURRENCY", 4)))
-            _SEMAPHORES[key] = sem
-        return sem
+def _concurrency_slot(base_url: str):
+    """Per-endpoint concurrency gate (cap = AUGHOR_LLM_MAX_CONCURRENCY, default 4).
 
-
-_PACE_LOCK = threading.Lock()
-_LAST_CALL_AT: dict[str, float] = {}
+    A context manager rather than a bare semaphore: a shared backend has to release its
+    slot on the way out, and returning the primitive itself would leak an in-process
+    ``threading`` object into a contract that must also be satisfiable remotely.
+    """
+    return _coordinator().concurrency_slot(
+        base_url or "default", max(1, _int_env("AUGHOR_LLM_MAX_CONCURRENCY", 4)))
 
 
 def _pace(base_url: str) -> None:
@@ -672,16 +668,13 @@ def _pace(base_url: str) -> None:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "pacing telemetry is best-effort; the rate gate itself still held",
                  counter="llm.pace_counter")
+    # The claim is atomic inside the coordinator; the sleep stays here so a shared
+    # backend never holds a connection open while a caller waits.
+    coord = _coordinator()
     while True:
-        with _PACE_LOCK:
-            now = time.monotonic()
-            earliest = _LAST_CALL_AT.get(key, 0.0) + interval
-            if now >= earliest:
-                # Claim the slot INSIDE the lock: two threads that both read "clear" and
-                # then both called would be the burst this exists to prevent.
-                _LAST_CALL_AT[key] = now
-                return
-            wait = earliest - now
+        wait = coord.reserve(key, interval)
+        if wait <= 0.0:
+            return
         time.sleep(wait)
 
 
@@ -1002,7 +995,6 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
     endpoint should be visible before it starts failing outright."""
     if stats is not None:
         stats["retries"] = 0
-    sem = _semaphore_for(base_url)
     max_retries = (max(0, int(max_retries)) if max_retries is not None
                    else max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3)))
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", _DEADLINE_S))
@@ -1010,7 +1002,9 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
     while True:
         _pace(base_url)  # rate gate BEFORE the concurrency gate: waiting for a slot we
         # are not yet allowed to use would hold it from callers who are.
-        with sem:  # hold a slot only during the call, never during backoff sleep
+        # Acquired fresh per attempt — the slot is a single-use context manager, and a
+        # retry must re-queue for the gate rather than re-enter a spent one.
+        with _concurrency_slot(base_url):  # held only during the call, never during backoff
             try:
                 return do()
             except Exception as e:

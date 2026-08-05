@@ -284,9 +284,12 @@ def _reset_provider_process_caches():
     passed alone and failed in the suite. Cleared here rather than per-file because the
     leak crosses file boundaries.
     """
+    from aughor.llm import coordination as _c
     from aughor.llm import provider as _p
     _p._ping_cache.clear()
-    _p._quota_cooldown.clear()
+    # The cooldown now lives in the coordinator (aughor/llm/coordination.py); dropping the
+    # instance re-resolves a clean one from env, which clears pacing and concurrency too.
+    _c.set_default(None)
     yield
     _p._ping_cache.clear()
-    _p._quota_cooldown.clear()
+    _c.set_default(None)

@@ -9,12 +9,14 @@ from __future__ import annotations
 import threading
 import time
 
+from aughor.llm import coordination as C
 from aughor.llm import provider as P
 
 
 def _reset():
-    with P._PACE_LOCK:
-        P._LAST_CALL_AT.clear()
+    # Pacing state moved into the coordinator (aughor/llm/coordination.py) so it can be
+    # shared across instances; dropping the instance re-resolves a clean one.
+    C.set_default(None)
 
 
 def test_pacing_is_off_by_default(monkeypatch):
