@@ -12,15 +12,23 @@ Cache is a simple JSON file capped at MAX_ENTRIES (LRU eviction).
 from __future__ import annotations
 
 import hashlib
-import json
 
 from aughor.db.paths import state_dir
+from aughor.util.json_store import KeyedJsonStore
 
 # Generated per-connection state, so it belongs to the AUGHOR_STATE_DIR family. It was a
 # repo-absolute `Path(__file__).parent…/data/` — an override-free hole the 2026-07-21 canary
 # caught only because it diffed the WHOLE directory rather than the stores we knew about.
 _CACHE_PATH = state_dir() / "schema_cache.json"
 _MAX_ENTRIES = 50
+
+
+def _store() -> KeyedJsonStore:
+    """Per-key transactional cache via the KeyedJsonStore/Ledger facade — same move and
+    same reasons as `knowledge/briefing.py:_store`. The MRU move-to-end and oldest-first
+    eviction this module hand-rolled are the facade's `max_entries` contract. Per call,
+    not a module global, so `_CACHE_PATH` stays the seam tests monkeypatch."""
+    return KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
 
 
 def compute_fingerprint(table_blocks: dict[str, str], scope: str = "") -> str:
@@ -56,37 +64,20 @@ def scope_key(connection_id: str | None, schema: str | None) -> str:
 
 def is_complete(fingerprint: str) -> bool:
     """Return True if this fingerprint was previously fully seeded."""
-    return fingerprint in _load()
+    try:
+        return bool(_store().get(fingerprint))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "schema-fingerprint cache read is best-effort; treated as unseeded (re-seeds)",
+                 counter="schema_cache.read")
+        return False
 
 
 def mark_complete(fingerprint: str) -> None:
-    """Record that this schema fingerprint is fully seeded."""
-    cache = _load()
-    # Move to end (most-recently-used)
-    cache.pop(fingerprint, None)
-    cache[fingerprint] = True
-    # Evict oldest if over cap
-    while len(cache) > _MAX_ENTRIES:
-        oldest = next(iter(cache))
-        del cache[oldest]
-    _save(cache)
-
-
-def _load() -> dict[str, bool]:
+    """Record that this schema fingerprint is fully seeded. MRU + eviction past
+    _MAX_ENTRIES are the store's `max_entries` contract."""
     try:
-        if _CACHE_PATH.exists():
-            return json.loads(_CACHE_PATH.read_text())
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "schema-fingerprint cache read is best-effort; treated as empty (re-seeds)",
-                 counter="schema_cache.read")
-    return {}
-
-
-def _save(cache: dict[str, bool]) -> None:
-    try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(cache, indent=2))
+        _store().put(fingerprint, True)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "schema-fingerprint cache write is non-fatal; schema re-seeds next time",

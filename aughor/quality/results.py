@@ -37,7 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 from aughor.org.context import current_org_id
 from aughor.util.time import now_iso as _now
 
@@ -54,7 +55,7 @@ STALE_AFTER_HOURS = 24
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = tune(sqlite3.connect(str(_DB_PATH)))
+    c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     _ensure_schema(c)
     return c

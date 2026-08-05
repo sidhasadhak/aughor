@@ -16,14 +16,16 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
-from aughor.db.sqlite_util import tune
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 # AUGHOR_REGISTRY_DB overrides the connections registry path (mirrors the ledger's
 # AUGHOR_SYSTEM_DB). Tests point it at a temp path so the suite can NEVER mutate the real
 # data/connections.db — the harness gap that let a full-suite run empty live connections.
-REGISTRY_DB = Path(os.environ.get("AUGHOR_REGISTRY_DB")
-                   or (Path(__file__).parent.parent.parent / "data" / "connections.db"))
+# Through resolve_db_path (same semantics as the direct environ.get it replaces) so the
+# Postgres backend can name this store's schema from its default (db/backend.py).
+REGISTRY_DB = resolve_db_path(
+    "AUGHOR_REGISTRY_DB", Path(__file__).parent.parent.parent / "data" / "connections.db")
 KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 
 BUILTIN_ID = "fixture"
@@ -82,8 +84,8 @@ _MIGRATIONS = [
 
 
 def _db() -> sqlite3.Connection:
-    REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = tune(sqlite3.connect(str(REGISTRY_DB)))
+    from aughor.db.backend import connect_store
+    conn = connect_store(REGISTRY_DB)
     conn.row_factory = sqlite3.Row
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS connections (

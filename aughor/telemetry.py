@@ -33,7 +33,34 @@ logger = logging.getLogger(__name__)
 
 _lf: Any = None          # Langfuse client (None = disabled)
 _lf_init_done = False
-_traces: dict[str, Any] = {}  # investigation_id → Langfuse Trace object
+# investigation_id → Langfuse Trace object. A MEMO of client-side handles, not the
+# identity of the trace — that is the id itself, which Langfuse upserts on. Kept
+# because handle construction isn't free, but a miss must never mean "no trace":
+# in a sliced run the invocation adding a span is routinely not the one that called
+# new_trace, and treating its miss as absence silently orphaned every such span
+# (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md §2). `_trace_handle` rebuilds by id.
+_traces: dict[str, Any] = {}
+
+
+def _trace_handle(trace_id: str) -> Any | None:
+    """The Langfuse trace handle for ``trace_id`` — memoized, else rebuilt by id.
+
+    Returns None only when Langfuse is disabled or the rebuild itself fails (down
+    host, bad key): with an id-addressed upstream, "not in this process's memo" is
+    not evidence the trace doesn't exist."""
+    tr = _traces.get(trace_id)
+    if tr is not None:
+        return tr
+    lf = _langfuse()
+    if lf is None or not trace_id:
+        return None
+    try:
+        tr = lf.trace(id=trace_id)
+        _traces[trace_id] = tr
+        return tr
+    except Exception as exc:
+        logger.debug("Langfuse trace rebuild failed for %s: %s", trace_id, exc)
+        return None
 
 
 def _langfuse() -> Any | None:
@@ -589,7 +616,7 @@ def span(
     # ── Langfuse span ──────────────────────────────────────────────────────────
     lf_span = None
     if _langfuse() is not None and trace_id:
-        tr = _traces.get(trace_id)
+        tr = _trace_handle(trace_id)
         if tr is not None:
             try:
                 lf_span = tr.span(name=name, metadata=metadata or {})
@@ -656,7 +683,7 @@ def log_generation(
     """Log a single LLM call as a Langfuse generation. No-op when disabled."""
     if _langfuse() is None or not trace_id:
         return
-    tr = _traces.get(trace_id)
+    tr = _trace_handle(trace_id)
     if tr is None:
         return
     try:
@@ -673,12 +700,18 @@ def log_generation(
 
 
 def end_trace(trace_id: str, output: dict | None = None) -> None:
-    """Finalise the trace (mark output) and flush the Langfuse client."""
-    tr = _traces.pop(trace_id, None)
-    if tr is None:
-        return
+    """Finalise the trace (mark output) and flush the Langfuse client.
+
+    In a sliced run the finalising invocation is routinely not the one that created
+    the trace, so the handle is rebuilt on a memo miss rather than treated as "nothing
+    to finalise". Safe to call twice — the update is an upsert on the trace id."""
     lf = _langfuse()
     if lf is None:
+        _traces.pop(trace_id, None)   # memo hygiene holds even with Langfuse disabled
+        return
+    tr = _trace_handle(trace_id)
+    _traces.pop(trace_id, None)
+    if tr is None:
         return
     try:
         if output:

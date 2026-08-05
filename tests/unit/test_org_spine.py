@@ -11,6 +11,8 @@ import sqlite3
 
 import pytest
 
+from aughor.db.backend import is_postgres
+
 from aughor.org import (
     DEFAULT_ORG_ID,
     current_org_id,
@@ -62,6 +64,14 @@ class TestOrgStore:
 
 # ── idempotent migrations: fresh + legacy DBs ─────────────────────────────────
 
+_LEGACY_FILE_SKIP = pytest.mark.skipif(
+    is_postgres(),
+    reason="upgrades an existing sqlite FILE in place — a scenario the postgres "
+           "backend structurally cannot have (it starts from a data migration, "
+           "not a legacy file on disk)")
+
+
+@_LEGACY_FILE_SKIP
 class TestWorkspaceMigration:
     def test_legacy_db_gets_org_id_backfilled(self, tmp_path, monkeypatch):
         import aughor.workspace.store as store
@@ -94,6 +104,7 @@ class TestWorkspaceMigration:
         assert store.get_workspace("b").org_id == "acme"
 
 
+@_LEGACY_FILE_SKIP
 class TestConnectionMigration:
     def test_legacy_registry_gets_org_id(self, tmp_path, monkeypatch):
         import aughor.db.registry as registry
@@ -166,6 +177,7 @@ class TestLedgerMigrationAndStamping:
         assert row[0] == "acme"
 
 
+@_LEGACY_FILE_SKIP
 class TestAuditMigrationAndStamping:
     def test_legacy_audit_gets_org_id_and_log_stamps(self, tmp_path, monkeypatch):
         import aughor.security.audit as audit

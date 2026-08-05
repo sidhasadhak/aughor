@@ -17,7 +17,8 @@ import sqlite3
 from pathlib import Path
 from typing import List
 
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 from aughor.rbac.models import RoleAssignment
 from aughor.util.time import now_iso as _now
 
@@ -28,7 +29,7 @@ _DB_PATH = resolve_db_path(
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = tune(sqlite3.connect(str(_DB_PATH)))
+    c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     return c
 

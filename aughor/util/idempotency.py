@@ -16,7 +16,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 from aughor.org.context import current_org_id
 
 _DB_PATH = resolve_db_path(
@@ -27,7 +28,7 @@ TTL_SECONDS = 24 * 3600
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = tune(sqlite3.connect(str(_DB_PATH)))
+    c = connect_store(_DB_PATH)
     c.execute(
         """CREATE TABLE IF NOT EXISTS idempotency (
             scope       TEXT NOT NULL,

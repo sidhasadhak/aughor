@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.evidence.models import EvidenceClaim
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 
 _LOCK = threading.Lock()
 _DB_PATH = resolve_db_path("AUGHOR_EVIDENCE_DB", Path(__file__).parent.parent.parent / "data" / "evidence_ledger.db")
@@ -20,7 +21,7 @@ _DB_PATH = resolve_db_path("AUGHOR_EVIDENCE_DB", Path(__file__).parent.parent.pa
 
 def _get_conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = tune(sqlite3.connect(str(_DB_PATH), check_same_thread=False))
+    conn = connect_store(_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 

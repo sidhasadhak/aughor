@@ -55,6 +55,11 @@ _CHECKPOINT_DB = resolve_db_path("AUGHOR_CHECKPOINTS_DB", Path(__file__).parent.
 
 
 def _checkpointer():
+    # Deliberately NOT on the connect_store seam: this connection belongs to
+    # LangGraph's SqliteSaver, whose internals speak to it directly — wrapping it
+    # is unproven territory. The Postgres story for checkpoints is the library's
+    # own PostgresSaver (a swap recorded in docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md
+    # §6 Q4), not SQL translation.
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
     conn = tune(sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False))

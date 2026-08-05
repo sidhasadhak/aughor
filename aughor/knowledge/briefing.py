@@ -11,19 +11,37 @@ sentence lede (all the UI's collapsed card shows) followed by the depth behind i
 Each citation maps back to a specific insight so the UI can render clickable
 references that deep-link to the source finding.
 
-Cache: data/briefing_cache.json  |  TTL: 2 hours per connection
+Cache: the `briefing_cache` keyed store  |  TTL: 2 hours per connection
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from aughor.db.paths import state_dir
+from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = state_dir() / "briefing_cache.json"
 _CACHE_TTL_HOURS = 2
+
+
+def _store() -> KeyedJsonStore:
+    """The briefing cache, per-key transactional via the KeyedJsonStore/Ledger facade.
+
+    This cache was ONE shared file for every connection, read-modify-written whole:
+    two briefings generating concurrently each loaded the file, added their own key,
+    and the last write silently dropped the other's work — the unlocked
+    load→mutate→save race the kernel Ledger was built to end (its own docstring names
+    the class), sitting unfixed in the very cache the 2026-08-03 purge bug lived in.
+    The facade gives per-key upserts and deletes; the legacy file is imported once
+    and left on disk untouched.
+
+    Constructed per call rather than held in a module global so `_CACHE_PATH` stays
+    the test seam it has always been — fixtures monkeypatch it to a temp path, and a
+    store captured at import would keep writing to the real one (the same
+    capture-at-import trap `db/paths.py` documents for `state_dir`)."""
+    return KeyedJsonStore(_CACHE_PATH)
 
 # This module's producer-logic version — bump when the narrative's SHAPE changes, so cached
 # briefs are regenerated even though their source data never moved. Registered as
@@ -606,9 +624,7 @@ def peek_briefing(scope_key: str) -> dict[str, Any] | None:
     one exists, and otherwise nothing to say. Ignores the TTL deliberately — a slightly stale
     brief is still the one on screen, and refreshing it is the Briefing's job, not the ask's."""
     try:
-        if not _CACHE_PATH.exists():
-            return None
-        entry = json.loads(_CACHE_PATH.read_text()).get(scope_key)
+        entry = _store().get(scope_key)
         return entry if isinstance(entry, dict) and entry.get("narrative") else None
     except Exception:
         return None
@@ -648,13 +664,11 @@ def get_briefing(
     pre_decision = None
     if not force_refresh:
         try:
-            if _CACHE_PATH.exists():
-                cache = json.loads(_CACHE_PATH.read_text())
-                entry = cache.get(key)
-                if entry:
-                    needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
-                    if not needs:
-                        return entry
+            entry = _store().get(key)
+            if entry:
+                needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
+                if not needs:
+                    return entry
         except Exception:
             pass
 
@@ -672,15 +686,9 @@ def get_briefing(
                                   col_types=col_types)
 
     try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        existing: dict = {}
-        if _CACHE_PATH.exists():
-            try:
-                existing = json.loads(_CACHE_PATH.read_text())
-            except Exception:
-                pass
-        existing[key] = briefing
-        _CACHE_PATH.write_text(json.dumps(existing, indent=2))
+        # Per-key upsert: a concurrent generation for ANOTHER scope can no longer be
+        # lost to this write, because neither writer carries the whole cache anymore.
+        _store().put(key, briefing)
     except Exception:
         pass
 
@@ -758,28 +766,27 @@ def invalidate(connection_id: str, schema: str | None = None) -> int:
     leaving sibling schemas — used when a single schema is removed. Without it, remove the
     connection-level entry AND every schema scope — used by the catalog-delete cascade.
     Returns the number of entries removed."""
-    if not _CACHE_PATH.exists():
-        return 0
     try:
-        cache = json.loads(_CACHE_PATH.read_text())
+        store = _store()
+        if schema:
+            # the schema's own briefing AND the now-stale 'All schemas' aggregate; siblings stay
+            drop = [f"{connection_id}:{schema}", connection_id]
+        else:
+            prefix = f"{connection_id}:"
+            drop = [k for k in store.load()
+                    if k == connection_id or k.startswith(prefix)]
+        # Per-key deletes, collecting what was actually removed: a brief cached by a
+        # CONCURRENT generation between the list and the deletes survives — correctly,
+        # it is a new artifact, not the one being invalidated.
+        removed_keys = {k for k in drop if store.delete(k)}
     except Exception:
         return 0
-    if schema:
-        # the schema's own briefing AND the now-stale 'All schemas' aggregate; siblings stay
-        drop = {f"{connection_id}:{schema}", connection_id}
-        kept = {k: v for k, v in cache.items() if k not in drop}
-    else:
-        prefix = f"{connection_id}:"
-        kept = {k: v for k, v in cache.items()
-                if k != connection_id and not k.startswith(prefix)}
-    removed = len(cache) - len(kept)
-    if removed:
-        _CACHE_PATH.write_text(json.dumps(kept, indent=2))
+    if removed_keys:
         # Wave V2: drop the remembered input versions too. Leaving them behind would mean a
         # rebuilt brief inherits a "nothing moved" memory from the brief that was deleted —
         # an explicit invalidation must not be undone by a stale freshness record.
-        _forget_brief_inputs(set(cache) - set(kept))
-    return removed
+        _forget_brief_inputs(removed_keys)
+    return len(removed_keys)
 
 
 def _forget_brief_inputs(keys: set[str]) -> None:

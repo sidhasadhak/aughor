@@ -60,10 +60,8 @@ class PopularitySignal:
 # ── store (the overview_drills pattern: tiny, keyed, replace-on-refresh) ─────
 
 def _connect() -> sqlite3.Connection:
-    from aughor.db.sqlite_util import tune
-    path = _db_path()
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    con = tune(sqlite3.connect(path, timeout=5))
+    from aughor.db.backend import connect_store
+    con = connect_store(_db_path())
     con.execute(
         "CREATE TABLE IF NOT EXISTS popularity ("
         " connection_id TEXT NOT NULL,"
@@ -108,7 +106,11 @@ def load_popularity(connection_id: str) -> dict[str, dict[str, int]]:
     """Read-only counts: ``{"table": {t: n}, "column": {"t.c": n}}``; {} buckets on any error."""
     out: dict[str, dict[str, int]] = {"table": {}, "column": {}}
     try:
-        if not Path(_db_path()).exists():
+        # The missing-file short-circuit is a sqlite-only optimization; on Postgres
+        # there is no file and the store's schema answers (or errors into the
+        # best-effort catch below).
+        from aughor.db.backend import is_postgres
+        if not is_postgres() and not Path(_db_path()).exists():
             return out
         con = _connect()
         rows = con.execute(

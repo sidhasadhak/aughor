@@ -17,6 +17,8 @@ the number — an exemption states a reason, a raised number states nothing.
 from __future__ import annotations
 
 import re
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -185,7 +187,42 @@ BASELINE: dict[str, int] = {
 }
 
 
+@lru_cache(maxsize=1)
+def _repo_content() -> frozenset[str] | None:
+    """Paths git considers repo content — tracked, plus new files not gitignored.
+
+    ``None`` when git cannot answer.
+
+    The baselines below were measured over ``git ls-files`` (see the note on `ada`), but
+    the walk used to ``rglob`` the filesystem, so the scanner and the numbers it is
+    checked against disagreed about what "the repo" means. On a developer box that has
+    run the suite, that gap is filled by BYPRODUCTS — `web/data/exploration_*.json`,
+    MLflow yaml under `evals/bakeoff_out/` — which CI's fresh checkout never sees. The
+    result was a ratchet that fails locally on a clean diff and passes in CI, which has
+    now cost four sessions; the failure names innocent terms, so the natural reading is
+    "my change did this". It is not.
+
+    ``--others --exclude-standard`` rather than tracked-only deliberately: a NEW source
+    file is repo content the moment it is written, and dropping it would blind the
+    ratchet to exactly the file most likely to introduce retired vocabulary. Byproducts
+    are gitignored, so the ignore rules already draw the line correctly.
+
+    ``None`` (no git, or a source tarball) falls back to the old walk rather than
+    silently scanning nothing — an empty scan passes every baseline, which is the one
+    way this must not fail.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"],
+            capture_output=True, text=True, timeout=60, check=True).stdout
+    except Exception:
+        return None
+    return frozenset(p for p in out.split("\0") if p)
+
+
 def _scannable() -> list[tuple[str, Path]]:
+    content = _repo_content()
     out: list[tuple[str, Path]] = []
     for root in CODE_ROOTS:
         base = REPO / root
@@ -199,6 +236,8 @@ def _scannable() -> list[tuple[str, Path]]:
             rel = p.relative_to(REPO).as_posix()
             if rel in _SKIP_FILES:
                 continue
+            if content is not None and rel not in content:
+                continue      # a byproduct of running the suite, not repo content
             out.append((rel, p))
     return out
 

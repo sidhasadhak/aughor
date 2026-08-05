@@ -162,14 +162,15 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
     # ── 5. Evidence claims summary ──────────────────────────────────────────
     try:
         # Count claims needing review
-        import sqlite3 as _sq
         from pathlib import Path as _P
 
+        from aughor.db.backend import connect_store, is_postgres
         from aughor.db.sqlite_util import resolve_db_path
         _ev_path = resolve_db_path("AUGHOR_EVIDENCE_DB", _P("data") / "evidence_ledger.db")
-        if _ev_path.exists():
-            with _sq.connect(str(_ev_path)) as _c:
-                _c.row_factory = _sq.Row
+        # The file-existence guard is meaningless on Postgres — there the store's
+        # schema exists (or the query fails into this function's best-effort catch).
+        if is_postgres() or _ev_path.exists():
+            with connect_store(_ev_path, row_factory=True) as _c:
                 unreviewed = _c.execute(
                     "SELECT COUNT(*) AS n FROM evidence_claims WHERE owner_feedback IS NULL"
                 ).fetchone()["n"]

@@ -16,14 +16,22 @@ queries required. Results are cached per-connection with a 6-hour TTL.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections import defaultdict
 from typing import Any
 
 from aughor.db.paths import state_dir
+from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = state_dir() / "patterns_cache.json"
 _CACHE_TTL_HOURS = 6
+
+
+def _store() -> KeyedJsonStore:
+    """Per-key transactional cache via the KeyedJsonStore/Ledger facade — same move
+    and same reasons as `knowledge/briefing.py:_store` (one shared file, whole-file
+    rewrites, the load→mutate→save race). Per call, not a module global, so
+    `_CACHE_PATH` stays the seam tests monkeypatch."""
+    return KeyedJsonStore(_CACHE_PATH)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -212,26 +220,16 @@ def get_patterns(
     """Return cached patterns if fresh, else recompute and cache."""
     if not force_refresh:
         try:
-            if _CACHE_PATH.exists():
-                cache = json.loads(_CACHE_PATH.read_text())
-                entry = cache.get(connection_id)
-                if entry and _age_hours(entry.get("computed_at", "")) < _CACHE_TTL_HOURS:
-                    return entry["patterns"]
+            entry = _store().get(connection_id)
+            if entry and _age_hours(entry.get("computed_at", "")) < _CACHE_TTL_HOURS:
+                return entry["patterns"]
         except Exception:
             pass
 
     patterns = extract_patterns(domain_data, connection_id)
 
     try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        existing: dict = {}
-        if _CACHE_PATH.exists():
-            try:
-                existing = json.loads(_CACHE_PATH.read_text())
-            except Exception:
-                pass
-        existing[connection_id] = {"computed_at": _now_iso(), "patterns": patterns}
-        _CACHE_PATH.write_text(json.dumps(existing, indent=2))
+        _store().put(connection_id, {"computed_at": _now_iso(), "patterns": patterns})
     except Exception:
         pass
 
@@ -243,14 +241,7 @@ def invalidate(connection_id: str) -> int:
     connection_id, connection-level not per-schema). Used by the catalog-delete
     cascade and on schema removal — patterns recompute cheaply from current
     findings. Returns 1 if an entry was removed, else 0."""
-    if not _CACHE_PATH.exists():
-        return 0
     try:
-        cache = json.loads(_CACHE_PATH.read_text())
+        return 1 if _store().delete(connection_id) else 0
     except Exception:
         return 0
-    if connection_id not in cache:
-        return 0
-    del cache[connection_id]
-    _CACHE_PATH.write_text(json.dumps(cache, indent=2))
-    return 1

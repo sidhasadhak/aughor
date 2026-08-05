@@ -161,10 +161,11 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     assert counts["pack_bindings"] == 1
     assert counts["briefing_cache"] == 2  # conn-level + schema-scoped, other_conn kept
     assert counts["patterns_cache"] == 1
-    import json
-    surviving = json.loads(briefing._CACHE_PATH.read_text())
-    assert set(surviving) == {"other_conn"}
-    assert set(json.loads(patterns._CACHE_PATH.read_text())) == {"other_conn"}
+    # Survivors read through the store, not the file: the caches live behind the
+    # KeyedJsonStore/Ledger facade now, and the legacy file (imported once) is left
+    # on disk untouched by design.
+    assert set(briefing._store().load()) == {"other_conn"}
+    assert set(patterns._store().load()) == {"other_conn"}
 
 
 def test_schema_scoped_briefing_invalidate(isolated):
@@ -182,12 +183,12 @@ def test_schema_scoped_briefing_invalidate(isolated):
     # but keeps sibling schemas
     removed = briefing.invalidate("workspace", "missimi")
     assert removed == 2
-    assert set(json.loads(briefing._CACHE_PATH.read_text())) == {"workspace:swiss_air"}
+    assert set(briefing._store().load()) == {"workspace:swiss_air"}
 
     # patterns are connection-level; invalidate drops the whole entry (recomputes cheap)
     patterns._CACHE_PATH.write_text(json.dumps({"workspace": {"patterns": []}}))
     assert patterns.invalidate("workspace") == 1
-    assert json.loads(patterns._CACHE_PATH.read_text()) == {}
+    assert patterns._store().load() == {}
     assert patterns.invalidate("workspace") == 0  # idempotent
 
 
@@ -247,7 +248,7 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
     assert not (isolated / f"business_profile_{CONN}.json").exists()
     assert not (isolated / f"exploration_{CONN}__{gone}.json").exists()
     assert not (isolated / f"exploration_{CONN}.json").exists()
-    bc = json.loads(briefing._CACHE_PATH.read_text())
+    bc = briefing._store().load()
     assert set(bc) == {f"{CONN}:{keep}"}                      # sibling kept, gone+aggregate dropped
     assert json.loads(watermark._PATH.read_text())[CONN] == {f"{keep}.sales": "d"}
     assert history.list_investigation_ids(CONN, limit=1000) == [inv_keep]

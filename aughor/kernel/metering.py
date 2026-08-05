@@ -181,6 +181,16 @@ def activations_snapshot() -> Optional[list]:
 
 # A run's live metrics, also reachable by job_id — so the kernel heartbeat (a
 # separate task, which can't see the job task's contextvar) can enforce budgets.
+#
+# ⚠️ Process-local BY CONTRACT, and the budget path must never assume otherwise.
+# This registry is the handoff between a job and its supervisor, and it only works
+# while the two share a process — exactly the assumption the durable-execution plan
+# removes (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md §2). When they split, a
+# supervisor-side lookup misses, and a miss reads as "no spend": budgets silently
+# stop being enforced behind healthy heartbeats. The cross-process story is
+# therefore flush + rehydrate — the heartbeat persists `snapshot_for_job` onto the
+# job row it already updates, and readers rebuild via `from_snapshot` when this
+# registry misses (kernel/jobs.py owns that fallback, because it owns the ledger).
 _by_job: dict[str, RunMetrics] = {}
 
 
@@ -203,7 +213,50 @@ def unregister_job(job_id: str) -> None:
 
 
 def metrics_for_job(job_id: str) -> Optional[RunMetrics]:
+    """The LIVE accumulator for a job registered in THIS process, or None.
+
+    None does not mean "no spend" — the job may be running in another process (see
+    the registry note above). Budget readers must fall back to the flushed job-row
+    snapshot rather than treating a miss as zero."""
     return _by_job.get(job_id)
+
+
+def snapshot_for_job(job_id: str) -> Optional[dict]:
+    """A consistent point-in-time dict of a registered job's live metrics, or None.
+
+    The write side of the cross-process story: the heartbeat flushes this onto the
+    job row alongside `heartbeat_at`. Registry-only on purpose — flushing a value
+    that was itself read back from the ledger would launder staleness into freshness.
+    Taken under the lock so a concurrent `record_*` can't tear the totals."""
+    with _lock:
+        m = _by_job.get(job_id)
+        return m.to_dict() if m is not None else None
+
+
+def from_snapshot(snap: dict) -> Optional[RunMetrics]:
+    """Rebuild a read-only RunMetrics view from a flushed job-row snapshot.
+
+    The read side of the cross-process story. Unknown keys are ignored so an old
+    snapshot survives a field addition; a malformed one yields None (fail-open,
+    like everything here — but the CALLER decides what None means, and for budget
+    enforcement it must mean "check what you can", not "under budget")."""
+    if not isinstance(snap, dict):
+        return None
+    try:
+        # Coerce each scalar to its field's type rather than trusting the snapshot: a
+        # dataclass constructor accepts anything, and a non-numeric total_tokens would
+        # defer the failure into the SUPERVISOR's comparison (`m.total_tokens > budget`)
+        # — an uncaught raise there kills the heartbeat task, which is a worse outcome
+        # than the missing metric it started from. A snapshot that won't coerce is a
+        # snapshot that can't be trusted; None, and the time budget still enforces.
+        kinds = {"org_id": str, "llm_calls": int, "prompt_tokens": int, "completion_tokens": int,
+                 "total_tokens": int, "query_count": int, "rows_returned": int,
+                 "llm_ms": float, "query_ms": float}
+        return RunMetrics(**{k: kinds[k](snap[k]) for k in kinds if k in snap})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "metrics snapshot rehydrate is fail-open; caller falls back", counter="metering")
+        return None
 
 
 # ── In-context budget enforcement (the synchronous path) ─────────────────────

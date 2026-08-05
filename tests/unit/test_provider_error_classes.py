@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
+from aughor.llm import coordination as C
 from aughor.llm import provider as P
 from aughor.llm.provider import BindingConfigError, LLMProvider
 
@@ -27,9 +28,9 @@ class Out(BaseModel):
 
 @pytest.fixture(autouse=True)
 def _clear_cooldown():
-    P._quota_cooldown.clear()
+    C.set_default(None)
     yield
-    P._quota_cooldown.clear()
+    C.set_default(None)
 
 
 # ── the marker sets ───────────────────────────────────────────────────────────

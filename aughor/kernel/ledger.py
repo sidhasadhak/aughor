@@ -253,10 +253,11 @@ class Ledger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._session_event_writes = 0  # drives amortised session-log retention
-        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't SQLITE_BUSY instantly (DATA-02)
-        self._conn.execute("PRAGMA synchronous=NORMAL")
+        # Through the backend seam: sqlite gets exactly the old inline PRAGMAs (they
+        # are what sqlite_util.tune applies); AUGHOR_DB_URL moves this store — and
+        # everything riding it, KeyedJsonStore included — onto shared Postgres.
+        from aughor.db.backend import connect_store
+        self._conn = connect_store(self.path, check_same_thread=False)
         with self._lock:
             with self._conn:
                 self._conn.executescript(_SCHEMA)
@@ -627,15 +628,18 @@ class Ledger:
                 trace_id = current_trace_id()
             except Exception:
                 trace_id = ""
+        from aughor.db.backend import insert_returning_id
         with self._lock, self._conn:
-            cur = self._conn.execute(
+            seq = insert_returning_id(
+                self._conn,
                 "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id) "
                 "VALUES (?,?,?,?,?,?,?)",
                 (_now(), kind, conn_id, canvas_id, job_id,
                  json.dumps(payload, default=str) if payload is not None else None,
                  trace_id or ""),
+                pk="seq",
             )
-        return int(cur.lastrowid)
+        return seq
 
     def events(
         self,
@@ -758,8 +762,10 @@ class Ledger:
         `events`/`task_history` both have today.
         """
         payload = row.get("payload")
+        from aughor.db.backend import insert_returning_id
         with self._lock, self._conn:
-            cur = self._conn.execute(
+            seq = insert_returning_id(
+                self._conn,
                 "INSERT INTO session_events "
                 "(at, trace_id, kind, name, span_id, parent_span_id, ok, duration_ms, "
                 " error_class, investigation_id, session_id, user_id, agent_id, conn_id, "
@@ -779,8 +785,8 @@ class Ledger:
                     row.get("total_tokens"), row.get("row_count"), row.get("retries"),
                     json.dumps(payload, default=str) if payload is not None else None,
                 ),
+                pk="seq",
             )
-            seq = int(cur.lastrowid)
         self._session_events_maybe_prune()
         return seq
 

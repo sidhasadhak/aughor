@@ -102,7 +102,8 @@ def _db_path() -> str:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = tune(sqlite3.connect(_db_path()))
+    from aughor.db.backend import connect_store
+    conn = connect_store(_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute(_SCHEMA)
     conn.execute(_GOLDENS_SCHEMA)

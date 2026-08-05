@@ -110,9 +110,63 @@ That single assumption produces every genuine obstacle:
 | One process owns all state | Job Kernel docstring: *"single-process runtime"*; boot recovery fails every non-terminal job because it assumes the only process died | Concurrent workers make that reasoning wrong, silently |
 | A scheduler lives in-process | APScheduler heartbeat | No always-on process to host it |
 
-**The encouraging half.** In-memory coupling is far lighter than the codebase's size
-suggests: **5 module-level mutable dicts, 5 `lru_cache`s, 36 singleton accessors** across
-133k lines. The statelessness refactor is bounded, not pervasive.
+**The encouraging half — but measured properly this time.** An AST pass over all of
+`aughor/` (not a grep) finds **40 mutated module-level containers across 32 modules**, not
+the 5 first reported. The count is the less important half of the correction: what matters
+is that they fall into three groups, and only the third is a migration blocker.
+
+| Group | Count | Serverless behaviour |
+|---|---|---|
+| Import-time registries (`_EVALUATORS`, `_PIPELINES`, purge/execution hooks, `SCENARIOS`) | ~15 | **Harmless** — every process rebuilds them identically at import |
+| Memo caches (`_schema_cache`, `_GRAIN_CACHE`, `_EMBED_CACHE`, `_COLTYPE_CACHE`, `_SEEN`, …) | ~15 | **Lose hit-rate, not correctness.** Cost, though, is not zero: `_SEEN` in `explorer/revalidate_live.py` suppresses re-running a finding's SQL, so per-invocation instances would re-validate up to 12 findings' queries on **every** refresh |
+| **Coordination state** (`llm/provider.py`: `_LAST_CALL_AT`, `_quota_cooldown`, `_SEMAPHORES`; `kernel/metering.py`: `_by_job`; `telemetry.py`: `_traces`) | **5** | **Breaks** — see below |
+
+So "the refactor is bounded" survives, but its *content* changes: the work is not 40
+conversions, it is **5 pieces of coordination state**, and two of them are load-bearing for
+this very plan.
+
+**`kernel/metering.py:_by_job` is the one to schedule next.** Its own comment states why it
+exists: *"the kernel heartbeat (a separate task, which can't see the job task's contextvar)
+can enforce budgets."* Budget enforcement is therefore a handoff between a job and its
+supervisor through a module-level dict — and the entire durable-execution refactor (§3.1) is
+predicated on those two no longer sharing a process. Split them and `metrics_for_job()`
+returns `None`, so **budgets stop being enforced and nothing reports an error**: precisely
+the §5.2 class of defect that hides behind healthy status codes. It must move with the
+kernel state into Postgres, not after it.
+
+`telemetry.py:_traces` (investigation_id → Langfuse trace) costs observability rather than
+correctness — spans orphan across invocations.
+
+> **The LLM gates were process-local.** `_LAST_CALL_AT` paces calls `60/RPM` apart,
+> `_quota_cooldown` records an exhausted backend, and `_SEMAPHORES` caps in-flight calls
+> with a `threading.Semaphore` — which caps nothing whatsoever across processes. §3.5
+> measured Vercel spreading five slices over **three cold plus two warm instances by
+> itself**, so N instances each independently honour a declared 15 RPM and the endpoint
+> sees 15×N; a backend one instance has learned is exhausted keeps being probed by the
+> rest. Measured caps this runs against are small enough for that to bite:
+> gemini-3.1-flash-lite at **15 RPM / 500 per day**, OpenRouter free at **20 RPM / 1,000
+> per day**.
+>
+> **Made closable — not yet closed** — by `aughor/llm/coordination.py`. The three gates now
+> sit behind a `Coordinator` Protocol, and the default `InProcessCoordinator` is today's
+> exact behaviour, still one instance per process. **The multi-instance defect is therefore
+> still present**; what changed is that closing it is now a backend implementation plus one
+> env var (`AUGHOR_LLM_COORDINATOR`) rather than a provider rewrite. No shared backend ships
+> here, deliberately: there is no Redis to verify one against, and an unexercised
+> distributed implementation is a liability, not progress.
+>
+> Proof the seam bears weight is by simulation, which needs no infrastructure: two
+> `InProcessCoordinator` objects stand in for two instances and **fail** to hold the limit
+> (asserted, so the problem is demonstrated rather than described), while one shared object
+> holds it. See `tests/unit/test_llm_coordination.py`.
+>
+> Note this is **not** Vercel-specific: the same seam is what would make a multi-worker
+> `uvicorn --workers N` honour its own rate limit, which it does not today.
+>
+> 🔑 **The clock is part of the contract.** `time.monotonic()` has a *per-process* epoch,
+> so a shared backend that stored those numbers would compare unrelated timelines and
+> produce no pacing at all while appearing to work. The Protocol therefore exchanges
+> **durations, never timestamps**, and a test asserts it.
 
 **The other encouraging half.** Two pieces of existing architecture do most of the heavy
 lifting:
@@ -350,10 +404,74 @@ The next test worth buying is **cost, not capability**: run one real exploration
 through sliced invocations with live LLM calls, and compare the serverless bill against a
 small always-on container for identical work (§5.1).
 
-**Phase 1 — externalize state (6–10 weeks).** Postgres migration is the bulk. Do **caches
-first** (Redis): smallest surface, and it is where the recent defect cluster lived —
-`briefing_cache.json` being one shared file for all connections is exactly the bug class
-proper keying eliminates.
+**Phase 1 — externalize state. THE RELATIONAL BULK SHIPPED 2026-08-05 — proven on a live
+Postgres, not asserted.** Every platform SQLite store (~33 modules, the kernel Ledger
+included) now opens through `aughor/db/backend.py`: default is byte-for-byte today's
+tuned sqlite; `AUGHOR_DB_URL=postgres://…` moves the store — schema-per-store in one
+database — behind a wrapper that speaks the sqlite3 surface the stores already use.
+Store SQL stays sqlite-dialect; the seam transpiles per statement (sqlglot, cached) and
+patches what a 420-statement corpus measurement showed survives verbatim (OR
+IGNORE/REPLACE, rowid, reserved words, ON CONFLICT SET ambiguity, literal `%`), maps
+declared types to keep string-first storage semantics, and answers `user_version` /
+`table_info` truthfully because the migration framework runs on them. **The 1,479-test
+store sweep passes against a real dockerized Postgres 16** (and 1,414 unchanged on
+sqlite). The live run surfaced one latent bug sqlite absorbed (bare column under GROUP
+BY returning an arbitrary row) and two file-existence guards that read as "no data" on
+a fileless backend — the §5.2 lesson again: none of this was visible without a real
+server.
+
+**Still open in Phase 1, deliberately:** the per-connection JSON document family
+(`exploration_*` / `business_profile_*` + episodes JSONL). Its migration crosses the
+purge cascade's file-glob contract — where this repo's real data-loss bugs have lived —
+and Phase 2's durable execution reworks explorer persistence anyway (state references,
+slice-level saves), so it moves *with* that work, not ahead of it. Directory stores
+(`uploads/`, `context_graph/`, `kb/`) are genuine file artifacts → Blob in Phase 3.
+Connection pooling is a knob, not a blocker: stores connect per operation, fine locally,
+worth a pool in front of a managed Postgres.
+
+**Step 0, seam landed 2026-08-05: the LLM coordination gates** (§2) — small, and it is what
+gates the concurrent-slice fan-out every number in §3.5 rests on. The Protocol and the
+in-process default ship; **the shared backend does not**, so the fan-out defect stands until
+one is written and verified against real Redis.
+
+**Step 0b, landed 2026-08-05: budgets enforceable across the process split.** The heartbeat
+now flushes the run's live spend onto the job row in the same UPDATE as `heartbeat_at`, and
+both budget readers (`_over_budget`, `budget_fraction_used`) fall back to that snapshot when
+the process-local registry misses — at most one beat stale. A test drives the real heartbeat
+loop against a run whose accumulator it cannot see and requires the cancel. Without this,
+splitting job from supervisor silently stopped token-budget enforcement (`metering._by_job`
+miss read as "no spend").
+
+**Step 0c, landed 2026-08-05: the three raw-file caches are on the Ledger facade.**
+`briefing_cache` / `patterns_cache` / `schema_cache` now go through `KeyedJsonStore`
+(per-key transactional, legacy file imported once and left untouched;
+`test_cache_store_races.py` demonstrates the lost-write race against the raw pattern and
+its absence through the store). This is the "caches first" step — done against the seam
+that already existed, so Redis later means one Ledger backend, not three migrations.
+
+**Step 0d, landed 2026-08-05: Langfuse spans survive the invocation split.**
+`telemetry._traces` is now a memo, not an identity: a miss rebuilds the handle by trace
+id (Langfuse upserts on id) instead of silently orphaning the span. With this, **all five
+§2 coordination-state items are dispositioned** — LLM gates (seam), `_by_job`
+(flush + fallback), `_traces` (rebuild by id); the ~15 registries rebuild identically per
+process and the ~15 memo caches lose only hit-rate. What remains of Phase 1 is the bulk:
+~32 SQLite stores → Postgres, and the 49 remaining JSON/dir stores.
+
+Then **caches — but onto the seam that already exists, not straight to Redis.**
+`kernel/ledger.py` is already a transactional store with `kv(store, key, value, seq,
+updated_at)`, and `KeyedJsonStore` in `util/json_store.py` is *already a facade over it*
+with a file fallback. Adoption is partial: **10 modules use the facade**, while the caches
+this plan wants moved first still do raw file I/O — `knowledge/briefing.py:683` is
+`json.loads(read_text())` → mutate → `write_text()` on **one file shared by every
+connection**, which is the exact unlocked load→mutate→save race the Ledger was built to
+eliminate, and the bug class the 2026-08-04 session hit. Routing those onto the existing
+`kv` facade is a smaller change than standing up Redis, fixes the race now, and collapses
+the later externalization to **one backend swap instead of N**. Redis then becomes a
+Ledger backend, not a per-store migration.
+
+*Leverage, don't duplicate* — the ledger's own docstring states this as the house rule;
+the first draft of this plan proposed new infrastructure without checking what was already
+built.
 
 **Phase 2 — durable execution (4–8 weeks).** Leases, kernel state in Postgres, slice the
 explorer, wire the queue.
@@ -402,8 +520,15 @@ explicit release gate, because status codes have repeatedly failed to detect the
    are macOS; Linux wheels differ.
 3. What is the real per-invocation cold-start cost of re-establishing DuckDB + remote data
    access? This decides slice granularity (per-phase vs per-angle vs batched).
-4. Which of the ~35 SQLite stores are genuinely hot, and which are append-only ledgers that
-   could go to Blob instead of Postgres?
+4. ~~Which of the ~35 SQLite stores are genuinely hot, and which are append-only ledgers
+   that could go to Blob instead of Postgres?~~ **ANSWERED 2026-08-05 — and the premise was
+   wrong.** Classifying all 32 platform stores by the SQL verbs they actually issue:
+   **26 are mutable** (`UPDATE` and/or `DELETE`), 6 append-only. Of those 6, two are not
+   migrations at all — `agent/graph.py` issues no raw SQL because `checkpoints.db`
+   (**128 MB, the largest store**) is LangGraph's `SqliteSaver`, making it a library swap to
+   `PostgresSaver`; and `security/audit.py` (`audit.db`, 36 MB) is the one genuinely
+   append-only ledger, by design. **There is no meaningful Blob tier to peel off** — plan
+   for a relational migration of essentially the whole set, plus one checkpointer swap.
 
 ---
 
