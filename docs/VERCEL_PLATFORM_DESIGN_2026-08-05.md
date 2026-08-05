@@ -489,10 +489,31 @@ built.
   the explorer decomposition to build on. Contention, expiry-steal, owner-checked
   renew/release proven on both backends.
 
-**Still ahead in Phase 2:** decompose the explorer's 8-minute loop into slice-sized
-steps at the angle level (Phase 8 already emits findings one at a time; `_save_state()`
-at 11 sites), a queue interface with an in-process default (the worker stays a
-deployment choice — §5.1), and the async LLM call (§3.5's hard requirement).
+**Phase 2 completed 2026-08-05:**
+
+* **The domain is the slice.** Phase 8's per-domain pass now claims
+  `explore:{store_key}:{domain}` (`AUGHOR_DOMAIN_LEASE_S`, default 900 s) before
+  working: two workers sharing the database split the domain list instead of
+  double-running it, a dead worker's domain frees itself by expiry, and completion
+  is recorded in `domain_coverage` state — so claims need no hand release. Claim
+  failure is a skip, not an error; a ledger hiccup degrades to single-process
+  behaviour. The explorer's existing cross-run resumability (phases that skip when
+  their state says done) is what makes the slice boundary this cheap.
+* **Dispatch is a seam** (`aughor/kernel/queue.py`): `WorkQueue` Protocol, in-process
+  default submitting supervised kernel jobs by KIND through a runner registry —
+  payloads are references, at-least-once via the kernel's idempotency keys. An
+  external queue is `AUGHOR_WORK_QUEUE=…` plus a backend class; none ships until
+  there is a real queue to verify against (the coordinator discipline).
+* **The async-LLM requirement, disposed honestly:** every explorer LLM/SQL call runs
+  via `run_in_executor` — the event loop is never blocked and a thread parked on a
+  socket burns no active CPU, which is what Fluid meters. §3.5's requirement is met
+  at the process level; a full `AsyncOpenAI` migration remains a *billing
+  optimization* to confirm with §4's cost test on real invoices, not a correctness
+  gap.
+
+**Deliberately not in Phase 2:** an end-to-end two-worker exploration run (needs live
+LLM budget — it is the §4 cost test's natural companion), and any external queue
+backend. The slice/claim/queue primitives all carry live shared-Postgres proofs.
 
 **Phase 3 — packaging and cutover (2–4 weeks).** Dependency trim (do the trivial part in
 week 1), functions, Cron.
