@@ -473,8 +473,47 @@ Ledger backend, not a per-store migration.
 the first draft of this plan proposed new infrastructure without checking what was already
 built.
 
-**Phase 2 — durable execution (4–8 weeks).** Leases, kernel state in Postgres, slice the
-explorer, wire the queue.
+**Phase 2 — durable execution (4–8 weeks). OPENED 2026-08-05 — its two foundations landed:**
+
+* **The Phase 1 JSON remainder went first** (it was the prerequisite): exploration +
+  business-profile state ride a `FileFamilyStore` (per-key transactional, legacy files
+  import on first touch, Postgres-capable) with purge moving *with* the data — the
+  cascade now runs through the agent's purge hooks rather than filename globs, and new
+  tests pin that store-seeded state purges as thoroughly as file-seeded did.
+* **Job ownership is a lease** (`AUGHOR_JOB_LEASE_S`, default the existing 120 s
+  staleness window; no schema change). Boot recovery fails only lapsed leases and
+  records live-lease skips as `job.foreign` — proven with two kernel instances on one
+  live Postgres, where the old blanket rule demonstrably killed a healthy peer's job.
+* **Slice claims are a kernel primitive** (`Ledger.try_claim/renew_claim/release_claim`,
+  atomic expiry-steal in the upsert's WHERE): the spike's HTTP-409 semantics, ready for
+  the explorer decomposition to build on. Contention, expiry-steal, owner-checked
+  renew/release proven on both backends.
+
+**Phase 2 completed 2026-08-05:**
+
+* **The domain is the slice.** Phase 8's per-domain pass now claims
+  `explore:{store_key}:{domain}` (`AUGHOR_DOMAIN_LEASE_S`, default 900 s) before
+  working: two workers sharing the database split the domain list instead of
+  double-running it, a dead worker's domain frees itself by expiry, and completion
+  is recorded in `domain_coverage` state — so claims need no hand release. Claim
+  failure is a skip, not an error; a ledger hiccup degrades to single-process
+  behaviour. The explorer's existing cross-run resumability (phases that skip when
+  their state says done) is what makes the slice boundary this cheap.
+* **Dispatch is a seam** (`aughor/kernel/queue.py`): `WorkQueue` Protocol, in-process
+  default submitting supervised kernel jobs by KIND through a runner registry —
+  payloads are references, at-least-once via the kernel's idempotency keys. An
+  external queue is `AUGHOR_WORK_QUEUE=…` plus a backend class; none ships until
+  there is a real queue to verify against (the coordinator discipline).
+* **The async-LLM requirement, disposed honestly:** every explorer LLM/SQL call runs
+  via `run_in_executor` — the event loop is never blocked and a thread parked on a
+  socket burns no active CPU, which is what Fluid meters. §3.5's requirement is met
+  at the process level; a full `AsyncOpenAI` migration remains a *billing
+  optimization* to confirm with §4's cost test on real invoices, not a correctness
+  gap.
+
+**Deliberately not in Phase 2:** an end-to-end two-worker exploration run (needs live
+LLM budget — it is the §4 cost test's natural companion), and any external queue
+backend. The slice/claim/queue primitives all carry live shared-Postgres proofs.
 
 **Phase 3 — packaging and cutover (2–4 weeks).** Dependency trim (do the trivial part in
 week 1), functions, Cron.

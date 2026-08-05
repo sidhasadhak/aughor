@@ -16,7 +16,6 @@ import hashlib
 import logging
 from typing import Optional
 
-from aughor.db.paths import state_dir
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +121,8 @@ def revalidate_for_briefing(conn_id: str, schema: Optional[str], limit: int = _R
     runs: list[tuple[str, Optional[str]]] = []
     if schema:
         store_key = f"{conn_id}__{schema}"
-        # specific schema: per-schema file if it exists, else the connection store
-        if (state_dir() / f"exploration_{store_key}.json").exists():
+        # specific schema: per-schema state if it exists, else the connection store
+        if _store.has_state(store_key):
             runs.append((store_key, schema))
         else:
             runs.append((conn_id, None))

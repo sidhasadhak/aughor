@@ -1,28 +1,39 @@
 """
 Persistence for exploration state and findings.
-Connection-scoped: data/exploration_{connection_id}.json
-Canvas-scoped:     data/exploration_canvas_{canvas_id}.json
+
+Keys in the ``exploration`` family store (KeyedJsonStore/Ledger facade — per-key
+transactional, Postgres-capable behind AUGHOR_DB_URL):
+    {connection_id}               # the bare connection run
+    {connection_id}__{schema}     # a per-schema run
+    canvas_{canvas_id}            # a canvas-scoped run
+
+Legacy layout was one file per key (``data/exploration_{key}.json``); each key
+imports on first touch and the file stays as the on-disk record until purge. This
+state is what Phase 2's sliced execution resumes from, so it must be readable
+across processes — a local file was the last single-process assumption here.
 """
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional
 
 from aughor.db.paths import state_dir
 from aughor.explorer.models import ExplorationPhase
+from aughor.util.json_store import FileFamilyStore
 
 # Honours AUGHOR_STATE_DIR — this store had NO override and the suite destroyed a real
 # exploration_workspace.json (2026-07-21). See aughor/db/paths.py.
 _DATA_DIR = state_dir()
 
 
-def _path(connection_id: str) -> Path:
-    return _DATA_DIR / f"exploration_{connection_id}.json"
+def _family() -> FileFamilyStore:
+    # Per call, not a module global: _DATA_DIR is the seam tests monkeypatch, and a
+    # store captured at import would keep writing to the real one (db/paths.py trap).
+    return FileFamilyStore(_DATA_DIR, "exploration_")
 
 
-def _canvas_path(canvas_id: str) -> Path:
-    return _DATA_DIR / f"exploration_canvas_{canvas_id}.json"
+def _canvas_key(canvas_id: str) -> str:
+    return f"canvas_{canvas_id}"
 
 
 def _empty() -> dict:
@@ -40,23 +51,31 @@ def _empty() -> dict:
 
 
 def load(connection_id: str) -> dict:
-    p = _path(connection_id)
-    if p.exists():
-        try:
-            return json.loads(p.read_text())
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "exploration state read is best-effort; empty state used on corrupt file", counter="explorer.store.read")
+    try:
+        entry = _family().get_entry(connection_id)
+        if entry is not None:
+            return entry
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "exploration state read is best-effort; empty state used on error", counter="explorer.store.read")
     return _empty()
 
 
 def save(connection_id: str, state: dict) -> None:
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        _path(connection_id).write_text(json.dumps(state, indent=2, default=str))
+        _family().put(connection_id, json.loads(json.dumps(state, default=str)))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "exploration state write is best-effort; next save retries", counter="explorer.store.write")
+
+
+def has_state(store_key: str) -> bool:
+    """Whether a run state exists under this key — the store-aware replacement for
+    the ``exploration_{key}.json``.exists() checks routers used to make."""
+    try:
+        return _family().has_entry(store_key)
+    except Exception:
+        return False
 
 
 def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bool:
@@ -75,7 +94,7 @@ def get_insights(connection_id: str, include_invalid: bool = False) -> list[dict
 
 
 def get_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
-    """Return insights grouped by domain. Quarantined (invalid-flagged) findings
+    """Findings grouped by domain. Quarantined (invalid-flagged) ones
     are excluded by default — kept in the store for inspection, hidden from intel."""
     grouped: dict[str, list[dict]] = {}
     for ins in get_insights(connection_id, include_invalid=include_invalid):
@@ -92,8 +111,7 @@ def get_domain_insights(connection_id: str, include_invalid: bool = False) -> di
 
 def schema_run_keys(connection_id: str) -> list[str]:
     """Store keys ({conn}__{schema}) of this connection's per-schema runs, or [] if none."""
-    return sorted(p.stem[len("exploration_"):]
-                  for p in _DATA_DIR.glob(f"exploration_{connection_id}__*.json"))
+    return _family().keys_with_prefix(f"{connection_id}__")
 
 
 def _agg_phase(phases: list[str]) -> str:
@@ -142,7 +160,7 @@ def load_aggregate(connection_id: str) -> dict:
 
 
 def get_aggregate_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
-    """by_domain insights merged across all per-schema runs of a connection. Each insight is
+    """by_domain findings merged across all per-schema runs of a connection. Each one is
     tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
     (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
     grouped: dict[str, list[dict]] = {}
@@ -250,7 +268,7 @@ def render_exploration_annotations(connection_id: str) -> str:
             )
         sections.append("\n".join(lines))
 
-    # ── Domain intelligence insights ──────────────────────────────────────────
+    # ── Domain intelligence findings ──────────────────────────────────────────
     insights: list = state.get("insights", [])
     if insights:
         # Group by domain for the schema context block
@@ -279,23 +297,28 @@ def render_exploration_annotations(connection_id: str) -> str:
 # ── Canvas-scoped variants ────────────────────────────────────────────────────
 
 def load_canvas(canvas_id: str) -> dict:
-    p = _canvas_path(canvas_id)
-    if p.exists():
-        try:
-            return json.loads(p.read_text())
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "canvas exploration state read is best-effort; empty state used on corrupt file", counter="explorer.store.read_canvas")
-    return _empty()
+    return load(_canvas_key(canvas_id))
 
 
 def save_canvas(canvas_id: str, state: dict) -> None:
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        _canvas_path(canvas_id).write_text(json.dumps(state, indent=2, default=str))
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "canvas exploration state write is best-effort; next save retries", counter="explorer.store.write_canvas")
+    save(_canvas_key(canvas_id), state)
+
+
+def canvas_ids_with_state() -> list[str]:
+    """Every canvas id that has exploration state — store keys and legacy files."""
+    return [k[len("canvas_"):] for k in _family().keys_with_prefix("canvas_")]
+
+
+def purge_connection_state(connection_id: str) -> int:
+    """Drop the bare + every per-schema run for a connection (store rows AND legacy
+    files), counted once per key. The seam db/purge.py calls — deletion semantics
+    live here, next to the naming they must match, not as globs in the cascade."""
+    return _family().purge_entries(exact=[connection_id], key_prefix=f"{connection_id}__")
+
+
+def purge_schema_state(connection_id: str, schema: str) -> int:
+    """Drop one schema's run AND the stale bare aggregate; sibling schemas stay."""
+    return _family().purge_entries(exact=[f"{connection_id}__{schema}", connection_id])
 
 
 def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:
@@ -322,7 +345,7 @@ def extend_domain_budget_canvas(canvas_id: str, domain: str, extra: int = 5) -> 
 
 
 def promote_insight(canvas_id: str, insight_id: str) -> bool:
-    """Mark a canvas insight as promoted to Org intelligence. Returns True on success."""
+    """Mark a canvas finding as promoted to Org intelligence. Returns True on success."""
     state = load_canvas(canvas_id)
     for ins in state.get("insights", []):
         if ins.get("id") == insight_id:
@@ -334,10 +357,10 @@ def promote_insight(canvas_id: str, insight_id: str) -> bool:
 
 
 def _find_insight_state(connection_id: str, insight_id: str):
-    """Locate the store key + state + insight for an id, searching the bare
+    """Locate the store key + state + finding for an id, searching the bare
     connection state AND every per-schema run ({conn}__{schema}).
 
-    Multi-schema connections store insights per schema, but the promote/dismiss
+    Multi-schema connections store findings per schema, but the promote/dismiss
     endpoints receive only the connection id — looking in the bare file alone
     made those buttons 404 on every per-schema finding (a dead button)."""
     for key in [connection_id, *schema_run_keys(connection_id)]:
@@ -417,4 +440,4 @@ def dismiss_insight_canvas(canvas_id: str, insight_id: str, reason: str = "") ->
 
 
 def canvas_has_state(canvas_id: str) -> bool:
-    return _canvas_path(canvas_id).exists()
+    return has_state(_canvas_key(canvas_id))

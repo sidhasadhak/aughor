@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Sequence, Union
 
 
 class KeyedJsonStore:
@@ -128,6 +128,79 @@ class KeyedJsonStore:
             if evict:
                 self._file_save(cache)
             return len(evict)
+
+
+class FileFamilyStore(KeyedJsonStore):
+    """A KeyedJsonStore for a family whose LEGACY layout was one file PER KEY
+    (``{prefix}{key}.json`` in a directory) rather than one dict file.
+
+    The exploration / business-profile stores wrote ``exploration_{conn}.json``,
+    ``business_profile_{conn}__{schema}.json``, … — so the base class's import-the-
+    one-legacy-file-once contract doesn't fit. Here each KEY imports on first touch,
+    and listing / purging consider both the store and any not-yet-imported files, so
+    a deployment mid-migration never sees a partial family. Legacy files are read
+    and (on purge) unlinked, but never rewritten.
+    """
+
+    def __init__(self, dir_path: Union[str, Path], file_prefix: str):
+        self.dir = Path(dir_path)
+        self.prefix = file_prefix
+        super().__init__(self.dir / f"{file_prefix.rstrip('_')}__family.json")
+
+    def _legacy_path(self, key: str) -> Path:
+        return self.dir / f"{self.prefix}{key}.json"
+
+    def get_entry(self, key: str) -> Optional[dict]:
+        """The entry for ``key`` — from the store, else imported from its legacy file."""
+        value = self.get(key)
+        if value is not None:
+            return value
+        p = self._legacy_path(key)
+        if p.exists():
+            try:
+                value = json.loads(p.read_text())
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "family-store legacy read is best-effort; corrupt file treated as absent",
+                         counter="json_store.family_read")
+                return None
+            self.put(key, value)   # import once; the file stays as the on-disk record
+            return value
+        return None
+
+    def has_entry(self, key: str) -> bool:
+        return self.get(key) is not None or self._legacy_path(key).exists()
+
+    def keys_with_prefix(self, key_prefix: str) -> list[str]:
+        """Every key starting with ``key_prefix`` — store keys and legacy files, deduped."""
+        keys = {k for k in self.load() if k.startswith(key_prefix)}
+        for p in self.dir.glob(f"{self.prefix}{key_prefix}*.json"):
+            if p.name != self.path.name:
+                keys.add(p.stem[len(self.prefix):])
+        return sorted(keys)
+
+    def purge_entries(self, *, exact: Sequence[str] = (), key_prefix: Optional[str] = None) -> int:
+        """Remove entries by exact key and/or key prefix — store row AND legacy file,
+        counted once per KEY (an imported entry exists in both places but is one
+        thing). This is the seam the purge cascade calls, so deletion semantics live
+        with the store rather than as filename globs in db/purge.py."""
+        candidates = set(exact)
+        if key_prefix is not None:
+            candidates.update(self.keys_with_prefix(key_prefix))
+        removed: set[str] = set()
+        for key in candidates:
+            if self.delete(key):
+                removed.add(key)
+            p = self._legacy_path(key)
+            if p.exists():
+                try:
+                    p.unlink()
+                    removed.add(key)
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "family-store legacy unlink is best-effort; the store row is gone",
+                             counter="json_store.family_purge")
+        return len(removed)
 
 
 class JsonListStore:

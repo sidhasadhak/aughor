@@ -109,6 +109,7 @@ def _register_purge_hooks() -> None:
     from aughor.kernel.registries import purge_hooks as ph
 
     # connection-keyed
+    ph.register_purge_hook("exploration", _exploration_conn)
     ph.register_purge_hook("ontology", _ontology_conn)
     ph.register_purge_hook("profile", _profile_conn)
     ph.register_purge_hook("profile_cache", _profile_cache_conn)
@@ -126,6 +127,8 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("qdrant", _qdrant_conn)
 
     # schema-keyed
+    ph.register_schema_purge_hook("explorer_files", _exploration_schema)
+    ph.register_schema_purge_hook("profile_bare", _profile_bare_schema)
     ph.register_schema_purge_hook("profile", _profile_schema)
     ph.register_schema_purge_hook("ontology", _ontology_schema)
     ph.register_schema_purge_hook("knowledge_cache", _knowledge_schema)
@@ -140,6 +143,18 @@ def _register_purge_hooks() -> None:
 
 
 # connection-keyed hooks ------------------------------------------------------
+
+def _exploration_conn(conn_id, org_id):
+    """Exploration state (family store: rows + legacy files) for a whole connection.
+    Covers the sanitized-id variant too — ancient writes could carry either form."""
+    import re as _re
+    from aughor.explorer import store as explorer_store
+    n = explorer_store.purge_connection_state(conn_id)
+    safe = _re.sub(r"[^A-Za-z0-9._-]", "_", conn_id)
+    if safe != conn_id:
+        n += explorer_store.purge_connection_state(safe)
+    return {"exploration": n}
+
 
 def _ontology_conn(conn_id, org_id):
     from aughor.ontology import store as ontology_store
@@ -249,6 +264,20 @@ def _qdrant_conn(conn_id, org_id):
 
 
 # schema-keyed hooks ----------------------------------------------------------
+
+def _exploration_schema(conn_id, schema):
+    """One schema's exploration run AND the stale bare aggregate; siblings stay."""
+    from aughor.explorer import store as explorer_store
+    return {"explorer_files": explorer_store.purge_schema_state(conn_id, schema)}
+
+
+def _profile_bare_schema(conn_id, schema):
+    """ONLY the connection-level 'All schemas' profile — stale once any schema goes.
+    Sibling schemas keep their own profiles (those are _profile_schema's job when
+    THEIR schema is removed)."""
+    from aughor.business_profile import store as profile_store
+    return {"profile_bare": profile_store.invalidate_bare(conn_id)}
+
 
 def _profile_schema(conn_id, schema):
     from aughor.business_profile import store as profile_store

@@ -77,6 +77,14 @@ _LEGAL = {
 _HEARTBEAT_SECONDS = 15
 _STALE_SECONDS = 120
 
+
+def _int_env(name: str, default: int) -> int:
+    import os
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
 # Concurrency cap for user-initiated jobs. Without a bound, a client (or a script
 # loop) hammering /investigate spawns unbounded supervised jobs + SSE streams +
 # LLM calls and exhausts the single process. Background explorers are exempt:
@@ -391,22 +399,50 @@ class JobKernel:
     # ── boot recovery (WCH-6) ─────────────────────────────────────────────────
 
     def boot_recovery(self) -> list[dict]:
-        """At startup, every non-terminal job row belongs to a dead process —
-        mark it FAILED and return the exploration jobs so the caller can respawn
-        them from their checkpoints. Idempotent: a clean ledger returns []."""
-        orphans = self.ledger.jobs_where(states=list(JobState.ACTIVE))
-        resumable = []
-        for job in orphans:
+        """At startup, fail the non-terminal jobs whose LEASE has lapsed and return
+        the exploration jobs among them so the caller can respawn from checkpoints.
+
+        The old rule — *every* non-terminal row belongs to a dead process — was only
+        sound while exactly one process ever ran (its own docstring said so). On a
+        shared database a second instance boots while the first is mid-exploration,
+        and blanket-failing would kill (then double-respawn) healthy work owned by a
+        living process. The heartbeat is the lease: a RUNNING job whose
+        ``heartbeat_at`` is fresher than the lease window is OWNED — left alone,
+        recorded as ``job.foreign`` so the skip is observable, never silent. A job
+        whose lease lapsed is an orphan wherever it ran, exactly as before.
+
+        PENDING/PAUSED rows have no heartbeat and no owner — still failed on sight:
+        nothing will ever pick them up (submit attaches the runner in-process), so
+        leaving them would recreate the orphaned-state class WCH-6 closed.
+        Idempotent: a clean ledger returns []."""
+        lease_s = _int_env("AUGHOR_JOB_LEASE_S", _STALE_SECONDS)
+        cutoff = datetime.now(timezone.utc).timestamp() - lease_s
+        resumable, orphaned, foreign = [], 0, 0
+        for job in self.ledger.jobs_where(states=list(JobState.ACTIVE)):
+            if job["state"] == JobState.RUNNING:
+                hb = job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")
+                try:
+                    hb_ts = datetime.fromisoformat(hb).timestamp()
+                except (ValueError, TypeError):
+                    hb_ts = 0
+                if hb_ts >= cutoff:
+                    foreign += 1
+                    self.ledger.emit("job.foreign", {"kind": job["kind"], "heartbeat_at": hb},
+                                     conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
+                                     job_id=job["id"])
+                    continue   # live lease — another process owns this job
+            orphaned += 1
             self.ledger.emit("job.orphaned", {"kind": job["kind"]},
                              conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
                              job_id=job["id"])
             # PENDING/PAUSED → FAILED is legal; RUNNING → FAILED is legal.
-            self._transition(job["id"], JobState.FAILED, error="server restart (orphaned)")
+            self._transition(job["id"], JobState.FAILED, error="lease lapsed (orphaned)")
             if job["kind"] == "exploration":
                 resumable.append(job)
-        if orphans:
-            logger.info("boot recovery: %d orphaned job(s) failed, %d exploration(s) resumable",
-                        len(orphans), len(resumable))
+        if orphaned or foreign:
+            logger.info("boot recovery: %d orphaned job(s) failed (%d exploration(s) resumable), "
+                        "%d foreign job(s) with live leases left running",
+                        orphaned, len(resumable), foreign)
         return resumable
 
     # ── the Supervisor ────────────────────────────────────────────────────────

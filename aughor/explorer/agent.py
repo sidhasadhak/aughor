@@ -67,6 +67,12 @@ from aughor.explorer.feasibility import (
 
 logger = logging.getLogger(__name__)
 
+# Lease on one Phase-8 domain pass (slice claims — Phase 2 durable execution).
+# Sized above the worst observed domain pass so a live worker is never stolen from;
+# a dead worker's domain frees itself within this window. AUGHOR_DOMAIN_LEASE_S
+# overrides for slicing experiments.
+_DOMAIN_LEASE_S = float(os.environ.get("AUGHOR_DOMAIN_LEASE_S", "900") or 900)
+
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
@@ -316,6 +322,15 @@ class SchemaExplorer:
             _store_key = connection_id
         self._store_key = _store_key
         self._episodes = EpisodeCollector(_store_key)
+        # Identity for slice claims (Phase 2 durable execution): stable per explorer
+        # instance, distinct across processes. Claims are released by EXPIRY, not by
+        # hand — completion is recorded in domain_coverage/budgets state, so a claim
+        # outliving its finished domain only shields it briefly; a claim whose worker
+        # died frees itself. try_claim is re-entrant for the same owner, so this
+        # instance resuming a domain it already holds just proceeds.
+        import uuid as _uuid
+        self._worker_id = f"explorer-{_uuid.uuid4().hex[:12]}"
+        self._held_claim: tuple | None = None    # (ledger, scope) of the domain being worked
         self._can_run = asyncio.Event()
         self._can_run.set()
         self._stopped = False
@@ -371,6 +386,21 @@ class SchemaExplorer:
             tolerate(_cg_exc, "context-graph rebuild after exploration is best-effort; the "
                               "run is complete and the next refresh picks the change up",
                      counter="explorer.context_graph_rebuild")
+
+    def _release_held_claim(self) -> None:
+        """Release the domain claim this worker currently holds, if any. Called
+        before claiming the next domain and when Phase 8 exits — a completed run
+        must free its slices immediately, not by lease expiry (a successor within
+        the lease window would skip them all). Best-effort."""
+        held, self._held_claim = self._held_claim, None
+        if held is None:
+            return
+        try:
+            held[0].release_claim(held[1], self._worker_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "claim release is best-effort; the lease frees it anyway",
+                     counter="explorer.claim_release")
 
     def _save_state(self) -> None:
         # Mirror the LIVE phase into the persisted state on EVERY save. Mid-run phase
@@ -2044,7 +2074,18 @@ class SchemaExplorer:
         return NQ(question=probe.question or "grounded probe", sql=sql,
                   angle=probe.angle or "grounded", why=probe.why or "grounded generation")
 
-    async def _phase8_domain_intelligence(
+    async def _phase8_domain_intelligence(self, *args, **kwargs) -> int:
+        """Wrapper: however Phase 8 exits — completion, early return, cancellation —
+        this worker's held domain claim is released. A finished run leaving claims
+        starves its successor within the lease window ('Explore 5 more' would skip
+        every domain the previous run claimed; caught live by the integration suite,
+        where a session-shared ledger crosses tests exactly like sequential runs)."""
+        try:
+            return await self._phase8_domain_intelligence_inner(*args, **kwargs)
+        finally:
+            self._release_held_claim()
+
+    async def _phase8_domain_intelligence_inner(
         self,
         cp: dict | None = None,
         tp: dict | None = None,
@@ -2420,6 +2461,30 @@ class SchemaExplorer:
             await self._gate()
             if self._stopped:
                 return
+
+            # Phase 2 durable execution: one DOMAIN is the unit of sliced work. A
+            # worker claims `explore:{store_key}:{domain}` before touching it, so two
+            # workers sharing the database split the domain list between them instead
+            # of double-running it — and a domain whose worker died is reclaimable
+            # after the lease lapses. Claim failure is not an error: the domain is
+            # simply someone else's slice right now; state-level coverage keeps a
+            # later pass from redoing what they complete. Best-effort: a ledger
+            # hiccup must not stop a single-process exploration.
+            self._release_held_claim()   # the previous domain is done — free its slice
+            _claim_scope = f"explore:{self._store_key}:{domain}"
+            try:
+                from aughor.kernel.ledger import Ledger
+                _claim_ledger = Ledger.default()
+                if not _claim_ledger.try_claim(_claim_scope, self._worker_id,
+                                               lease_s=_DOMAIN_LEASE_S):
+                    logger.info("[explorer:%s] Phase 8: domain %s is another worker's slice — skipping",
+                                self.connection_id, domain)
+                    continue
+                self._held_claim = (_claim_ledger, _claim_scope)
+            except Exception as _cl_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_cl_exc, "domain claim is best-effort; single-process exploration proceeds",
+                         counter="explorer.domain_claim")
 
             # Derive: profile metrics lead the angle checklist; generic angles remain
             # as fallback. The column-feasibility gate downstream drops any that don't

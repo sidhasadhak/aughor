@@ -175,7 +175,8 @@ def _store_key(conn_id: str, schema: str | None) -> str:
     fall back to the connection-level state (the single-run case, then schema-FILTERED by the
     callers). Lets the same endpoints serve per-schema runs and the legacy connection run."""
     if schema:
-        if (state_dir() / f"exploration_{conn_id}__{schema}.json").exists():
+        from aughor.explorer.store import has_state
+        if has_state(f"{conn_id}__{schema}"):
             return f"{conn_id}__{schema}"
     return conn_id
 
@@ -779,7 +780,16 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
 
     deleted: list[str] = []
     data = state_dir()
-    for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
+    # Exploration state through its store (rows + legacy files, counted per key);
+    # episodes stay files — an append-only observability log.
+    try:
+        from aughor.explorer.store import purge_connection_state
+        n = purge_connection_state(conn_id)
+        if n:
+            deleted.append(f"exploration:{n}")
+    except Exception as exc:
+        tolerate(exc, "exploration state purge is best-effort during reset", counter="explorer.purge_unlink")
+    for fname in (f"episodes_{conn_id}.jsonl",):
         p = data / fname
         if p.exists():
             try:
@@ -787,7 +797,7 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
                 deleted.append(fname)
             except Exception as exc:
                 tolerate(exc, f"could not delete {fname} during purge", counter="explorer.purge_unlink")
-    for pat in (f"exploration_{conn_id}__*.json", f"episodes_{conn_id}__*.jsonl"):
+    for pat in (f"episodes_{conn_id}__*.jsonl",):
         for p in data.glob(pat):
             try:
                 p.unlink()
