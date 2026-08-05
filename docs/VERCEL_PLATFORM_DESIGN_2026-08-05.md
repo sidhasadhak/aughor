@@ -1,0 +1,392 @@
+# Running Aughor on Vercel at full capacity — design note
+
+**Status:** proposal · **Date:** 2026-08-05 · **Author:** design spike, no functional code changes
+
+This note answers one question: *can the whole platform — not a demo — run on Vercel, and
+if so, how?* It is written against measurements taken on `main` @ `1ea6ca3`, not against
+assumptions. Every number below is reproducible with the commands in
+[Appendix A](#appendix-a--how-the-numbers-were-taken).
+
+---
+
+## 1. The headline: the bundle is not the blocker
+
+The 250 MB serverless limit was assumed fatal because the development virtualenv is
+**1.1 GB**. It is not, because almost none of that venv is on the serving path.
+
+| Measurement | Result |
+|---|---|
+| Development venv | **1,100 MB** |
+| API boot import closure (44 third-party packages) | **121 MB** |
+| Clean install of a candidate serving set | **102 MB** |
+| Application code (`aughor/**.py`) | **7 MB** |
+| **Estimated Vercel bundle** | **~110 MB** against a 250 MB limit |
+
+The boot closure was captured by importing `aughor.api` and diffing `sys.modules` — so it
+is what the process actually loads, not what `pyproject.toml` declares. Absent from it:
+
+> `polars`, `pyarrow`, `pandas`, `numpy`, `scipy`, `statsmodels`, `matplotlib`,
+> `langgraph`, `mlflow`, `connectorx`, `reportlab`, `python-pptx`, `qdrant-client`
+
+Those are ~700 MB of the venv and **the API does not import any of them at boot.**
+
+Three specific findings worth acting on regardless of Vercel:
+
+* **`statsmodels` (36 MB) is imported by zero modules.** It is a declared runtime
+  dependency that nothing uses.
+* **`polars` + `pyarrow` (312 MB) serve one module** (`aughor/db/connection.py`).
+* **`botocore` (21 MB) is in the boot closure** but nothing in `aughor/` imports it. It
+  arrives transitively via `boto3` / `snowflake-connector-python` / `mlflow-skinny` —
+  optional-connector dependencies leaking into the default install. The trimmed set drops
+  it automatically.
+
+**Conclusion:** bundle size is a dependency-hygiene problem, solvable in days, and it does
+not gate this programme. It should still be fixed first because it is cheap and it makes
+every later measurement honest.
+
+---
+
+## 2. The real blocker
+
+> **The platform assumes one process with a local disk.**
+
+That single assumption produces every genuine obstacle:
+
+| Assumption | Evidence | Why serverless breaks it |
+|---|---|---|
+| Local disk is durable | **~35 SQLite DBs** (`system.db` 96 MB, `checkpoints.db` 128 MB, `audit.db` 36 MB), **52 JSON/JSONL stores**, **13 directory stores**, 7 `.duckdb` files | Functions have no persistent disk; `/tmp` is ephemeral and per-invocation |
+| Work runs to completion in-process | an exploration ran **102 queries over ~8 minutes**; investigations take 2–5 min | Exceeds function duration; no long-lived process |
+| One process owns all state | Job Kernel docstring: *"single-process runtime"*; boot recovery fails every non-terminal job because it assumes the only process died | Concurrent workers make that reasoning wrong, silently |
+| A scheduler lives in-process | APScheduler heartbeat | No always-on process to host it |
+
+**The encouraging half.** In-memory coupling is far lighter than the codebase's size
+suggests: **5 module-level mutable dicts, 5 `lru_cache`s, 36 singleton accessors** across
+133k lines. The statelessness refactor is bounded, not pervasive.
+
+**The other encouraging half.** Two pieces of existing architecture do most of the heavy
+lifting:
+
+1. **The Job Kernel (K1)** already has a persisted state machine
+   (`PENDING → RUNNING → SUCCEEDED | FAILED | CANCELLED`), heartbeats, an orphan
+   supervisor, idempotency keys, and scope cancellation. It needs its *coordination
+   model* replaced, not its *design*.
+2. **`sqlglot` runs through 40 modules.** Dialect transpilation is already a first-class
+   concern, which makes "push the query down to the customer's warehouse" a configuration
+   of something built, not new work.
+
+---
+
+## 3. Target architecture
+
+| Layer | Today | Target |
+|---|---|---|
+| Frontend | Next.js on Vercel | unchanged |
+| API | FastAPI, one process | stateless Python functions; SSE streaming already supported |
+| Relational state | ~35 SQLite files | one Postgres (Neon/Supabase) |
+| Documents & artifacts | 52 JSON/JSONL + 13 dir stores | Blob storage |
+| Caches | local JSON (`briefing_cache.json`) | Redis (Upstash) |
+| Analytics | local `.duckdb` files | **MotherDuck** (hosted) + **warehouse pushdown** (enterprise) |
+| Long work | in-process asyncio | **durable workflow** — queue-driven slices |
+| Scheduler | APScheduler | Vercel Cron |
+
+### 3.1 Durable execution — the central refactor
+
+Today an exploration is one 8-minute asyncio task. It must become a sequence of short,
+independently-invocable steps over durable state.
+
+The explorer is already close: `_save_state()` is called at **11 sites**, persisting
+phase, counters, findings and negative knowledge as it goes. The unit of slicing is
+natural — Phases 2→9 are explicit, and Phase 8 (the long one, ~100 queries) already
+emits and de-duplicates one finding at a time, so it slices at the *angle* level.
+
+Two changes make it serverless-safe:
+
+* **Leases replace process-ownership.** A worker claims a slice with a time-bounded lease
+  and heartbeats it; if the lease lapses, another worker reclaims it. This directly
+  replaces the current boot-recovery rule, which is only sound when a restart implies
+  every non-terminal job is dead.
+* **Idempotent steps.** Already partly present via the kernel's idempotency keys; each
+  slice must be safe to execute twice, because at-least-once delivery is what queues
+  guarantee.
+
+Queue candidate: **Inngest** (designed for durable step functions on serverless, good
+Python support) or **Upstash QStash** (lighter, less structure).
+
+### 3.2 Analytics
+
+Three tiers, all already supported by the dialect layer:
+
+* **MotherDuck** — hosted DuckDB, preserves the semantics the codebase assumes.
+* **Warehouse pushdown** — Snowflake/BigQuery/Postgres via `sqlglot`; the enterprise story.
+* **DuckDB-in-function over Parquet in Blob** — for small datasets and the demo path.
+
+---
+
+## 3.3 The falsification spike — RUN, and it passed
+
+Deployed 2026-08-05 to a throwaway Vercel project (`aughor-duckdb-spike`), separate from
+the demo. Source in `scratchpad/spike`; not added to this repo.
+
+| Step | Result | Cold | Warm |
+|---|---|---|---|
+| A. `import duckdb` (Linux wheel loads) | ✅ v1.5.5 | 391 ms | 0 ms |
+| B. query Parquet bundled in the function | ✅ 112,439 rows, €45,437,544 | 16 ms | 2 ms |
+| C. `INSTALL httpfs` + `LOAD` into `/tmp` | ✅ | 618 ms | 120 ms |
+| D. read remote data over HTTPS | ✅ | 269 ms | 72 ms |
+| E. real analytical query (GROUP BY over 112k rows) | ✅ | — | 24 ms |
+| F. `sqlglot` transpile to Snowflake/BigQuery | ✅ | 173 ms | 2 ms |
+
+**≈1.5 s cold, ≈220 ms warm.** The build ran on **Python 3.12**, and Vercel's Python
+runtime takes an **ASGI entrypoint** (`[tool.vercel] entrypoint = "app:app"` in
+`pyproject.toml`) — so FastAPI is a first-class citizen and the existing app shape carries
+over.
+
+Three results matter more than the pass/fail:
+
+1. **`httpfs` installs at runtime on a read-only filesystem** — this was the predicted
+   most-likely failure. It works provided `extension_directory` and `home_directory` point
+   at `/tmp`. Cost: **618 ms cold, 120 ms warm, per invocation.** That is a real per-slice
+   tax and an argument for coarser slices; pre-bundling the extension would remove it.
+2. **Correctness held.** Step E returned logistics ratios by platform — THE OUTNET
+   `0.0997`, YOOX `0.0768`, MR PORTER `0.0480`, NET-A-PORTER `0.0444`, Mytheresa `0.0403`
+   — **identical to the same query run locally against DuckDB.** Same engine, same answers,
+   different runtime.
+3. **A false negative worth recording.** The first attempt failed steps D/E with
+   *"No magic bytes found at end of file"*. The cause was **Deployment Protection**: DuckDB
+   fetched an HTML login page and correctly refused it. Nothing to do with httpfs. Any
+   future test that reads from a protected deployment will hit this — use a public origin
+   or a bypass token.
+
+**Verdict: the runtime assumption is confirmed, not refuted.** Python + DuckDB + sqlglot
+run in a Vercel function, query bundled and remote data, and produce answers identical to
+local. The programme's remaining risk is entirely in state and durable execution (§2), not
+in the runtime.
+
+---
+
+## 3.4 The durable-execution spike — RUN, and it passed
+
+The plan's second load-bearing assumption: an 8-minute in-process exploration can be
+decomposed into short, resumable, queue-driven slices. Tested by deploying a `/api/slice`
+endpoint doing **claim (lease) → load state → real DuckDB query → merge → return state**,
+then driving five slices as five *separate* invocations with the caller acting as the queue.
+
+**State is small — the feared blocker is absent.** Measured on real artifacts:
+
+| | |
+|---|---|
+| Largest exploration state on disk | **68 KB** (`914df862` = 49 KB) |
+| Dominated by | `insights` — 29 KB for 21 findings (~1.4 KB each) |
+| JSON round-trip (deserialize + serialize) | **0.4 ms** |
+
+**Per-slice cost, five separate invocations:**
+
+| Payload | Wall (median) | In-function | Work (real query) | **Slicing overhead** |
+|---|---|---|---|---|
+| 1 KB state | 222 ms | 3.4–7.0 ms | 3.3–6.9 ms | **0.10–0.13 ms** |
+| **49 KB real state** | 459 ms | 4.8–6.6 ms | 3.7–5.5 ms | **~1.1 ms** |
+
+The chain resumed correctly across invocations — final state `phase=complete`,
+`queries=5`, `findings=5`, each slice building on the last.
+
+**Leases work.** A second worker was refused with **HTTP 409** while the first held the
+lease, and **reclaimed** it once the lease lapsed. That is the mechanism that replaces the
+kernel's *"single-process runtime"* assumption.
+
+### What the numbers mean
+
+Slicing overhead *inside* the function is ~1 ms — effectively free. The per-slice cost is
+**network round-trip**, ~220 ms at 1 KB and ~460 ms carrying 49 KB of state.
+
+Applied to a real Phase-8 angle, which is dominated by an LLM call measured at **8.8 s**:
+
+```
+slice = ~0.3 s transport + ~8.8 s LLM + ~0.01 s query  ≈  9.1 s
+overhead ≈ 3% of the slice
+102 slices × ~0.3 s ≈ 31 s added to an ~8-minute run  ≈ +6% wall-clock
+```
+
+**Slicing is viable.** The tax is single-digit percent, and it buys resumability,
+horizontal scale, and survival of worker death.
+
+Two consequences for design:
+
+* **Pass a state *reference*, not the state.** 49 KB doubled the round-trip (222 → 459 ms).
+  Slices should exchange a key and read/write the store directly, keeping queue messages
+  small.
+* **The httpfs tax argues for warm reuse.** 618 ms cold / 120 ms warm per invocation (§3.3)
+  is comparable to the entire transport cost. Reusing the connection across slices — as the
+  spike does via a module-level handle — or pre-bundling the extension removes it.
+
+---
+
+## 3.5 The cost test — RUN, and it moderates §5.1
+
+Serverless bills for time the function is held open, so what a slice *costs* depends only
+on its duration — not on whether that time is inference or any other wait. The test used a
+wait calibrated to **measured free-tier latency** (nemotron-120b **8.8 s**), so no
+inference was purchased and no credential left the machine.
+
+**One LLM-shaped slice** (1024 MB, real DuckDB query + real egress + 8.8 s wait):
+
+| | |
+|---|---|
+| Real analytical query | 64 ms |
+| **Egress to `openrouter.ai` from inside the function** | **47 ms, HTTP 200** |
+| Inference wait | 8,800 ms |
+| Total | 8,911 ms |
+| **Billed duration that is pure idle-waiting** | **98.8%** |
+
+**Five concurrent slices:**
+
+| | |
+|---|---|
+| Wall-clock for all five | **18.1 s** (serial would be 44 s) |
+| Instances | 3 cold + 2 warm — Vercel scaled out automatically |
+| **Aggregate function-seconds billed** | **~44.4 s** |
+
+Two facts follow, and they matter more than any price:
+
+1. **Concurrency is real and automatic** — five slices ran in parallel across instances with
+   no queue of our own. But **billing is the sum of durations, not the wall-clock**: 44.4
+   function-seconds for 18.1 s of elapsed time.
+2. **98.8% of each slice is idle.** Whether that idle is cheap depends entirely on whether
+   the platform charges it as active CPU. Vercel's Fluid model bills *active CPU* separately
+   from *provisioned memory*, so genuinely-idle time should cost the (much cheaper) memory
+   rate — **but only if the wait is truly non-blocking.**
+
+### Arithmetic for one exploration (102 LLM-bound slices)
+
+```
+102 slices × 8.9 s      = 908 function-seconds = 0.252 GB-hours @ 1 GB
+  memory-time only      ≈ $0.003     per exploration
+  if idle bills as CPU  ≈ $0.032     per exploration      (~10× worse)
+  invocations           ≈ negligible
+```
+
+> ⚠️ Rates are from general knowledge and **must be verified against current Vercel
+> pricing** before any decision rests on them. The *function-seconds* above are measured
+> and are the durable input to whatever the rates turn out to be.
+
+At 1,000 explorations/month that is roughly **$3–$35**, against a small always-on container
+at a **flat ~$3–7/month** — which is cheaper per unit at high volume but costs the same when
+nothing is running and does not scale out by itself.
+
+### What this changes
+
+**§5.1 was too pessimistic.** The concern was "paying premium rates to idle." The measurement
+says idle-waiting is affordable *provided two things hold*:
+
+* **The LLM call must be `async`/non-blocking.** The spike used a blocking `sleep`; a real
+  slice must `await`, or the runtime cannot treat the wait as idle and the 10× penalty
+  applies. **This is now an architectural requirement, not a preference.**
+* **Warm reuse matters.** 3 of 5 concurrent slices were cold; at ~1.5 s cold-start each
+  (§3.3), 102 mostly-cold slices would add ~2.5 minutes of billed time for nothing.
+
+**Revised recommendation:** serverless is viable for the LLM path, and the deployment-choice
+hedge in §5.1 stands — not because serverless is too expensive, but because the decision now
+turns on verified pricing and on async discipline, both cheap to establish.
+
+---
+
+## 4. Sequence
+
+**Week 1 — ~~falsify before funding~~ BOTH SPIKES DONE (§3.3, §3.4).** Runtime and durable
+execution are proven. Remaining risk is concentrated in **state externalization** (§2) —
+the ~35 SQLite stores — which is engineering effort, not technical uncertainty.
+
+The next test worth buying is **cost, not capability**: run one real exploration end-to-end
+through sliced invocations with live LLM calls, and compare the serverless bill against a
+small always-on container for identical work (§5.1).
+
+**Phase 1 — externalize state (6–10 weeks).** Postgres migration is the bulk. Do **caches
+first** (Redis): smallest surface, and it is where the recent defect cluster lived —
+`briefing_cache.json` being one shared file for all connections is exactly the bug class
+proper keying eliminates.
+
+**Phase 2 — durable execution (4–8 weeks).** Leases, kernel state in Postgres, slice the
+explorer, wire the queue.
+
+**Phase 3 — packaging and cutover (2–4 weeks).** Dependency trim (do the trivial part in
+week 1), functions, Cron.
+
+**≈4–6 months.** Phases 1 and 3 are independent of Phase 2 and can run in parallel.
+
+---
+
+## 5. Two recommendations against the grain
+
+### 5.1 Do not put the LLM path on serverless without measuring cost
+
+Serverless bills wall-clock. Measured LLM latency on the current free tier is **8.8 s per
+call**, and one exploration issued **102 queries**. Paying serverless rates to sit waiting
+on an inference provider is paying a premium to idle; a small always-on container may cost
+an order of magnitude less for the same work.
+
+**Recommendation:** make the worker a *deployment choice, not an architecture choice*. The
+durable-workflow refactor is identical either way — only the runtime target differs. Build
+it, measure real cost at real volume, then choose. This also preserves the option to leave
+Vercel without losing the investment.
+
+### 5.2 Budget for the guard layer to grow
+
+Every defect found during the 2026-08-04/05 sessions was **semantic, not structural**: a
+cached finding outliving the table it depended on; a number correctly drawn from the result
+but bound to the wrong label (a 26× overstatement that every existing gate passed); a list
+route and a detail route disagreeing about what an id means; an HTTP cache surviving a
+redeploy. None would have been caught by types, and several were invisible behind healthy
+`200`s.
+
+Distributing state enlarges that class. The verification layer becomes *more* load-bearing
+after this migration, not less — and "read the prose, check the arithmetic" should be an
+explicit release gate, because status codes have repeatedly failed to detect these.
+
+---
+
+## 6. Open questions before committing
+
+1. Is `polars` in `db/connection.py` on the hot query path, or a convenience that DuckDB
+   can absorb? (Decides whether 312 MB leaves permanently.)
+2. Does Vercel's Python runtime hold DuckDB's **Linux** wheel comfortably? All sizes here
+   are macOS; Linux wheels differ.
+3. What is the real per-invocation cold-start cost of re-establishing DuckDB + remote data
+   access? This decides slice granularity (per-phase vs per-angle vs batched).
+4. Which of the ~35 SQLite stores are genuinely hot, and which are append-only ledgers that
+   could go to Blob instead of Postgres?
+
+---
+
+## Appendix A — how the numbers were taken
+
+```bash
+# Boot import closure: what the process actually loads, not what pyproject declares
+python - <<'PY'
+import sys; before = set(sys.modules)
+import aughor.api
+import sysconfig, pathlib
+sp = pathlib.Path(sysconfig.get_paths()["purelib"])
+tops = {n.split(".")[0] for n in set(sys.modules) - before
+        if str(sp) in (getattr(sys.modules.get(n), "__file__", "") or "")}
+print(sorted(tops))
+PY
+
+# Clean serving-set install (measured: 102 MB)
+uv venv --python 3.11 && uv pip install \
+  fastapi uvicorn pydantic python-dotenv python-multipart \
+  duckdb sqlglot openai instructor cryptography pyyaml pytz
+du -sh .venv/lib/python3.11/site-packages
+
+# How deeply a dependency is woven in
+for lib in sqlglot duckdb polars scipy statsmodels; do
+  echo "$lib: $(grep -rl "import $lib" aughor --include='*.py' | wc -l) modules"
+done
+
+# State inventory
+ls data/*.db data/*.duckdb | wc -l      # ~40 stores
+ls data/*.json data/*.jsonl | wc -l     # 52 document stores
+```
+
+**Caveat on portability:** all sizes are macOS/arm64. Linux wheels — particularly
+`duckdb` (43 MB here) and `cryptography` (13 MB) — should be re-measured on the target
+platform before the ~110 MB figure is treated as final. The margin against 250 MB is
+large enough that the conclusion is unlikely to change.
