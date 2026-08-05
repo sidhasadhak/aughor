@@ -400,9 +400,44 @@ turns on verified pricing and on async discipline, both cheap to establish.
 execution are proven. Remaining risk is concentrated in **state externalization** (§2) —
 the ~35 SQLite stores — which is engineering effort, not technical uncertainty.
 
-The next test worth buying is **cost, not capability**: run one real exploration end-to-end
-through sliced invocations with live LLM calls, and compare the serverless bill against a
-small always-on container for identical work (§5.1).
+~~The next test worth buying is **cost, not capability**~~ **THE COST TEST RAN 2026-08-05,
+with live LLM calls — and it settles §5.1.**
+
+One real exploration (LuxExperience, fresh state, full profiling + ontology + Phase 8)
+instrumented at the process level with `getrusage` — so the CPU number covers every
+thread, LLM retries and throttle-waits included:
+
+| Measured | Value |
+|---|---|
+| Queries executed / findings | 100 / 10 (stopped by hand at the reference workload size) |
+| **Active CPU, whole exploration** | **27.7 s** |
+| Wall time (free tier, heavily throttled evening) | 3,924 s |
+| **Idle share** | **99.3%** (Spike 3 predicted 98.8%) |
+
+Pricing was **verified against the live Vercel docs** (dated 2026-06-16), which also
+resolve §3.5's 10× question *officially*: "Active CPU is billed only while your code
+executes; CPU billing pauses when waiting for external services." iad1 rates:
+$0.128/CPU-hr, $0.0106/GB-hr memory, $0.60/M invocations.
+
+```
+Active CPU:  27.7 s → $0.0010 per exploration
+Memory @1GB: 908 fn-s (daytime 8.8 s/call latency)  → $0.0027
+             3,924 fn-s (throttled evening)          → $0.0116
+TOTAL:       ~$0.004 per exploration (daytime) · ~$0.013 (worst-case throttling)
+Break-even vs a ~$5/mo always-on container: ~1,300 explorations/month
+```
+
+**Verdict: serverless is cheap for this workload — compute is not the cost driver at
+any realistic volume.** Below ~1,000 explorations/month serverless wins outright and
+scales to zero; the container becomes cheaper per unit only past ~1,300/month, at which
+point ~$5/month is noise anyway. Provider latency, not platform pricing, dominates the
+bill — a paid inference tier changes the economics more than any deployment choice.
+
+Caveats recorded honestly: the run was stopped at 100 queries/3 domains (the throttled
+tail added no new information); the metering contextvar missed executor-thread LLM
+counts in the bare-script harness (the process-level CPU number is unaffected); and the
+throttled wall time is a worst case that a paid tier or daytime free tier roughly
+quarters.
 
 **Phase 1 — externalize state. THE RELATIONAL BULK SHIPPED 2026-08-05 — proven on a live
 Postgres, not asserted.** Every platform SQLite store (~33 modules, the kernel Ledger
