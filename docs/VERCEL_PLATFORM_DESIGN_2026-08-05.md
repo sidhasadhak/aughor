@@ -1,6 +1,6 @@
 # Running Aughor on Vercel at full capacity — design note
 
-**Status:** proposal · **Date:** 2026-08-05 · **Author:** design spike, no functional code changes
+**Status:** proposal; §1's trim is IMPLEMENTED · **Date:** 2026-08-05
 
 This note answers one question: *can the whole platform — not a demo — run on Vercel, and
 if so, how?* It is written against measurements taken on `main` @ `1ea6ca3`, not against
@@ -9,18 +9,59 @@ assumptions. Every number below is reproducible with the commands in
 
 ---
 
-## 1. The headline: the bundle is not the blocker
+## 1. The headline: the bundle is a solvable packaging problem, not a wall
 
 The 250 MB serverless limit was assumed fatal because the development virtualenv is
-**1.1 GB**. It is not, because almost none of that venv is on the serving path.
+**1.1 GB**. Most of that never reaches the serving path — but the deployable figure is the
+**declared dependency set**, and measuring it honestly puts the pre-trim install at 622 MB
+and the post-trim install at 268 MB: close, and closable.
+
+> **Correction (2026-08-05, after implementing the trim).** The first version of this
+> section reported the **boot closure** (~110 MB) as the bundle size. That was the wrong
+> measure: a deployment installs the **declared dependency set**, not merely what the
+> process imports at startup. The corrected numbers are below; the conclusion softens from
+> "large headroom" to "achievable, with one more decision".
 
 | Measurement | Result |
 |---|---|
-| Development venv | **1,100 MB** |
-| API boot import closure (44 third-party packages) | **121 MB** |
-| Clean install of a candidate serving set | **102 MB** |
+| Development venv (all extras) | **1,100 MB** |
+| API boot import closure (44 packages — what actually *loads*) | **121 MB** |
+| **Runtime dependency install — BEFORE the trim** | **622 MB** |
+| **Runtime dependency install — AFTER the trim** | **268 MB** |
 | Application code (`aughor/**.py`) | **7 MB** |
-| **Estimated Vercel bundle** | **~110 MB** against a 250 MB limit |
+| **Against the Vercel limit** | **~18 MB over 250 MB** |
+
+The trim removed **354 MB (57%)**. What remains, and why:
+
+| Package | Size | On boot path? | Status |
+|---|---|---|---|
+| `scipy` | 71 MB | no — but on the **analysis** path | **kept** (`tools/stats.py` → `agent/explore.py`, `nodes.py`, `investigate.py`) |
+| `duckdb` | 44 MB | yes | core |
+| `grpc` | 39 MB | no — pulled by `qdrant-client` | **the next lever** |
+| `numpy` | 22 MB | no | required by scipy |
+| `cryptography` | 13 MB | yes | core (secretvault) |
+| `openai` | 11 MB | yes | core |
+| `psycopg2` | 10 MB | no | Postgres connector |
+
+**The remaining 18 MB has one obvious answer: `qdrant-client` + `grpc` = 42 MB**, which
+would land the bundle at **~226 MB**. It is not done here because it is a product decision,
+not a packaging one: Qdrant powers semantic search, its call sites import it *unguarded*
+inside functions (e.g. `tools/prior_analyses.py:303`), and it already requires a separate
+server (`AUGHOR_QDRANT_URL`, default `localhost:6333`). Moving it to an extra without
+guarding those imports would turn "semantic search is unavailable" into an `ImportError`.
+Doing it properly means the same treatment the export path received in this change.
+
+**What was done** (see `[project.optional-dependencies]`):
+
+* **`statsmodels` deleted** — 36 MB, imported by zero modules. A test now fails if it returns.
+* **`polars` → `[fastread]`** — 192 MB (+120 MB `pyarrow`) for one call site in
+  `db/connection.py` that already falls back to DuckDB on `ImportError`.
+* **`reportlab`, `python-pptx`, `matplotlib` → `[export]`** — the PDF/PPTX renderers, reached
+  only via `from aughor.export import export_report` inside a router handler. `aughor/export`
+  now degrades to `ExportUnavailable` naming the install command, and the route answers
+  **501** rather than 500, because a missing extra is a configuration state, not a fault.
+* **`scipy` kept**, with a comment recording why — it is absent from the boot closure but
+  present on the analysis path, which the first measurement missed.
 
 The boot closure was captured by importing `aughor.api` and diffing `sys.modules` — so it
 is what the process actually loads, not what `pyproject.toml` declares. Absent from it:
@@ -30,19 +71,19 @@ is what the process actually loads, not what `pyproject.toml` declares. Absent f
 
 Those are ~700 MB of the venv and **the API does not import any of them at boot.**
 
-Three specific findings worth acting on regardless of Vercel:
+One finding remains open after the trim:
 
-* **`statsmodels` (36 MB) is imported by zero modules.** It is a declared runtime
-  dependency that nothing uses.
-* **`polars` + `pyarrow` (312 MB) serve one module** (`aughor/db/connection.py`).
-* **`botocore` (21 MB) is in the boot closure** but nothing in `aughor/` imports it. It
-  arrives transitively via `boto3` / `snowflake-connector-python` / `mlflow-skinny` —
-  optional-connector dependencies leaking into the default install. The trimmed set drops
-  it automatically.
+* **`botocore` (21 MB) is in the boot closure** of a *development* environment, though
+  nothing in `aughor/` imports it — it arrives transitively via `boto3` /
+  `snowflake-connector-python` / `mlflow-skinny`, all of which live in extras. A
+  runtime-only install never pulls it, so it needs no action; it is recorded here because
+  it will reappear in any measurement taken against a dev venv.
 
-**Conclusion:** bundle size is a dependency-hygiene problem, solvable in days, and it does
-not gate this programme. It should still be fixed first because it is cheap and it makes
-every later measurement honest.
+**Conclusion:** bundle size is a dependency-hygiene problem and it is now mostly solved —
+622 MB → 268 MB in one change, with a ratchet test (`tests/unit/test_serving_footprint.py`)
+that fails if any of the heavy packages returns to the boot closure. It does not gate the
+programme, but it is no longer true that there is generous headroom: one further decision
+(`qdrant-client`, above) is needed to clear 250 MB.
 
 ---
 
