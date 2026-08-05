@@ -404,7 +404,30 @@ The next test worth buying is **cost, not capability**: run one real exploration
 through sliced invocations with live LLM calls, and compare the serverless bill against a
 small always-on container for identical work (§5.1).
 
-**Phase 1 — externalize state (6–10 weeks).** Postgres migration is the bulk.
+**Phase 1 — externalize state. THE RELATIONAL BULK SHIPPED 2026-08-05 — proven on a live
+Postgres, not asserted.** Every platform SQLite store (~33 modules, the kernel Ledger
+included) now opens through `aughor/db/backend.py`: default is byte-for-byte today's
+tuned sqlite; `AUGHOR_DB_URL=postgres://…` moves the store — schema-per-store in one
+database — behind a wrapper that speaks the sqlite3 surface the stores already use.
+Store SQL stays sqlite-dialect; the seam transpiles per statement (sqlglot, cached) and
+patches what a 420-statement corpus measurement showed survives verbatim (OR
+IGNORE/REPLACE, rowid, reserved words, ON CONFLICT SET ambiguity, literal `%`), maps
+declared types to keep string-first storage semantics, and answers `user_version` /
+`table_info` truthfully because the migration framework runs on them. **The 1,479-test
+store sweep passes against a real dockerized Postgres 16** (and 1,414 unchanged on
+sqlite). The live run surfaced one latent bug sqlite absorbed (bare column under GROUP
+BY returning an arbitrary row) and two file-existence guards that read as "no data" on
+a fileless backend — the §5.2 lesson again: none of this was visible without a real
+server.
+
+**Still open in Phase 1, deliberately:** the per-connection JSON document family
+(`exploration_*` / `business_profile_*` + episodes JSONL). Its migration crosses the
+purge cascade's file-glob contract — where this repo's real data-loss bugs have lived —
+and Phase 2's durable execution reworks explorer persistence anyway (state references,
+slice-level saves), so it moves *with* that work, not ahead of it. Directory stores
+(`uploads/`, `context_graph/`, `kb/`) are genuine file artifacts → Blob in Phase 3.
+Connection pooling is a knob, not a blocker: stores connect per operation, fine locally,
+worth a pool in front of a managed Postgres.
 
 **Step 0, seam landed 2026-08-05: the LLM coordination gates** (§2) — small, and it is what
 gates the concurrent-slice fan-out every number in §3.5 rests on. The Protocol and the
