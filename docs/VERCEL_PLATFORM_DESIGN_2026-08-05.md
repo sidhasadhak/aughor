@@ -409,8 +409,22 @@ small always-on container for identical work (§5.1).
 **Step 0, seam landed 2026-08-05: the LLM coordination gates** (§2) — small, and it is what
 gates the concurrent-slice fan-out every number in §3.5 rests on. The Protocol and the
 in-process default ship; **the shared backend does not**, so the fan-out defect stands until
-one is written and verified against real Redis. `kernel/metering.py:_by_job` is the next of
-the five, and belongs with the kernel's own move to Postgres.
+one is written and verified against real Redis.
+
+**Step 0b, landed 2026-08-05: budgets enforceable across the process split.** The heartbeat
+now flushes the run's live spend onto the job row in the same UPDATE as `heartbeat_at`, and
+both budget readers (`_over_budget`, `budget_fraction_used`) fall back to that snapshot when
+the process-local registry misses — at most one beat stale. A test drives the real heartbeat
+loop against a run whose accumulator it cannot see and requires the cancel. Without this,
+splitting job from supervisor silently stopped token-budget enforcement (`metering._by_job`
+miss read as "no spend").
+
+**Step 0c, landed 2026-08-05: the three raw-file caches are on the Ledger facade.**
+`briefing_cache` / `patterns_cache` / `schema_cache` now go through `KeyedJsonStore`
+(per-key transactional, legacy file imported once and left untouched;
+`test_cache_store_races.py` demonstrates the lost-write race against the raw pattern and
+its absence through the store). This is the "caches first" step — done against the seam
+that already existed, so Redis later means one Ledger backend, not three migrations.
 
 Then **caches — but onto the seam that already exists, not straight to Redis.**
 `kernel/ledger.py` is already a transactional store with `kv(store, key, value, seq,

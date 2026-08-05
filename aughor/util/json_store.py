@@ -103,6 +103,19 @@ class KeyedJsonStore:
                     del cache[next(iter(cache))]
             self._file_save(cache)
 
+    def delete(self, key: str) -> bool:
+        """Drop one key. Returns whether it existed — callers count removals to report
+        an invalidation that actually removed something vs one that found nothing."""
+        try:
+            return self._ledger().kv_delete(self._store_id, key)
+        except Exception:
+            cache = self._file_load()
+            if key not in cache:
+                return False
+            del cache[key]
+            self._file_save(cache)
+            return True
+
     def invalidate_prefix(self, prefix: str) -> int:
         """Drop every key starting with `prefix`. Returns how many were removed."""
         try:
