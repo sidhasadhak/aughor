@@ -243,9 +243,9 @@ class JobKernel:
 
     def _over_budget(self, job_id: str, gov, elapsed_s: float) -> Optional[str]:
         """The budget this run has blown, or None. Tokens come from the live
-        metrics registry; time from the heartbeat's own clock."""
-        from aughor.kernel import metering
-        m = metering.metrics_for_job(job_id)
+        metrics registry when the run shares this process, else from the snapshot
+        the heartbeat flushed onto the job row; time from the heartbeat's own clock."""
+        m = _live_or_flushed_metrics(job_id, self.ledger)
         if gov.token_budget and m and m.total_tokens > gov.token_budget:
             return f"token budget ({gov.token_budget:,} tokens)"
         if gov.time_budget_s and elapsed_s > gov.time_budget_s:
@@ -259,7 +259,19 @@ class JobKernel:
         while True:
             await asyncio.sleep(_HEARTBEAT_SECONDS)
             try:
-                self.ledger.job_update(job_id, heartbeat_at=_now())
+                # The heartbeat carries the run's live spend out with it. This is what
+                # makes budgets enforceable from OUTSIDE this process: a supervisor that
+                # cannot see the job task's accumulator reads the flushed row instead
+                # (see _live_or_flushed_metrics). Same UPDATE as the heartbeat itself,
+                # so liveness and spend cost one write and can never disagree about
+                # which beat they describe. Snapshot may be None in the teardown window
+                # after unregister — then the beat writes alone rather than nulling the
+                # final flush.
+                fields: dict[str, Any] = {"heartbeat_at": _now()}
+                _snap = metering.snapshot_for_job(job_id)
+                if _snap is not None:
+                    fields["metrics"] = json.dumps(_snap, default=str)
+                self.ledger.job_update(job_id, **fields)
             except Exception:
                 logger.debug("heartbeat write failed for job %s", job_id, exc_info=True)
             # Budget enforcement — the reliable kill: cancel raises CancelledError,
@@ -546,6 +558,38 @@ def submit_background_tick(
     return fut.result(timeout=timeout)
 
 
+def _live_or_flushed_metrics(job_id: str, ledger: Ledger) -> Optional[metering.RunMetrics]:
+    """A job's spend: the live accumulator when the run shares this process, else the
+    snapshot its heartbeat flushed onto the job row, else None.
+
+    This ordering is the budget story's load-bearing line. The registry in
+    kernel/metering.py is process-local by contract, and a supervisor that treats a
+    registry miss as "no spend" stops enforcing token budgets the moment job and
+    supervisor stop sharing a process — silently, behind healthy heartbeats, which is
+    the §5.2 defect class (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md). The flushed row
+    is at most one heartbeat stale, and a budget kill one beat late is enforcement;
+    a kill that never comes is not.
+
+    Lives here rather than in metering because the ledger is a parameter, not a
+    global: the kernel under test runs against `Ledger(tmp_path)`, and metering
+    guessing `Ledger.default()` would read a different store than the kernel writes.
+    """
+    m = metering.metrics_for_job(job_id)
+    if m is not None:
+        return m
+    try:
+        row = ledger.job_get(job_id) or {}
+        snap = row.get("metrics")
+        if isinstance(snap, str):
+            snap = json.loads(snap)
+        return metering.from_snapshot(snap) if snap else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "flushed-metrics read is fail-open; time budgets still enforce",
+                 counter="metering.flushed_read")
+        return None
+
+
 def budget_fraction_used(job_id: Optional[str] = None) -> Optional[float]:
     """Fraction (0..1+) of the active job's token budget already consumed, or None
     when there is no job / no token budget. A long-running agent can use this to
@@ -560,8 +604,9 @@ def budget_fraction_used(job_id: Optional[str] = None) -> Optional[float]:
         budget = getattr(gov, "token_budget", None)
         if not budget:
             return None
-        from aughor.kernel import metering
-        m = metering.metrics_for_job(job_id)
+        # Live registry, then the heartbeat-flushed row — a registry miss must not
+        # read as "100% headroom" when the run lives in another process.
+        m = _live_or_flushed_metrics(job_id, kernel().ledger)
         used = m.total_tokens if m else 0
         return used / budget
     except Exception:
