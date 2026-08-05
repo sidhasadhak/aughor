@@ -14,8 +14,16 @@ import sqlite3
 import pytest
 
 from aughor.db import history
+from aughor.db.backend import is_postgres
 from aughor.db.migrations import run_migrations
 from aughor.db.sqlite_util import tune
+
+
+_LEGACY_FILE_SKIP = pytest.mark.skipif(
+    is_postgres(),
+    reason="upgrades an existing sqlite FILE in place — a scenario the postgres "
+           "backend structurally cannot have (it starts from a data migration, "
+           "not a legacy file on disk)")
 
 
 @pytest.fixture()
@@ -33,6 +41,7 @@ def _columns(path) -> set[str]:
         c.close()
 
 
+@pytest.mark.skipif(is_postgres(), reason="verifies the column by reading the sqlite FILE — file-backend specific; the migration itself runs on both")
 def test_fresh_db_has_agent_id_column(hist_db):
     # Any write path calls _ensure_schema, which runs migrations on a fresh DB.
     history.create_investigation("q", "conn1")
@@ -61,6 +70,7 @@ def test_list_investigations_surfaces_agent_id(hist_db):
     assert inv_rows[0]["agent_id"] == "finance"
 
 
+@_LEGACY_FILE_SKIP
 def test_migration_upgrades_legacy_db_and_backfills_empty(hist_db):
     """The live-DB upgrade path: a DB already at user_version=2 (agent_id absent,
     a pre-existing row) gains the column with the old row backfilled to ''."""
@@ -104,6 +114,7 @@ def test_list_investigations_for_agent_filters(hist_db):
     assert history.list_investigations_for_agent("ghost") == []     # unknown agent
 
 
+@_LEGACY_FILE_SKIP
 def test_migration_is_idempotent(hist_db):
     history.create_investigation("q", "conn1")  # builds + migrates to the head version
     c = tune(sqlite3.connect(str(hist_db)))

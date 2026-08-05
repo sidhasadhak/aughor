@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _emit_lifecycle(inv_id: str, kind: str, *, conn_id: Optional[str] = None,
 
 
 def _conn() -> sqlite3.Connection:
-    c = tune(sqlite3.connect(_DB_PATH))
+    c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     return c
 
@@ -714,7 +715,8 @@ def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
                   MAX(canvas_id) as canvas_id, MIN(started_at) as started_at,
                   MAX(completed_at) as completed_at, 'complete' as status,
                   0 as hypothesis_count, COUNT(*) as query_count,
-                  MAX(headline) as headline, 'chat' as kind, session_id, agent_id
+                  MAX(headline) as headline, 'chat' as kind, session_id,
+                  MAX(agent_id) as agent_id
            FROM investigations
            WHERE agent_id = ? AND kind = 'chat'
                  AND session_id IS NOT NULL AND session_id != ''{_org}

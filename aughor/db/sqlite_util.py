@@ -41,6 +41,20 @@ def set_user_version(conn: sqlite3.Connection, version: int) -> sqlite3.Connecti
     return conn
 
 
+# resolved-path → shipped default, recorded by resolve_db_path. The Postgres backend
+# (db/backend.py) names each store's schema from its DEFAULT filename — stable across
+# hosts — but call sites only hold the RESOLVED path; this mapping closes the gap
+# without threading a second constant through 33 store modules. A path not in the map
+# (a test's monkeypatched _DB_PATH) gets a hashed schema, which is the isolation a
+# redirected file already meant.
+_DEFAULT_FOR_PATH: dict[str, Path] = {}
+
+
+def default_for_path(path: Path | str) -> Path | None:
+    """The shipped default behind a resolved store path, if resolve_db_path saw it."""
+    return _DEFAULT_FOR_PATH.get(str(path))
+
+
 def resolve_db_path(env_var: str, default: Path | str) -> Path:
     """Resolve a store's SQLite path, honouring an ``AUGHOR_*_DB`` env override.
 
@@ -50,7 +64,9 @@ def resolve_db_path(env_var: str, default: Path | str) -> Path:
     NEVER mutate the live ``data/`` stores (OPS-02 / DATA-01) — and on-prem
     operators get per-store path control for free.
     """
-    return Path(os.environ.get(env_var) or default)
+    resolved = Path(os.environ.get(env_var) or default)
+    _DEFAULT_FOR_PATH[str(resolved)] = Path(default)
+    return resolved
 
 
 def tune(conn: sqlite3.Connection) -> sqlite3.Connection:

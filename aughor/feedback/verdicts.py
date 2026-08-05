@@ -13,7 +13,8 @@ from typing import Optional
 from aughor.org.context import current_org_id
 from aughor.util.time import now_iso as _now
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
-from aughor.db.sqlite_util import resolve_db_path, tune
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
 
 _DB_PATH = resolve_db_path("AUGHOR_VERDICTS_DB", Path(__file__).parent.parent.parent / "data" / "verdicts.db")
 
@@ -35,7 +36,7 @@ VERDICTS = ("accept", "correct", "reject")
 
 def _conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    c = tune(sqlite3.connect(str(_DB_PATH)))
+    c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     _ensure_schema(c)
     return c
@@ -84,7 +85,9 @@ def record_verdict(
     now = _now()
     c = _conn()
     try:
-        cur = c.execute(
+        from aughor.db.backend import insert_returning_id
+        new_id = insert_returning_id(
+            c,
             "INSERT INTO finding_verdicts "
             "(org_id, connection_id, investigation_id, verdict, note, headline, "
             "sql_source, corrected_sql, created_at) "
@@ -94,7 +97,7 @@ def record_verdict(
         )
         c.commit()
         result = {
-            "id": cur.lastrowid, "org_id": org, "connection_id": connection_id or "",
+            "id": new_id, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,
             "note": note or "", "headline": headline or "",
             "sql_source": sql_source or "", "corrected_sql": corrected_sql or "",

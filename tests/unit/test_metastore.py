@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from aughor.db.backend import is_postgres
+
 import pytest
 
 from aughor.org import using_org
@@ -81,6 +83,7 @@ class TestGrantStore:
 
 
 class TestMigrationIdempotent:
+    @pytest.mark.skipif(is_postgres(), reason="verifies columns by reopening the sqlite FILE with raw sqlite3 — file-backend specific")
     def test_schema_created_and_reopen_clean(self, stores, tmp_path):
         upsert_catalog("c1", name="One")            # creates the DB + tables
         db = tmp_path / "metastore.db"
