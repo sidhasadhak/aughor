@@ -127,3 +127,91 @@ def test_an_unsupported_format_still_fails_before_the_availability_check():
 
     with pytest.raises(ValueError, match="unsupported export format"):
         E.export_report({"report": {}}, "docx")
+
+
+# ── The degraded path: qdrant-client absent ───────────────────────────────────────────
+# The development environment HAS qdrant-client, so every ordinary test exercises the
+# happy path. These simulate its absence, which is the configuration this split creates
+# and the only one where the new guards do anything.
+
+
+@pytest.fixture
+def no_qdrant(monkeypatch):
+    """Make `import qdrant_client` raise, as it would without the `semantic` extra."""
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **kw):
+        if name == "qdrant_client" or name.startswith("qdrant_client."):
+            raise ImportError("No module named 'qdrant_client'")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    # `available()` is cheap and uncached, so nothing else needs resetting.
+    return fake_import
+
+
+def test_vector_store_reports_unavailable_without_the_extra(no_qdrant):
+    from aughor.semantic import vector_store
+
+    assert vector_store.available() is False
+
+
+def test_the_no_qdrant_fixture_actually_changes_something():
+    """Vacuous-pass guard for every test above: the development environment HAS
+    qdrant-client, so if `available()` were False for some unrelated reason, the whole
+    degraded-path suite would pass while testing nothing."""
+    from aughor.semantic import vector_store
+
+    assert vector_store.available() is True, (
+        "qdrant-client is not installed locally, so the no_qdrant tests prove nothing — "
+        "install the extra: uv pip install -e '.[semantic]'")
+
+
+def test_reads_answer_like_an_empty_index(no_qdrant):
+    """A deployment without semantic search HAS no index; 'no hits' is the honest answer,
+    and every caller already handles it."""
+    from aughor.semantic import vector_store
+
+    assert vector_store.search("anything", [0.1, 0.2], top_k=5) == []
+    assert vector_store.collection_count("anything") == 0
+    assert vector_store.scroll_payloads("anything") == []
+
+
+def test_writes_no_op_rather_than_raising(no_qdrant):
+    from aughor.semantic import vector_store
+
+    vector_store.ensure_collection("c")                      # must not raise
+    vector_store.upsert("c", [{"id": "1", "vector": [0.0], "payload": {}}])
+
+
+def test_the_raw_client_fails_with_an_actionable_message(no_qdrant):
+    """`_client` is deliberately unguarded — it is the one place a caller who skipped the
+    availability check should hear about it, and the message must name the fix."""
+    from aughor.semantic import vector_store
+
+    with pytest.raises(vector_store.SemanticIndexUnavailable) as exc:
+        vector_store._client()
+    assert "[semantic]" in str(exc.value) and "install" in str(exc.value).lower()
+
+
+def test_purge_hooks_report_nothing_to_purge(no_qdrant):
+    """A purge over an index that does not exist removed zero points — not an error."""
+    from aughor.agent.bootstrap import _qdrant_conn, _qdrant_inv
+
+    assert _qdrant_conn("conn1", "org1") == {"qdrant_points": 0}
+    assert _qdrant_inv(["inv1", "inv2"]) == {"qdrant_points": 0}
+
+
+def test_the_suggestions_cache_misses_rather_than_raising(no_qdrant):
+    from aughor.semantic.suggestions_cache import get_cached
+
+    assert get_cached("conn1", "fingerprint") is None
+
+
+def test_the_connection_filter_degrades_to_no_filter(no_qdrant):
+    """Its value is moot once search() returns nothing, so None keeps the three call
+    sites free of their own guards."""
+    from aughor.tools.prior_analyses import _connection_filter
+
+    assert _connection_filter("conn1") is None

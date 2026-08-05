@@ -38,7 +38,6 @@ dependencies = [
     "cryptography>=48.0.0",
     "psycopg2-binary>=2.9.12",
     "pyyaml>=6.0.3",
-    "qdrant-client>=1.9.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "python-multipart>=0.0.9",
     "apscheduler>=3.10.0",
@@ -64,6 +63,15 @@ dependencies = [
 # its partner and already lives in [warehouse].
 fastread = [
     "polars>=1.0.0",
+]
+# Semantic search / RAG. `qdrant-client` is 3 MB but drags 39 MB of grpc, and it already
+# needs a Qdrant server (`AUGHOR_QDRANT_URL`, default localhost:6333) — so a deployment
+# without that server carries 42 MB for a feature it cannot use. Every entry point in
+# `semantic/vector_store.py` checks `available()` and degrades to "empty index": reads
+# return nothing, writes no-op. A CONNECTION failure still raises, because a configured
+# index that is down is an outage worth surfacing, not a silent no-op.
+semantic = [
+    "qdrant-client>=1.9.0",
 ]
 # PDF/PPTX rendering. Reached only through `from aughor.export import export_report`
 # inside a router handler, never at import time.
