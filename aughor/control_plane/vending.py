@@ -17,6 +17,7 @@ bucket; swap direct-FS for vended credentials).
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +29,9 @@ logger = logging.getLogger(__name__)
 # The managed-storage root the platform owns. An org gets a subtree; a workspace
 # never addresses storage directly — it addresses logical objects and the control
 # plane resolves the physical path here.
-STORAGE_ROOT = Path("data/uploads")
+# AUGHOR_UPLOAD_DIR overrides for read-only deployments (serverless stages uploads
+# under /tmp until the Blob tier lands); unset → the historical location.
+STORAGE_ROOT = Path(os.environ.get("AUGHOR_UPLOAD_DIR") or "data/uploads")
 
 
 @dataclass(frozen=True)

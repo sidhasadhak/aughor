@@ -249,14 +249,12 @@ def _qdrant_conn(conn_id, org_id):
     from aughor.semantic.vector_store import available
     if not available():
         return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
-    from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-    from aughor.semantic.vector_store import delete_by_filter
+    from aughor.semantic.vector_store import delete_by_filter, match_filter
     from aughor.tools.prior_analyses import (
         INVESTIGATIONS_COLLECTION,
         SQL_EXAMPLES_COLLECTION,
     )
-    filt = Filter(must=[FieldCondition(key="connection_id", match=MatchValue(value=conn_id))])
+    filt = match_filter("connection_id", conn_id)
     total = 0
     for coll in (INVESTIGATIONS_COLLECTION, SQL_EXAMPLES_COLLECTION):
         total += delete_by_filter(coll, filt) or 0
@@ -330,12 +328,10 @@ def _qdrant_inv(inv_ids):
     from aughor.semantic.vector_store import available
     if not available():
         return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
-    from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-    from aughor.semantic.vector_store import delete_by_filter
+    from aughor.semantic.vector_store import delete_by_filter, match_filter
     from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
     total = 0
     for inv_id in inv_ids:
-        filt = Filter(must=[FieldCondition(key="inv_id", match=MatchValue(value=inv_id))])
+        filt = match_filter("inv_id", inv_id)
         total += delete_by_filter(INVESTIGATIONS_COLLECTION, filt) or 0
     return {"qdrant_points": total}

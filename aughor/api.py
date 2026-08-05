@@ -14,6 +14,26 @@ try:
 except ImportError:
     pass
 
+# ── Serverless shape (Vercel) ─────────────────────────────────────────────────
+# On Vercel the filesystem is read-only except /tmp, and relational state lives in
+# Postgres behind AUGHOR_DB_URL — but a handful of best-effort FILE surfaces remain
+# (episode logs, dismissal logs, upload staging). Default those under /tmp HERE,
+# before any aughor import: many stores capture their directory at IMPORT time
+# (the `_DATA_DIR = state_dir()` convention), so a later default would be ignored.
+# Explicit env always wins — setdefault only. Detection via Vercel's own VERCEL=1.
+if os.environ.get("VERCEL"):
+    os.environ.setdefault("AUGHOR_STATE_DIR", "/tmp/aughor-state")
+    os.environ.setdefault("AUGHOR_UPLOAD_DIR", "/tmp/aughor-uploads")
+    Path(os.environ["AUGHOR_STATE_DIR"]).mkdir(parents=True, exist_ok=True)
+    # The registry's at-rest encryption key MUST come from the environment on a
+    # read-only deployment — a generated key file would land in /tmp and silently
+    # vanish with the instance, orphaning every encrypted DSN. Fail loud and early,
+    # not at the first connection registration.
+    if not os.environ.get("AUGHOR_SECRET_KEY"):
+        raise RuntimeError(
+            "serverless deployment requires AUGHOR_SECRET_KEY in the environment "
+            "(a generated key file cannot persist on a read-only filesystem)")
+
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 
 from fastapi.middleware.cors import CORSMiddleware
