@@ -424,6 +424,19 @@ def test_merge_is_idempotent_for_a_repeated_connection():
     assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa"]
 
 
+def test_merge_carries_every_connections_schema_qualified_routes():
+    """The regression that started this work, at merge grain: a schema-qualified route
+    recorded for the SECOND connection must survive the merge, or LuxExperience's
+    briefing 501s on a demo that reports itself as working."""
+    from aughor.demo.record_api import merge_recordings
+
+    a = _rec("aaa", {"POST /exploration/aaa/briefing?schema=main&workspace_id=w1": {"ok": 1}})
+    b = _rec("bbb", {"POST /exploration/bbb/briefing?schema=lux&workspace_id=w2": {"ok": 2}})
+    merged = merge_recordings(a, b)
+    assert merged["routes"]["POST /exploration/aaa/briefing?schema=main&workspace_id=w1"]
+    assert merged["routes"]["POST /exploration/bbb/briefing?schema=lux&workspace_id=w2"]
+
+
 def test_allow_terms_narrows_the_contamination_gate_per_recording():
     """'Foreign' is relative to the dataset being recorded: LuxExperience legitimately
     carries the very terms that must never reach the Superstore recording."""
