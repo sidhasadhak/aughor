@@ -100,7 +100,6 @@ _MIGRATIONS: list[Migration] = []
 
 
 def _connect() -> sqlite3.Connection:
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = connect_store(_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn

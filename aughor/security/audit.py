@@ -39,7 +39,6 @@ _MIGRATIONS = [
 
 
 def _connect() -> sqlite3.Connection:
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = connect_store(_DB_PATH, check_same_thread=False)
     c.row_factory = sqlite3.Row
     return c

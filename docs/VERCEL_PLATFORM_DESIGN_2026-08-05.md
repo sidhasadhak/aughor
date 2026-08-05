@@ -640,3 +640,55 @@ ls data/*.json data/*.jsonl | wc -l     # 52 document stores
 `duckdb` (43 MB here) and `cryptography` (13 MB) — should be re-measured on the target
 platform before the ~110 MB figure is treated as final. The margin against 250 MB is
 large enough that the conclusion is unlikely to change.
+
+---
+
+## Appendix B — DEPLOYED (2026-08-05): the empty-catalogue platform is live
+
+The stated goal — *the fully-featured platform on Vercel with an empty catalogue,
+behaving exactly like local; nothing baked, users connect data and it works live* —
+is standing, verified end-to-end in a browser:
+
+| Piece | Where | Proof |
+|---|---|---|
+| Platform API | **`https://aughor-platform.vercel.app`** (project `aughor-platform`, CLI-deployed from repo root) | `/health` ok with OpenRouter ready; `/connections` = builtins only |
+| State | Supabase via the Vercel integration (`supabase-rose-kettle`, connected by CLI) | a `/workspaces` row written by one invocation's boot, read by another; nine `store_*` schemas self-booted on first touch |
+| Semantic index | pgvector in the same Supabase | backend auto-selected by `AUGHOR_DB_URL`; no second service |
+| Web UI | branch-preview of `aughor_intelligence` with `NEXT_PUBLIC_API_URL` (preview env only — the production demo is untouched) | browser resource timeline shows every fetch hitting `aughor-platform.vercel.app`; the empty-state "Start exploration" screen is real API truth |
+
+**Deployment decisions that carry weight:**
+
+* **`POSTGRES_URL_NON_POOLING`, never the pooled DSN** — the stores `SET search_path`
+  per connection, session state that transaction-mode pooling does not preserve. The
+  serverless block honours the integration's variable when `AUGHOR_DB_URL` is unset,
+  and fails LOUDLY with no Postgres at all (sqlite cannot live on a read-only
+  filesystem; `/tmp` state vanishes with the instance — as would a generated
+  `AUGHOR_SECRET_KEY` file, which is why a missing key also fails at boot).
+* **The migration script was not needed** — empty catalogue means stores boot their
+  own schemas. It remains the cutover path for moving an existing local workspace.
+
+**Operational lessons the live errors taught (each cost one deploy):**
+
+1. The pyproject `[tool.vercel]` entrypoint alone produced a 1-second build serving
+   nothing — `api/index.py` + a `vercel.json` rewrite is the shape that works.
+2. `vercel env add` piped in a shell loop wrote 11-byte garbage; sensitive values
+   CANNOT be pulled back (redacted stubs — never re-add them). Write value files,
+   redirect stdin, verify by pull-and-length.
+3. `.vercelignore` is gitignore-like: a bare `evals` swallowed `aughor/evals`.
+4. **One root, two projects: a committed `.vercelignore` excluding `/web` starved the
+   web project's git builds into a 7-second empty shell whose check PASSED.** It now
+   lives as `.vercelignore.platform`, copied into place only for platform CLI deploys.
+   The tell was the build log's prose, not the checkmark.
+5. `mkdir(exist_ok=True)` on an EXISTING read-only dir succeeds — a faithful
+   read-only rehearsal needs the dir ABSENT, shaped exactly like the bundle. 21
+   stores carried pre-seam mkdirs that only the real deploy exposed.
+6. The demo posture (`NEXT_PUBLIC_DEMO_PACK=1`) outranks `NEXT_PUBLIC_API_URL` —
+   removed from the preview env; production keeps the demo until the flip.
+
+**What remains (fast-follows behind graceful degradation):** uploads → Blob (the
+first feature an empty-catalogue user hits; file-upload staging currently `/tmp`,
+ephemeral), scheduler → Cron (interactive works without), the production flip (point
+production `NEXT_PUBLIC_API_URL` at the platform and retire the demo posture — a
+product decision, two env vars and a promote), an external queue backend when there
+is one to verify against, and the fixture builtin listing itself although its duckdb
+is not bundled (cosmetic).

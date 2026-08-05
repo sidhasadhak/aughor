@@ -20,7 +20,6 @@ _DB_PATH = resolve_db_path("AUGHOR_PACK_DELTAS_DB", Path(__file__).parent.parent
 
 
 def _conn() -> sqlite3.Connection:
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
     _ensure_schema(c)
