@@ -1,3 +1,6 @@
+# COPY to .vercelignore before a PLATFORM CLI deploy (cp .vercelignore.platform .vercelignore).
+# NOT committed as .vercelignore: the web project builds from this same root via git,
+# and excluding /web starved its builds into a 7-second empty shell whose check PASSED.
 # Platform (Python API) deploy. Root-anchored (a bare name also matches subpaths —
 # `evals` swallowed aughor/evals once). data/ ships ONLY its authored inputs
 # (glossary, KB, rules): the empty-catalogue goal means no generated stores, and

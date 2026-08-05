@@ -122,3 +122,4 @@ evals/llm_exp/
 .vercel/
 .vercel
 .env*
+.vercelignore
