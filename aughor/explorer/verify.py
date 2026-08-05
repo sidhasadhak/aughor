@@ -510,6 +510,78 @@ def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
     return None
 
 
+#: A measure label sitting immediately before a number — "logistics costs totaling 2949292",
+#: "GMV 2949292.0", "revenue of 1.2M". Only the words directly before the figure are captured,
+#: so a label three clauses away is never bound to it.
+_LABELLED_NUM_RE = re.compile(
+    r"([A-Za-z][A-Za-z_ /%-]{2,40}?)\s*"
+    r"(?:of|totalling|totaling|at|is|was|=|:|reached|stands at)?\s*"
+    r"[\(\[]?\s*(\d[\d,]*(?:\.\d+)?)",
+    re.I,
+)
+#: Words that carry no measure identity, so two labels differing only by these are the SAME
+#: label rather than a mislabel ("total revenue" vs "revenue").
+_LABEL_NOISE = frozenset({
+    "the", "a", "an", "of", "in", "at", "to", "with", "and", "for", "its", "their",
+    "total", "totalling", "totaling", "about", "approximately", "around", "over",
+    "under", "roughly", "some", "only", "just", "is", "was", "are", "were", "has", "had",
+})
+
+
+def _label_tokens(label: str) -> frozenset:
+    return frozenset(w for w in re.split(r"[^a-z]+", (label or "").lower()) if w and w not in _LABEL_NOISE)
+
+
+def one_value_two_labels(finding_text: str, rows) -> str | None:
+    """One value asserted under TWO different measure names — a mislabelled binding.
+
+    Seen live on the LuxExperience demo: *"Mytheresa has the lowest logistics cost ratio at
+    0.0381 …, with logistics costs totaling 2949292 of GMV 2949292.0"*. The query selected
+    ``platform, logistics_cost_ratio, gmv_eur`` — there is no logistics-cost total in it at
+    all, so the narrator reused GMV for both. True logistics cost was €112,367; the finding
+    overstated it 26×, and it reached a shipped briefing.
+
+    :func:`_claim_numbers_grounded` cannot catch this: 2,949,292 *is* in the result, so every
+    number is grounded. What is wrong is the NAME it is given, and the tell is that the same
+    figure appears under two labels while occurring only ONCE in the row.
+
+    Deliberately narrow, because a false positive drops a real finding:
+
+    * the value must appear **exactly once** among the result cells — a figure that genuinely
+      occurs twice (a self-join, a repeated dimension) can honestly be described twice;
+    * the two labels must share **no** meaningful token — "net revenue"/"revenue" is one
+      label, "logistics costs"/"GMV" is two;
+    * both labels must be non-empty after noise removal.
+    """
+    if not finding_text or not rows:
+        return None
+    cells = _result_cells(rows)
+    if not cells:
+        return None
+    by_value: dict = {}
+    for label, tok in _LABELLED_NUM_RE.findall(finding_text):
+        v = _safe_float(tok.replace(",", ""))
+        if v is None:
+            continue
+        toks = _label_tokens(label)
+        if toks:
+            by_value.setdefault(round(v, 6), []).append((label.strip(), toks))
+    for value, labelled in by_value.items():
+        if len(labelled) < 2:
+            continue
+        # Only when the result carries this figure ONCE — otherwise two mentions are fine.
+        if sum(1 for c in cells if abs(c - value) <= abs(value) * 0.01 + 1e-6) != 1:
+            continue
+        for i in range(len(labelled)):
+            for j in range(i + 1, len(labelled)):
+                (l1, t1), (l2, t2) = labelled[i], labelled[j]
+                if not (t1 & t2):
+                    return (f"one value, two labels: {value:g} is asserted as both "
+                            f"{l1!r} and {l2!r}, but appears once in the result — "
+                            f"one of the two names is wrong")
+    return None
+
+
 def grounded_fraction(finding_text: str, rows) -> float:
     """Fraction of the text's salient numbers grounded (raw or derived) in the result cells.
     Used to break narrator↔query binding ties by NUMERIC evidence: a finding binds to the query
@@ -638,6 +710,9 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
+        ov = one_value_two_labels(finding_text, rows)
+        if ov:
+            return (False, ov)
         nm = mislabeled_named_metric(finding_text, sql, metric_vocab_for(conn, industry))
         if nm:
             return (False, nm)

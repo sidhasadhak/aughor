@@ -1,0 +1,42 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-05T06:49:01.895918+00:00",
+  "connection_id": "914df862",
+  "headline": "Platform with Highest Average Order Value",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "6fff130c",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "Which platform has the highest average order value?",
+  "report": {
+    "approach": [
+      "Compute average GMV (AOV) per platform from the orders table.",
+      "Order the results by AOV in descending order.",
+      "Limit to the top platform to answer the question."
+    ],
+    "chart_type": "bar",
+    "columns": [
+      "platform",
+      "aov"
+    ],
+    "headline": "Platform with Highest Average Order Value",
+    "insight": null,
+    "intent": "Identify the platform that generates the highest average order value.",
+    "overview_report": null,
+    "rows": [
+      [
+        "Mytheresa",
+        "631.21"
+      ]
+    ],
+    "sql": "SELECT platform, ROUND(AVG(gmv_eur), 2) AS aov FROM luxexperience.orders GROUP BY platform ORDER BY aov DESC LIMIT 1;",
+    "tables_used": [
+      "orders"
+    ]
+  },
+  "started_at": "2026-08-05T06:49:01.895918+00:00",
+  "status": "complete"
+}

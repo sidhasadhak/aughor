@@ -1,0 +1,52 @@
+{
+  "canvas_id": null,
+  "completed_at": "2026-08-05T06:51:43.543685+00:00",
+  "connection_id": "914df862",
+  "headline": "Average delivery days for standard vs express shipping",
+  "hypotheses": null,
+  "hypothesis_count": 0,
+  "id": "b1026d87",
+  "kind": "chat",
+  "purpose": "",
+  "query_count": 1,
+  "query_history": null,
+  "question": "How does delivery time differ between standard and express shipping?",
+  "report": {
+    "approach": [
+      "Filter shipments to standard and express service levels",
+      "Compute average delivery days for each service level",
+      "Round the average to two decimal places",
+      "Order results by average delivery days descending"
+    ],
+    "chart_type": "bar_horizontal",
+    "columns": [
+      "service_level",
+      "avg_delivery_days"
+    ],
+    "headline": "Average delivery days for standard vs express shipping",
+    "insight": {
+      "anomalies": [],
+      "confidence": "High",
+      "narrative": "Express shipping is faster, averaging **3.36** days versus **5.34** days for standard.",
+      "trend": "Express shipping consistently yields shorter delivery times than standard."
+    },
+    "intent": "You want to see the average delivery time for standard and express shipping options.",
+    "overview_report": null,
+    "rows": [
+      [
+        "standard",
+        "5.34"
+      ],
+      [
+        "express",
+        "3.36"
+      ]
+    ],
+    "sql": "SELECT service_level, ROUND(AVG(delivery_days), 2) AS avg_delivery_days FROM luxexperience.shipments WHERE service_level IN ('standard', 'express') GROUP BY service_level ORDER BY avg_delivery_days DESC",
+    "tables_used": [
+      "shipments"
+    ]
+  },
+  "started_at": "2026-08-05T06:51:43.543685+00:00",
+  "status": "complete"
+}

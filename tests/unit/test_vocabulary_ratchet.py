@@ -167,9 +167,9 @@ BASELINE: dict[str, int] = {
     "foundry": 0,
     "genie": 23,
     "hire": 27,
-    # 1967 → 1960: already true on main after #248; locked in here rather than left as
-    # headroom for the next regression.
-    "insight": 1960,
+    # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
+    # saying "finding" there (the glossary word) paid for the API names they must import.
+    "insight": 1959,
     "investigation_in_web": 659,
     "kinetic": 402,
     "mindsdb": 0,
