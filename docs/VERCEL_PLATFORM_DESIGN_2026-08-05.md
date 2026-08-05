@@ -13,43 +13,41 @@ assumptions. Every number below is reproducible with the commands in
 
 The 250 MB serverless limit was assumed fatal because the development virtualenv is
 **1.1 GB**. Most of that never reaches the serving path — but the deployable figure is the
-**declared dependency set**, and measuring it honestly puts the pre-trim install at 622 MB
-and the post-trim install at 268 MB: close, and closable.
+**declared dependency set**, not the boot closure. Measured honestly and then acted on, it
+went from **622 MB to 225 MB**, which fits.
 
 > **Correction (2026-08-05, after implementing the trim).** The first version of this
 > section reported the **boot closure** (~110 MB) as the bundle size. That was the wrong
 > measure: a deployment installs the **declared dependency set**, not merely what the
-> process imports at startup. The corrected numbers are below; the conclusion softens from
-> "large headroom" to "achievable, with one more decision".
+> process imports at startup. That correction cost the claim its comfort — the honest
+> starting figure was 622 MB, not 110 MB — and the trims below are what actually closed it.
 
 | Measurement | Result |
 |---|---|
 | Development venv (all extras) | **1,100 MB** |
 | API boot import closure (44 packages — what actually *loads*) | **121 MB** |
 | **Runtime dependency install — BEFORE the trim** | **622 MB** |
-| **Runtime dependency install — AFTER the trim** | **268 MB** |
+| Runtime install — after step 1 (statsmodels/polars/export) | 268 MB |
+| **Runtime install — after step 2 (semantic)** | **225 MB** |
 | Application code (`aughor/**.py`) | **7 MB** |
-| **Against the Vercel limit** | **~18 MB over 250 MB** |
+| **Against the Vercel limit** | **~232 MB — UNDER 250 MB** ✅ |
 
-The trim removed **354 MB (57%)**. What remains, and why:
+The two trims removed **397 MB (64%)**. What remains, and why:
 
 | Package | Size | On boot path? | Status |
 |---|---|---|---|
 | `scipy` | 71 MB | no — but on the **analysis** path | **kept** (`tools/stats.py` → `agent/explore.py`, `nodes.py`, `investigate.py`) |
 | `duckdb` | 44 MB | yes | core |
-| `grpc` | 39 MB | no — pulled by `qdrant-client` | **the next lever** |
+| `grpc` | 39 MB | no — pulled by `qdrant-client` | **moved to `[semantic]`** |
 | `numpy` | 22 MB | no | required by scipy |
 | `cryptography` | 13 MB | yes | core (secretvault) |
 | `openai` | 11 MB | yes | core |
 | `psycopg2` | 10 MB | no | Postgres connector |
 
-**The remaining 18 MB has one obvious answer: `qdrant-client` + `grpc` = 42 MB**, which
-would land the bundle at **~226 MB**. It is not done here because it is a product decision,
-not a packaging one: Qdrant powers semantic search, its call sites import it *unguarded*
-inside functions (e.g. `tools/prior_analyses.py:303`), and it already requires a separate
-server (`AUGHOR_QDRANT_URL`, default `localhost:6333`). Moving it to an extra without
-guarding those imports would turn "semantic search is unavailable" into an `ImportError`.
-Doing it properly means the same treatment the export path received in this change.
+`qdrant-client` + `grpc` (42 MB) was the last lever and has now been pulled — carefully,
+because it was the one with teeth. An AST pass over all **19 import sites found 7 that were
+bare**, so simply moving the package would have raised `ImportError` from inside a purge
+hook or a suggestion lookup. `semantic/vector_store.py` is now the single seam.
 
 **What was done** (see `[project.optional-dependencies]`):
 
@@ -62,6 +60,15 @@ Doing it properly means the same treatment the export path received in this chan
   **501** rather than 500, because a missing extra is a configuration state, not a fault.
 * **`scipy` kept**, with a comment recording why — it is absent from the boot closure but
   present on the analysis path, which the first measurement missed.
+* **`qdrant-client` → `[semantic]`** — 42 MB with grpc. `vector_store.available()` gates
+  every entry point; reads return empty and writes no-op, because a deployment without
+  semantic search *has* no index. A **connection** failure still raises: an absent package
+  is a deployment choice, a configured index that is down is an outage worth surfacing.
+
+**The guard rails matter more than the megabytes.** `tests/unit/test_serving_footprint.py`
+imports the API in a subprocess and fails if any heavy package returns to the boot closure,
+and simulates `qdrant-client`'s absence — with a vacuous-pass guard, since the development
+environment has it installed and would otherwise exercise only the happy path.
 
 The boot closure was captured by importing `aughor.api` and diffing `sys.modules` — so it
 is what the process actually loads, not what `pyproject.toml` declares. Absent from it:
@@ -79,11 +86,14 @@ One finding remains open after the trim:
   runtime-only install never pulls it, so it needs no action; it is recorded here because
   it will reappear in any measurement taken against a dev venv.
 
-**Conclusion:** bundle size is a dependency-hygiene problem and it is now mostly solved —
-622 MB → 268 MB in one change, with a ratchet test (`tests/unit/test_serving_footprint.py`)
-that fails if any of the heavy packages returns to the boot closure. It does not gate the
-programme, but it is no longer true that there is generous headroom: one further decision
-(`qdrant-client`, above) is needed to clear 250 MB.
+**Conclusion:** bundle size was a dependency-hygiene problem and it is **solved** —
+**622 MB → 225 MB (−64%)**, roughly 232 MB deployed, inside the 250 MB limit with ~18 MB to
+spare. Thin, so the ratchet is the durable part: one convenience import at module scope
+would put it back and nothing else would notice.
+
+The headroom is real but not generous. If it needs to grow, `scipy` (71 MB) is the next
+candidate — it is on the analysis path today, so moving it means making `tools/stats.py`
+lazily imported by its three callers, which is a larger change than any made here.
 
 ---
 
