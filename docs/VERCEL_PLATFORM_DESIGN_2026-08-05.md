@@ -426,6 +426,14 @@ miss read as "no spend").
 its absence through the store). This is the "caches first" step — done against the seam
 that already existed, so Redis later means one Ledger backend, not three migrations.
 
+**Step 0d, landed 2026-08-05: Langfuse spans survive the invocation split.**
+`telemetry._traces` is now a memo, not an identity: a miss rebuilds the handle by trace
+id (Langfuse upserts on id) instead of silently orphaning the span. With this, **all five
+§2 coordination-state items are dispositioned** — LLM gates (seam), `_by_job`
+(flush + fallback), `_traces` (rebuild by id); the ~15 registries rebuild identically per
+process and the ~15 memo caches lose only hit-rate. What remains of Phase 1 is the bulk:
+~32 SQLite stores → Postgres, and the 49 remaining JSON/dir stores.
+
 Then **caches — but onto the seam that already exists, not straight to Redis.**
 `kernel/ledger.py` is already a transactional store with `kv(store, key, value, seq,
 updated_at)`, and `KeyedJsonStore` in `util/json_store.py` is *already a facade over it*

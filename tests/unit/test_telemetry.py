@@ -279,3 +279,109 @@ def test_flat_attrs_converts_to_otel_compatible_types():
     for v in result.values():
         assert isinstance(v, (str, int, float, bool)), f"Non-scalar OTel attribute: {v!r}"
     assert result["e"] == "[1, 2]"
+
+
+# ── cross-invocation trace continuity ─────────────────────────────────────────
+# In a sliced run the invocation adding a span is routinely not the one that
+# called new_trace. The handle memo is process-local; a miss used to be treated
+# as "no trace", silently orphaning every such span. Langfuse addresses traces
+# by id (upsert), so the handle is rebuildable — these tests pin that.
+
+class _FakeSpan:
+    def __init__(self, name):
+        self.name = name
+        self.ended = False
+
+    def end(self, **kw):
+        self.ended = True
+
+
+class _FakeTrace:
+    def __init__(self, id):
+        self.id = id
+        self.spans: list[_FakeSpan] = []
+        self.generations: list[_FakeSpan] = []
+        self.output = None
+
+    def span(self, name, metadata=None):
+        sp = _FakeSpan(name)
+        self.spans.append(sp)
+        return sp
+
+    def generation(self, name, model, input, output, metadata=None):
+        g = _FakeSpan(name)
+        self.generations.append(g)
+        return g
+
+    def update(self, output=None):
+        self.output = output
+
+
+class _FakeLangfuse:
+    def __init__(self):
+        self.traces: dict[str, _FakeTrace] = {}
+        self.trace_calls = 0
+        self.flushed = 0
+
+    def trace(self, id, **kw):
+        # Langfuse semantics: trace(id=X) upserts — same id, same trace.
+        self.trace_calls += 1
+        return self.traces.setdefault(id, _FakeTrace(id))
+
+    def flush(self):
+        self.flushed += 1
+
+
+@pytest.fixture()
+def _fake_lf(monkeypatch):
+    import aughor.telemetry as tel
+    fake = _FakeLangfuse()
+    monkeypatch.setattr(tel, "_lf", fake)
+    monkeypatch.setattr(tel, "_lf_init_done", True)
+    monkeypatch.setattr(tel, "_traces", {})       # a fresh process's empty memo
+    return fake
+
+
+def test_span_from_another_invocation_attaches_not_orphans(_fake_lf):
+    """The memo is EMPTY — as it is in every invocation but the creating one. The
+    span must rebuild the handle by id and attach, not silently vanish."""
+    import aughor.telemetry as tel
+    with tel.span("inv-sliced", "phase8_angle", {"slice": 3}) as sp:
+        pass
+    assert sp is not None, "span was orphaned on a memo miss"
+    assert _fake_lf.traces["inv-sliced"].spans[0].name == "phase8_angle"
+
+
+def test_generation_from_another_invocation_attaches(_fake_lf):
+    import aughor.telemetry as tel
+    tel.log_generation("inv-sliced", "narrator", "m", [{"role": "user", "content": "q"}], "out")
+    assert _fake_lf.traces["inv-sliced"].generations[0].name == "narrator"
+
+
+def test_end_trace_finalises_a_trace_it_did_not_create(_fake_lf):
+    """The finalising invocation is routinely not the creating one in a sliced run."""
+    import aughor.telemetry as tel
+    tel.end_trace("inv-sliced", output={"headline": "done"})
+    assert _fake_lf.traces["inv-sliced"].output == {"headline": "done"}
+    assert _fake_lf.flushed == 1
+
+
+def test_handle_is_memoized_after_rebuild(_fake_lf):
+    """One rebuild per process, not one per span — the memo still earns its keep."""
+    import aughor.telemetry as tel
+    for i in range(3):
+        with tel.span("inv-sliced", f"n{i}"):
+            pass
+    assert _fake_lf.trace_calls == 1
+    assert len(_fake_lf.traces["inv-sliced"].spans) == 3
+
+
+def test_rebuild_failure_degrades_to_no_span(_fake_lf, monkeypatch):
+    """A down Langfuse host must not break the node the span wraps."""
+    import aughor.telemetry as tel
+    def _boom(id, **kw):
+        raise RuntimeError("host unreachable")
+    monkeypatch.setattr(_fake_lf, "trace", _boom)
+    with tel.span("inv-sliced", "phase") as sp:
+        ok = True
+    assert ok and sp is None
