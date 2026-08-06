@@ -60,7 +60,11 @@ def _due_in_window(cron_expr: str, now: datetime, window_s: int) -> bool:
         return False
 
 
-@router.api_route("/cron/tick", methods=["GET", "POST"])
+# GET only, deliberately: both real callers (Vercel Cron, the Actions curl) GET,
+# and a two-method api_route makes FastAPI emit colliding operationIds — the
+# generated TS client carried `cron_tick_cron_tick_get` TWICE, failing typecheck,
+# the web build, and the drift check nondeterministically.
+@router.get("/cron/tick")
 def cron_tick(request: Request, window_s: int = 60) -> dict:
     """Run one tick of every scheduled family. Returns per-family counts.
 
