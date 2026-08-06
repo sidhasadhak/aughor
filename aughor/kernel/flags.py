@@ -62,14 +62,20 @@ FLAG_ENV = {
     # model calls for a "more alive" cadence the chat UI now provides for free, and
     # the end-of-run Phase 9 synthesis always ran regardless.
     "specialist_packs": "AUGHOR_SPECIALIST_PACKS",
-    "explore.parallel_subq": "AUGHOR_EXPLORE_PARALLEL",
+    # The four Group-E parallelism flags ("explore.parallel_subq" / AUGHOR_EXPLORE_PARALLEL,
+    # "deep_analysis.parallel_lenses" / AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES,
+    # "deep_analysis.parallel_phases" / AUGHOR_DEEP_ANALYSIS_PARALLEL_PHASES,
+    # "deep_analysis.parallel_why_lenses" / AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES)
+    # were DELETED 2026-08-06 (flag endgame Wave 6, verdict sheet 2026-08-01): hardwiring
+    # them ON broke the rate-capped free transport, OFF threw away wall-clock on capable
+    # ones — neither default was honest, so there is no switch. The always-on behaviour is
+    # "as parallel as the bound transport's declared rate budget allows", derived in
+    # aughor/llm/profile.py (`parallel_waves_enabled`; AUGHOR_LLM_RPM still wins in both
+    # directions, and an OpenRouter `:free` binding counts as its documented 20 RPM).
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "starters.library": "AUGHOR_STARTERS_LIBRARY",
-    "deep_analysis.parallel_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_LENSES",
-    "deep_analysis.parallel_phases": "AUGHOR_DEEP_ANALYSIS_PARALLEL_PHASES",
     "deep_analysis.why_where_interaction": "AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION",
     "deep_analysis.why_deepen": "AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN",
-    "deep_analysis.parallel_why_lenses": "AUGHOR_DEEP_ANALYSIS_PARALLEL_WHY_LENSES",
     "semantic.resolve_live": "AUGHOR_SEMANTIC_RESOLVE_LIVE",
     "semantic.contract_live": "AUGHOR_SEMANTIC_CONTRACT_LIVE",
     "capability.pipeline_live": "AUGHOR_CAPABILITY_PIPELINE_LIVE",
@@ -185,10 +191,11 @@ RENAMED: dict[str, str] = {
     # Wave W: the `ada.*` family. "ADA" expanded, in its own docstring, to words it does
     # not spell; the feature is "deep analysis" everywhere a human reads it. Call sites
     # may keep passing the old name indefinitely — `_canonical` resolves it.
+    # Three more `ada.*` aliases left 2026-08-06: their targets
+    # (deep_analysis.{parallel_lenses, parallel_phases, parallel_why_lenses}) were
+    # deleted by flag endgame Wave 6 (transport-derived parallelism) — same rule as
+    # the Wave 3 removals above: an alias only means something while its target lives.
     "ada.causal_drill": "deep_analysis.causal_drill",
-    "ada.parallel_lenses": "deep_analysis.parallel_lenses",
-    "ada.parallel_phases": "deep_analysis.parallel_phases",
-    "ada.parallel_why_lenses": "deep_analysis.parallel_why_lenses",
     "ada.why_deepen": "deep_analysis.why_deepen",
     "ada.why_where_interaction": "deep_analysis.why_where_interaction",
 }
@@ -199,9 +206,8 @@ RETIRED_ENV: dict[str, str] = {
     # Wave W: `AUGHOR_ADA_*` → `AUGHOR_DEEP_ANALYSIS_*`. An operator's existing .env keeps
     # opting in. (The three `ada.*` flags whose env var never said ADA — PREMISE_CHECK,
     # CAUSAL_DRILL, CLARIFY_GATE — kept their variable and need no entry.)
-    "AUGHOR_ADA_PARALLEL_LENSES": "deep_analysis.parallel_lenses",
-    "AUGHOR_ADA_PARALLEL_PHASES": "deep_analysis.parallel_phases",
-    "AUGHOR_ADA_PARALLEL_WHY_LENSES": "deep_analysis.parallel_why_lenses",
+    # The three AUGHOR_ADA_PARALLEL_* entries left 2026-08-06 with their targets
+    # (flag endgame Wave 6).
     "AUGHOR_ADA_WHY_DEEPEN": "deep_analysis.why_deepen",
     "AUGHOR_ADA_WHY_WHERE_INTERACTION": "deep_analysis.why_where_interaction",
 }
@@ -492,10 +498,6 @@ FLAG_META = {
         "label": "Packs — authored domain bundles that steer the planner",
         "description": "Load user-built packs (packs/) and let them steer the engine at intake — the pack's stance, grounded metric recipes and diagnostic questions prepended to the explore planner context. Steering is data-gated three gates deep: it requires an installed pack whose manifest says status: active, matching the question, AND a human-pinned deploy binding on the exact connection (propose → confirm → pin in the deploy UI; auto-proposals never steer). A custom agent's pack bindings restrict selection to its packs but never bypass the deploy gate. Default-ON since the 2026-07-31 flag-strategy batch 1, graduated on receipt `452a6fcebba4` (run `c84f1e75a50c` of aughor/evals/specialist_packs_receipt.py, 8/8 stable ×3): with no active pack or no pinned deployment the planner context is byte-identical on vs off, and the fresh-clone delta is exactly GET /packs reporting enabled: true (the shipped sample pack is status: draft). Force off with AUGHOR_SPECIALIST_PACKS=0 or a runtime override. See docs/DOMAIN_EXPERTISE_PACKS.md.",
     },
-    "explore.parallel_subq": {
-        "label": "Parallel explore sub-questions",
-        "description": "Run independent explore sub-questions concurrently in dependency-respecting waves (map-reduce over the operator.add state) instead of one-at-a-time. Cuts wall-clock on multi-cut deep analyses; multiplies concurrent LLM calls (bounded by the fan-out width cap + the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
-    },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Unlocks the already-built explore wave from /ask. Off by default.",
@@ -508,25 +510,13 @@ FLAG_META = {
         "label": "Named starter questions",
         "description": "Surface a library of named, deterministic starters (interesting outlier entities, where are we losing money, data quality scan) plus per-space curated questions from the ontology doc tree as one-click starters on /suggestions. Each starter declares its route up front (deep analysis or the wide explore wave) and carries a purpose tag on the route receipt — templates, no model in the loop. Default-ON since flag strategy batch A (2026-07-31, receipt `3155c4d9de61` — deterministic payload, purely additive `starters` key on /suggestions); force off with AUGHOR_STARTERS_LIBRARY=0 or a runtime override for LLM-generated-only suggestions — see docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md (R13).",
     },
-    "deep_analysis.parallel_lenses": {
-        "label": "Parallel deep-analysis lenses",
-        "description": "For a cross-sectional deep analysis ('why is X high/low'), run independent lenses (segment/where ∥ mechanism/why) concurrently instead of one bundled scan — a deeper, multi-angle answer at ~flat wall-clock. Multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default — see docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.",
-    },
-    "deep_analysis.parallel_phases": {
-        "label": "Parallel deep-analysis phases",
-        "description": "Run a temporal deep analysis's middle phases (baseline ∥ decomposition ∥ dimensional) as one concurrent wave instead of a serial chain, keeping the serial tier-routers' early-stop semantics post-hoc (anything the serial path would have skipped is dropped from the report). Behavioral stays sequential — it targets the dimensional dominant finding. Cuts deep-run wall-clock; multiplies concurrent LLM calls (bounded by the P6 token budget). Off by default.",
-    },
     "deep_analysis.why_where_interaction": {
         "label": "WHY×WHERE interaction lens",
-        "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires 'Parallel deep-analysis lenses'. Off by default.",
+        "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires the parallel lens wave, which runs whenever the transport allows it (A1 ModelProfile). Off by default.",
     },
     "deep_analysis.why_deepen": {
         "label": "Deepen the WHY (benchmark + drill)",
-        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires 'Parallel deep-analysis lenses'. Off by default.",
-    },
-    "deep_analysis.parallel_why_lenses": {
-        "label": "Parallel WHY-deepening lenses",
-        "description": "Run the forward-chained WHY lenses (WHY×WHERE interaction ∥ peer benchmark ∥ reason drill) as one concurrent wave instead of a serial chain. Each depends ONLY on the already-computed WHERE/WHY summaries, never on each other, so the merge is byte-identical (fixed spec order, never completion order) — just faster wall-clock when two or more are enabled. Multiplies concurrent LLM calls (bounded by the P6 token budget); requires 'Parallel deep-analysis lenses' + the WHY lenses it parallelizes. Off by default.",
+        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires the parallel lens wave, which runs whenever the transport allows it (A1 ModelProfile). Off by default.",
     },
     "semantic.resolve_live": {
         "label": "Semantic plane resolved at the router",
@@ -664,13 +654,14 @@ EXPERIMENT: dict = {
     # already one mechanism (freeze.py reuses snapshot.data_version).
 }
 
-#: Group E — wall-clock vs concurrent-request trades. The exit is ONE performance
-#: profile (Conservative / Balanced / Fast) that sets these together; under a 20 RPM
-#: free-tier transport, defaulting them on individually is actively wrong today.
-COST_LATENCY_PROFILE: frozenset = frozenset({
-    "explore.parallel_subq", "deep_analysis.parallel_lenses", "deep_analysis.parallel_phases",
-    "deep_analysis.parallel_why_lenses",
-})
+#: Group E — wall-clock vs concurrent-request trades. EMPTY as of flag endgame Wave 6
+#: (2026-08-06): the four parallelism flags were deleted for a transport-derived
+#: decision in `aughor/llm/profile.py` (`parallel_waves_enabled` — "as parallel as the
+#: bound transport's declared rate budget allows"; the exit the verdict sheet named).
+#: The set stays declared and EMPTY like AUTO_ELIGIBLE: `flag_disposition` and the
+#: disposition ratchet still reference it, and an empty set proves nothing rejoins
+#: the tier.
+COST_LATENCY_PROFILE: frozenset = frozenset()
 
 #: Group F — a fork of two maintained code paths with a completion obligation: flip,
 #: soak, then DELETE the flag and the losing path. A migration flag with no completion

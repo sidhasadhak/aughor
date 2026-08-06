@@ -72,7 +72,7 @@ Constraints from the question (extract before writing sub-questions):
 """
 
 # Injected into the decompose prompt ONLY when the parallel-wave executor is enabled
-# (flag `explore.parallel_subq`); empty otherwise so the default prompt is byte-identical.
+# (transport-derived parallel waves, A1 ModelProfile); empty otherwise so the default prompt is byte-identical.
 # The wave executor runs every sub-question whose `depends_on` are all satisfied concurrently,
 # so an over-linked (deep-chain) plan serializes work that could run at once. This steers the
 # planner toward a WIDE, SHALLOW dependency graph — the realized parallelism is entirely a

@@ -102,18 +102,18 @@ def read_checkpoint_state(investigation_id: str) -> dict:
 
 
 def _explore_parallel_enabled() -> bool:
-    """The explore.parallel_subq flag, resolved fail-safe (env/ledger). A ledger read can fail in
-    a bare CLI context, so any error means 'off' (the safe, byte-identical sequential path)."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("explore.parallel_subq")
-    except Exception:
-        return False
+    """Concurrent explore sub-question waves, transport-derived (A1 ModelProfile) — the
+    former `explore.parallel_subq` flag, deleted by flag endgame Wave 6. Any resolution
+    error means 'serial' (the safe, byte-identical sequential path)."""
+    from aughor.llm.profile import parallel_waves_enabled
+    return parallel_waves_enabled()
 
 
 def topology_flags() -> dict:
-    """The flag-gated topology variants, resolved NOW — the public read for
-    surfaces that render the graph a run would take (Wave CR5b)."""
+    """The topology variants, resolved NOW — the public read for surfaces that render
+    the graph a run would take (Wave CR5b). Since flag endgame Wave 6 all three follow
+    ONE transport-derived decision (A1 ModelProfile); the dict keeps its per-variant
+    shape because the CR surfaces render them as separate graph forks."""
     return {
         "ada_parallel_lenses": _ada_parallel_lenses_enabled(),
         "ada_parallel_phases": _ada_parallel_phases_enabled(),
@@ -122,21 +122,17 @@ def topology_flags() -> dict:
 
 
 def _ada_parallel_lenses_enabled() -> bool:
-    """The ada.parallel_lenses flag, resolved fail-safe (env/ledger) → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.parallel_lenses")
-    except Exception:
-        return False
+    """Concurrent deep-analysis lenses, transport-derived (A1 ModelProfile) — the former
+    `deep_analysis.parallel_lenses` flag, deleted by flag endgame Wave 6. → serial on any error."""
+    from aughor.llm.profile import parallel_waves_enabled
+    return parallel_waves_enabled()
 
 
 def _ada_parallel_phases_enabled() -> bool:
-    """The ada.parallel_phases flag, resolved fail-safe (env/ledger) → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.parallel_phases")
-    except Exception:
-        return False
+    """Concurrent deep-analysis middle phases, transport-derived (A1 ModelProfile) — the former
+    `deep_analysis.parallel_phases` flag, deleted by flag endgame Wave 6. → serial on any error."""
+    from aughor.llm.profile import parallel_waves_enabled
+    return parallel_waves_enabled()
 
 
 def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None,
@@ -159,10 +155,10 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("ada_behavioral",  ada.get("behavioral",  lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_synthesize",  ada_synthesize)
 
-    # Parallel multi-lens cross-section (flag: ada.parallel_lenses) — a cross-sectional "why"
-    # question runs independent lenses (segment/where ∥ mechanism/why) concurrently instead of one
-    # bundled scan. route_after_intake still returns "ada_cross_section"; we just repoint that target
-    # to the multilens node when the flag is on. Off by default → the single scan.
+    # Parallel multi-lens cross-section (transport-derived, A1 ModelProfile) — a cross-sectional
+    # "why" question runs independent lenses (segment/where ∥ mechanism/why) concurrently instead of
+    # one bundled scan. route_after_intake still returns "ada_cross_section"; we just repoint that
+    # target to the multilens node when the transport allows waves. Serial → the single scan.
     _xsec_node = ada.get("cross_section_multilens")
     _xsec_target = "ada_cross_section"
     if _xsec_node is not None and _ada_parallel_lenses_enabled():
@@ -170,10 +166,10 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         graph.add_edge("ada_cross_section_multilens", "ada_synthesize")
         _xsec_target = "ada_cross_section_multilens"
 
-    # Parallel phase wave (flag: ada.parallel_phases) — the temporal chain's middle phases
-    # (baseline ∥ decompose ∥ dimensional) run as ONE wave node; the serial tier-routers'
+    # Parallel phase wave (transport-derived, A1 ModelProfile) — the temporal chain's middle
+    # phases (baseline ∥ decompose ∥ dimensional) run as ONE wave node; the serial tier-routers'
     # early-stop semantics are applied post-hoc inside it (phase_waves.py). Behavioral stays
-    # sequential (it hard-depends on the dimensional dominant finding). Off by default →
+    # sequential (it hard-depends on the dimensional dominant finding). Serial transport →
     # the classic serial chain below, byte-identical.
     _wave_node = ada.get("phase_wave")
     _baseline_target = "ada_baseline"
@@ -261,11 +257,11 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_edge("exploratory_scan_explore", "decompose_exploration")
     graph.add_edge("decompose_exploration", "plan_gate")
 
-    # Parallel wave executor (flag: explore.parallel_subq) — after the plan gate, independent
+    # Parallel wave executor (transport-derived, A1 ModelProfile) — after the plan gate, independent
     # sub-questions run concurrently in dependency-respecting waves (one node folds in the
     # per-sub-question discovery scan + plan + execute + reason and fans out over
-    # ContextThreadPoolExecutor; the router loops it until the chain is exhausted). Off by default →
-    # the byte-identical sequential chain below. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
+    # ContextThreadPoolExecutor; the router loops it until the chain is exhausted). Serial
+    # transport → the byte-identical sequential chain below. See docs/PARALLEL_MULTIAGENT_GROUNDWORK.md.
     if explore_wave_node is not None and _explore_parallel_enabled():
         graph.add_node("plan_and_execute_wave", explore_wave_node)
         graph.add_edge("plan_gate", "plan_and_execute_wave")
@@ -333,7 +329,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
         partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
-        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (flag-gated)
+        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (transport-gated)
         ada_nodes=ada_nodes,
     )
 
@@ -355,7 +351,7 @@ def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False, clarify
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
         partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
-        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (flag-gated)
+        explore_wave_node=partial(plan_and_execute_wave, conn=db),  # parallel wave (transport-gated)
         ada_nodes=ada_nodes,
         hitl=hitl,
         plan_gate=plan_gate,

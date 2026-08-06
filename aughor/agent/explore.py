@@ -193,7 +193,7 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
 
-    # The parallel-wave executor (flag `explore.parallel_subq`) reads the plan's `depends_on`
+    # The parallel-wave executor (transport-derived parallel waves) reads the plan's `depends_on`
     # to decide what runs concurrently — so under the flag we steer the planner toward a wide,
     # shallow dependency graph. Off → the prompt + downstream are byte-identical to the serial form.
     parallel_on = _parallel_subq_on()
@@ -249,7 +249,7 @@ def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_sec
     """Run the decompose planner with one corrective retry. Never raises —
     returns [] only if the LLM truly can't produce a valid SQL-answerable chain.
 
-    ``parallel_on`` (the `explore.parallel_subq` flag) injects the wide-DAG guidance + a
+    ``parallel_on`` (the transport-derived parallel-waves decision) injects the wide-DAG guidance + a
     dependency-graph system role; when off the prompt is byte-identical to the sequential form."""
     llm = get_provider("coder")
     base_user = DECOMPOSE_EXPLORATION_PROMPT.format(
@@ -342,13 +342,12 @@ def _canonicalize_subq_ids(sqs: list[SubQuestion]) -> list[SubQuestion]:
 
 
 def _parallel_subq_on() -> bool:
-    """The `explore.parallel_subq` flag, resolved fail-safe (mirrors graph._parallel_subq_enabled —
-    a ledger read can fail in a bare test harness). Off → the serial decompose path, unchanged."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("explore.parallel_subq")
-    except Exception:
-        return False
+    """Concurrent explore sub-question waves, transport-derived (A1 ModelProfile) — the
+    former `explore.parallel_subq` flag, deleted by flag endgame Wave 6. The decision
+    follows the bound transport's declared rate budget instead of a switch; any
+    resolution error means the serial decompose path, unchanged."""
+    from aughor.llm.profile import parallel_waves_enabled
+    return parallel_waves_enabled()
 
 
 def _normalize_depends_on(sqs: list[SubQuestion]) -> list[SubQuestion]:

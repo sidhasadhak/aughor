@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, setCapabilityState, type DevStats, type SystemFlag, type CapabilityState } from "@/lib/api";
+import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
@@ -372,8 +372,8 @@ function FeatureFlags() {
   const GROUPS: Array<{ key: string; title: string; hint: string; open?: boolean }> = [
     { key: "intentionally_off", title: "Deliberate opt-ins", open: true,
       hint: "Off for a stated reason (cost, privacy, outward sends). The only toggles meant to be flipped by hand." },
-    { key: "performance_profile", title: "Performance", open: true,
-      hint: "Wall-clock vs concurrent LLM requests. Pick a profile matched to your provider's rate limits — it sets these four together." },
+    // "performance_profile" left with flag endgame Wave 6 (2026-08-06): parallelism is
+    // transport-derived in the backend ModelProfile; no switch to render.
     { key: "experiment", title: "Experiments", open: true,
       hint: "Each adds model calls for a claimed gain; the note names the measurement that settles it." },
     { key: "migration", title: "Migrations", open: true,
@@ -419,9 +419,6 @@ function FeatureFlags() {
             <span className="text-[9.5px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
             <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t4)" }}>— {g.hint}</span>
           </summary>
-          {g.key === "performance_profile" && (
-            <PerformanceProfile flags={flags} refresh={async () => setFlags(await getSystemFlags())} />
-          )}
           {byGroup.get(g.key)!.map(([name, f]) => (
             <FlagRow key={name} name={name} f={f} chip={sourceChip(f)}
                      busy={busy === name} onToggle={v => toggle(name, v)} />
@@ -467,64 +464,11 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
   );
 }
 
-/** Group E as one control: the four parallelism flags set together, matched to rate limits.
- *
- *  These must be the CANONICAL backend keys. Three of them were the retired `ada.*`
- *  aliases, and the alias layer does not reach either side of this control: `list_flags()`
- *  keys its response canonically, so `flags["ada.parallel_lenses"]` read `undefined` and
- *  the profile always rendered "Conservative"; and `set_system_flag` rejects any name not
- *  literally in `FLAG_ENV`, so three of every four writes 404'd. The control looked wired
- *  and did nothing. */
-const PERF_FLAGS = ["explore.parallel_subq", "deep_analysis.parallel_lenses",
-                    "deep_analysis.parallel_phases",
-                    "deep_analysis.parallel_why_lenses"] as const;
-
-function PerformanceProfile({ flags, refresh }: {
-  flags: Record<string, SystemFlag>; refresh: () => Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const vals = PERF_FLAGS.map(n => !!flags[n]?.value);
-  const current = vals.every(v => v) ? "fast"
-    : vals.every(v => !v) ? "conservative"
-    : (flags["deep_analysis.parallel_why_lenses"]?.value && vals.filter(Boolean).length === 1) ? "balanced"
-    : "custom";
-
-  const apply = async (profile: "conservative" | "balanced" | "fast") => {
-    setBusy(true);
-    for (const n of PERF_FLAGS) {
-      const state = profile === "fast" ? "on"
-        : profile === "balanced" && n === "deep_analysis.parallel_why_lenses" ? "on"
-        : "auto";                                  // auto = clear the override → code default (off)
-      await setCapabilityState(n, state as CapabilityState);
-    }
-    await refresh();
-    setBusy(false);
-  };
-
-  const OPTS: Array<{ id: "conservative" | "balanced" | "fast"; label: string; hint: string }> = [
-    { id: "conservative", label: "Conservative", hint: "serial — fits a 20 RPM free tier" },
-    { id: "balanced", label: "Balanced", hint: "parallel WHY lenses only (byte-identical output)" },
-    { id: "fast", label: "Fast", hint: "all waves concurrent — needs provider headroom" },
-  ];
-  return (
-    <div className="flex items-center gap-2 py-2 border-b border-white/5 flex-wrap">
-      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>Profile:</span>
-      <div className="inline-flex overflow-hidden rounded-[var(--r2)]" style={{ border: "1px solid var(--b1)" }}>
-        {OPTS.map(o => (
-          <Button key={o.id} size="xs" variant={current === o.id ? "secondary" : "ghost"}
-                  disabled={busy} onClick={() => apply(o.id)}
-                  className="h-6 rounded-none px-2" title={o.hint}>
-            {o.label}
-          </Button>
-        ))}
-      </div>
-      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
-        {current === "custom" ? "custom mix — pick a profile to align all four"
-          : OPTS.find(o => o.id === current)?.hint}
-      </span>
-    </div>
-  );
-}
+/* The PerformanceProfile control (Group E as one Conservative/Balanced/Fast picker)
+ * left with its four flags — flag endgame Wave 6, 2026-08-06: parallelism is now a
+ * transport-derived decision in the backend's ModelProfile ("as parallel as the bound
+ * transport's declared rate budget allows"; AUGHOR_LLM_RPM still overrides in both
+ * directions), so there is no user-facing switch to render. */
 
 /** The pill switch used by the Feature flags list. */
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {

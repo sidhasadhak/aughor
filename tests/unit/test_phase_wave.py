@@ -1,4 +1,4 @@
-"""WS1 · ada.parallel_phases — the deep path's middle-phase wave (phase_waves.py).
+"""WS1 · the deep path's middle-phase wave (phase_waves.py), transport-gated since Wave 6.
 
 Contract under test: baseline ∥ decompose ∥ dimensional run concurrently on reader
 clones, and the SERIAL tier-routers' early-stop decisions are applied post-hoc so the

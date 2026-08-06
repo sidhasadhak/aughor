@@ -1,4 +1,4 @@
-"""P-A (deep path) — run the ADA middle phases as one parallel wave (flag `ada.parallel_phases`).
+"""P-A (deep path) — run the ADA middle phases as one parallel wave (transport-derived, A1 ModelProfile).
 
 The temporal deep-analysis pipeline is baseline → decompose → dimensional → behavioral →
 synthesize, each phase one plan-LLM → parallel-SQL → interpret-LLM cycle that BLOCKS the next —

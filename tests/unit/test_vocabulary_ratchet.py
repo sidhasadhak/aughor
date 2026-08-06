@@ -154,7 +154,7 @@ BASELINE: dict[str, int] = {
     # most of them ada-era prose. Counted over `git ls-files` only — a box that has run
     # the eval suite feeds the scanner untracked MLflow yaml under evals/bakeoff_out/,
     # which is what CI's fresh checkout will never see.
-    "ada": 654,
+    "ada": 628,   # paid down by flag endgame Wave 6 (the ada.parallel_* aliases left with their targets)
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,

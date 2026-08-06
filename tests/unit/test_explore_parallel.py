@@ -1,6 +1,6 @@
 """Unit tests for the flag-gated parallel wave executor in explore mode.
 
-The parallel path (`explore.parallel_subq`) fans out READY sub-questions concurrently over
+The parallel path (transport-derived parallel waves, A1 ModelProfile) fans out READY sub-questions concurrently over
 ContextThreadPoolExecutor and reduces through the existing operator.add state. These tests pin the
 five guardrails from docs/PARALLEL_MULTIAGENT_GROUNDWORK.md §5: budget-abort, determinism/ordering,
 failure isolation, correct dependency waves, and the flag gate (byte-identical when off).
@@ -263,16 +263,16 @@ def test_route_after_wave_iteration_cap():
     assert ex.route_after_wave(over) == "synthesize_exploration"
 
 
-# ── The flag gate ──────────────────────────────────────────────────────────────
+# ── The transport gate (formerly the explore.parallel_subq flag) ───────────────
 
 def _explore_nodes(flag: str | None):
     import duckdb
     from aughor.db.connection import DuckDBConnection
     from aughor.agent.graph import build_graph_generic
     if flag:
-        os.environ["AUGHOR_EXPLORE_PARALLEL"] = flag
+        os.environ["AUGHOR_LLM_RPM"] = "120"       # declared headroom → parallel waves
     else:
-        os.environ.pop("AUGHOR_EXPLORE_PARALLEL", None)
+        os.environ.pop("AUGHOR_LLM_RPM", None)     # undeclared → serial
     try:
         db = DuckDBConnection.__new__(DuckDBConnection)
         db._conn = duckdb.connect(":memory:")
@@ -281,7 +281,7 @@ def _explore_nodes(flag: str | None):
         g = build_graph_generic(db)
         return set(g.get_graph().nodes.keys())
     finally:
-        os.environ.pop("AUGHOR_EXPLORE_PARALLEL", None)
+        os.environ.pop("AUGHOR_LLM_RPM", None)
 
 
 def test_flag_off_uses_sequential_nodes():

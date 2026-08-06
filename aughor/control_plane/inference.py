@@ -89,6 +89,19 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     # under-estimate only costs payload headroom; an over-estimate silences the guard
     # on the model that most needs it.
     "deepseek": 131_072,
+    # The Nemotron-3 families — verified against OpenRouter's live catalogue
+    # 2026-08-06, taking the MINIMUM across variants of each family key (paid/:free/
+    # :batch report different windows; under-estimate is safe): super reports
+    # 1,000,000 paid / 262,144 :free → 262,144; ultra 512,288 paid / 1,000,000 :free
+    # → 512,288; nano 262,144 / 256,000 (+ the omni-reasoning at 256,000) → 256,000.
+    # Without these the shipped coder binding (nemotron-3-super:free) inherited
+    # _DEFAULT_CONTEXT = 32,768 — an 8× under-statement that would clamp any
+    # profile-sized (A1) payload budget back down through schema_scan_char_limits.
+    "nemotron-3-super": 262_144,
+    "nemotron-3-ultra": 512_288,
+    "nemotron-3-nano": 256_000,
+    # gemma-4-31b-it and :free both report 262,144 (same catalogue read).
+    "gemma-4-31b": 262_144,
 }
 _DEFAULT_CONTEXT = 32_768
 
