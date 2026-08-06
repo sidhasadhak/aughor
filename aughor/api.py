@@ -107,9 +107,16 @@ async def _lifespan(app: "FastAPI"):
     await _start_ontology_refresh_loop()
     await _start_continuous_exploration_loop()
     await _seed_playbook()
-    await _start_monitor_scheduler()
-    await _start_brief_scheduler()
-    await _start_automation_heartbeat()
+    # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick once a
+    # minute runs one tick of every family). Starting APScheduler here too would
+    # DOUBLE-tick on warm instances, so the in-process schedulers are the
+    # always-on-process path only.
+    if os.environ.get("VERCEL"):
+        logger.info("serverless: in-process schedulers OFF — Vercel Cron drives /cron/tick")
+    else:
+        await _start_monitor_scheduler()
+        await _start_brief_scheduler()
+        await _start_automation_heartbeat()
     yield
     # ── Shutdown ───────────────────────────────────────────────────────────────
     # Background loops (supervisor, ontology refresh) are cancelled by event-loop
@@ -621,6 +628,7 @@ async def _start_automation_heartbeat() -> None:
 # ── Router registration ───────────────────────────────────────────────────────
 
 from aughor.routers import (
+    cron,
     system,
     agents,
     lifecycle,
@@ -664,6 +672,7 @@ from aughor.routers import (
 )
 
 app.include_router(consistency.router)
+app.include_router(cron.router)
 app.include_router(system.router)
 app.include_router(investigations.router)
 app.include_router(canvas.router)

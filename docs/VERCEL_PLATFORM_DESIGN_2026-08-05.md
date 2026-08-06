@@ -685,10 +685,29 @@ is standing, verified end-to-end in a browser:
 6. The demo posture (`NEXT_PUBLIC_DEMO_PACK=1`) outranks `NEXT_PUBLIC_API_URL` —
    removed from the preview env; production keeps the demo until the flip.
 
-**What remains (fast-follows behind graceful degradation):** uploads → Blob (the
-first feature an empty-catalogue user hits; file-upload staging currently `/tmp`,
-ephemeral), scheduler → Cron (interactive works without), the production flip (point
-production `NEXT_PUBLIC_API_URL` at the platform and retire the demo posture — a
-product decision, two env vars and a promote), an external queue backend when there
-is one to verify against, and the fixture builtin listing itself although its duckdb
-is not bundled (cosmetic).
+**Fast-follows LANDED (2026-08-06):**
+
+* **Uploads are durable via Vercel Blob** (`control_plane/object_store.py`, a private
+  store, header `x-vercel-blob-access` — found in the SDK source after four guessed
+  names failed). The staged files under a vended root were already the truth the
+  in-memory DuckDB rebuilds from; the seam mirrors that root down on connect and up
+  after every mutation (all drop paths funnel through the tombstone save — one hook).
+  Proven END-TO-END through the production API: CSV uploaded → ingested + mirrored
+  (file + sidecar) → read back from a fresh invocation → deleted → blob strays gone,
+  tombstone persisted.
+* **The scheduler's clock is tiered to the plan** (`routers/cron.py`): `/cron/tick`
+  (CRON_SECRET-protected; refuses to serve unauthenticated on Vercel — an open faucet,
+  not a degradation) runs one idempotent tick of every family — automations, due
+  monitors, due briefs, the stale-lease sweep, hourly matcache eviction — with
+  due-ness computed over the caller's lookback window. **Hobby allows only daily
+  crons**, so Vercel Cron is the guaranteed floor (06:00 UTC) and a GitHub Actions
+  schedule drives ~10-minute ticks (`.github/workflows/cron-tick.yml`, `window_s=660`).
+  In-process APScheduler is gated OFF under VERCEL (a warm instance would double-tick)
+  and remains the always-on-process path. Live-verified on production: 401 without
+  the secret, real counts with it. `maxDuration` capped at 300 s (the Hobby ceiling —
+  800 needs Pro; long explorations get correspondingly less headroom per invocation).
+
+**Still open:** the production flip is DONE (2026-08-06 — production fetches only the
+platform; demo posture retired); an external queue backend when there is one to verify
+against; the fixture-builtin listing and the `connections//prewarm` double-slash
+(cosmetic); CI Postgres/pgvector services.

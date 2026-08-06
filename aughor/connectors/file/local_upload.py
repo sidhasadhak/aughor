@@ -168,6 +168,18 @@ class LocalUploadConnection(Connector):
         self._upload_dir = self._cap.root
         self._upload_dir.mkdir(parents=True, exist_ok=True)
         (self._upload_dir / DEFAULT_SCHEMA).mkdir(exist_ok=True)
+        # Durable-store materialization (Blob on Vercel; no-op locally): the files
+        # under this root ARE the truth this connection rebuilds from, so a cold
+        # instance fetches them before the tombstone load and file reload below.
+        # Best-effort — an object-store outage must degrade to local-only, not
+        # block the connection.
+        try:
+            from aughor.control_plane.object_store import mirror_down
+            mirror_down(self._upload_dir, self._blob_prefix())
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "upload-store materialization is best-effort; local files serve",
+                     counter="uploads.mirror_down", conn_id=connection_id or None)
         self._duckdb = duckdb.connect(":memory:")
         # Alias the handle under the name the DuckDB intelligence-build path expects
         # (build_intelligence / profilers read ._conn). LocalUpload is DuckDB-backed,
@@ -321,6 +333,24 @@ class LocalUploadConnection(Connector):
             logger.debug("removed-seed tombstone load failed for %s: %s", self._connection_id, exc)
         return schemas, tables
 
+    def _blob_prefix(self) -> str:
+        """This connection's namespace in the durable object store — the same
+        {org}/{conn} shape the vended local path uses."""
+        return f"uploads/{self._cap.org_id}/{self._cap.conn_id}"
+
+    def _persist_uploads(self) -> None:
+        """Mirror the upload root to the durable store after a mutation. Deletions
+        propagate as remote strays; the tombstone rides along as a regular file.
+        Best-effort: a failed mirror must not fail the ingest/delete that worked
+        locally — the next mutation (or instance) retries by construction."""
+        try:
+            from aughor.control_plane.object_store import mirror_up
+            mirror_up(self._upload_dir, self._blob_prefix())
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "upload-store mirror is best-effort; local state is intact",
+                     counter="uploads.mirror_up", conn_id=self._connection_id or None)
+
     def _save_tombstone(self) -> None:
         try:
             (self._upload_dir / _TOMBSTONE_FILE).write_text(json.dumps(
@@ -328,6 +358,9 @@ class LocalUploadConnection(Connector):
                  "tables": sorted(self._removed_seed_tables)}))
         except Exception as exc:
             logger.debug("removed-seed tombstone save failed for %s: %s", self._connection_id, exc)
+        # Every drop/restore path funnels through here — the one mirror hook that
+        # makes deletions durable (the tombstone rides up; removed files become strays).
+        self._persist_uploads()
 
     def restore_seeds(self, schema: str | None = None) -> None:
         """Clear the tombstone (all, or one schema) so the sample catalog re-materializes on
@@ -550,6 +583,7 @@ class LocalUploadConnection(Connector):
             self._removed_seed_schemas.discard(schema)
             self._removed_seed_tables.discard(key)
             self._save_tombstone()
+        self._persist_uploads()   # the staged file + sidecar just became the truth
         return table_name
 
     def _describe_contract(self, schema: str, table_name: str) -> dict:

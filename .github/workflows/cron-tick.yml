@@ -1,0 +1,21 @@
+# The fine-grained half of the platform's tiered clock. Vercel Cron (Hobby) can
+# only fire daily — that daily hit of /cron/tick is the guaranteed floor — while
+# this schedule drives ~10-minute ticks. Both call the same endpoint; window_s
+# tells it how far to look back, so entries due between ticks fire on the next
+# one (at-least-once, and every family's tick is idempotent).
+name: Cron · platform tick
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Tick the platform scheduler
+        run: |
+          curl -sf --max-time 290 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://aughor-platform.vercel.app/cron/tick?window_s=660" \
+            | head -c 500

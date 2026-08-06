@@ -111,7 +111,7 @@ def _make_job_fn(monitor_id: str):
 
 # ── Housekeeping ───────────────────────────────────────────────────────────────
 
-def _evict_matcache() -> None:
+def evict_matcache_once() -> None:
     """Hourly: drop expired materialized-cache rows so mat_cache.duckdb can't grow
     unbounded (the cache is TTL-on-read; unread entries never expire on their own)."""
     try:
@@ -210,7 +210,7 @@ def start() -> None:
             reload_monitor(monitor)
         # Background housekeeping that needs a heartbeat but isn't a monitor.
         _scheduler.add_job(
-            _evict_matcache,
+            evict_matcache_once,
             trigger=IntervalTrigger(hours=1),
             id="matcache_evict",
             name="matcache eviction",
