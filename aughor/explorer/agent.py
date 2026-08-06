@@ -266,6 +266,30 @@ def _query_columns(sql: str) -> set:
     return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
 
 
+def _org_identity(connection_id: str, profile_industry: str = "") -> tuple[str, str]:
+    """Track E (2026-08-06) — ``(org_block, effective_industry)`` resolved through
+    the workspace that OWNS this connection, never the app-level global alone.
+
+    The explorer was the one identity consumer that never asked which workspace it
+    explores for — which is how a briefing came to assert the operator's company
+    name (and EUR) over a public US-retail sample dataset: the org block and
+    industry rode in from whoever configured the app, regardless of whose data was
+    on the table. ``workspace_for_connection`` is best-effort and returns ``None``
+    for the catch-all Default workspace, which resolves to the app scope — same as
+    before for single-workspace deployments, scoped for everyone else. Fail-open:
+    a broken workspace store degrades to the app scope, never blocks a run."""
+    from aughor.orgsettings import org_context, resolve_industry
+    try:
+        from aughor.workspace.store import workspace_for_connection
+        ws_id = workspace_for_connection(connection_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace resolution is best-effort; identity falls back to app scope",
+                 counter="explorer.workspace_identity")
+        ws_id = None
+    return org_context(ws_id), resolve_industry(profile_industry, ws_id)
+
+
 def _ontology_skip_note(last_build: Optional[dict]) -> str:
     """An actionable 'why domain intelligence is empty' message, from the build outcome the
     connection recorded (which stage failed + why). Turns a silent empty Hub into a clear,
@@ -2348,8 +2372,9 @@ class SchemaExplorer:
                         "you keep the SQL correct — a conversion rate must come out 0..1, not 1.4):\n"
                         + "\n".join(_parts) + "\n"
                     )
-                from aughor.orgsettings import org_context, resolve_industry
-                _eff_industry = resolve_industry(_bp.industry)
+                # Track E (2026-08-06): identity resolved through the workspace
+                # that OWNS this connection — see _org_identity.
+                _org_block, _eff_industry = _org_identity(self.connection_id, _bp.industry)
                 # Steer by the effective industry's CURATED metrics — names + formula + grain +
                 # anti-patterns. Deterministic, no LLM.
                 #
@@ -2383,7 +2408,7 @@ class SchemaExplorer:
                     tolerate(_exc, "selected-industry KB steering is best-effort; fall back to the "
                              "inferred profile metrics", counter="explorer.selected_industry_kb")
                 profile_block = (
-                    org_context()
+                    _org_block
                     + _kb_block
                     + f"INDUSTRY CONTEXT — this is a {_eff_industry} business ({_bp.business_model}). "
                     f"{_bp.summary}\n"

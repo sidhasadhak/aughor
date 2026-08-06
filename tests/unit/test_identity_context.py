@@ -93,3 +93,54 @@ def test_inference_no_org_settings_is_a_noop(monkeypatch):
     with pytest.raises(_Boom):
         I.infer_business_profile("test-conn")
     assert captured["user"].startswith("SCHEMA (tables")   # nothing prepended when unset
+
+
+# ── Track E (2026-08-06): the explorer resolves identity through the OWNING workspace ─
+
+class TestExplorerWorkspaceIdentity:
+    """`explorer.agent._org_identity` — the seam that ended the contamination class
+    where a briefing asserted the operator's company name (and currency) over a
+    public sample dataset: the explorer now asks which workspace owns the
+    connection before it borrows anyone's identity."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated(self, tmp_path, monkeypatch):
+        from aughor.orgsettings import store as S
+        from aughor.workspace import store as WS
+        monkeypatch.setattr(S, "_PATH", tmp_path / "org_settings.json")
+        monkeypatch.setattr(WS, "_DB_PATH", tmp_path / "workspaces.db")
+
+    def test_owning_workspace_identity_beats_the_app_global(self):
+        from aughor.explorer.agent import _org_identity
+        from aughor.orgsettings import store as S
+        from aughor.orgsettings.models import OrgSettings
+        from aughor.workspace import store as WS
+
+        # App-level identity = the operator's own company (the contamination source).
+        S.save_org_settings(OrgSettings(company_name="LuxOperator", industry="luxury retail"))
+        # The connection lives in a workspace whose override says what the DATA is.
+        WS.create_workspace("US-Retail-Samples",
+                            connection_ids=["conn-superstore"],
+                            settings_override={"industry": "retail"})
+
+        org_block, industry = _org_identity("conn-superstore", profile_industry="")
+        assert industry == "retail"                      # workspace override, not the app's
+        assert "luxury retail" not in org_block
+
+    def test_unowned_connection_falls_back_to_app_scope(self):
+        from aughor.explorer.agent import _org_identity
+        from aughor.orgsettings import store as S
+        from aughor.orgsettings.models import OrgSettings
+
+        S.save_org_settings(OrgSettings(company_name="Acme", industry="food"))
+        org_block, industry = _org_identity("conn-nowhere", profile_industry="inferred")
+        assert "Acme" in org_block                       # Default-workspace ⇒ app scope, as before
+        assert industry == "food"                        # explicit app industry outranks inferred
+
+    def test_workspace_store_failure_is_fail_open(self, monkeypatch):
+        from aughor.explorer import agent as EA
+
+        monkeypatch.setattr("aughor.workspace.store.workspace_for_connection",
+                            lambda cid: (_ for _ in ()).throw(RuntimeError("store down")))
+        org_block, industry = EA._org_identity("conn-x", profile_industry="fallback")
+        assert industry == "fallback"                    # degraded to app scope, never raised
