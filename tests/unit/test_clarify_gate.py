@@ -1,9 +1,10 @@
-"""P4 clarify_gate (backend detection + routing + graph wiring).
+"""P4 clarify gate (backend detection + routing + graph wiring).
 
 When a metric's GOVERNED reading and the LLM's parsed reading both run over the metric table but give
 materially different numbers (the count-vs-value 'refund rate' class), the deep run should PAUSE and ask
 rather than silently pin one. These tests pin the detector's fire/no-fire conditions, the intake router,
-and the graph structure (the clarify_gate node + interrupt exist only when the flag is on).
+and the graph structure (the interrupt is armed only when the REQUEST allows a pause —
+`allow_clarify`, which replaced the `deep_analysis.clarify_gate` flag on 2026-08-06).
 """
 from __future__ import annotations
 
@@ -13,7 +14,21 @@ import duckdb
 
 import aughor.agent.investigate as I
 from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.semantic.canonical import CanonicalMetric
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _Metric:
+    """The attribute shape `_match_canonical_metric` reads — the planning resolver
+    serves it via `_ContractMetricView`; tests construct it directly."""
+    name: str
+    label: str
+    sql: str
+    unit: str = ""
+    tables: list = field(default_factory=list)
+    source: str = "catalog"
+    verified: bool = True
+    caveats: str = ""
 
 
 def _intake(**over) -> IntakeOutput:
@@ -29,9 +44,9 @@ def _intake(**over) -> IntakeOutput:
     return IntakeOutput(**base)
 
 
-_GOVERNED = CanonicalMetric(name="refund_rate", label="Refund Rate",
-                            sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
-                            source="catalog", verified=True)
+_GOVERNED = _Metric(name="refund_rate", label="Refund Rate",
+                    sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
+                    source="catalog", verified=True)
 
 
 class _ProbeConn:
@@ -45,8 +60,7 @@ class _ProbeConn:
 
 
 def _on(monkeypatch, metrics=(_GOVERNED,)):
-    monkeypatch.setenv("AUGHOR_CLARIFY_GATE", "1")
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: list(metrics))
 
 
@@ -150,7 +164,8 @@ def test_clarify_gate_interrupt_armed_only_when_enabled():
     on = build_graph_generic(db, clarify_gate=True)
     off = build_graph_generic(db, clarify_gate=False)
     # The NODE is present in both (so a paused run can reconnect its checkpoint on resume — mirrors
-    # plan_gate); only the INTERRUPT is armed when the flag is on, so the flag-off run never pauses.
+    # plan_gate); only the INTERRUPT is armed when the request allows a pause, so a
+    # headless run (allow_clarify=False) never stops.
     assert "clarify_gate" in set(on.get_graph().nodes.keys())
     assert "clarify_gate" in set(off.get_graph().nodes.keys())
     assert "clarify_gate" in on.interrupt_before_nodes
@@ -209,7 +224,6 @@ def test_resume_noop_without_pending_clarify():
 
 def test_burndown_hard_binds_the_resolved_reading(monkeypatch):
     # After a prior clarify resolved to the parsed reading, a later run must BIND it and skip the ask.
-    monkeypatch.setenv("AUGHOR_CLARIFY_GATE", "1")
     from aughor.org.context import current_org_id
     from aughor.semantic import ambiguity_ledger as L
     parsed = "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100"
@@ -227,14 +241,15 @@ def test_burndown_hard_binds_the_resolved_reading(monkeypatch):
 
 
 def test_burndown_noop_when_unresolved(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLARIFY_GATE", "1")
     it = _intake()
     conn = _ProbeConn({"refund_id": 20.2})
     assert I._apply_resolved_metric_reading(it, "c_fresh_nothing", conn) is None
 
 
-def test_burndown_noop_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CLARIFY_GATE", raising=False)
+def test_burndown_is_unconditional_but_safe_on_no_resolution(monkeypatch):
+    """The burndown lost its flag (honoring a RECORDED user choice never pauses a
+    run, so no deployment needed an opt-out) — with nothing recorded it stays a
+    no-op, which is the property the old flag-off test actually relied on."""
     it = _intake()
     assert I._apply_resolved_metric_reading(it, "c_burndown", _ProbeConn({})) is None
 

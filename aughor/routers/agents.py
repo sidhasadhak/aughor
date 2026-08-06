@@ -149,13 +149,10 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
 
 # ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
 # Dynamic, user-created personas (aughor/custom_agents/) — distinct from the
-# static built-in fleet charters above. Routes 404 when the flag is off.
-
-def _require_user_agents() -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("agents.user_defined"):
-        raise HTTPException(status_code=404,
-                            detail="user-defined agents are disabled (flag agents.user_defined)")
+# static built-in fleet charters above. Permanent since flag endgame Wave 2
+# (2026-08-06, receipt df89c044999a): every behaviour is DATA-GATED — it needs an
+# agent row the user created AND a request naming it, so a fresh clone's only
+# delta is /agents/custom returning an empty roster instead of 404.
 
 
 def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
@@ -224,7 +221,6 @@ class UserAgentFromTemplate(BaseModel):
 @router.get("/agents/custom")
 def list_user_agents():
     """All user-defined agents (the persona roster, newest first)."""
-    _require_user_agents()
     from aughor.custom_agents import list_agents
     return [a.model_dump() for a in list_agents()]
 
@@ -239,7 +235,6 @@ def list_agent_templates():
     behavioural expectations rather than queries), so the template says so rather than
     seeding a suite that would measure nothing. See :mod:`aughor.custom_agents.templates`.
     """
-    _require_user_agents()
     from aughor.custom_agents.templates import list_templates
     return {"templates": list_templates()}
 
@@ -252,7 +247,6 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
     while they still have the domain in mind — the agent is born with a stance, and earns
     its pass chip only once real ground truth exists.
     """
-    _require_user_agents()
     from aughor.custom_agents.templates import create_from_template
     made = create_from_template(body.pack_id, name=body.name,
                                 connection_id=body.connection_id,
@@ -264,7 +258,6 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
 
 @router.post("/agents/custom", status_code=201)
 def create_user_agent(body: UserAgentCreate):
-    _require_user_agents()
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
     from aughor.org.context import current_org_id
@@ -278,7 +271,6 @@ def create_user_agent(body: UserAgentCreate):
 
 @router.get("/agents/custom/{agent_id}")
 def get_user_agent(agent_id: str):
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     agent = get_agent(agent_id)
     if agent is None:
@@ -288,7 +280,6 @@ def get_user_agent(agent_id: str):
 
 @router.patch("/agents/custom/{agent_id}")
 def patch_user_agent(agent_id: str, body: UserAgentPatch):
-    _require_user_agents()
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
     from aughor.custom_agents import update_agent
@@ -310,7 +301,6 @@ def list_user_agent_revisions(agent_id: str, limit: int = 50):
     agent answers are versioned — a rename does not appear here, because it changed nothing
     about what the agent does.
     """
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     from aughor.custom_agents.revisions import list_revisions
     agent = get_agent(agent_id)
@@ -332,7 +322,6 @@ def restore_user_agent_revision(agent_id: str, version: int):
     configuration, not a counter, so returning to a measured state returns the measurement
     with it.
     """
-    _require_user_agents()
     from aughor.custom_agents import get_agent, update_agent
     from aughor.custom_agents.revisions import revision_config
     if get_agent(agent_id) is None:
@@ -348,7 +337,6 @@ def restore_user_agent_revision(agent_id: str, version: int):
 
 @router.delete("/agents/custom/{agent_id}")
 def delete_user_agent(agent_id: str):
-    _require_user_agents()
     from aughor.custom_agents import delete_agent
     if not delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="No such agent")
@@ -364,7 +352,6 @@ class GoldenCreate(BaseModel):
 
 @router.get("/agents/custom/{agent_id}/goldens")
 def list_agent_goldens(agent_id: str):
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     from aughor.custom_agents.store import list_goldens
     if get_agent(agent_id) is None:
@@ -377,7 +364,6 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
     """Pin a golden question: the agent's own regression suite. reference_sql is
     the ground truth the evaluation compares against (executed, not matched as
     text) — read-only statements only."""
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     from aughor.custom_agents.store import add_golden
     if get_agent(agent_id) is None:
@@ -404,7 +390,6 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
 
 @router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
 def delete_agent_golden(agent_id: str, golden_id: str):
-    _require_user_agents()
     from aughor.custom_agents.store import delete_golden
     if not delete_golden(golden_id):
         raise HTTPException(status_code=404, detail="No such golden")
@@ -427,7 +412,6 @@ def user_agent_observability(agent_id: str):
     returning zeros: a confident 0 tokens and an unmeasured 0 tokens look identical
     on a tile, and only one of them is true.
     """
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
@@ -469,7 +453,6 @@ def evaluate_user_agent(agent_id: str):
     """Run the agent's golden suite NOW (one coder-model call per golden, capped)
     and stamp the result on the agent — 'your agent still passes 11/12'. Run it
     after editing instructions or documents to catch regressions."""
-    _require_user_agents()
     from aughor.custom_agents import get_agent
     from aughor.custom_agents.quality import evaluate_agent
     agent = get_agent(agent_id)

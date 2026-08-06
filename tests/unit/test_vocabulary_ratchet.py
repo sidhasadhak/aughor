@@ -108,10 +108,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "not a user-facing word; the roster lists 'agents'",
     ),
     "investigation_in_web": (
-        r"(?i)investigat", ("web",), ("web/lib/api.ts",),
+        r"(?i)investigat", ("web",), ("web/lib/api.ts", "web/lib/uiMessageAdapter.ts"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
-        "must mirror the backend contract field-for-field",
+        "must mirror the backend contract field-for-field, and the C1 SSE→UIMessage "
+        "adapter is exempt for the same reason (it names the wire frames verbatim, "
+        "including the start frame's investigation_id drop-recovery handle)",
     ),
     # ── External product names ────────────────────────────────────────────────────────
     "palantir": (r"(?i)palantir", CODE_ROOTS, (), "name our features for what they do"),
@@ -176,7 +178,7 @@ BASELINE: dict[str, int] = {
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 321,
+    "persona": 281,  # paid down 2026-08-06: the user-agents graduation eval retired with its flag
     "reforce": 1,
     "soma": 26,
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";

@@ -77,15 +77,16 @@ def _run_one(automation) -> None:
         with using_org(org):
             run_automation(automation)
 
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("ops.metered_monitors"):
-        from aughor.kernel.jobs import submit_background_tick
-        job_id = submit_background_tick(
-            "automation", _work, conn_id=automation.conn_id, org_id=org,
-            idempotency_key=f"automation:{automation.id}")
-        if job_id is not None:
-            return       # routed through the kernel
-    _work()              # legacy / no-loop fallback
+    # Metered execution is permanent (flag endgame Wave 2, 2026-08-06; receipt
+    # b167bb891764) — the automation runs as a supervised job when the kernel
+    # loop is up; _work() stays the no-loop fallback.
+    from aughor.kernel.jobs import submit_background_tick
+    job_id = submit_background_tick(
+        "automation", _work, conn_id=automation.conn_id, org_id=org,
+        idempotency_key=f"automation:{automation.id}")
+    if job_id is not None:
+        return       # routed through the kernel
+    _work()              # no-loop fallback
 
 
 def trigger_now(automation_id: str) -> Optional[AutomationRun]:

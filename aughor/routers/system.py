@@ -148,19 +148,18 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
 
     # R13 — the named research-starter playbooks + per-space curated questions
     # (deterministic templates, no model). Computed before the cache check so they
-    # ride cache hits too; the key is absent entirely when the flag is off.
-    from aughor.kernel.flags import flag_enabled as _flag_enabled
+    # ride cache hits too. Unconditional since flag endgame Wave 2 (2026-08-06,
+    # receipt 3155c4d9de61 — deterministic payload, additive `starters` key).
     _starters: list[dict] | None = None
-    if _flag_enabled("starters.library"):
-        try:
-            from aughor.starters import starter_payload
-            _starters = await loop.run_in_executor(
-                None, lambda: starter_payload(connection_id))
-        except Exception as _st_exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_st_exc, "starter library is best-effort",
-                     counter="starters.library", conn_id=connection_id or None)
-            _starters = []
+    try:
+        from aughor.starters import starter_payload
+        _starters = await loop.run_in_executor(
+            None, lambda: starter_payload(connection_id))
+    except Exception as _st_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_st_exc, "starter library is best-effort",
+                 counter="starters.library", conn_id=connection_id or None)
+        _starters = []
 
     try:
         cached = get_cached(connection_id, fingerprint)

@@ -45,7 +45,8 @@ FLAGS = (
     "automations.source_probes", "automations.proposals",
     "freshness.resolved_rebuild",
     "agui.endpoint", "federation.remote_join",
-    "semantic.contract_live",
+    # "semantic.contract_live" left 2026-08-06 with its scenario: the migration
+    # completed and its oracle (the legacy CanonicalMetric path) was deleted.
 )
 
 #: The scenario-name prefix that backs each flag — the receipt's flag→cases map.
@@ -62,7 +63,6 @@ SCENARIO_PREFIX = {
     "freshness.resolved_rebuild": "freshness_resolved_rebuild",
     "agui.endpoint": "agui_endpoint",
     "federation.remote_join": "federation_remote_join",
-    "semantic.contract_live": "semantic_contract_live",
 }
 
 PROBE_CONN = "flag-batch-b-receipt-probe"
@@ -394,23 +394,17 @@ def _agui_endpoint__the_route_is_the_whole_surface() -> Comparison:
     refusal is the flag's entire surface. The on-state is deliberately NOT invoked
     with a valid body (it would start a real run); the single-call-site fact is the
     on-state argument, and the batch-A pattern (calling is the consent) applies."""
-    from fastapi.testclient import TestClient
-
-    from aughor.api import app
-    from aughor.kernel.flags import flag_overrides
-
-    client = TestClient(app, raise_server_exceptions=False)
-    valid = {"threadId": "receipt-t", "runId": "receipt-r", "state": {},
-             "messages": [], "tools": [], "context": [], "forwardedProps": {}}
-
-    with flag_overrides({"agui.endpoint": False}):
-        off = client.post("/agui/run", json=valid).status_code
+    # Permanent since flag endgame Wave 2 (2026-08-06): the flag's single call
+    # site (the first line of the handler) is deleted, so the surviving claim is
+    # structural — nothing else in the app ever consulted it, and the route is
+    # deliberately NOT invoked here (a valid body would start a real run; calling
+    # is the consent).
     return Comparison(
         scenario="agui_endpoint__the_route_is_the_whole_surface",
-        expected={"off": 404, "single_call_site": True},
-        observed={"off": off, "single_call_site": True},
-        oracle="declared (additive translator; one call site)",
-        note="calling the endpoint is the consent; nothing else in the app consults the flag",
+        expected={"single_call_site": True},
+        observed={"single_call_site": True},
+        oracle="declared (additive translator; one call site, now unconditional)",
+        note="calling the endpoint is the consent; the 404 gate died with the flag",
     )
 
 
@@ -423,53 +417,28 @@ def _federation_remote_join__the_route_is_the_whole_surface() -> Comparison:
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    from aughor.kernel.flags import flag_overrides
 
     client = TestClient(app, raise_server_exceptions=False)
     body = {"left_conn_id": "", "left_sql": "", "left_key": "",
             "right_conn_id": "", "right_table": "", "right_key": ""}
 
-    def probe(on: bool) -> int:
-        with flag_overrides({"federation.remote_join": on}):
-            return client.post("/query/cross-source-join", json=body).status_code
-
-    off, on = probe(False), probe(True)
+    status = client.post("/query/cross-source-join", json=body).status_code
     return Comparison(
         scenario="federation_remote_join__the_route_is_the_whole_surface",
-        expected={"off": 404, "on": 400},
-        observed={"off": off, "on": on},
-        oracle="declared (invocation-gated)",
-        note="the gate opens; work happens only on an explicit, fully-specified call",
+        expected={"empty_body": 400},
+        observed={"empty_body": status},
+        oracle="declared (invocation-gated; permanent since flag endgame Wave 2)",
+        note="an empty body is refused at field validation before any source is touched",
     )
 
 
 # ── the migration equality (semantic.contract_live) ──────────────────────────────
 
-@scenario("semantic_contract_live__metric_blocks_are_byte_identical")
-def _semantic_contract_live__metric_blocks_are_byte_identical() -> Comparison:
-    """The REC-U10 claim, proven the L4 way: the metric grounding blocks render
-    byte-identical from the legacy CanonicalMetric path and the unified
-    SemanticContract path — over THIS box's real metric stores, not a fixture.
-    (On a fresh clone both are empty, which is the same equality.)"""
-    from aughor.db.registry import list_connections
-    from aughor.semantic.canonical import canonical_metrics_block, unified_metric_grounding
-
-    conns = [c.get("id") for c in (list_connections() or []) if c.get("id")]
-    conn = conns[0] if conns else PROBE_CONN
-
-    def probe():
-        return {"canonical": canonical_metrics_block(conn),
-                "unified": unified_metric_grounding(conn)}
-
-    off, on = _on_off("semantic.contract_live", probe)
-    return Comparison(
-        scenario="semantic_contract_live__metric_blocks_are_byte_identical",
-        expected=off, observed=on,
-        oracle="the legacy CanonicalMetric path",
-        note="one contract type, zero drift — the migration's whole safety argument",
-        detail={"connection": conn,
-                "canonical_chars": len(on["canonical"]), "unified_chars": len(on["unified"])},
-    )
+# `semantic_contract_live__metric_blocks_are_byte_identical` RETIRED 2026-08-06
+# (flag endgame Wave 2): its oracle — the legacy CanonicalMetric path — was deleted
+# once the migration completed. The equality it proved (receipt e801ff3a4448) is
+# history: byte-identical renders over this box's real stores, recorded before the
+# legacy resolver was removed. Equivalence to deleted code is not a live property.
 
 
 # ── the conversion trigger (ask.conversation_context → AUTO) ─────────────────────

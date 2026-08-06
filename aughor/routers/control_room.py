@@ -185,11 +185,9 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
         })
 
     # ── persona rows, from H2's agent axis over the session log ──────────────
-    # Personas exist as a surface only while `agents.user_defined` is on — with
-    # it off their CRUD routes 404, and a fleet table advertising rows nobody
-    # can open would be two views disagreeing about what exists.
-    from aughor.kernel.flags import flag_enabled
-    personas_on = flag_enabled("agents.user_defined")
+    # Personas are a permanent surface (flag endgame Wave 2, 2026-08-06) — the
+    # fleet table always lists user-defined agents; an empty roster is honest.
+    personas_on = True
     persona_usage: dict[str, Any] = {}
     if personas_on:
         try:

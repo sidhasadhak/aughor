@@ -482,9 +482,12 @@ def test_openai_compat_calls_now_carry_an_output_cap():
     assert seen["max_tokens"] == P._max_output_tokens()
 
 
-def test_reasoning_effort_is_sent_only_where_it_is_understood():
+def test_reasoning_effort_is_sent_only_where_it_is_understood(monkeypatch):
     """OpenRouter reads `reasoning` from the body; other OpenAI-compat shims reject
-    unknown fields, so sending it everywhere would break them."""
+    unknown fields, so sending it everywhere would break them. The VALUE is pinned
+    via env because the default is model-sized (A1 ModelProfile) — asserting the
+    tier default here would make the test depend on this box's llm_config binding."""
+    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "low")
     assert P._reasoning_extra_body("openrouter") == {"reasoning": {"effort": "low"}}
     assert P._reasoning_extra_body("gemini") == {}
     assert P._reasoning_extra_body("groq") == {}

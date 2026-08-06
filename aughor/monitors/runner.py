@@ -543,11 +543,9 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
     # deterministic correctness finding on the monitor's SQL to the fired alert.
     if alert is not None:
         try:
-            from aughor.kernel.flags import flag_enabled
-            if flag_enabled("monitors.guarded"):
-                _cav = _guard_caveats(monitor, db)
-                if _cav:
-                    alert.caveat = _cav
+            _cav = _guard_caveats(monitor, db)
+            if _cav:
+                alert.caveat = _cav
         except Exception:
             logger.debug("monitor guard probes are best-effort; skipped", exc_info=True)
 

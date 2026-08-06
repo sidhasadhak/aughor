@@ -485,7 +485,8 @@ export interface paths {
         /**
          * Agui Run
          * @description AG-UI-protocol translator over the unified `/ask` stream (fresh run, or a resume from an
-         *     interrupt outcome). Additive + flag-gated.
+         *     interrupt outcome). Additive; always available since flag endgame Wave 2 (2026-08-06 —
+         *     the route is the whole surface, calling it is the consent, receipt b395745f7771).
          */
         post: operations["agui_run_agui_run_post"];
         delete?: never;
@@ -6094,7 +6095,12 @@ export interface paths {
         };
         /**
          * Get Packs
-         * @description All packs under packs/ with a validation summary, plus the feature-flag state.
+         * @description All packs under packs/ with a validation summary.
+         *
+         *     `enabled` is a permanent True since flag endgame Wave 2 (2026-08-06, receipt
+         *     452a6fcebba4) — kept in the payload because it is API surface; steering is
+         *     still data-gated three gates deep (active pack · question match · pinned
+         *     deploy binding).
          */
         get: operations["get_packs_packs_get"];
         put?: never;
@@ -6428,8 +6434,9 @@ export interface paths {
          * Query Capability Answer
          * @description Answer a data question end-to-end through the Capability plane (AL-02): one
          *     `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
-         *     and returns the whole result. The non-streaming, template-driven counterpart to /ask — behind
-         *     the `capability.pipeline_live` flag while the plane lands.
+         *     and returns the whole result. The non-streaming, template-driven counterpart to /ask —
+         *     permanent since flag endgame Wave 2 (2026-08-06, receipt 0dd2b45930c7: the route is the
+         *     single gate, calling it is the consent).
          */
         post: operations["query_capability_answer_query_capability_answer_post"];
         delete?: never;
@@ -6452,7 +6459,8 @@ export interface paths {
          * @description Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
          *
          *     The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
-         *     the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+         *     the same `cross_source_join`. Always available since flag endgame Wave 2 (2026-08-06;
+         *     the route is the whole surface — calling it is the consent, receipt 41ec864723fb). The
          *     left SQL goes through the same safety gate as the Query Builder.
          */
         post: operations["query_cross_source_join_query_cross_source_join_post"];
@@ -7533,6 +7541,11 @@ export interface components {
         AskRequest: {
             /** Agent Id */
             agent_id?: string | null;
+            /**
+             * Allow Clarify
+             * @default true
+             */
+            allow_clarify: boolean;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
@@ -8589,6 +8602,11 @@ export interface components {
         };
         /** InvestigateRequest */
         InvestigateRequest: {
+            /**
+             * Allow Clarify
+             * @default true
+             */
+            allow_clarify: boolean;
             /** Canvas Id */
             canvas_id?: string | null;
             /**

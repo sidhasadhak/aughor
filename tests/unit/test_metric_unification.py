@@ -67,13 +67,11 @@ class TestRegisteredMetric:
         """built != wired: the registered metric must REACH the prompt the
         pipeline injects, not merely sit in the file."""
         from aughor.semantic.metrics import list_metrics
-        from aughor.semantic.canonical import (
-            resolve_canonical_metrics, render_canonical_metrics_block,
-        )
-        metrics = resolve_canonical_metrics(
+        from aughor.semantic.canonical import resolve_contracts, render_contracts_block
+        metrics = resolve_contracts(
             samples_db, "ecommerce", catalog=list_metrics(), ontology=None
         )
-        block = render_canonical_metrics_block(metrics)
+        block = render_contracts_block(metrics)
         assert block and "revenue" in block and "SUM(total_amount)" in block, (
             "the canonical revenue formula must appear in the injected block"
         )

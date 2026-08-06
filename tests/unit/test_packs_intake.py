@@ -30,7 +30,6 @@ def _active_sample():
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setattr(intake, "flag_enabled", lambda name: True)
     monkeypatch.setattr(bnd, "_DB_PATH", tmp_path / "pack_bindings.db")
     return tmp_path
 
@@ -68,11 +67,9 @@ def test_no_steer_without_pinned_binding(env):
     assert inj is None                              # active + matches, but not deployed → no steer
 
 
-def test_flag_off_never_steers(env, monkeypatch):
-    monkeypatch.setattr(intake, "flag_enabled", lambda name: False)
-    with using_org("default"):
-        save_binding("customer-analytics", "workspace", BINDING, verified=True)
-        assert intake.injection_for_question(Q, "workspace", packs=[_active_sample()]) is None
+# test_flag_off_never_steers was DELETED with its flag (flag endgame Wave 2,
+# 2026-08-06): steering's control is the three data gates, proven by the tests
+# above and by aughor/evals/specialist_packs_receipt.py.
 
 
 def test_off_topic_question_does_not_steer(env):

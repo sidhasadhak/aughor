@@ -105,7 +105,8 @@ def test_shipped_customer_analytics_pack_validates():
     assert r.ok, r.errors
 
 
-def test_specialist_packs_flag_registered():
+def test_specialist_packs_flag_stayed_deleted():
+    """Hardwired by flag endgame Wave 2 (2026-08-06); a re-registration would be drift."""
     from aughor.kernel.flags import FLAG_ENV, FLAG_META
-    assert "specialist_packs" in FLAG_ENV
-    assert "specialist_packs" in FLAG_META
+    assert "specialist_packs" not in FLAG_ENV
+    assert "specialist_packs" not in FLAG_META

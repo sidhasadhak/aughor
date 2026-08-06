@@ -215,12 +215,31 @@ def _alerts_for(conn_id: str) -> list:
 
 
 # Both halves pin `ops.metered_monitors` OFF because the comparison is between the two
-# LOOPS, and the kernel bridge is a third thing: with it on (default since flag strategy
-# batch A) and a kernel loop captured by the process, run_monitor_job submits the tick as
-# an async background job — the legacy half then reads its alert store before the job has
-# run and reports zero alerts, which is an artifact of the bridge, not of either loop.
-_LEGACY_FLAGS = {"automations.adopt_legacy": False, "ops.metered_monitors": False}
-_ADOPTED_FLAGS = {"automations.adopt_legacy": True, "ops.metered_monitors": False}
+# LOOPS, and the kernel bridge is a third thing: with a kernel loop captured by the
+# process, run_monitor_job submits the tick as an async background job — the legacy half
+# then reads its alert store before the job has run and reports zero alerts, an artifact
+# of the bridge, not of either loop. The bridge is PERMANENT since flag endgame Wave 2
+# (ops.metered_monitors hardwired, 2026-08-06), so the pin is now on the CONDITION: the
+# comparison runs with no captured kernel loop, which makes submit_background_tick
+# decline and both halves run their closures inline — synchronous, comparable.
+_LEGACY_FLAGS = {"automations.adopt_legacy": False}
+_ADOPTED_FLAGS = {"automations.adopt_legacy": True}
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def _no_kernel_loop():
+    """Force the no-loop condition (not assume it — inside the full test suite an
+    earlier test may have captured a loop, the exact trap batch A's receipt hit)."""
+    from aughor.kernel import jobs as jobs_mod
+    saved = getattr(jobs_mod, "_main_loop", None)
+    jobs_mod._main_loop = None
+    try:
+        yield
+    finally:
+        jobs_mod._main_loop = saved
 
 
 def _run_legacy(monitor) -> list:
@@ -230,7 +249,7 @@ def _run_legacy(monitor) -> list:
     from aughor.monitors.store import upsert_monitor
 
     upsert_monitor(monitor)
-    with flag_overrides(_LEGACY_FLAGS):
+    with _no_kernel_loop(), flag_overrides(_LEGACY_FLAGS):
         run_monitor_job(monitor.id)
     return _alerts_for(monitor.conn_id)
 
@@ -246,7 +265,7 @@ def _run_adopted(monitor) -> tuple[Any, list]:
     from aughor.monitors.store import upsert_monitor
 
     upsert_monitor(monitor)
-    with flag_overrides(_ADOPTED_FLAGS):
+    with _no_kernel_loop(), flag_overrides(_ADOPTED_FLAGS):
         run = run_automation(monitor_as_automation(monitor), persist=False)
     return run, _alerts_for(monitor.conn_id)
 

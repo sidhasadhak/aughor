@@ -72,19 +72,14 @@ def test_plain_default_off_flag_env_semantics(monkeypatch):
     assert flag_enabled("semops.champion_validate") is False
 
 
-def test_specialist_packs_is_default_on(monkeypatch):
-    # Graduated 2026-07-31 (flag strategy batch 1, receipt 452a6fcebba4). What
-    # matters at default-on is the OPERATOR ESCAPE HATCH: an explicit falsy env
-    # value still kills steering outright.
-    assert FLAG_DEFAULT.get("specialist_packs") is True
-    monkeypatch.delenv("AUGHOR_SPECIALIST_PACKS", raising=False)
-    assert flag_enabled("specialist_packs") is True
-    for off in ("0", "false", "no", "off"):
-        monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", off)
-        assert flag_enabled("specialist_packs") is False, off
-    # default-on semantics: any non-off value stays on
-    monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "garbage")
-    assert flag_enabled("specialist_packs") is True
+def test_specialist_packs_left_the_registry_for_good():
+    """Hardwired by flag endgame Wave 2 (2026-08-06; graduated 2026-07-31 on
+    receipt 452a6fcebba4). The escape hatch the old test pinned is now the DATA
+    GATE itself: steering needs an active pack with a human-pinned deploy binding,
+    so there is nothing an env var needs to kill. The registry must stay empty of
+    it — a re-registration would be the drift the endgame exists to prevent."""
+    assert "specialist_packs" not in FLAG_ENV
+    assert FLAG_DEFAULT == {}     # Wave 2 complete: no graduated default-ONs remain
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):

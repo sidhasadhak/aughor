@@ -3096,8 +3096,8 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     if not llm_sql:
         return None
     try:
-        from aughor.semantic.canonical import resolve_canonical_metrics
-        metrics = resolve_canonical_metrics(connection_id, schema_text=schema_text or "")
+        from aughor.semantic.canonical import resolve_planning_metrics
+        metrics = resolve_planning_metrics(connection_id, schema_text=schema_text or "")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "canonical-metric resolve for intake pin is best-effort; keeping the LLM "
@@ -3199,12 +3199,9 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     choice). Returns a transparency note when it binds, else None. Fail-open: only binds a
     substitutable formula that actually runs over the metric table.
 
-    Flag-gated on ``deep_analysis.clarify_gate`` (default ON). The substitutability check
-    is the DATA trigger; the flag is the DEPLOYMENT posture — a headless consumer cannot
-    answer an interrupt, and this path is one that pauses the run."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("deep_analysis.clarify_gate"):
-        return None
+    Unconditional since the clarify flag dissolved into the request posture
+    (2026-08-06): honoring a choice the user already recorded never pauses a run,
+    so no deployment needed an opt-out here."""
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
     if not (label and metric_table):
@@ -3230,12 +3227,11 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     their probed previews) so the run can PAUSE and ask, instead of silently choosing one. Returns None
     (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
     the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
-    Deterministic; fail-open on every uncertainty. Flag-gated on
-    ``deep_analysis.clarify_gate`` (default ON) — this is the path that PAUSES the run,
-    so a headless deployment must be able to opt out of being interrupted."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("deep_analysis.clarify_gate"):
-        return None
+    Deterministic; fail-open on every uncertainty. The pause POSTURE lives on the
+    request (`allow_clarify`, replacing the deleted `deep_analysis.clarify_gate`
+    flag): the ada_intake call site skips this probe when the run may not pause,
+    so a headless consumer never pays two preview queries for a question that
+    cannot be asked."""
     parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
@@ -3244,8 +3240,8 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     if not _metric_is_ratio(parsed_sql, label):
         return None   # only a ratio has a count-vs-value split worth interrupting for
     try:
-        from aughor.semantic.canonical import resolve_canonical_metrics
-        cand = _match_canonical_metric(label, parsed_sql, resolve_canonical_metrics(
+        from aughor.semantic.canonical import resolve_planning_metrics
+        cand = _match_canonical_metric(label, parsed_sql, resolve_planning_metrics(
             connection_id, schema_text=schema_text or "") or [])
     except Exception as exc:
         from aughor.kernel.errors import tolerate
@@ -3578,7 +3574,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _resolved_note = _apply_resolved_metric_reading(intake, _conn_id, conn)
         if _resolved_note:
             _metric_note = f"{_metric_note} {_resolved_note}".strip() if _metric_note else _resolved_note
-        else:
+        elif state.get("_allow_clarify", True):
             _clarify_pending = _detect_metric_clarify(intake, _conn_id, _full_schema, conn, question)
 
     # P1 — canonical-metric pinning: prefer the connection's GOVERNED definition of this metric over
@@ -3835,8 +3831,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     }
     if plan_dict is not None:
         out["_orchestration_plan"] = plan_dict
-    # P4 clarify_gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
-    # run through the interrupt gate. Only ever set when the flag is on and the readings materially diverge.
+    # P4 clarify gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
+    # run through the interrupt gate. Only ever set when the request allows a pause and the readings
+    # materially diverge.
     if _clarify_pending is not None:
         out["_clarify_pending"] = _clarify_pending
     return out

@@ -17,7 +17,21 @@ import types
 
 import aughor.agent.investigate as I
 from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.semantic.canonical import CanonicalMetric
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _Metric:
+    """The attribute shape the planning resolver serves (via `_ContractMetricView`);
+    tests construct it directly — the legacy CanonicalMetric left with its resolver."""
+    name: str
+    label: str
+    sql: str
+    unit: str = ""
+    tables: list = field(default_factory=list)
+    source: str = "catalog"
+    verified: bool = True
+    caveats: str = ""
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
@@ -47,9 +61,9 @@ class _StubConn:
         return types.SimpleNamespace(error=None if self._ok else "column not found", rows=[[1]])
 
 
-def _governed_refund_rate() -> CanonicalMetric:
+def _governed_refund_rate() -> _Metric:
     # A value-weighted rate — a bare aggregate the ratio-aware scan can parse + decompose.
-    return CanonicalMetric(
+    return _Metric(
         name="refund_rate", label="Refund Rate",
         sql="SUM(refund_amount) / NULLIF(SUM(order_total), 0) * 100",
         unit="%", source="catalog", verified=True,
@@ -58,7 +72,7 @@ def _governed_refund_rate() -> CanonicalMetric:
 
 def _pin_on(monkeypatch, metrics):
     monkeypatch.setattr(
-        "aughor.semantic.canonical.resolve_canonical_metrics",
+        "aughor.semantic.canonical.resolve_planning_metrics",
         lambda *a, **k: list(metrics),
     )
 
@@ -98,7 +112,7 @@ def test_no_match_when_label_lacks_the_metric_tokens():
 
 def test_generic_only_governed_name_never_matches():
     # 'total revenue' collapses to {} distinctive tokens → must not match everything.
-    generic = CanonicalMetric(name="total_revenue", label="Total Revenue",
+    generic = _Metric(name="total_revenue", label="Total Revenue",
                               sql="SUM(revenue)", source="catalog")
     assert I._match_canonical_metric("net revenue", "SUM(revenue)", [generic]) is None
 
@@ -106,7 +120,7 @@ def test_generic_only_governed_name_never_matches():
 def test_ratio_alignment_breaks_ties():
     # Both share the {refund} token; the intake metric is a RATE, so the ratio metric must win.
     rate = _governed_refund_rate()
-    amount = CanonicalMetric(name="refund_amount", label="Refund Amount",
+    amount = _Metric(name="refund_amount", label="Refund Amount",
                              sql="SUM(refund_amount)", source="catalog")
     m = I._match_canonical_metric("Fragrance refund rate",
                                   "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100",
@@ -115,7 +129,7 @@ def test_ratio_alignment_breaks_ties():
 
 
 def test_non_substitutable_candidate_skipped():
-    northstar = CanonicalMetric(
+    northstar = _Metric(
         name="refund_rate", label="Refund Rate",
         sql="SELECT SUM(refund_amount) / SUM(order_total) FROM refunds",  # full query
         source="profile_governed",

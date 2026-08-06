@@ -194,14 +194,15 @@ def test_the_legacy_brief_job_stands_down_when_adoption_is_active(monkeypatch):
 
 
 def test_the_legacy_monitor_job_runs_normally_when_adoption_is_off(monkeypatch):
-    """Reversibility: flag off ⇒ the legacy job runs exactly as before (byte-identical path).
+    """Reversibility: adoption off ⇒ the legacy job runs exactly as before.
 
-    Pins ops.metered_monitors OFF because this test's oracle is the IN-THREAD legacy
-    path: with the bridge on (default since flag strategy batch A) and a kernel loop
-    captured by an earlier test, the tick would run async and the assertion below
-    would read a stale False — the same bridge-vs-loop confusion the L4 equivalence
-    suite pinned away."""
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "0")
+    The metered bridge is PERMANENT (flag endgame Wave 2, 2026-08-06), so the pin
+    moved from the dead env var to the CONDITION: force the no-kernel-loop state,
+    under which submit_background_tick declines and the tick runs the in-thread
+    legacy path this test's oracle needs — the same bridge-vs-loop confusion the
+    L4 equivalence suite pinned away, handled its way."""
+    from aughor.kernel import jobs as jobs_mod
+    monkeypatch.setattr(jobs_mod, "_main_loop", None, raising=False)
     upsert_monitor(_monitor(id="m-legacy", conn_id="c-legacy"))
     ran = {"value": False}
     monkeypatch.setattr("aughor.monitors.runner.run_monitor",

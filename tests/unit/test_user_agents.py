@@ -143,10 +143,13 @@ def client():
     return TestClient(app)
 
 
-def test_routes_404_when_flag_off(client, monkeypatch):
-    _flag(monkeypatch, False)
-    assert client.get("/agents/custom").status_code == 404
-    assert client.post("/agents/custom", json={"name": "x"}).status_code == 404
+def test_routes_answer_with_a_roster(client):
+    """Permanent since flag endgame Wave 2 (2026-08-06, receipt df89c044999a): the
+    CRUD surface always answers — the flip's whole fresh-clone delta was an empty
+    roster instead of a 404, and now the roster is simply always served."""
+    r = client.get("/agents/custom")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
 
 
 def test_routes_crud_roundtrip(client, monkeypatch):
@@ -259,10 +262,6 @@ def test_persona_for_investigation_rules(monkeypatch):
     a = create_agent("Deep Persona", instructions="deep focus")
     monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {"agent_id": a.id})
 
-    _flag(monkeypatch, False)
-    assert persona_for_investigation("inv-1") is None  # flag off → never
-
-    _flag(monkeypatch, True)
     resolved = persona_for_investigation("inv-1")
     assert resolved is not None and resolved.id == a.id
 
@@ -308,7 +307,6 @@ def test_intake_pool_restricted_to_agent_packs(monkeypatch):
     import aughor.packs.intake as intake
 
     pack_a, pack_b = types.SimpleNamespace(id="pack-a"), types.SimpleNamespace(id="pack-b")
-    monkeypatch.setattr(intake, "flag_enabled", lambda name: name == "specialist_packs")
     monkeypatch.setattr(intake, "active_packs", lambda packs_dir=None: [pack_a, pack_b])
     monkeypatch.setattr(intake, "select_pack", lambda q, pool: (pool[0], 1.0) if pool else None)
     monkeypatch.setattr(intake, "load_binding", lambda pid, conn, schema: {"bindings": {"t": "x"}})

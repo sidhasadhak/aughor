@@ -43,7 +43,7 @@ def test_submit_background_tick_no_loop_returns_none(monkeypatch):
     assert ran["n"] == 0
 
 
-def test_monitor_job_routes_by_flag(monkeypatch):
+def test_monitor_job_routes_through_the_kernel_with_inline_fallback(monkeypatch):
     """The monitor cron `_job` submits through the kernel iff `ops.metered_monitors` is on;
     otherwise it runs the work inline (legacy path)."""
     from aughor.monitors import scheduler as sched
@@ -64,13 +64,17 @@ def test_monitor_job_routes_by_flag(monkeypatch):
 
     job = sched._make_job_fn("m1")
 
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "1")
+    # Metered is permanent (flag endgame Wave 2, 2026-08-06): every tick offers
+    # itself to the kernel first…
     job()
     assert calls["submit"] == 1 and calls["run"] == 0   # routed through the kernel
 
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "0")
+    # …and only a DECLINED submit (no captured loop → None) runs the same closure
+    # inline — the no-loop fallback, not an env opt-out.
+    monkeypatch.setattr(jobs_mod, "submit_background_tick",
+                        lambda *a, **k: (calls.__setitem__("submit", calls["submit"] + 1), None)[1])
     job()
-    assert calls["submit"] == 1 and calls["run"] == 1   # ran inline
+    assert calls["submit"] == 2 and calls["run"] == 1   # declined → ran inline
 
 
 class _FakeDB:

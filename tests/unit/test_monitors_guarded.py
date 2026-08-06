@@ -45,17 +45,19 @@ class _StubDB:
 
 # ── Runner: flag-gated caveat ─────────────────────────────────────────────────
 
-def test_guarded_forced_off_is_byte_identical(monkeypatch):
-    # Explicit =0 — the operator escape hatch; the flag is default-ON since flag
-    # strategy batch A, so an unset env now means the probes run.
-    monkeypatch.setenv("AUGHOR_MONITORS_GUARDED", "0")
+def test_guard_probe_failure_never_blocks_the_alert(monkeypatch):
+    """The guard is unconditional since flag endgame Wave 2 (2026-08-06, receipt
+    9bf08c312faa) — the property that replaces the old forced-off test is the
+    fail-open: a probe that raises must deliver the alert WITHOUT a caveat, never
+    swallow it."""
+    monkeypatch.setattr("aughor.monitors.runner._guard_caveats",
+                        lambda m, d: (_ for _ in ()).throw(RuntimeError("probe boom")))
     alert = run_monitor(_monitor(), _StubDB(), suppress=False)
     assert alert is not None and alert.severity == "warning"
-    assert alert.caveat is None  # forced off — no probe, no field
+    assert alert.caveat is None  # probe failed — alert unchanged, no caveat
 
 
 def test_guarded_attaches_id_arithmetic_caveat(monkeypatch):
-    monkeypatch.setenv("AUGHOR_MONITORS_GUARDED", "1")
     alert = run_monitor(_monitor(), _StubDB(), suppress=False)
     assert alert is not None
     assert alert.caveat and "id-arithmetic" in alert.caveat, alert.caveat
@@ -64,7 +66,6 @@ def test_guarded_attaches_id_arithmetic_caveat(monkeypatch):
 
 
 def test_guarded_quiet_on_clean_sql(monkeypatch):
-    monkeypatch.setenv("AUGHOR_MONITORS_GUARDED", "1")
     m = _monitor(custom_sql="SELECT SUM(amt) AS x FROM sales")
     alert = run_monitor(m, _StubDB(), suppress=False)
     assert alert is not None
@@ -72,7 +73,6 @@ def test_guarded_quiet_on_clean_sql(monkeypatch):
 
 
 def test_guarded_skips_bare_scalar_expression(monkeypatch):
-    monkeypatch.setenv("AUGHOR_MONITORS_GUARDED", "1")
     m = _monitor(custom_sql="1 + 1")  # no FROM — nothing the AST probes can see
     alert = run_monitor(m, _StubDB(), suppress=False)
     assert alert is not None and alert.caveat is None

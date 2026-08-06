@@ -87,7 +87,7 @@ export interface ChatTurn {
     downgradedFrom: string | null;   // "deep" when capability-gated down to quick
   } | null;
 
-  // User-agent receipt (flag `agents.user_defined`) — the persona this turn ran
+  // User-agent receipt — the persona this turn ran
   // as; opens the /ask stream when agent_id was sent. Null on plain turns.
   agent: {
     agentId: string;

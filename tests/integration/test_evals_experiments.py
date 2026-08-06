@@ -136,13 +136,10 @@ def test_a_failed_cell_does_not_leak_its_pins_into_the_next(db, suite):
     assert P.current_run_model() is None
 
 
-def test_refuses_to_run_when_the_flag_is_off(db, suite, monkeypatch):
-    """Silently running every cell under one configuration would yield a grid of identical
-    numbers — which reads as 'the variant made no difference'."""
-    monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "0")
-    with pytest.raises(RuntimeError) as exc:
-        run_experiment(suite, lambda: reference_target(db), _cells())
-    assert "evals.experiments" in str(exc.value)
+# test_refuses_to_run_when_the_flag_is_off was DELETED with its flag (flag endgame
+# Wave 2, 2026-08-06, receipt 1bc0e4690955): the experiments plane is permanent; the
+# refusal that still matters — a live fallback chain invalidating the whole grid —
+# keeps its own test below.
 
 
 def test_refuses_to_run_while_the_fallback_chain_is_live(db, suite, monkeypatch):
@@ -198,15 +195,7 @@ def test_schedule_refuses_while_the_fallback_chain_is_live(db, suite, monkeypatc
             suite, lambda: reference_target(db), _cells(), checker=reference_checker(db)))
 
 
-def test_schedule_refuses_when_the_flag_is_off(db, suite, monkeypatch):
-    import asyncio
-
-    from aughor.evals.runner import schedule_experiment
-
-    monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "0")
-    with pytest.raises(RuntimeError) as exc:
-        asyncio.run(schedule_experiment(suite, lambda: reference_target(db), _cells()))
-    assert "evals.experiments" in str(exc.value)
+# test_schedule_refuses_when_the_flag_is_off was DELETED with its flag (same wave).
 
 
 def test_schedule_runs_the_grid_as_a_supervised_job(db, suite):

@@ -118,21 +118,15 @@ def test_starter_payload_is_library_then_curated():
 
 # ── /suggestions surfaces the library only behind the flag ───────────────────
 
-def test_suggestions_carries_starters_only_when_flag_on(client, monkeypatch):
+def test_suggestions_always_carries_starters(client, monkeypatch):
+    """Unconditional since flag endgame Wave 2 (2026-08-06, receipt 3155c4d9de61) —
+    deterministic templates, additive key; there is no off-state to keep testing."""
     def _fake_suggestions(*a, **k):
         return [{"text": "q", "mode": "ask"}]
     # Avoid the LLM: serve from the fingerprint cache.
     monkeypatch.setattr("aughor.semantic.suggestions_cache.get_cached",
                         lambda cid, fp: [{"text": "cached q", "mode": "ask"}])
 
-    # Explicit =0 — the operator escape hatch, which is what "off" means now that the
-    # flag is default-ON (flag strategy batch A). An unset env would resolve on.
-    monkeypatch.setenv("AUGHOR_STARTERS_LIBRARY", "0")
-    r = client.get("/suggestions", params={"connection_id": "fixture"})
-    assert r.status_code == 200
-    assert "starters" not in r.json()                     # forced off → byte-identical
-
-    monkeypatch.setenv("AUGHOR_STARTERS_LIBRARY", "1")
     r = client.get("/suggestions", params={"connection_id": "fixture"})
     body = r.json()
     assert r.status_code == 200

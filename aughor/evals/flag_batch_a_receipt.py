@@ -297,50 +297,36 @@ def _guarded_monitor():
 def _monitors_guarded__caveat_and_deliver_never_rewrites() -> Comparison:
     """On vs off: identical severity and message, identical monitor SQL afterwards; the
     only delta is an additive caveat naming the id-arithmetic footgun."""
-    from aughor.kernel.flags import flag_overrides
     from aughor.monitors.runner import run_monitor
 
-    def fire(flag_on: bool):
-        m = _guarded_monitor()
-        with flag_overrides({"monitors.guarded": flag_on}):
-            alert = run_monitor(m, _StubDB(), suppress=False)
-        return m, alert
-
-    m_off, off = fire(False)
-    m_on, on = fire(True)
+    m = _guarded_monitor()
+    sql_before = m.custom_sql
+    alert = run_monitor(m, _StubDB(), suppress=False)
     return Comparison(
         scenario="monitors_guarded__caveat_and_deliver_never_rewrites",
-        expected={"severity_same": True, "message_same": True, "sql_same": True,
-                  "off_caveat": False, "on_caveat": True},
-        observed={"severity_same": off.severity == on.severity,
-                  "message_same": off.message == on.message,
-                  "sql_same": m_off.custom_sql == m_on.custom_sql,
-                  "off_caveat": bool(getattr(off, "caveat", None)),
-                  "on_caveat": bool(getattr(on, "caveat", None))},
-        oracle="flag-off run",
-        note="the alert still fires and says the same thing; the caveat is additive",
-        detail={"caveat": getattr(on, "caveat", None)},
+        expected={"fired": True, "sql_same": True, "caveat": True},
+        observed={"fired": alert is not None,
+                  "sql_same": m.custom_sql == sql_before,
+                  "caveat": bool(getattr(alert, "caveat", None))},
+        oracle="declared (caveat-and-deliver; unconditional since flag endgame Wave 2)",
+        note="the alert still fires unchanged; the caveat is additive, never a rewrite",
+        detail={"caveat": getattr(alert, "caveat", None)},
     )
 
 
 @scenario("monitors_guarded__a_probe_crash_leaves_the_alert_untouched")
 def _monitors_guarded__a_probe_crash_leaves_the_alert_untouched() -> Comparison:
     """Fail-open: a schema probe that raises must not block, delay or alter the alert."""
-    from aughor.kernel.flags import flag_overrides
     from aughor.monitors.runner import run_monitor
 
-    with flag_overrides({"monitors.guarded": False}):
-        off = run_monitor(_guarded_monitor(), _BrokenSchemaDB(), suppress=False)
-    with flag_overrides({"monitors.guarded": True}):
-        on = run_monitor(_guarded_monitor(), _BrokenSchemaDB(), suppress=False)
+    alert = run_monitor(_guarded_monitor(), _BrokenSchemaDB(), suppress=False)
     return Comparison(
         scenario="monitors_guarded__a_probe_crash_leaves_the_alert_untouched",
-        expected={"fired": True, "severity_same": True, "message_same": True},
-        observed={"fired": on is not None,
-                  "severity_same": off.severity == on.severity,
-                  "message_same": off.message == on.message},
-        oracle="flag-off run",
-        note="guard probes are best-effort; a broken probe changes nothing",
+        expected={"fired": True, "severity": "warning"},
+        observed={"fired": alert is not None,
+                  "severity": getattr(alert, "severity", None)},
+        oracle="declared (fail-open; unconditional since flag endgame Wave 2)",
+        note="guard probes are best-effort; a broken schema probe never blocks delivery",
     )
 
 
@@ -348,29 +334,17 @@ def _monitors_guarded__a_probe_crash_leaves_the_alert_untouched() -> Comparison:
 
 @scenario("consistency_divergence__the_routes_are_the_whole_surface")
 def _consistency_divergence__the_routes_are_the_whole_surface() -> Comparison:
-    """Off, every /consistency route 404s. On, the summary answers read-only from the
-    receipts store — for a connection with none, an empty accounting, written nowhere."""
-    from fastapi import HTTPException
-
-    from aughor.kernel.flags import flag_overrides
+    """The summary answers read-only from the receipts store — for a connection with
+    none, an empty accounting, written nowhere. Permanent since flag endgame Wave 2."""
     from aughor.routers.consistency import consistency_summary
 
-    def probe(flag_on: bool) -> dict:
-        with flag_overrides({"consistency.divergence": flag_on}):
-            try:
-                out = consistency_summary(connection_id="batch-a-receipt-none")
-                return {"status": 200, "is_dict": isinstance(out, dict)}
-            except HTTPException as exc:
-                return {"status": exc.status_code, "is_dict": False}
-
-    off, on = probe(False), probe(True)
+    out = consistency_summary(connection_id="batch-a-receipt-none")
     return Comparison(
         scenario="consistency_divergence__the_routes_are_the_whole_surface",
-        expected={"off_status": 404, "on_status": 200, "on_answers": True},
-        observed={"off_status": off["status"], "on_status": on["status"],
-                  "on_answers": on["is_dict"]},
-        oracle="declared (route-gated, read-only)",
-        note="nothing on the answer path; the flip makes an audit surface reachable",
+        expected={"answers": True},
+        observed={"answers": isinstance(out, dict)},
+        oracle="declared (read-only audit surface, permanent)",
+        note="nothing on the answer path; an empty store yields an empty accounting",
     )
 
 
@@ -417,28 +391,20 @@ def _evals_experiments__off_refuses_loudly_on_stays_ambient_inert() -> Compariso
     that reads as 'the variant made no difference'. On: ambient traffic is untouched —
     the plane lives in contextvars that default unset, so with no experiment entered
     there are no run-scoped overrides at all."""
-    from aughor.evals.runner import run_experiment
-    from aughor.kernel.flags import active_flag_overrides, flag_overrides
+    from aughor.kernel.flags import active_flag_overrides
 
-    with flag_overrides({"evals.experiments": False}):
-        try:
-            run_experiment("no-such-suite", lambda: (lambda case: None), [])
-            refused, msg = False, ""
-        except RuntimeError as exc:
-            refused, msg = True, str(exc)
-        except TypeError as exc:  # signature drift would surface here, loudly
-            refused, msg = False, f"signature: {exc}"
-    # Ambient traffic never enters the plane: outside any experiment cell (and outside
-    # any flag_overrides block) the run-scoped contextvar is unset — the exact state
-    # every ordinary request runs in, flag on or off.
+    # Ambient traffic never enters the plane: outside any experiment cell the
+    # run-scoped contextvar is unset — the exact state every ordinary request runs
+    # in. (The off-state refusal died with the flag: the plane is permanent, and
+    # the fallback-chain integrity guard inside run_experiment is the one that
+    # still refuses — pinned by tests/integration/test_evals_experiments.py.)
     ambient = active_flag_overrides()
     return Comparison(
         scenario="evals_experiments__off_refuses_loudly_on_stays_ambient_inert",
-        expected={"refused": True, "names_the_flag": True, "ambient_overrides": {}},
-        observed={"refused": refused, "names_the_flag": "evals.experiments" in msg,
-                  "ambient_overrides": ambient},
+        expected={"ambient_overrides": {}},
+        observed={"ambient_overrides": ambient},
         oracle="declared (E4 inert-plane contract)",
-        note="off is a loud refusal; on changes nothing until a run enters the plane",
+        note="the plane is permanent and changes nothing until a run enters it",
     )
 
 

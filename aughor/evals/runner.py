@@ -305,15 +305,10 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
         assert_frozen_semantics, assert_measurable, assert_within_budget,
         data_version_of, estimate_requests,
     )
-    from aughor.kernel.flags import flag_enabled
-
-    if not flag_enabled("evals.experiments"):
-        raise RuntimeError(
-            "grid experiments are off — enable the `evals.experiments` flag "
-            "(AUGHOR_EVALS_EXPERIMENTS=1) before running one. Refusing rather than "
-            "silently running every cell under one configuration, which would produce a "
-            "grid of identical numbers that looks like 'the variant made no difference'."
-        )
+    # The experiments plane is permanent since flag endgame Wave 2 (2026-08-06,
+    # receipt 1bc0e4690955 — inert until a run enters it). The refusal that guarded a
+    # half-disabled plane went with the flag; the fallback-chain integrity guard below
+    # is the one that still matters, and it stays.
     # Both integrity guards sit OUTSIDE the per-cell try, because both describe conditions
     # that invalidate the WHOLE grid rather than one cell of it: a live failover chain is
     # process-global, and a connection's volatile semantics are shared by every cell. Letting
@@ -436,13 +431,7 @@ async def schedule_experiment(
     from aughor.evals.experiments import (
         assert_measurable, assert_within_budget, estimate_requests,
     )
-    from aughor.kernel.flags import flag_enabled
     from aughor.kernel.jobs import kernel
-
-    if not flag_enabled("evals.experiments"):
-        raise RuntimeError(
-            "grid experiments are off — enable the `evals.experiments` flag "
-            "(AUGHOR_EVALS_EXPERIMENTS=1) before scheduling one.")
 
     # Preconditions BEFORE the job is created: an ineligible grid must fail at the call that
     # schedules it, not silently as a job that transitions straight to FAILED.

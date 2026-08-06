@@ -24,19 +24,19 @@ per-table COUNT touches the DB, so an operator turns it on deliberately.
 from __future__ import annotations
 
 import hashlib
-import os
 from typing import Any, Iterable, Optional
 
 
 def snapshot_receipts_enabled() -> bool:
-    """True when findings should be pinned to a data-version token at emit. Off by default
-    (the version probe touches the DB). A runtime override (Settings → System) wins;
-    otherwise ``AUGHOR_SNAPSHOT_RECEIPTS=1`` decides."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("snapshot_receipts")
-    except Exception:
-        return os.getenv("AUGHOR_SNAPSHOT_RECEIPTS", "").strip().lower() in ("1", "true", "yes", "on")
+    """Always True — findings pin to a data-version token at emit.
+
+    Hardwired by flag endgame Wave 2 (2026-08-06). The exit was settled without a
+    grid on 2026-07-31 (receipt `2dee7a36c03f`): the probe is one metadata
+    COUNT(*) per finding table, measured median ~0.2ms against E1's 5ms bar, and
+    the emit fails open (a probe that cannot run yields None, never blocking).
+    The function survives as the single consult point so call sites keep one
+    name; a future cost concern re-argues here, not via a flag."""
+    return True
 
 
 def _meta_row(conn: Any, sql: str) -> Optional[tuple]:

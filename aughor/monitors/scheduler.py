@@ -86,14 +86,14 @@ def run_monitor_job(monitor_id: str) -> None:
 
         # WP-7: under `ops.metered_monitors`, run the tick as a supervised Watcher job so
         # its warehouse SQL is metered + budget-enforced (else the direct in-thread path).
-        from aughor.kernel.flags import flag_enabled
-        if flag_enabled("ops.metered_monitors"):
-            from aughor.kernel.jobs import submit_background_tick
-            job_id = submit_background_tick(
-                "monitor", _work, conn_id=monitor.conn_id, org_id=org,
-                idempotency_key=f"monitor:{monitor_id}")
-            if job_id is not None:
-                return   # routed through the kernel
+        # Metered execution is permanent (flag endgame Wave 2, 2026-08-06;
+        # receipt b167bb891764) — the tick runs as a supervised Watcher job.
+        from aughor.kernel.jobs import submit_background_tick
+        job_id = submit_background_tick(
+            "monitor", _work, conn_id=monitor.conn_id, org_id=org,
+            idempotency_key=f"monitor:{monitor_id}")
+        if job_id is not None:
+            return   # routed through the kernel
         _work()          # legacy / no-loop fallback
     except Exception as exc:
         logger.error("Monitor job %s crashed: %s", monitor_id, exc)

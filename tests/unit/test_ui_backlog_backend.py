@@ -25,8 +25,10 @@ class TestFeatureFlags:
         clear_flag("semops.champion_validate")
 
     def test_list_flags_shape(self):
+        # snapshot_receipts left the registry with flag endgame Wave 2 (2026-08-06);
+        # a surviving experiment flag carries the shape claim.
         f = list_flags()
-        assert "semops.champion_validate" in f and "snapshot_receipts" in f
+        assert "semops.champion_validate" in f and "snapshot_receipts" not in f
         assert {"value", "source", "env_var", "label", "description"} <= set(f["semops.champion_validate"])
 
 

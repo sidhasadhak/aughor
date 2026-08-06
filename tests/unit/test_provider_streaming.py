@@ -215,7 +215,7 @@ def test_anthropic_branch_uses_create_partial(monkeypatch):
     # overrides at call time. A developer who raises it in their own .env — as the
     # briefing work required (8192, because a ~25-finding synthesis truncates at 4096) —
     # would otherwise see this fail locally and pass in CI, where no .env exists.
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "4096")   # pin: the default is model-sized (A1)
 
     class _Partial(_Out):
         pass
@@ -304,7 +304,8 @@ def test_streamed_openai_compat_calls_carry_the_output_cap():
     assert completions.calls[0]["max_tokens"] == P._max_output_tokens()
 
 
-def test_streamed_openrouter_calls_carry_the_reasoning_bound():
+def test_streamed_openrouter_calls_carry_the_reasoning_bound(monkeypatch):
+    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "low")   # pin: default is model-sized (A1)
     completions = _FakeRawCompletions(chunks=_happy_chunks())
     _stream_once("openrouter", completions)
     assert completions.calls[0]["extra_body"] == {"reasoning": {"effort": "low"}}

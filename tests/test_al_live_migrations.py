@@ -45,16 +45,19 @@ def test_al01_clean_select_passes():
 
 # ── AL-05 — the Semantic plane resolved at seed ──────────────────────────────────────────
 
-def test_al05_dormant_when_forced_off(monkeypatch):
-    # Explicit =0 — default-ON since flag strategy batch C; off is the escape hatch.
-    monkeypatch.setenv("AUGHOR_SEMANTIC_RESOLVE_LIVE", "0")
+def test_al05_fail_open_returns_none(monkeypatch):
+    """Permanent since flag endgame Wave 2 (2026-08-06, receipt 49e7af321440). The
+    property the old forced-off test protected the answer path with is now the
+    FAIL-OPEN: a resolver that raises yields None and the run proceeds without
+    the plane — never an exception on the answer path."""
+    monkeypatch.setattr("aughor.semantic.context.resolve",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("resolver boom")))
     from aughor.semantic.context import resolve_if_enabled
-    assert resolve_if_enabled("q", "fixture") is None          # forced off → the plane stays dormant
+    assert resolve_if_enabled("q", "fixture") is None
 
 
-def test_al05_resolves_when_flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SEMANTIC_RESOLVE_LIVE", "1")
-    # Keep it hermetic — the sources are empty; we're testing the flag gate + attachment, not content.
+def test_al05_resolves_unconditionally(monkeypatch):
+    # Keep it hermetic — the sources are empty; we're testing attachment, not content.
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: None)
     monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda *a, **k: None)
@@ -154,8 +157,7 @@ def test_al02_full_answer_end_to_end(monkeypatch):
     assert res.narrative
 
 
-def test_al02_endpoint_answers_when_flag_on(client, builtin_conn_id, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
+def test_al02_endpoint_answers(client, builtin_conn_id, monkeypatch):
     monkeypatch.setattr("aughor.pipeline.sql_generate.generate_sql", lambda *a, **k: "SELECT 1 AS n")
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "how many rows?"})
@@ -167,16 +169,12 @@ def test_al02_endpoint_answers_when_flag_on(client, builtin_conn_id, monkeypatch
     assert body["row_count"] == 1
 
 
-def test_al02_endpoint_disabled_when_forced_off(client, builtin_conn_id, monkeypatch):
-    # Explicit =0 — default-ON since flag strategy batch C; off is the escape hatch.
-    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "0")
-    r = client.post("/query/capability-answer",
-                    json={"conn_id": builtin_conn_id, "question": "q"})
-    assert r.status_code == 404
+# test_al02_endpoint_disabled_when_forced_off was DELETED with its flag (flag
+# endgame Wave 2, 2026-08-06, receipt 0dd2b45930c7): the route is the single gate
+# and calling it is the consent — there is no off-state left to test.
 
 
 def test_al02_endpoint_metadata_domain(client, builtin_conn_id, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "what tables exist?",
                           "domain": "metadata"})
@@ -188,7 +186,6 @@ def test_al02_endpoint_metadata_domain(client, builtin_conn_id, monkeypatch):
 
 
 def test_al02_endpoint_unknown_domain(client, builtin_conn_id, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CAPABILITY_PIPELINE_LIVE", "1")
     r = client.post("/query/capability-answer",
                     json={"conn_id": builtin_conn_id, "question": "q", "domain": "nope"})
     assert r.status_code == 400

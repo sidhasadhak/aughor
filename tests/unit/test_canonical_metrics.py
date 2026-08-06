@@ -1,131 +1,18 @@
-"""Canonical metric resolver — reconciliation precedence + injection safety.
+"""Governed-metric resolution — precedence + injection safety, contract-native.
 
-Ensures "revenue" resolves to ONE formula across stores so /chat and ADA can't diverge.
-See aughor/semantic/canonical.py.
+Ensures "revenue" resolves to ONE formula across stores so /chat and ADA can't
+diverge. The legacy CanonicalMetric resolver was DELETED by flag endgame Wave 2
+(2026-08-06) after the `semantic.contract_live` migration soaked default-ON with a
+byte-identical-render proof (receipt e801ff3a4448); these tests carry the durable
+claims forward onto the surviving resolver (`resolve_contracts` /
+`resolve_planning_metrics` / `render_contracts_block`). The old flag-toggle
+equivalence tests retired with their oracle — equivalence to a deleted path is not
+a property of the live system.
+
+See aughor/semantic/canonical.py + aughor/semantic/contracts.py.
 """
 from types import SimpleNamespace
 
-from aughor.semantic.canonical import (
-    resolve_canonical_metrics,
-    render_canonical_metrics_block,
-)
-
-
-def _md(name, sql, **kw):  # MetricDefinition stub (catalog)
-    return SimpleNamespace(name=name, label=kw.get("label", name), sql=sql,
-                           unit=kw.get("unit", ""), tables=kw.get("tables", []),
-                           caveats=kw.get("caveats", ""))
-
-
-def _om(mid, sql, verified=False, **kw):  # OntologyMetric stub
-    return SimpleNamespace(id=mid, display_name=kw.get("display_name", mid),
-                           formula_sql=sql, unit=kw.get("unit", ""),
-                           tables=kw.get("tables", []), verified=verified)
-
-
-def _onto(*metrics):  # OntologyGraph stub
-    return SimpleNamespace(metrics={m.id: m for m in metrics})
-
-
-def test_catalog_outranks_ontology():
-    catalog = [_md("revenue", "SUM(price*qty)")]
-    onto = _onto(_om("revenue", "SUM(invoices.revenue_net)", verified=True))
-    res = resolve_canonical_metrics(catalog=catalog, ontology=onto)
-    rev = {m.name: m for m in res}["revenue"]
-    assert rev.sql == "SUM(price*qty)", rev.sql          # curated catalog wins
-    assert rev.source == "catalog"
-
-
-def test_ontology_verified_flag_drives_source_and_injectability():
-    # The ontology keys metrics by id, so the verified flag governs source rank +
-    # whether the formula is injectable as authoritative (not within-ontology dedup).
-    onto = _onto(
-        _om("aov", "SUM(amount)/COUNT(DISTINCT order_id)", verified=True),
-        _om("margin", "SUM(profit)/SUM(revenue)", verified=False),
-    )
-    res = {m.name: m for m in resolve_canonical_metrics(catalog=[], ontology=onto)}
-    assert res["aov"].source == "ontology_verified" and res["aov"].verified
-    assert res["margin"].source == "ontology_unverified" and not res["margin"].verified
-    block = render_canonical_metrics_block(list(res.values()))
-    assert "aov" in block            # verified → injected
-    assert "margin" not in block     # unverified → excluded
-
-
-def test_source_rank_ordering():
-    from aughor.semantic.canonical import CanonicalMetric
-    ranks = [CanonicalMetric("m", "m", "x", source=s).rank
-             for s in ("catalog", "ontology_verified", "ontology_unverified")]
-    assert ranks == sorted(ranks, reverse=True) and len(set(ranks)) == 3
-
-
-def test_dedup_by_normalized_name():
-    catalog = [_md("Net Revenue", "SUM(net)")]
-    onto = _onto(_om("net_revenue", "SUM(gross)", verified=True))
-    res = resolve_canonical_metrics(catalog=catalog, ontology=onto)
-    names = [m.name for m in res]
-    assert len(res) == 1, names           # "Net Revenue" and "net_revenue" collapse
-    assert res[0].sql == "SUM(net)"       # catalog precedence
-
-
-def test_render_excludes_unverified_by_default():
-    onto = _onto(_om("churn", "1 - retention", verified=False))
-    res = resolve_canonical_metrics(catalog=[], ontology=onto)
-    assert render_canonical_metrics_block(res) == ""   # unverified not injected as authoritative
-    block = render_canonical_metrics_block(res, include_unverified=True)
-    assert "churn" in block and "unverified" in block
-
-
-def test_render_lists_verified_with_exact_formula():
-    catalog = [_md("revenue", "SUM(price*qty)", unit="$")]
-    res = resolve_canonical_metrics(catalog=catalog, ontology=None)
-    block = render_canonical_metrics_block(res)
-    assert "revenue [$] = SUM(price*qty)" in block
-    assert "use these EXACT formulas" in block
-
-
-def test_empty_is_noop_safe():
-    assert resolve_canonical_metrics(catalog=[], ontology=None) == []
-    assert render_canonical_metrics_block([]) == ""
-
-
-def test_metrics_without_sql_are_skipped():
-    res = resolve_canonical_metrics(catalog=[_md("ghost", "")], ontology=None)
-    assert res == []
-
-
-# ── unified_metric_grounding — ONE block both NL2SQL paths inject (UNIFY, 2026-06-21) ──
-# /chat used build_metrics_block (catalog only) while Deep used canonical_metrics_block
-# (catalog + north-star + ontology), so they could disagree on the same metric. The unified
-# block must surface the connection's GOVERNED north-star value_sql (what /chat was missing).
-def test_unified_grounding_surfaces_north_star(monkeypatch):
-    from aughor.semantic import canonical as C
-
-    class _NSM:
-        name = "Gross Margin Rate"
-        value_sql = "SELECT ROUND(100.0 * SUM(margin) / NULLIF(SUM(price), 0), 2) FROM t"
-        unit_or_range = "%"
-        definition = "gross margin"
-
-    class _Prof:
-        north_star_metrics = [_NSM()]
-
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])  # empty catalog → no DB open
-    out = C.unified_metric_grounding("conn", "schema", schema_text="TABLE: t\n  margin\n  price")
-    assert "Gross Margin Rate" in out
-    assert "SUM(margin)" in out  # the governed value_sql is present (chat previously never saw it)
-
-
-def test_unified_grounding_noop_safe_without_connection(monkeypatch):
-    from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
-    # no connection, no metrics → empty string, never raises
-    assert C.unified_metric_grounding("", None, schema_text="") == ""
-
-
-# ── resolve_contracts / render_contracts_block — the contract-native twin (REC-U10) ────────
-# These use REAL models (the adapters read attributes directly, not defensively) and prove the
-# contract path resolves + renders identically to the CanonicalMetric path it will replace.
 
 def _real_md(name, sql, **kw):
     from aughor.semantic.metrics import MetricDefinition
@@ -143,160 +30,148 @@ def _real_om(mid, sql, verified=False, **kw):
 
 
 def _real_onto(*metrics):
-    from types import SimpleNamespace
     return SimpleNamespace(metrics={m.id: m for m in metrics})
 
 
-def test_resolve_contracts_render_is_byte_identical_to_canonical(monkeypatch):
-    """The strongest guarantee: on the same three-source inputs, the contract render equals the
-    legacy CanonicalMetric render exactly — so flipping the flag is a pure no-op on the prompt."""
-    from aughor.semantic import canonical as C
-
-    catalog = [_real_md("revenue", "SUM(price*qty)", unit="$", caveats="net of refunds")]
-    onto = _real_onto(
-        _real_om("aov", "SUM(amount)/COUNT(*)", verified=True, unit="$"),
-        _real_om("churn", "1 - retention", verified=False),   # excluded in both by default
-    )
-
-    class _NSM:
-        name = "gross_margin"
-        value_sql = "SUM(margin)/NULLIF(SUM(price),0)"
-        unit_or_range = "%"
-        definition = "gross margin rate"
-
-    class _Prof:
-        north_star_metrics = [_NSM()]
-
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
-
-    canon = C.resolve_canonical_metrics("conn", None, catalog=catalog, ontology=onto)
-    contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)
-
-    # same set of keys survive dedup, same order
-    assert [m.name for m in canon] == [c.key for c in contracts]
-    # byte-identical rendered block, default AND include_unverified
-    assert C.render_contracts_block(contracts) == C.render_canonical_metrics_block(canon)
-    assert (C.render_contracts_block(contracts, include_unverified=True)
-            == C.render_canonical_metrics_block(canon, include_unverified=True))
-    # and it actually rendered the three authoritative sources
-    block = C.render_contracts_block(contracts)
-    assert "revenue [$] = SUM(price*qty)" in block
-    assert "aov" in block and "gross_margin" in block
-    assert "churn" not in block                          # unverified ontology excluded
-
-
-def test_resolve_contracts_precedence_catalog_wins(monkeypatch):
-    from aughor.semantic import canonical as C
+def _no_profile(monkeypatch):
     monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
+
+
+# ── precedence + dedup (the "one formula" guarantee) ──────────────────────────
+
+def test_catalog_outranks_ontology(monkeypatch):
+    from aughor.semantic import canonical as C
+    _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)")]
-    onto = _real_onto(_real_om("revenue", "SUM(net)", verified=True))
-    contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)
-    rev = {c.key: c for c in contracts}["revenue"]
-    assert rev.source == "catalog" and rev.sql == "SUM(price*qty)"   # human catalog outranks ontology
+    onto = _real_onto(_real_om("revenue", "SUM(invoices.revenue_net)", verified=True))
+    rev = {c.key: c for c in C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)}["revenue"]
+    assert rev.sql == "SUM(price*qty)"          # curated catalog wins
+    assert rev.source == "catalog"
 
 
-def test_resolve_contracts_carries_rich_fields_canonical_dropped(monkeypatch):
-    """The whole point of the contract: it keeps thresholds/additivity the CanonicalMetric lost."""
+def test_dedup_by_normalized_key(monkeypatch):
     from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
-    catalog = [_real_md("mrr", "SUM(amount)", additivity="additive", target_value=100000.0)]
-    contracts = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)
-    c = contracts[0]
-    assert c.additivity == "additive" and c.target_value == 100000.0
+    _no_profile(monkeypatch)
+    catalog = [_real_md("Net Revenue", "SUM(net)")]
+    onto = _real_onto(_real_om("net_revenue", "SUM(gross)", verified=True))
+    res = C.resolve_contracts("conn", None, catalog=catalog, ontology=onto)
+    assert len(res) == 1, [c.key for c in res]  # "Net Revenue" and "net_revenue" collapse
+    assert res[0].sql == "SUM(net)"             # catalog precedence
 
 
-def test_resolve_contracts_skips_empty_sql_and_is_noop_safe(monkeypatch):
+def test_ontology_verified_flag_drives_source_and_injectability(monkeypatch):
     from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
+    _no_profile(monkeypatch)
+    onto = _real_onto(
+        _real_om("aov", "SUM(amount)/COUNT(DISTINCT order_id)", verified=True),
+        _real_om("margin", "SUM(profit)/SUM(revenue)", verified=False),
+    )
+    res = {c.key: c for c in C.resolve_contracts("conn", None, catalog=[], ontology=onto)}
+    # The contract keys provenance as source="ontology" + a verified bit (the legacy
+    # shape fused them into ontology_verified/_unverified); injectability derives.
+    assert res["aov"].source == "ontology" and res["aov"].verified and res["aov"].injectable
+    assert res["margin"].source == "ontology" and not res["margin"].injectable
+    block = C.render_contracts_block(list(res.values()))
+    assert "aov" in block            # verified → injected
+    assert "margin" not in block     # unverified → excluded
+
+
+# ── render policy ─────────────────────────────────────────────────────────────
+
+def test_render_excludes_unverified_by_default(monkeypatch):
+    from aughor.semantic import canonical as C
+    _no_profile(monkeypatch)
+    onto = _real_onto(_real_om("churn", "1 - retention", verified=False))
+    res = C.resolve_contracts("conn", None, catalog=[], ontology=onto)
+    assert C.render_contracts_block(res) == ""   # unverified not injected as authoritative
+    block = C.render_contracts_block(res, include_unverified=True)
+    assert "churn" in block and "unverified" in block
+
+
+def test_render_lists_verified_with_exact_formula(monkeypatch):
+    from aughor.semantic import canonical as C
+    _no_profile(monkeypatch)
+    catalog = [_real_md("revenue", "SUM(price*qty)", unit="$")]
+    res = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)
+    block = C.render_contracts_block(res)
+    assert "revenue [$] = SUM(price*qty)" in block
+    assert "use these EXACT formulas" in block
+
+
+def test_empty_and_missing_sql_are_noop_safe(monkeypatch):
+    from aughor.semantic import canonical as C
+    _no_profile(monkeypatch)
     assert C.resolve_contracts("conn", None, catalog=[_real_md("ghost", "")], ontology=None) == []
     assert C.resolve_contracts("", None, catalog=[], ontology=None) == []
     assert C.render_contracts_block([]) == ""
 
 
-# ── semantic.contract_live flag — flipping it is a pure no-op on the emitted prompt ────────
-
-def _pin_three_sources(monkeypatch):
-    """Fix the loaded catalog/ontology/profile so the only variable across a flag toggle is
-    which resolver renders them."""
+def test_contracts_carry_rich_fields_the_legacy_shape_dropped(monkeypatch):
+    """The point of the migration: thresholds/additivity survive resolution."""
     from aughor.semantic import canonical as C
-    catalog = [_real_md("revenue", "SUM(price*qty)", unit="$", caveats="net of refunds")]
-    onto = _real_onto(_real_om("aov", "SUM(a)/COUNT(*)", verified=True),
-                      _real_om("churn", "1 - r", verified=False))
+    _no_profile(monkeypatch)
+    catalog = [_real_md("mrr", "SUM(amount)", additivity="additive", target_value=100000.0)]
+    c = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)[0]
+    assert c.additivity == "additive" and c.target_value == 100000.0
+
+
+# ── unified_metric_grounding — ONE block both NL2SQL paths inject ─────────────
+
+def test_unified_grounding_surfaces_north_star(monkeypatch):
+    from aughor.semantic import canonical as C
 
     class _NSM:
-        name = "gross_margin"
-        value_sql = "SUM(m)/NULLIF(SUM(p),0)"
+        name = "Gross Margin Rate"
+        value_sql = "SELECT ROUND(100.0 * SUM(margin) / NULLIF(SUM(price), 0), 2) FROM t"
         unit_or_range = "%"
-        definition = "gross margin rate"
+        definition = "gross margin"
 
     class _Prof:
         north_star_metrics = [_NSM()]
 
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: list(catalog))
-    monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda c, s=None: onto)
     monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
-    return C
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
+    out = C.unified_metric_grounding("conn", "schema", schema_text="TABLE: t\n  margin\n  price")
+    assert "Gross Margin Rate" in out
+    assert "SUM(margin)" in out  # the governed value_sql is present (chat previously never saw it)
 
 
-def test_canonical_metrics_block_flag_toggle_is_byte_identical(monkeypatch):
-    C = _pin_three_sources(monkeypatch)
-    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
-    off = C.canonical_metrics_block("conn", None, schema_text="TABLE t")
-    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
-    on = C.canonical_metrics_block("conn", None, schema_text="TABLE t")
-    assert on == off                                     # flag flip is a no-op on the block
-    assert "revenue" in on and "aov" in on and "gross_margin" in on
-    assert "churn" not in on                             # unverified ontology stays excluded
+def test_unified_grounding_noop_safe_without_connection(monkeypatch):
+    from aughor.semantic import canonical as C
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
+    assert C.unified_metric_grounding("", None, schema_text="") == ""
 
 
-def test_unified_grounding_flag_toggle_is_byte_identical(monkeypatch):
-    C = _pin_three_sources(monkeypatch)
-    schema = "TABLE t\n  price\n  qty\n  m\n  p"
-    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
-    off = C.unified_metric_grounding("conn", None, schema_text=schema)
-    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
-    on = C.unified_metric_grounding("conn", None, schema_text=schema)
-    assert on == off
-    assert "gross_margin" in on          # north-star renders via the (flag-gated) canonical half
+# ── resolve_planning_metrics — the STRUCTURED compiler resolver ───────────────
 
-
-# ── resolve_planning_metrics — the STRUCTURED compiler resolver (REC-U10 tail) ──────────────
-
-def test_resolve_planning_metrics_flag_toggle_is_structurally_identical(monkeypatch):
-    """The semantic compiler reads `.name`/`.verified`/`.sql`/`.tables` off each metric to bind a
-    named metric to SQL. Flipping `semantic.contract_live` must leave every one of those fields
-    identical, so the SQL the compiler synthesizes is unchanged — and under the flag the objects
-    are contract-backed (CanonicalMetric retired from the compiler's live path)."""
+def test_planning_metrics_are_contract_backed_views(monkeypatch):
+    """The compiler reads `.name`/`.verified`/`.sql`/`.tables`/`.unit` off each metric.
+    They must arrive via `_ContractMetricView` over the one SemanticContract — the
+    shape the deleted CanonicalMetric list carried, now with a single source of truth."""
+    from aughor.semantic import canonical as C
     from aughor.semantic.canonical import _ContractMetricView
-
-    C = _pin_three_sources(monkeypatch)
-    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
-    off = C.resolve_planning_metrics("conn", None, schema_text="TABLE t")
-    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
-    on = C.resolve_planning_metrics("conn", None, schema_text="TABLE t")
-
-    shape = lambda ms: [(m.name, m.verified, m.sql, list(m.tables or []), m.unit) for m in ms]
-    assert shape(on) == shape(off)                        # every field the compiler reads is equal
-    assert all(isinstance(m, _ContractMetricView) for m in on)   # ...via the one SemanticContract
-    assert [m.name for m in off] == ["aov", "churn", "gross_margin", "revenue"]   # all resolved, sorted
-    # the compiler's verified gate drops unverified churn downstream (render/bind time), not here
-    assert {m.name: m.verified for m in off}["churn"] is False
+    _no_profile(monkeypatch)
+    catalog = [_real_md("revenue", "SUM(price*qty)", unit="$")]
+    onto = _real_onto(_real_om("aov", "SUM(a)/COUNT(*)", verified=True),
+                      _real_om("churn", "1 - r", verified=False))
+    ms = C.resolve_planning_metrics("conn", None, catalog=catalog, ontology=onto)
+    assert all(isinstance(m, _ContractMetricView) for m in ms)
+    shape = {m.name: (m.verified, m.sql) for m in ms}
+    assert shape["revenue"] == (True, "SUM(price*qty)")
+    assert shape["churn"][0] is False    # unverified flows through; render/bind gates drop it
 
 
 def test_planning_view_verified_maps_to_injectable_not_raw_verified(monkeypatch):
-    """The subtle correctness point: the compiler's `verified` gate must map to the contract's
-    `injectable` (== legacy CanonicalMetric.verified), NOT the raw `SemanticContract.verified`
-    field. A DRAFT catalog metric is authoritative-by-provenance (injectable=True) yet
-    verified=False (never executed) — mapping to the wrong field would wrongly drop it."""
+    """The subtle correctness point: the compiler's `verified` gate maps to the
+    contract's `injectable` (the authoritative-by-provenance policy), NOT the raw
+    `SemanticContract.verified` execution bit. A DRAFT catalog metric is
+    injectable=True yet verified=False (never executed) — mapping to the wrong
+    field would wrongly drop it from planning."""
     from aughor.semantic import canonical as C
-
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
-    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
+    _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)")]     # status defaults to "draft"
     view = C.resolve_planning_metrics("conn", None, catalog=catalog, ontology=None)[0]
     assert view.name == "revenue" and view.sql == "SUM(price*qty)"
-    assert view.verified is True                          # injectable by provenance, though status=draft
-    # and it equals what the legacy resolver reports for the same source
-    legacy = C.resolve_canonical_metrics("conn", None, catalog=catalog, ontology=None)[0]
-    assert view.verified == legacy.verified
+    assert view.verified is True                          # injectable by provenance
+    raw = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)[0]
+    assert raw.injectable is True and view.verified == raw.injectable

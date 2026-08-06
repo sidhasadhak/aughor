@@ -711,6 +711,8 @@ class InvestigateRequest(BaseModel):
     # canvas composes on the previous query instead of starting cold — parity with the
     # quick /chat path. Same shape /chat + /ask accept.
     history: list[ChatHistoryTurn] = []
+    # P4 pause posture — see AskRequest.allow_clarify.
+    allow_clarify: bool = True
 
 
 class FeedbackRequest(BaseModel):
@@ -765,6 +767,13 @@ class AskRequest(BaseModel):
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
+    # P4 pause posture (replaces the deleted `deep_analysis.clarify_gate` flag,
+    # 2026-08-06): may this run PAUSE to ask which metric reading was meant? A
+    # headless consumer that cannot answer an interrupt passes False and gets a
+    # complete (silently-chosen) report instead of a truncated run. The data
+    # trigger (a material reading divergence) is unchanged — this only decides
+    # whether the run may stop to ask a human.
+    allow_clarify: bool = True
     # I4 — the reading the user chose when answering a clarify (the chip text / typed detail).
     # When present, it crystallizes into the Ambiguity Ledger (source=user) so the class never
     # re-ambiguates on this connection. `clarify_subject` is the original ambiguous question
@@ -2528,6 +2537,7 @@ async def _stream_investigation(
     history: Optional[list] = None,
     requested_mode: str = "investigate",
     purpose: str = "",
+    allow_clarify: bool = True,
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -2740,11 +2750,12 @@ async def _stream_investigation(
         # (before the expensive fan-out) so the user can review/edit the sub-question
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
-        # The clarify gate ARMS an interrupt node, and an armed interrupt with nobody to
-        # answer it ends the run without a report — so this stays operator-controllable
-        # (default ON) rather than unconditional.
-        from aughor.kernel.flags import flag_enabled as _flag_enabled
-        _clarify_gate = _flag_enabled("deep_analysis.clarify_gate")
+        # The clarify gate ARMS an interrupt node, and an armed interrupt with nobody
+        # to answer it ends the run without a report — so the CALLER decides
+        # (`allow_clarify`, default True; a headless consumer passes False). This
+        # dissolved the `deep_analysis.clarify_gate` flag (2026-08-06): the posture
+        # is a property of the REQUEST, not of the deployment's env.
+        _clarify_gate = bool(allow_clarify)
         agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
@@ -2780,6 +2791,7 @@ async def _stream_investigation(
             # agents.user_defined — persist the active persona so a plan/clarify-gate
             # resume (which never passes through /ask) can re-activate it.
             "agent_id": _current_agent_id(),
+            "_allow_clarify": _clarify_gate,
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
@@ -3309,6 +3321,7 @@ async def _investigation_job_streamed(
     history: Optional[list] = None,
     requested_mode: str = "investigate",
     purpose: str = "",
+    allow_clarify: bool = True,
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -3332,6 +3345,7 @@ async def _investigation_job_streamed(
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
                 requested_mode=requested_mode, purpose=purpose,
+                allow_clarify=allow_clarify,
             ):
                 await queue.put(sse)
         finally:
@@ -3362,6 +3376,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
+            allow_clarify=req.allow_clarify,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -3703,6 +3718,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             # Normally "investigate"; "explore" only when the deterministic wide detector fired
             # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
             requested_mode=route.mode,
+            allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
         ):
             yield sse
@@ -3815,13 +3831,9 @@ def ask_context_endpoint(
 
 
 def _resolve_ask_agent(req: "AskRequest"):
-    """The user-defined agent this ask runs as, or None (flag off / no agent_id)."""
+    """The user-defined agent this ask runs as, or None (no agent_id named)."""
     if not req.agent_id:
         return None
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("agents.user_defined"):
-        raise HTTPException(status_code=404,
-                            detail="user-defined agents are disabled (flag agents.user_defined)")
     from aughor.custom_agents import get_agent
     agent = get_agent(req.agent_id)
     if agent is None:
@@ -3866,11 +3878,8 @@ def persona_for_investigation(inv_id: str):
 
     Resume (plan/clarify-gate feedback) never passes through /ask, so the
     persona is re-read from the run's persisted state (`agent_id`). Fail-open:
-    a missing checkpoint, an unknown/disabled agent, or the flag being off all
-    resume the run WITHOUT the persona rather than blocking it."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("agents.user_defined"):
-        return None
+    a missing checkpoint or an unknown/disabled agent resumes the run WITHOUT
+    the persona rather than blocking it."""
     try:
         from aughor.agent.graph import read_checkpoint_values
         agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""

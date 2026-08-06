@@ -44,13 +44,12 @@ def test_data_version_fail_open_on_missing_table():
     assert snap.data_version(c, ["does_not_exist"]) is None    # never raises
 
 
-def test_flag_default_on_and_honours_forced_off(monkeypatch):
-    # Graduated 2026-07-31 (flag strategy batch D): default-ON now, so an unset env
-    # resolves on; "off" is the operator escape hatch (an explicit falsy value).
-    monkeypatch.delenv("AUGHOR_SNAPSHOT_RECEIPTS", raising=False)
+def test_snapshot_receipts_are_unconditional(monkeypatch):
+    """Hardwired by flag endgame Wave 2 (2026-08-06; receipt 2dee7a36c03f measured
+    the probe at ~0.2ms vs the 5ms bar). The env var is dead on purpose — the
+    consult point answers True regardless, and the emit stays fail-open."""
+    monkeypatch.setenv("AUGHOR_SNAPSHOT_RECEIPTS", "0")   # a stale .env must not resurrect the off-state
     assert snap.snapshot_receipts_enabled() is True
-    monkeypatch.setenv("AUGHOR_SNAPSHOT_RECEIPTS", "0")
-    assert snap.snapshot_receipts_enabled() is False
 
 
 def test_as_of_unsupported_on_plain_duckdb():

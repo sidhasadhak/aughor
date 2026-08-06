@@ -52,14 +52,14 @@ def _make_job_fn(sub_id: str):
 
             # WP-7: under `ops.metered_monitors`, deliver as a supervised Briefer job so the
             # brief's synthesis LLM calls + warehouse SQL are metered + budget-enforced.
-            from aughor.kernel.flags import flag_enabled
-            if flag_enabled("ops.metered_monitors"):
-                from aughor.kernel.jobs import submit_background_tick
-                job_id = submit_background_tick(
-                    "brief", _work, conn_id=sub.conn_id, org_id=org,
-                    idempotency_key=f"brief:{sub_id}")
-                if job_id is not None:
-                    return   # routed through the kernel
+            # Metered delivery is permanent (flag endgame Wave 2, 2026-08-06;
+            # receipt b167bb891764) — the brief runs as a supervised Briefer job.
+            from aughor.kernel.jobs import submit_background_tick
+            job_id = submit_background_tick(
+                "brief", _work, conn_id=sub.conn_id, org_id=org,
+                idempotency_key=f"brief:{sub_id}")
+            if job_id is not None:
+                return   # routed through the kernel
             _work()          # legacy / no-loop fallback
         except Exception as exc:
             logger.error("Brief job %s crashed: %s", sub_id, exc)

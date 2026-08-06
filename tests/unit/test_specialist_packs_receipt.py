@@ -36,8 +36,7 @@ def test_the_suite_covers_the_invariants_the_flip_rests_on():
             "a_draft_pack_never_steers_even_when_deployed",
             "steering_is_scoped_to_the_deployed_connection",
             "agent_pack_preference_never_bypasses_the_deploy_gate",
-            "the_env_kill_switch_still_stops_a_fully_earned_steer",
-            "a_broken_pack_on_disk_never_takes_down_intake",
+                        "a_broken_pack_on_disk_never_takes_down_intake",
             "the_enabled_field_is_the_only_fresh_clone_delta"} <= set(SCENARIOS)
 
 
@@ -48,8 +47,10 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_the_flag_under_test_is_registered_and_default_on():
+def test_the_flag_stayed_deleted():
+    """Hardwired by flag endgame Wave 2 (2026-08-06). The registry must stay empty
+    of it — a re-registration would be the drift the endgame exists to prevent."""
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
-    assert FLAG in FLAG_ENV
-    assert FLAG_DEFAULT.get(FLAG) is True
+    assert FLAG not in FLAG_ENV
+    assert FLAG not in FLAG_DEFAULT

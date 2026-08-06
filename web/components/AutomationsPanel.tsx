@@ -473,7 +473,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 1);
   const [saving, setSaving] = useState(false);
   // The personas an `investigate` effect may run as (Wave H1). Empty when the
-  // `agents.user_defined` flag is off — the picker then simply doesn't render, and
+  // roster is empty — the picker then simply doesn't render, and
   // an unbound investigation is still the default.
   const [agents, setAgents] = useState<UserAgent[]>([]);
   useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
