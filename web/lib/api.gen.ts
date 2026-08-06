@@ -2437,6 +2437,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cron/tick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cron Tick
+         * @description Run one tick of every scheduled family. Returns per-family counts.
+         *
+         *     ``window_s`` is the caller's own tick interval — entries whose cron fired
+         *     within that lookback are due now.
+         */
+        get: operations["cron_tick_cron_tick_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dev/stats": {
         parameters: {
             query?: never;
@@ -14778,6 +14801,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cron_tick_cron_tick_get: {
+        parameters: {
+            query?: {
+                window_s?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

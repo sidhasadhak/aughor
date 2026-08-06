@@ -32,7 +32,7 @@ _started = False
 TICK_SECONDS = 60
 
 
-def _tick() -> None:
+def tick_once() -> None:
     """Evaluate every enabled automation once. One automation's failure never stops the rest.
 
     When ``automations.adopt_legacy`` is on (A5), the same tick ALSO runs every enabled monitor and
@@ -118,7 +118,7 @@ def start() -> None:
         return
     try:
         _scheduler.add_job(
-            _tick,
+            tick_once,
             trigger=IntervalTrigger(seconds=TICK_SECONDS),
             id="automation_heartbeat",
             name="automation heartbeat",
