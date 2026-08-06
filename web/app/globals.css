@@ -369,6 +369,17 @@ a:hover { color: var(--blue4); }
   background-size: 200% 100%;
   animation: aug-shimmer 1.4s infinite;
 }
+/* B1 (ai-elements) — the TEXT variant of the same sweep: a readable label whose
+   gradient travels through it while something streams. Same keyframes, same
+   tokens; the block variant above stays for skeletons. */
+.aug-shimmer-text {
+  background: linear-gradient(90deg, var(--t4) 25%, var(--t2) 50%, var(--t4) 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aug-shimmer 1.8s infinite;
+}
 
 /* Tactile press + crisp keyboard focus for interactive controls. Additive:
    pair with an element's existing colour transition (Tailwind `transition`
