@@ -241,6 +241,10 @@ export async function recordVerdict(input: {
   investigationId?: string;
   headline?: string;
   note?: string;
+  /** S3 fix-it: the SQL that produced the judged answer + an optional human fix —
+   *  the structural payload the closed loop reads back into planning. */
+  sqlSource?: string;
+  correctedSql?: string;
 }): Promise<void> {
   const res = await fetch(`${getApiBase()}/verify/verdict`, {
     method: "POST",
@@ -251,6 +255,8 @@ export async function recordVerdict(input: {
       investigation_id: input.investigationId ?? "",
       headline: input.headline ?? "",
       note: input.note ?? "",
+      sql_source: input.sqlSource ?? "",
+      corrected_sql: input.correctedSql ?? "",
     }),
   });
   if (!res.ok) {
@@ -4586,7 +4592,8 @@ export async function getAgentObservability(agentId: string): Promise<AgentObser
 export interface LearningSummary {
   connection_id: string | null;
   ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
-  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null };
+  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null;
+              trend?: { week: string; total: number; acceptance_rate: number }[] };
   trusted: { queries: number };
 }
 

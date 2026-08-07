@@ -2447,10 +2447,10 @@ export interface paths {
         };
         /**
          * Cron Tick
-         * @description Run one tick of every scheduled family. Returns per-family counts.
+         * @description Run one engine tick (automations + adopted monitors/briefs). Returns counts.
          *
-         *     ``window_s`` is the caller's own tick interval — entries whose cron fired
-         *     within that lookback are due now.
+         *     ``window_s`` is the caller's own tick interval; due-ness is the engine's
+         *     since-last-run check, so the window only gates the hourly housekeeping.
          */
         get: operations["cron_tick_cron_tick_get"];
         put?: never;
@@ -4473,8 +4473,9 @@ export interface paths {
         /**
          * Propose Actions Route
          * @description Wave K4: the agent proposes declared actions for a context. Returns STAGED, dry-run-validated
-         *     proposals — nothing is executed (a human accepts, then POSTs to .../execute). Flag-gated on
-         *     `kinetic.agent_actions` → 404 when off. The proposer LLM call runs on the `fast` role binding.
+         *     proposals — nothing is executed (a human accepts, then POSTs to .../execute). Always on
+         *     (flag endgame Wave 5, 2026-08-06): data-gated — no declared actions ⇒ nothing to propose,
+         *     and every proposal still passes a human. The proposer LLM call runs on the `fast` role binding.
          */
         post: operations["propose_actions_route_kinetic_actions_propose_post"];
         delete?: never;
@@ -9515,6 +9516,11 @@ export interface components {
              */
             connection_id: string;
             /**
+             * Corrected Sql
+             * @default
+             */
+            corrected_sql: string;
+            /**
              * Headline
              * @default
              */
@@ -9529,6 +9535,11 @@ export interface components {
              * @default
              */
             note: string;
+            /**
+             * Sql Source
+             * @default
+             */
+            sql_source: string;
             /** Verdict */
             verdict: string;
         };

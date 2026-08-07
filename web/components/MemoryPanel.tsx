@@ -39,6 +39,15 @@ const ellipsize: React.CSSProperties = {
   flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
 };
 
+/** "72% → 84% over N wks" from the weekly acceptance series — the product's
+ *  accuracy TREND (S3). Null when fewer than two measured weeks exist: one
+ *  point is a number, not a direction. */
+function trendSub(trend?: { week: string; acceptance_rate: number }[]): string | null {
+  if (!trend || trend.length < 2) return null;
+  const first = trend[0], last = trend[trend.length - 1];
+  return `${Math.round(first.acceptance_rate * 100)}% → ${Math.round(last.acceptance_rate * 100)}% over ${trend.length} wks`;
+}
+
 export function MemoryPanel() {
   const [summary, setSummary] = useState<LearningSummary | null>(null);
   const [trusted, setTrusted] = useState<TrustedAssets | null>(null);
@@ -77,7 +86,8 @@ export function MemoryPanel() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
             <Tile label="Resolutions" value={compactNumber(ledger?.resolutions ?? 0)} sub="ambiguities settled" />
             <Tile label="Times served" value={compactNumber(ledger?.served_total ?? 0)} sub="priors reused in answers" />
-            <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"} sub={`${verdicts?.total ?? 0} verdicts`} />
+            <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"}
+                  sub={trendSub(verdicts?.trend) ?? `${verdicts?.total ?? 0} verdicts`} />
             <Tile label="Trusted" value={String(trustedTotal)} sub={plural(summary.trusted.queries, "query")} />
           </div>
 

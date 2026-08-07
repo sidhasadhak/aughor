@@ -6,6 +6,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { BriefDetails, BriefDetailBlock, renderEmphasis } from "@/components/brief/Brief";
 import { stripPlannerNotes } from "@/lib/format";
 import { recordVerdict } from "@/lib/api";
+import { FixItForm } from "@/components/FixItForm";
 
 interface Props {
   report: ExplorationReportType;
@@ -185,12 +186,16 @@ function FindingVerdict({ headline, connectionId, investigationId }: {
 }) {
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const send = async (verdict: "accept" | "correct" | "reject") => {
+  // S3 fix-it: a negative verdict asks WHAT was wrong — an accept stays one
+  // click, but "Partly"/"Wrong" without the reason teaches the loop nothing.
+  const [fixIt, setFixIt] = useState<"correct" | "reject" | null>(null);
+  const send = async (verdict: "accept" | "correct" | "reject", note = "") => {
     if (busy) return;
     setBusy(true);
     try {
-      await recordVerdict({ verdict, connectionId, investigationId, headline });
+      await recordVerdict({ verdict, connectionId, investigationId, headline, note });
       setDone(verdict);
+      setFixIt(null);
     } catch {
       setDone(null);
     } finally {
@@ -210,10 +215,17 @@ function FindingVerdict({ headline, connectionId, investigationId }: {
       <span className="aug-fs-xs text-zinc-500 mr-1">Was this finding right?</span>
       <button disabled={busy} onClick={() => send("accept")}
         className={`${btn} border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10`}>Accept</button>
-      <button disabled={busy} onClick={() => send("correct")}
+      <button disabled={busy} onClick={() => setFixIt("correct")}
         className={`${btn} border-amber-500/40 text-amber-300 hover:bg-amber-500/10`}>Partly</button>
-      <button disabled={busy} onClick={() => send("reject")}
+      <button disabled={busy} onClick={() => setFixIt("reject")}
         className={`${btn} border-rose-500/40 text-rose-300 hover:bg-rose-500/10`}>Reject</button>
+      {fixIt && (
+        <div className="w-full">
+          <FixItForm busy={busy}
+                     onSubmit={(note) => send(fixIt, note)}
+                     onCancel={() => setFixIt(null)} />
+        </div>
+      )}
     </div>
   );
 }

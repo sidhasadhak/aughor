@@ -31,7 +31,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { validateQuery, sendChatFeedback, recordVerdict, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -39,6 +39,7 @@ import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
+import { FixItForm } from "@/components/FixItForm";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
@@ -1057,6 +1058,11 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
+  // S3 fix-it: a thumbs-down opens the typed what-was-wrong form; the correction
+  // flows through record_verdict into the ledger, so the next answer cites it.
+  const [fixItOpen, setFixItOpen] = useState(false);
+  const [fixItBusy, setFixItBusy] = useState(false);
+  const [fixItDone, setFixItDone] = useState(false);
   const sql = (turn.sql || "").trim();
   if (!sql || !connectionId) return null;
 
@@ -1069,6 +1075,22 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   const rate = (v: "helpful" | "unhelpful") => {
     setFeedback(v);
     if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v);
+    // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
+    if (v === "unhelpful") setFixItOpen(true);
+  };
+  const submitFixIt = async (note: string, correctedSql: string) => {
+    setFixItBusy(true);
+    try {
+      await recordVerdict({
+        verdict: correctedSql ? "correct" : "reject",
+        connectionId, investigationId: turn.investigationId ?? "",
+        headline: turn.headline ?? "", note,
+        sqlSource: sql, correctedSql,
+      });
+      setFixItDone(true);
+      setFixItOpen(false);
+    } catch { /* the receipt signal already landed; the form stays open to retry */ }
+    finally { setFixItBusy(false); }
   };
 
   const issues = verdict
@@ -1092,8 +1114,13 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
         <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
-        {feedback && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {feedback && !fixItOpen && !fixItDone && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {fixItDone && <span className="text-zinc-600 italic">correction recorded — future answers cite it</span>}
       </div>
+      {fixItOpen && (
+        <FixItForm withSql busy={fixItBusy}
+                   onSubmit={submitFixIt} onCancel={() => setFixItOpen(false)} />
+      )}
       {verdict && (
         issues.length === 0 ? (
           <p className="aug-text-xs text-emerald-400/80">✓ Validated — no fan-out, join, or filter issues found.</p>
@@ -1269,7 +1296,7 @@ export function ChatMessage({
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
-  /** Drill an overview fact into a live seeded investigation (see OverviewReportView). */
+  /** Drill an overview fact into a live seeded deep analysis (see OverviewReportView). */
   onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
@@ -1526,7 +1553,7 @@ export function ChatMessage({
   );
 }
 
-// Crystallize a finished investigation into a reusable, governed learned skill: propose
+// Crystallize a finished deep analysis into a reusable, governed learned skill: propose
 // (the candidate from its grounded, read-only SQL) → save (EXPLAIN-gated server-side). A
 // 422 means the run wasn't skill-worthy (low confidence / ungrounded / no read-only query).
 function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionId: string }) {

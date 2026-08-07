@@ -473,7 +473,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
 
 /* ── Escalation bar — progressive escalation (Phase 5) ──
    Shown when a quick answer was inconclusive; one click re-runs the question as a
-   deep investigation (auto + transparency — the agent offers, the user decides). */
+   deep analysis (auto + transparency — the agent offers, the user decides). */
 function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => void }) {
   const e = turn.escalate;
   if (!e || turn.status === "loading") return null;
@@ -918,7 +918,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {turn.status === "done" && turn.publicReceiptId && (
                       <WhyThisNumber receiptId={turn.publicReceiptId} />
                     )}
-                    {/* Post-investigation feedback — shown once per completed investigation with hypotheses */}
+                    {/* Post-run feedback — shown once per completed deep analysis with hypotheses */}
                     {turn.mode === "investigate" &&
                      turn.status === "done" &&
                      turn.hypotheses.length > 0 &&
