@@ -38,6 +38,8 @@ import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { GuardReceiptChain } from "@/components/GuardReceiptChain";
+import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
 import { ClarifyGateCard } from "@/components/ClarifyGateCard";
@@ -1330,6 +1332,26 @@ export function ChatMessage({
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} onShowSource={onShowSource} />
+      )}
+
+      {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
+             nothing when no guard fired (most turns) ── */}
+      <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
+
+      {/* ── B3: live dimension scan as a Task list — the deep run's long silent
+             phase becomes visible per-dimension progress ── */}
+      {isInvestigate && turn.status === "loading" && turn.scanProgress && (
+        <Task defaultOpen className="my-1">
+          <TaskTrigger
+            status="in_progress"
+            title={`Scanning dimensions · ${turn.scanProgress.done}/${turn.scanProgress.total}`}
+          />
+          <TaskContent>
+            {turn.scanItems.map((d) => (
+              <TaskItem key={d}>{d}</TaskItem>
+            ))}
+          </TaskContent>
+        </Task>
       )}
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}

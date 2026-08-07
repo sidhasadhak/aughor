@@ -73,6 +73,10 @@ export interface ChatTurn {
   status: "loading" | "done" | "error";
   /** A4 — guard interventions in arrival order, both quick and deep paths. */
   guardReceipts: GuardReceipt[];
+  /** B3 — live scan progress (deep runs): dimensions completed so far, and the
+   *  running counts, so the surface can render a Task list instead of silence. */
+  scanItems: string[];
+  scanProgress: { done: number; total: number } | null;
 
   // Ask mode
   sql: string | null;
@@ -226,6 +230,7 @@ export type ChatAction =
   | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
   | { type: "GUARD_RECEIPT"; receipt: GuardReceipt }
+  | { type: "SCAN_PROGRESS"; done: number; total: number; current: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
@@ -308,6 +313,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   clarify: null,
   escalate: null,
   guardReceipts: [],
+  scanItems: [], scanProgress: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -365,6 +371,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "GUARD_RECEIPT":
       return updateLast(state, t => ({ ...t, guardReceipts: [...t.guardReceipts, action.receipt] }));
+    case "SCAN_PROGRESS":
+      return updateLast(state, t => ({
+        ...t,
+        scanProgress: { done: action.done, total: action.total },
+        scanItems: action.current && !t.scanItems.includes(action.current)
+          ? [...t.scanItems, action.current] : t.scanItems,
+      }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "CONTEXT_ASSEMBLED": return updateLast(state, t => ({ ...t, contextManifest: action.manifest }));
     case "PLAN_PENDING": return updateLast(state, t => ({ ...t, planPending: action.plan, status: "done" }));
@@ -602,6 +615,8 @@ export async function consumeStream(
               dispatch({ type: "STATUS_TEXT", text: current
                 ? `Scanning ${current} · ${done}/${total}…`
                 : `Scanning dimensions · ${done}/${total}…` });
+              // B3 — the same marker feeds the Task surface (per-dimension rows).
+              dispatch({ type: "SCAN_PROGRESS", done, total, current });
               break;
             }
             case "hypotheses":
