@@ -233,8 +233,15 @@ class GoogleSheetsConnector(Connector):
                 except Exception:
                     n = 0
                 lines.append(f"TABLE: {tname}  ({n:,} rows)")
+                # A2: show what each column holds, not just its type.
+                from aughor.db.schema_render import column_head_samples
+                def _run(sql):
+                    self._duckdb.execute(sql)
+                    return self._duckdb.fetchall()
+                samples = column_head_samples(
+                    _run, '"' + tname.replace('"', '""') + '"', [c for c, _ in cols])
                 for col, dtype in cols:
-                    lines.append(f"  {col}  {dtype}")
+                    lines.append(f"  {col}  {dtype}" + samples.get(col, ""))
                 lines.append("")
         except Exception as e:
             lines.append(f"# Schema introspection failed: {e}")

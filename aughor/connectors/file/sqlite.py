@@ -174,11 +174,17 @@ class SQLiteConnection(Connector):
                 cols = self._conn.execute(f'PRAGMA table_info("{table}")').fetchall()
             except Exception:
                 cols = []
+            # A2: one head scan makes every column self-describing (what it HOLDS,
+            # not just its declared type — sqlite affinity makes this matter more).
+            from aughor.db.schema_render import column_head_samples
+            _samples = column_head_samples(
+                lambda sql: self._conn.execute(sql).fetchall(),
+                '"' + table.replace('"', '""') + '"', [c[1] for c in cols])
             # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
             for col in cols:
                 name = col[1]
                 dtype = (col[2] or "").strip() or "TEXT"
-                parts.append(f"  {name}  {dtype}")
+                parts.append(f"  {name}  {dtype}" + _samples.get(name, ""))
                 inject_into_schema_parts(parts, table, name, _ann)
         return "\n".join(parts)
 

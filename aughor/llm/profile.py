@@ -68,6 +68,15 @@ class ModelProfile:
     structured_attempts: int
     #: Reasoning effort for backends that expose it ("low"|"medium"|"high").
     reasoning_effort: str
+    #: A3 linker budgets — rank bounds for the schema-linking pre-filter; the char
+    #: budget that actually caps the packed schema is `schema_char_limit`. Baseline
+    #: = the old hardcoded 4×8 bouncer exactly; a capable model ranks further down
+    #: the list because its window genuinely holds it.
+    linker_top_tables: int
+    linker_top_cols: int
+    #: Post-catalog table cap (successor of the hardcoded ``max_tables=10`` at the
+    #: `enforce_context_cap` call sites and the join-expansion ``cap=10``).
+    context_table_cap: int
     #: Transport-derived: may independent phases/lenses/sub-questions run as
     #: concurrent waves? (Replaces explore.parallel_subq,
     #: deep_analysis.parallel_lenses/parallel_phases/parallel_why_lenses.)
@@ -90,6 +99,9 @@ _BASELINE = dict(
     max_output_tokens=4_096,
     structured_attempts=1,
     reasoning_effort="low",
+    linker_top_tables=4,
+    linker_top_cols=8,
+    context_table_cap=10,
 )
 
 # Large-context families this deployment actually runs (llm_config.json history +
@@ -104,6 +116,9 @@ _CAPABLE = dict(
     max_output_tokens=8_192,
     structured_attempts=1,
     reasoning_effort="medium",
+    linker_top_tables=24,
+    linker_top_cols=24,
+    context_table_cap=24,
 )
 
 #: Model-id prefix → tier. Longest-prefix match; the `:free`/`:cloud` suffix is not
@@ -227,6 +242,9 @@ def profile_for(role: str = "coder", *, model: Optional[str] = None) -> ModelPro
         max_output_tokens=max_out,
         structured_attempts=attempts,
         reasoning_effort=effort,
+        linker_top_tables=tier["linker_top_tables"],
+        linker_top_cols=tier["linker_top_cols"],
+        context_table_cap=tier["context_table_cap"],
         parallel_waves=_parallel_waves(rpm),
         rpm_budget=rpm,
     )

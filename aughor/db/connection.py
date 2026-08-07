@@ -1123,23 +1123,35 @@ class PostgresConnection(DatabaseConnection):
         from aughor.db.annotations import load_annotations, inject_into_schema_parts
         _ann = load_annotations(self._connection_id or "postgres")
 
-        parts: list[str] = []
-        current_table = None
+        from collections import OrderedDict
+        by_table: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
         for table, col, dtype in rows:
-            if table != current_table:
-                if current_table:
-                    parts.append("")
-                try:
-                    with self._conn.cursor() as cur2:
-                        cur2.execute(f"SELECT COUNT(*) FROM {table}")
-                        count = cur2.fetchone()[0]
-                except Exception:
-                    count = "?"
-                parts.append(f"TABLE: {table}  ({count:,} rows)")
-                inject_into_schema_parts(parts, table, None, _ann)
-                current_table = table
-            parts.append(f"  {col}  {dtype}")
-            inject_into_schema_parts(parts, table, col, _ann)
+            by_table.setdefault(table, []).append((col, dtype))
+
+        def _run(sql: str):
+            with self._conn.cursor() as cur2:
+                cur2.execute(sql)
+                return cur2.fetchall()
+
+        from aughor.db.schema_render import column_head_samples
+        parts: list[str] = []
+        for table, cols in by_table.items():
+            if parts:
+                parts.append("")
+            try:
+                with self._conn.cursor() as cur2:
+                    cur2.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cur2.fetchone()[0]
+            except Exception:
+                count = "?"
+            parts.append(f"TABLE: {table}  ({count:,} rows)")
+            inject_into_schema_parts(parts, table, None, _ann)
+            # A2: one head scan per table so a column line says what it HOLDS.
+            samples = column_head_samples(
+                _run, '"' + table.replace('"', '""') + '"', [c for c, _ in cols])
+            for col, dtype in cols:
+                parts.append(f"  {col}  {dtype}" + samples.get(col, ""))
+                inject_into_schema_parts(parts, table, col, _ann)
 
         schema_str = "\n".join(parts)
         hints = self._detect_sql_hints(rows)  # also populates self._varchar_ts_cols

@@ -121,7 +121,9 @@ def test_investigate_budgets_follow_the_profile(monkeypatch):
     cap = pr.ModelProfile(backend="t", model="m", schema_char_limit=42_000,
                           evidence_budget=17_000, interpret_max_rows=33,
                           max_output_tokens=8192, structured_attempts=1,
-                          reasoning_effort="low", parallel_waves=False, rpm_budget=None)
+                          reasoning_effort="low", linker_top_tables=4,
+                          linker_top_cols=8, context_table_cap=10,
+                          parallel_waves=False, rpm_budget=None)
     monkeypatch.setattr("aughor.llm.profile.profile_for", lambda *a, **k: cap)
     assert inv._schema_limit() == 42_000
     assert inv._evidence_budget() == 17_000

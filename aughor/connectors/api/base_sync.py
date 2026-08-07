@@ -236,14 +236,25 @@ class RestApiSync(Connector):
                 "ORDER BY table_name, ordinal_position"
             )
             rows = self._duckdb.fetchall()
-            from collections import defaultdict
-            table_cols: defaultdict[str, list[str]] = defaultdict(list)
+            from collections import OrderedDict
+            table_cols: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
             for tname, col, dtype in rows:
-                table_cols[tname].append(f"{col} {dtype}")
+                table_cols.setdefault(tname, []).append((col, dtype))
             state = self._load_state()
+            # Canonical house format + A2 head samples (the bracketed one-liner hid
+            # every column from the schema-linker and the data catalog).
+            from aughor.db.schema_render import column_head_samples
+            def _run(sql):
+                self._duckdb.execute(sql)
+                return self._duckdb.fetchall()
             for tname, cols in table_cols.items():
                 row_count = state.get(tname, {}).get("rows", "?")
-                lines.append(f"TABLE: {tname} ({row_count} rows) [{', '.join(cols)}]")
+                lines.append(f"TABLE: {tname}  ({row_count} rows)")
+                samples = column_head_samples(
+                    _run, '"' + tname.replace('"', '""') + '"', [c for c, _ in cols])
+                for col, dtype in cols:
+                    lines.append(f"  {col}  {dtype}" + samples.get(col, ""))
+                lines.append("")
         except Exception as e:
             lines.append(f"# Schema introspection failed: {e}")
         return "\n".join(lines) or f"(no data synced yet — run POST /connections/{self._connection_id}/sync)"

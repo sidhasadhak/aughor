@@ -572,7 +572,7 @@ def _execute_one_subq(
     try:
         from aughor.tools.schema_linker import link_schema
         linked = link_schema(
-            subq.question, subq_schema, top_k_tables=4, top_k_cols=8,
+            subq.question, subq_schema,
             connection_id=state.get("connection_id"),
         )
         if linked:

@@ -214,10 +214,20 @@ class FederatedConnection(Connector):
                 # Get columns
                 try:
                     self._duckdb.execute(f'SELECT * FROM "{view}" LIMIT 0')
-                    cols = ", ".join(d[0] for d in self._duckdb.description) if self._duckdb.description else ""
+                    colnames = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
                 except Exception:
-                    cols = ""
-                parts.append(f"  TABLE: {view} ({cnt} rows)  [{cols}]")
+                    colnames = []
+                # A2: head samples per member view, same one-scan pattern as every
+                # other connector.
+                from aughor.db.schema_render import column_head_samples
+                def _run(sql):
+                    self._duckdb.execute(sql)
+                    return self._duckdb.fetchall()
+                samples = column_head_samples(
+                    _run, '"' + view.replace('"', '""') + '"', colnames)
+                parts.append(f"  TABLE: {view} ({cnt} rows)")
+                for col in colnames:
+                    parts.append(f"    {col}" + samples.get(col, ""))
             parts.append("")
 
         # Cross-source join hints (reuse existing fuzzy inference on combined schema)

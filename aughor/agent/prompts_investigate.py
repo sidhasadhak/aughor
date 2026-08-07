@@ -747,7 +747,7 @@ class SemanticStep(BaseModel):
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
-    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "pareto", "auto", "none"] = "auto"
+    chart_type: Literal["auto", "bar", "bar_horizontal", "bar_vertical", "line", "multi_line", "area", "stacked_bar", "scatter", "pie", "pareto", "treemap", "heatmap", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "none"] = "auto"
     rationale: str
     semantic: Optional[SemanticStep] = Field(
         default=None,
@@ -775,7 +775,7 @@ class PhaseFindingModel(BaseModel):
     title: str
     interpretation: str
     key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
-    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "pareto", "auto", "none"] = "auto"
+    chart_type: Literal["auto", "bar", "bar_horizontal", "bar_vertical", "line", "multi_line", "area", "stacked_bar", "scatter", "pie", "pareto", "treemap", "heatmap", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "none"] = "auto"
     stat_note: Optional[str] = None
     is_significant: bool = False
 

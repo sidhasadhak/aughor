@@ -805,9 +805,6 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "pareto", "stacked_bar", "scatter",
-                      "multi_line", "heatmap", "treemap", "combo"}
-
 # Concentration / 80-20 intent — only the QUESTION carries this, so the chart
 # selection has to read it here (the renderer never sees the question). Models
 # inconsistently emit a share column or the literal "pareto" chart_type, so this
@@ -1418,13 +1415,15 @@ async def _stream_chat(
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
-        # Hard cap: max 10 tables in context
+        # Hard cap on tables in context — profile-derived (A3): the linker output
+        # is rank-ordered, so a first-N cut here keeps the top-N ranked tables.
         try:
+            from aughor.llm.profile import profile_for
             from aughor.tools.data_catalog import enforce_context_cap
-            schema = enforce_context_cap(schema, max_tables=10)
+            schema = enforce_context_cap(schema, max_tables=profile_for("coder").context_table_cap)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "10-table context cap is best-effort; answering from the uncapped schema context",
+            tolerate(exc, "table context cap is best-effort; answering from the uncapped schema context",
                      counter="chat.context_cap")
 
         # ── final_text path: definitional questions answered from KB ──
@@ -2665,7 +2664,7 @@ async def _stream_investigation(
         # Schema-linking pre-filter: narrow to relevant tables/columns per question.
         try:
             from aughor.tools.schema_linker import link_schema
-            schema = link_schema(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+            schema = link_schema(question, schema, connection_id=connection_id)
         except Exception:
             logger.warning("Schema-linking pre-filter failed (agentic path); using full schema", exc_info=True)
         # Build structured Data Catalog from linked tables
@@ -2683,7 +2682,9 @@ async def _stream_investigation(
                 for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
-                linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
+                from aughor.llm.profile import profile_for as _pf
+                linked_tables = fk_neighbor_expand(full_schema, linked_tables,
+                                                   cap=_pf("coder").context_table_cap)
                 # Scope the expansion to the canvas schema: temporal/FK expansion walks the
                 # FULL schema and can pull a sibling schema's same-named table (netflix.products
                 # into a missimi investigation), which then becomes a cross-schema reference the
@@ -2698,15 +2699,17 @@ async def _stream_investigation(
         except Exception:
             logger.warning("Data Catalog build failed (agentic path); using linked schema", exc_info=True)
 
-        # Hard cap: max 10 tables in context
+        # Hard cap on tables in context — profile-derived (A3), rank-preserving.
         try:
+            from aughor.llm.profile import profile_for
             from aughor.tools.data_catalog import enforce_context_cap
-            schema = enforce_context_cap(schema, max_tables=10)
+            _cap = profile_for("coder").context_table_cap
+            schema = enforce_context_cap(schema, max_tables=_cap)
             if data_catalog:
-                data_catalog = enforce_context_cap(data_catalog, max_tables=10)
+                data_catalog = enforce_context_cap(data_catalog, max_tables=_cap)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "10-table context cap is best-effort; investigating with the uncapped schema context",
+            tolerate(exc, "table context cap is best-effort; investigating with the uncapped schema context",
                      counter="investigation.context_cap")
 
         # P2 Agent Context surface: expose the assembled working context (which tables
