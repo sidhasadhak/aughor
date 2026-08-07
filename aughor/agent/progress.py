@@ -58,6 +58,35 @@ def emit_phase_progress(phase_id: str, done: int, total: int, current: str = "")
                  counter="ada.progress_emit")
 
 
+def emit_guard_receipt(guard: str, action: str, detail: str = "",
+                       before: str | None = None, after: str | None = None) -> None:
+    """A4 — push one guard receipt to the active sink, if any. Best-effort; never raises.
+
+    A guard that silently rewrites SQL or overrides a chart is doing the right thing
+    for the wrong witness: the user sees only the corrected output and cannot tell
+    direction from restriction. The receipt makes the intervention visible — the SSE
+    stream turns it into a ``guard_receipt`` event ({guard, action, detail, before?,
+    after?}), which is also the data source for the Chain-of-Thought UI (Track B).
+    Emitting is exactly as disposable as phase progress: no sink ⇒ a single
+    ContextVar read and out, so guards shared with non-SSE paths (explorer, evals)
+    cost nothing there."""
+    sink = _PROGRESS_SINK.get()
+    if sink is None:
+        return
+    loop, queue = sink
+    payload: dict = {"guard": guard, "action": action, "detail": (detail or "")[:500]}
+    if before is not None:
+        payload["before"] = before[:2000]
+    if after is not None:
+        payload["after"] = after[:2000]
+    try:
+        loop.call_soon_threadsafe(queue.put_nowait, {"__guard_receipt__": payload})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "guard-receipt emit is disposable telemetry; a closed loop / full queue is fine",
+                 counter="ada.guard_receipt_emit")
+
+
 # Coalesce token-stream partials to ~word-group granularity so ada_synthesize's prose
 # stream doesn't flood the sink queue (the terminal answer_report is authoritative anyway).
 _REPORT_DELTA_MIN_CHARS = 24

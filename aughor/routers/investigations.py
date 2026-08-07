@@ -490,9 +490,10 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
                 {next_graph, next_prog}, return_when=asyncio.FIRST_COMPLETED)
             if next_prog in done:
                 _p = next_prog.result()
-                # Two payload types share the sink queue: a report-delta (R6, already
-                # self-tagged) passes through verbatim; a phase-progress marker is wrapped.
-                if isinstance(_p, dict) and "__report_delta__" in _p:
+                # Three payload types share the sink queue: a report-delta (R6) and a
+                # guard receipt (A4) are self-tagged and pass through verbatim; a
+                # phase-progress marker is wrapped.
+                if isinstance(_p, dict) and ("__report_delta__" in _p or "__guard_receipt__" in _p):
                     yield _p
                 else:
                     yield {"__ada_progress__": _p}
@@ -1834,14 +1835,25 @@ async def _stream_chat(
                 if _rw and _rw.strip() != final_sql.strip():
                     _dry_ok, _ = db.dry_run(_rw)
                     if _dry_ok:
+                        _before_sql = final_sql
                         final_sql = _rw
                         _adopted = True
                         _rcpt["defan"] = True
                         yield _sse("sql", {"sql": final_sql})
                         yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
+                        yield _sse("guard_receipt", {
+                            "guard": "fanout_defan", "action": "rewrote_sql",
+                            "detail": (f"join fans out {_ff.hub_root} across "
+                                       f"{', '.join(_ff.satellites or [])} - replaced with the "
+                                       "exact pre-aggregated rewrite"),
+                            "before": _before_sql[:2000], "after": final_sql[:2000]})
                 if not _adopted:
                     _fanout_fix_hint = _ff.to_prompt_text()
                     yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
+                    yield _sse("guard_receipt", {
+                        "guard": "fanout_defan", "action": "hinted",
+                        "detail": ("fan-out detected but no provable rewrite exists; the "
+                                   "repair hint goes back to the model instead")})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "fan-out detection/de-fan guard is best-effort; executing the original SQL",
@@ -1854,17 +1866,29 @@ async def _stream_chat(
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)
+                # A4 - the repair round sees what the guards already did, so a fix
+                # cannot undo an adopted de-fan without knowing it existed.
+                _lint_hint_txt = _lint_hint(_lint_issues)
+                if _rcpt.get("defan"):
+                    _lint_hint_txt += (
+                        "\nGUARD ALREADY APPLIED: the SQL was de-fanned (pre-aggregated "
+                        "to avoid join over-counting) - preserve that structure in your fix.")
+                _before_lint = final_sql
                 _lint_fix = await asyncio.to_thread(
                     lambda: _writer.fix(
                         final_sql,
                         "SQL quality issues detected before execution",
-                        hint=_lint_hint(_lint_issues),
+                        hint=_lint_hint_txt,
                         max_retries=1,
                     )
                 )
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
                     _rcpt["lint"] = True
+                    yield _sse("guard_receipt", {
+                        "guard": "sql_lint", "action": "rewrote_sql",
+                        "detail": "; ".join(i.message for i in _lint_issues[:3])[:400],
+                        "before": _before_lint[:2000], "after": final_sql[:2000]})
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "lint auto-fix is non-fatal; proceeding with the original SQL",
@@ -2044,6 +2068,13 @@ async def _stream_chat(
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
         _rcpt["grounded"] = (_grounded_headline or "") != (answer.headline or "")
+        if _rcpt["grounded"]:
+            yield _sse("guard_receipt", {
+                "guard": "headline_grounding", "action": "rewrote_headline",
+                "detail": ("the model's headline was a pre-execution prediction; it was "
+                           "re-grounded in the rows the query actually returned"),
+                "before": (answer.headline or "")[:2000],
+                "after": (_grounded_headline or "")[:2000]})
         # Narration-inversion caveat: a per-group value stated as UNIVERSAL ("all
         # orders have 3 items") over a varying result. We can't drop a user's answer,
         # so qualify it inline instead of asserting a falsehood. High-precision, so
@@ -2056,6 +2087,10 @@ async def _stream_chat(
             )
             _rcpt["narration_inversion"] = True
             logger.info("[chat] narration-inversion caveat applied to headline")
+            yield _sse("guard_receipt", {
+                "guard": "narration_inversion", "action": "caveated_headline",
+                "detail": ("a per-group value was stated as universal over a varying "
+                           "result; the claim now carries its qualification")})
         # Measure-grain caveat (backstop to the prevention block): if the executed SQL
         # summed a measure at the WRONG grain (per-unit without ×quantity, or per-line
         # ×quantity), flag the number instead of asserting it. Data-detected + cached.
@@ -2069,6 +2104,10 @@ async def _stream_chat(
             )
             _rcpt["measure_grain"] = True
             logger.info("[chat] measure-grain caveat applied to headline")
+            yield _sse("guard_receipt", {
+                "guard": "measure_grain", "action": "caveated_headline",
+                "detail": ("a measure may be summed at the wrong grain "
+                           "(per-unit vs per-line); the total carries a caution")})
         # id-arithmetic backstop: if the repair couldn't eliminate a measure×key product
         # (or a SUM/AVG over an id), the number is fabricated — caveat it instead of asserting.
         try:
@@ -2080,6 +2119,10 @@ async def _stream_chat(
                 )
                 _rcpt["id_arithmetic"] = True
                 logger.info("[chat] id-arithmetic caveat applied to headline")
+                yield _sse("guard_receipt", {
+                    "guard": "id_arithmetic", "action": "caveated_headline",
+                    "detail": ("the total multiplies a measure by an id/key column; "
+                               "the magnitude is flagged untrustworthy")})
         except Exception as _e:
             logger.debug("chat id-arithmetic backstop is best-effort; skipped: %s", _e)
         # WP-1e — E1 function-semantics checks on the LIVE answer (flag `trust.e1_live`):
@@ -2103,10 +2146,20 @@ async def _stream_chat(
                     _rcpt["e1_checks"] = [t.pattern for t in _e1_hits]
                     logger.info("[chat] E1 trust-check caveat applied to headline: %s",
                                 [t.pattern for t in _e1_hits])
+                    yield _sse("guard_receipt", {
+                        "guard": "e1_trust_checks", "action": "caveated_headline",
+                        "detail": _e1_msgs[:400]})
             except Exception as _e:
                 logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
+        _chart_before = answer.chart_type
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
+        if answer.chart_type != _chart_before:
+            yield _sse("guard_receipt", {
+                "guard": "concentration_pareto", "action": "overrode_chart",
+                "detail": ("the question asks about concentration (80/20) over a ranked "
+                           "measure; a Pareto states that claim, the picked chart did not"),
+                "before": _chart_before, "after": answer.chart_type})
         # Chart-grammar exhibit for the quick answer — computed from the result grid alone
         # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
         # chart_config so no new event/persistence surface is needed; absent when the
@@ -2839,6 +2892,9 @@ async def _stream_investigation(
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
                 continue
+            if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
+                yield _sse("guard_receipt", event["__guard_receipt__"])
+                continue
             if "__interrupt__" in event:
                 # Distinguish a plan-gate pause (P3 — before the explore fan-out) from the
                 # ada_synthesize HITL pause by checking which node the graph is about to run.
@@ -3187,6 +3243,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 continue
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
+                continue
+            if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
+                yield _sse("guard_receipt", event["__guard_receipt__"])
                 continue
             if "__interrupt__" in event:
                 continue

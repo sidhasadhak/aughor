@@ -569,6 +569,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           question: t.question,
           mode: "ask" as const,
           status: "done" as const,
+          guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
           route: null,
           agent: null,
           clarify: null,

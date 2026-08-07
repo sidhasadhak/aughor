@@ -4061,6 +4061,9 @@ def run_analysis_phase(
         _fanout_hints = [] if _preplanned else _scan_fanout(plan.queries)
         if _fanout_hints:
             from aughor.stats import stats as _s; _s.inc("deep_analysis.fanout_guard_retries")
+            from aughor.agent.progress import emit_guard_receipt as _egr
+            _egr("fanout_replan", "replanned_queries",
+                 detail="; ".join(dict.fromkeys(_fanout_hints))[:400])
             try:
                 _fixed = _provider("coder").complete(
                     system=plan_system_eff,
@@ -4086,6 +4089,9 @@ def run_analysis_phase(
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
             if _scan_fanout(plan.queries):
                 _s.inc("deep_analysis.fanout_guard_unresolved")
+                _egr("fanout_replan", "caveated",
+                     detail="the re-plan still aggregates across the fan-out; the "
+                            "magnitude will carry a caveat instead of being asserted")
                 _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
