@@ -148,9 +148,22 @@ FLAG_ENV = {
     # "capabilities.auto" (AUGHOR_CAPABILITIES_AUTO) was DELETED 2026-08-04 (flag endgame
     # Wave 3): it was a master switch over the ten AUTO_ELIGIBLE guards, and those are
     # unconditional now, so it governed nothing. See the AUTO_ELIGIBLE tombstone.
-    "explorer.continuous": "AUGHOR_EXPLORER_CONTINUOUS",
+    # "explorer.continuous" (AUGHOR_EXPLORER_CONTINUOUS) turned ON and was DELETED
+    # 2026-08-06 (flag endgame Wave 4, user-approved 2026-08-01): the continuous tick
+    # always runs on an always-on process — spend is governed by the per-connection
+    # decision in explorer/continuous.py (governance + AUTO_EXPLORATION gates, the
+    # staleness window, the per-run exploration budget), which is where a cost control
+    # belongs; a boolean over a governed loop was a second, blunter budget. Under
+    # VERCEL the loop does not start at all (api.py) — a warm serverless instance is
+    # not a clock, and a spawned exploration would die with it.
     "kinetic.agent_actions": "AUGHOR_KINETIC_AGENT_ACTIONS",  # Wave K4: the agent may PROPOSE declared actions
-    "automations.adopt_legacy": "AUGHOR_AUTOMATIONS_ADOPT_LEGACY",  # Wave A5: run monitors+briefs through the engine
+    # "automations.adopt_legacy" (AUGHOR_AUTOMATIONS_ADOPT_LEGACY) turned ON and was
+    # DELETED 2026-08-06 (flag endgame Wave 4, user-approved 2026-08-01): monitors and
+    # brief subscriptions run through the ONE automation engine — the legacy per-object
+    # APScheduler cron paths were deleted in the same change, so there is nothing left
+    # for the flag to stand down. The L4 equivalence receipt (65364174a172, 9/9 stable
+    # ×3: alerts byte-for-byte, anti-flap and no-double-fire held) is what made the
+    # flip safe; adoption_active() survives as the single consult point, hardwired True.
     "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
 }
 
@@ -264,17 +277,9 @@ FLAG_META = {
         "label": "Grep-the-graph-first read-back",
         "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers and exploration findings) and the `resolves` readings, so a question about a table Aughor already analysed inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
     },
-    "automations.adopt_legacy": {
-        "label": "Adopt monitors and briefings onto the automation engine",
-        "description": "Run every enabled Monitor and Briefing subscription THROUGH the one automation engine instead of their own near-identical schedulers: each is read on the fly as a virtual automation (a cron `schedule` condition + a faithful effect — a `monitor` effect that replays run_monitor with its anti-flap debounce intact and appends the same alert, or the existing `brief` effect that calls deliver_subscription), so there is one loop, one run history, and one place a tick's reason is recorded. Only takes effect when automations.engine is ALSO on (the heartbeat has to be running to drive them), and while active the legacy monitor and briefing schedulers stand down at FIRE time as well as at start — so a runtime flag flip can never double-fire an alert or, worse, double-DELIVER a briefing (an outward send). Off by default ⇒ the legacy schedulers run exactly as before (byte-identical) and the heartbeat ignores monitors and briefings. No data migration either way; flipping it off restores the legacy path.",
-    },
     "explorer.manifest_driven": {
         "label": "Manifest-driven deterministic exploration",
         "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
-    },
-    "explorer.continuous": {
-        "label": "Continuous exploration (re-explore on schema change / staleness)",
-        "description": "Keep the Explorer learning after the first pass: a periodic tick re-arms exploration when the connection's live schema fingerprint no longer matches the one the last run recorded (a table/column was added or removed), or when the last completed run is older than the staleness window (AUGHOR_EXPLORER_REFRESH_DAYS, default 7). Re-runs are incremental — the coverage frontier is recomputed from persisted findings, so only genuinely new cuts spend budget — and still flow through the Explorer-governance + AUTO_EXPLORATION gates and the per-run exploration budget. Off by default = byte-identical (exploration runs once on connect + on demand). WP-6 of the 2026-07-12 platform review; makes the \"never stops learning\" claim true rather than aspirational.",
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
@@ -355,16 +360,19 @@ CAPABILITY_TRIGGER: dict = {
 #: Deliberately OFF, forever or until the named condition — the only category that
 #: should stay a raw manual toggle.
 INTENTIONALLY_OFF: dict = {
-    # "ai_sql" left this set 2026-08-01: DELETED outright (see the FLAG_ENV tombstone).
-    # "obs.prompt_capture" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
+    # EMPTY since 2026-08-06 (flag endgame Wave 4) — and staying declared so the
+    # disposition ratchet keeps proving nothing re-enters the category. History:
+    # "ai_sql" left 2026-08-01: DELETED outright (see the FLAG_ENV tombstone).
+    # "obs.prompt_capture" left 2026-08-01: DELETED outright (see the FLAG_ENV
     # tombstone) — "bounded-window use only" is now enforced by the window, not by a note.
-    "automations.adopt_legacy": "changes an outward-send path (brief delivery); adopt "
-                                "deliberately after the engine soaks, then DELETE the "
-                                "legacy schedulers — the win is one loop, not a flag",
-    "explorer.continuous": "recurring background spend; revisit now that "
-                           "ops.metered_monitors (its declared gate) is default-ON",
-    # "search.rrf" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
-    # tombstone) — the flag endgame has no "measured worse, kept anyway" state.
+    # "search.rrf" left 2026-08-01: DELETED outright (see the FLAG_ENV tombstone) —
+    # the flag endgame has no "measured worse, kept anyway" state.
+    # "automations.adopt_legacy" left 2026-08-06: turned ON and DELETED, its exit
+    # condition met exactly as written — the engine soaked, the L4 receipt held, and
+    # the legacy schedulers were deleted with the flag (the win was one loop).
+    # "explorer.continuous" left 2026-08-06: turned ON and DELETED — its declared
+    # gate (ops.metered_monitors) hardwired ON in Wave 2, and the real spend control
+    # is the governed per-connection decision, not a process-wide boolean.
 }
 
 #: Group D — adds LLM calls (or changes prompts/routing) for a claimed quality gain;

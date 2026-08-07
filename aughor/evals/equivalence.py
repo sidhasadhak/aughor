@@ -1,26 +1,24 @@
-"""Wave L4 — deterministic equivalence, for flags whose claim is EXACTNESS.
+"""Wave L4 — deterministic receipts for claims of EXACTNESS.
 
 Most flags are graduated by sampling: run a suite twice, compare pass rates, and refuse the
-delta if it does not clear a noise floor. ``automations.*`` is a different kind of claim and
-deserves a different kind of evidence. A5 does not assert "the engine answers better"; it
-asserts **the engine produces the same alert the legacy scheduler produced** — same severity,
-same message, same anti-flap debounce. That is a pass/fail with no sampling, no floor, and no
-LLM budget, which is why the promotion gate's own carve-out (a threshold run with no baseline,
-therefore no A/B, therefore no floor required) fits it exactly.
+delta if it does not clear a noise floor. The automation engine's claims are a different kind
+and deserve a different kind of evidence: pass/fail on real rows with no sampling, no floor,
+and no LLM budget — which is why the promotion gate's own carve-out (a threshold run with no
+baseline, therefore no A/B, therefore no floor required) fits them exactly.
 
-**The legacy path is the oracle.** Every monitor scenario here computes ``expected`` by calling
-:func:`aughor.monitors.scheduler.run_monitor_job` — the actual legacy tick body, not a
-re-implementation of it — and ``observed`` by driving the same monitor through
-:func:`aughor.automations.engine.run_automation`. Nothing is patched. Both halves run against a
-real DuckDB warehouse on a real registered connection, because the thing under test is whether
-two loops compute the same number from the same data.
-
-Why that mattered enough to build: the A5 unit tests (`tests/unit/test_automations_adopt.py`)
-patch ``run_monitor`` and ``append_alert``, so they lock the WIRING — "different loop, same two
-functions" — and are silent on whether the two loops produce the same alert from real rows. The
-only evidence that ever covered that was a manual run on 2026-07-24, recorded as prose in
-`docs/WAVE_A_AUTOMATIONS_ARC.md`. Prose is not a receipt, and a graduation is a receipt or it is
-nothing.
+**History: the legacy path WAS the oracle.** Until flag endgame Wave 4 (2026-08-06) the
+monitor scenarios computed ``expected`` by calling the actual legacy tick body
+(``run_monitor_job``) and ``observed`` by driving the same monitor through
+:func:`aughor.automations.engine.run_automation` — that comparison is the L4 receipt
+(`65364174a172`, 9/9 stable ×3: alerts byte-for-byte, anti-flap and no-double-fire held)
+that let ``automations.adopt_legacy`` turn ON and the legacy schedulers be DELETED. With
+the legacy loop gone there is nothing left to compare against, so the legacy-vs-engine
+scenarios went with it; what remains here are the engine-path claims those comparisons
+covered — a breach alerts, a healthy metric stays quiet, the anti-flap debounce suppresses
+a repeat — now against DECLARED expectations on the same real-DuckDB fixtures. The unit
+tests (`tests/unit/test_automations_adopt.py`) still lock only the WIRING; these scenarios
+are the only real-rows coverage of the monitor effect, which is why they outlive the
+comparison that created them.
 
 **Isolation.** Each scenario runs on a throwaway DuckDB warehouse registered as a real
 connection under a ``_eqv-`` name and purged in a ``finally`` — monitors, alerts, automations,
@@ -49,10 +47,10 @@ from aughor.trust import BLOCK, Check
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
 SUITE_NAME = "automations — deterministic equivalence (L4)"
 
-#: The flag this suite is still evidence for. `automations.engine` and
-#: `automations.source_probes` were HARDWIRED 2026-08-02; `adopt_legacy` remains the one
-#: decision this suite backs — whether the legacy monitor/briefing loops stand down.
-FLAGS = ("automations.adopt_legacy",)
+# The suite once carried a FLAGS tuple naming what it was evidence for; every flag it
+# backed is now hardwired (`automations.engine` and `automations.source_probes`
+# 2026-08-02, `automations.adopt_legacy` turned ON and deleted 2026-08-06 with the
+# legacy schedulers). The scenarios remain as standing receipts, not as a graduation.
 
 
 @dataclass
@@ -67,7 +65,7 @@ class Comparison:
     scenario: str
     expected: dict[str, Any]
     observed: dict[str, Any]
-    oracle: str                       # "legacy monitor scheduler" | "declared (A3)"
+    oracle: str                       # "declared (A5)" | "declared (A3)"
     note: str = ""
     detail: dict[str, Any] = field(default_factory=dict)
 
@@ -214,18 +212,6 @@ def _alerts_for(conn_id: str) -> list:
     return list(get_alerts(conn_id=conn_id))
 
 
-# Both halves pin `ops.metered_monitors` OFF because the comparison is between the two
-# LOOPS, and the kernel bridge is a third thing: with a kernel loop captured by the
-# process, run_monitor_job submits the tick as an async background job — the legacy half
-# then reads its alert store before the job has run and reports zero alerts, an artifact
-# of the bridge, not of either loop. The bridge is PERMANENT since flag endgame Wave 2
-# (ops.metered_monitors hardwired, 2026-08-06), so the pin is now on the CONDITION: the
-# comparison runs with no captured kernel loop, which makes submit_background_tick
-# decline and both halves run their closures inline — synchronous, comparable.
-_LEGACY_FLAGS = {"automations.adopt_legacy": False}
-_ADOPTED_FLAGS = {"automations.adopt_legacy": True}
-
-
 import contextlib
 
 
@@ -242,135 +228,90 @@ def _no_kernel_loop():
         jobs_mod._main_loop = saved
 
 
-def _run_legacy(monitor) -> list:
-    """One legacy tick, through the real legacy body. Returns the alerts it left behind."""
-    from aughor.kernel.flags import flag_overrides
-    from aughor.monitors.scheduler import run_monitor_job
-    from aughor.monitors.store import upsert_monitor
-
-    upsert_monitor(monitor)
-    with _no_kernel_loop(), flag_overrides(_LEGACY_FLAGS):
-        run_monitor_job(monitor.id)
-    return _alerts_for(monitor.conn_id)
-
-
-def _run_adopted(monitor) -> tuple[Any, list]:
-    """One engine tick over the SAME monitor read as a virtual automation. Returns
+def _run_engine(monitor) -> tuple[Any, list]:
+    """One engine tick over the monitor read as a virtual automation. Returns
     ``(run, alerts)``. ``persist=False`` keeps the automation-run history out of it — the
     schedule condition then reports "first run" every tick, so the only thing that can suppress
-    the second alert is the monitor's own anti-flap debounce, which is what the claim is about."""
+    the second alert is the monitor's own anti-flap debounce, which is what the claim is about.
+    The kernel-loop pin makes the effect run inline (submit declines), synchronous and
+    readable the moment the call returns."""
     from aughor.automations.adopt import monitor_as_automation
     from aughor.automations.engine import run_automation
-    from aughor.kernel.flags import flag_overrides
     from aughor.monitors.store import upsert_monitor
 
     upsert_monitor(monitor)
-    with _no_kernel_loop(), flag_overrides(_ADOPTED_FLAGS):
+    with _no_kernel_loop():
         run = run_automation(monitor_as_automation(monitor), persist=False)
     return run, _alerts_for(monitor.conn_id)
 
 
-# ── scenarios: automations.engine / automations.adopt_legacy ─────────────────────
+# ── scenarios: the monitor effect on the engine path ─────────────────────────────
 
-@scenario("monitor_alert_equivalence")
-def _monitor_alert_equivalence() -> Comparison:
-    """The load-bearing A5 claim: the engine appends the alert the legacy scheduler would have.
+@scenario("monitor_alert_via_engine")
+def _monitor_alert_via_engine() -> Comparison:
+    """A breaching metric produces exactly one alert with the right verdict.
 
-    Two throwaway warehouses with identical rows, so neither side can see the other's alerts —
-    `previous_value` is read from the alert store, so a shared connection would make the second
-    side compute a different alert for a reason that has nothing to do with which loop ran it.
-    """
-    with throwaway_warehouse(_SALES_BREACH, label="legacy") as wh:
-        legacy_alerts = _run_legacy(_revenue_monitor(wh.conn_id, "eqv-legacy"))
-    with throwaway_warehouse(_SALES_BREACH, label="adopted") as wh:
-        run, adopted_alerts = _run_adopted(_revenue_monitor(wh.conn_id, "eqv-adopted"))
+    ``expected`` is declared, not measured — the legacy loop that used to measure it was
+    deleted (Wave 4); the declared values are the ones the L4 comparison receipt recorded
+    byte-for-byte. SUM(revenue)=1200 sits below the 2000 critical floor, so the alert is
+    critical and carries that reading."""
+    with throwaway_warehouse(_SALES_BREACH, label="engine") as wh:
+        run, alerts = _run_engine(_revenue_monitor(wh.conn_id, "eqv-engine"))
 
     return Comparison(
-        scenario="monitor_alert_equivalence",
-        oracle="legacy monitor scheduler (run_monitor_job)",
-        expected={"alerts": [_alert_shape(a) for a in legacy_alerts]},
-        observed={"alerts": [_alert_shape(a) for a in adopted_alerts]},
-        note="one breaching tick on identical data, legacy loop vs engine loop",
+        scenario="monitor_alert_via_engine",
+        oracle="declared (A5; was: legacy loop, receipt 65364174a172)",
+        expected={"alert_count": 1, "severities": ["critical"],
+                  "current_values": [1200.0]},
+        observed={"alert_count": len(alerts),
+                  "severities": sorted(a.severity for a in alerts),
+                  "current_values": sorted(a.current_value for a in alerts)},
+        note="one breaching tick through the engine = one critical alert with the real reading",
         detail={"automation_outcome": getattr(run, "outcome", ""),
-                "effect_statuses": [o.status for o in getattr(run, "effects", [])]},
+                "effect_statuses": [o.status for o in getattr(run, "effects", [])],
+                "alerts": [_alert_shape(a) for a in alerts]},
     )
 
 
-@scenario("monitor_quiet_equivalence")
-def _monitor_quiet_equivalence() -> Comparison:
-    """A quiet check appends nothing under either loop — equivalence has to cover the silence
-    too, or a loop that alerted on everything would still pass the firing case."""
-    with throwaway_warehouse(_SALES_HEALTHY, label="legacy-quiet") as wh:
-        legacy_alerts = _run_legacy(_revenue_monitor(wh.conn_id, "eqv-legacy-quiet"))
-    with throwaway_warehouse(_SALES_HEALTHY, label="adopted-quiet") as wh:
-        run, adopted_alerts = _run_adopted(_revenue_monitor(wh.conn_id, "eqv-adopted-quiet"))
+@scenario("monitor_quiet_via_engine")
+def _monitor_quiet_via_engine() -> Comparison:
+    """A quiet check appends nothing — the receipt has to cover the silence too, or a loop
+    that alerted on everything would still pass the firing case."""
+    with throwaway_warehouse(_SALES_HEALTHY, label="engine-quiet") as wh:
+        run, alerts = _run_engine(_revenue_monitor(wh.conn_id, "eqv-engine-quiet"))
 
     return Comparison(
-        scenario="monitor_quiet_equivalence",
-        oracle="legacy monitor scheduler (run_monitor_job)",
-        expected={"alert_count": len(legacy_alerts)},
-        observed={"alert_count": len(adopted_alerts)},
-        note="healthy metric: neither loop may append an alert",
+        scenario="monitor_quiet_via_engine",
+        oracle="declared (A5; was: legacy loop, receipt 65364174a172)",
+        expected={"alert_count": 0},
+        observed={"alert_count": len(alerts)},
+        note="healthy metric: the engine may not append an alert",
         detail={"automation_outcome": getattr(run, "outcome", ""),
                 "effect_messages": [o.message for o in getattr(run, "effects", [])]},
     )
 
 
-@scenario("monitor_debounce_equivalence")
-def _monitor_debounce_equivalence() -> Comparison:
-    """Two consecutive breaching ticks leave the same number of alerts under both loops.
+@scenario("monitor_debounce_via_engine")
+def _monitor_debounce_via_engine() -> Comparison:
+    """Two consecutive breaching ticks leave ONE alert.
 
     This is the claim the wiring tests can only assert indirectly (they check that
-    ``suppress=True`` was passed): the anti-flap grace window must actually suppress the repeat
-    on the engine path, not merely be requested.
-    """
-    with throwaway_warehouse(_SALES_BREACH, label="legacy-debounce") as wh:
-        monitor = _revenue_monitor(wh.conn_id, "eqv-legacy-debounce")
-        _run_legacy(monitor)
-        legacy_alerts = _run_legacy(monitor)
-    with throwaway_warehouse(_SALES_BREACH, label="adopted-debounce") as wh:
-        monitor = _revenue_monitor(wh.conn_id, "eqv-adopted-debounce")
-        _run_adopted(monitor)
-        _, adopted_alerts = _run_adopted(monitor)
+    ``suppress=True`` was passed): the anti-flap grace window must actually suppress the
+    repeat on the engine path, not merely be requested. With the engine as the only loop,
+    this is also what "no double fire" means now — the structural guarantee replaced the
+    fire-time skip the deleted `no_double_fire_under_adoption` scenario proved."""
+    with throwaway_warehouse(_SALES_BREACH, label="engine-debounce") as wh:
+        monitor = _revenue_monitor(wh.conn_id, "eqv-engine-debounce")
+        _run_engine(monitor)
+        _, alerts = _run_engine(monitor)
 
     return Comparison(
-        scenario="monitor_debounce_equivalence",
-        oracle="legacy monitor scheduler (run_monitor_job)",
-        expected={"alert_count": len(legacy_alerts),
-                  "severities": sorted(a.severity for a in legacy_alerts)},
-        observed={"alert_count": len(adopted_alerts),
-                  "severities": sorted(a.severity for a in adopted_alerts)},
-        note="two breaching ticks: the grace window must suppress the repeat on both paths",
-    )
-
-
-@scenario("no_double_fire_under_adoption")
-def _no_double_fire_under_adoption() -> Comparison:
-    """With adoption active, both loops running the same monitor must still produce ONE alert.
-
-    The declared expectation here is not a legacy measurement but A5's safety property, so the
-    oracle says "declared": while ``adopt_legacy`` and ``engine`` are both on, the legacy tick
-    stands down at FIRE time, which is what makes a runtime flag flip unable to double-fire.
-    """
-    from aughor.kernel.flags import flag_overrides
-    from aughor.monitors.scheduler import run_monitor_job
-    from aughor.monitors.store import upsert_monitor
-
-    with throwaway_warehouse(_SALES_BREACH, label="double-fire") as wh:
-        monitor = _revenue_monitor(wh.conn_id, "eqv-double-fire")
-        upsert_monitor(monitor)
-        with flag_overrides(_ADOPTED_FLAGS):
-            # Both loops tick the same monitor in the same window, engine first.
-            _run_adopted(monitor)
-            run_monitor_job(monitor.id)      # the legacy loop must stand down here
-            alerts = _alerts_for(wh.conn_id)
-
-    return Comparison(
-        scenario="no_double_fire_under_adoption",
-        oracle="declared (A5 safety property)",
-        expected={"alert_count": 1},
-        observed={"alert_count": len(alerts)},
-        note="engine tick + legacy tick in one window under adoption = exactly one alert",
+        scenario="monitor_debounce_via_engine",
+        oracle="declared (A5; was: legacy loop, receipt 65364174a172)",
+        expected={"alert_count": 1, "severities": ["critical"]},
+        observed={"alert_count": len(alerts),
+                  "severities": sorted(a.severity for a in alerts)},
+        note="two breaching ticks: the grace window must suppress the repeat",
     )
 
 
@@ -418,10 +359,8 @@ def _inert_dispatch(effect, automation):
 def _tick(automation) -> str:
     """One engine tick with source probes on; returns the outcome ("fired" / "not_fired")."""
     from aughor.automations.engine import run_automation
-    from aughor.kernel.flags import flag_overrides
 
-    with flag_overrides(_ADOPTED_FLAGS):
-        run = run_automation(automation, persist=False, dispatch=_inert_dispatch)
+    run = run_automation(automation, persist=False, dispatch=_inert_dispatch)
     return run.outcome
 
 
@@ -617,10 +556,11 @@ def ensure_suite() -> str:
     if existing is None:
         existing = store.create_suite(
             SUITE_NAME,
-            description=("Wave L4 — the automations flags claim EXACTNESS, so their evidence is "
-                         "a deterministic pass/fail rather than a sampled delta. Each case runs "
-                         "the legacy loop and the engine loop against a real throwaway DuckDB "
-                         "warehouse and compares them; nothing is patched."),
+            description=("Wave L4 — deterministic pass/fail receipts on real rows. Originally "
+                         "legacy-loop-vs-engine comparisons; since flag endgame Wave 4 "
+                         "(2026-08-06, legacy schedulers deleted on receipt 65364174a172) the "
+                         "cases assert the engine path against declared expectations on a real "
+                         "throwaway DuckDB warehouse; nothing is patched."),
             target="equivalence")
     suite_id = existing["id"]
 

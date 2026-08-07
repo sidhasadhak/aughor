@@ -88,25 +88,28 @@ def test_ensure_suite_is_idempotent():
 
 # ── a real scenario, genuinely falsified ─────────────────────────────────────────
 
-def test_monitor_equivalence_reports_a_real_disagreement(monkeypatch):
-    """Break the legacy half and the scenario must report non-equivalence.
+def test_monitor_scenario_reports_a_real_disagreement(monkeypatch):
+    """Break the engine half and the scenario must report the mismatch.
 
-    This is the test that makes the other nine meaningful: with `run_monitor_job` stubbed out,
-    the legacy side appends nothing while the engine side still fires, so `expected != observed`.
-    If this passed, the comparison would be decorative.
+    This is the test that makes the others meaningful: with the monitor effect's check
+    stubbed to stay quiet, the engine appends nothing while the declared expectation
+    still says one critical alert, so `expected != observed`. If this passed, the
+    comparison would be decorative. (It used to break the LEGACY half — that half was
+    deleted with the legacy schedulers, Wave 4 2026-08-06.)
     """
-    monkeypatch.setattr("aughor.monitors.scheduler.run_monitor_job", lambda monitor_id: None)
-    comparison = SCENARIOS["monitor_alert_equivalence"]()
+    monkeypatch.setattr("aughor.monitors.runner.run_monitor",
+                        lambda m, db, suppress=True: None)
+    comparison = SCENARIOS["monitor_alert_via_engine"]()
     assert not comparison.equivalent
-    assert comparison.expected["alerts"] == []
-    assert len(comparison.observed["alerts"]) == 1
+    assert comparison.expected["alert_count"] == 1
+    assert comparison.observed["alert_count"] == 0
 
 
-def test_monitor_alert_equivalence_holds_on_real_data():
-    """The A5 claim itself, unpatched: same severity, same message, same numbers."""
-    comparison = SCENARIOS["monitor_alert_equivalence"]()
+def test_monitor_alert_via_engine_holds_on_real_data():
+    """The A5 claim itself, unpatched: the declared severity, message and numbers."""
+    comparison = SCENARIOS["monitor_alert_via_engine"]()
     assert comparison.equivalent, (comparison.expected, comparison.observed)
-    alert = comparison.observed["alerts"][0]
+    alert = comparison.detail["alerts"][0]
     assert alert["severity"] == "critical"
     assert alert["message"] == "Revenue floor: 1200 below critical threshold 2000"
 

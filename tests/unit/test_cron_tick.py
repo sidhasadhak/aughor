@@ -1,7 +1,13 @@
-"""The cron tick: auth contract, due-this-minute semantics, fault-isolated families."""
-from __future__ import annotations
+"""The cron tick: auth contract, one-loop delegation, fault isolation.
 
-from datetime import datetime, timezone
+The per-family monitor/brief blocks (and their `_due_in_window` lookback) were deleted
+with the legacy schedulers (flag endgame Wave 4, 2026-08-06): the tick now delegates to
+the automation engine's `tick_once`, which carries monitors and briefs as virtual
+automations and owns due-ness ("did the cron match since the last run"). Driving the
+families here as well DOUBLE-DELIVERED briefs — the engine tick delivered, then the
+brief family's `trigger_now` delivered again.
+"""
+from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
@@ -15,16 +21,6 @@ def client():
     app = FastAPI()
     app.include_router(C.router)
     return TestClient(app)
-
-
-def test_due_in_window_semantics():
-    now = datetime(2026, 8, 6, 9, 30, 12, tzinfo=timezone.utc)
-    assert C._due_in_window("30 9 * * *", now, 60) is True     # fires 09:30
-    assert C._due_in_window("31 9 * * *", now, 60) is False    # fires 09:31 — not yet
-    assert C._due_in_window("*/7 * * * *", now, 60) is False   # 09:28 outside a 60s window
-    assert C._due_in_window("*/7 * * * *", now, 600) is True   # inside a 10-min window
-    assert C._due_in_window("0 9 * * *", now, 86400) is True   # daily floor catches 09:00
-    assert C._due_in_window("not a cron", now, 60) is False    # unparseable → skipped
 
 
 def test_secret_required_when_configured(client, monkeypatch):
@@ -43,39 +39,49 @@ def test_unconfigured_secret_refuses_on_vercel_but_allows_locally(client, monkey
     assert client.get("/cron/tick").status_code == 200        # local/manual tick
 
 
-def test_tick_runs_due_families_and_reports_counts(client, monkeypatch):
+def test_tick_runs_the_one_loop_and_reports_what_it_evaluated(client, monkeypatch):
+    """ONE engine tick covers all three families; the endpoint reports the engine's
+    own per-family evaluation counts rather than recomputing due-ness itself."""
     monkeypatch.delenv("CRON_SECRET", raising=False)
     monkeypatch.delenv("VERCEL", raising=False)
 
-    ran: dict[str, list] = {"monitors": [], "briefs": [], "auto": []}
+    calls: list[int] = []
 
     from aughor.automations import scheduler as auto_sched
-    monkeypatch.setattr(auto_sched, "tick_once", lambda: ran["auto"].append(1))
 
-    class _Mon:
-        id, enabled, check_cron = "m1", True, "* * * * *"     # always due
+    def _tick_once():
+        calls.append(1)
+        return {"automations": 2, "monitors": 3, "briefs": 1}
 
-    class _MonOff:
-        id, enabled, check_cron = "m2", False, "* * * * *"    # disabled → skipped
-
-    from aughor.monitors import scheduler as mon_sched, store as mon_store
-    monkeypatch.setattr(mon_store, "list_monitors", lambda: [_Mon(), _MonOff()])
-    monkeypatch.setattr(mon_sched, "run_monitor_job", lambda mid: ran["monitors"].append(mid))
-
-    class _Sub:
-        id, enabled = "s1", True
-        def resolved_cron(self):
-            return "0 0 1 1 *"                                 # never due today
-
-    from aughor.briefing import scheduler as brief_sched, store as brief_store
-    monkeypatch.setattr(brief_store, "list_subscriptions", lambda: [_Sub()])
-    monkeypatch.setattr(brief_sched, "trigger_now", lambda sid: ran["briefs"].append(sid))
+    monkeypatch.setattr(auto_sched, "tick_once", _tick_once)
 
     body = client.get("/cron/tick").json()
     assert body["ok"] is True
-    assert ran["auto"] == [1]
-    assert ran["monitors"] == ["m1"]                           # due + enabled only
-    assert ran["briefs"] == []                                 # not its minute
-    assert body["counts"]["monitors_run"] == 1
-    assert body["counts"]["briefs_delivered"] == 0
+    assert calls == [1], "exactly one engine tick per cron tick"
+    assert body["counts"]["automations_tick"] == 1
+    assert body["counts"]["monitors_evaluated"] == 3
+    assert body["counts"]["briefs_evaluated"] == 1
     assert "stale_jobs_swept" in body["counts"]
+
+
+def test_tick_survives_a_crashing_engine_tick(client, monkeypatch):
+    """Fault isolation: a tick_once that raises must not take down the endpoint —
+    the sweep and housekeeping families still run and the tick still answers."""
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+
+    from aughor.automations import scheduler as auto_sched
+    monkeypatch.setattr(auto_sched, "tick_once",
+                        lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    body = client.get("/cron/tick").json()
+    assert body["ok"] is True
+    assert "automations_tick" not in body["counts"]
+    assert "stale_jobs_swept" in body["counts"]
+
+
+def test_the_per_family_lookback_is_gone():
+    """`_due_in_window` was the families' own due-ness clock; with due-ness owned by
+    the engine (since-last-run), a revived copy here would be a second, disagreeing
+    clock — the drift the collapse removed."""
+    assert not hasattr(C, "_due_in_window")

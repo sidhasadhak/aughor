@@ -133,7 +133,9 @@ def test_kickoff_auto_skip_emits_ledger_event(monkeypatch):
 
 # ── Default-off invariant ─────────────────────────────────────────────────────
 
-def test_continuous_is_default_off():
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
-    assert "explorer.continuous" in FLAG_ENV
-    assert FLAG_DEFAULT.get("explorer.continuous", False) is False
+def test_continuous_flag_is_gone_for_good():
+    """Flag endgame Wave 4 (2026-08-06): the loop is always on for an always-on
+    process; the spend controls are the per-connection gates in this module, not a
+    process-wide boolean. A re-registered flag would be the boolean growing back."""
+    from aughor.kernel.flags import FLAG_ENV
+    assert "explorer.continuous" not in FLAG_ENV

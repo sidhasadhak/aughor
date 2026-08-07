@@ -87,9 +87,14 @@ def list_adopted_automations() -> list[Automation]:
 
 
 def adoption_active() -> bool:
-    """True when adopted legacy objects should run through the engine — and, equivalently, when the
-    legacy schedulers must stand down. Requires BOTH flags: ``adopt_legacy`` alone does nothing
-    The heartbeat that drives the adopted objects is always running now, so this flag alone
-    decides whether the legacy loops stand down."""
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("automations.adopt_legacy")
+    """Always True — monitors and brief subscriptions run through the ENGINE.
+
+    Flag endgame Wave 4 (2026-08-06, user-approved 2026-08-01): the
+    `automations.adopt_legacy` flag turned ON and was deleted, and the legacy
+    APScheduler loops were deleted WITH it in the same change — the win is one
+    loop, not a flag. The L4 equivalence receipt (`65364174a172`, 9/9 stable ×3:
+    alerts byte-for-byte, anti-flap and no-double-fire held) is what made the
+    flip safe; the function survives as the single consult point so the callers
+    that stand the legacy paths down keep one name while those paths are
+    dismantled."""
+    return True

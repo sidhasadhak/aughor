@@ -68,7 +68,6 @@ def list_brief_subscriptions(conn_id: Optional[str] = None):
 def create_briefing_subscription(body: _SubscriptionBody, request: Request):
     from aughor.briefing.models    import BriefSubscription
     from aughor.briefing.store     import save_subscription
-    from aughor.briefing.scheduler import reload_subscription
     from aughor.notifications.store    import get_trigger
     from aughor.security.authz   import check_owner, get_principal
 
@@ -82,7 +81,8 @@ def create_briefing_subscription(body: _SubscriptionBody, request: Request):
         period=body.period, send_cron=body.send_cron, enabled=body.enabled,
     )
     saved = save_subscription(sub)
-    reload_subscription(saved)
+    # No scheduler sync: the automation heartbeat reads the subscription store live
+    # each tick (virtual adoption), so a saved row is already scheduled.
     return saved.to_dict()
 
 
@@ -104,7 +104,6 @@ def create_brief_subscription(body: _SubscriptionBody, request: Request):
 @router.put("/briefing/subscriptions/{sub_id}", dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
 def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     from aughor.briefing.store     import get_subscription, save_subscription
-    from aughor.briefing.scheduler import reload_subscription
 
     _validate_period(body.period)
     existing = get_subscription(sub_id)
@@ -118,7 +117,6 @@ def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     existing.send_cron  = body.send_cron
     existing.enabled    = body.enabled
     saved = save_subscription(existing)
-    reload_subscription(saved)
     return saved.to_dict()
 
 
@@ -138,10 +136,8 @@ def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
 @router.delete("/briefing/subscriptions/{sub_id}", status_code=204)
 def delete_briefing_subscription(sub_id: str):
     from aughor.briefing.store     import delete_subscription
-    from aughor.briefing.scheduler import remove_subscription
     if not delete_subscription(sub_id):
         raise HTTPException(status_code=404, detail="Subscription not found")
-    remove_subscription(sub_id)
 
 
 @router.delete("/briefs/subscriptions/{sub_id}", status_code=204, deprecated=True)
