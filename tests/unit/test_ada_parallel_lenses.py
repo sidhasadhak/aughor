@@ -338,24 +338,15 @@ def _install_interaction_stubs(monkeypatch, *, why_findings=True, interaction_ph
 
 def test_interaction_appends_and_gets_both_summaries_when_flag_on(monkeypatch):
     captured = _install_interaction_stubs(monkeypatch)
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert ids[-1] == "cross_section_interaction"           # forward-chained last
     assert captured["why"] == "size/fit 42%" and "WHERE::" in captured["where"]
 
 
-def test_interaction_off_by_default(monkeypatch):
-    _install_interaction_stubs(monkeypatch)
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", raising=False)
-    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
-    assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
-
-
 def test_interaction_skipped_without_why_findings(monkeypatch):
     # composition ran but produced no findings → nothing to cross → no interaction (even flag-on)
     _install_interaction_stubs(monkeypatch, why_findings=False)
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     assert "cross_section_interaction" not in [p["phase_id"] for p in out["investigation_phases"]]
 
@@ -406,7 +397,6 @@ def _install_deepen_stubs(monkeypatch, *, why_findings=True):
 
 def test_deepen_appends_benchmark_and_drill_when_flag_on(monkeypatch):
     seen = _install_deepen_stubs(monkeypatch)
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert "reason_benchmark" in ids and "reason_drill" in ids
@@ -414,17 +404,8 @@ def test_deepen_appends_benchmark_and_drill_when_flag_on(monkeypatch):
     assert seen["bench_why"] == "size/fit 42%" and seen["drill_why"] == "size/fit 42%"
 
 
-def test_deepen_off_by_default(monkeypatch):
-    _install_deepen_stubs(monkeypatch)
-    monkeypatch.delenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", raising=False)
-    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
-    ids = [p["phase_id"] for p in out["investigation_phases"]]
-    assert "reason_benchmark" not in ids and "reason_drill" not in ids
-
-
 def test_deepen_skipped_without_why_findings(monkeypatch):
     _install_deepen_stubs(monkeypatch, why_findings=False)
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     ids = [p["phase_id"] for p in out["investigation_phases"]]
     assert "reason_benchmark" not in ids and "reason_drill" not in ids
@@ -595,8 +576,6 @@ def _install_forward_stub(monkeypatch, *, seen=None, sleep=0.0):
     monkeypatch.setattr(inv, "_run_reason_benchmark_lens", lambda s, c, b: _mk("why_benchmark")(s, c))
     monkeypatch.setattr(inv, "_run_reason_drill_lens", lambda s, c, b: _mk("why_drill")(s, c))
     # enable the two WHY-lens families whose lenses we parallelize
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION", "1")
-    monkeypatch.setenv("AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN", "1")
 
 
 def test_forward_why_lenses_wave_is_byte_identical_to_serial(monkeypatch):

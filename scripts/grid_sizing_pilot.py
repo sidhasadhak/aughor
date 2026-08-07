@@ -23,7 +23,7 @@ import time
 
 PILOT_CASES = int(os.environ.get("PILOT_CASES", "8"))
 WIDE_SUITE = os.environ.get("SUITE", "9c1e13e458ff")
-FLAG = os.environ.get("FLAG", "closed_loop")
+FLAG = os.environ.get("FLAG", "explore.route_wide")
 PILOT_SUITE_NAME = f"grid sizing pilot — {FLAG} ({PILOT_CASES} cases)"
 #: CWD (or `GRID_OUT_DIR`), never beside the script — a run artifact written into `scripts/`
 #: shows up as untracked source and invites being committed.

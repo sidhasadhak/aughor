@@ -238,17 +238,15 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # I6 — surface ambiguity handling on the Trust Receipt: any resolution THIS question
         # matched in the Ambiguity Ledger (settled earlier by a probe / the user / a reviewer) is
         # recorded, so "this answer followed a previously-resolved reading" is inspectable — the
-        # machinery made honest to the user. Best-effort; gated with the ledger (closed_loop).
+        # machinery made honest to the user. Best-effort.
         _resolved_ambig: list = []
         try:
-            from aughor.feedback.priors import closed_loop_enabled
-            if closed_loop_enabled():
-                from aughor.semantic.ambiguity_ledger import retrieve_resolutions
-                for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
-                    _resolved_ambig.append({"subject": _r.subject, "reading": _r.resolved_reading,
-                                            "source": _r.resolution_source})
-                    lineage.append(("resolved_ambiguity", f"reading:{_r.subject[:60]}",
-                                    f"{_r.resolved_reading} (resolved by {_r.resolution_source})"))
+            from aughor.semantic.ambiguity_ledger import retrieve_resolutions
+            for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
+                _resolved_ambig.append({"subject": _r.subject, "reading": _r.resolved_reading,
+                                        "source": _r.resolution_source})
+                lineage.append(("resolved_ambiguity", f"reading:{_r.subject[:60]}",
+                                f"{_r.resolved_reading} (resolved by {_r.resolution_source})"))
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ambiguity-ledger lineage on the Trust Receipt is best-effort; the receipt still writes without it",
@@ -3635,20 +3633,18 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # I4 — if this turn is the user ANSWERING a clarify (a reading chosen from the chips),
     # crystallize that choice into the Ambiguity Ledger (source=user) BEFORE we answer, so the
     # resolution is an authoritative prior on this turn and every future one — the class never
-    # re-ambiguates on this connection. Gated with the ledger (closed_loop); best-effort.
+    # re-ambiguates on this connection. Best-effort.
     if req.clarify_reading:
-        from aughor.feedback.priors import closed_loop_enabled
-        if closed_loop_enabled():
-            try:
-                from aughor.org.context import current_org_id
-                from aughor.semantic.ambiguity_ledger import crystallize_user_choice
-                crystallize_user_choice(
-                    conn_id, req.clarify_subject or req.question, req.clarify_reading,
-                    org_id=current_org_id() or "", clarify_source=req.clarify_source)
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "clarify-choice crystallization is best-effort",
-                         counter="ask.clarify_crystallize")
+        try:
+            from aughor.org.context import current_org_id
+            from aughor.semantic.ambiguity_ledger import crystallize_user_choice
+            crystallize_user_choice(
+                conn_id, req.clarify_subject or req.question, req.clarify_reading,
+                org_id=current_org_id() or "", clarify_source=req.clarify_source)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "clarify-choice crystallization is best-effort",
+                     counter="ask.clarify_crystallize")
 
     # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
     # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn

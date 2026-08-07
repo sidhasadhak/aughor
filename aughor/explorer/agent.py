@@ -2134,12 +2134,12 @@ class SchemaExplorer:
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter
 
-        # Tier-1 #4: manifest-driven deterministic generation (feature-flagged, default OFF — zero
-        # regression). When on, Phase 8 covers the L2 baseline cells with SYNTHESISED SQL (no
-        # generation LLM call) and the existing guards enforce correctness; it falls back to the
-        # LLM curiosity loop for cells/domains the manifest doesn't cover.
-        from aughor.kernel.flags import flag_enabled
-        self._manifest_driven = flag_enabled("explorer.manifest_driven")
+        # Tier-1 #4: manifest-driven deterministic generation — permanent (flag endgame
+        # Wave 5, 2026-08-06): Phase 8 covers the L2 baseline cells with SYNTHESISED SQL
+        # (no generation LLM call) and the existing guards enforce correctness; the LLM
+        # curiosity loop handles cells/domains the manifest doesn't cover, and a manifest
+        # build failure fails closed to that loop (the flip below).
+        self._manifest_driven = True
         self._manifest_cells = []
         self._manifest_attempted = set()
         self._cp_by_key = {}

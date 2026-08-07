@@ -1970,13 +1970,10 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
     """K4b — after synthesis, let the agent PROPOSE declared actions grounded in the answer. Staged,
-    never executed (a human accepts and runs them through the K2 executor). Flag `kinetic.agent_actions`
-    (default off). Best-effort: the flag off, no declared actions, or a proposer hiccup all leave the
-    report untouched — a proposer must never disturb the answer it rides on."""
+    never executed (a human accepts and runs them through the K2 executor). Always on (flag
+    endgame Wave 5, 2026-08-06) and data-gated. Best-effort: no declared actions or a proposer
+    hiccup leave the report untouched — a proposer must never disturb the answer it rides on."""
     try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("kinetic.agent_actions"):
-            return
         from aughor.ontology.store import load_latest_ontology
         graph = load_latest_ontology(connection_id or "")
         if graph is None or not getattr(graph, "kinetic_actions", None):
@@ -4848,16 +4845,6 @@ def _premise_direction(question: str) -> "Optional[str]":
     return None
 
 
-def _causal_drill_enabled() -> bool:
-    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off.
-    When on, the cross-section scan floats causal dimensions to the front (so they
-    survive the query cap) and, after localising WHERE, auto-drills the event-only dims to WHY (a
-    composition/share-of-returns lens) instead of stopping and merely recommending it."""
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("deep_analysis.causal_drill")
-
-
 def _causal_split(dimensions: list) -> "tuple[list, list]":
     """Split intake dimensions for a causal (WHERE→WHY) scan: population dims stay in the RATE scan
     (the WHERE), event-only dims (living on a return/refund/cancel table) are held out for a
@@ -4909,7 +4896,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # event-only dims (return reason/condition — tautological as a rate) aside for a composition/WHY
     # lens after the rate scan, and float population causal dims ahead of the descriptive ones so the
     # scan covers the differentiators, not brand/tier.
-    _causal_drill = _causal_drill_enabled() and dims_override is None
+    # Causal drill is permanent (flag endgame Wave 5, 2026-08-06): the scan floats
+    # causal dimensions to the front and auto-drills event-only dims to WHY instead
+    # of stopping and merely recommending it. Skipped only under a dims override
+    # (the caller pinned the scan's dimensions — drilling would defy the pin).
+    _causal_drill = dims_override is None
     _why_event_dims: list = []
     if _causal_drill:
         dimensions, _why_event_dims = _causal_split(dimensions)
@@ -6076,16 +6067,6 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
     return phases
 
 
-def _why_where_interaction_enabled() -> bool:
-    """Flag `ada.why_where_interaction` (env AUGHOR_ADA_WHY_WHERE_INTERACTION or ledger override).
-    Off by default; resolved fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.why_where_interaction")
-    except Exception:
-        return False
-
-
 def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
                           where_summary: str, why_summary: str) -> Optional[dict]:
     """Forward-chained WHY×WHERE cross. The WHERE lens found which segment concentrates the metric and
@@ -6169,16 +6150,6 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
         "cross_section_interaction", "Interaction — Where the Cause Concentrates", "🔗",
         "complete" if any(not f["error"] for f in findings) else "partial", summary, findings,
     )
-
-
-def _why_deepen_enabled() -> bool:
-    """Flag `ada.why_deepen` (env AUGHOR_ADA_WHY_DEEPEN or ledger override) — the peer-benchmark +
-    second-level-drill WHY lenses. Off by default; fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.why_deepen")
-    except Exception:
-        return False
 
 
 def _parallel_why_lenses_enabled() -> bool:
@@ -6697,11 +6668,14 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     #  • benchmark + drill (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it
     #    abnormal?) and drill it by product (which products drive it?) — both need only the WHY finding.
     forward_specs: list = []
-    if _why_phase and primary_summary and _why_where_interaction_enabled():
+    # The WHY lenses are permanent (flag endgame Wave 5, 2026-08-06): this is the
+    # depth a deep run is FOR — one bounded interaction query, two bounded deepen
+    # queries per qualifying run.
+    if _why_phase and primary_summary:
         forward_specs.append(("interaction",
                               lambda c: _run_interaction_lens(state, c, primary_summary, _why_summary),
                               "deep_analysis.interaction_lens"))
-    if _why_phase and _why_deepen_enabled():
+    if _why_phase:
         forward_specs.append(("benchmark",
                               lambda c: _run_reason_benchmark_lens(state, c, _why_summary),
                               "deep_analysis.benchmark_lens"))

@@ -21,11 +21,10 @@ from aughor.feedback.priors import (
     retrieve_priors,
     build_priors_section,
     build_corrections_section,
-    closed_loop_enabled,
 )
 
 __all__ = [
     "VERDICTS", "record_verdict", "verdict_stats", "list_verdicts", "list_corrections",
     "is_compoundable", "can_act_autonomously", "COMPOUND_MIN_CONFIDENCE",
-    "retrieve_priors", "build_priors_section", "build_corrections_section", "closed_loop_enabled",
+    "retrieve_priors", "build_priors_section", "build_corrections_section",
 ]

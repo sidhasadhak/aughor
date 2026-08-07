@@ -367,11 +367,15 @@ def test_canonical_is_identity_for_current_names():
 
 
 def test_no_ada_flag_survives_in_the_registry():
-    """The rename is complete on the registry side: `ada.*` exists only as an alias."""
+    """The rename is complete: no `ada.*` flag is registered, and — since an alias
+    only means something while its target lives (the last three `ada.*` aliases left
+    2026-08-06 with Wave 5's hardwires) — every surviving alias must point at a
+    REGISTERED flag, or `_canonical` resolves the old name to a dead one."""
     from aughor.kernel.flags import FLAG_ENV, RENAMED
 
     assert not [n for n in FLAG_ENV if n.startswith("ada.")]
-    assert [n for n in RENAMED if n.startswith("ada.")], "the aliases must still be there"
+    dangling = {old: new for old, new in RENAMED.items() if new not in FLAG_ENV}
+    assert not dangling, f"aliases pointing at unregistered flags: {dangling}"
 
 
 def test_a_renamed_flag_resolves_through_its_old_name(monkeypatch):

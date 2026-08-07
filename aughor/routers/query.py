@@ -238,7 +238,6 @@ async def query_semantic(body: _SemanticOpRequest):
                 tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
         if base.error:
             return None, base
-        from aughor.kernel.flags import flag_enabled
         op = apply_step(
             base, body.operator, body.column,
             predicate=body.predicate or "",
@@ -250,7 +249,10 @@ async def query_semantic(body: _SemanticOpRequest):
             max_rows=body.max_rows,
             override_cap=body.override_cap,
             validate=True,
-            validate_sample=8 if flag_enabled("semops.champion_validate") else 0,
+            # Champion validation is permanent (flag endgame Wave 5, 2026-08-06):
+            # the strong model spot-checks 8 sampled filter verdicts per op —
+            # self-checking is direction, and the call is bounded by the sample.
+            validate_sample=8,
         )
         return op, base
 

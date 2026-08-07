@@ -11,25 +11,25 @@ from aughor.routers.query import _PostprocRequest, query_postproc
 
 class TestFeatureFlags:
     def test_override_wins_then_env_fallback(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
-        clear_flag("semops.champion_validate")
-        assert flag_enabled("semops.champion_validate") is False   # no override, env unset
-        set_flag("semops.champion_validate", True)
-        assert flag_enabled("semops.champion_validate") is True    # runtime override wins
-        set_flag("semops.champion_validate", False)
-        monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
-        assert flag_enabled("semops.champion_validate") is False   # override still wins over env
-        clear_flag("semops.champion_validate")
-        assert flag_enabled("semops.champion_validate") is True    # cleared → env decides
-        monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
-        clear_flag("semops.champion_validate")
+        monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+        clear_flag("federation.planner")
+        assert flag_enabled("federation.planner") is False   # no override, env unset
+        set_flag("federation.planner", True)
+        assert flag_enabled("federation.planner") is True    # runtime override wins
+        set_flag("federation.planner", False)
+        monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+        assert flag_enabled("federation.planner") is False   # override still wins over env
+        clear_flag("federation.planner")
+        assert flag_enabled("federation.planner") is True    # cleared → env decides
+        monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+        clear_flag("federation.planner")
 
     def test_list_flags_shape(self):
         # snapshot_receipts left the registry with flag endgame Wave 2 (2026-08-06);
         # a surviving experiment flag carries the shape claim.
         f = list_flags()
-        assert "semops.champion_validate" in f and "snapshot_receipts" not in f
-        assert {"value", "source", "env_var", "label", "description"} <= set(f["semops.champion_validate"])
+        assert "federation.planner" in f and "snapshot_receipts" not in f
+        assert {"value", "source", "env_var", "label", "description"} <= set(f["federation.planner"])
 
 
 class TestPostprocEndpoint:

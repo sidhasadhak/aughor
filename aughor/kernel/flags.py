@@ -82,16 +82,11 @@ FLAG_ENV = {
     # honest home: whether a run may pause is a property of the caller, not the env).
     # Receipts on the FLAG_DEFAULT tombstone below.
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
-    "deep_analysis.why_where_interaction": "AUGHOR_DEEP_ANALYSIS_WHY_WHERE_INTERACTION",
-    "deep_analysis.why_deepen": "AUGHOR_DEEP_ANALYSIS_WHY_DEEPEN",
-    "deep_analysis.causal_drill": "AUGHOR_CAUSAL_DRILL",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
-    "closed_loop": "AUGHOR_CLOSED_LOOP",
-    "semops.champion_validate": "AUGHOR_SEMOPS_CHAMPION_VALIDATE",
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
     # "plan.program" (AUGHOR_PLAN_PROGRAM) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): a SECOND answer path (typed program executor) with a standing
@@ -144,7 +139,6 @@ FLAG_ENV = {
     #   ask.resolve_first  (AUGHOR_ASK_RESOLVE_FIRST)
     #   ask.overview  (AUGHOR_ASK_OVERVIEW)
     #   ask.conversation_context  (AUGHOR_ASK_CONVERSATION_CONTEXT)
-    "explorer.manifest_driven": "AUGHOR_EXPLORER_MANIFEST_DRIVEN",
     # "capabilities.auto" (AUGHOR_CAPABILITIES_AUTO) was DELETED 2026-08-04 (flag endgame
     # Wave 3): it was a master switch over the ten AUTO_ELIGIBLE guards, and those are
     # unconditional now, so it governed nothing. See the AUTO_ELIGIBLE tombstone.
@@ -156,7 +150,6 @@ FLAG_ENV = {
     # belongs; a boolean over a governed loop was a second, blunter budget. Under
     # VERCEL the loop does not start at all (api.py) — a warm serverless instance is
     # not a clock, and a spawned exploration would die with it.
-    "kinetic.agent_actions": "AUGHOR_KINETIC_AGENT_ACTIONS",  # Wave K4: the agent may PROPOSE declared actions
     # "automations.adopt_legacy" (AUGHOR_AUTOMATIONS_ADOPT_LEGACY) turned ON and was
     # DELETED 2026-08-06 (flag endgame Wave 4, user-approved 2026-08-01): monitors and
     # brief subscriptions run through the ONE automation engine — the legacy per-object
@@ -164,7 +157,6 @@ FLAG_ENV = {
     # for the flag to stand down. The L4 equivalence receipt (65364174a172, 9/9 stable
     # ×3: alerts byte-for-byte, anti-flap and no-double-fire held) is what made the
     # flip safe; adoption_active() survives as the single consult point, hardwired True.
-    "graph.readback": "AUGHOR_GRAPH_READBACK",  # Wave C2: grep-the-graph-first — inject the graph slice as a plan-time prior
 }
 
 # ── Renamed flags (Wave W vocabulary unification) ─────────────────────────────────────
@@ -206,9 +198,10 @@ RENAMED: dict[str, str] = {
     # (deep_analysis.{parallel_lenses, parallel_phases, parallel_why_lenses}) were
     # deleted by flag endgame Wave 6 (transport-derived parallelism) — same rule as
     # the Wave 3 removals above: an alias only means something while its target lives.
-    "ada.causal_drill": "deep_analysis.causal_drill",
-    "ada.why_deepen": "deep_analysis.why_deepen",
-    "ada.why_where_interaction": "deep_analysis.why_where_interaction",
+    # The LAST three `ada.*` aliases (causal_drill, why_deepen, why_where_interaction)
+    # left 2026-08-06 with their targets — flag endgame Wave 5 hardwired all three.
+    # The map stays declared (empty) because `_canonical` is still the resolution
+    # seam any future rename must pass through.
 }
 
 #: Retired env var → the flag it now feeds. Consulted only when the current flag's own
@@ -218,9 +211,8 @@ RETIRED_ENV: dict[str, str] = {
     # opting in. (The three `ada.*` flags whose env var never said ADA — PREMISE_CHECK,
     # CAUSAL_DRILL, CLARIFY_GATE — kept their variable and need no entry.)
     # The three AUGHOR_ADA_PARALLEL_* entries left 2026-08-06 with their targets
-    # (flag endgame Wave 6).
-    "AUGHOR_ADA_WHY_DEEPEN": "deep_analysis.why_deepen",
-    "AUGHOR_ADA_WHY_WHERE_INTERACTION": "deep_analysis.why_where_interaction",
+    # (flag endgame Wave 6), and the last two (WHY_DEEPEN, WHY_WHERE_INTERACTION)
+    # left the same day with Wave 5 — their flags are permanent behaviour now.
 }
 
 
@@ -269,41 +261,9 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
-    "kinetic.agent_actions": {
-        "label": "Agent proposes declared actions",
-        "description": "Let the agent PROPOSE declared actions from an analysis — the model returns structured proposals which are dry-run validated (typed params + submission criteria) and STAGED for a human to accept and run through the governed executor. Nothing is executed here; nothing above LOW risk ever auto-fires. Off by default ⇒ the agent never proposes actions (byte-identical) and the proposer makes no LLM call.",
-    },
-    "graph.readback": {
-        "label": "Grep-the-graph-first read-back",
-        "description": "Before generating SQL, match the committed connection knowledge graph against the question, pull the 1-hop subgraph, and inject it as a plan-time prior — the mechanic that finally closes the open feedback loop. The subgraph carries the two node types that were write-only before: `finding` (dossiers and exploration findings) and the `resolves` readings, so a question about a table Aughor already analysed inherits what it learned, with the join guard's measured value-domain overlap surfaced as a number (not the ✓ the prompt path otherwise collapses it to). Every injected line is cited by its node/edge id (the block the context receipt shows names exactly what grounded the plan). Ranked hybrid search: a deterministic lexical floor always runs; the Qdrant vector rank fuses in when reachable (RRF) and NEVER degrades to an unranked fallback. Appended at the one function both live answer paths inject (verify.priors.build_corrections_section), gated independently of `closed_loop`. Off by default = byte-identical (empty string, zero prompt cost). Requires a graph built by `graph.build`; no graph ⇒ no-op. Counter: context_graph.*",
-    },
-    "explorer.manifest_driven": {
-        "label": "Manifest-driven deterministic exploration",
-        "description": "Cover the Phase-8 L2 baseline cells (measure × dimension) with SYNTHESISED SQL from a deterministic coverage manifest — no per-cell generation LLM call — with the existing explorer guards enforcing correctness; the LLM curiosity loop still handles cells/domains the manifest doesn't cover. Deterministic-first: fewer LLM calls, reproducible baseline coverage tracked across re-runs. Fails closed to the LLM loop if the manifest can't build. Off by default = byte-identical (LLM-only exploration). (Was consulted but unregistered — study E3 housekeeping.)",
-    },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Unlocks the already-built explore wave from /ask. Off by default.",
-    },
-    "deep_analysis.why_where_interaction": {
-        "label": "WHY×WHERE interaction lens",
-        "description": "After the parallel WHERE and WHY lenses, forward-chain one more query crossing the leading return reason with the highest-impact segment — does the cause concentrate where the metric is worst (→ target that segment) or is it uniform (→ a broad problem)? Turns two independent findings into the actionable link. Adds one LLM-planned query per qualifying run; requires the parallel lens wave, which runs whenever the transport allows it (A1 ModelProfile). Off by default.",
-    },
-    "deep_analysis.why_deepen": {
-        "label": "Deepen the WHY (benchmark + drill)",
-        "description": "After the WHY lens finds the leading return reason, forward-chain two more queries: a PEER BENCHMARK (is the reason's share abnormally high for the subject vs its peers, or a brand-wide baseline?) and a SECOND-LEVEL DRILL (which brands/products concentrate the leading reason — the fix target?). Establishes whether the cause is real and where to act. Adds two LLM-planned queries per qualifying run; requires the parallel lens wave, which runs whenever the transport allows it (A1 ModelProfile). Off by default.",
-    },
-    "deep_analysis.causal_drill": {
-        "label": "Causal-dimension priority + WHERE→WHY drill",
-        "description": "The cross-section scan floats diagnostic dimensions (reason/condition/defect) ahead of the descriptive taxonomy so they survive the query cap, and after localising WHERE it auto-drills event-only dims into the WHY composition lens instead of stopping. Only affects the serial scan path (inert when 'Parallel deep-analysis lenses' is on, which lands the same idea in-lens). Off by default.",
-    },
-    "closed_loop": {
-        "label": "Closed-loop corrections",
-        "description": "Read captured human corrections/verdicts and trusted queries back into the planner as priors, so a corrected mistake isn't repeated. Off by default until its delta is proven on your data.",
-    },
-    "semops.champion_validate": {
-        "label": "Champion cascade on semantic filter",
-        "description": "The semantic filter operator runs on the cheap tier; with this on, a small spread sample of its verdicts is re-judged by the strong 'champion' model and the whole batch is escalated to the champion when they disagree beyond a bar — catching cheap-tier errors at the cost of one extra sample call per filter. Off by default = byte-identical (no validation sample). A label-free quality estimator: disagreement between the two tiers is the signal, so no ground-truth labels are needed.",
     },
     "federation.planner": {
         "label": "Cross-source federated planner",
@@ -383,26 +343,39 @@ EXPERIMENT: dict = {
     # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
     # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
     "federation.planner": "does auto-federating fresh /ask turns improve cross-source "
-                          "answers enough to pay its planning call?",
+                          "answers enough to pay its planning call? ⚠️ GRID BLOCKED ON "
+                          "CORPUS (premise-checked 2026-08-07): the reference suite "
+                          "(9c1e13e458ff) is single-source, so an A/B there measures only "
+                          "the selector's overhead + false-positive rate, never the "
+                          "cross-source benefit — author a cross-source suite first",
     # "plan.program" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
     # tombstone) — the adopt-or-kill question was settled as KILL, not measured.
-    "closed_loop": "does reading captured corrections back into the planner improve "
-                   "answers on your data? (its own description names this exit)",
-    "graph.readback": "does the injected graph slice improve plans enough to pay its "
-                      "prompt cost?",
-    "explore.route_wide": "do landscape questions answer better through the explore wave?",
+    "explore.route_wide": "do landscape questions answer better through the explore wave? "
+                          "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
+                          "is_wide_question fires on 0/102 of the reference suite "
+                          "(9c1e13e458ff) — the deterministic detector, run corpus-wide at "
+                          "zero LLM cost, so a grid there measures a no-op on every case "
+                          "(the exact L3 mistake Guard 1 exists to refuse). Author a "
+                          "landscape-question suite first, then grid the fired subset",
     # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
-    "deep_analysis.why_where_interaction": "does the WHY×WHERE cross query change conclusions?",
-    "deep_analysis.why_deepen": "do the peer-benchmark + drill queries change the fix target?",
-    "deep_analysis.causal_drill": "serial-path twin of the parallel lenses — delete it if the "
-                        "performance profile makes parallel the default",
     # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — it dropped rows, the opposite of the evidence direction.
-    "explorer.manifest_driven": "does deterministic coverage match LLM-loop quality?",
-    "kinetic.agent_actions": "does the action proposer earn its LLM call?",
-    "semops.champion_validate": "does champion validation catch enough cheap-tier "
-                                "errors to pay one extra sample call per filter?",
+    # EIGHT left this set 2026-08-06 (flag endgame Wave 5, verdict sheet approved
+    # 2026-08-01): hardwired ON and DELETED — where cost is bounded and the behaviour
+    # is exactly "more intelligence, well-directed", the answer is yes without a grid:
+    #   closed_loop (a user who corrects the system and watches it repeat the mistake
+    #     is the worst experience we can ship; prompt-only cost) ·
+    #   graph.readback (we finally USE what we know; prompt-only; post-validate with
+    #     its already-budgeted grid) ·
+    #   deep_analysis.why_where_interaction / why_deepen (the depth a deep run is FOR;
+    #     three bounded queries per qualifying run) ·
+    #   deep_analysis.causal_drill (serial-path parity twin) ·
+    #   explorer.manifest_driven (FEWER model calls, reproducible coverage) ·
+    #   kinetic.agent_actions (data-gated; a human accepts every proposal) ·
+    #   semops.champion_validate (self-checking is direction; one bounded sample call).
+    # The two that remain are the two with an UNMEASURED LLM-bearing routing change;
+    # their grids are the exit, nothing else.
     # snapshot_receipts SETTLED 2026-07-31 (batch D) and moved to FLAG_DEFAULT — its exit
     # was decidable without a grid: cost measured sub-ms (receipt 2dee7a36c03f), reconcile
     # already one mechanism (freeze.py reuses snapshot.data_version).

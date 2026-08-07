@@ -153,11 +153,11 @@ def test_crystallize_verdict_is_highest_authority():
     assert crystallize_verdict("vd_conn", "") is None  # empty subject → no-op
 
 
-def test_record_verdict_bridges_to_the_ledger(monkeypatch):
+def test_record_verdict_bridges_to_the_ledger():
     """The live hook: a reject/correct verdict on a headlined finding crystallizes a
-    verdict-source resolution; accept / no-headline / flag-off write nothing."""
+    verdict-source resolution; accept / no-headline write nothing. The bridge is
+    always on (flag endgame Wave 5, 2026-08-06) — the verdict KIND is the gate."""
     from aughor.feedback import verdicts
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     purge_connections(["vb_conn"])
     verdicts.record_verdict("vb_conn", "inv1", "correct", note="use per-career totals",
                             headline="average total runs by strikers", corrected_sql="GROUP BY player")
@@ -167,10 +167,9 @@ def test_record_verdict_bridges_to_the_ledger(monkeypatch):
     # an accept teaches no correction → no ledger write
     verdicts.record_verdict("vb_conn", "inv2", "accept", headline="something fine")
     assert len(list_resolutions("vb_conn")) == 1
-    # flag off → no write even for a correction
-    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+    # a headline-less verdict has no subject to crystallize → no ledger write
     purge_connections(["vb_off"])
-    verdicts.record_verdict("vb_off", "inv3", "reject", headline="a bad reading")
+    verdicts.record_verdict("vb_off", "inv3", "reject", headline="")
     assert list_resolutions("vb_off") == []
 
 

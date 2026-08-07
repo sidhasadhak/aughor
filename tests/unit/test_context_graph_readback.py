@@ -99,7 +99,6 @@ def _save(cg, monkeypatch, tmp_path):
 def test_readback_surfaces_the_unread_finding(monkeypatch, tmp_path):
     """The point of Wave C: a finding that was write-only now reaches the plan, cited."""
     _save(_graph(), monkeypatch, tmp_path)
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
     from aughor.ontology.context_graph_readback import build_graph_prior, last_cited_nodes
 
     p = build_graph_prior("which orders never reach a terminal state", "c", org_id="o")
@@ -117,7 +116,6 @@ def test_readback_surfaces_the_unread_finding(monkeypatch, tmp_path):
 def test_readback_empty_when_no_graph_built(monkeypatch, tmp_path):
     from aughor.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
     from aughor.ontology.context_graph_readback import build_graph_prior
     assert build_graph_prior("anything", "no-such-conn", org_id="o").section == ""
 
@@ -126,19 +124,19 @@ def test_readback_empty_when_no_graph_built(monkeypatch, tmp_path):
 
 def test_build_corrections_section_appends_graph_block(monkeypatch, tmp_path):
     """The graph block reaches both live paths via build_corrections_section, and is
-    gated INDEPENDENTLY of closed_loop (fires with closed_loop OFF)."""
+    independent of the corrections loop (fires with nothing else stored)."""
     _save(_graph(), monkeypatch, tmp_path)
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "0")  # explicitly off
     from aughor.feedback.priors import build_corrections_section
     section = build_corrections_section("which orders never reach a terminal state", "c", org_id="o")
     assert "CONNECTION GRAPH" in section
     assert "32% of orders never reach a terminal state" in section
 
 
-def test_build_corrections_section_byte_identical_when_both_off(monkeypatch, tmp_path):
-    _save(_graph(), monkeypatch, tmp_path)
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "0")
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "0")
+def test_build_corrections_section_empty_when_nothing_is_stored(monkeypatch, tmp_path):
+    """Both loops are always on (flag endgame Wave 5); zero-cost now means DATA-gated:
+    no graph, no ledger rows, no corrections ⇒ empty string, not a flag check."""
+    monkeypatch.setattr("aughor.ontology.context_graph_store.load_graph",
+                        lambda *a, **k: None)
     from aughor.feedback.priors import build_corrections_section
-    assert build_corrections_section("which orders never reach a terminal state", "c", org_id="o") == ""
+    assert build_corrections_section("which orders never reach a terminal state",
+                                     "conn-with-nothing-stored", org_id="o") == ""

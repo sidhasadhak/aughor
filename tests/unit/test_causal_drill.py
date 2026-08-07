@@ -1,4 +1,4 @@
-"""Auto-drill WHERE→WHY + metric-aware dimension priority (flag AUGHOR_CAUSAL_DRILL).
+"""Auto-drill WHERE→WHY + metric-aware dimension priority (permanent since flag endgame Wave 5).
 
 For an outcome question ("why is X so high/low") the cross-section scan should (1) float causal
 dimensions to the front so they survive the per-phase query cap, and (2) after localising WHERE,
@@ -41,15 +41,6 @@ def test_causal_split_holds_event_dims_for_composition():
     # event-TABLE dims (returns/refunds) → the WHY composition; population dims → the WHERE rate scan
     assert event == ["db.returns.reason", "db.refunds.method"]
     assert pop == ["db.orders.channel", "db.customers.segment"]
-
-
-def test_flag_gating(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CAUSAL_DRILL", raising=False)
-    assert inv._causal_drill_enabled() is False
-    monkeypatch.setenv("AUGHOR_CAUSAL_DRILL", "1")
-    assert inv._causal_drill_enabled() is True
-    monkeypatch.setenv("AUGHOR_CAUSAL_DRILL", "off")
-    assert inv._causal_drill_enabled() is False
 
 
 # ── multilens improvement #1: causal-relevance in the WHY composition ───────────
@@ -143,7 +134,6 @@ def _phase_ids(out):
 
 def test_drill_appends_why_phase_and_scans_only_population(monkeypatch):
     cap = _install(monkeypatch)
-    monkeypatch.setenv("AUGHOR_CAUSAL_DRILL", "1")
     out = inv.ada_cross_section(_state(_MIXED_DIMS), _FakeConn())
     ids = _phase_ids(out)
     # the WHERE rate phase, then the auto-drilled WHY composition phase
@@ -155,20 +145,10 @@ def test_drill_appends_why_phase_and_scans_only_population(monkeypatch):
     assert "returns.reason" not in cap["plan_user"] and "return_logistics.condition" not in cap["plan_user"]
 
 
-def test_flag_off_is_byte_identical_single_scan(monkeypatch):
-    cap = _install(monkeypatch)
-    monkeypatch.delenv("AUGHOR_CAUSAL_DRILL", raising=False)
-    out = inv.ada_cross_section(_state(_MIXED_DIMS), _FakeConn())
-    assert _phase_ids(out) == ["cross_section"]           # no WHY phase
-    assert "event_dims" not in cap                          # composition lens never called
-    assert "returns.reason" in cap["plan_user"]            # event dims still in the (unsplit) rate scan
-
-
 def test_sub_lens_invocation_never_drills(monkeypatch):
     # dims_override set = a themed sub-lens call from the multilens node, which owns its own
     # partition/composition — the serial drill must not fire and double-count.
     cap = _install(monkeypatch)
-    monkeypatch.setenv("AUGHOR_CAUSAL_DRILL", "1")
     out = inv.ada_cross_section(_state(_MIXED_DIMS), _FakeConn(), dims_override=_MIXED_DIMS)
     assert _phase_ids(out) == ["cross_section"]
     assert "event_dims" not in cap
@@ -176,7 +156,6 @@ def test_sub_lens_invocation_never_drills(monkeypatch):
 
 def test_no_event_dims_means_no_drill(monkeypatch):
     cap = _install(monkeypatch)
-    monkeypatch.setenv("AUGHOR_CAUSAL_DRILL", "1")
     out = inv.ada_cross_section(_state(["lux.order_items.brand", "lux.platforms.segment"]), _FakeConn())
     assert _phase_ids(out) == ["cross_section"]            # nothing event-only to drill
     assert "event_dims" not in cap

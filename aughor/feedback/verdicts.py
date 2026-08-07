@@ -106,14 +106,12 @@ def record_verdict(
         c.close()
     # Verdict → Ambiguity Ledger bridge: a reviewer's reject/correct on a headlined finding
     # crystallizes as the HIGHEST-authority resolution (overrides any probe/user reading on that
-    # question). Best-effort, gated with the ledger (closed_loop); never fails the verdict write.
+    # question). Best-effort; never fails the verdict write.
     if v in ("reject", "correct") and (headline or "").strip():
         try:
-            from aughor.feedback.priors import closed_loop_enabled
-            if closed_loop_enabled():
-                from aughor.semantic.ambiguity_ledger import crystallize_verdict
-                crystallize_verdict(connection_id or "", headline, org_id=org,
-                                    corrected_sql=corrected_sql or "", note=note or "")
+            from aughor.semantic.ambiguity_ledger import crystallize_verdict
+            crystallize_verdict(connection_id or "", headline, org_id=org,
+                                corrected_sql=corrected_sql or "", note=note or "")
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "verdict→ledger crystallization is best-effort",

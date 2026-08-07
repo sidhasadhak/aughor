@@ -36,11 +36,12 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-FLAG = "closed_loop"      # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
+FLAG = "explore.route_wide"      # a registered, default-off flag — one of the LAST TWO
 # The nested-release assertion below expects OTHER's AMBIENT value to be off; this one
-# is an unsettled experiment, so it is off today. (Its predecessor exemplars `ai_sql` and
-# `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame.)
-OTHER = "semops.champion_validate"
+# is an unsettled experiment, so it is off today. (Exemplars keep getting re-pointed as
+# the endgame deletes flags: ai_sql → obs.prompt_capture → semops.champion_validate →
+# explore.route_wide → these two, the grid-bound remainder of the registry.)
+OTHER = "federation.planner"
 
 
 @pytest.fixture(autouse=True)
@@ -165,10 +166,10 @@ def test_graph_topology_reads_the_transport_only_at_compile_time(monkeypatch):
 
     # The flag-side half of the old test, on a surviving flag: a read INSIDE a
     # flag_overrides block sees the override; a value captured before does not.
-    assert flag_enabled("closed_loop") is False
-    with flag_overrides({"closed_loop": True}):
-        assert flag_enabled("closed_loop") is True
-    captured_flag = flag_enabled("closed_loop")
-    with flag_overrides({"closed_loop": True}):
+    assert flag_enabled("explore.route_wide") is False
+    with flag_overrides({"explore.route_wide": True}):
+        assert flag_enabled("explore.route_wide") is True
+    captured_flag = flag_enabled("explore.route_wide")
+    with flag_overrides({"explore.route_wide": True}):
         assert captured_flag is False
-    clear_flag("closed_loop")
+    clear_flag("explore.route_wide")

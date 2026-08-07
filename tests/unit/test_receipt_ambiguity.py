@@ -35,7 +35,6 @@ def cap_ledger(monkeypatch):
 
 def test_receipt_surfaces_resolved_ambiguity(cap_ledger, monkeypatch):
     from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     purge_connections(["rcpt_conn"])
     crystallize_user_choice("rcpt_conn", "top products", "by revenue")
     inv._write_answer_receipt(
@@ -53,7 +52,6 @@ def test_receipt_surfaces_resolved_ambiguity(cap_ledger, monkeypatch):
 
 def test_receipt_omits_field_when_no_resolution(cap_ledger, monkeypatch):
     from aughor.semantic.ambiguity_ledger import purge_connections
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     purge_connections(["rcpt_empty"])
     inv._write_answer_receipt(
         kind="chat_answer", natural_key="chat:rcpt_empty:x",
@@ -62,16 +60,6 @@ def test_receipt_omits_field_when_no_resolution(cap_ledger, monkeypatch):
     assert "resolved_ambiguities" not in cap_ledger.payloads[-1]
 
 
-def test_receipt_omits_field_when_flag_off(cap_ledger, monkeypatch):
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
-    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
-    purge_connections(["rcpt_off"])
-    crystallize_user_choice("rcpt_off", "top products", "by revenue")
-    inv._write_answer_receipt(
-        kind="chat_answer", natural_key="chat:rcpt_off:x",
-        question="what are the top products?", sqls=["SELECT 1"], headline="",
-        schema="", connection_id="rcpt_off")
-    assert "resolved_ambiguities" not in cap_ledger.payloads[-1]
 
 
 def test_receipt_endpoint_serves_resolved_ambiguity_lineage(monkeypatch):
@@ -82,7 +70,6 @@ def test_receipt_endpoint_serves_resolved_ambiguity_lineage(monkeypatch):
     from fastapi.testclient import TestClient
 
     from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     purge_connections(["rcpt_api"])
     crystallize_user_choice("rcpt_api", "top products", "by revenue")
     # write a real receipt artifact under the chat natural key the endpoint reads

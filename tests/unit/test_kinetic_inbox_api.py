@@ -87,11 +87,10 @@ def test_accept_can_mint_a_grant_then_list_and_revoke_it(flag_on, wired):
     assert client.post(f"/kinetic-actions/grants/{grant_id}/revoke").status_code == 404
 
 
-def test_propose_stages_to_the_inbox_when_the_flag_is_on(monkeypatch):
+def test_propose_stages_to_the_inbox(monkeypatch):
     """The producer wire: /propose persists valid proposals so they become durable + acceptable.
-    Needs both the proposer flag (K4) and the inbox flag (A4)."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda n: n in ("automations.proposals", "kinetic.agent_actions"))
+    (Both former gates — the proposer flag K4 and the inbox flag A4 — are permanent now:
+    Wave 2 hardwired automations.proposals, Wave 5 hardwired kinetic.agent_actions.)"""
     class _G:
         kinetic_actions = {"refund": _action()}
     monkeypatch.setattr("aughor.routers.kinetic._resolve_graph", lambda c, s: _G())
