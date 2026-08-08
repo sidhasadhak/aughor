@@ -135,6 +135,14 @@ _FAMILY_TIERS: dict[str, dict] = {
     "kimi": _CAPABLE,            # ollama-cloud naming
     # gemma-4-31b / nemotron-nano stay BASELINE: narrator/fast-tier models, never
     # measured against the bigger budgets.
+    #
+    # The faux test backend's DECLARED capable id (aughor/llm/faux.py). Its default
+    # models (faux-coder/-narrator/-fast) hit the unknown-model BASELINE floor above,
+    # so tests reach both tiers deterministically: pin `faux-capable` for the big
+    # budgets, use the defaults for the floor. No evidence bar applies — it serves
+    # scripted text, and the entry exists precisely so tier-dependent defaults are
+    # testable offline.
+    "faux-capable": _CAPABLE,
 }
 
 #: The OpenRouter free tier's documented request budget. A model id ending in

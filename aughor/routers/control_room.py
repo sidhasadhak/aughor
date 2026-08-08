@@ -29,13 +29,13 @@ from typing import Any, Optional
 
 from fastapi import APIRouter
 
+# The error string boot recovery writes on rows a process restart orphaned —
+# imported from the producer so the exact-equality match below can never drift blind.
+from aughor.db.history import ORPHAN_REASON as _ORPHAN_ERROR
 from aughor.kernel.ledger import Ledger
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["control-room"])
-
-#: The error string boot_recovery writes on rows a process restart orphaned.
-_ORPHAN_ERROR = "server restart (orphaned)"
 
 _ACTIVE_STATES = ["PENDING", "RUNNING", "PAUSED"]
 

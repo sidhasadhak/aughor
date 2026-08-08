@@ -114,6 +114,16 @@ os.environ.setdefault(
     "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
 )
 
+# Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
+# inherited from the developer's machine: it holds the operator's chosen backend AND
+# secretvault-encrypted API keys, and aughor/api.py's import-time load_dotenv() brings
+# in the AUGHOR_SECRET_KEY that decrypts them — so a test could resolve a real paid
+# binding without a single key in its own env. Isolated like every other store; the
+# file simply doesn't exist, so tests see the pure env→default precedence.
+os.environ.setdefault(
+    "AUGHOR_LLM_CONFIG_PATH", os.path.join(_test_stores_dir, "llm_config.json")
+)
+
 # The suite must not spend real LLM requests. `semantic.autoseed` defaults ON and `get_schema()`
 # fires it, so ANY test that loads a schema would call a live model against the free 1,000/day
 # budget. Measured before this line existed: `tests/integration/test_evals_experiments.py`
@@ -283,13 +293,119 @@ def _reset_provider_process_caches():
     session: one file's cached verdict was served to another file's assertion, which
     passed alone and failed in the suite. Cleared here rather than per-file because the
     leak crosses file boundaries.
+
+    The RUNTIME-CONFIG cache (`_runtime`) is reset the same way, for the same reason:
+    it is filled lazily by whichever `_cfg()` call happens first, so a test that
+    patches `_read_config`/`_CONFIG_PATH` (test_free_by_default_binding's in-memory
+    store, the config gate) can leave `backend: openrouter` cached for the REST of
+    the suite. Before the config-path isolation that leak was invisible locally —
+    every binding test silently resolved the developer's real openrouter config and
+    key — and visible only as ordering luck on CI. Resetting per test makes every
+    test start from the isolated (empty) config unless it builds its own.
     """
     from aughor.llm import coordination as _c
     from aughor.llm import provider as _p
-    _p._ping_cache.clear()
-    # The cooldown now lives in the coordinator (aughor/llm/coordination.py); dropping the
-    # instance re-resolves a clean one from env, which clears pacing and concurrency too.
-    _c.set_default(None)
+    _cfg_path = os.environ.get("AUGHOR_LLM_CONFIG_PATH")
+
+    def _reset():
+        _p._ping_cache.clear()
+        if _cfg_path and os.path.exists(_cfg_path):
+            os.unlink(_cfg_path)   # a write_config-persisting test must not leak forward
+        _p._runtime = None         # re-read (isolated ⇒ empty) on next _cfg()
+        _p._config_version += 1    # drop providers built against another test's config
+        # The cooldown now lives in the coordinator (aughor/llm/coordination.py); dropping
+        # the instance re-resolves a clean one from env, which clears pacing and
+        # concurrency too.
+        _c.set_default(None)
+
+    _reset()
     yield
-    _p._ping_cache.clear()
-    _c.set_default(None)
+    _reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_provider_credentials(request):
+    """Layer 0.2 — the mechanical no-key guarantee: a test structurally cannot reach a
+    paid backend.
+
+    Two moves, both enforcement rather than discipline:
+
+    * every provider credential env var is DELETED, driven off ``provider._KEY_ENV``
+      itself so a newly registered backend is scrubbed by construction (the list can
+      never lag the registry). This matters because ``aughor/api.py`` loads the
+      developer's real ``.env`` at import time — the suite process otherwise holds
+      real keys (the "together had a key" incident: a free primary's fallback chain
+      quietly reached a PAID backend that only looked configured because of .env).
+    * the fallback chain is pinned EMPTY via ``AUGHOR_FALLBACK_BACKENDS=none`` (the
+      explicit empty-chain spelling; ``""`` has always meant "default order"). The
+      chain tests in test_provider_resilience set this variable themselves, and their
+      own monkeypatch simply replaces the pin — no special-casing needed.
+
+    Skipped for @e2e / @eval tests, which spend live requests on purpose. There is
+    deliberately no per-test assertion here: real keys can only arrive via env or the
+    (now isolated) runtime config, both closed above — tests/unit/test_no_key_guarantee.py
+    carries the proof.
+
+    A PRIVATE MonkeyPatch instance, not the shared ``monkeypatch`` fixture: an autouse
+    conftest fixture that requests the shared instance drags its instantiation ahead
+    of every module-local autouse fixture, which INVERTS teardown order — a module
+    fixture's teardown then runs while the test's own patches are still applied
+    (test_parallel_safety's hostile-contextvar teardown caught exactly that).
+    """
+    from aughor.llm import provider as _p
+    mp = pytest.MonkeyPatch()
+    try:
+        if request.node.get_closest_marker("e2e") or request.node.get_closest_marker("eval"):
+            # Live-spending tests keep the operator's REAL binding: undo the suite-wide
+            # runtime-config isolation (AUGHOR_LLM_CONFIG_PATH above) for this test only,
+            # or `pytest -m eval` / --run-e2e would resolve the ollama default instead of
+            # the configured backend and meter zero tokens (test_ratchet_live_smoke
+            # caught exactly that when the isolation first landed).
+            from pathlib import Path as _Path
+            _real = _Path(_p.__file__).resolve().parent.parent.parent / "data" / "llm_config.json"
+            mp.setattr(_p, "_CONFIG_PATH", _real)
+            mp.setattr(_p, "_runtime", None)   # lazy-reload from the real path
+            mp.setattr(_p, "_config_version", _p._config_version + 1)
+        else:
+            for _var in _p._KEY_ENV.values():
+                mp.delenv(_var, raising=False)
+            # The BINDING env vars go too, not just credentials: aughor.api's
+            # import-time load_dotenv() plants the developer's .env (AUGHOR_BACKEND=
+            # openrouter + model pins) into the process env the moment any test
+            # touches the app — after which every later test resolves a keyless
+            # openrouter binding and dies in the client constructor. Scrubbed per
+            # test, so every test starts from the ollama default unless it pins a
+            # backend itself (the faux_llm fixture does).
+            for _var in ("AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL",
+                         "AUGHOR_NARRATOR_MODEL", "AUGHOR_FAST_NARRATOR_MODEL"):
+                mp.delenv(_var, raising=False)
+            mp.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+        yield
+    finally:
+        mp.undo()
+
+
+@pytest.fixture
+def faux_llm(monkeypatch):
+    """Route every LLM completion in this test through the scripted faux backend.
+
+    Returns the ``aughor.llm.faux`` module: ``set_responses([...])`` to script,
+    ``calls()`` to see the exact prompts the code built, ``pending()`` to prove the
+    script was fully consumed. An unscripted call raises ``FauxResponsesExhausted``
+    loudly and never falls through to a real provider (``never_failover``).
+
+    Isolation is inherited, not re-built: `_reset_provider_process_caches` nulls the
+    runtime-config cache and bumps `_config_version` around EVERY test (so the
+    provider cache can't serve a faux-bound provider to a later test), and
+    `_no_provider_credentials` scrubs the developer's .env binding vars — this
+    fixture only pins the backend and manages the script. `_config_version` is
+    deliberately never monkeypatched: a restore moves the version BACKWARDS, and a
+    later real `load_config()` bump can then collide with the stale `_cache_version`
+    and revive a dead provider cache.
+    """
+    from aughor.llm import faux as _faux
+    from aughor.llm import provider as _p
+    monkeypatch.setenv("AUGHOR_BACKEND", _p.FAUX_BACKEND)
+    _faux.reset()
+    yield _faux
+    _faux.reset()

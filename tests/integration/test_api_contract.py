@@ -77,3 +77,52 @@ def test_contract_scanner_finds_calls():
     """The scanner itself must not silently match nothing (a regex rot guard)."""
     paths = _frontend_paths()
     assert len(paths) > 40, f"only {len(paths)} frontend paths parsed — scanner broken?"
+
+
+_HTTP_METHODS = ("get", "post", "put", "patch", "delete")
+
+
+def test_operation_ids_are_unique(client):
+    """Layer 0.3 — the #269 class as a fast local failure. A dual-method
+    `api_route(["GET", "POST"])` emits the SAME operationId twice; the generated TS
+    client then carries the identifier twice and web typecheck/build/codegen-drift
+    fail NONDETERMINISTICALLY, far from the cause. Until now the only protections
+    were the CI drift gate and a memory rule."""
+    schema = client.get("/openapi.json").json()
+    seen: dict[str, str] = {}
+    duplicates = []
+    for path, ops in schema["paths"].items():
+        for method, op in ops.items():
+            if method not in _HTTP_METHODS:
+                continue
+            where = f"{method.upper()} {path}"
+            oid = op.get("operationId")
+            assert oid, f"{where} has no operationId — the TS codegen needs one per operation"
+            if oid in seen:
+                duplicates.append(f"{oid!r}: {seen[oid]} and {where}")
+            seen[oid] = where
+    assert not duplicates, (
+        "Colliding operationIds (split each route into single-method handlers):\n  "
+        + "\n  ".join(duplicates)
+    )
+
+
+def test_every_route_declares_a_single_method(client):
+    """The structural rule behind the operationId guarantee: one route function, one
+    HTTP method. FastAPI derives operationIds per handler, so a multi-method
+    `api_route` is a collision by construction even before the spec is dumped."""
+    from fastapi.routing import APIRoute
+
+    from aughor.api import app   # imported through the client fixture's isolation
+
+    offenders = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        methods = set(route.methods or ()) - {"HEAD", "OPTIONS"}
+        if len(methods) > 1:
+            offenders.append(f"{route.path} declares {sorted(methods)}")
+    assert not offenders, (
+        "Multi-method route declarations (each emits colliding operationIds):\n  "
+        + "\n  ".join(offenders)
+    )

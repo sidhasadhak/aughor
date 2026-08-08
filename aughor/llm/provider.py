@@ -52,6 +52,12 @@ LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
 
 _KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
             "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
+
+# The scripted test backend — first-class through the whole provider stack
+# (constructor, model resolution, tiers) but never operator-selectable; see the
+# registration note on _DEFAULT_MODELS and aughor/llm/faux.py's module docstring.
+FAUX_BACKEND = "faux"
+DEFAULT_FAUX_MODELS = {"coder": "faux-coder", "narrator": "faux-narrator", "fast": "faux-fast"}
 _BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
 
 _DEFAULT_BASE_URLS = {
@@ -100,9 +106,21 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
     "openrouter": {"coder": "nvidia/nemotron-3-ultra-550b-a55b:free",
                    "narrator": "google/gemma-4-31b-it:free",
                    "fast": "nvidia/nemotron-3-nano-30b-a3b:free"},
+    # The scripted test backend (aughor/llm/faux.py). Registered here so model
+    # resolution works like any backend's, but deliberately absent from BACKENDS —
+    # that tuple is the operator-facing registry (Settings dropdown, the CLI's
+    # literal mirror, fallback eligibility), and a scripted backend must not be
+    # selectable there. Reached only via AUGHOR_BACKEND=faux (the test fixture).
+    FAUX_BACKEND: dict(DEFAULT_FAUX_MODELS),
 }
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "data" / "llm_config.json"
+# AUGHOR_LLM_CONFIG_PATH relocates the runtime config — the test suite points it at
+# an isolated file so tests can never read the developer's live backend choice or
+# encrypted keys (every other data/ store already has exactly this env seam; this
+# one was the last store tests inherited from the developer's machine). Read at
+# import like its siblings: conftest sets it above any app import.
+_CONFIG_PATH = Path(os.getenv("AUGHOR_LLM_CONFIG_PATH", "").strip()
+                    or Path(__file__).parent.parent.parent / "data" / "llm_config.json")
 
 
 def _flag(name: str, default: str = "") -> bool:
@@ -216,10 +234,16 @@ def _fallback_backends() -> tuple[str, ...]:
 
     Override with AUGHOR_FALLBACK_BACKENDS (comma-separated, e.g. "gemini,groq") to pin a
     chain — order is honoured as given, and unknown names are dropped rather than raising,
-    so a typo degrades to a shorter chain instead of breaking every LLM call."""
+    so a typo degrades to a shorter chain instead of breaking every LLM call. The one
+    explicit spelling is "none" — an EMPTY chain (no fallback at all). It exists because
+    "" cannot mean empty (it has always meant the default order), and the test suite's
+    no-key guarantee needs a value that structurally forbids the chain while still letting
+    an individual test override the variable to exercise it."""
     raw = os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()
     if not raw:
         return _FALLBACK_ORDER
+    if raw.lower() == "none":
+        return ()
     return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
 
 
@@ -1124,7 +1148,14 @@ def _should_failover(exc: BaseException) -> bool:
     provider will reproduce. Fail-open: an unclassifiable error keeps the pre-R1
     behaviour (try the chain), because a wrongly-suppressed failover breaks a working
     install while a wrongly-attempted one only costs one request.
+
+    ``never_failover`` is the one attribute-based veto: the faux backend's
+    exhausted-script failure is a TEST bug, and a chain that answers in its place is
+    the silent fall-through the faux backend exists to kill — so the veto lives here,
+    where the chain decision is made, not in the test harness.
     """
+    if getattr(exc, "never_failover", False):
+        return False
     from aughor.llm.reliability import StructuredOutputError, should_failover
 
     if isinstance(exc, StructuredOutputError):
@@ -1159,14 +1190,16 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
                         fallback: bool, stats: dict):
     """Recover a valid ``response_model`` from a failed structured call, or ``None``.
 
-    Two stages, in cost order:
+    Two stages, in cost order (both hardwired unconditional — flag endgame Wave 2,
+    2026-08-01, graduated with receipts as ``llm.structured_salvage`` /
+    ``llm.bounded_repair``):
 
-    1. **Deterministic salvage** (flag ``llm.structured_salvage``, default on) — zero
-       requests. Returns ``(value, completion)`` so the caller's normal success path
-       still meters the tokens the provider already charged us for.
-    2. **One bounded repair** (flag ``llm.bounded_repair``, default off) — exactly one
-       request, only when the diagnosis says another request could plausibly help.
-       Never for a truncation, an empty body or a refusal.
+    1. **Deterministic salvage** — zero requests. Returns ``(value, completion)`` so
+       the caller's normal success path still meters the tokens the provider already
+       charged us for.
+    2. **One bounded repair** — exactly one request, only when the diagnosis says
+       another request could plausibly help. Never for a truncation, an empty body
+       or a refusal.
 
     Never raises: a failure inside the recovery layer must leave the original error's
     path intact, not replace one failure with a different one.
@@ -1251,6 +1284,9 @@ class LLMProvider:
             self._client = _build_gemini_client(url, key)
         elif backend == "anthropic":
             self._client = _build_anthropic_client(key)
+        elif backend == FAUX_BACKEND:
+            from aughor.llm.faux import build_client
+            self._client = build_client(role)
         else:
             raise ValueError(f"Unknown backend: {backend!r}. Use one of {', '.join(BACKENDS)}.")
 

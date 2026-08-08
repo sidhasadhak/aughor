@@ -77,6 +77,15 @@ _LEGAL = {
 _HEARTBEAT_SECONDS = 15
 _STALE_SECONDS = 120
 
+#: The one shared sentence for interrupted work (unified plan Layer 0.4). An
+#: interrupted run's result is UNKNOWN, not known-bad — "failed" claims a fact
+#: nobody observed — so every surface that reports an orphaned/interrupted run
+#: appends this exact wording rather than coining its own (the web side mirrors it
+#: in web/lib/investigationStream.ts UNCERTAIN_RESULT). The full
+#: interrupted-uncertain terminal STATUS is a later wave; the shared vocabulary
+#: lands first so wordings cannot diverge in the meantime.
+UNCERTAIN_RESULT = "its result is uncertain and was not replayed"
+
 
 def _int_env(name: str, default: int) -> int:
     import os
@@ -436,7 +445,8 @@ class JobKernel:
                              conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
                              job_id=job["id"])
             # PENDING/PAUSED → FAILED is legal; RUNNING → FAILED is legal.
-            self._transition(job["id"], JobState.FAILED, error="lease lapsed (orphaned)")
+            self._transition(job["id"], JobState.FAILED,
+                             error=f"lease lapsed (orphaned) — {UNCERTAIN_RESULT}")
             if job["kind"] == "exploration":
                 resumable.append(job)
         if orphaned or foreign:
@@ -461,8 +471,9 @@ class JobKernel:
             except (ValueError, TypeError):
                 hb_ts = 0
             if hb_ts < cutoff:
-                if self._transition(job["id"], JobState.FAILED,
-                                    error="orphaned (stale heartbeat, no live task)"):
+                if self._transition(
+                        job["id"], JobState.FAILED,
+                        error=f"orphaned (stale heartbeat, no live task) — {UNCERTAIN_RESULT}"):
                     n += 1
         return n
 
