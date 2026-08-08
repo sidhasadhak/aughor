@@ -69,6 +69,13 @@ _EDITABLE: dict[str, set[str]] = {
         # additive-only (the preferred table is ADDED to the schema handed to the
         # model, the deprecated one is never dropped) and existence-bound below.
         "use_instead",
+        # …and its PENDING twin. A proposal captured from a conversation lives in its
+        # own field rather than in `use_instead`, so it can never be mistaken for an
+        # accepted rule: enforcement reads `use_instead` and nothing else, which makes
+        # "a proposal changes no behaviour" true by construction rather than by a
+        # status check somebody has to remember. Accepting MOVES it across; that is
+        # the only way a rule becomes live (C4: never auto-apply).
+        "use_instead_proposed",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -94,7 +101,16 @@ _SQL_FIELDS = {"active_filter", "filter_sql", "formula_sql"}
 # reads as verified. A field validated by nobody is therefore reported as verified, which
 # for a routing target means the prompt is told to prefer a table that may not exist. So
 # an existence field ALWAYS writes a binding entry, even when the probe cannot run.
-_EXISTENCE_FIELDS = {"use_instead"}
+#: Public because the HTTP boundary needs it too: when the connection cannot be
+#: reached at all, the caller has to know WHICH fields still owe a verdict (an
+#: existence field with an empty binding reads as verified — see _bind_existence).
+EXISTENCE_FIELDS = frozenset({"use_instead", "use_instead_proposed"})
+_EXISTENCE_FIELDS = EXISTENCE_FIELDS   # the in-module name this file already uses
+
+#: The pending field and the live one. A proposal is bound when it is CAPTURED, not
+#: when it is accepted, so a typo is caught while the person who made it is still here.
+PROPOSED_FIELD = "use_instead_proposed"
+ROUTING_FIELD = "use_instead"
 
 
 def preferred_table(value: Any) -> str:
@@ -181,6 +197,17 @@ def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) ->
     except Exception:
         pass
     return False
+
+
+def find_override(conn: str, schema: str, kind: TargetKind,
+                  target_id: str) -> Optional[OntologyOverride]:
+    """One override by identity, or None. Public because a caller that needs to MERGE
+    a field into an existing override (rather than replace the file, which is what
+    ``save_override`` does) has to read it back first."""
+    for ov in load_overrides(conn, schema):
+        if ov.target_kind == kind and ov.target_id == target_id:
+            return ov
+    return None
 
 
 def override_scopes(conn: str) -> list[str]:

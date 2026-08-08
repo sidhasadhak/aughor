@@ -5606,6 +5606,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/routing-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Entity Routing
+         * @description Capture a routing correction as a PENDING proposal (Wave 2 / Layer 1.1).
+         *
+         *     Never applies it. The proposal is stored in its own field, so enforcement — which
+         *     reads only ``use_instead`` — cannot see it: "a proposal changes nothing" is true by
+         *     construction rather than by a status check someone has to remember. It IS
+         *     existence-bound here though, while the person who volunteered it is still present,
+         *     so a typo is reported now instead of at accept time.
+         *
+         *     Merges into any existing override for the entity rather than replacing the file,
+         *     so proposing does not wipe a description or an active filter that is already there.
+         */
+        post: operations["propose_entity_routing_ontology_entities__entity_id__routing_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/routing-proposal/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Entity Routing
+         * @description Promote a pending proposal to the live routing rule — the human click (C4).
+         *
+         *     This is the ONLY path from proposed to enforced. Refuses a proposal that did not
+         *     existence-bind: accepting a rule that names a table nobody can read would put a
+         *     dead pointer into every prompt for this connection.
+         */
+        post: operations["accept_entity_routing_ontology_entities__entity_id__routing_proposal_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/segments": {
         parameters: {
             query?: never;
@@ -5923,6 +5976,29 @@ export interface paths {
         };
         /** Get Ontology Relationships */
         get: operations["get_ontology_relationships_ontology_relationships_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/routing-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Routing Proposals
+         * @description Every pending routing proposal for this connection — the review surface.
+         *
+         *     Each carries its bind verdict, so the reviewer sees "this table does not exist"
+         *     before accepting rather than after.
+         */
+        get: operations["list_routing_proposals_ontology_routing_proposals_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10041,6 +10117,29 @@ export interface components {
             dialect: string;
             /** Sql */
             sql: string;
+        };
+        /**
+         * _RoutingProposal
+         * @description A volunteered correction: "for X questions you should have used table Y".
+         */
+        _RoutingProposal: {
+            /**
+             * Evidence
+             * @default
+             */
+            evidence: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
+            /** Table */
+            table: string;
         };
         /** _SaveQueryRequest */
         _SaveQueryRequest: {
@@ -20600,6 +20699,78 @@ export interface operations {
             };
         };
     };
+    propose_entity_routing_ontology_entities__entity_id__routing_proposal_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RoutingProposal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_entity_routing_ontology_entities__entity_id__routing_proposal_accept_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_entity_segments_ontology_entities__entity_id__segments_get: {
         parameters: {
             query?: {
@@ -21113,6 +21284,38 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_routing_proposals_ontology_routing_proposals_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
                 schema_name?: string | null;
             };
             header?: never;

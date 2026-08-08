@@ -83,3 +83,24 @@ def test_the_narrator_is_fed_the_grounded_headline_not_the_raw_one():
         "the narrator prompt must carry the grounded/caveated headline — the raw "
         "answer.headline lets the narrative contradict what the user was shown")
     assert 'f"Answer: {answer.headline}\\n"' not in src
+
+
+# ── Wave 3 / 2.3: the disclosed assumption ───────────────────────────────────
+
+def test_answer_anyway_is_disclosed_not_silent():
+    """"Answer anyway" already shipped in the UI; what it never did was record that an
+    assumption was made. An answer resting on one of several readings must say so."""
+    note = _guard_note({"assumed": True})
+    assert "more than one reasonable reading" in note
+    assert "say which one you answered" in note
+
+
+def test_an_unambiguous_turn_discloses_nothing():
+    assert _guard_note({"assumed": False}) == ""
+
+
+def test_assumption_rides_with_the_guard_notes():
+    """One list, one instruction — everything the reader must account for arrives in
+    the same sentence rather than as a second mechanism."""
+    note = _guard_note({"assumed": True, "grounded": True})
+    assert note.count("\n- ") == 2

@@ -110,6 +110,11 @@ _GUARD_PROSE = {
     "narration_inversion": "this value varies by group and is not uniform across every row",
     "measure_grain": "the measure may be summed at the wrong grain (per-unit vs per-line)",
     "id_arithmetic": "the total multiplies a measure by an id/key column, so its magnitude is unreliable",
+    # Not a guard rewrite — an assumption the user asked us to make. It belongs in the
+    # same breath as the rest: everything here is something the reader must account for
+    # when reading the number (Wave 3 / 2.3).
+    "assumed": "the question had more than one reasonable reading and you asked for a "
+               "best guess, so ONE reading was chosen — say which one you answered",
 }
 
 
@@ -1268,6 +1273,7 @@ async def _stream_chat(
     skip_clarify: bool = False,
     purpose: str = "",
     schema_scope: Optional[str] = None,
+    assumed_default: bool = False,
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1829,7 +1835,13 @@ async def _stream_chat(
         final_sql = answer.sql
         # Trust-receipt provenance signals — recorded ONLY when a guard
         # demonstrably fires this turn (honest lineage, not aspirational).
-        _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False}
+        _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False,
+                 # Wave 3 / 2.3 — the user pressed "Answer anyway": the question was
+                 # open to more than one reading and they asked for a best guess. That
+                 # is an ASSUMPTION the answer rests on, and until now it was recorded
+                 # nowhere — `guard:ambiguous_question` fires off re-derived complexity,
+                 # not off the user's own decision to skip.
+                 "assumed": bool(assumed_default)}
         # The semantic compiler offers a grounded reference query as a HINT in the prompt above;
         # it no longer OVERRIDES the LLM. Overriding served confidently-wrong answers whenever the
         # compiler could not faithfully express the question — a computed late-delivery condition, a
@@ -2285,6 +2297,12 @@ async def _stream_chat(
                 _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
             if _rcpt.get("id_arithmetic"):
                 _guards.append(("flagged", "guard:id_arithmetic", "a measure was multiplied by an id/key column; magnitude caveated inline"))
+            if _rcpt.get("assumed"):
+                # The user's own "answer anyway" — a DISCLOSED assumption, recorded on
+                # the receipt so the reader can see what the answer rests on.
+                _guards.append(("flagged", "guard:assumed_reading",
+                                "the question was open to more than one reading and a best guess was requested; "
+                                "one reading was chosen and is disclosed in the answer"))
             if _cx.ambiguous:
                 # The #1 NL2SQL challenge (ambiguity): the question was under-specified.
                 # Surface it honestly on the receipt rather than silently guessing.
@@ -3875,7 +3893,11 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
-                         schema_scope=req.schema_name),
+                         schema_scope=req.schema_name,
+                         # "Answer anyway" = skipped WITHOUT supplying a reading. When a
+                         # reading did come back the choice is recorded and crystallized,
+                         # so there is nothing to disclose.
+                         assumed_default=bool(req.skip_clarify and not req.clarify_reading)),
             budget=_insight_budget(conn_id),
         ):
             yield sse
