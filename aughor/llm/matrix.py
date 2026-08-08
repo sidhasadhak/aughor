@@ -188,6 +188,17 @@ VOUCHED: tuple[VouchedModel, ...] = (
     VouchedModel("together", "Qwen/Qwen2.5-Coder-32B-Instruct", "", False),
     VouchedModel("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "", False),
     VouchedModel("together", "deepseek-ai/DeepSeek-V3", "", False),
+
+    # ── Faux (the scripted test backend, aughor/llm/faux.py) ── these ids assert no
+    # fact about the outside world: the backend serves whatever the test scripted, by
+    # construction, so "can it serve" is categorically true and the entries exist to
+    # keep the every-shipped-default-is-accounted-for sweep and the agent vouch checks
+    # coherent. Never operator-selectable (absent from provider.BACKENDS).
+    VouchedModel("faux", "faux-coder", "", False, "scripted test backend — serves by construction"),
+    VouchedModel("faux", "faux-narrator", "", False, "scripted test backend — serves by construction"),
+    VouchedModel("faux", "faux-fast", "", True, "scripted test backend — the cheap-tier stand-in"),
+    VouchedModel("faux", "faux-capable", "", False,
+                 "scripted test backend — declared CAPABLE in profile.py for tier tests"),
 )
 
 _BY_KEY: dict[tuple[str, str], VouchedModel] = {(v.backend, v.model): v for v in VOUCHED}

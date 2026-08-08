@@ -412,6 +412,14 @@ def list_orphaned_running_investigations() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+#: The reason written on rows a process restart orphaned. The control-room error-rate
+#: split matches this EXACTLY (aughor/routers/control_room.py imports it) — a guard
+#: whose matching key drifts from its producer goes blind, so there is one definition.
+#: It is a MATCHING KEY, not prose: the user-facing uncertainty wording
+#: (kernel/jobs.py UNCERTAIN_RESULT) must never be appended here.
+ORPHAN_REASON = "server restart (orphaned)"
+
+
 def reconcile_orphaned_investigations() -> int:
     """Boot-time reconciliation: a freshly-started process has nothing genuinely
     running, so EVERY 'running' row is an orphan from the prior process. Fail all
@@ -434,7 +442,7 @@ def reconcile_orphaned_investigations() -> int:
     c.close()
     for r in rows:
         _emit_lifecycle(r["id"], "investigation.failed", conn_id=r["connection_id"],
-                        canvas_id=r["canvas_id"], status="failed", reason="server restart (orphaned)")
+                        canvas_id=r["canvas_id"], status="failed", reason=ORPHAN_REASON)
     return len(rows)
 
 

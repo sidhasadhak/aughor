@@ -709,12 +709,18 @@ export async function consumeStream(
   }
 }
 
+// The one shared sentence for interrupted work (unified plan Layer 0.4) — mirrors
+// aughor/kernel/jobs.py UNCERTAIN_RESULT. Interrupted ≠ failed: "failed" claims a
+// fact nobody observed, so every surface that gives up on learning the truth says
+// this instead of coining its own wording.
+export const UNCERTAIN_RESULT = "its result is uncertain and was not replayed";
+
 // WP-2 — after an SSE drop, poll the investigation's persisted terminal state so the
 // turn resolves to the TRUTH (completed / failed / timed-out) rather than a misleading
 // "interrupted". Always ends in exactly one DONE or ERROR — never a stuck spinner.
 async function recoverAfterDrop(invId: string | null, dispatch: (a: ChatAction) => void) {
   if (!invId) {
-    dispatch({ type: "ERROR", message: "Connection dropped before the run was identified." });
+    dispatch({ type: "ERROR", message: `Connection dropped before the run was identified — ${UNCERTAIN_RESULT}.` });
     return;
   }
   dispatch({ type: "STATUS_TEXT", text: "Connection dropped — recovering the investigation…" });
@@ -746,7 +752,7 @@ async function recoverAfterDrop(invId: string | null, dispatch: (a: ChatAction) 
     }
     // running / paused → keep polling until it settles or the deadline passes
   }
-  dispatch({ type: "ERROR", message: "Connection dropped; the investigation may still be running — check History." });
+  dispatch({ type: "ERROR", message: `Connection dropped and the run did not settle in time — ${UNCERTAIN_RESULT}. Check History for the outcome.` });
 }
 
 // Tiny session ID generator — no external deps

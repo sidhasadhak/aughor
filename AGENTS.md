@@ -33,6 +33,13 @@ reasoning lives in the wave arc docs under `docs/`.
   this" teaches the reader the data does not exist.
 - **Supersede, do not delete.** Findings, ontology overrides and artifacts are superseded
   with history intact. The exceptions are deliberate and documented where they occur.
+- **Reversing durable intent must clear the durable record before acting.** A delete
+  guarded only by a filesystem op is not durably deleted: anything re-materialized from a
+  seed, a mirror or a scan quietly comes back. The tombstone — not the file's absence — is
+  the authority (`connectors/file/local_upload.py` paid for this: removed seed schemas
+  resurrected on every construction until the delete path wrote `_removed_seeds.json`
+  first, and the tombstone now rides object-store mirroring so the delete survives a
+  mirror round-trip).
 - **One word, one concept.** [`docs/GLOSSARY.md`](docs/GLOSSARY.md) is the authority for
   names in code, UI copy, prompts and flag labels — and it is enforced, not advisory:
   `tests/unit/test_vocabulary_ratchet.py` holds a measured baseline per retired term, and a
