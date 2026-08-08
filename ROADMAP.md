@@ -14,7 +14,19 @@
 
 ## 0 · Immediate next action ⏭️
 
-### ⏭️ NEXT SESSION — start here
+### ⏭️ 2026-08-08 — the forward plan of record is now [`docs/UNIFIED_ADOPTION_PLAN_2026-08-08.md`](docs/UNIFIED_ADOPTION_PLAN_2026-08-08.md) (v2)
+
+The Prime Agent + Open-WebUI adoption program: durable knowledge (Continual Harness),
+conversational aliveness, the `_stream_converse` body, platform robustness, frontend
+steerability. **v2 is reconciled against PR #271** (flag endgame → registry of 2,
+Track A1–A6, A4 guard receipts, B2/B3 organs, S1/S3/S5): four of its items got their
+first half shipped there — guard-receipt emission, follow-up frames, model-derived
+output budgets, and the fix-it capture pattern — and the plan's waves are re-scoped
+accordingly. It composes with (not replaces) `docs/ROADMAP_INTELLIGENCE_AND_CHAT_2026-08-01.md`:
+Layer 3 lands on the existing shell first, then Track C's C2–C4 adopt it; Layer 5 merges
+into Tracks B/C. Flag policy: ≤5 new EXPERIMENT loans, each naming its exit in the plan.
+
+### ⏭️ Previous session pointer (2026-07-26 program — Waves L→G→O→Q→S now COMPLETE through S)
 
 **📋 The forward plan of record is [`docs/PLATFORM_PROGRAM_2026-07-26.md`](docs/PLATFORM_PROGRAM_2026-07-26.md)**
 — the v2 wave roadmap (**L → G → O → Q → S**), built from the Databricks
