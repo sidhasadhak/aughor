@@ -39,13 +39,16 @@ type JobFilter = "active" | "all" | "succeeded" | "failed";
 const JOB_STATE_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "muted"> = {
   RUNNING: "info", PENDING: "muted", PAUSED: "caution",
   SUCCEEDED: "positive", FAILED: "negative", CANCELLED: "caution",
+  // Interrupted is not an error — the process died holding the job, and nobody
+  // observed a failure. Caution, like Cancelled, rather than the negative hue.
+  INTERRUPTED: "caution",
 };
 
 const JOB_FILTERS: { id: JobFilter; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "all", label: "All" },
   { id: "succeeded", label: "Succeeded" },
-  { id: "failed", label: "Failed / Cancelled" },
+  { id: "failed", label: "Failed / Stopped" },
 ];
 
 export function FleetOverviewPanel({ onOpenAgent }: {
@@ -100,7 +103,9 @@ export function FleetOverviewPanel({ onOpenAgent }: {
     if (jobFilter === "all") return jobs;
     if (jobFilter === "active") return jobs.filter(j => ["RUNNING", "PENDING", "PAUSED"].includes(j.state));
     if (jobFilter === "succeeded") return jobs.filter(j => j.state === "SUCCEEDED");
-    return jobs.filter(j => j.state === "FAILED" || j.state === "CANCELLED");
+    // INTERRUPTED belongs here so a restart-killed job is still findable — it is a
+    // terminal state, and without it those rows would appear under no filter but "All".
+    return jobs.filter(j => ["FAILED", "CANCELLED", "INTERRUPTED"].includes(j.state));
   }, [jobs, jobFilter]);
 
   const togglePause = async (row: FleetRow) => {

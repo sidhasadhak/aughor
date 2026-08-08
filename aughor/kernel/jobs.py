@@ -60,18 +60,29 @@ class JobState:
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    #: The process died with this job in flight — a restart, a lost lease, a worker
+    #: that stopped heartbeating. "It broke" and "we do not know how far it got" are
+    #: different facts, and recording the second as the first is a falsehood, not a
+    #: safe default: it charges an infrastructure event to the agent's error rate and
+    #: tells the reader a failure was observed when none was. Not a flag, for the
+    #: same reason — an off-path that lies is not an off-path.
+    INTERRUPTED = "INTERRUPTED"
 
     ACTIVE = (PENDING, RUNNING, PAUSED)
-    TERMINAL = (SUCCEEDED, FAILED, CANCELLED)
+    TERMINAL = (SUCCEEDED, FAILED, CANCELLED, INTERRUPTED)
 
 
 _LEGAL = {
-    JobState.PENDING: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED},
-    JobState.RUNNING: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED, JobState.PAUSED},
-    JobState.PAUSED: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED},
+    JobState.PENDING: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED,
+                       JobState.INTERRUPTED},
+    JobState.RUNNING: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED,
+                       JobState.PAUSED, JobState.INTERRUPTED},
+    JobState.PAUSED: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED,
+                      JobState.INTERRUPTED},
     JobState.SUCCEEDED: set(),
     JobState.FAILED: set(),
     JobState.CANCELLED: set(),
+    JobState.INTERRUPTED: set(),
 }
 
 _HEARTBEAT_SECONDS = 15
@@ -444,8 +455,9 @@ class JobKernel:
             self.ledger.emit("job.orphaned", {"kind": job["kind"]},
                              conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
                              job_id=job["id"])
-            # PENDING/PAUSED → FAILED is legal; RUNNING → FAILED is legal.
-            self._transition(job["id"], JobState.FAILED,
+            # INTERRUPTED, not FAILED: the process died holding this job. Nobody
+            # observed a failure, and the error rate must not be charged for a restart.
+            self._transition(job["id"], JobState.INTERRUPTED,
                              error=f"lease lapsed (orphaned) — {UNCERTAIN_RESULT}")
             if job["kind"] == "exploration":
                 resumable.append(job)
@@ -458,8 +470,8 @@ class JobKernel:
     # ── the Supervisor ────────────────────────────────────────────────────────
 
     def sweep_stale(self, *, stale_after: int = _STALE_SECONDS) -> int:
-        """Fail RUNNING jobs whose heartbeat went silent and whose task is gone —
-        the in-process orphan case (task died without a terminal transition)."""
+        """Mark INTERRUPTED any RUNNING job whose heartbeat went silent and whose task
+        is gone — the in-process orphan case (task died without a terminal transition)."""
         n = 0
         cutoff = datetime.now(timezone.utc).timestamp() - stale_after
         for job in self.ledger.jobs_where(states=[JobState.RUNNING]):
@@ -472,7 +484,7 @@ class JobKernel:
                 hb_ts = 0
             if hb_ts < cutoff:
                 if self._transition(
-                        job["id"], JobState.FAILED,
+                        job["id"], JobState.INTERRUPTED,
                         error=f"orphaned (stale heartbeat, no live task) — {UNCERTAIN_RESULT}"):
                     n += 1
         return n

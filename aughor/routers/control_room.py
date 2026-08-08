@@ -17,7 +17,9 @@ Honesty rules the fleet table is built on (each earned by a measurement):
   (orphaned restarts never reach the metering flush) — those are counted as
   `unmetered_runs`, never as 0 tokens.
 - **An orphaned restart is not an agent error.** The error-rate tile excludes
-  `server restart (orphaned)` failures and reports them separately.
+  interrupted runs (`JobState.INTERRUPTED`) and reports them separately. That used
+  to be an error-string match, which silently never fired for jobs — the string it
+  compared against is the investigations wording.
 - **Concurrency is what the kernel actually has**: one global cap plus an
   exemption set (`concurrency_policy()`), not per-agent knobs.
 """
@@ -95,7 +97,16 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
         if started and finished:
             durations_ms.append((finished - started).total_seconds() * 1000)
         state = j.get("state")
-        if state == "FAILED":
+        if state == "INTERRUPTED":
+            orphaned += 1
+        elif state == "FAILED":
+            # The legacy string match stays for rows written before INTERRUPTED
+            # existed. It never matched a JOB even then — `_ORPHAN_ERROR` is the
+            # *investigations* wording, while an orphaned job says "lease lapsed
+            # (orphaned)" — so every restart-killed job has been counted as an agent
+            # error, which is exactly what this split exists to prevent. The status
+            # is now the authority; a key that must equal a sentence is how a guard
+            # goes blind.
             if (j.get("error") or "") == _ORPHAN_ERROR:
                 orphaned += 1
             else:
@@ -141,7 +152,9 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
         })
         row["runs"] += 1
         row["kinds"].add(j.get("kind") or "")
-        if j.get("state") == "FAILED":
+        if j.get("state") == "INTERRUPTED":
+            row["orphaned"] += 1
+        elif j.get("state") == "FAILED":
             row["orphaned" if (j.get("error") or "") == _ORPHAN_ERROR else "failed"] += 1
         metrics = j.get("metrics") or {}
         if isinstance(metrics, dict) and metrics.get("total_tokens") is not None:
