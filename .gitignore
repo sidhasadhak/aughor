@@ -92,11 +92,17 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 data/ontology_recommendations/
-# NOTE: data/ontology_overrides/ and data/context_graph/ are deliberately NOT ignored.
-# They are the version-controllable artifacts (the ontology override overlay and the
-# Wave-C connection knowledge graph) — a nested json escapes the non-recursive
-# data/*.json rule on purpose, so a graph can be reviewed in a diff and shipped to a
-# teammate. See aughor/ontology/context_graph_store.py and overrides.py.
+# NOTE: FOUR data/ paths are deliberately NOT ignored, because each store's own
+# docstring declares it a version-controllable artifact rather than runtime state:
+#   data/ontology_overrides/     the human override overlay        (overrides.py)
+#   data/context_graph/          the Wave-C knowledge graph        (context_graph_store.py)
+#   data/ontology_docs/          the R8 Merkle doc tree            (doctree.py: "git-reviewable")
+#   data/ontology_column_config/ the R11 per-column config         (column_config.py)
+# A nested json/yaml escapes the non-recursive data/*.json rule on purpose, so these
+# can be reviewed in a diff and shipped to a teammate. Adding any of them here once
+# silently negated Waves C and E4 (PR #218) — read the store's docstring first.
+# To keep a PRIVATE connection's artifacts out of a public repo, point the store
+# elsewhere instead of ignoring it: AUGHOR_ONTOLOGY_DOCS_DIR / AUGHOR_COLUMN_CONFIG_ROOT.
 evals/spider2_out/
 evals/bakeoff_out/
 evals/spider2_afix/

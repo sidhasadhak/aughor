@@ -2393,6 +2393,21 @@ async def _stream_chat(
             if _resolution is not None and _resolution.caveat:
                 _res_note = (f"\n\nGROUNDED FACT — state this once, honestly, and do NOT speculate "
                              f"about other tables or grains: {_resolution.caveat}.")
+            # The reader's declared organization — industry, reporting currency, fiscal
+            # year. This block existed but had only three callers (profile inference,
+            # the explorer, the brief), so the most-used surface in the product could
+            # not see facts the operator had explicitly stated. Empty string when
+            # nothing is declared, so an unconfigured org's prompt is unchanged.
+            _org_note = ""
+            try:
+                from aughor.orgsettings import org_context
+                _org_note = org_context(reading="this answer")
+                if _org_note:
+                    _org_note = "\n\n" + _org_note.rstrip("\n")
+            except Exception as _org_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_org_exc, "org context is additive; the answer stands without it",
+                         counter="ask.org_context")
             # Wave 2 / 2.2 — the narration half of the guard receipts.
             #
             # `_grounded_headline`, not `answer.headline`: the headline the USER sees
@@ -2412,6 +2427,7 @@ async def _stream_chat(
                 f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
+                f"{_org_note}"
                 f"{_res_note}"
                 f"{_guard_note(_rcpt)}"
             )

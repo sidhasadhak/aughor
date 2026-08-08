@@ -195,8 +195,11 @@ class TestOrphanRecovery:
         })
         return f"dead-{state}-{hb_age_s}"
 
-    def test_boot_recovery_fails_lapsed_leases_and_returns_explorations(self, ledger):
+    def test_boot_recovery_interrupts_lapsed_leases_and_returns_explorations(self, ledger):
         """The lease contract: a RUNNING row whose heartbeat lapsed is an orphan
+        — and an orphan is INTERRUPTED, not FAILED. Nobody observed a failure; the
+        process died holding the job, and recording that as a failure charges an
+        infrastructure event to the agent's error rate (Wave 4 / 4.1b).
         wherever it ran — failed, explorations returned for respawn. The OLD rule
         ('every non-terminal row at boot is dead') was sound only while exactly one
         process ever ran; these rows are aged past the lease to stay orphans."""
@@ -204,9 +207,9 @@ class TestOrphanRecovery:
         jid = self._orphan_row(ledger, hb_age_s=600)
         other = self._orphan_row(ledger, kind="brief_delivery", hb_age_s=601)
         resumable = k.boot_recovery()
-        assert ledger.job_get(jid)["state"] == JobState.FAILED
+        assert ledger.job_get(jid)["state"] == JobState.INTERRUPTED
         assert "lease lapsed" in ledger.job_get(jid)["error"]
-        assert ledger.job_get(other)["state"] == JobState.FAILED
+        assert ledger.job_get(other)["state"] == JobState.INTERRUPTED
         assert [j["id"] for j in resumable] == [jid]     # only explorations
         # Idempotent: a clean second pass finds nothing
         assert k.boot_recovery() == []
@@ -221,27 +224,27 @@ class TestOrphanRecovery:
         dead = self._orphan_row(ledger, kind="brief_delivery", hb_age_s=600)
         resumable = k.boot_recovery()
         assert ledger.job_get(owned)["state"] == JobState.RUNNING     # not touched
-        assert ledger.job_get(dead)["state"] == JobState.FAILED
+        assert ledger.job_get(dead)["state"] == JobState.INTERRUPTED
         assert resumable == []                                 # the survivor isn't respawned
         foreign = [e for e in ledger.events(kind="job.foreign")]
         assert [e["job_id"] for e in foreign] == [owned]       # the skip is observable
 
-    def test_boot_recovery_still_fails_pending_rows_regardless_of_age(self, ledger):
+    def test_boot_recovery_still_interrupts_pending_rows_regardless_of_age(self, ledger):
         """PENDING rows have no owner and nothing will ever pick them up (submit
         attaches the runner in-process) — failed on sight, or the orphaned-state
         class WCH-6 closed comes back."""
         k = JobKernel(ledger)
         pending = self._orphan_row(ledger, state=JobState.PENDING, hb_age_s=0)
         k.boot_recovery()
-        assert ledger.job_get(pending)["state"] == JobState.FAILED
+        assert ledger.job_get(pending)["state"] == JobState.INTERRUPTED
 
-    def test_sweep_stale_fails_only_stale_taskless_jobs(self, ledger):
+    def test_sweep_stale_interrupts_only_stale_taskless_jobs(self, ledger):
         k = JobKernel(ledger)
         stale = self._orphan_row(ledger, hb_age_s=600)
         fresh = self._orphan_row(ledger, hb_age_s=5)
         n = k.sweep_stale(stale_after=120)
         assert n == 1
-        assert ledger.job_get(stale)["state"] == JobState.FAILED
+        assert ledger.job_get(stale)["state"] == JobState.INTERRUPTED
         assert "stale heartbeat" in ledger.job_get(stale)["error"]
         assert ledger.job_get(fresh)["state"] == JobState.RUNNING
 

@@ -130,11 +130,22 @@ def test_fleet_orphaned_restarts_are_not_agent_errors(client, ledger):
     ledger.job_insert({"id": "job-cr3-orphan", "kind": "profile", "state": "FAILED",
                        "attempt": 1, "created_at": now})
     ledger.job_update("job-cr3-orphan", error="server restart (orphaned)")
+    # Wave 4 / 4.1b — the real shape an orphaned JOB now takes. The error-string
+    # match above never fired for a job (that wording belongs to investigations), so
+    # every restart-killed job was landing in `failed`; the terminal status is the
+    # authority now, and a key that must equal a whole sentence is how a guard goes
+    # blind.
+    ledger.job_insert({"id": "job-cr3-interrupted", "kind": "profile",
+                       "state": "INTERRUPTED", "attempt": 1, "created_at": now})
+    ledger.job_update("job-cr3-interrupted",
+                      error="lease lapsed (orphaned) — its result is uncertain "
+                            "and was not replayed")
 
     body = client.get("/control-room/fleet").json()
     curator = next(r for r in body["rows"] if r["id"] == "curator")
-    assert curator["orphaned"] >= 1
+    assert curator["orphaned"] >= 2, "both the legacy and the status-based orphan count"
     assert curator["failed"] == 0, "an orphaned restart must not read as an agent failure"
+    assert body["tiles"]["orphaned_runs"] >= 2
 
 
 # ── CR4: needs a human ───────────────────────────────────────────────────────────
