@@ -19,7 +19,9 @@ agent involvement), which is the plug-and-play property the boundary guarantees.
 """
 from __future__ import annotations
 
-from typing import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Callable, Optional
 
 from aughor.kernel.errors import tolerate
 
@@ -54,10 +56,59 @@ def run_post_execute_hooks(sql: str, result, connection_id) -> None:
             tolerate(e, f"post-execute hook {name!r}", counter=f"exec.post.{name}")
 
 
+#: Receipts emitted inside an open :func:`collect_guard_receipts` block. A ContextVar
+#: rather than a module list so concurrent requests — and the worker threads a fan-out
+#: spawns, which inherit the context — never pour into each other's collection.
+_COLLECTOR: ContextVar[Optional[list]] = ContextVar("guard_receipt_collector", default=None)
+
+
+@contextmanager
+def collect_guard_receipts():
+    """Accumulate the guard interventions raised inside this block.
+
+    The hook fan-out below is push-only: a receipt goes out to whoever registered a
+    sink and is gone. That is right for the SSE stream, where the frame is the point,
+    but it means a caller cannot ask "what did the guards do to the query I just ran"
+    — the answer only existed as something already sent to somebody else.
+
+    Yields the list, which fills as receipts arrive::
+
+        with collect_guard_receipts() as receipts:
+            result = execute_guarded(conn, sql, query_id=...)
+        return {"result": result, "guard_receipts": receipts}
+
+    Collecting does not consume: registered hooks still fire, so opening a collector
+    around code that also streams cannot silently cost the UI its frames. Nested
+    blocks each collect independently, and the outer one does not see the inner's —
+    a collector is about one caller's own question.
+    """
+    token = _COLLECTOR.set([])
+    try:
+        yield _COLLECTOR.get()
+    finally:
+        _COLLECTOR.reset(token)
+
+
 def emit_guard_receipt(guard: str, action: str, detail: str = "",
                        before=None, after=None) -> None:
     """Report a guard intervention (A4). No hook registered = free no-op, which is
-    what a bare platform (tests, scripts) gets."""
+    what a bare platform (tests, scripts) gets.
+
+    Also lands in the innermost open collector, if any — see
+    :func:`collect_guard_receipts`.
+    """
+    sink = _COLLECTOR.get()
+    if sink is not None:
+        try:
+            payload = {"guard": guard, "action": action, "detail": (detail or "")[:500]}
+            if before is not None:
+                payload["before"] = str(before)[:2000]
+            if after is not None:
+                payload["after"] = str(after)[:2000]
+            sink.append(payload)
+        except Exception as e:
+            tolerate(e, "guard-receipt collection is additive; the hooks still fired",
+                     counter="exec.guard.collect")
     for name, fn in list(_GUARD_RECEIPT):
         try:
             fn(guard, action, detail, before, after)
