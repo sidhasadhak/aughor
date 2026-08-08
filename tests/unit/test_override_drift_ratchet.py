@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from aughor.evals.promotion import evaluate_graduation
 
-FLAGS = {"graph.readback", "closed_loop", "semops.champion_validate"}
+FLAGS = {"explore.route_wide", "federation.planner", "graph.readback"}
 
 
 def _clean_summary(total: int = 9) -> dict:
@@ -38,7 +38,7 @@ def _drift(**flags: bool) -> dict:
 
 
 def test_a_clean_run_on_a_clean_box_graduates():
-    d = evaluate_graduation("graph.readback", _clean_summary(),
+    d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS, override_drift={})
     assert d.can_graduate is True
     assert d.reasons == []
@@ -48,38 +48,38 @@ def test_a_clean_run_on_a_clean_box_graduates():
 def test_a_contradicting_override_blocks_an_otherwise_perfect_run():
     """The run is 9/9 with no baseline to beat — the decision is refused purely because
     the environment it was measured in is not one anybody else runs."""
-    d = evaluate_graduation("graph.readback", _clean_summary(),
+    d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS,
-                            override_drift=_drift(closed_loop=True))
+                            override_drift=_drift(**{"federation.planner": True}))
 
     assert d.can_graduate is False
     assert any("contradict a fresh clone" in r for r in d.reasons)
     # The refusal NAMES the drifted flag and which way it differs, so the fix is obvious
     # without a second investigation.
-    assert any("closed_loop is on here but off on a fresh clone" in r for r in d.reasons)
+    assert any("federation.planner is on here but off on a fresh clone" in r for r in d.reasons)
 
 
 def test_drift_in_an_unrelated_flag_still_blocks():
     """Deliberately not scoped to the flag under decision. The overrides that move a
     measurement are the ones nobody was thinking about — scoping the check to the
     candidate would miss exactly those."""
-    d = evaluate_graduation("graph.readback", _clean_summary(),
+    d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS,
-                            override_drift=_drift(**{"semops.champion_validate": True}))
+                            override_drift=_drift(**{"graph.readback": True}))
     assert d.can_graduate is False
-    assert any("semops.champion_validate" in r for r in d.reasons)
+    assert any("graph.readback" in r for r in d.reasons)
 
 
 def test_the_drift_is_recorded_on_the_receipt_not_only_in_the_refusal():
     """A receipt has to state the configuration it was measured in, so a later reader can
     re-judge it. Carried on passing decisions too."""
-    drift = _drift(closed_loop=True)
-    d = evaluate_graduation("graph.readback", _clean_summary(),
+    drift = _drift(**{"federation.planner": True})
+    d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS, override_drift=drift)
     assert d.override_drift == drift
     assert d.to_dict()["override_drift"] == drift
 
-    clean = evaluate_graduation("graph.readback", _clean_summary(),
+    clean = evaluate_graduation("explore.route_wide", _clean_summary(),
                                 registered_flags=FLAGS, override_drift={})
     assert "override_drift" in clean.to_dict()
 
@@ -87,10 +87,10 @@ def test_the_drift_is_recorded_on_the_receipt_not_only_in_the_refusal():
 def test_drift_is_reported_even_when_there_is_no_run():
     """The no-run early return must not drop the configuration — otherwise the one
     decision most likely to be retried says nothing about why it should not be."""
-    d = evaluate_graduation("graph.readback", None, registered_flags=FLAGS,
-                            override_drift=_drift(closed_loop=True))
+    d = evaluate_graduation("explore.route_wide", None, registered_flags=FLAGS,
+                            override_drift=_drift(**{"federation.planner": True}))
     assert d.can_graduate is False
-    assert d.override_drift == _drift(closed_loop=True)
+    assert d.override_drift == _drift(**{"federation.planner": True})
 
 
 def test_many_drifted_flags_are_summarised_not_dumped():
@@ -141,7 +141,7 @@ def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch
     """
     import aughor.kernel.flags as flags
 
-    victim = "semops.champion_validate"          # a plain default-OFF flag
+    victim = "federation.planner"          # a plain default-OFF flag
     assert flags.FLAG_DEFAULT.get(victim, False) is False, "picked a flag with a real default"
 
     # The env turns it ON; the override pins it OFF. FLAG_DEFAULT says False and the

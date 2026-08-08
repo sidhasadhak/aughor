@@ -175,14 +175,15 @@ def governed_metrics(question: str, connection_id: str, *, db: Optional[object] 
 
 def schema_slice(question: str, connection_id: str, *, schema: str = "") -> str:
     """The schema-linked slice (relevant tables/columns) — the same pre-filter the
-    answer path applies (``link_schema_for_prompt``, top_k=8), falling back to the
-    full schema on failure (byte-identical to the answer path's fallback)."""
+    answer path applies, with the SAME profile-derived budgets (A3 reconciled the
+    old 4-vs-8 disagreement: a receipt must describe the prompt that actually ran),
+    falling back to the full schema on failure (byte-identical to the answer
+    path's fallback)."""
     if not schema:
         return ""
     try:
         from aughor.tools.schema_linker import link_schema_for_prompt
-        return link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8,
-                                      connection_id=connection_id)
+        return link_schema_for_prompt(question, schema, connection_id=connection_id)
     except Exception:
         logger.warning("schema-linking pre-filter failed; using full schema", exc_info=True)
         return schema

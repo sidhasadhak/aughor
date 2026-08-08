@@ -238,17 +238,15 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # I6 — surface ambiguity handling on the Trust Receipt: any resolution THIS question
         # matched in the Ambiguity Ledger (settled earlier by a probe / the user / a reviewer) is
         # recorded, so "this answer followed a previously-resolved reading" is inspectable — the
-        # machinery made honest to the user. Best-effort; gated with the ledger (closed_loop).
+        # machinery made honest to the user. Best-effort.
         _resolved_ambig: list = []
         try:
-            from aughor.feedback.priors import closed_loop_enabled
-            if closed_loop_enabled():
-                from aughor.semantic.ambiguity_ledger import retrieve_resolutions
-                for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
-                    _resolved_ambig.append({"subject": _r.subject, "reading": _r.resolved_reading,
-                                            "source": _r.resolution_source})
-                    lineage.append(("resolved_ambiguity", f"reading:{_r.subject[:60]}",
-                                    f"{_r.resolved_reading} (resolved by {_r.resolution_source})"))
+            from aughor.semantic.ambiguity_ledger import retrieve_resolutions
+            for _r, _sc in retrieve_resolutions(question, connection_id, top_k=3):
+                _resolved_ambig.append({"subject": _r.subject, "reading": _r.resolved_reading,
+                                        "source": _r.resolution_source})
+                lineage.append(("resolved_ambiguity", f"reading:{_r.subject[:60]}",
+                                f"{_r.resolved_reading} (resolved by {_r.resolution_source})"))
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ambiguity-ledger lineage on the Trust Receipt is best-effort; the receipt still writes without it",
@@ -492,9 +490,10 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
                 {next_graph, next_prog}, return_when=asyncio.FIRST_COMPLETED)
             if next_prog in done:
                 _p = next_prog.result()
-                # Two payload types share the sink queue: a report-delta (R6, already
-                # self-tagged) passes through verbatim; a phase-progress marker is wrapped.
-                if isinstance(_p, dict) and "__report_delta__" in _p:
+                # Three payload types share the sink queue: a report-delta (R6) and a
+                # guard receipt (A4) are self-tagged and pass through verbatim; a
+                # phase-progress marker is wrapped.
+                if isinstance(_p, dict) and ("__report_delta__" in _p or "__guard_receipt__" in _p):
                     yield _p
                 else:
                     yield {"__ada_progress__": _p}
@@ -711,6 +710,8 @@ class InvestigateRequest(BaseModel):
     # canvas composes on the previous query instead of starting cold — parity with the
     # quick /chat path. Same shape /chat + /ask accept.
     history: list[ChatHistoryTurn] = []
+    # P4 pause posture — see AskRequest.allow_clarify.
+    allow_clarify: bool = True
 
 
 class FeedbackRequest(BaseModel):
@@ -765,6 +766,13 @@ class AskRequest(BaseModel):
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
+    # P4 pause posture (replaces the deleted `deep_analysis.clarify_gate` flag,
+    # 2026-08-06): may this run PAUSE to ask which metric reading was meant? A
+    # headless consumer that cannot answer an interrupt passes False and gets a
+    # complete (silently-chosen) report instead of a truncated run. The data
+    # trigger (a material reading divergence) is unchanged — this only decides
+    # whether the run may stop to ask a human.
+    allow_clarify: bool = True
     # I4 — the reading the user chose when answering a clarify (the chip text / typed detail).
     # When present, it crystallizes into the Ambiguity Ledger (source=user) so the class never
     # re-ambiguates on this connection. `clarify_subject` is the original ambiguous question
@@ -797,9 +805,6 @@ class OutcomeRequest(BaseModel):
     metric_before: Optional[float] = None
     metric_after: Optional[float] = None
 
-
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "pareto", "stacked_bar", "scatter",
-                      "multi_line", "heatmap", "treemap", "combo"}
 
 # Concentration / 80-20 intent — only the QUESTION carries this, so the chart
 # selection has to read it here (the renderer never sees the question). Models
@@ -1411,13 +1416,15 @@ async def _stream_chat(
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
-        # Hard cap: max 10 tables in context
+        # Hard cap on tables in context — profile-derived (A3): the linker output
+        # is rank-ordered, so a first-N cut here keeps the top-N ranked tables.
         try:
+            from aughor.llm.profile import profile_for
             from aughor.tools.data_catalog import enforce_context_cap
-            schema = enforce_context_cap(schema, max_tables=10)
+            schema = enforce_context_cap(schema, max_tables=profile_for("coder").context_table_cap)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "10-table context cap is best-effort; answering from the uncapped schema context",
+            tolerate(exc, "table context cap is best-effort; answering from the uncapped schema context",
                      counter="chat.context_cap")
 
         # ── final_text path: definitional questions answered from KB ──
@@ -1828,14 +1835,25 @@ async def _stream_chat(
                 if _rw and _rw.strip() != final_sql.strip():
                     _dry_ok, _ = db.dry_run(_rw)
                     if _dry_ok:
+                        _before_sql = final_sql
                         final_sql = _rw
                         _adopted = True
                         _rcpt["defan"] = True
                         yield _sse("sql", {"sql": final_sql})
                         yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
+                        yield _sse("guard_receipt", {
+                            "guard": "fanout_defan", "action": "rewrote_sql",
+                            "detail": (f"join fans out {_ff.hub_root} across "
+                                       f"{', '.join(_ff.satellites or [])} - replaced with the "
+                                       "exact pre-aggregated rewrite"),
+                            "before": _before_sql[:2000], "after": final_sql[:2000]})
                 if not _adopted:
                     _fanout_fix_hint = _ff.to_prompt_text()
                     yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
+                    yield _sse("guard_receipt", {
+                        "guard": "fanout_defan", "action": "hinted",
+                        "detail": ("fan-out detected but no provable rewrite exists; the "
+                                   "repair hint goes back to the model instead")})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "fan-out detection/de-fan guard is best-effort; executing the original SQL",
@@ -1848,17 +1866,29 @@ async def _stream_chat(
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)
+                # A4 - the repair round sees what the guards already did, so a fix
+                # cannot undo an adopted de-fan without knowing it existed.
+                _lint_hint_txt = _lint_hint(_lint_issues)
+                if _rcpt.get("defan"):
+                    _lint_hint_txt += (
+                        "\nGUARD ALREADY APPLIED: the SQL was de-fanned (pre-aggregated "
+                        "to avoid join over-counting) - preserve that structure in your fix.")
+                _before_lint = final_sql
                 _lint_fix = await asyncio.to_thread(
                     lambda: _writer.fix(
                         final_sql,
                         "SQL quality issues detected before execution",
-                        hint=_lint_hint(_lint_issues),
+                        hint=_lint_hint_txt,
                         max_retries=1,
                     )
                 )
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
                     _rcpt["lint"] = True
+                    yield _sse("guard_receipt", {
+                        "guard": "sql_lint", "action": "rewrote_sql",
+                        "detail": "; ".join(i.message for i in _lint_issues[:3])[:400],
+                        "before": _before_lint[:2000], "after": final_sql[:2000]})
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "lint auto-fix is non-fatal; proceeding with the original SQL",
@@ -2038,6 +2068,13 @@ async def _stream_chat(
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
         _rcpt["grounded"] = (_grounded_headline or "") != (answer.headline or "")
+        if _rcpt["grounded"]:
+            yield _sse("guard_receipt", {
+                "guard": "headline_grounding", "action": "rewrote_headline",
+                "detail": ("the model's headline was a pre-execution prediction; it was "
+                           "re-grounded in the rows the query actually returned"),
+                "before": (answer.headline or "")[:2000],
+                "after": (_grounded_headline or "")[:2000]})
         # Narration-inversion caveat: a per-group value stated as UNIVERSAL ("all
         # orders have 3 items") over a varying result. We can't drop a user's answer,
         # so qualify it inline instead of asserting a falsehood. High-precision, so
@@ -2050,6 +2087,10 @@ async def _stream_chat(
             )
             _rcpt["narration_inversion"] = True
             logger.info("[chat] narration-inversion caveat applied to headline")
+            yield _sse("guard_receipt", {
+                "guard": "narration_inversion", "action": "caveated_headline",
+                "detail": ("a per-group value was stated as universal over a varying "
+                           "result; the claim now carries its qualification")})
         # Measure-grain caveat (backstop to the prevention block): if the executed SQL
         # summed a measure at the WRONG grain (per-unit without ×quantity, or per-line
         # ×quantity), flag the number instead of asserting it. Data-detected + cached.
@@ -2063,6 +2104,10 @@ async def _stream_chat(
             )
             _rcpt["measure_grain"] = True
             logger.info("[chat] measure-grain caveat applied to headline")
+            yield _sse("guard_receipt", {
+                "guard": "measure_grain", "action": "caveated_headline",
+                "detail": ("a measure may be summed at the wrong grain "
+                           "(per-unit vs per-line); the total carries a caution")})
         # id-arithmetic backstop: if the repair couldn't eliminate a measure×key product
         # (or a SUM/AVG over an id), the number is fabricated — caveat it instead of asserting.
         try:
@@ -2074,6 +2119,10 @@ async def _stream_chat(
                 )
                 _rcpt["id_arithmetic"] = True
                 logger.info("[chat] id-arithmetic caveat applied to headline")
+                yield _sse("guard_receipt", {
+                    "guard": "id_arithmetic", "action": "caveated_headline",
+                    "detail": ("the total multiplies a measure by an id/key column; "
+                               "the magnitude is flagged untrustworthy")})
         except Exception as _e:
             logger.debug("chat id-arithmetic backstop is best-effort; skipped: %s", _e)
         # WP-1e — E1 function-semantics checks on the LIVE answer (flag `trust.e1_live`):
@@ -2097,10 +2146,20 @@ async def _stream_chat(
                     _rcpt["e1_checks"] = [t.pattern for t in _e1_hits]
                     logger.info("[chat] E1 trust-check caveat applied to headline: %s",
                                 [t.pattern for t in _e1_hits])
+                    yield _sse("guard_receipt", {
+                        "guard": "e1_trust_checks", "action": "caveated_headline",
+                        "detail": _e1_msgs[:400]})
             except Exception as _e:
                 logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
+        _chart_before = answer.chart_type
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
+        if answer.chart_type != _chart_before:
+            yield _sse("guard_receipt", {
+                "guard": "concentration_pareto", "action": "overrode_chart",
+                "detail": ("the question asks about concentration (80/20) over a ranked "
+                           "measure; a Pareto states that claim, the picked chart did not"),
+                "before": _chart_before, "after": answer.chart_type})
         # Chart-grammar exhibit for the quick answer — computed from the result grid alone
         # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
         # chart_config so no new event/persistence surface is needed; absent when the
@@ -2528,6 +2587,7 @@ async def _stream_investigation(
     history: Optional[list] = None,
     requested_mode: str = "investigate",
     purpose: str = "",
+    allow_clarify: bool = True,
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -2657,7 +2717,7 @@ async def _stream_investigation(
         # Schema-linking pre-filter: narrow to relevant tables/columns per question.
         try:
             from aughor.tools.schema_linker import link_schema
-            schema = link_schema(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+            schema = link_schema(question, schema, connection_id=connection_id)
         except Exception:
             logger.warning("Schema-linking pre-filter failed (agentic path); using full schema", exc_info=True)
         # Build structured Data Catalog from linked tables
@@ -2675,7 +2735,9 @@ async def _stream_investigation(
                 for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
-                linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
+                from aughor.llm.profile import profile_for as _pf
+                linked_tables = fk_neighbor_expand(full_schema, linked_tables,
+                                                   cap=_pf("coder").context_table_cap)
                 # Scope the expansion to the canvas schema: temporal/FK expansion walks the
                 # FULL schema and can pull a sibling schema's same-named table (netflix.products
                 # into a missimi investigation), which then becomes a cross-schema reference the
@@ -2690,15 +2752,17 @@ async def _stream_investigation(
         except Exception:
             logger.warning("Data Catalog build failed (agentic path); using linked schema", exc_info=True)
 
-        # Hard cap: max 10 tables in context
+        # Hard cap on tables in context — profile-derived (A3), rank-preserving.
         try:
+            from aughor.llm.profile import profile_for
             from aughor.tools.data_catalog import enforce_context_cap
-            schema = enforce_context_cap(schema, max_tables=10)
+            _cap = profile_for("coder").context_table_cap
+            schema = enforce_context_cap(schema, max_tables=_cap)
             if data_catalog:
-                data_catalog = enforce_context_cap(data_catalog, max_tables=10)
+                data_catalog = enforce_context_cap(data_catalog, max_tables=_cap)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "10-table context cap is best-effort; investigating with the uncapped schema context",
+            tolerate(exc, "table context cap is best-effort; investigating with the uncapped schema context",
                      counter="investigation.context_cap")
 
         # P2 Agent Context surface: expose the assembled working context (which tables
@@ -2740,11 +2804,12 @@ async def _stream_investigation(
         # (before the expensive fan-out) so the user can review/edit the sub-question
         # plan. Opt-in via AUGHOR_PLAN_GATE; off by default so the path is unchanged.
         _plan_gate = os.getenv("AUGHOR_PLAN_GATE", "").strip().lower() in ("1", "true", "yes", "on")
-        # The clarify gate ARMS an interrupt node, and an armed interrupt with nobody to
-        # answer it ends the run without a report — so this stays operator-controllable
-        # (default ON) rather than unconditional.
-        from aughor.kernel.flags import flag_enabled as _flag_enabled
-        _clarify_gate = _flag_enabled("deep_analysis.clarify_gate")
+        # The clarify gate ARMS an interrupt node, and an armed interrupt with nobody
+        # to answer it ends the run without a report — so the CALLER decides
+        # (`allow_clarify`, default True; a headless consumer passes False). This
+        # dissolved the `deep_analysis.clarify_gate` flag (2026-08-06): the posture
+        # is a property of the REQUEST, not of the deployment's env.
+        _clarify_gate = bool(allow_clarify)
         agent = build_graph_generic(db, hitl=hitl, plan_gate=_plan_gate, clarify_gate=_clarify_gate)
 
         # ONE structured origin finding — the single source of truth for "what known
@@ -2780,6 +2845,7 @@ async def _stream_investigation(
             # agents.user_defined — persist the active persona so a plan/clarify-gate
             # resume (which never passes through /ask) can re-activate it.
             "agent_id": _current_agent_id(),
+            "_allow_clarify": _clarify_gate,
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
@@ -2825,6 +2891,9 @@ async def _stream_investigation(
                 continue
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
+                continue
+            if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
+                yield _sse("guard_receipt", event["__guard_receipt__"])
                 continue
             if "__interrupt__" in event:
                 # Distinguish a plan-gate pause (P3 — before the explore fan-out) from the
@@ -3175,6 +3244,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
             if "__ada_progress__" in event:            # P2 live per-dimension progress (flag-gated)
                 yield _sse("phase_progress", event["__ada_progress__"])
                 continue
+            if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
+                yield _sse("guard_receipt", event["__guard_receipt__"])
+                continue
             if "__interrupt__" in event:
                 continue
             node_name = next(iter(event))
@@ -3309,6 +3381,7 @@ async def _investigation_job_streamed(
     history: Optional[list] = None,
     requested_mode: str = "investigate",
     purpose: str = "",
+    allow_clarify: bool = True,
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -3332,6 +3405,7 @@ async def _investigation_job_streamed(
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
                 requested_mode=requested_mode, purpose=purpose,
+                allow_clarify=allow_clarify,
             ):
                 await queue.put(sse)
         finally:
@@ -3362,6 +3436,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
+            allow_clarify=req.allow_clarify,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -3620,20 +3695,18 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # I4 — if this turn is the user ANSWERING a clarify (a reading chosen from the chips),
     # crystallize that choice into the Ambiguity Ledger (source=user) BEFORE we answer, so the
     # resolution is an authoritative prior on this turn and every future one — the class never
-    # re-ambiguates on this connection. Gated with the ledger (closed_loop); best-effort.
+    # re-ambiguates on this connection. Best-effort.
     if req.clarify_reading:
-        from aughor.feedback.priors import closed_loop_enabled
-        if closed_loop_enabled():
-            try:
-                from aughor.org.context import current_org_id
-                from aughor.semantic.ambiguity_ledger import crystallize_user_choice
-                crystallize_user_choice(
-                    conn_id, req.clarify_subject or req.question, req.clarify_reading,
-                    org_id=current_org_id() or "", clarify_source=req.clarify_source)
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "clarify-choice crystallization is best-effort",
-                         counter="ask.clarify_crystallize")
+        try:
+            from aughor.org.context import current_org_id
+            from aughor.semantic.ambiguity_ledger import crystallize_user_choice
+            crystallize_user_choice(
+                conn_id, req.clarify_subject or req.question, req.clarify_reading,
+                org_id=current_org_id() or "", clarify_source=req.clarify_source)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "clarify-choice crystallization is best-effort",
+                     counter="ask.clarify_crystallize")
 
     # Ask-vs-guess (Phase 3): when the question is materially ambiguous and this is a
     # fresh auto turn (not an explicit depth override, deep-drill, dossier, or a turn
@@ -3703,6 +3776,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             # Normally "investigate"; "explore" only when the deterministic wide detector fired
             # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
             requested_mode=route.mode,
+            allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
         ):
             yield sse
@@ -3815,13 +3889,9 @@ def ask_context_endpoint(
 
 
 def _resolve_ask_agent(req: "AskRequest"):
-    """The user-defined agent this ask runs as, or None (flag off / no agent_id)."""
+    """The user-defined agent this ask runs as, or None (no agent_id named)."""
     if not req.agent_id:
         return None
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("agents.user_defined"):
-        raise HTTPException(status_code=404,
-                            detail="user-defined agents are disabled (flag agents.user_defined)")
     from aughor.custom_agents import get_agent
     agent = get_agent(req.agent_id)
     if agent is None:
@@ -3866,11 +3936,8 @@ def persona_for_investigation(inv_id: str):
 
     Resume (plan/clarify-gate feedback) never passes through /ask, so the
     persona is re-read from the run's persisted state (`agent_id`). Fail-open:
-    a missing checkpoint, an unknown/disabled agent, or the flag being off all
-    resume the run WITHOUT the persona rather than blocking it."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("agents.user_defined"):
-        return None
+    a missing checkpoint or an unknown/disabled agent resumes the run WITHOUT
+    the persona rather than blocking it."""
     try:
         from aughor.agent.graph import read_checkpoint_values
         agent_id = read_checkpoint_values(inv_id).get("agent_id") or ""

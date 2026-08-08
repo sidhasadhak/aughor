@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from aughor.kernel.flags import flag_enabled
 from aughor.packs.loader import load_pack, list_packs
 from aughor.packs.models import Pack
 from aughor.packs.routing import select_pack
@@ -46,14 +45,12 @@ def injection_for_question(
     packs: Optional[list[Pack]] = None,
 ) -> Optional[PackInjection]:
     """Resolve the steering payload for this question, or None when nothing should steer
-    (flag off · no matching active pack · the pack is not DEPLOYED on this connection).
+    (no matching active pack · the pack is not DEPLOYED on this connection).
 
     Safety: steering requires a human-confirmed PINNED binding (load_binding). Auto-proposals
     from the resolver are for the deploy/review UI only — they can be wrong on real schemas, so
     a live run never steers off an unconfirmed guess. Deploy a pack (propose → confirm → pin)
     before it can sharpen a run."""
-    if not flag_enabled("specialist_packs"):
-        return None
     pool = packs if packs is not None else active_packs()
     # agents.user_defined — an active user-agent with EXPLICIT pack bindings
     # restricts selection to its packs (a preference, not a safety bypass: the

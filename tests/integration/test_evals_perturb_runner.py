@@ -27,7 +27,7 @@ from aughor.evals.runner import run_experiment, run_suite
 from aughor.evals.targets import reference_checker, reference_target
 from aughor.kernel.flags import clear_flag
 
-FLAG = "closed_loop"   # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
+FLAG = "explore.route_wide"   # a registered, default-off flag — one of the last two (Wave 5 hardwired closed_loop)
 
 
 @pytest.fixture(autouse=True)

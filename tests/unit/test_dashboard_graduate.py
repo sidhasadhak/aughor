@@ -16,10 +16,11 @@ client = TestClient(app)
 
 
 def _stub_monitor(monkeypatch):
+    # No scheduler stub: the automation heartbeat reads the monitor store live each
+    # tick (Wave 4 — the per-monitor scheduler sync was deleted with the legacy loop).
     captured: dict = {}
     monkeypatch.setattr("aughor.monitors.store.upsert_monitor",
                         lambda m: captured.setdefault("monitor", m) or m)
-    monkeypatch.setattr("aughor.monitors.scheduler.reload_monitor", lambda m: None)
     return captured
 
 

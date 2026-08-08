@@ -56,11 +56,27 @@ export interface ClarifyPending {
   previews: string[];
 }
 
+/** A4 — one visible guard intervention: a silent rewrite made narratable.
+ *  The Chain-of-Thought surface renders these as steps (Track B). */
+export interface GuardReceipt {
+  guard: string;
+  action: string;
+  detail: string;
+  before?: string;
+  after?: string;
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
   mode: "ask" | "investigate";
   status: "loading" | "done" | "error";
+  /** A4 — guard interventions in arrival order, both quick and deep paths. */
+  guardReceipts: GuardReceipt[];
+  /** B3 — live scan progress (deep runs): dimensions completed so far, and the
+   *  running counts, so the surface can render a Task list instead of silence. */
+  scanItems: string[];
+  scanProgress: { done: number; total: number } | null;
 
   // Ask mode
   sql: string | null;
@@ -87,7 +103,7 @@ export interface ChatTurn {
     downgradedFrom: string | null;   // "deep" when capability-gated down to quick
   } | null;
 
-  // User-agent receipt (flag `agents.user_defined`) — the persona this turn ran
+  // User-agent receipt — the persona this turn ran
   // as; opens the /ask stream when agent_id was sent. Null on plain turns.
   agent: {
     agentId: string;
@@ -213,6 +229,8 @@ export type ChatAction =
   | { type: "CLARIFY";      clarify: NonNullable<ChatTurn["clarify"]> }
   | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
+  | { type: "GUARD_RECEIPT"; receipt: GuardReceipt }
+  | { type: "SCAN_PROGRESS"; done: number; total: number; current: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
@@ -294,6 +312,8 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   agent: null,
   clarify: null,
   escalate: null,
+  guardReceipts: [],
+  scanItems: [], scanProgress: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -349,6 +369,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
     case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
+    case "GUARD_RECEIPT":
+      return updateLast(state, t => ({ ...t, guardReceipts: [...t.guardReceipts, action.receipt] }));
+    case "SCAN_PROGRESS":
+      return updateLast(state, t => ({
+        ...t,
+        scanProgress: { done: action.done, total: action.total },
+        scanItems: action.current && !t.scanItems.includes(action.current)
+          ? [...t.scanItems, action.current] : t.scanItems,
+      }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "CONTEXT_ASSEMBLED": return updateLast(state, t => ({ ...t, contextManifest: action.manifest }));
     case "PLAN_PENDING": return updateLast(state, t => ({ ...t, planPending: action.plan, status: "done" }));
@@ -539,6 +568,15 @@ export async function consumeStream(
               } });
               break;
             case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
+            case "guard_receipt":
+              dispatch({ type: "GUARD_RECEIPT", receipt: {
+                guard: (p.guard as string) ?? "",
+                action: (p.action as string) ?? "",
+                detail: (p.detail as string) ?? "",
+                before: p.before as string | undefined,
+                after: p.after as string | undefined,
+              } });
+              break;
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
             case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
@@ -577,6 +615,8 @@ export async function consumeStream(
               dispatch({ type: "STATUS_TEXT", text: current
                 ? `Scanning ${current} · ${done}/${total}…`
                 : `Scanning dimensions · ${done}/${total}…` });
+              // B3 — the same marker feeds the Task surface (per-dimension rows).
+              dispatch({ type: "SCAN_PROGRESS", done, total, current });
               break;
             }
             case "hypotheses":

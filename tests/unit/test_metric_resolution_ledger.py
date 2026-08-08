@@ -13,7 +13,21 @@ import types
 import aughor.agent.investigate as I
 from aughor.agent.prompts_investigate import IntakeOutput
 from aughor.semantic import ambiguity_ledger as L
-from aughor.semantic.canonical import CanonicalMetric
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _Metric:
+    """The attribute shape the planning resolver serves (via `_ContractMetricView`);
+    tests construct it directly — the legacy CanonicalMetric left with its resolver."""
+    name: str
+    label: str
+    sql: str
+    unit: str = ""
+    tables: list = field(default_factory=list)
+    source: str = "catalog"
+    verified: bool = True
+    caveats: str = ""
 
 
 def _intake(**over) -> IntakeOutput:
@@ -36,13 +50,13 @@ class _StubConn:
 
 
 def _governed():
-    return CanonicalMetric(name="refund_rate", label="Refund Rate",
+    return _Metric(name="refund_rate", label="Refund Rate",
                            sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
                            source="catalog", verified=True)
 
 
 def _pin_on(monkeypatch, metrics):
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: list(metrics))
 
 

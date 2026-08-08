@@ -241,6 +241,10 @@ export async function recordVerdict(input: {
   investigationId?: string;
   headline?: string;
   note?: string;
+  /** S3 fix-it: the SQL that produced the judged answer + an optional human fix —
+   *  the structural payload the closed loop reads back into planning. */
+  sqlSource?: string;
+  correctedSql?: string;
 }): Promise<void> {
   const res = await fetch(`${getApiBase()}/verify/verdict`, {
     method: "POST",
@@ -251,12 +255,85 @@ export async function recordVerdict(input: {
       investigation_id: input.investigationId ?? "",
       headline: input.headline ?? "",
       note: input.note ?? "",
+      sql_source: input.sqlSource ?? "",
+      corrected_sql: input.correctedSql ?? "",
     }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "Failed to record verdict");
   }
+}
+
+/** G2 governed tags, read path (S1/J13): the governance axis rendered on entity
+ *  pages. `securable` format is `table:catalog.schema.name`. */
+export interface GovernedTag {
+  securable: string;
+  key: string;
+  value: string;
+  set_by: string;
+  set_at: string;
+  source: string;
+}
+
+export async function listGovernedTags(opts: { key?: string; securablePrefix?: string } = {}): Promise<GovernedTag[]> {
+  const qs = new URLSearchParams();
+  if (opts.key) qs.set("key", opts.key);
+  if (opts.securablePrefix) qs.set("securable_prefix", opts.securablePrefix);
+  const res = await fetch(`${getApiBase()}/governance/tags?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to list governed tags");
+  return res.json();
+}
+
+/** S5 cited memory — a remembered reading with its citation (who settled it,
+ *  when, how often served). Revocable one row at a time. */
+export interface RememberedReading {
+  id: string;
+  connection_id: string;
+  subject: string;
+  resolved_reading: string;
+  resolution_source: string;
+  resolved_sql?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+  use_count: number;
+}
+
+export async function listRememberedReadings(connectionId?: string): Promise<RememberedReading[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/resolutions${qs}`);
+  if (!res.ok) throw new Error("Failed to list remembered readings");
+  return res.json();
+}
+
+export async function revokeRememberedReading(resId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/learning/resolutions/${encodeURIComponent(resId)}`,
+                          { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to revoke reading");
+}
+
+/** K5 — write a human overlay annotation on a table (merged onto reads by K3;
+ *  never mutates source). Column/row targeting optional. */
+export async function annotateTable(connectionId: string, input: {
+  table: string; body: string; column?: string; keyColumn?: string; rowKey?: string;
+  kind?: "annotation" | "correction";
+}): Promise<{ id: string; target: string }> {
+  const res = await fetch(
+    `${getApiBase()}/kinetic-actions/annotate?connection_id=${encodeURIComponent(connectionId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table: input.table, body: input.body, column: input.column ?? "",
+        key_column: input.keyColumn ?? "", row_key: input.rowKey ?? "",
+        kind: input.kind ?? "annotation",
+      }),
+    });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to annotate");
+  }
+  return res.json();
 }
 
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
@@ -2775,7 +2852,7 @@ export interface MonitorAlert {
   previous_value: number | null;
   threshold: number | null;
   message: string;
-  /** WP-1b (`monitors.guarded`) — deterministic correctness finding on the monitor's
+  /** WP-1b — deterministic correctness finding on the monitor's
    *  SQL (id-arithmetic / fan-out); the alert fired but its value may be mis-computed. */
   caveat?: string | null;
   acknowledged: boolean;
@@ -4586,7 +4663,8 @@ export async function getAgentObservability(agentId: string): Promise<AgentObser
 export interface LearningSummary {
   connection_id: string | null;
   ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
-  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null };
+  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null;
+              trend?: { week: string; total: number; acceptance_rate: number }[] };
   trusted: { queries: number };
 }
 

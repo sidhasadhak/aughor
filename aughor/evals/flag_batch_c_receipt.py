@@ -249,22 +249,20 @@ def _semantic_resolve_live__one_resolve_equals_per_node_consults() -> Comparison
     (empty equals empty on a fresh clone). Off, the plane stays dormant (None)."""
     from aughor.agent.nodes import metrics_for_state
     from aughor.db.registry import list_connections
-    from aughor.kernel.flags import flag_overrides
     from aughor.semantic.context import resolve_if_enabled
 
     conns = [c.get("id") for c in (list_connections() or []) if c.get("id")]
     conn = conns[0] if conns else PROBE_CONN
 
-    with flag_overrides({"semantic.resolve_live": False}):
-        dormant = resolve_if_enabled("what moved last month?", conn)
-    with flag_overrides({"semantic.resolve_live": True}):
-        ctx = resolve_if_enabled("what moved last month?", conn)
-        via_ctx = [getattr(m, "name", "") for m in metrics_for_state({"semantic_context": ctx})]
-        via_consult = [getattr(m, "name", "") for m in metrics_for_state({})]
+    # Permanent since flag endgame Wave 2 (2026-08-06): the plane always resolves;
+    # the surviving equality is context-vs-consult over the same stores.
+    ctx = resolve_if_enabled("what moved last month?", conn)
+    via_ctx = [getattr(m, "name", "") for m in metrics_for_state({"semantic_context": ctx})]
+    via_consult = [getattr(m, "name", "") for m in metrics_for_state({})]
     return Comparison(
         scenario="semantic_resolve_live__one_resolve_equals_per_node_consults",
-        expected={"dormant_off": True, "metrics_equal": True},
-        observed={"dormant_off": dormant is None, "metrics_equal": via_ctx == via_consult},
+        expected={"metrics_equal": True},
+        observed={"metrics_equal": via_ctx == via_consult},
         oracle="the per-node consult path",
         detail={"connection": conn, "metric_count": len(via_consult),
                 "context_resolved": ctx is not None},
@@ -281,22 +279,17 @@ def _capability_pipeline_live__the_route_is_the_whole_surface() -> Comparison:
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    from aughor.kernel.flags import flag_overrides
 
     client = TestClient(app, raise_server_exceptions=False)
     body = {"question": "", "conn_id": PROBE_CONN}
 
-    def probe(on: bool) -> int:
-        with flag_overrides({"capability.pipeline_live": on}):
-            return client.post("/query/capability-answer", json=body).status_code
-
-    off, on = probe(False), probe(True)
+    status = client.post("/query/capability-answer", json=body).status_code
     return Comparison(
         scenario="capability_pipeline_live__the_route_is_the_whole_surface",
-        expected={"off": 404, "on": 400},
-        observed={"off": off, "on": on},
-        oracle="declared (AL-02, invocation-gated)",
-        note="the gate opens; work happens only on an explicit, non-empty call",
+        expected={"empty_question": 400},
+        observed={"empty_question": status},
+        oracle="declared (AL-02, invocation-gated; permanent since flag endgame Wave 2)",
+        note="work happens only on an explicit, non-empty call",
     )
 
 

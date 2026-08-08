@@ -13,9 +13,12 @@ Three properties are worth more than the happy path here, and each has a matchin
   measurement to the wrong configuration.
 * **A typo is loud.** An override on an unregistered name would silently do nothing, and
   "the override did nothing" reads downstream as "the variant did not help".
-* **Topology is decided at COMPILE time.** `agent/graph.py` reads three flags inside
-  `_compile()`. Wrapping only the run leaves those at the process-global value while every
-  other axis moves — a half-overridden cell that reports as fully overridden.
+* **Topology is decided at COMPILE time.** Since flag endgame Wave 6 the three topology
+  forks in `agent/graph.py` derive from the declared transport budget (A1 ModelProfile),
+  not from flags — but the trap survives in transport form: a graph compiled under one
+  declaration has baked its topology, and no later declaration (or override) can change
+  it. Wrapping only the run leaves topology at the compile-time value while every other
+  axis moves — a half-overridden cell that reports as fully overridden.
 """
 from __future__ import annotations
 
@@ -33,11 +36,12 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-FLAG = "closed_loop"      # a registered, default-off flag (evidence_stubs was deleted 2026-08-01)
+FLAG = "explore.route_wide"      # a registered, default-off flag — one of the LAST TWO
 # The nested-release assertion below expects OTHER's AMBIENT value to be off; this one
-# is an unsettled experiment, so it is off today. (Its predecessor exemplars `ai_sql` and
-# `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame.)
-OTHER = "semops.champion_validate"
+# is an unsettled experiment, so it is off today. (Exemplars keep getting re-pointed as
+# the endgame deletes flags: ai_sql → obs.prompt_capture → semops.champion_validate →
+# explore.route_wide → these two, the grid-bound remainder of the registry.)
+OTHER = "federation.planner"
 
 
 @pytest.fixture(autouse=True)
@@ -136,24 +140,36 @@ def test_exception_inside_the_block_still_releases_the_override():
     assert active_flag_overrides() == {}
 
 
-def test_graph_topology_reads_the_override_only_at_compile_time():
-    """The trap, as an executable fact.
+def test_graph_topology_reads_the_transport_only_at_compile_time(monkeypatch):
+    """The trap, as an executable fact — updated for flag endgame Wave 6.
 
-    `_ada_parallel_lenses_enabled()` is called from inside `_compile()`. Evaluating it
-    within the block sees the override; a graph compiled OUTSIDE the block has already
-    baked in the process-global answer and no later block can change it. This is why
-    `experiments.applied` must wrap `build_graph_generic`, not just the run.
+    `_ada_parallel_lenses_enabled()` is called from inside `_compile()` and now answers
+    from the DECLARED transport budget (A1 ModelProfile), not a flag. Evaluating it at
+    compile time bakes the answer into the topology; no later declaration change (and no
+    flag_overrides block — there is no flag) can alter a graph already built. This is
+    still why `experiments.applied` must wrap `build_graph_generic`, not just the run.
     """
     from aughor.agent import graph as g
 
-    assert g._ada_parallel_lenses_enabled() is False
-    with flag_overrides({"deep_analysis.parallel_lenses": True}):
-        assert g._ada_parallel_lenses_enabled() is True     # read INSIDE ⇒ override applies
+    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
+    assert g._ada_parallel_lenses_enabled() is False        # undeclared budget → serial
+    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")
+    assert g._ada_parallel_lenses_enabled() is True         # read NOW ⇒ new declaration applies
+    monkeypatch.setenv("AUGHOR_LLM_RPM", "20")
     assert g._ada_parallel_lenses_enabled() is False
 
-    # A value captured before the block is fixed — exactly what a pre-built graph holds.
+    # A value captured before the declaration changed is fixed — exactly what a
+    # pre-built graph holds.
     captured = g._ada_parallel_lenses_enabled()
-    with flag_overrides({"deep_analysis.parallel_lenses": True}):
-        assert captured is False
+    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")
+    assert captured is False
 
-    clear_flag("deep_analysis.parallel_lenses")
+    # The flag-side half of the old test, on a surviving flag: a read INSIDE a
+    # flag_overrides block sees the override; a value captured before does not.
+    assert flag_enabled("explore.route_wide") is False
+    with flag_overrides({"explore.route_wide": True}):
+        assert flag_enabled("explore.route_wide") is True
+    captured_flag = flag_enabled("explore.route_wide")
+    with flag_overrides({"explore.route_wide": True}):
+        assert captured_flag is False
+    clear_flag("explore.route_wide")

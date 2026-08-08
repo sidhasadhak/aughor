@@ -1,16 +1,17 @@
 """Wave A2 — the automation heartbeat.
 
 Deliberately **one interval job, not one cron job per automation** — the opposite of what
-:mod:`aughor.monitors.scheduler` and :mod:`aughor.briefing.scheduler` do, and the reason those two
-could never merge. A per-automation cron job can only ever encode a *time* condition, so an
-automation whose trigger is "revenue dropped" or "new rows landed" has nothing to register. A single
-heartbeat that asks each enabled automation "are your conditions true?" handles time and non-time
-conditions with one mechanism, and a ``schedule`` condition stays exact because
-:func:`~aughor.automations.engine._schedule_fired` asks whether the cron matched *since the last
-run*, not whether this instant is the cron minute.
+the legacy monitor and brief schedulers did, and the reason those two could never merge.
+A per-automation cron job can only ever encode a *time* condition, so an automation whose
+trigger is "revenue dropped" or "new rows landed" has nothing to register. A single
+heartbeat that asks each enabled automation "are your conditions true?" handles time and
+non-time conditions with one mechanism, and a ``schedule`` condition stays exact because
+:func:`~aughor.automations.engine._schedule_fired` asks whether the cron matched *since the
+last run*, not whether this instant is the cron minute.
 
-The whole subsystem is gated on ``automations.engine``: off ⇒ the heartbeat never starts and this
-module is inert.
+Since flag endgame Wave 4 (2026-08-06) this is the ONLY loop: monitors and brief
+subscriptions ride every tick as virtual automations (:mod:`aughor.automations.adopt`),
+their legacy per-object schedulers deleted.
 """
 from __future__ import annotations
 
@@ -32,12 +33,17 @@ _started = False
 TICK_SECONDS = 60
 
 
-def tick_once() -> None:
+def tick_once() -> dict[str, int]:
     """Evaluate every enabled automation once. One automation's failure never stops the rest.
 
-    When ``automations.adopt_legacy`` is on (A5), the same tick ALSO runs every enabled monitor and
-    brief subscription as a virtual automation — the legacy schedulers stand down (fire-time skip)
-    so each object fires through exactly one loop."""
+    The same tick ALSO runs every enabled monitor and brief subscription as a virtual
+    automation (adoption is permanent — flag endgame Wave 4, 2026-08-06; the legacy
+    per-object schedulers were deleted, so this is the ONE loop). Returns per-family
+    counts of what was evaluated — each object's own ``schedule`` condition decides
+    whether it actually fires — so a caller holding an external clock (``/cron/tick``)
+    can report a tick that did something distinguishable from one that found nothing."""
+    from aughor.automations.adopt import BRIEF_PREFIX, MONITOR_PREFIX, list_adopted_automations
+
     try:
         from aughor.automations.store import list_automations
         automations = list_automations(enabled_only=True)
@@ -45,19 +51,26 @@ def tick_once() -> None:
         logger.warning("automation heartbeat could not load automations: %s", exc)
         automations = []
 
-    from aughor.automations.adopt import adoption_active, list_adopted_automations
-    if adoption_active():
-        try:
-            automations = list(automations) + list_adopted_automations()
-        except Exception as exc:
-            logger.warning("automation heartbeat could not adopt legacy objects: %s", exc)
+    try:
+        automations = list(automations) + list_adopted_automations()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not adopt legacy objects: %s", exc)
 
+    counts = {"automations": 0, "monitors": 0, "briefs": 0}
     for automation in automations:
+        aid = str(automation.id)
+        if aid.startswith(MONITOR_PREFIX):
+            counts["monitors"] += 1
+        elif aid.startswith(BRIEF_PREFIX):
+            counts["briefs"] += 1
+        else:
+            counts["automations"] += 1
         try:
             _run_one(automation)
         except Exception as exc:
             logger.error("automation %s (%s) crashed the tick: %s",
                          automation.id, automation.name, exc)
+    return counts
 
 
 def _run_one(automation) -> None:
@@ -77,15 +90,16 @@ def _run_one(automation) -> None:
         with using_org(org):
             run_automation(automation)
 
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("ops.metered_monitors"):
-        from aughor.kernel.jobs import submit_background_tick
-        job_id = submit_background_tick(
-            "automation", _work, conn_id=automation.conn_id, org_id=org,
-            idempotency_key=f"automation:{automation.id}")
-        if job_id is not None:
-            return       # routed through the kernel
-    _work()              # legacy / no-loop fallback
+    # Metered execution is permanent (flag endgame Wave 2, 2026-08-06; receipt
+    # b167bb891764) — the automation runs as a supervised job when the kernel
+    # loop is up; _work() stays the no-loop fallback.
+    from aughor.kernel.jobs import submit_background_tick
+    job_id = submit_background_tick(
+        "automation", _work, conn_id=automation.conn_id, org_id=org,
+        idempotency_key=f"automation:{automation.id}")
+    if job_id is not None:
+        return       # routed through the kernel
+    _work()              # no-loop fallback
 
 
 def trigger_now(automation_id: str) -> Optional[AutomationRun]:

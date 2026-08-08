@@ -96,11 +96,9 @@ def propose_actions_route(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Wave K4: the agent proposes declared actions for a context. Returns STAGED, dry-run-validated
-    proposals — nothing is executed (a human accepts, then POSTs to .../execute). Flag-gated on
-    `kinetic.agent_actions` → 404 when off. The proposer LLM call runs on the `fast` role binding."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("kinetic.agent_actions"):
-        raise HTTPException(status_code=404, detail="Agent action proposals are not enabled")
+    proposals — nothing is executed (a human accepts, then POSTs to .../execute). Always on
+    (flag endgame Wave 5, 2026-08-06): data-gated — no declared actions ⇒ nothing to propose,
+    and every proposal still passes a human. The proposer LLM call runs on the `fast` role binding."""
     graph = _resolve_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")

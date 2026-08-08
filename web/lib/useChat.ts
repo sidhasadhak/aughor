@@ -137,7 +137,7 @@ export function useChat() {
             history: chatHistory(),
             session_id: sessionIdRef.current,
             depth: opts.depth ?? "auto",
-            // Answer AS a user-defined agent (flag `agents.user_defined`).
+            // Answer AS a user-defined agent.
             agent_id: opts.agentId ?? null,
             skip_clarify: opts.skipClarify ?? false,
             // I4 — when this turn answers a clarify, carry the chosen reading so the backend

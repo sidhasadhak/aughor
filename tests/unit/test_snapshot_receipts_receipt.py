@@ -35,8 +35,9 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
     assert obs.error and "nope" in obs.error
 
 
-def test_the_flag_is_registered_and_default_on():
+def test_the_flag_stayed_deleted():
+    """Hardwired by flag endgame Wave 2 (2026-08-06); the registry must stay empty of it."""
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
-    assert FLAG in FLAG_ENV
-    assert FLAG_DEFAULT.get(FLAG) is True
+    assert FLAG not in FLAG_ENV
+    assert FLAG not in FLAG_DEFAULT

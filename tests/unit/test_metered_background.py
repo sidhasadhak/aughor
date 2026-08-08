@@ -43,34 +43,41 @@ def test_submit_background_tick_no_loop_returns_none(monkeypatch):
     assert ran["n"] == 0
 
 
-def test_monitor_job_routes_by_flag(monkeypatch):
-    """The monitor cron `_job` submits through the kernel iff `ops.metered_monitors` is on;
-    otherwise it runs the work inline (legacy path)."""
-    from aughor.monitors import scheduler as sched
+def test_monitor_tick_routes_through_the_kernel_with_inline_fallback(monkeypatch):
+    """A background monitor tick offers itself to the kernel first; only a DECLINED
+    submit (no captured loop → None) runs the same closure inline.
+
+    The vehicle moved (flag endgame Wave 4, 2026-08-06): the legacy cron `_job` that
+    carried this property was deleted with the legacy scheduler, and a monitor now
+    ticks through the automation engine — `automations.scheduler._run_one` over the
+    monitor read as a virtual automation. Same claim, current loop."""
+    from aughor.automations.adopt import monitor_as_automation
+    from aughor.automations import scheduler as auto_sched
 
     class _M:
         id, name, conn_id, enabled = "m1", "M", "c1", True
+        check_cron = "* * * * *"
 
-    monkeypatch.setattr("aughor.monitors.store.get_monitor", lambda mid: _M(), raising=False)
-    monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: None, raising=False)
     monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda cid: "default", raising=False)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
-                        lambda cid: _FakeDB(), raising=False)
     calls = {"submit": 0, "run": 0}
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor",
-                        lambda m, db: calls.__setitem__("run", calls["run"] + 1), raising=False)
+    monkeypatch.setattr("aughor.automations.engine.run_automation",
+                        lambda a, **k: calls.__setitem__("run", calls["run"] + 1), raising=False)
     monkeypatch.setattr(jobs_mod, "submit_background_tick",
                         lambda *a, **k: (calls.__setitem__("submit", calls["submit"] + 1), "job1")[1])
 
-    job = sched._make_job_fn("m1")
+    automation = monitor_as_automation(_M())
 
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "1")
-    job()
+    # Metered is permanent (flag endgame Wave 2, 2026-08-06): every tick offers
+    # itself to the kernel first…
+    auto_sched._run_one(automation)
     assert calls["submit"] == 1 and calls["run"] == 0   # routed through the kernel
 
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "0")
-    job()
-    assert calls["submit"] == 1 and calls["run"] == 1   # ran inline
+    # …and only a DECLINED submit (no captured loop → None) runs the same closure
+    # inline — the no-loop fallback, not an env opt-out.
+    monkeypatch.setattr(jobs_mod, "submit_background_tick",
+                        lambda *a, **k: (calls.__setitem__("submit", calls["submit"] + 1), None)[1])
+    auto_sched._run_one(automation)
+    assert calls["submit"] == 2 and calls["run"] == 1   # declined → ran inline
 
 
 class _FakeDB:

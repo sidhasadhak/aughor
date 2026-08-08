@@ -178,17 +178,20 @@ def test_an_unrunnable_agent_is_a_dispatch_error_not_a_quiet_unbound_run(monkeyp
     assert submitted == []
 
 
-def test_the_flag_being_off_refuses_the_run_rather_than_dropping_the_persona(monkeypatch):
-    """Fail-closed on the flag too: an agent-bound automation with `agents.user_defined` off
-    must not degrade into an anonymous investigation that looks like it worked."""
+def test_a_healthy_agent_binding_submits_as_that_agent(monkeypatch):
+    """The flag-off refusal died with the flag (flag endgame Wave 2, 2026-08-06):
+    user-defined agents are permanent and DATA-GATED. The property that replaces it
+    is positive — a healthy agent binding runs AS the agent (persona carried, never
+    silently dropped), while the unrunnable-agent refusals keep their own tests
+    above."""
     agent = create_agent(name="Customer Analyst")
-    import aughor.kernel.flags as flags
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
     submitted = _capture_submit(monkeypatch)
     effect = Effect(kind="investigate", config={"question": "q", "agent_id": agent.id})
 
     outcome = _dispatch_investigate(effect, _automation())
 
-    assert outcome.status == "dispatch_error"
-    assert "agents.user_defined" in outcome.message
-    assert submitted == []
+    assert outcome.status == "executed"
+    assert submitted, "the run was never submitted"
+    # The agent is part of the identity of the work — it must reach the idempotency
+    # key, or the same question as two personas would deduplicate onto one run.
+    assert agent.id in submitted[0]["idem"], "the persona was dropped on the way to the runner"

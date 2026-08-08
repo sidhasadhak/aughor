@@ -222,27 +222,14 @@ def test_deep_run_trace_resolves_its_investigation(client, ledger, monkeypatch, 
         "the H3 drill-in must find a deep run by its investigation id")
 
 
-def test_fleet_hides_personas_while_their_surface_is_off(client, monkeypatch):
-    """With `agents.user_defined` off the persona CRUD routes 404 — a fleet table
-    advertising persona rows nobody can open would be two views disagreeing about
-    what exists. Rows appear only when the flag is on.
-
-    Both states are FORCED. Reading the off state from the default is what made the
-    equivalent CR0 test invert the moment `obs.session_log` graduated: "unset" means
-    "whatever the default says", so a default flip silently turns an off-state
-    assertion into an on-state one that still looks deliberate.
-    """
-    import aughor.kernel.flags as flags
+def test_fleet_always_lists_user_defined_agents(client):
+    """User-defined agents are a PERMANENT surface (flag endgame Wave 2, 2026-08-06,
+    receipt df89c044999a): the CRUD routes always answer, so the fleet table and the
+    roster can never disagree about what exists — the two-views hazard the old
+    flag-off half of this test guarded is structurally gone."""
     from aughor.custom_agents.store import create_agent
 
     create_agent(name="Ghost Persona", instructions="x")
-
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
-    off = client.get("/control-room/fleet").json()
-    assert all(r["kind"] != "persona" for r in off["rows"])
-
-    monkeypatch.setattr(flags, "flag_enabled",
-                        lambda name: name == "agents.user_defined")
-    on = client.get("/control-room/fleet").json()
+    got = client.get("/control-room/fleet").json()
     assert any(r["kind"] == "persona" and r["name"] == "Ghost Persona"
-               for r in on["rows"])
+               for r in got["rows"])

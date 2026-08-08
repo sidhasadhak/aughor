@@ -105,17 +105,19 @@ async def _lifespan(app: "FastAPI"):
     await _validate_connections()
     await _start_explorers()
     await _start_ontology_refresh_loop()
-    await _start_continuous_exploration_loop()
     await _seed_playbook()
-    # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick once a
-    # minute runs one tick of every family). Starting APScheduler here too would
-    # DOUBLE-tick on warm instances, so the in-process schedulers are the
-    # always-on-process path only.
+    # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick runs one
+    # engine tick; monitors and briefs ride it as virtual automations). Starting
+    # APScheduler here too would DOUBLE-tick on warm instances, so the in-process
+    # schedulers are the always-on-process path only — and so is the continuous-
+    # exploration loop: a warm serverless instance is not a clock, and an
+    # exploration it spawned would die with the instance (durable slicing is the
+    # serverless path for exploration, when it lands).
     if os.environ.get("VERCEL"):
         logger.info("serverless: in-process schedulers OFF — Vercel Cron drives /cron/tick")
     else:
+        await _start_continuous_exploration_loop()
         await _start_monitor_scheduler()
-        await _start_brief_scheduler()
         await _start_automation_heartbeat()
     yield
     # ── Shutdown ───────────────────────────────────────────────────────────────
@@ -554,17 +556,16 @@ async def _start_ontology_refresh_loop() -> None:
 
 async def _continuous_exploration_loop() -> None:
     """WP-6 — periodically re-arm the Scout so exploration doesn't die after the first
-    pass. Gated by the `explorer.continuous` flag (default off = a pure sleep, byte-
-    identical). The per-connection decision + governance/licensing gates live in
-    `explorer.continuous.run_continuous_tick`; this is just the heartbeat.
+    pass. Always on for an always-on process (flag endgame Wave 4, 2026-08-06 — the
+    `explorer.continuous` flag turned ON and was deleted): spend is governed where it
+    can be reasoned about, by the per-connection decision + governance/licensing gates
+    + staleness window in `explorer.continuous.run_continuous_tick`; this is just the
+    heartbeat. Not started under VERCEL (see the lifespan).
     """
     from aughor.explorer.continuous import _TICK_SECONDS, run_continuous_tick
-    from aughor.kernel.flags import flag_enabled
 
     while True:
         await asyncio.sleep(_TICK_SECONDS)
-        if not flag_enabled("explorer.continuous"):
-            continue
         try:
             # run_continuous_tick does its blocking decision off the loop internally, then
             # schedules spawns on it — so it's awaited here, not executor-wrapped.
@@ -598,26 +599,18 @@ async def _seed_playbook() -> None:
 
 
 async def _start_monitor_scheduler() -> None:
-    """Load enabled monitors and start the APScheduler background thread."""
+    """Start the housekeeping scheduler (matcache eviction; monitors run through the
+    automation heartbeat since flag endgame Wave 4)."""
     try:
         from aughor.monitors.scheduler import start as _start_monitors
         _start_monitors()
     except Exception as exc:
-        logger.warning("Monitor scheduler startup failed (non-fatal): %s", exc)
-
-
-async def _start_brief_scheduler() -> None:
-    """Load enabled brief subscriptions and start their delivery scheduler."""
-    try:
-        from aughor.briefing.scheduler import start as _start_briefs
-        _start_briefs()
-    except Exception as exc:
-        logger.warning("Brief scheduler startup failed (non-fatal): %s", exc)
+        logger.warning("Housekeeping scheduler startup failed (non-fatal): %s", exc)
 
 
 async def _start_automation_heartbeat() -> None:
-    """Start the Wave-A condition→effect heartbeat. Self-gates on `automations.engine`:
-    with the flag off it returns without scheduling anything."""
+    """Start the Wave-A condition→effect heartbeat — the ONE loop; monitors and brief
+    subscriptions ride each tick as virtual automations."""
     try:
         from aughor.automations.scheduler import start as _start_automations
         _start_automations()

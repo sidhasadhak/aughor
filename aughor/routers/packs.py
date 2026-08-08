@@ -12,7 +12,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from aughor.kernel.flags import flag_enabled
 from aughor.packs import (
     load_pack, list_packs, validate_pack, PacksError,
     schema_facts_from_table_cols, save_binding, load_binding,
@@ -41,8 +40,13 @@ def _summary(pack_dir: Path) -> dict:
 
 @router.get("/packs")
 def get_packs():
-    """All packs under packs/ with a validation summary, plus the feature-flag state."""
-    enabled = flag_enabled("specialist_packs")
+    """All packs under packs/ with a validation summary.
+
+    `enabled` is a permanent True since flag endgame Wave 2 (2026-08-06, receipt
+    452a6fcebba4) — kept in the payload because it is API surface; steering is
+    still data-gated three gates deep (active pack · question match · pinned
+    deploy binding)."""
+    enabled = True
     packs = []
     if PACKS_DIR.is_dir():
         for pid in list_packs(PACKS_DIR):

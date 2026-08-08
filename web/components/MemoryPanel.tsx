@@ -8,9 +8,10 @@
 import { useEffect, useState } from "react";
 import { compactNumber } from "@/lib/format";
 import {
-  getLearningSummary, getTrustedAssets,
-  type LearningSummary, type TrustedAssets,
+  getLearningSummary, getTrustedAssets, listRememberedReadings, revokeRememberedReading,
+  type LearningSummary, type TrustedAssets, type RememberedReading,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -39,16 +40,38 @@ const ellipsize: React.CSSProperties = {
   flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
 };
 
+/** "72% → 84% over N wks" from the weekly acceptance series — the product's
+ *  accuracy TREND (S3). Null when fewer than two measured weeks exist: one
+ *  point is a number, not a direction. */
+function trendSub(trend?: { week: string; acceptance_rate: number }[]): string | null {
+  if (!trend || trend.length < 2) return null;
+  const first = trend[0], last = trend[trend.length - 1];
+  return `${Math.round(first.acceptance_rate * 100)}% → ${Math.round(last.acceptance_rate * 100)}% over ${trend.length} wks`;
+}
+
 export function MemoryPanel() {
   const [summary, setSummary] = useState<LearningSummary | null>(null);
   const [trusted, setTrusted] = useState<TrustedAssets | null>(null);
   const [loading, setLoading] = useState(true);   // fetch runs once on mount; starts in the loading state
+  // S5 cited memory — the readings themselves: remembered, cited, revocable.
+  const [readings, setReadings] = useState<RememberedReading[]>([]);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([getLearningSummary(), getTrustedAssets()])
       .then(([s, t]) => { setSummary(s); setTrusted(t); })
       .finally(() => setLoading(false));
+    listRememberedReadings().then(setReadings).catch(() => setReadings([]));
   }, []);
+
+  const revoke = async (id: string) => {
+    setRevoking(id);
+    try {
+      await revokeRememberedReading(id);
+      setReadings(rs => rs.filter(r => r.id !== id));
+    } catch { /* row stays; the user can retry */ }
+    finally { setRevoking(null); }
+  };
 
   const ledger = summary?.ledger;
   const verdicts = summary?.verdicts;
@@ -77,9 +100,41 @@ export function MemoryPanel() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
             <Tile label="Resolutions" value={compactNumber(ledger?.resolutions ?? 0)} sub="ambiguities settled" />
             <Tile label="Times served" value={compactNumber(ledger?.served_total ?? 0)} sub="priors reused in answers" />
-            <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"} sub={`${verdicts?.total ?? 0} verdicts`} />
+            <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"}
+                  sub={trendSub(verdicts?.trend) ?? `${verdicts?.total ?? 0} verdicts`} />
             <Tile label="Trusted" value={String(trustedTotal)} sub={plural(summary.trusted.queries, "query")} />
           </div>
+
+          {readings.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 4 }}>
+                Remembered readings
+              </div>
+              <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 8, maxWidth: 640 }}>
+                Each is injected as a prior on matching questions — cited to who settled it,
+                and revocable: a revoked reading re-ambiguates instead of silently persisting.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 1, marginBottom: 18 }}>
+                {readings.slice(0, 30).map(r => (
+                  <div key={r.id} style={{ ...rowStyle, padding: "7px 10px", alignItems: "center" }}>
+                    <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", minWidth: 0 }}>
+                      <span style={{ color: "var(--t2)" }}>{r.subject}</span>
+                      {" → "}{r.resolved_reading}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
+                      {SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}
+                      {" · served "}{compactNumber(r.use_count)}
+                    </span>
+                    <Button variant="ghost" size="xs" disabled={revoking === r.id}
+                            onClick={() => revoke(r.id)}
+                            className="h-auto px-1.5 py-0.5 aug-fs-xs font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent">
+                      {revoking === r.id ? "Revoking…" : "Revoke"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {sources.length > 0 && (
             <>

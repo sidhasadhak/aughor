@@ -31,13 +31,16 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { GuardReceiptChain } from "@/components/GuardReceiptChain";
+import { FixItForm } from "@/components/FixItForm";
+import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
 import { ClarifyGateCard } from "@/components/ClarifyGateCard";
@@ -1055,6 +1058,11 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
+  // S3 fix-it: a thumbs-down opens the typed what-was-wrong form; the correction
+  // flows through record_verdict into the ledger, so the next answer cites it.
+  const [fixItOpen, setFixItOpen] = useState(false);
+  const [fixItBusy, setFixItBusy] = useState(false);
+  const [fixItDone, setFixItDone] = useState(false);
   const sql = (turn.sql || "").trim();
   if (!sql || !connectionId) return null;
 
@@ -1067,6 +1075,40 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
   const rate = (v: "helpful" | "unhelpful") => {
     setFeedback(v);
     if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v);
+    // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
+    if (v === "unhelpful") setFixItOpen(true);
+  };
+  // K5 — "annotate this cell": a human note pinned to the answer's primary table,
+  // written to the K3 overlay (merged onto future reads; never mutates source).
+  const [annotateOpen, setAnnotateOpen] = useState(false);
+  const [annotateText, setAnnotateText] = useState("");
+  const [annotateBusy, setAnnotateBusy] = useState(false);
+  const [annotateDone, setAnnotateDone] = useState(false);
+  const annotateTarget = (turn.tablesUsed || [])[0] || "";
+  const submitAnnotation = async () => {
+    if (!annotateText.trim() || !annotateTarget) return;
+    setAnnotateBusy(true);
+    try {
+      await annotateTable(connectionId, { table: annotateTarget, body: annotateText.trim() });
+      setAnnotateDone(true);
+      setAnnotateOpen(false);
+      setAnnotateText("");
+    } catch { /* stays open to retry */ }
+    finally { setAnnotateBusy(false); }
+  };
+  const submitFixIt = async (note: string, correctedSql: string) => {
+    setFixItBusy(true);
+    try {
+      await recordVerdict({
+        verdict: correctedSql ? "correct" : "reject",
+        connectionId, investigationId: turn.investigationId ?? "",
+        headline: turn.headline ?? "", note,
+        sqlSource: sql, correctedSql,
+      });
+      setFixItDone(true);
+      setFixItOpen(false);
+    } catch { /* the receipt signal already landed; the form stays open to retry */ }
+    finally { setFixItBusy(false); }
   };
 
   const issues = verdict
@@ -1085,13 +1127,48 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
           className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">Copy SQL</Button>
+        {annotateTarget && (
+          <>
+            <span className="text-zinc-700">·</span>
+            <Button variant="ghost" size="xs" onClick={() => setAnnotateOpen(o => !o)}
+              className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+              title={`Pin a note to ${annotateTarget} — future reads see it`}>Annotate</Button>
+          </>
+        )}
+        {annotateDone && <span className="text-zinc-600 italic">note pinned to {annotateTarget}</span>}
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
         <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
-        {feedback && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {feedback && !fixItOpen && !fixItDone && <span className="text-zinc-600 italic">thanks — noted</span>}
+        {fixItDone && <span className="text-zinc-600 italic">correction recorded — future answers cite it</span>}
       </div>
+      {fixItOpen && (
+        <FixItForm withSql busy={fixItBusy}
+                   onSubmit={submitFixIt} onCancel={() => setFixItOpen(false)} />
+      )}
+      {annotateOpen && (
+        <div className="flex flex-col gap-1.5 rounded-[var(--r2)] p-2 my-1"
+             style={{ background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+          <textarea autoFocus rows={2} value={annotateText}
+            onChange={(e) => setAnnotateText(e.target.value)}
+            placeholder={`Note on ${annotateTarget} (e.g. 'March data is a partial load — totals run low')`}
+            className="w-full bg-transparent aug-fs-xs text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none" />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="xs" disabled={annotateBusy || !annotateText.trim()}
+              onClick={submitAnnotation}
+              className="h-auto px-2 py-0.5 aug-fs-xs border rounded-[var(--r1)] border-zinc-600 text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+              {annotateBusy ? "Pinning…" : "Pin note"}
+            </Button>
+            <Button variant="ghost" size="xs" disabled={annotateBusy} onClick={() => setAnnotateOpen(false)}
+              className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+              Cancel
+            </Button>
+            <span className="aug-fs-xs text-zinc-600">Overlay only — the source data is never touched.</span>
+          </div>
+        </div>
+      )}
       {verdict && (
         issues.length === 0 ? (
           <p className="aug-text-xs text-emerald-400/80">✓ Validated — no fan-out, join, or filter issues found.</p>
@@ -1267,7 +1344,7 @@ export function ChatMessage({
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
   onDeeper?: (question: string, insightId: string | null) => void;
-  /** Drill an overview fact into a live seeded investigation (see OverviewReportView). */
+  /** Drill an overview fact into a live seeded deep analysis (see OverviewReportView). */
   onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
   onApprovePlan?: (invId: string, keepIndices: number[]) => void;
   onRejectPlan?: (invId: string) => void;
@@ -1330,6 +1407,26 @@ export function ChatMessage({
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} onShowSource={onShowSource} />
+      )}
+
+      {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
+             nothing when no guard fired (most turns) ── */}
+      <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
+
+      {/* ── B3: live dimension scan as a Task list — the deep run's long silent
+             phase becomes visible per-dimension progress ── */}
+      {isInvestigate && turn.status === "loading" && turn.scanProgress && (
+        <Task defaultOpen className="my-1">
+          <TaskTrigger
+            status="in_progress"
+            title={`Scanning dimensions · ${turn.scanProgress.done}/${turn.scanProgress.total}`}
+          />
+          <TaskContent>
+            {turn.scanItems.map((d) => (
+              <TaskItem key={d}>{d}</TaskItem>
+            ))}
+          </TaskContent>
+        </Task>
       )}
 
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
@@ -1504,7 +1601,7 @@ export function ChatMessage({
   );
 }
 
-// Crystallize a finished investigation into a reusable, governed learned skill: propose
+// Crystallize a finished deep analysis into a reusable, governed learned skill: propose
 // (the candidate from its grounded, read-only SQL) → save (EXPLAIN-gated server-side). A
 // 422 means the run wasn't skill-worthy (low confidence / ungrounded / no read-only query).
 function SaveAsSkillButton({ invId, connectionId }: { invId: string; connectionId: string }) {

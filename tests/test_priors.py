@@ -31,15 +31,16 @@ def _seed_reject(verdicts, question_headline: str, corrected_sql: str = "", note
     )
 
 
-def test_flag_off_is_zero_cost(isolated_verdicts, monkeypatch):
-    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
+def test_unrelated_question_is_zero_cost(isolated_verdicts):
+    """The loop is always on (flag endgame Wave 5); the zero-cost guarantee moved to
+    the DATA gate — an unrelated question clears the overlap threshold nowhere and
+    injects nothing."""
     _seed_reject(isolated_verdicts, "revenue by product category")
     from aughor.feedback.priors import build_corrections_section
-    assert build_corrections_section("what is revenue by product category?", "samples") == ""
+    assert build_corrections_section("which couriers deliver to Iceland?", "samples") == ""
 
 
 def test_fires_on_relevant_match(isolated_verdicts, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     _seed_reject(isolated_verdicts, "revenue by product category",
                  corrected_sql="SELECT category, SUM(line_total) FROM order_items GROUP BY 1",
                  note="use order_items.line_total, not orders.total_amount (fan-out)")
@@ -51,7 +52,6 @@ def test_fires_on_relevant_match(isolated_verdicts, monkeypatch):
 
 
 def test_empty_on_irrelevant_question(isolated_verdicts, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     _seed_reject(isolated_verdicts, "revenue by product category")
     from aughor.feedback.priors import build_corrections_section
     # A question with no token overlap must inject nothing (conservative threshold).
@@ -59,13 +59,11 @@ def test_empty_on_irrelevant_question(isolated_verdicts, monkeypatch):
 
 
 def test_empty_when_no_verdicts(isolated_verdicts, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     from aughor.feedback.priors import build_corrections_section
     assert build_corrections_section("anything at all", "samples") == ""
 
 
 def test_only_reject_and_correct_are_read_back(isolated_verdicts, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     # an ACCEPT teaches nothing new — it must not surface as a correction
     isolated_verdicts.record_verdict(
         connection_id="samples", investigation_id="i", verdict="accept",
@@ -84,7 +82,6 @@ def _seed_resolution(conn_id, subject, reading, source="probe"):
 
 
 def test_ledger_resolution_reads_back_into_priors(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     _seed_resolution("led_conn1", "total runs scored by strikers", "career totals")
     from aughor.feedback.priors import build_priors_section, retrieve_priors
     section = build_priors_section("what is the average total runs by strikers?", "led_conn1")
@@ -94,15 +91,7 @@ def test_ledger_resolution_reads_back_into_priors(monkeypatch):
     assert res.fired and res.resolutions
 
 
-def test_ledger_prior_off_when_flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
-    _seed_resolution("led_conn2", "total runs by strikers", "career totals")
-    from aughor.feedback.priors import build_priors_section
-    assert build_priors_section("total runs by strikers?", "led_conn2") == ""
-
-
 def test_ledger_prior_empty_on_irrelevant_question(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     _seed_resolution("led_conn3", "total runs by strikers", "career totals")
     from aughor.feedback.priors import build_priors_section
     assert build_priors_section("how many suppliers are in France?", "led_conn3") == ""
@@ -112,7 +101,6 @@ def test_verdict_surfaces_via_corrections_not_double_injected(isolated_verdicts,
     # a reject/correct verdict lands in BOTH the ledger (bridge) and the verdicts store; the PROMPT
     # must surface it ONCE — via the emphatic corrections voice — with the redundant ledger line
     # deduped, while the ledger row survives for the burn-down metric + the Trust Receipt.
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
     purge_connections(["ded_conn"])
     isolated_verdicts.record_verdict(
@@ -129,7 +117,6 @@ def test_verdict_surfaces_via_corrections_not_double_injected(isolated_verdicts,
 def test_probe_resolution_reaches_the_live_corrections_section(monkeypatch):
     # the LIVE answer path (chat + plan node) calls build_corrections_section — the Ambiguity-Ledger
     # read path MUST fire there, or the whole compounding feature never reaches a real prompt.
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
     _seed_resolution("led_live", "total runs by strikers", "career totals")   # probe-source
     from aughor.feedback.priors import build_corrections_section
     section = build_corrections_section("what is the total runs by strikers?", "led_live")

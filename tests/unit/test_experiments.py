@@ -30,8 +30,8 @@ from aughor.llm import provider as P
 # they DO. Both are EXPERIMENT-dispositioned so they outlive the endgame's hardwiring
 # waves; the two predecessors were re-pointed for exactly that reason (evidence_stubs
 # deleted 2026-08-01, evidence_dedup hardwired by Wave 2d).
-FLAG = "closed_loop"
-OTHER = "graph.readback"
+FLAG = "explore.route_wide"
+OTHER = "federation.planner"
 
 
 @pytest.fixture(autouse=True)

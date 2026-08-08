@@ -1,7 +1,7 @@
 """A/B one flag over an eval suite — with the two guards this session paid to learn.
 
-    FLAG=closed_loop SUITE=9c1e13e458ff DEPTH=quick TEMPERATURE=0 REPLICATE=1 \
-      AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1 \
+    FLAG=explore.route_wide SUITE=9c1e13e458ff DEPTH=quick TEMPERATURE=0 REPLICATE=1 \
+      AUGHOR_FALLBACK_DISABLED=1 \
       AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
       .venv/bin/python -u scripts/flag_ab_grid.py
 
@@ -39,7 +39,7 @@ import pathlib
 import sys
 import time
 
-FLAG = os.environ.get("FLAG", "closed_loop")
+FLAG = os.environ.get("FLAG", "explore.route_wide")
 SUITE = os.environ.get("SUITE", "9c1e13e458ff")
 DEPTH = os.environ.get("DEPTH", "quick")
 CONN = os.environ.get("CONNECTION_ID", "workspace")

@@ -485,7 +485,8 @@ export interface paths {
         /**
          * Agui Run
          * @description AG-UI-protocol translator over the unified `/ask` stream (fresh run, or a resume from an
-         *     interrupt outcome). Additive + flag-gated.
+         *     interrupt outcome). Additive; always available since flag endgame Wave 2 (2026-08-06 —
+         *     the route is the whole surface, calling it is the consent, receipt b395745f7771).
          */
         post: operations["agui_run_agui_run_post"];
         delete?: never;
@@ -2446,10 +2447,10 @@ export interface paths {
         };
         /**
          * Cron Tick
-         * @description Run one tick of every scheduled family. Returns per-family counts.
+         * @description Run one engine tick (automations + adopted monitors/briefs). Returns counts.
          *
-         *     ``window_s`` is the caller's own tick interval — entries whose cron fired
-         *     within that lookback are due now.
+         *     ``window_s`` is the caller's own tick interval; due-ness is the engine's
+         *     since-last-run check, so the window only gates the hourly housekeeping.
          */
         get: operations["cron_tick_cron_tick_get"];
         put?: never;
@@ -3706,6 +3707,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/governance/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Governed Tags
+         * @description Browse the G2 governed-tag plane (read-only). S1/J13: the governance axis
+         *     was write-only — tags existed in the store with no route and no UI, so a
+         *     'Certified' securable could never LOOK certified. Writes stay with the
+         *     clearance machinery; this is the render path.
+         */
+        get: operations["get_governed_tags_governance_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -4472,8 +4496,9 @@ export interface paths {
         /**
          * Propose Actions Route
          * @description Wave K4: the agent proposes declared actions for a context. Returns STAGED, dry-run-validated
-         *     proposals — nothing is executed (a human accepts, then POSTs to .../execute). Flag-gated on
-         *     `kinetic.agent_actions` → 404 when off. The proposer LLM call runs on the `fast` role binding.
+         *     proposals — nothing is executed (a human accepts, then POSTs to .../execute). Always on
+         *     (flag endgame Wave 5, 2026-08-06): data-gated — no declared actions ⇒ nothing to propose,
+         *     and every proposal still passes a human. The proposer LLM call runs on the `fast` role binding.
          */
         post: operations["propose_actions_route_kinetic_actions_propose_post"];
         delete?: never;
@@ -4499,6 +4524,49 @@ export interface paths {
          */
         post: operations["execute_action_kinetic_actions__action_id__execute_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/resolutions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Resolutions
+         * @description S5 cited memory — the remembered readings, listed with their citations:
+         *     who settled each (probe/user/reviewer), when, and how many times it has been
+         *     served as a prior. The revoke route below is what makes showing them honest.
+         */
+        get: operations["get_resolutions_learning_resolutions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/resolutions/{res_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Resolution
+         * @description S5 cited memory — revoke one remembered reading. The next matching question
+         *     re-ambiguates instead of inheriting a reading the user no longer stands behind.
+         */
+        delete: operations["delete_resolution_learning_resolutions__res_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6094,7 +6162,12 @@ export interface paths {
         };
         /**
          * Get Packs
-         * @description All packs under packs/ with a validation summary, plus the feature-flag state.
+         * @description All packs under packs/ with a validation summary.
+         *
+         *     `enabled` is a permanent True since flag endgame Wave 2 (2026-08-06, receipt
+         *     452a6fcebba4) — kept in the payload because it is API surface; steering is
+         *     still data-gated three gates deep (active pack · question match · pinned
+         *     deploy binding).
          */
         get: operations["get_packs_packs_get"];
         put?: never;
@@ -6428,8 +6501,9 @@ export interface paths {
          * Query Capability Answer
          * @description Answer a data question end-to-end through the Capability plane (AL-02): one
          *     `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
-         *     and returns the whole result. The non-streaming, template-driven counterpart to /ask — behind
-         *     the `capability.pipeline_live` flag while the plane lands.
+         *     and returns the whole result. The non-streaming, template-driven counterpart to /ask —
+         *     permanent since flag endgame Wave 2 (2026-08-06, receipt 0dd2b45930c7: the route is the
+         *     single gate, calling it is the consent).
          */
         post: operations["query_capability_answer_query_capability_answer_post"];
         delete?: never;
@@ -6452,7 +6526,8 @@ export interface paths {
          * @description Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
          *
          *     The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
-         *     the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+         *     the same `cross_source_join`. Always available since flag endgame Wave 2 (2026-08-06;
+         *     the route is the whole surface — calling it is the consent, receipt 41ec864723fb). The
          *     left SQL goes through the same safety gate as the Query Builder.
          */
         post: operations["query_cross_source_join_query_cross_source_join_post"];
@@ -7533,6 +7608,11 @@ export interface components {
         AskRequest: {
             /** Agent Id */
             agent_id?: string | null;
+            /**
+             * Allow Clarify
+             * @default true
+             */
+            allow_clarify: boolean;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
@@ -8589,6 +8669,11 @@ export interface components {
         };
         /** InvestigateRequest */
         InvestigateRequest: {
+            /**
+             * Allow Clarify
+             * @default true
+             */
+            allow_clarify: boolean;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
@@ -9497,6 +9582,11 @@ export interface components {
              */
             connection_id: string;
             /**
+             * Corrected Sql
+             * @default
+             */
+            corrected_sql: string;
+            /**
              * Headline
              * @default
              */
@@ -9511,6 +9601,11 @@ export interface components {
              * @default
              */
             note: string;
+            /**
+             * Sql Source
+             * @default
+             */
+            sql_source: string;
             /** Verdict */
             verdict: string;
         };
@@ -16970,6 +17065,39 @@ export interface operations {
             };
         };
     };
+    get_governed_tags_governance_tags_get: {
+        parameters: {
+            query?: {
+                key?: string | null;
+                securable_prefix?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_context_graph_graph_get: {
         parameters: {
             query?: {
@@ -18217,6 +18345,66 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resolutions_learning_resolutions_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_resolution_learning_resolutions__res_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                res_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

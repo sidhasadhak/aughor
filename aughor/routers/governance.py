@@ -78,3 +78,17 @@ def get_audit_feed(
         raise HTTPException(status_code=400, detail=str(exc))
     return {"categories": list(CATEGORIES), "category": category,
             "count": len(events), "events": [e.to_dict() for e in events]}
+
+
+@router.get("/governance/tags")
+def get_governed_tags(key: str | None = None, securable_prefix: str | None = None,
+                      limit: int = 200):
+    """Browse the G2 governed-tag plane (read-only). S1/J13: the governance axis
+    was write-only — tags existed in the store with no route and no UI, so a
+    'Certified' securable could never LOOK certified. Writes stay with the
+    clearance machinery; this is the render path."""
+    from dataclasses import asdict
+
+    from aughor.govern.tag_store import list_tags
+    return [asdict(t) for t in
+            list_tags(key=key, securable_prefix=securable_prefix, limit=limit)]

@@ -156,12 +156,8 @@ def create_monitor(req: CreateMonitorRequest, request: Request) -> dict:
         detail = "; ".join(f"{er['loc'][-1]}: {er['msg']}" for er in e.errors())
         raise HTTPException(status_code=422, detail=f"Invalid monitor configuration — {detail}")
     saved = upsert_monitor(monitor)
-    # Schedule it
-    try:
-        from aughor.monitors.scheduler import reload_monitor
-        reload_monitor(saved)
-    except Exception:
-        pass
+    # No scheduler sync: the automation heartbeat reads the monitor store live each
+    # tick (virtual adoption), so an upserted row is already scheduled.
     return saved.model_dump()
 
 
@@ -176,14 +172,6 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = existing.model_copy(update=updates)
     saved = upsert_monitor(updated)
-    try:
-        from aughor.monitors.scheduler import reload_monitor, remove_monitor
-        if saved.enabled:
-            reload_monitor(saved)
-        else:
-            remove_monitor(monitor_id)
-    except Exception:
-        pass
     return saved.model_dump()
 
 
@@ -191,11 +179,6 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
 def delete_monitor_route(monitor_id: str) -> None:
     if not delete_monitor(monitor_id):
         raise HTTPException(status_code=404, detail="Monitor not found")
-    try:
-        from aughor.monitors.scheduler import remove_monitor
-        remove_monitor(monitor_id)
-    except Exception:
-        pass
 
 
 # ── Enable / disable ───────────────────────────────────────────────────────────
@@ -205,11 +188,6 @@ def enable_monitor(monitor_id: str) -> dict:
     m = set_monitor_enabled(monitor_id, True)
     if not m:
         raise HTTPException(status_code=404, detail="Monitor not found")
-    try:
-        from aughor.monitors.scheduler import reload_monitor
-        reload_monitor(m)
-    except Exception:
-        pass
     return m.model_dump()
 
 
@@ -218,11 +196,6 @@ def disable_monitor(monitor_id: str) -> dict:
     m = set_monitor_enabled(monitor_id, False)
     if not m:
         raise HTTPException(status_code=404, detail="Monitor not found")
-    try:
-        from aughor.monitors.scheduler import remove_monitor
-        remove_monitor(monitor_id)
-    except Exception:
-        pass
     return m.model_dump()
 
 

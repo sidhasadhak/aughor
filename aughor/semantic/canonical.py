@@ -14,34 +14,14 @@ stores that must reconcile"). It is deterministic and side-effect-free.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Optional
 
 
 # Higher rank wins when the same metric name appears in more than one store.
 # profile_governed = the connection's BusinessProfile north-star metrics: build-time
 # audited, connection-specific governed SQL — above the ontology, below the human catalog.
-_SOURCE_RANK = {"catalog": 4, "profile_governed": 3, "ontology_verified": 2, "ontology_unverified": 1}
-
-
-@dataclass
-class CanonicalMetric:
-    name: str
-    label: str
-    sql: str
-    unit: str = ""
-    tables: list = field(default_factory=list)
-    source: str = "catalog"          # catalog | ontology_verified | ontology_unverified
-    verified: bool = True            # curated + M24c-verified are trustworthy for injection
-    caveats: str = ""
-
-    @property
-    def rank(self) -> int:
-        return _SOURCE_RANK.get(self.source, 0)
-
-
-def _norm(name: str) -> str:
-    return (name or "").strip().lower().replace(" ", "_").replace("-", "_")
+# _SOURCE_RANK / _norm left with the CanonicalMetric resolver (2026-08-06);
+# `contracts.py` carries the authoritative rank + key-normalization mirrors.
 
 
 # ── Source loaders — the three governed-metric stores, loaded once and shared by BOTH the
@@ -124,73 +104,11 @@ def _load_profile_north_stars(connection_id: str, schema_name: Optional[str]) ->
         return []
 
 
-def resolve_canonical_metrics(
-    connection_id: str = "",
-    schema_name: Optional[str] = None,
-    *,
-    catalog=None,
-    ontology=None,
-    schema_text: Optional[str] = None,
-) -> list[CanonicalMetric]:
-    """Merge the catalog + ontology + profile north-star stores into one deduplicated,
-    precedence-ranked list (sorted by name). ``catalog`` / ``ontology`` are injectable for
-    testing; otherwise loaded live and best-effort. See the source loaders for the schema-filter
-    + latency notes."""
-    by_name: dict[str, CanonicalMetric] = {}
-
-    def _consider(m: CanonicalMetric) -> None:
-        key = _norm(m.name)
-        if not key or not (m.sql or "").strip():
-            return
-        cur = by_name.get(key)
-        if cur is None or m.rank > cur.rank:
-            by_name[key] = m
-
-    # 1. Curated catalog — highest authority.
-    for md in _load_catalog_metrics(connection_id, schema_text, catalog):
-        _consider(CanonicalMetric(
-            name=getattr(md, "name", "") or "",
-            label=getattr(md, "label", "") or getattr(md, "name", ""),
-            sql=getattr(md, "sql", "") or "",
-            unit=getattr(md, "unit", "") or "",
-            tables=list(getattr(md, "tables", []) or []),
-            source="catalog",
-            verified=True,
-            caveats=getattr(md, "caveats", "") or "",
-        ))
-
-    # 2. Ontology metrics — verified outrank unverified; both below the catalog.
-    for om in _load_ontology_metrics(connection_id, schema_name, ontology):
-        verified = bool(getattr(om, "verified", False))
-        _consider(CanonicalMetric(
-            name=getattr(om, "id", "") or "",
-            label=getattr(om, "display_name", "") or getattr(om, "id", ""),
-            sql=getattr(om, "formula_sql", "") or "",
-            unit=getattr(om, "unit", "") or "",
-            tables=list(getattr(om, "tables", []) or []),
-            source="ontology_verified" if verified else "ontology_unverified",
-            verified=verified,
-        ))
-
-    # 3. BusinessProfile north-star metrics — the connection's governed formulas (above the
-    # ontology, below the human catalog). The full value_sql (with its FROM/WHERE) is the most
-    # faithful reference.
-    for nsm in _load_profile_north_stars(connection_id, schema_name):
-        vsql = (getattr(nsm, "value_sql", "") or "").strip()
-        if not vsql:
-            continue
-        _consider(CanonicalMetric(
-            name=getattr(nsm, "name", "") or "",
-            label=getattr(nsm, "name", "") or "",
-            sql=vsql,
-            unit=getattr(nsm, "unit_or_range", "") or "",
-            source="profile_governed",
-            verified=True,
-            caveats=(getattr(nsm, "definition", "") or "")[:160],
-        ))
-
-    return sorted(by_name.values(), key=lambda m: m.name)
-
+# `resolve_canonical_metrics` was DELETED by flag endgame Wave 2 (2026-08-06) —
+# the `semantic.contract_live` migration completed its obligation: the planning
+# path resolves through `resolve_planning_metrics` (SemanticContract behind
+# `_ContractMetricView`, proven byte-identical, receipt e801ff3a4448), and the
+# CanonicalMetric shape left with its resolver.
 
 def resolve_contracts(
     connection_id: str = "",
@@ -230,23 +148,6 @@ def resolve_contracts(
     return dedup_by_rank(out)
 
 
-def render_canonical_metrics_block(metrics, *, include_unverified: bool = False) -> str:
-    """Format resolved metrics as a prompt block. Unverified ontology formulas are
-    excluded by default — they must never be injected as authoritative SQL. Returns "" when
-    there's nothing trustworthy to inject (so callers can append unconditionally)."""
-    usable = [m for m in metrics if (m.sql or "").strip() and (m.verified or include_unverified)]
-    if not usable:
-        return ""
-    lines = ["CANONICAL METRICS — use these EXACT formulas; never re-derive a metric listed here:"]
-    for m in usable:
-        unit = f" [{m.unit}]" if m.unit else ""
-        tag = "" if m.verified else " (unverified — use only if no verified form exists)"
-        lines.append(f"  - {m.name}{unit} = {m.sql}{tag}")
-        if m.caveats:
-            lines.append(f"      caveat: {m.caveats}")
-    return "\n".join(lines)
-
-
 def render_contracts_block(contracts, *, include_unverified: bool = False) -> str:
     """The contract-native twin of ``render_canonical_metrics_block`` — renders a
     ``list[SemanticContract]`` to the SAME prompt block, byte-for-byte. The render-authority
@@ -265,16 +166,6 @@ def render_contracts_block(contracts, *, include_unverified: bool = False) -> st
         if c.caveats:
             lines.append(f"      caveat: {c.caveats}")
     return "\n".join(lines)
-
-
-def _contract_live() -> bool:
-    """Whether the planning path renders from the one SemanticContract (REC-U10 invasive half).
-    Fail-safe to the legacy CanonicalMetric path if the flag store is unreachable."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("semantic.contract_live")
-    except Exception:
-        return False
 
 
 class _ContractMetricView:
@@ -318,6 +209,14 @@ class _ContractMetricView:
     def verified(self) -> bool:
         return self._c.injectable
 
+    @property
+    def rank(self) -> int:
+        # The matcher's precedence tiebreak (`_match_canonical_metric` reads
+        # `getattr(m, "rank", 0)` — a fail-open that would have SILENTLY flattened
+        # catalog-over-ontology precedence at match time had the view not carried
+        # it; caught by the PR-2 adversarial self-review, not by any test).
+        return self._c.rank
+
 
 def resolve_planning_metrics(
     connection_id: str = "",
@@ -327,34 +226,29 @@ def resolve_planning_metrics(
     ontology=None,
     schema_text: Optional[str] = None,
 ) -> list:
-    """Flag-aware STRUCTURED metric resolver for the semantic compiler (REC-U10 tail — retires
-    ``CanonicalMetric`` from the compiler's live path). Off → the legacy ``CanonicalMetric`` list
-    (byte-identical default). On (``semantic.contract_live``) → the SAME three governed stores
-    resolved into ``SemanticContract``s and presented through ``_ContractMetricView``, so the
-    compiler consumes the one contract type without any shape churn. ``verified`` maps to the
-    contract's ``injectable`` (equal to the legacy field), so the synthesized SQL is unchanged."""
-    if _contract_live():
-        return [
-            _ContractMetricView(c)
-            for c in resolve_contracts(
-                connection_id, schema_name, catalog=catalog, ontology=ontology,
-                schema_text=schema_text)
-        ]
-    return resolve_canonical_metrics(
-        connection_id, schema_name, catalog=catalog, ontology=ontology, schema_text=schema_text)
+    """STRUCTURED metric resolver for the planning path (REC-U10 — ``CanonicalMetric``
+    retired). The three governed stores resolve into ``SemanticContract``s presented
+    through ``_ContractMetricView``, so consumers read one contract type in the exact
+    attribute shape the legacy list carried; ``verified`` maps to the contract's
+    ``injectable`` (defined equal to the legacy field), so synthesized SQL is
+    unchanged. The legacy branch was deleted by flag endgame Wave 2 (2026-08-06)
+    after the flip soaked default-ON from 2026-07-31 (receipt e801ff3a4448)."""
+    return [
+        _ContractMetricView(c)
+        for c in resolve_contracts(
+            connection_id, schema_name, catalog=catalog, ontology=ontology,
+            schema_text=schema_text)
+    ]
 
 
 def canonical_metrics_block(connection_id: str = "", schema_name: Optional[str] = None,
                             schema_text: Optional[str] = None) -> str:
     """Convenience: resolve + render in one call (the form callers inject). No-op safe.
     Pass ``schema_text`` when the caller already holds the schema to avoid a costly
-    re-introspection (see resolve_canonical_metrics). When ``semantic.contract_live`` is on this
-    renders from the unified SemanticContract instead — byte-identical output (REC-U10)."""
-    if _contract_live():
-        return render_contracts_block(
-            resolve_contracts(connection_id, schema_name, schema_text=schema_text))
-    return render_canonical_metrics_block(
-        resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text))
+    re-introspection (see resolve_contracts). Renders from the unified
+    SemanticContract — the one metric type (REC-U10; legacy path deleted 2026-08-06)."""
+    return render_contracts_block(
+        resolve_contracts(connection_id, schema_name, schema_text=schema_text))
 
 
 def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str] = None,
@@ -387,16 +281,11 @@ def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str]
                  "canonical metrics still inject", counter="canonical.unified_catalog")
     try:
         # catalog already rendered above (build_metrics_block) with its governance — so this half
-        # renders only the north-star + ontology formulas. Under semantic.contract_live it resolves
-        # from the unified SemanticContract; byte-identical to the CanonicalMetric path (REC-U10).
-        if _contract_live():
-            extra = [c for c in resolve_contracts(connection_id, schema_name, schema_text=schema_text)
-                     if c.source != "catalog"]
-            block = render_contracts_block(extra)
-        else:
-            extra = [m for m in resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text)
-                     if m.source != "catalog"]
-            block = render_canonical_metrics_block(extra)
+        # renders only the north-star + ontology formulas, from the unified
+        # SemanticContract (REC-U10; the CanonicalMetric twin was deleted 2026-08-06).
+        extra = [c for c in resolve_contracts(connection_id, schema_name, schema_text=schema_text)
+                 if c.source != "catalog"]
+        block = render_contracts_block(extra)
         if block:
             parts.append(block)
     except Exception as exc:

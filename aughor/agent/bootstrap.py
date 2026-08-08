@@ -25,7 +25,22 @@ def register_agent_plugins() -> None:
     _register_schema_annotators()
     _register_authz_resolvers()
     _register_value_sample_loader()
+    _register_guard_receipt_forwarder()
     _REGISTERED = True
+
+
+def _register_guard_receipt_forwarder() -> None:
+    """A4 — forward platform-side guard receipts (de-fan, preflight repair) to the
+    live progress sink, where the SSE stream turns them into ``guard_receipt``
+    frames. The kernel seam is a no-op until this registration, so a bare platform
+    stays agent-free."""
+    from aughor.agent.progress import emit_guard_receipt as _to_sink
+    from aughor.kernel.registries.execution_hooks import register_guard_receipt_hook
+
+    def _forward(guard, action, detail, before, after):
+        _to_sink(guard, action, detail=detail, before=before, after=after)
+
+    register_guard_receipt_hook("sse_sink", _forward)
 
 
 def _register_value_sample_loader() -> None:

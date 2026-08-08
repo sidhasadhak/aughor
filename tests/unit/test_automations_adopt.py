@@ -1,11 +1,11 @@
-"""Wave A5 — adopt monitors + briefs onto the one engine.
+"""Wave A5 — monitors + briefs run through the one engine.
 
-The decision gate is EQUIVALENCE + REVERSIBILITY: the engine path produces the same alert/delivery
-as the legacy path (same severity, message, and anti-flap debounce), and flipping the flag off
-restores the legacy path with no data migration. The strongest evidence is that the translation is
-literally the same two functions (`run_monitor`, `deliver_subscription`) called from a different
-loop — so these tests lock the WIRING that makes "different loop, same behaviour" true, and the one
-place a bug could hide: double-firing across a runtime flip.
+Originally the decision gate was EQUIVALENCE + REVERSIBILITY against the legacy schedulers.
+Both were proven (L4 receipt 65364174a172) and the legacy paths were DELETED (flag endgame
+Wave 4, 2026-08-06), so what these tests lock now is the WIRING that makes "one loop, same
+behaviour" true — the translation is literally the same two functions (`run_monitor`,
+`deliver_subscription`) called from the engine's loop — plus the structural facts that
+replaced the runtime flip: adoption is permanent, and the legacy job factories are gone.
 
 Hermetic: the monitor/brief stores are the conftest temp DBs; `run_monitor` / `deliver_subscription`
 are patched to spy on the calls the engine makes.
@@ -153,64 +153,36 @@ def test_adopted_monitor_fires_its_effect_through_run_automation(monkeypatch):
     assert appended == [alert]
 
 
-# ── reversibility + no double-fire ────────────────────────────────────────────────
+# ── adoption is permanent; the legacy loop is structurally gone ───────────────────
 
-def test_adoption_follows_its_own_flag(monkeypatch):
-    """The heartbeat that drives the adopted objects is always running now (the engine
-    flag was hardwired 2026-08-02), so adopt_legacy alone decides whether the legacy
-    schedulers stand down."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    assert adoption_active() is False
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda n: n == "automations.adopt_legacy")
+def test_adoption_is_permanently_active():
+    """Wave 4 hardwired the answer: the engine drives every adopted object, always.
+    The function survives (rather than being inlined away) as the single consult
+    point named by the Wave-4 tombstone in kernel/flags.py."""
     assert adoption_active() is True
 
 
-def test_the_legacy_monitor_job_stands_down_when_adoption_is_active(monkeypatch):
-    """The no-double-fire net: with adoption active the legacy monitor job returns at FIRE time
-    without running the check — so only the heartbeat fires it."""
-    upsert_monitor(_monitor(id="m-sd", conn_id="c-sd"))
-    ran = {"value": False}
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor",
-                        lambda m, db, suppress=True: ran.__setitem__("value", True))
-    monkeypatch.setattr("aughor.automations.adopt.adoption_active", lambda: True)
+def test_the_legacy_job_factories_are_gone():
+    """The no-double-fire guarantee is STRUCTURAL now: there is no second loop to race.
+    A revived `_make_job_fn` (or the per-object schedule/unschedule helpers) in either
+    scheduler module would mean the legacy path grew back beside the engine — the exact
+    double-fire/double-send hazard the fire-time skip used to guard."""
+    import aughor.briefing.scheduler as brief_sched
+    import aughor.monitors.scheduler as mon_sched
 
-    from aughor.monitors.scheduler import _make_job_fn
-    _make_job_fn("m-sd")()          # invoke the legacy job body directly
-    assert ran["value"] is False, "the legacy monitor job ran while adopted — double-fire risk"
-
-
-def test_the_legacy_brief_job_stands_down_when_adoption_is_active(monkeypatch):
-    """Same net for briefs — and it matters more, because a brief is an OUTWARD send."""
-    save_subscription(_sub(id="s-sd", conn_id="c-sd"))
-    delivered = {"value": False}
-    monkeypatch.setattr("aughor.briefing.delivery.deliver_subscription",
-                        lambda sub, persist=True: delivered.__setitem__("value", True))
-    monkeypatch.setattr("aughor.automations.adopt.adoption_active", lambda: True)
-
-    from aughor.briefing.scheduler import _make_job_fn
-    _make_job_fn("s-sd")()
-    assert delivered["value"] is False, "the legacy brief job delivered while adopted — double-send risk"
+    for mod, names in ((mon_sched, ("_make_job_fn", "run_monitor_job",
+                                    "reload_monitor", "remove_monitor")),
+                       (brief_sched, ("_make_job_fn", "reload_subscription",
+                                      "remove_subscription", "start"))):
+        for name in names:
+            assert not hasattr(mod, name), (
+                f"{mod.__name__}.{name} exists — the deleted legacy scheduler path "
+                "is growing back; monitors/briefs must run only through the engine")
 
 
-def test_the_legacy_monitor_job_runs_normally_when_adoption_is_off(monkeypatch):
-    """Reversibility: flag off ⇒ the legacy job runs exactly as before (byte-identical path).
-
-    Pins ops.metered_monitors OFF because this test's oracle is the IN-THREAD legacy
-    path: with the bridge on (default since flag strategy batch A) and a kernel loop
-    captured by an earlier test, the tick would run async and the assertion below
-    would read a stale False — the same bridge-vs-loop confusion the L4 equivalence
-    suite pinned away."""
-    monkeypatch.setenv("AUGHOR_METERED_MONITORS", "0")
-    upsert_monitor(_monitor(id="m-legacy", conn_id="c-legacy"))
-    ran = {"value": False}
-    monkeypatch.setattr("aughor.monitors.runner.run_monitor",
-                        lambda m, db, suppress=True: ran.__setitem__("value", True) or None)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
-                        lambda cid: type("D", (), {"close": lambda self: None})())
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda cid: "")
-    monkeypatch.setattr("aughor.automations.adopt.adoption_active", lambda: False)
-
-    from aughor.monitors.scheduler import _make_job_fn
-    _make_job_fn("m-legacy")()
-    assert ran["value"] is True, "the legacy job did not run with adoption off"
+def test_the_manual_triggers_survive():
+    """What deliberately remains of the legacy modules: the synchronous test-endpoint
+    triggers (an operator's 'run it now' bypasses the debounce and answers inline)."""
+    from aughor.briefing.scheduler import trigger_now as brief_trigger
+    from aughor.monitors.scheduler import trigger_now as monitor_trigger
+    assert callable(monitor_trigger) and callable(brief_trigger)

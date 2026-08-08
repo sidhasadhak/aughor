@@ -96,7 +96,7 @@ type NavTab =
   | "canvases"
   | "canvas-workspace"
   | "recents"
-  | "fleet"              // the agent fleet — runs, status, cost
+  | "fleet"              // agent runs, status, cost (legacy tab id)
   | "agents"             // user-defined agents (domain personas, flag agents.user_defined)
   | "inbox"
   | "briefing"
@@ -106,7 +106,7 @@ type NavTab =
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
-  | "agentic-ops"       // Agentic Ops — fleet · agents · attention · activity · run graphs
+  | "agentic-ops"       // Agentic Ops — runs · agents · attention · activity · run graphs
   | "control-room"      // legacy deep-link → agentic-ops (Wave CR's original id)
   | "evals"             // unified Evals workspace (Suites / Runs) — Wave E
   | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
@@ -1443,11 +1443,43 @@ const LAST_CONN_KEY = "aughor_last_conn";
 const LAST_WS_KEY = "aughor_last_workspace";
 const THEME_KEY = "aughor_theme";
 
+/** S1 — the URL is the router. Every screen in the NavTab union is addressable
+ *  as `?tab=<id>` (+ `&conn=<id>` for the bound connection), so screens are
+ *  linkable, bookmarkable and back-button-navigable without rebuilding the
+ *  state-based shell into route files. Uses the History API directly rather
+ *  than next/navigation: the shell is one client page, and a query-param sync
+ *  has no server-render surface to disagree with. */
+const VALID_TABS = new Set<NavTab>([
+  "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
+  "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
+  "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
+  "health", "playbook", "catalog", "builder", "connections", "metrics",
+  "monitors", "actions", "activity", "security", "semantic", "settings",
+]);
+
+function tabFromUrl(): NavTab | null {
+  if (typeof window === "undefined") return null;
+  const t = new URLSearchParams(window.location.search).get("tab") as NavTab | null;
+  return t && VALID_TABS.has(t) ? t : null;
+}
+
+const VALID_LAYERS = new Set<IntelLayer>([
+  "briefing", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org",
+]);
+
+function layerFromUrl(): IntelLayer | null {
+  if (typeof window === "undefined") return null;
+  const l = new URLSearchParams(window.location.search).get("layer") as IntelLayer | null;
+  return l && VALID_LAYERS.has(l) ? l : null;
+}
+
 export default function Home() {
-  // v2 nav IA: land on the Briefing (the intelligence digest), not the Home overview.
-  const [tab, setTab] = useState<NavTab>("intelligence");
+  // v2 nav IA: land on the Briefing (the intelligence digest), not the Home
+  // overview — unless the URL names a screen (S1: deep links win).
+  const [tab, setTab] = useState<NavTab>(() => tabFromUrl() ?? "intelligence");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [rawSelectedConn, setSelectedConn] = useState("");
+
   const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
   const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
@@ -1460,7 +1492,46 @@ export default function Home() {
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
-  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  const [intelLayer, setIntelLayer] = useState<IntelLayer>(() => layerFromUrl() ?? "briefing");
+  // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
+  const [initialGraphTable] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return new URLSearchParams(window.location.search).get("table") ?? undefined;
+  });
+  // S1 — keep the URL in step with the screen: a tab change PUSHES (back works
+  // across screens), a connection change REPLACES (no history spam), and
+  // popstate restores the screen the URL names.
+  const urlSyncReady = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlTab = params.get("tab");
+    const urlConn = params.get("conn");
+    const urlLayer = params.get("layer");
+    const wantLayer = tab === "intelligence" ? intelLayer : null;
+    if (urlTab === tab && (urlConn ?? "") === rawSelectedConn
+        && (urlLayer ?? null) === wantLayer) return;
+    params.set("tab", tab);
+    if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
+    if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
+    const next = `${window.location.pathname}?${params.toString()}`;
+    if (!urlSyncReady.current || urlTab === tab) {
+      window.history.replaceState(null, "", next);
+      urlSyncReady.current = true;
+    } else {
+      window.history.pushState(null, "", next);
+    }
+  }, [tab, rawSelectedConn, intelLayer]);
+  useEffect(() => {
+    const onPop = () => {
+      const t = tabFromUrl();
+      if (t) setTab(t);
+      const l = layerFromUrl();
+      if (l) setIntelLayer(l);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
   const [agenticOpsLayer, setAgenticOpsLayer] = useState<AgenticOpsLayer>("fleet");
@@ -1524,9 +1595,13 @@ export default function Home() {
     getConnections()
       .then(conns => {
         setConnections(conns);
+        // S1 — a `?conn=` deep link outranks the remembered connection: a shared
+        // URL must open on the data it was looking at, not the reader's last tab.
+        const fromUrl = typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("conn") : null;
         const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_CONN_KEY) : null;
-        const valid = saved && conns.find(c => c.id === saved);
-        setSelectedConn(valid ? saved : (conns[0]?.id ?? ""));
+        const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
+        setSelectedConn(pick || (conns[0]?.id ?? ""));
       })
       .catch(err => console.error("[Aughor] failed to load connections:", err));
   }, []);
@@ -1968,6 +2043,7 @@ export default function Home() {
                   onInvestigate={goToChat}
                   layer={intelLayer}
                   onLayerChange={setIntelLayer}
+                  initialGraphTable={initialGraphTable}
                   connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
                   onConnectionChange={setSelectedConn}
                   workspaceId={selectedWorkspace}

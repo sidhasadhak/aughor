@@ -65,7 +65,10 @@ def test_filter_subsets_rows(client: TestClient, builtin_conn_id: str, _mock_llm
     assert body["output_rows"] == 2
     assert body["row_count"] == 2
     assert all("open" in row[0].lower() for row in body["rows"])
-    assert body["llm_calls"] == 1
+    # 2, not 1: the filter's own call plus the champion validation sample —
+    # permanent since flag endgame Wave 5 (2026-08-06); the verdict sheet priced
+    # exactly this one extra bounded call per filter op.
+    assert body["llm_calls"] == 2
     assert body["truncated"] is False
 
 

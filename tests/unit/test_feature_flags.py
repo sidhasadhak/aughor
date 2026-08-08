@@ -26,9 +26,11 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-# `deep_analysis.premise_check` left this list 2026-08-04: flag endgame Wave 3
-# unwrapped it (its trigger was always the gate). Two registered exemplars remain.
-WS4B_FLAGS = ["deep_analysis.causal_drill", "closed_loop"]
+# `deep_analysis.premise_check` left this list 2026-08-04 (Wave 3), and
+# `deep_analysis.causal_drill` left 2026-08-06 (Wave 5 hardwired it). The registry's
+# last two flags are the exemplars now — when they graduate, Wave 7 retires this
+# machinery and these tests with it.
+WS4B_FLAGS = ["explore.route_wide", "federation.planner"]
 
 
 @pytest.fixture(autouse=True)
@@ -55,36 +57,31 @@ def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
     assert "capabilities.auto" not in FLAG_ENV
 
     # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
-    monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
-    assert flag_enabled("semops.champion_validate") is False
-    assert flag_state("semops.champion_validate") == "off"
+    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+    assert flag_enabled("federation.planner") is False
+    assert flag_state("federation.planner") == "off"
 
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
     # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
     # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
-    monkeypatch.delenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", raising=False)
-    assert flag_enabled("semops.champion_validate") is False
-    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "1")
-    assert flag_enabled("semops.champion_validate") is True
-    monkeypatch.setenv("AUGHOR_SEMOPS_CHAMPION_VALIDATE", "garbage")
-    assert flag_enabled("semops.champion_validate") is False
+    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+    assert flag_enabled("federation.planner") is False
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    assert flag_enabled("federation.planner") is True
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "garbage")
+    assert flag_enabled("federation.planner") is False
 
 
-def test_specialist_packs_is_default_on(monkeypatch):
-    # Graduated 2026-07-31 (flag strategy batch 1, receipt 452a6fcebba4). What
-    # matters at default-on is the OPERATOR ESCAPE HATCH: an explicit falsy env
-    # value still kills steering outright.
-    assert FLAG_DEFAULT.get("specialist_packs") is True
-    monkeypatch.delenv("AUGHOR_SPECIALIST_PACKS", raising=False)
-    assert flag_enabled("specialist_packs") is True
-    for off in ("0", "false", "no", "off"):
-        monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", off)
-        assert flag_enabled("specialist_packs") is False, off
-    # default-on semantics: any non-off value stays on
-    monkeypatch.setenv("AUGHOR_SPECIALIST_PACKS", "garbage")
-    assert flag_enabled("specialist_packs") is True
+def test_specialist_packs_left_the_registry_for_good():
+    """Hardwired by flag endgame Wave 2 (2026-08-06; graduated 2026-07-31 on
+    receipt 452a6fcebba4). The escape hatch the old test pinned is now the DATA
+    GATE itself: steering needs an active pack with a human-pinned deploy binding,
+    so there is nothing an env var needs to kill. The registry must stay empty of
+    it — a re-registration would be the drift the endgame exists to prevent."""
+    assert "specialist_packs" not in FLAG_ENV
+    assert FLAG_DEFAULT == {}     # Wave 2 complete: no graduated default-ONs remain
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
@@ -105,15 +102,15 @@ def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
 
 
 def test_runtime_override_wins_both_directions(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CLOSED_LOOP", raising=False)
-    assert flag_enabled("closed_loop") is False
-    set_flag("closed_loop", True)
-    assert flag_enabled("closed_loop") is True  # override beats unset env
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
-    set_flag("closed_loop", False)
-    assert flag_enabled("closed_loop") is False  # override beats truthy env
-    clear_flag("closed_loop")
-    assert flag_enabled("closed_loop") is True  # env decides again
+    monkeypatch.delenv("AUGHOR_EXPLORE_ROUTE_WIDE", raising=False)
+    assert flag_enabled("explore.route_wide") is False
+    set_flag("explore.route_wide", True)
+    assert flag_enabled("explore.route_wide") is True  # override beats unset env
+    monkeypatch.setenv("AUGHOR_EXPLORE_ROUTE_WIDE", "1")
+    set_flag("explore.route_wide", False)
+    assert flag_enabled("explore.route_wide") is False  # override beats truthy env
+    clear_flag("explore.route_wide")
+    assert flag_enabled("explore.route_wide") is True  # env decides again
 
 
 def test_list_flags_reflects_default_on(monkeypatch, synthetic_default_on):

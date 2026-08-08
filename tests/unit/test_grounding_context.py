@@ -106,7 +106,9 @@ def test_schema_slice_matches_inline_link():
     db = open_connection_for("samples")
     schema = db.get_schema()
     q, c = "why is revenue down by channel", "samples"
-    expected = link_schema_for_prompt(q, schema, top_k_tables=8, top_k_cols=8, connection_id=c)
+    # A3 reconciled the receipt to the answer path: both use the profile-derived
+    # defaults, so the receipt describes the prompt that actually ran.
+    expected = link_schema_for_prompt(q, schema, connection_id=c)
     assert G.schema_slice(q, c, schema=schema) == expected
 
 

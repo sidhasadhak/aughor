@@ -101,6 +101,15 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
         if _ff:
             _rw = defan(sql, _ff, dialect=_dialect)
             if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
+                # A4 — the rewrite is silent no longer: the receipt goes through the
+                # kernel's guard-receipt seam (the agent's hook forwards it to the
+                # live SSE sink; a bare platform has no hook and this is free).
+                from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+                emit_guard_receipt(
+                    "fanout_defan", "rewrote_sql",
+                    detail=f"join fans out {_ff.hub_root} across {', '.join(_ff.satellites or [])} "
+                           "— replaced with the exact pre-aggregated rewrite",
+                    before=sql, after=_rw)
                 sql = _rw
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
@@ -112,7 +121,17 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
     # so a binder error is repaired BEFORE execute, not only by the post-execute retry. Fail-open.
     try:
         from aughor.sql.safety import preflight_repair
-        sql, _ = preflight_repair(conn, sql, schema)
+        _pre = sql
+        sql, _pf_info = preflight_repair(conn, sql, schema)
+        if sql.strip() != _pre.strip():
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            _what = [k for k in ("identifiers_repaired", "filter_bound",
+                                 "aliases_uniquified", "fixed") if (_pf_info or {}).get(k)]
+            emit_guard_receipt(
+                "preflight_repair", "repaired_sql",
+                detail=(", ".join(_what) or "repaired before execution")
+                       + (f" ({_pf_info['error_class']})" if (_pf_info or {}).get("error_class") else ""),
+                before=_pre, after=sql)
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "pre-flight SQL repair is fail-open; original SQL executes and "

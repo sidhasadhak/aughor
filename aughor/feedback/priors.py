@@ -18,8 +18,8 @@ connection it assembles a single prompt section from:
 
 It is deliberately conservative: token-overlap matching with a threshold, so an
 unrelated question injects nothing and the section is empty (zero prompt cost, no
-behaviour change) when there are no relevant priors. Gated behind
-``AUGHOR_CLOSED_LOOP`` at the call sites.
+behaviour change) when there are no relevant priors. Always on since flag endgame
+Wave 5 (2026-08-06) — the data gate above IS the gate.
 """
 from __future__ import annotations
 
@@ -43,13 +43,6 @@ _STOP = frozenset({
 # Same conservative overlap threshold as trusted_queries — an unrelated question
 # must inject nothing rather than pollute the plan with irrelevant corrections.
 _MIN_CORRECTION_SCORE = 0.18
-
-
-def closed_loop_enabled() -> bool:
-    """P1 is opt-in until its delta is proven. Off ⇒ call sites are no-ops."""
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("closed_loop")
 
 
 def _tokens(text: str) -> set[str]:
@@ -143,9 +136,10 @@ def retrieve_priors(question: str, connection_id: str, *, org_id: str = "", top_
                     max_corrections: int = 3, top_k_resolutions: int = 2) -> PriorsResult:
     """Assemble plan-time priors for a question. Returns an empty result (no section)
     when nothing relevant is stored, so callers can inject unconditionally. The resolved-
-    ambiguity block leads (most authoritative — an explicit resolution beats an example)."""
-    if not closed_loop_enabled():
-        return PriorsResult()
+    ambiguity block leads (most authoritative — an explicit resolution beats an example).
+    Always on (flag endgame Wave 5, 2026-08-06 — `closed_loop` hardwired): a user who
+    corrects the system and watches it repeat the mistake is the worst experience we can
+    ship; the cost is prompt-only. Data-gated — nothing stored ⇒ empty result."""
     trusted: list[tuple[TrustedQuery, float]] = []
     corrections: list[dict] = []
     resolutions: list = []
@@ -188,27 +182,26 @@ def build_corrections_section(question: str, connection_id: str, max_corrections
     separately, so this deliberately OMITS the trusted block to avoid double-injecting it. The
     Ambiguity-Ledger resolution leads (an explicit settled reading beats a past-mistake note); a
     verdict already crystallized into the ledger is deduped out of the corrections block. The
-    connection-graph slice is appended last and is gated INDEPENDENTLY (``graph.readback``), so it
-    reads back even when ``closed_loop`` is off. Empty when both flags are off or nothing matches
-    (zero-cost, byte-identical)."""
+    connection-graph slice is appended last. Both loops are always on (flag endgame
+    Wave 5, 2026-08-06 — `closed_loop` and `graph.readback` hardwired) and data-gated:
+    nothing stored and no graph ⇒ empty string (zero-cost, byte-identical)."""
     parts: list[str] = []
-    if closed_loop_enabled():
-        resolutions: list = []
-        corrections: list[dict] = []
-        try:
-            resolutions = _match_resolutions(question, connection_id, org_id, 2)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
-        try:
-            corrections = _match_corrections(question, connection_id, max_corrections)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")
-        resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
-        from aughor.semantic.ambiguity_ledger import build_resolution_block
-        parts += [p for p in (build_resolution_block(resolutions),
-                              _build_corrections_block(corrections)) if p]
+    resolutions: list = []
+    corrections: list[dict] = []
+    try:
+        resolutions = _match_resolutions(question, connection_id, org_id, 2)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ambiguity-ledger retrieval is best-effort", counter="priors.resolutions")
+    try:
+        corrections = _match_corrections(question, connection_id, max_corrections)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "verdict-correction retrieval is best-effort", counter="priors.corrections")
+    resolutions = _dedup_resolutions_covered_by_corrections(resolutions, corrections)
+    from aughor.semantic.ambiguity_ledger import build_resolution_block
+    parts += [p for p in (build_resolution_block(resolutions),
+                          _build_corrections_block(corrections)) if p]
 
     graph_section = _graph_prior_section(question, connection_id, org_id)
     if graph_section:

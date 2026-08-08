@@ -248,11 +248,32 @@ def route_after_dimensional(state: AgentState) -> str:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-# Groq free tier hard cap is ~12k tokens per request.
-# Rough char-to-token ratio for mixed SQL/prose is ~3.5 chars/token.
-# Budget: 8000 tokens for schema+scan combined → ~28000 chars total.
+# The BASELINE caps — the 2026-06 Groq-free-tier sizing (~12k tokens/request,
+# ~3.5 chars/token) that every unknown model still gets. The LIVE caps are
+# model-sized (A1 ModelProfile): `_schema_limit()` asks the bound model's tier, and
+# the intake site still runs the result through `schema_scan_char_limits`, which
+# only ever scales DOWN for a small window — so the two seams compose: profile
+# raises the default for a capable family, Layer A clamps it for a tiny BYO model.
 _SCHEMA_CHAR_LIMIT = 20_000
 _SCAN_CHAR_LIMIT = 6_000
+
+
+def _schema_limit() -> int:
+    """Model-sized schema char budget, fail-safe to the baseline constant."""
+    try:
+        from aughor.llm.profile import profile_for
+        return profile_for("coder").schema_char_limit
+    except Exception:
+        return _SCHEMA_CHAR_LIMIT
+
+
+def _interpret_rows() -> int:
+    """Model-sized rows-per-result cap for interpretation, fail-safe to the old 12."""
+    try:
+        from aughor.llm.profile import profile_for
+        return profile_for("coder").interpret_max_rows
+    except Exception:
+        return 12
 
 
 def _trim(text: str, limit: int) -> str:
@@ -684,10 +705,13 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
     return out
 
 
-def _results_to_text(results, max_rows: int = 12) -> str:
+def _results_to_text(results, max_rows: Optional[int] = None) -> str:
     """Render a list of QueryResults as compact text for LLM interpretation. `max_rows` caps each
-    result; the default is small to save tokens, but a full-series phase (a temporal trend) raises it
-    so the interpreter doesn't reason over a truncated window while the chart plots every row."""
+    result; the default is model-sized (A1 ModelProfile: 12 on the baseline tier, more on a
+    capable binding), and a full-series phase (a temporal trend) raises it explicitly so the
+    interpreter doesn't reason over a truncated window while the chart plots every row."""
+    if max_rows is None:
+        max_rows = _interpret_rows()
     parts = []
     for i, r in enumerate(results, 1):
         parts.append(f"--- Query {i} ---")
@@ -1946,13 +1970,10 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
     """K4b — after synthesis, let the agent PROPOSE declared actions grounded in the answer. Staged,
-    never executed (a human accepts and runs them through the K2 executor). Flag `kinetic.agent_actions`
-    (default off). Best-effort: the flag off, no declared actions, or a proposer hiccup all leave the
-    report untouched — a proposer must never disturb the answer it rides on."""
+    never executed (a human accepts and runs them through the K2 executor). Always on (flag
+    endgame Wave 5, 2026-08-06) and data-gated. Best-effort: no declared actions or a proposer
+    hiccup leave the report untouched — a proposer must never disturb the answer it rides on."""
     try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled("kinetic.agent_actions"):
-            return
         from aughor.ontology.store import load_latest_ontology
         graph = load_latest_ontology(connection_id or "")
         if graph is None or not getattr(graph, "kinetic_actions", None):
@@ -1970,9 +1991,23 @@ def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
                  counter="kinetic.k4b_failed")
 
 
-_EVIDENCE_BUDGET = 6000
+_EVIDENCE_BUDGET = 6000       # baseline; the live budget is _evidence_budget() (A1 ModelProfile)
 _CONDENSE_ROWS = 6            # rows kept per finding when an overflow phase must be condensed
 _CONDENSE_PHASE_CAP = 1200    # hard per-phase char backstop for a condensed block
+
+
+def _evidence_budget() -> int:
+    """Model-sized deep-synthesis evidence budget, fail-safe to the baseline.
+
+    6k chars was the ENTIRE evidence block a synthesis saw regardless of how much
+    the phases produced — sized for the weakest model the platform ever ran on. A
+    capable binding gets 18k; condensation semantics are unchanged, it just engages
+    later."""
+    try:
+        from aughor.llm.profile import profile_for
+        return profile_for("coder").evidence_budget
+    except Exception:
+        return _EVIDENCE_BUDGET
 
 
 def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
@@ -2004,13 +2039,15 @@ def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
     return "\n".join(lines)[:_CONDENSE_PHASE_CAP]
 
 
-def _phases_evidence_budgeted(phases: list[InvestigationPhaseResult], budget: int = _EVIDENCE_BUDGET) -> str:
+def _phases_evidence_budgeted(phases: list[InvestigationPhaseResult], budget: Optional[int] = None) -> str:
     """Per-phase evidence packed VERBATIM up to ``budget`` chars (exact numbers preserved for
     grounding); phases that overflow are DETERMINISTICALLY condensed (SQL dropped, rows capped —
     numbers kept), never truncated away or paraphrased by a model. Replaces the old
     ``evidence_log[:6000]`` and the ``fast``-tier tree-reduce digest that briefly stood between
     them. Small investigations (under budget) are returned unchanged. **No LLM call on any path**;
     fails open to plain truncation."""
+    if budget is None:
+        budget = _evidence_budget()   # call-time, so a runtime rebind re-sizes it
     blocks = [_one_phase_evidence(p) for p in phases]
     full = "\n".join(blocks)
     if len(full) <= budget:
@@ -3056,8 +3093,8 @@ def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) ->
     if not llm_sql:
         return None
     try:
-        from aughor.semantic.canonical import resolve_canonical_metrics
-        metrics = resolve_canonical_metrics(connection_id, schema_text=schema_text or "")
+        from aughor.semantic.canonical import resolve_planning_metrics
+        metrics = resolve_planning_metrics(connection_id, schema_text=schema_text or "")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "canonical-metric resolve for intake pin is best-effort; keeping the LLM "
@@ -3159,12 +3196,9 @@ def _apply_resolved_metric_reading(intake, connection_id: str, conn) -> Optional
     choice). Returns a transparency note when it binds, else None. Fail-open: only binds a
     substitutable formula that actually runs over the metric table.
 
-    Flag-gated on ``deep_analysis.clarify_gate`` (default ON). The substitutability check
-    is the DATA trigger; the flag is the DEPLOYMENT posture — a headless consumer cannot
-    answer an interrupt, and this path is one that pauses the run."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("deep_analysis.clarify_gate"):
-        return None
+    Unconditional since the clarify flag dissolved into the request posture
+    (2026-08-06): honoring a choice the user already recorded never pauses a run,
+    so no deployment needed an opt-out here."""
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
     if not (label and metric_table):
@@ -3190,12 +3224,11 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     their probed previews) so the run can PAUSE and ask, instead of silently choosing one. Returns None
     (proceed silently) when: the flag is off, the metric isn't a ratio, no governed reading matches,
     the readings agree / one doesn't run, or the ambiguity was already resolved on this connection.
-    Deterministic; fail-open on every uncertainty. Flag-gated on
-    ``deep_analysis.clarify_gate`` (default ON) — this is the path that PAUSES the run,
-    so a headless deployment must be able to opt out of being interrupted."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("deep_analysis.clarify_gate"):
-        return None
+    Deterministic; fail-open on every uncertainty. The pause POSTURE lives on the
+    request (`allow_clarify`, replacing the deleted `deep_analysis.clarify_gate`
+    flag): the ada_intake call site skips this probe when the run may not pause,
+    so a headless consumer never pays two preview queries for a question that
+    cannot be asked."""
     parsed_sql = (getattr(intake, "metric_sql", "") or "").strip()
     label = (getattr(intake, "metric_label", "") or "").strip()
     metric_table = (getattr(intake, "metric_table", "") or "").strip()
@@ -3204,8 +3237,8 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     if not _metric_is_ratio(parsed_sql, label):
         return None   # only a ratio has a count-vs-value split worth interrupting for
     try:
-        from aughor.semantic.canonical import resolve_canonical_metrics
-        cand = _match_canonical_metric(label, parsed_sql, resolve_canonical_metrics(
+        from aughor.semantic.canonical import resolve_planning_metrics
+        cand = _match_canonical_metric(label, parsed_sql, resolve_planning_metrics(
             connection_id, schema_text=schema_text or "") or [])
     except Exception as exc:
         from aughor.kernel.errors import tolerate
@@ -3266,7 +3299,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     from aughor.llm.context_budget import schema_scan_char_limits
     from aughor.control_plane import vend_llm
     _schema_cap, _scan_cap = schema_scan_char_limits(vend_llm("coder").max_context,
-                                                     default_schema=_SCHEMA_CHAR_LIMIT,
+                                                     default_schema=_schema_limit(),
                                                      default_scan=_SCAN_CHAR_LIMIT)
     schema = _trim(state["schema_context"], _schema_cap)
     scan = _trim(state.get("scan_context") or "", _scan_cap)
@@ -3538,7 +3571,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _resolved_note = _apply_resolved_metric_reading(intake, _conn_id, conn)
         if _resolved_note:
             _metric_note = f"{_metric_note} {_resolved_note}".strip() if _metric_note else _resolved_note
-        else:
+        elif state.get("_allow_clarify", True):
             _clarify_pending = _detect_metric_clarify(intake, _conn_id, _full_schema, conn, question)
 
     # P1 — canonical-metric pinning: prefer the connection's GOVERNED definition of this metric over
@@ -3795,8 +3828,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     }
     if plan_dict is not None:
         out["_orchestration_plan"] = plan_dict
-    # P4 clarify_gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
-    # run through the interrupt gate. Only ever set when the flag is on and the readings materially diverge.
+    # P4 clarify gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
+    # run through the interrupt gate. Only ever set when the request allows a pause and the readings
+    # materially diverge.
     if _clarify_pending is not None:
         out["_clarify_pending"] = _clarify_pending
     return out
@@ -3892,7 +3926,7 @@ def run_analysis_phase(
     preplanned=None,
     question: str = "",
     connection_id: str = "",
-    interpret_max_rows: int = 12,
+    interpret_max_rows: Optional[int] = None,   # None → model-sized (A1 ModelProfile)
     grounding_block: Optional[str] = None,
     sql_transform=None,
 ) -> "_PhaseRun":
@@ -4027,6 +4061,9 @@ def run_analysis_phase(
         _fanout_hints = [] if _preplanned else _scan_fanout(plan.queries)
         if _fanout_hints:
             from aughor.stats import stats as _s; _s.inc("deep_analysis.fanout_guard_retries")
+            from aughor.agent.progress import emit_guard_receipt as _egr
+            _egr("fanout_replan", "replanned_queries",
+                 detail="; ".join(dict.fromkeys(_fanout_hints))[:400])
             try:
                 _fixed = _provider("coder").complete(
                     system=plan_system_eff,
@@ -4052,6 +4089,9 @@ def run_analysis_phase(
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
             if _scan_fanout(plan.queries):
                 _s.inc("deep_analysis.fanout_guard_unresolved")
+                _egr("fanout_replan", "caveated",
+                     detail="the re-plan still aggregates across the fan-out; the "
+                            "magnitude will carry a caveat instead of being asserted")
                 _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
@@ -4183,7 +4223,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     phases = state.get("investigation_phases", [])
@@ -4493,7 +4533,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     phases = state.get("investigation_phases", [])
     baseline_summary = state.get("_baseline_summary", "Baseline established.")
 
@@ -4591,7 +4631,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     phases = state.get("investigation_phases", [])
 
     metric_label = intake_data.get("metric_label", "the metric")
@@ -4698,7 +4738,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     phases = state.get("investigation_phases", [])
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
@@ -4811,16 +4851,6 @@ def _premise_direction(question: str) -> "Optional[str]":
     return None
 
 
-def _causal_drill_enabled() -> bool:
-    """The `ada.causal_drill` flag (env `AUGHOR_CAUSAL_DRILL`) — additive, fail-off.
-    When on, the cross-section scan floats causal dimensions to the front (so they
-    survive the query cap) and, after localising WHERE, auto-drills the event-only dims to WHY (a
-    composition/share-of-returns lens) instead of stopping and merely recommending it."""
-    from aughor.kernel.flags import flag_enabled
-
-    return flag_enabled("deep_analysis.causal_drill")
-
-
 def _causal_split(dimensions: list) -> "tuple[list, list]":
     """Split intake dimensions for a causal (WHERE→WHY) scan: population dims stay in the RATE scan
     (the WHERE), event-only dims (living on a return/refund/cancel table) are held out for a
@@ -4860,7 +4890,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     question = state["question"]
     phases = state.get("investigation_phases", [])
     intake_data = state.get("_ada_intake") or {}
-    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     if extra_schema:
         schema = schema + extra_schema
     metric_label = intake_data.get("metric_label", "the metric")
@@ -4872,7 +4902,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # event-only dims (return reason/condition — tautological as a rate) aside for a composition/WHY
     # lens after the rate scan, and float population causal dims ahead of the descriptive ones so the
     # scan covers the differentiators, not brand/tier.
-    _causal_drill = _causal_drill_enabled() and dims_override is None
+    # Causal drill is permanent (flag endgame Wave 5, 2026-08-06): the scan floats
+    # causal dimensions to the front and auto-drills event-only dims to WHY instead
+    # of stopping and merely recommending it. Skipped only under a dims override
+    # (the caller pinned the scan's dimensions — drilling would defy the pin).
+    _causal_drill = dims_override is None
     _why_event_dims: list = []
     if _causal_drill:
         dimensions, _why_event_dims = _causal_split(dimensions)
@@ -5832,7 +5866,7 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     date_column = axis["date_column"]
     _grain_plan = _grain_plan_directive(grain) if grain else ""
     _grain_n = f"the {grain['label']} population" if grain else "the population"
-    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
             conn, phase_id="temporal_when", title="Temporal Trend — When", emoji="📈", cap=1, schema=schema,
@@ -5943,7 +5977,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
-    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     # Lead the WHY with the causal dims; drop downstream ops metadata (carrier/refund method) so the
     # composition answers "why", not "how it shipped" (fail-safe keeps all when nothing looks causal).
     event_dims = _select_why_dims(event_dims)
@@ -6039,16 +6073,6 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
     return phases
 
 
-def _why_where_interaction_enabled() -> bool:
-    """Flag `ada.why_where_interaction` (env AUGHOR_ADA_WHY_WHERE_INTERACTION or ledger override).
-    Off by default; resolved fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.why_where_interaction")
-    except Exception:
-        return False
-
-
 def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
                           where_summary: str, why_summary: str) -> Optional[dict]:
     """Forward-chained WHY×WHERE cross. The WHERE lens found which segment concentrates the metric and
@@ -6061,7 +6085,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
-    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
             conn, phase_id="cross_section_interaction",
@@ -6134,26 +6158,17 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
     )
 
 
-def _why_deepen_enabled() -> bool:
-    """Flag `ada.why_deepen` (env AUGHOR_ADA_WHY_DEEPEN or ledger override) — the peer-benchmark +
-    second-level-drill WHY lenses. Off by default; fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.why_deepen")
-    except Exception:
-        return False
-
-
 def _parallel_why_lenses_enabled() -> bool:
-    """Flag `ada.parallel_why_lenses` — run the forward-chained WHY lenses (interaction ∥ benchmark ∥
-    drill) as one concurrent wave instead of serially. They depend only on the already-computed
-    WHERE/WHY summaries, never on each other, so the merge stays byte-identical (fixed spec order).
-    Off by default; fail-safe → 'off' on any error."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("deep_analysis.parallel_why_lenses")
-    except Exception:
-        return False
+    """Run the forward-chained WHY lenses (interaction ∥ benchmark ∥ drill) as one concurrent
+    wave instead of serially. They depend only on the already-computed WHERE/WHY summaries,
+    never on each other, so the merge stays byte-identical (fixed spec order).
+
+    Transport-derived (A1 ModelProfile) — the former `deep_analysis.parallel_why_lenses`
+    flag, deleted by flag endgame Wave 6: under a rate-capped free transport a concurrent
+    wave starves the rest of the run, on an unmetered one serial throws away wall-clock, so
+    the decision follows the declared rate budget instead of a switch. Fail-safe → serial."""
+    from aughor.llm.profile import parallel_waves_enabled
+    return parallel_waves_enabled()
 
 
 def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", why_summary: str) -> Optional[dict]:
@@ -6166,7 +6181,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
-    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
             conn, phase_id="reason_benchmark",
@@ -6221,7 +6236,7 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
     intake = state.get("_ada_intake") or {}
     question = state["question"]
     metric_label = intake.get("metric_label", "the metric")
-    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
             conn, phase_id="reason_drill",
@@ -6439,7 +6454,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     bool(_lc_transform))
         question = state["question"]
         schema = _with_ledger(state, intake_data.get("filtered_schema")
-                              or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+                              or _trim(state["schema_context"], _schema_limit()))
         # Pin the contra columns' UNITS before planning, for the same reason the lifecycle
         # values are pinned: the planner is about to be asked for `SUM(<contra amount>)`
         # and cannot see whether the column it was handed holds currency or a fraction.
@@ -6659,11 +6674,14 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     #  • benchmark + drill (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it
     #    abnormal?) and drill it by product (which products drive it?) — both need only the WHY finding.
     forward_specs: list = []
-    if _why_phase and primary_summary and _why_where_interaction_enabled():
+    # The WHY lenses are permanent (flag endgame Wave 5, 2026-08-06): this is the
+    # depth a deep run is FOR — one bounded interaction query, two bounded deepen
+    # queries per qualifying run.
+    if _why_phase and primary_summary:
         forward_specs.append(("interaction",
                               lambda c: _run_interaction_lens(state, c, primary_summary, _why_summary),
                               "deep_analysis.interaction_lens"))
-    if _why_phase and _why_deepen_enabled():
+    if _why_phase:
         forward_specs.append(("benchmark",
                               lambda c: _run_reason_benchmark_lens(state, c, _why_summary),
                               "deep_analysis.benchmark_lens"))

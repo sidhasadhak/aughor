@@ -54,7 +54,7 @@ from aughor.evals.evaluator import EvalCase, EvalObservation
 SUITE_NAME = "specialist packs — steering is three-gates data-gated (flag strategy batch 1)"
 
 #: The flag this suite is evidence for.
-FLAG = "specialist_packs"
+FLAG = "specialist_packs"   # historical name — hardwired 2026-08-06 (flag endgame Wave 2)
 
 #: The question the shipped sample pack owns (mirrors tests/unit/test_packs_intake.py).
 Q = "How is retention trending by cohort?"
@@ -98,13 +98,14 @@ def _shipped_pack(*, active: bool):
     return pack.model_copy(update={"manifest": pack.manifest.model_copy(update={"status": "active"})})
 
 
-def _steers(*, flag_on: bool, connection_id: str = PROBE_CONN, packs=None,
+def _steers(*, connection_id: str = PROBE_CONN, packs=None,
             question: str = Q) -> dict:
-    """Whether steering fires, through the one seam the explore path calls."""
-    from aughor.kernel.flags import flag_overrides
+    """Whether steering fires, through the one seam the explore path calls.
+    Flag-free since flag endgame Wave 2 (2026-08-06): the DATA gates are the
+    whole control now — which is exactly what these scenarios prove."""
     from aughor.org.context import using_org
     from aughor.packs.intake import injection_for_question
-    with flag_overrides({FLAG: flag_on}), using_org("default"):
+    with using_org("default"):
         inj = injection_for_question(question, connection_id, packs=packs)
     return {"steers": inj is not None,
             "pack_id": getattr(inj, "pack_id", None)}
@@ -134,12 +135,12 @@ def _an_installed_active_pack_alone_steers_nothing() -> Comparison:
 
     This is the case that makes default-on safe: the analog of Wave H's
     "an unreferenced agent changes nothing"."""
-    off = _steers(flag_on=False, packs=[_shipped_pack(active=True)])
-    on = _steers(flag_on=True, packs=[_shipped_pack(active=True)])
+    got = _steers(packs=[_shipped_pack(active=True)])
     return Comparison(
-        scenario="an_installed_active_pack_alone_steers_nothing", expected=off, observed=on,
-        oracle="flag-off run",
-        note="active + matching, but no human-pinned deploy binding ⇒ no steer, on or off",
+        scenario="an_installed_active_pack_alone_steers_nothing",
+        expected={"steers": False, "pack_id": None}, observed=got,
+        oracle="declared (deploy gate)",
+        note="active + matching, but no human-pinned deploy binding ⇒ no steer",
     )
 
 
@@ -153,12 +154,12 @@ def _a_fresh_clone_has_nothing_to_steer_with() -> Comparison:
     otherwise fail a receipt that is measuring the machine, not the flag."""
     from aughor.packs.intake import active_packs
 
-    off = _steers(flag_on=False, packs=[])
-    on = _steers(flag_on=True, packs=[])
+    got = _steers(packs=[])
     live = active_packs()
     return Comparison(
-        scenario="a_fresh_clone_has_nothing_to_steer_with", expected=off, observed=on,
-        oracle="flag-off run",
+        scenario="a_fresh_clone_has_nothing_to_steer_with",
+        expected={"steers": False, "pack_id": None}, observed=got,
+        oracle="declared (no active pack)",
         note="no active pack ⇒ no steer, on or off; the shipped sample pack is status: draft",
         detail={"live_active_packs_here": len(live),
                 "fresh_clone_active_packs": 0},
@@ -172,7 +173,7 @@ def _a_draft_pack_never_steers_even_when_deployed() -> Comparison:
     pins a binding without first activating the pack."""
     try:
         _pin()
-        on = _steers(flag_on=True, packs=[_shipped_pack(active=False)])
+        on = _steers(packs=[_shipped_pack(active=False)])
     finally:
         _purge_probe_bindings()
     return Comparison(
@@ -189,9 +190,9 @@ def _steering_is_scoped_to_the_deployed_connection() -> Comparison:
     on one connection must not leak it to another."""
     try:
         _pin(PROBE_CONN)
-        here = _steers(flag_on=True, connection_id=PROBE_CONN,
+        here = _steers(connection_id=PROBE_CONN,
                        packs=[_shipped_pack(active=True)])
-        elsewhere = _steers(flag_on=True, connection_id=PROBE_CONN_B,
+        elsewhere = _steers(connection_id=PROBE_CONN_B,
                             packs=[_shipped_pack(active=True)])
     finally:
         _purge_probe_bindings()
@@ -221,9 +222,9 @@ def _agent_pack_preference_never_bypasses_the_deploy_gate() -> Comparison:
     try:
         tok = activate_agent(agent)
         try:
-            undeployed = _steers(flag_on=True, packs=[_shipped_pack(active=True)])
+            undeployed = _steers(packs=[_shipped_pack(active=True)])
             _pin()
-            deployed = _steers(flag_on=True, packs=[_shipped_pack(active=True)])
+            deployed = _steers(packs=[_shipped_pack(active=True)])
         finally:
             release_agent(tok)
     finally:
@@ -241,25 +242,9 @@ def _agent_pack_preference_never_bypasses_the_deploy_gate() -> Comparison:
 
 # ── what default-on makes load-bearing ───────────────────────────────────────────
 
-@scenario("the_env_kill_switch_still_stops_a_fully_earned_steer")
-def _the_env_kill_switch_still_stops_a_fully_earned_steer() -> Comparison:
-    """The operator escape hatch, tested at full strength: active pack AND pinned
-    binding — everything earned — and flag-off still refuses to steer. This is the
-    control an explicit ``AUGHOR_SPECIALIST_PACKS=0`` keeps after graduation."""
-    try:
-        _pin()
-        off = _steers(flag_on=False, packs=[_shipped_pack(active=True)])
-        on = _steers(flag_on=True, packs=[_shipped_pack(active=True)])
-    finally:
-        _purge_probe_bindings()
-    return Comparison(
-        scenario="the_env_kill_switch_still_stops_a_fully_earned_steer",
-        expected={"off_steers": False, "on_steers": True},
-        observed={"off_steers": off["steers"], "on_steers": on["steers"]},
-        oracle="declared (operator escape hatch)",
-        note="flag off kills steering outright even when every data gate is earned",
-        detail={"steered_by_when_on": on["pack_id"]},
-    )
+# `the_env_kill_switch_still_stops_a_fully_earned_steer` was DELETED with the flag
+# (flag endgame Wave 2, 2026-08-06): the escape hatch it measured no longer exists —
+# the three DATA gates above are the whole control, which the surviving scenarios prove.
 
 
 @scenario("a_broken_pack_on_disk_never_takes_down_intake")
@@ -297,23 +282,16 @@ def _the_enabled_field_is_the_only_fresh_clone_delta() -> Comparison:
     reachable either way (unlike Wave H there is no 404 to flip), and the pack
     listing itself is identical on and off — asserted, with the live pack count
     reported as detail rather than asserted."""
-    from aughor.kernel.flags import flag_overrides
     from aughor.routers.packs import get_packs
 
-    def probe(flag_on: bool) -> dict:
-        with flag_overrides({FLAG: flag_on}):
-            out = get_packs()
-        return {"enabled": out["enabled"], "packs": len(out["packs"])}
-
-    off, on = probe(False), probe(True)
+    out = get_packs()
     return Comparison(
         scenario="the_enabled_field_is_the_only_fresh_clone_delta",
-        expected={"off_enabled": False, "on_enabled": True, "listing_identical": True},
-        observed={"off_enabled": off["enabled"], "on_enabled": on["enabled"],
-                  "listing_identical": off["packs"] == on["packs"]},
-        oracle="declared (flag strategy batch 1)",
-        note="the flip's whole fresh-clone effect: the surface reports the feature as on",
-        detail={"packs_listed_here": on["packs"]},
+        expected={"enabled": True},
+        observed={"enabled": out["enabled"]},
+        oracle="declared (hardwired, flag endgame Wave 2)",
+        note="the surface reports the feature permanently on; steering stays data-gated",
+        detail={"packs_listed_here": len(out["packs"])},
     )
 
 

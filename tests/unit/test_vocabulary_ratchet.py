@@ -108,10 +108,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "not a user-facing word; the roster lists 'agents'",
     ),
     "investigation_in_web": (
-        r"(?i)investigat", ("web",), ("web/lib/api.ts",),
+        r"(?i)investigat", ("web",), ("web/lib/api.ts", "web/lib/uiMessageAdapter.ts"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
-        "must mirror the backend contract field-for-field",
+        "must mirror the backend contract field-for-field, and the C1 SSE→UIMessage "
+        "adapter is exempt for the same reason (it names the wire frames verbatim, "
+        "including the start frame's investigation_id drop-recovery handle)",
     ),
     # ── External product names ────────────────────────────────────────────────────────
     "palantir": (r"(?i)palantir", CODE_ROOTS, (), "name our features for what they do"),
@@ -154,7 +156,7 @@ BASELINE: dict[str, int] = {
     # most of them ada-era prose. Counted over `git ls-files` only — a box that has run
     # the eval suite feeds the scanner untracked MLflow yaml under evals/bakeoff_out/,
     # which is what CI's fresh checkout will never see.
-    "ada": 654,
+    "ada": 628,   # paid down by flag endgame Wave 6 (the ada.parallel_* aliases left with their targets)
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,
@@ -176,7 +178,7 @@ BASELINE: dict[str, int] = {
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 321,
+    "persona": 281,  # paid down 2026-08-06: the user-agents graduation eval retired with its flag
     "reforce": 1,
     "soma": 26,
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";
@@ -365,11 +367,15 @@ def test_canonical_is_identity_for_current_names():
 
 
 def test_no_ada_flag_survives_in_the_registry():
-    """The rename is complete on the registry side: `ada.*` exists only as an alias."""
+    """The rename is complete: no `ada.*` flag is registered, and — since an alias
+    only means something while its target lives (the last three `ada.*` aliases left
+    2026-08-06 with Wave 5's hardwires) — every surviving alias must point at a
+    REGISTERED flag, or `_canonical` resolves the old name to a dead one."""
     from aughor.kernel.flags import FLAG_ENV, RENAMED
 
     assert not [n for n in FLAG_ENV if n.startswith("ada.")]
-    assert [n for n in RENAMED if n.startswith("ada.")], "the aliases must still be there"
+    dangling = {old: new for old, new in RENAMED.items() if new not in FLAG_ENV}
+    assert not dangling, f"aliases pointing at unregistered flags: {dangling}"
 
 
 def test_a_renamed_flag_resolves_through_its_old_name(monkeypatch):

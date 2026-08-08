@@ -238,7 +238,6 @@ async def query_semantic(body: _SemanticOpRequest):
                 tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
         if base.error:
             return None, base
-        from aughor.kernel.flags import flag_enabled
         op = apply_step(
             base, body.operator, body.column,
             predicate=body.predicate or "",
@@ -250,7 +249,10 @@ async def query_semantic(body: _SemanticOpRequest):
             max_rows=body.max_rows,
             override_cap=body.override_cap,
             validate=True,
-            validate_sample=8 if flag_enabled("semops.champion_validate") else 0,
+            # Champion validation is permanent (flag endgame Wave 5, 2026-08-06):
+            # the strong model spot-checks 8 sampled filter verdicts per op —
+            # self-checking is direction, and the call is bounded by the sample.
+            validate_sample=8,
         )
         return op, base
 
@@ -297,11 +299,9 @@ async def query_cross_source_join(body: _CrossSourceJoinRequest):
     """Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
 
     The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
-    the same `cross_source_join`. Flag-gated on `federation.remote_join` (default off → 404). The
+    the same `cross_source_join`. Always available since flag endgame Wave 2 (2026-08-06;
+    the route is the whole surface — calling it is the consent, receipt 41ec864723fb). The
     left SQL goes through the same safety gate as the Query Builder."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("federation.remote_join"):
-        raise HTTPException(status_code=404, detail="cross-source join is not enabled")
     for field in ("left_conn_id", "left_sql", "left_key", "right_conn_id", "right_table", "right_key"):
         if not (getattr(body, field) or "").strip():
             raise HTTPException(status_code=400, detail=f"{field} is required")
@@ -696,11 +696,9 @@ class _CapabilityAnswerRequest(BaseModel):
 def query_capability_answer(body: _CapabilityAnswerRequest):
     """Answer a data question end-to-end through the Capability plane (AL-02): one
     `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
-    and returns the whole result. The non-streaming, template-driven counterpart to /ask — behind
-    the `capability.pipeline_live` flag while the plane lands."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("capability.pipeline_live"):
-        raise HTTPException(status_code=404, detail="capability answer path is disabled")
+    and returns the whole result. The non-streaming, template-driven counterpart to /ask —
+    permanent since flag endgame Wave 2 (2026-08-06, receipt 0dd2b45930c7: the route is the
+    single gate, calling it is the consent)."""
     if not (body.question or "").strip():
         raise HTTPException(status_code=400, detail="question is required")
     from aughor.db.connection import open_connection_for

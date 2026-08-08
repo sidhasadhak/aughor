@@ -59,34 +59,31 @@ def _conn(rows: int = 1000):
     return DuckDBConnection(p, connection_id="sr-receipt")
 
 
-def _emit_data_version(conn, tables, *, flag_on: bool):
-    """Exactly the gate the finding-emit path runs (explorer/agent.py): compute a token
-    only when the flag is on, fail-open to None."""
+def _emit_data_version(conn, tables):
+    """Exactly the gate the finding-emit path runs (explorer/agent.py): compute the
+    token unconditionally (flag endgame Wave 2, 2026-08-06), fail-open to None."""
     from aughor.db.snapshot import data_version, snapshot_receipts_enabled
-    from aughor.kernel.flags import flag_overrides
-    with flag_overrides({FLAG: flag_on}):
-        try:
-            return data_version(conn, tables) if snapshot_receipts_enabled() else None
-        except Exception:
-            return None
+    try:
+        return data_version(conn, tables) if snapshot_receipts_enabled() else None
+    except Exception:
+        return None
 
 
 # ── the additive/data-gated claim ────────────────────────────────────────────────
 
 @scenario("off_stamps_nothing_on_stamps_a_valid_token")
 def _off_stamps_nothing_on_stamps_a_valid_token() -> Comparison:
-    """Off, the emit computes no token (the dossier's data_version is None); on, it is a
-    valid fingerprint token. That one field is the entire on/off delta at emit."""
+    """The emit stamps a valid fingerprint token — unconditionally since flag endgame
+    Wave 2 (2026-08-06); the off-state (None) died with the flag."""
     c = _conn()
-    off = _emit_data_version(c, ["shop_orders"], flag_on=False)
-    on = _emit_data_version(c, ["shop_orders"], flag_on=True)
+    on = _emit_data_version(c, ["shop_orders"])
     return Comparison(
         scenario="off_stamps_nothing_on_stamps_a_valid_token",
-        expected={"off_token": None, "on_is_token": True},
-        observed={"off_token": off, "on_is_token": isinstance(on, str) and on.startswith("fp:")},
-        oracle="flag-off run",
-        note="turning it on adds a data_version token; off is byte-identical (None)",
-        detail={"on_token": on},
+        expected={"is_token": True},
+        observed={"is_token": isinstance(on, str) and on.startswith("fp:")},
+        oracle="declared (unconditional emit, fail-open)",
+        note="every finding pins a data_version token; a failed probe yields None, never a block",
+        detail={"token": on},
     )
 
 

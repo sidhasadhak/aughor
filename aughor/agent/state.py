@@ -503,7 +503,8 @@ class AgentState(TypedDict):
     investigation_phases: list[InvestigationPhaseResult]
     answer_report: Optional[AnswerReport]
     _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
-    _clarify_pending: Optional[dict]  # P4 clarify_gate: a material metric ambiguity awaiting the user's choice
+    _clarify_pending: Optional[dict]  # P4 clarify gate: a material metric ambiguity awaiting the user's choice
+    _allow_clarify: Optional[bool]    # request posture: may this run PAUSE to ask? (replaces the clarify flag)
     _suppressed_ratio: Optional[dict]  # a ratio metric proven corrupt (conditioned denom / fan-out): {metric_label, caveat, true_global_str} — synthesis scrubs it from every phase + cites the true level
 
     # Plan-then-SQL: set by plan_queries, consumed by execute_planned_queries
@@ -519,7 +520,7 @@ class AgentState(TypedDict):
     _dimensional_summary: Optional[str]
     _dimensional_passes: Optional[str]     # dominant finding → seeds Tier-3 targeting
     _behavioral_summary: Optional[str]
-    # ada.parallel_phases — the wave node's post-hoc routing decision (phase_waves.py)
+    # parallel phase waves — the wave node's post-hoc routing decision (phase_waves.py)
     _wave_next: NotRequired[Optional[str]]
 
     # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·

@@ -145,19 +145,9 @@ def test_validate_mixes_valid_and_invalid():
 
 # ── the HTTP surface ─────────────────────────────────────────────────────────────
 
-def test_router_propose_404_when_flag_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    from fastapi import HTTPException
-
-    from aughor.routers import kinetic as K
-    import pytest
-    with pytest.raises(HTTPException) as e:
-        K.propose_actions_route(K.ProposeRequest(context="x"), connection_id="c", schema_name=None)
-    assert e.value.status_code == 404
 
 
 def test_router_propose_returns_staged_proposals(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: _graph())
     fake = _FakeProvider([ProposedAction(action_id="refund_order",
                                          params={"order_id": "A1", "amount_eur": "500"})])

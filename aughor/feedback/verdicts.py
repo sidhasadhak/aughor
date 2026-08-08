@@ -106,14 +106,12 @@ def record_verdict(
         c.close()
     # Verdict → Ambiguity Ledger bridge: a reviewer's reject/correct on a headlined finding
     # crystallizes as the HIGHEST-authority resolution (overrides any probe/user reading on that
-    # question). Best-effort, gated with the ledger (closed_loop); never fails the verdict write.
+    # question). Best-effort; never fails the verdict write.
     if v in ("reject", "correct") and (headline or "").strip():
         try:
-            from aughor.feedback.priors import closed_loop_enabled
-            if closed_loop_enabled():
-                from aughor.semantic.ambiguity_ledger import crystallize_verdict
-                crystallize_verdict(connection_id or "", headline, org_id=org,
-                                    corrected_sql=corrected_sql or "", note=note or "")
+            from aughor.semantic.ambiguity_ledger import crystallize_verdict
+            crystallize_verdict(connection_id or "", headline, org_id=org,
+                                corrected_sql=corrected_sql or "", note=note or "")
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "verdict→ledger crystallization is best-effort",
@@ -147,7 +145,48 @@ def verdict_stats(connection_id: Optional[str] = None) -> dict:
     total = sum(counts.values())
     # acceptance credits a full accept and a half-credit "correct" (right direction).
     acceptance = round((counts["accept"] + 0.5 * counts["correct"]) / total, 3) if total else None
-    return {"counts": counts, "total": total, "acceptance_rate": acceptance}
+    return {"counts": counts, "total": total, "acceptance_rate": acceptance,
+            "trend": _acceptance_trend(org, connection_id)}
+
+
+def _acceptance_trend(org: str, connection_id: Optional[str], weeks: int = 8) -> list[dict]:
+    """Weekly acceptance for the last ``weeks`` ISO weeks (oldest first) — the
+    product's per-connection accuracy TREND (S3). Same half-credit convention as
+    the headline rate. Weeks with no verdicts are simply absent: an empty week is
+    "no measurements", which must not render as 0% accuracy."""
+    c = _conn()
+    try:
+        where = "WHERE org_id=?"
+        params: list = [org]
+        if connection_id:
+            where += " AND connection_id=?"
+            params.append(connection_id)
+        rows = c.execute(
+            f"SELECT substr(created_at, 1, 10) d, verdict FROM finding_verdicts {where}",
+            tuple(params),
+        ).fetchall()
+    finally:
+        c.close()
+    from collections import defaultdict
+    from datetime import date, timedelta
+    by_week: dict[str, dict] = defaultdict(lambda: {"accept": 0, "correct": 0, "reject": 0})
+    cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+    for r in rows:
+        d = r["d"] or ""
+        if len(d) == 10 and d >= cutoff:
+            try:
+                y, w, _ = date.fromisoformat(d).isocalendar()
+            except ValueError:
+                continue
+            wk = f"{y}-W{w:02d}"
+            if r["verdict"] in by_week[wk]:
+                by_week[wk][r["verdict"]] += 1
+    out = []
+    for wk in sorted(by_week):
+        n = sum(by_week[wk].values())
+        rate = round((by_week[wk]["accept"] + 0.5 * by_week[wk]["correct"]) / n, 3)
+        out.append({"week": wk, "total": n, "acceptance_rate": rate})
+    return out
 
 
 def list_verdicts(connection_id: Optional[str] = None, limit: int = 50) -> list[dict]:

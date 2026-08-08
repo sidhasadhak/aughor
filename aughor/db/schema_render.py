@@ -103,11 +103,17 @@ def render_raw_schema(
 
         cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
         _overrides = get_table_overrides(connection_id or "", table) if connection_id else {}
+        # A2 — every connector shows what its columns HOLD, not just their types
+        # (one head scan per table; strip_value_samples removes these before any
+        # pass that token-scans the schema text).
+        _samples = column_head_samples(
+            lambda sql: conn.execute(sql).fetchall(), f'"{schema_name}"."{table}"' if schema_name else f'"{table}"',
+            [c[0] for c in cols])
         for col in cols:
             col_name, col_type = col[0], col[1]
             if col_name in _overrides:
                 col_type = _overrides[col_name]
-            parts.append(f"  {col_name}  {col_type}")
+            parts.append(f"  {col_name}  {col_type}" + _samples.get(col_name, ""))
             if _annotations:
                 inject_into_schema_parts(parts, table, col_name, _annotations)
 
@@ -174,6 +180,33 @@ _SAMPLE_LINE_RE = re.compile(re.escape(SAMPLE_MARK) + r".*$", re.MULTILINE)
 # a hint, not a data dump, and a free-text column would otherwise swamp the block.
 SAMPLE_VALUE_CHARS = 28
 SAMPLE_MAX_VALUES = 3
+
+
+def column_head_samples(run_query, table_fqn: str, columns: list[str]) -> dict[str, str]:
+    """``{column: " ~ e.g. 'a', 'b'"}`` from ONE head scan of the table — the A2
+    generalization of the currency-VARCHAR fix, shared by every connector's
+    ``get_schema``. A type alone does not say what a column HOLDS; two real values
+    make `actual_price VARCHAR` self-describing. ``run_query(sql)`` must return
+    rows as sequences; best-effort — any failure renders the schema exactly as
+    before, sample-free."""
+    if not columns:
+        return {}
+    try:
+        # Double every embedded quote: column names can come from user-supplied
+        # headers and must not be able to close the identifier.
+        quoted = ", ".join('"' + str(c).replace('"', '""') + '"' for c in columns)
+        rows = run_query(f'SELECT {quoted} FROM {table_fqn} LIMIT 5')
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for i, col in enumerate(columns):
+        try:
+            suffix = format_value_samples([r[i] for r in rows])
+        except Exception:
+            continue
+        if suffix:
+            out[col] = suffix
+    return out
 
 
 def strip_value_samples(schema_str: str) -> str:

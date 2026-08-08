@@ -350,11 +350,8 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
         raise HTTPException(status_code=422, detail=f"Invalid alert configuration — {detail}")
 
     saved_monitor = upsert_monitor(monitor)
-    try:
-        from aughor.monitors.scheduler import reload_monitor
-        reload_monitor(saved_monitor)
-    except Exception as exc:
-        tolerate(exc, "dashboard: monitor scheduler reload failed after card graduate", counter="dashboard.monitor_reload")
+    # No scheduler sync: the automation heartbeat reads the monitor store live each
+    # tick (virtual adoption), so the graduated monitor is already scheduled.
 
     updated = upsert_card(card.model_copy(update={"thresholds": {
         "warning": req.warning_threshold,

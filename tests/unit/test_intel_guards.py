@@ -94,8 +94,21 @@ def test_distribution_named_ratio_is_incoherent():
 # ── RC2: governed BusinessProfile metrics reach the canonical resolver ────────
 
 def test_profile_governed_source_outranks_ontology():
-    from aughor.semantic.canonical import _SOURCE_RANK
+    """RC2 precedence, on the surviving authority: SemanticContract.rank (the
+    legacy canonical._SOURCE_RANK mirror left with its resolver, 2026-08-06)."""
+    from aughor.ontology.models import OntologyMetric
+    from aughor.semantic.contracts import SemanticContract
+    from aughor.semantic.metrics import MetricDefinition
+    from aughor.business_profile.models import NorthStarMetric
+
+    catalog = SemanticContract.from_metric_definition(
+        MetricDefinition(name="m", label="M", sql="SUM(x)"))
+    profile = SemanticContract.from_north_star_metric(
+        NorthStarMetric(name="m", definition="d", maps_to="t.c", why_it_matters="w",
+                        unit_or_range="$", value_sql="SUM(y)"))
+    onto_ok = SemanticContract.from_ontology_metric(
+        OntologyMetric(id="m", display_name="M", entity="e", formula_sql="SUM(z)", verified=True))
+    onto_no = SemanticContract.from_ontology_metric(
+        OntologyMetric(id="m", display_name="M", entity="e", formula_sql="SUM(w)", verified=False))
     # catalog (human) > profile_governed > ontology_verified > ontology_unverified
-    assert _SOURCE_RANK["catalog"] > _SOURCE_RANK["profile_governed"]
-    assert _SOURCE_RANK["profile_governed"] > _SOURCE_RANK["ontology_verified"]
-    assert _SOURCE_RANK["ontology_verified"] > _SOURCE_RANK["ontology_unverified"]
+    assert catalog.rank > profile.rank > onto_ok.rank > onto_no.rank

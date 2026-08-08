@@ -124,8 +124,20 @@ _REASONING_EFFORT_DEFAULT = "low"
 
 
 def _max_output_tokens() -> int:
-    """Cap on generated tokens per call (AUGHOR_MAX_OUTPUT_TOKENS)."""
-    return max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", _MAX_OUTPUT_TOKENS))
+    """Cap on generated tokens per call (AUGHOR_MAX_OUTPUT_TOKENS).
+
+    The default is model-sized (A1 ModelProfile): a capable large-context binding
+    gets 8192 — the 4096 floor demonstrably truncated a ~25-finding briefing — and
+    an unknown model keeps the old 4096. The env var still wins outright."""
+    default = _MAX_OUTPUT_TOKENS
+    try:
+        from aughor.llm.profile import tier_for
+        default = int(tier_for(_active_model(_active_backend(), "coder"))["max_output_tokens"])
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile tier unreadable — legacy output ceiling",
+                 counter="llm.profile_tier_unreadable")
+    return max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", default))
 
 
 # How many attempts instructor may spend inside ONE logical structured call.
@@ -162,12 +174,23 @@ def _reasoning_extra_body(backend: str) -> dict:
     """Provider-specific body extras that bound reasoning, or ``{}``.
 
     ``AUGHOR_REASONING_EFFORT`` accepts low|medium|high, or ``off`` to omit the field
-    entirely (for a binding that rejects it)."""
-    effort = os.getenv("AUGHOR_REASONING_EFFORT", _REASONING_EFFORT_DEFAULT).strip().lower()
+    entirely (for a binding that rejects it). Unset, the default is model-sized (A1
+    ModelProfile): "medium" for a capable family — the free tier's constraint is
+    request RATE, not tokens, and reasoning depth is the direct quality lever — and
+    the old "low" for anything unknown."""
+    default_effort = _REASONING_EFFORT_DEFAULT
+    try:
+        from aughor.llm.profile import tier_for
+        default_effort = tier_for(_active_model(backend, "coder"))["reasoning_effort"]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile tier unreadable — legacy reasoning effort",
+                 counter="llm.profile_tier_unreadable")
+    effort = os.getenv("AUGHOR_REASONING_EFFORT", default_effort).strip().lower()
     if backend != "openrouter" or effort in ("", "off", "none"):
         return {}
     if effort not in ("low", "medium", "high"):
-        effort = _REASONING_EFFORT_DEFAULT
+        effort = default_effort
     return {"reasoning": {"effort": effort}}
 
 

@@ -25,7 +25,21 @@ import pytest
 import aughor.agent.investigate as I
 from aughor.agent.prompts_investigate import IntakeOutput
 from aughor.db.connection import DuckDBConnection
-from aughor.semantic.canonical import CanonicalMetric
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _Metric:
+    """The attribute shape the planning resolver serves (via `_ContractMetricView`);
+    constructed directly — the legacy CanonicalMetric left with its resolver."""
+    name: str
+    label: str
+    sql: str
+    unit: str = ""
+    tables: list = field(default_factory=list)
+    source: str = "catalog"
+    verified: bool = True
+    caveats: str = ""
 from aughor.tools.stats import mean_shift_significance
 
 # ── Ground truth baked into the fixture (assert against these constants) ───────────
@@ -220,12 +234,12 @@ class _FakeProvider:
 def test_p1_pin_runs_the_governed_formula_against_the_real_db(monkeypatch, gt_db):
     # The pin's dry-run probe executes the governed formula over the real fixture; a runnable
     # single-table rate is pinned (stronger than the stubbed-conn unit test).
-    governed = CanonicalMetric(
+    governed = _Metric(
         name="refund_rate", label="Refund Rate",
         sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))
     import aughor.agent.explore as ex
@@ -241,12 +255,12 @@ def test_p1_pin_runs_the_governed_formula_against_the_real_db(monkeypatch, gt_db
 def test_p1_pin_fails_closed_when_governed_formula_does_not_run(monkeypatch, gt_db):
     # Fail-closed against a real DB: a governed formula referencing a missing column must NOT replace
     # the working LLM formula (the dry-run probe errors → keep the original).
-    governed = CanonicalMetric(
+    governed = _Metric(
         name="refund_rate", label="Refund Rate",
         sql="SUM(nonexistent_col) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_canonical_metrics",
+    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))
     import aughor.agent.explore as ex

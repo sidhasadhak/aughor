@@ -133,14 +133,14 @@ def _run_config() -> dict:
                  counter="evals.config.model")
     try:
         from aughor.kernel.flags import flag_enabled
-        # Snapshot the flags an eval's comparability actually depends on. The two named
-        # here before (`ask.resolve_first`, `capabilities.auto`) were deleted by flag
-        # endgame Wave 3 — resolution now runs unconditionally, so there is nothing to
-        # record about it. `closed_loop` and `graph.readback` are the live experiments
-        # that change what the planner is shown, which is what makes two runs
-        # incomparable if they differ.
+        # Snapshot the flags an eval's comparability actually depends on. Earlier
+        # occupants of this tuple kept graduating out (Wave 3 deleted ask.resolve_first
+        # and capabilities.auto; Wave 5 hardwired closed_loop and graph.readback — both
+        # unconditional now, nothing to record). The two remaining experiments change
+        # ROUTING (wide→explore wave, fresh-turn auto-federation), which is what makes
+        # two runs incomparable if they differ.
         cfg["flags"] = {name: flag_enabled(name) for name in
-                        ("closed_loop", "graph.readback")}
+                        ("explore.route_wide", "federation.planner")}
     except Exception as exc:
         tolerate(exc, "eval run config: flag snapshot unavailable",
                  counter="evals.config.flags")
@@ -305,15 +305,10 @@ def run_experiment(suite_id: str, target_factory: Callable[[], Target],
         assert_frozen_semantics, assert_measurable, assert_within_budget,
         data_version_of, estimate_requests,
     )
-    from aughor.kernel.flags import flag_enabled
-
-    if not flag_enabled("evals.experiments"):
-        raise RuntimeError(
-            "grid experiments are off — enable the `evals.experiments` flag "
-            "(AUGHOR_EVALS_EXPERIMENTS=1) before running one. Refusing rather than "
-            "silently running every cell under one configuration, which would produce a "
-            "grid of identical numbers that looks like 'the variant made no difference'."
-        )
+    # The experiments plane is permanent since flag endgame Wave 2 (2026-08-06,
+    # receipt 1bc0e4690955 — inert until a run enters it). The refusal that guarded a
+    # half-disabled plane went with the flag; the fallback-chain integrity guard below
+    # is the one that still matters, and it stays.
     # Both integrity guards sit OUTSIDE the per-cell try, because both describe conditions
     # that invalidate the WHOLE grid rather than one cell of it: a live failover chain is
     # process-global, and a connection's volatile semantics are shared by every cell. Letting
@@ -436,13 +431,7 @@ async def schedule_experiment(
     from aughor.evals.experiments import (
         assert_measurable, assert_within_budget, estimate_requests,
     )
-    from aughor.kernel.flags import flag_enabled
     from aughor.kernel.jobs import kernel
-
-    if not flag_enabled("evals.experiments"):
-        raise RuntimeError(
-            "grid experiments are off — enable the `evals.experiments` flag "
-            "(AUGHOR_EVALS_EXPERIMENTS=1) before scheduling one.")
 
     # Preconditions BEFORE the job is created: an ineligible grid must fail at the call that
     # schedules it, not silently as a job that transitions straight to FAILED.

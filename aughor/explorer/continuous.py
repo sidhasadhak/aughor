@@ -17,7 +17,10 @@ genuinely new. Every re-kick still flows through `kickoff_exploration(auto=True)
 Scout-governance and `AUTO_EXPLORATION` licensing gates are unchanged, and a run always
 executes as a budget-supervised kernel job.
 
-Flag-gated (`explorer.continuous`), default-off = byte-identical (the tick loop no-ops).
+Always on for an always-on process since flag endgame Wave 4 (2026-08-06; the
+`explorer.continuous` flag turned ON and was deleted) — the spend controls are the
+per-connection gates above, not a process-wide boolean. The heartbeat is not started
+under VERCEL (api.py): a warm serverless instance is not a clock.
 """
 from __future__ import annotations
 

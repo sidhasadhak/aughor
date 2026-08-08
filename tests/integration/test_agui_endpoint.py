@@ -32,14 +32,12 @@ def _fresh_input(**over) -> dict:
     return body
 
 
-def test_agui_run_404_when_flag_off(client: TestClient, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGUI_ENDPOINT", "0")
-    r = client.post("/agui/run", json=_fresh_input())
-    assert r.status_code == 404          # additive + gated: off by default ⇒ the route 404s
+# test_agui_run_404_when_flag_off was DELETED with its flag (flag endgame Wave 2,
+# 2026-08-06, receipt b395745f7771): the route is the whole surface and calling it
+# is the consent — the sibling tests below exercise the always-on translator.
 
 
 def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGUI_ENDPOINT", "1")
     captured: dict = {}
 
     async def fake_ask(req, request):
@@ -109,7 +107,6 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
 def test_agui_run_carries_starter_mode_and_purpose(client: TestClient, monkeypatch):
     """R13 parity — a named starter's declared route + purpose tag ride forwardedProps
     into the real AskRequest; a malformed mode degrades to auto instead of 422-ing."""
-    monkeypatch.setenv("AUGHOR_AGUI_ENDPOINT", "1")
     captured: dict = {}
 
     async def fake_ask(req, request):

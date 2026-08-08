@@ -13,14 +13,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from aughor.kernel.flags import flag_enabled
 
 router = APIRouter(tags=["consistency"])
 
 
-def _enabled_or_404() -> None:
-    if not flag_enabled("consistency.divergence"):
-        raise HTTPException(status_code=404, detail="Not found")
 
 
 class PinIn(BaseModel):
@@ -34,7 +30,6 @@ class PinIn(BaseModel):
 @router.get("/consistency/summary")
 def consistency_summary(connection_id: str, limit: int = 2000):
     """Headline counts — whether inconsistent answers are a problem on this connection."""
-    _enabled_or_404()
     from aughor.semantic.answer_divergence import summary
     return summary(connection_id, limit=limit)
 
@@ -49,7 +44,6 @@ def list_divergences(connection_id: str, limit: int = 2000,
     excluded by default: those are being explored rather than decided, and asking a reviewer
     to pin one of fifteen one-off queries is asking the wrong question.
     """
-    _enabled_or_404()
     from aughor.semantic.answer_divergence import detect
     divs = detect(connection_id, limit=limit,
                   include_exploratory=include_exploratory,
@@ -67,7 +61,6 @@ def divergence_impact(connection_id: str, question_key: str, max_variants: int =
     contested questions became 12 genuinely divergent ones — so this is the step that turns
     "the SQL differs" into a number somebody can act on.
     """
-    _enabled_or_404()
     from aughor.semantic.answer_divergence import detect, measure_impact
     divs = detect(connection_id, include_exploratory=True, include_settled=True)
     match = next((d for d in divs if d.question_key == question_key), None)
@@ -81,7 +74,6 @@ def divergence_impact(connection_id: str, question_key: str, max_variants: int =
 @router.post("/consistency/pin")
 def pin_answer(body: PinIn):
     """Record which variant is correct. The warrant becomes "a person decided"."""
-    _enabled_or_404()
     from aughor.semantic.answer_divergence import pin
     tq = pin(body.connection_id, body.question, body.sql,
              tables=body.tables, note=body.note)
@@ -96,7 +88,6 @@ def confirmed_divergences(connection_id: str, max_questions: int = 25,
     The expensive-but-honest view: only divergences whose variants genuinely return
     different data, ordered by how much separates them.
     """
-    _enabled_or_404()
     from aughor.semantic.answer_divergence import confirmed
     pairs = confirmed(connection_id, limit=limit, max_questions=max_questions)
     return {"connection_id": connection_id, "count": len(pairs),

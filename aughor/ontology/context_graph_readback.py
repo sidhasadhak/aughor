@@ -18,7 +18,6 @@ import contextvars
 from dataclasses import dataclass, field
 
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.org.context import current_org_id
 
 # The nodes that grounded the most recent read-back — read by the trust/context
@@ -42,10 +41,6 @@ class GraphPrior:
     @property
     def fired(self) -> bool:
         return bool(self.section)
-
-
-def graph_readback_enabled() -> bool:
-    return flag_enabled("graph.readback")
 
 
 def last_cited_nodes() -> list[str]:
@@ -80,14 +75,13 @@ def build_graph_prior(
     question: str, connection_id: str, *, org_id: str = "", top_k: int = 6,
     max_chars: int = _SECTION_CAP,
 ) -> GraphPrior:
-    """Assemble the CONNECTION GRAPH prior for a question. Empty (no section, no
-    citations) when the flag is off, no graph is built for the connection, or nothing
-    matches — so a caller can inject it unconditionally at zero cost. ``max_chars`` is
-    the token-proportional budget the injected slice must respect (C3)."""
+    """Assemble the CONNECTION GRAPH prior for a question. Always on (flag endgame
+    Wave 5, 2026-08-06 — `graph.readback` hardwired: we finally USE what we know;
+    prompt-only cost, post-validated by its budgeted grid). Empty (no section, no
+    citations) when no graph is built for the connection or nothing matches — so a
+    caller can inject it unconditionally at zero cost. ``max_chars`` is the
+    token-proportional budget the injected slice must respect (C3)."""
     _last_cited.set([])
-    if not graph_readback_enabled():
-        return GraphPrior()
-
     try:
         return _build(question, connection_id, org_id or current_org_id(), top_k, max_chars)
     except Exception as exc:

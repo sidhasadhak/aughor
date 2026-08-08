@@ -148,7 +148,7 @@ export function setApiBase(raw: string | null): string {
  * of the native `/ask` SSE. The adapter (lib/aguiTransport.ts) re-frames AG-UI events back into
  * the same reducer dispatches, so the UI is identical either way — this is a transport swap for
  * dogfooding the seam. Default OFF ⇒ the native transport (byte-identical). Requires the backend
- * flag `agui.endpoint` to be on as well.
+ * AG-UI endpoint (always available).
  */
 export const AUGHOR_AGUI =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_AUGHOR_AGUI === "1";

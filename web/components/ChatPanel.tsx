@@ -69,7 +69,7 @@ interface InputBoxProps {
   onClear: () => void;
   attachedFile?: File | null;
   onAttach?: (f: File | null) => void;
-  // User-defined agents (flag `agents.user_defined`) — empty roster hides the picker.
+  // User-defined agents — an empty roster hides the picker.
   agents?: UserAgent[];
   agentId?: string;
   setAgentId?: (id: string) => void;
@@ -190,7 +190,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
           </button>
         </div>
 
-        {/* Agent picker (flag `agents.user_defined`) — answer AS a saved persona.
+        {/* Agent picker — answer AS a saved user-defined persona.
             Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
         {(agents?.length ?? 0) > 0 && setAgentId && (
           <select
@@ -397,7 +397,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
   );
 }
 
-/* ── Agent badge — the user-agent receipt on a turn (flag `agents.user_defined`).
+/* ── Agent badge — the user-agent receipt on a turn.
    Mirrors DepthBanner: reads turn.agent, renders nothing on plain turns. */
 function AgentBadge({ turn }: { turn: ChatTurn }) {
   const a = turn.agent;
@@ -473,7 +473,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
 
 /* ── Escalation bar — progressive escalation (Phase 5) ──
    Shown when a quick answer was inconclusive; one click re-runs the question as a
-   deep investigation (auto + transparency — the agent offers, the user decides). */
+   deep analysis (auto + transparency — the agent offers, the user decides). */
 function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => void }) {
   const e = turn.escalate;
   if (!e || turn.status === "loading") return null;
@@ -499,7 +499,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
-  // User-defined agents (flag `agents.user_defined`): the roster + the picked persona.
+  // User-defined agents: the roster + the picked persona.
   const [agents, setAgents]         = useState<UserAgent[]>([]);
   const [agentId, setAgentId]       = useState<string>("");
   useEffect(() => { listUserAgents().then(setAgents).catch(() => {}); }, []);
@@ -543,7 +543,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           text: s.text,
           mode: (s.mode === "investigate" ? "investigate" : "ask") as "ask" | "investigate",
         }));
-        // R13 — named research-starter playbooks (flag `starters.library`): lead the
+        // R13 — named research-starter playbooks: lead the
         // grid, styled as deep chips, carrying their declared route + purpose tag.
         const library: Starter[] = (data.starters ?? []).map((s: { text: string; mode: string; purpose?: string }) => ({
           text: s.text,
@@ -569,6 +569,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           question: t.question,
           mode: "ask" as const,
           status: "done" as const,
+          guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
+          scanItems: [], scanProgress: null,
           route: null,
           agent: null,
           clarify: null,
@@ -916,7 +918,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {turn.status === "done" && turn.publicReceiptId && (
                       <WhyThisNumber receiptId={turn.publicReceiptId} />
                     )}
-                    {/* Post-investigation feedback — shown once per completed investigation with hypotheses */}
+                    {/* Post-run feedback — shown once per completed deep analysis with hypotheses */}
                     {turn.mode === "investigate" &&
                      turn.status === "done" &&
                      turn.hypotheses.length > 0 &&

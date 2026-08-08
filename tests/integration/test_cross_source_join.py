@@ -17,21 +17,13 @@ def _duck_file(path, *stmts):
     return str(path)
 
 
-def test_cross_source_join_disabled_when_forced_off(client: TestClient, monkeypatch):
-    # Explicit =0 — the route graduated default-ON in flag strategy batch B, so "off"
-    # is now the operator escape hatch, not the ambient state (an unset env resolves on
-    # and the fully-specified body would attempt a real cross-source join).
-    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "0")
-    resp = client.post("/query/cross-source-join", json={
-        "left_conn_id": "x", "left_sql": "SELECT 1", "left_key": "a",
-        "right_conn_id": "y", "right_table": "t", "right_key": "b",
-    })
-    assert resp.status_code == 404
+# test_cross_source_join_disabled_when_forced_off was DELETED with its flag (flag
+# endgame Wave 2, 2026-08-06, receipt 41ec864723fb): the route is invocation-gated —
+# field validation and the SQL safety gate below are the surviving controls.
 
 
 def test_cross_source_join_end_to_end(client: TestClient, monkeypatch, tmp_path):
     from aughor.db import registry
-    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "1")
 
     lp = _duck_file(
         tmp_path / "left.duckdb",
@@ -66,7 +58,6 @@ def test_cross_source_join_end_to_end(client: TestClient, monkeypatch, tmp_path)
 def test_cross_source_join_driver_exceeds_500_row_cap(client: TestClient, monkeypatch, tmp_path):
     """The LEFT driver is read via execute_bounded, so a >500-row join isn't silently truncated."""
     from aughor.db import registry
-    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "1")
 
     lpath = tmp_path / "big_left.duckdb"
     lcon = duckdb.connect(str(lpath))
@@ -92,7 +83,6 @@ def test_cross_source_join_driver_exceeds_500_row_cap(client: TestClient, monkey
 
 
 def test_cross_source_join_validates_required_fields(client: TestClient, monkeypatch):
-    monkeypatch.setenv("AUGHOR_FEDERATION_REMOTE_JOIN", "1")
     resp = client.post("/query/cross-source-join", json={
         "left_conn_id": "a", "left_sql": "  ", "left_key": "k",
         "right_conn_id": "b", "right_table": "t", "right_key": "k",

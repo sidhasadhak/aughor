@@ -7,8 +7,11 @@ Two seams the platform's connection layer exposes, which the AGENT fills:
     react: e.g. emit a receipt about what the query did. ``fn(sql, result, connection_id)``.
   • **on-connect** — when a physical DuckDB connection is opened, the agent may
     install capabilities on the raw handle. ``fn(raw_conn, *, is_motherduck=...)``.
-    (The original client — the deleted ai_sql UDF installer — is gone; the seam
-    stays for the guard-receipt work that needs a post-execute attachment point.)
+  • **guard-receipt** (A4) — when a platform-side guard silently rewrites or
+    repairs SQL, it reports what it did through this seam; the agent's hook
+    forwards the receipt to the live SSE sink so the intervention becomes a
+    ``guard_receipt`` frame (and Chain-of-Thought step) instead of an invisible
+    correction. ``fn(guard, action, detail, before, after)``.
 
 Both run under ``tolerate`` — best-effort, never break execution or a connect. With
 nothing registered they are no-ops (the platform executes and connects with zero
@@ -22,6 +25,7 @@ from aughor.kernel.errors import tolerate
 
 _POST_EXECUTE: list[tuple[str, Callable]] = []  # fn(sql, result, connection_id)
 _ON_CONNECT: list[tuple[str, Callable]] = []    # fn(raw_conn, **ctx)
+_GUARD_RECEIPT: list[tuple[str, Callable]] = []  # fn(guard, action, detail, before, after)
 
 
 def register_post_execute_hook(name: str, fn: Callable) -> None:
@@ -32,9 +36,14 @@ def register_on_connect_hook(name: str, fn: Callable) -> None:
     _ON_CONNECT.append((name, fn))
 
 
+def register_guard_receipt_hook(name: str, fn: Callable) -> None:
+    _GUARD_RECEIPT.append((name, fn))
+
+
 def clear() -> None:
     _POST_EXECUTE.clear()
     _ON_CONNECT.clear()
+    _GUARD_RECEIPT.clear()
 
 
 def run_post_execute_hooks(sql: str, result, connection_id) -> None:
@@ -43,6 +52,17 @@ def run_post_execute_hooks(sql: str, result, connection_id) -> None:
             fn(sql, result, connection_id)
         except Exception as e:
             tolerate(e, f"post-execute hook {name!r}", counter=f"exec.post.{name}")
+
+
+def emit_guard_receipt(guard: str, action: str, detail: str = "",
+                       before=None, after=None) -> None:
+    """Report a guard intervention (A4). No hook registered = free no-op, which is
+    what a bare platform (tests, scripts) gets."""
+    for name, fn in list(_GUARD_RECEIPT):
+        try:
+            fn(guard, action, detail, before, after)
+        except Exception as e:
+            tolerate(e, f"guard-receipt hook {name!r}", counter=f"exec.guard.{name}")
 
 
 def run_on_connect_hooks(raw_conn, **ctx) -> None:

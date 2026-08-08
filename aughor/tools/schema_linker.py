@@ -18,8 +18,7 @@ Plug-and-play contract:
 
 Usage:
     from aughor.tools.schema_linker import link_schema
-    filtered = link_schema(question, full_schema, top_k_tables=4, top_k_cols=8,
-                           connection_id=conn_id)
+    filtered = link_schema(question, full_schema, connection_id=conn_id)
 """
 from __future__ import annotations
 
@@ -308,10 +307,15 @@ def _score_table(
     block: dict,
     tokens: set[str],
     table_hints: dict[str, list[str]],
+    hint_weight: float = 2.0,
 ) -> float:
     """Score how relevant a table is to the (morphologically-expanded) question
     tokens. Generic signals (name match, hint match, fuzzy substring) only —
-    no schema is privileged."""
+    no schema is privileged. ``hint_weight`` is how much a hint match counts:
+    full weight when the hints were DERIVED from this connection's own semantic
+    layer, tie-breaker weight (below any real token match) when they are the
+    built-in e-commerce fallback — a generic dictionary must never outvote the
+    schema's own names on somebody else's domain (A3)."""
     table_name = block["table"].lower()
     bare_name = _bare_table(table_name)
     name_forms = _morph(bare_name) | {table_name, bare_name}
@@ -325,7 +329,7 @@ def _score_table(
     for token in tokens:
         for hint in table_hints.get(token, []):
             if hint in (table_name, bare_name) or hint in name_forms:
-                score += 2.0
+                score += hint_weight
 
     # Fuzzy substring (e.g. "order" inside "order_items").
     for token in tokens:
@@ -350,8 +354,10 @@ def _score_column(
     tokens: set[str],
     question_lower: str,
     col_hints: dict[str, list[str]],
+    hint_weight: float = 2.5,
 ) -> float:
-    """Score how relevant a column is to the question."""
+    """Score how relevant a column is to the question. ``hint_weight`` follows the
+    same derived-vs-fallback rule as `_score_table`."""
     col_name = col["name"].lower()
     col_type = col["type"].upper()
     col_forms = _morph(col_name)
@@ -365,7 +371,7 @@ def _score_column(
     for phrase, hints in col_hints.items():
         if phrase in question_lower or phrase in tokens:
             if col_name in {h.lower() for h in hints}:
-                score += 2.5
+                score += hint_weight
 
     # Date-shaped questions → boost date/time columns.
     if any(w in question_lower for w in ("month", "year", "quarter", "day", "week", "trend", "over time")):
@@ -447,24 +453,51 @@ def compress_schema(schema_str: str, *, min_group: int = 3) -> str:
     return "\n".join(out)
 
 
+def _linker_budgets() -> tuple[int, int, int]:
+    """(top_tables, top_cols, char_budget) from the bound coder's ModelProfile —
+    the A3 change: the linker is a RANKER packed to the model's real window, not
+    a fixed 4×8 bouncer. Fail-safe to the baseline constants (the old behaviour
+    exactly) when the binding cannot be resolved."""
+    try:
+        from aughor.llm.profile import profile_for
+        p = profile_for("coder")
+        return p.linker_top_tables, p.linker_top_cols, p.schema_char_limit
+    except Exception:
+        return 4, 8, 20_000
+
+
 def link_schema(
     question: str,
     schema_str: str,
     *,
-    top_k_tables: int = 4,
-    top_k_cols: int = 8,
+    top_k_tables: int | None = None,
+    top_k_cols: int | None = None,
+    char_budget: int | None = None,
     always_include: list[str] | None = None,
     connection_id: str | None = None,
 ) -> str:
     """Return a schema string filtered to the tables/columns most relevant to the
-    question. Hints are derived from the connection's own semantic layer when a
-    connection_id is supplied; otherwise the built-in defaults are used.
+    question, packed to the bound model's budget. Hints are derived from the
+    connection's own semantic layer when a connection_id is supplied; the built-in
+    e-commerce dictionary is only a tie-breaker fallback.
+
+    A3 (ranks, not drops): tables are ordered by score and included while BOTH the
+    rank bound and the char budget hold — on a capable model that is up to 24
+    tables into a 60k window; on the baseline it is the old top-4×8 exactly.
+    Explicit keyword arguments still win (tests, callers with their own budget).
 
     Recall safety: if no table shows ANY signal, the full schema is returned
     unchanged — the filter never strips the schema down to nothing.
     """
     if not schema_str or not question:
         return schema_str
+    _d_tables, _d_cols, _d_chars = _linker_budgets()
+    if top_k_tables is None:
+        top_k_tables = _d_tables
+    if top_k_cols is None:
+        top_k_cols = _d_cols
+    if char_budget is None:
+        char_budget = _d_chars
 
     # Collapse sharded/dated table families first (no-op on ordinary schemas), so keyword linking
     # operates on the compact, de-duplicated schema rather than thousands of date partitions.
@@ -474,10 +507,15 @@ def link_schema(
     raw_tokens = set(_tokenise(question)) - _STOP_WORDS
     tokens = _expand_tokens(raw_tokens) - _STOP_WORDS
 
-    # Per-connection hints (de-hardwired); fall back to defaults when absent.
+    # Per-connection hints (de-hardwired); fall back to defaults when absent —
+    # but a DERIVED hint is evidence and keeps full weight, while the generic
+    # fallback dictionary only breaks ties (A3: it must never outvote the
+    # schema's own names on somebody else's domain).
     conn_table_hints, conn_col_hints, synonyms = build_connection_hints(connection_id)
     table_hints = conn_table_hints or _DEFAULT_TABLE_HINTS
     col_hints = conn_col_hints or _DEFAULT_COL_HINTS
+    table_hint_weight = 2.0 if conn_table_hints else 0.25
+    col_hint_weight = 2.5 if conn_col_hints else 0.25
 
     # Expand tokens through user-authored synonyms (KB-derived).
     if synonyms:
@@ -492,7 +530,8 @@ def link_schema(
     if not blocks:
         return schema_str
 
-    scored_tables = [(_score_table(b, tokens, table_hints), b) for b in blocks]
+    scored_tables = [(_score_table(b, tokens, table_hints, table_hint_weight), b)
+                     for b in blocks]
     scored_tables.sort(key=lambda x: x[0], reverse=True)
 
     best_score = scored_tables[0][0] if scored_tables else 0.0
@@ -511,17 +550,26 @@ def link_schema(
         keep_tables.add(scored_tables[0][1]["table"].lower())
 
     out_lines: list[str] = []
+    spent = 0
+    included = 0
     for score, block in scored_tables:
         if block["table"].lower() not in keep_tables:
             continue
-        scored_cols = [(_score_column(c, tokens, question_lower, col_hints), c) for c in block["columns"]]
+        scored_cols = [(_score_column(c, tokens, question_lower, col_hints, col_hint_weight), c)
+                       for c in block["columns"]]
         scored_cols.sort(key=lambda x: x[0], reverse=True)
         keep_cols = scored_cols[:top_k_cols]
 
-        out_lines.append(block["header"])
-        for _, col in keep_cols:
-            out_lines.append(col["line"])
-        out_lines.append("")
+        block_lines = [block["header"]] + [col["line"] for _, col in keep_cols] + [""]
+        block_chars = sum(len(line) + 1 for line in block_lines)
+        # Pack to the char budget: rank order means what falls off the end is the
+        # LEAST relevant, never an arbitrary slice. The first table always fits
+        # (recall safety over budget purity — an empty schema helps nobody).
+        if included and spent + block_chars > char_budget:
+            break
+        out_lines.extend(block_lines)
+        spent += block_chars
+        included += 1
 
     # Append non-table trailing content (join hints, metrics, etc.) verbatim.
     past_tables = False
@@ -544,11 +592,13 @@ def link_schema_for_prompt(
     question: str,
     schema_str: str,
     *,
-    top_k_tables: int = 4,
-    top_k_cols: int = 8,
+    top_k_tables: int | None = None,
+    top_k_cols: int | None = None,
     connection_id: str | None = None,
 ) -> str:
-    """Wrapper that adds a header note explaining the filter, for LLM prompts."""
+    """Wrapper that adds a header note explaining the filter, for LLM prompts.
+    Defaults are profile-derived (A3), so the answer path and the grounding
+    receipt describe the SAME prompt by construction."""
     filtered = link_schema(
         question, schema_str,
         top_k_tables=top_k_tables, top_k_cols=top_k_cols, connection_id=connection_id,

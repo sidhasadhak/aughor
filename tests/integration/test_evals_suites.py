@@ -394,7 +394,7 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
         {"question": "rows", "artifact": "SELECT id, v FROM t ORDER BY id"}]})
     client.post(f"/evals/suites/{sid}/run", json={"iterations": 3})
 
-    flag = "closed_loop"                           # a real, default-OFF flag (an E4 A/B candidate)
+    flag = "explore.route_wide"                    # a real, default-OFF flag (an E4 A/B candidate)
     before = flag_state(flag)
     assert before == "off"
 
@@ -423,7 +423,7 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
 
 def test_graduate_without_a_run_reports_the_blocker_not_a_500(client):
     sid = client.post("/evals/suites", json={"name": "empty"}).json()["id"]
-    r = client.post("/evals/flags/ada.parallel_lenses/graduate", json={"suite_id": sid})
+    r = client.post("/evals/flags/graph.readback/graduate", json={"suite_id": sid})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["can_graduate"] is False

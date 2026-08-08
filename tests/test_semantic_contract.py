@@ -121,11 +121,9 @@ def test_rank_orders_the_three_stores_catalog_first():
     onto_no = SemanticContract.from_ontology_metric(
         OntologyMetric(id="m", display_name="M", entity="e", formula_sql="SUM(w)", verified=False))
     assert (catalog.rank, profile.rank, onto_ok.rank, onto_no.rank) == (4, 3, 2, 1)
-    # Mirrors the legacy canonical._SOURCE_RANK exactly.
-    from aughor.semantic.canonical import _SOURCE_RANK
-    assert (catalog.rank, profile.rank, onto_ok.rank, onto_no.rank) == (
-        _SOURCE_RANK["catalog"], _SOURCE_RANK["profile_governed"],
-        _SOURCE_RANK["ontology_verified"], _SOURCE_RANK["ontology_unverified"])
+    # The legacy canonical._SOURCE_RANK mirror left with its resolver (flag endgame
+    # Wave 2, 2026-08-06) — the contract's own rank is the single authority now,
+    # pinned above as absolute numbers.
 
 
 # ── Injectable — the render-authority signal, byte-for-byte legacy CanonicalMetric.verified ─

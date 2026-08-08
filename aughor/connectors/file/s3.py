@@ -181,17 +181,26 @@ class S3Connection(Connector):
                 "ORDER BY table_name, ordinal_position"
             )
             rows = self._duckdb.fetchall()
-            from collections import defaultdict
-            table_cols: dict[str, list[str]] = defaultdict(list)
+            from collections import OrderedDict
+            table_cols: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
             for tname, col, dtype in rows:
-                table_cols[tname].append(f"{col} {dtype}")
+                table_cols.setdefault(tname, []).append((col, dtype))
+            # Canonical house format (`TABLE:` header + indented `col  TYPE` lines) —
+            # the bracketed one-liner hid every column from the schema-linker, the
+            # data catalog and build_rich_schema (the gsheets connector documented
+            # exactly this defect). A2 adds head samples in the same pass.
+            from aughor.db.schema_render import column_head_samples
+            def _run(sql):
+                self._duckdb.execute(sql)
+                return self._duckdb.fetchall()
+            p = self._params
             for tname, cols in table_cols.items():
-                p = self._params
-                lines.append(
-                    f"TABLE: {tname}  "
-                    f"[source: s3://{p['bucket']}/{p['prefix']}]  "
-                    f"[{', '.join(cols)}]"
-                )
+                lines.append(f"TABLE: {tname}  [source: s3://{p['bucket']}/{p['prefix']}]")
+                samples = column_head_samples(
+                    _run, '"' + tname.replace('"', '""') + '"', [c for c, _ in cols])
+                for col, dtype in cols:
+                    lines.append(f"  {col}  {dtype}" + samples.get(col, ""))
+                lines.append("")
         except Exception as e:
             lines.append(f"# Schema introspection failed: {e}")
         return "\n".join(lines)

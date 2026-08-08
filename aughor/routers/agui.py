@@ -30,7 +30,7 @@ import json
 import uuid
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from ag_ui.core import (
@@ -50,7 +50,6 @@ from ag_ui.core import (
 from ag_ui.encoder import EventEncoder
 
 from aughor.kernel.errors import tolerate
-from aughor.kernel.flags import flag_enabled
 from aughor.routers.investigations import (
     AskRequest, ChatHistoryTurn, build_ask_stream, build_resume_stream,
 )
@@ -288,9 +287,8 @@ def _resume_field(item, *keys):
 @router.post("/agui/run")
 async def agui_run(inp: RunAgentInput, request: Request):
     """AG-UI-protocol translator over the unified `/ask` stream (fresh run, or a resume from an
-    interrupt outcome). Additive + flag-gated."""
-    if not flag_enabled("agui.endpoint"):
-        raise HTTPException(status_code=404, detail="AG-UI endpoint is disabled")
+    interrupt outcome). Additive; always available since flag endgame Wave 2 (2026-08-06 —
+    the route is the whole surface, calling it is the consent, receipt b395745f7771)."""
 
     encoder = EventEncoder(accept=request.headers.get("accept"))
     run_id = inp.run_id or uuid.uuid4().hex
