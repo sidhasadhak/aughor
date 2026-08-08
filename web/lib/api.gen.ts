@@ -4529,6 +4529,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/resolutions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Resolutions
+         * @description S5 cited memory — the remembered readings, listed with their citations:
+         *     who settled each (probe/user/reviewer), when, and how many times it has been
+         *     served as a prior. The revoke route below is what makes showing them honest.
+         */
+        get: operations["get_resolutions_learning_resolutions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/resolutions/{res_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Resolution
+         * @description S5 cited memory — revoke one remembered reading. The next matching question
+         *     re-ambiguates instead of inheriting a reading the user no longer stands behind.
+         */
+        delete: operations["delete_resolution_learning_resolutions__res_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/summary": {
         parameters: {
             query?: never;
@@ -18302,6 +18345,66 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resolutions_learning_resolutions_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_resolution_learning_resolutions__res_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                res_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

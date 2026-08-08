@@ -285,6 +285,57 @@ export async function listGovernedTags(opts: { key?: string; securablePrefix?: s
   return res.json();
 }
 
+/** S5 cited memory — a remembered reading with its citation (who settled it,
+ *  when, how often served). Revocable one row at a time. */
+export interface RememberedReading {
+  id: string;
+  connection_id: string;
+  subject: string;
+  resolved_reading: string;
+  resolution_source: string;
+  resolved_sql?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+  use_count: number;
+}
+
+export async function listRememberedReadings(connectionId?: string): Promise<RememberedReading[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/resolutions${qs}`);
+  if (!res.ok) throw new Error("Failed to list remembered readings");
+  return res.json();
+}
+
+export async function revokeRememberedReading(resId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/learning/resolutions/${encodeURIComponent(resId)}`,
+                          { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to revoke reading");
+}
+
+/** K5 — write a human overlay annotation on a table (merged onto reads by K3;
+ *  never mutates source). Column/row targeting optional. */
+export async function annotateTable(connectionId: string, input: {
+  table: string; body: string; column?: string; keyColumn?: string; rowKey?: string;
+  kind?: "annotation" | "correction";
+}): Promise<{ id: string; target: string }> {
+  const res = await fetch(
+    `${getApiBase()}/kinetic-actions/annotate?connection_id=${encodeURIComponent(connectionId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table: input.table, body: input.body, column: input.column ?? "",
+        key_column: input.keyColumn ?? "", row_key: input.rowKey ?? "",
+        kind: input.kind ?? "annotation",
+      }),
+    });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to annotate");
+  }
+  return res.json();
+}
+
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
   const res = await fetch(`${getApiBase()}/org-settings/effective${q}`);

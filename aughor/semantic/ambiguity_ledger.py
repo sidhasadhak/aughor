@@ -304,6 +304,29 @@ def ledger_stats(connection_id: str = "", org_id: str = "") -> dict:
     }
 
 
+def revoke_resolution(res_id: str, org_id: Optional[str] = None) -> bool:
+    """S5 cited memory — the REVOCABLE half of "remembered, cited, revocable".
+
+    A remembered reading is a standing prior injected into every matching plan;
+    a user who can see it must be able to retract it, one row at a time — the
+    only delete before this was the wholesale connection purge. Org-scoped so a
+    tenant can only revoke its own memory. Returns whether a row was removed."""
+    from aughor.org.context import current_org_id
+    org = org_id or current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            cur = c.execute("DELETE FROM ambiguity_resolutions WHERE id = ? AND org_id = ?",
+                            (res_id, org))
+            c.commit()
+            removed = cur.rowcount > 0
+        finally:
+            c.close()
+    if removed:
+        _bump("ledger.revoked")
+    return removed
+
+
 def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -> int:
     """Catalog-delete cascade — drop every resolution for the given connections. Returns the
     rows removed (observable, per the purge-hook contract)."""

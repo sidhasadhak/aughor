@@ -31,7 +31,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, recordVerdict, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -1078,6 +1078,24 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
     // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
     if (v === "unhelpful") setFixItOpen(true);
   };
+  // K5 — "annotate this cell": a human note pinned to the answer's primary table,
+  // written to the K3 overlay (merged onto future reads; never mutates source).
+  const [annotateOpen, setAnnotateOpen] = useState(false);
+  const [annotateText, setAnnotateText] = useState("");
+  const [annotateBusy, setAnnotateBusy] = useState(false);
+  const [annotateDone, setAnnotateDone] = useState(false);
+  const annotateTarget = (turn.tablesUsed || [])[0] || "";
+  const submitAnnotation = async () => {
+    if (!annotateText.trim() || !annotateTarget) return;
+    setAnnotateBusy(true);
+    try {
+      await annotateTable(connectionId, { table: annotateTarget, body: annotateText.trim() });
+      setAnnotateDone(true);
+      setAnnotateOpen(false);
+      setAnnotateText("");
+    } catch { /* stays open to retry */ }
+    finally { setAnnotateBusy(false); }
+  };
   const submitFixIt = async (note: string, correctedSql: string) => {
     setFixItBusy(true);
     try {
@@ -1109,6 +1127,15 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
           className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">Copy SQL</Button>
+        {annotateTarget && (
+          <>
+            <span className="text-zinc-700">·</span>
+            <Button variant="ghost" size="xs" onClick={() => setAnnotateOpen(o => !o)}
+              className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+              title={`Pin a note to ${annotateTarget} — future reads see it`}>Annotate</Button>
+          </>
+        )}
+        {annotateDone && <span className="text-zinc-600 italic">note pinned to {annotateTarget}</span>}
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
           className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful">👍</Button>
@@ -1120,6 +1147,27 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
       {fixItOpen && (
         <FixItForm withSql busy={fixItBusy}
                    onSubmit={submitFixIt} onCancel={() => setFixItOpen(false)} />
+      )}
+      {annotateOpen && (
+        <div className="flex flex-col gap-1.5 rounded-[var(--r2)] p-2 my-1"
+             style={{ background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+          <textarea autoFocus rows={2} value={annotateText}
+            onChange={(e) => setAnnotateText(e.target.value)}
+            placeholder={`Note on ${annotateTarget} (e.g. 'March data is a partial load — totals run low')`}
+            className="w-full bg-transparent aug-fs-xs text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none" />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="xs" disabled={annotateBusy || !annotateText.trim()}
+              onClick={submitAnnotation}
+              className="h-auto px-2 py-0.5 aug-fs-xs border rounded-[var(--r1)] border-zinc-600 text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+              {annotateBusy ? "Pinning…" : "Pin note"}
+            </Button>
+            <Button variant="ghost" size="xs" disabled={annotateBusy} onClick={() => setAnnotateOpen(false)}
+              className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+              Cancel
+            </Button>
+            <span className="aug-fs-xs text-zinc-600">Overlay only — the source data is never touched.</span>
+          </div>
+        </div>
       )}
       {verdict && (
         issues.length === 0 ? (

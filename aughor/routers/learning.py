@@ -50,3 +50,24 @@ def learning_trusted(connection_id: Optional[str] = None):
     return {
         "queries": [q.model_dump() for q in list_trusted(cid)],
     }
+
+
+@router.get("/learning/resolutions")
+def get_resolutions(connection_id: str = ""):
+    """S5 cited memory — the remembered readings, listed with their citations:
+    who settled each (probe/user/reviewer), when, and how many times it has been
+    served as a prior. The revoke route below is what makes showing them honest."""
+    from aughor.org.context import current_org_id
+    from aughor.semantic.ambiguity_ledger import list_resolutions
+    return [r.model_dump() for r in list_resolutions(connection_id, org_id=current_org_id() or "")]
+
+
+@router.delete("/learning/resolutions/{res_id}", status_code=204)
+def delete_resolution(res_id: str):
+    """S5 cited memory — revoke one remembered reading. The next matching question
+    re-ambiguates instead of inheriting a reading the user no longer stands behind."""
+    from fastapi import HTTPException
+
+    from aughor.semantic.ambiguity_ledger import revoke_resolution
+    if not revoke_resolution(res_id):
+        raise HTTPException(status_code=404, detail="No such resolution")

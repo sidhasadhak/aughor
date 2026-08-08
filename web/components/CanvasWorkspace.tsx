@@ -6,6 +6,7 @@ import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
+import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
@@ -316,6 +317,12 @@ function SettingsPopover({
             {saving ? "Saving…" : "Save"}
           </Button>
         </div>
+
+        {/* V6b — the canvas's revision history, publish/revert, and the freeze
+            pin, on the artifact's own settings surface. Renders nothing until
+            the canvas has a revision. */}
+        <LifecyclePanel kind="canvas" naturalKey={`canvas:${canvas.id}`}
+                        connectionId={canvas.scopes[0]?.connection_id} />
       </div>
     </>
   );
