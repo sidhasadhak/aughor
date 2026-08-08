@@ -69,6 +69,8 @@ type Props = {
   onInvestigate: (q?: string, mode?: "ask" | "investigate", insightId?: string) => void;
   /** Active layer — controlled by the shell so external nav can deep-link. */
   layer: IntelLayer;
+  /** S1 — `?table=` deep link: open the graph layer straight onto one entity. */
+  initialGraphTable?: string;
   onLayerChange: (l: IntelLayer) => void;
   /** Briefings-enabled connections for the workspace's connection picker, and the
    *  setter to switch the active one. Omitted/short → the picker hides. */
@@ -93,7 +95,7 @@ type Props = {
  * scope (connection + schema pickers, the five panels, the icon set); the shell owns
  * the header chrome, the perspective switcher, and the keep-alive layered body.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, canvasId, workspaceId, initialGraphTable }: Props) {
   // Shared schema scope — one selector that filters Briefing, Hub, and Domains
   // together (a connection can expose several schemas; a canvas is already scoped).
   const [schemas, setSchemas]               = useState<string[]>([]);
@@ -192,7 +194,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // another schema's verdict. Belt to the server-side scope_key guard's braces.
         if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
-        if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} />;
+        if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;

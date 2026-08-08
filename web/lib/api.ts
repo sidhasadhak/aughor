@@ -265,6 +265,26 @@ export async function recordVerdict(input: {
   }
 }
 
+/** G2 governed tags, read path (S1/J13): the governance axis rendered on entity
+ *  pages. `securable` format is `table:catalog.schema.name`. */
+export interface GovernedTag {
+  securable: string;
+  key: string;
+  value: string;
+  set_by: string;
+  set_at: string;
+  source: string;
+}
+
+export async function listGovernedTags(opts: { key?: string; securablePrefix?: string } = {}): Promise<GovernedTag[]> {
+  const qs = new URLSearchParams();
+  if (opts.key) qs.set("key", opts.key);
+  if (opts.securablePrefix) qs.set("securable_prefix", opts.securablePrefix);
+  const res = await fetch(`${getApiBase()}/governance/tags?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to list governed tags");
+  return res.json();
+}
+
 export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
   const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
   const res = await fetch(`${getApiBase()}/org-settings/effective${q}`);

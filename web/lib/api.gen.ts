@@ -3707,6 +3707,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/governance/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Governed Tags
+         * @description Browse the G2 governed-tag plane (read-only). S1/J13: the governance axis
+         *     was write-only — tags existed in the store with no route and no UI, so a
+         *     'Certified' securable could never LOOK certified. Writes stay with the
+         *     clearance machinery; this is the render path.
+         */
+        get: operations["get_governed_tags_governance_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -16978,6 +17001,39 @@ export interface operations {
                 "application/json": components["schemas"]["UpdateColumnRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_governed_tags_governance_tags_get: {
+        parameters: {
+            query?: {
+                key?: string | null;
+                securable_prefix?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

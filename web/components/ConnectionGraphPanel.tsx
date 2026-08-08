@@ -16,6 +16,8 @@ import {
   getGraphLineage,
   getGraphReview,
   getGraphTrust,
+  listGovernedTags,
+  type GovernedTag,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
@@ -47,12 +49,31 @@ function bare(t: string): string {
 
 // The Ask seam is renamed at the door: the panel's own vocabulary is 'ask', and the
 // prop name is the workspace's older spelling of the same callback.
-export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAsk }: {
+export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAsk, initialTableId }: {
   connectionId: string; schema?: string;
   /** The workspace Ask seam — a graph selection becomes a question on the full Ask surface. */
   onInvestigate?: (q: string) => void;
+  /** S1 deep link — open straight onto one entity's detail page (`?table=` in the URL). */
+  initialTableId?: string;
 }) {
   const [graph, setGraph] = useState<ConnectionGraph | null>(null);
+  // S1/J13 — the governance axis on the entity page: G2 tags were write-only
+  // (store, no route, no UI). One fetch of table-kind tags serves every detail
+  // view; a tag matches an entity when its securable's table segment equals one
+  // of the entity's source tables. Best-effort: no tags plane ⇒ no chip row.
+  const [governedTags, setGovernedTags] = useState<GovernedTag[]>([]);
+  useEffect(() => {
+    listGovernedTags({ securablePrefix: "table:" })
+      .then(setGovernedTags)
+      .catch(() => setGovernedTags([]));
+  }, [connectionId]);
+  const tagsForEntity = (sourceTables: string[]): GovernedTag[] => {
+    const wants = new Set(sourceTables.map((s) => (s.split(".").pop() || s).toLowerCase()));
+    return governedTags.filter((t) => {
+      const seg = t.securable.slice("table:".length).split(".").pop() || "";
+      return wants.has(seg.toLowerCase());
+    });
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ level: "domains" });
@@ -60,6 +81,19 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
   // Explore = the C4 anti-hairball card drill-down; Tour = the C5 topology walk.
   const [mode, setMode] = useState<"map" | "cards" | "tour" | "review">("map");
   // Wave C5 — the topology-ordered tour, lazily fetched on first open.
+  // S1 — the entity page is addressable: entering a detail view stamps `?table=`
+  // (replace, not push — the TAB is the history unit; the entity refines it),
+  // leaving removes it. page.tsx owns tab/conn/layer; this param is the panel's.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const current = params.get("table");
+    const want = view.level === "detail" ? view.tableId : null;
+    if (current === want || (!current && !want)) return;
+    if (want) params.set("table", want); else params.delete("table");
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, [view]);
+
   const [tour, setTour] = useState<ConnectionTour | null>(null);
   const [tourError, setTourError] = useState<string | null>(null);
   // Wave P2 — the honesty scorecard (warrant mix + the CONTENT drift axis the staleness
@@ -92,7 +126,18 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
     const token = ++loadToken.current;
     const fresh = () => token === loadToken.current;
     getConnectionGraph(connectionId, schema)
-      .then((g) => { if (fresh()) { setGraph(g); setView({ level: "domains" }); } })
+      .then((g) => {
+        if (!fresh()) return;
+        setGraph(g);
+        // S1 — a `?table=` deep link opens the entity page directly; an unknown
+        // id degrades to the domains view rather than erroring.
+        if (initialTableId && g.nodes[initialTableId]) {
+          setMode("cards");
+          setView({ level: "detail", tableId: initialTableId });
+        } else {
+          setView({ level: "domains" });
+        }
+      })
       .catch((e) => { if (fresh()) setError(e?.message || "Failed to load the knowledge graph"); })
       .finally(() => { if (fresh()) setLoading(false); });
     getGraphAudit(connectionId, schema)
@@ -311,6 +356,23 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                     <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>
                       {((t.data.source_tables as string[]) || []).join(", ")} · {formatCount(cols.length)} columns
                     </div>
+                    {(() => {
+                      const tags = tagsForEntity((t.data.source_tables as string[]) || []);
+                      if (!tags.length) return null;
+                      return (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                          {tags.map((tag) => (
+                            <span key={`${tag.securable}:${tag.key}`}
+                                  title={`${tag.securable} — set by ${tag.set_by || tag.source}`}
+                                  style={{ fontSize: 11, padding: "1px 7px", borderRadius: "var(--r-pill)",
+                                           background: "var(--bg-2)", border: "1px solid var(--b2)",
+                                           color: "var(--t2)" }}>
+                              {tag.key}: {tag.value}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {trust?.nodes?.[t.id] && (
                       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
                         {trust.nodes[t.id].detail}
