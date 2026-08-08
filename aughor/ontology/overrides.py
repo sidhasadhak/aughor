@@ -62,6 +62,13 @@ _EDITABLE: dict[str, set[str]] = {
     "entity": {
         "description", "display_name", "domain", "active_filter",
         "default_filters", "exclude_when", "lifecycle_states", "terminal_states",
+        # Wave 2 (Layer 1.1) — routing guidance: "for this kind of question, query
+        # {table} instead of this entity's own table". A new FIELD, deliberately not
+        # a new TargetKind, so the frozen directory layout above is untouched.
+        # Value: {"table": str, "scope": str, "reason": str}. Enforcement is
+        # additive-only (the preferred table is ADDED to the schema handed to the
+        # model, the deprecated one is never dropped) and existence-bound below.
+        "use_instead",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -77,6 +84,29 @@ _EDITABLE: dict[str, set[str]] = {
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
 _SQL_FIELDS = {"active_filter", "filter_sql", "formula_sql"}
+
+# Fields naming a TABLE that must exist before the override is enforced. Same gate as
+# _SQL_FIELDS, different probe: the value is an identifier, not a fragment, so the probe
+# is "can this table be read at all".
+#
+# Why these need their own set rather than joining _SQL_FIELDS: `verified` is computed as
+# `all(b["bound"] for b in binding.values()) if binding else True` — an EMPTY binding dict
+# reads as verified. A field validated by nobody is therefore reported as verified, which
+# for a routing target means the prompt is told to prefer a table that may not exist. So
+# an existence field ALWAYS writes a binding entry, even when the probe cannot run.
+_EXISTENCE_FIELDS = {"use_instead"}
+
+
+def preferred_table(value: Any) -> str:
+    """The table name inside a ``use_instead`` value, or ``""``.
+
+    Accepts the full ``{"table": …, "scope": …, "reason": …}`` form and a bare string,
+    because a human editing YAML by hand will write the bare form and losing their edit
+    silently is worse than accepting it.
+    """
+    if isinstance(value, dict):
+        return str(value.get("table") or "").strip()
+    return str(value or "").strip()
 
 
 class OntologyOverride(BaseModel):
@@ -151,6 +181,23 @@ def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) ->
     except Exception:
         pass
     return False
+
+
+def override_scopes(conn: str) -> list[str]:
+    """Schema scopes that have an override directory under ``conn``, sorted.
+
+    Public because a consumer that holds only a connection id — the schema linker is
+    one — otherwise has to guess the schema scope or reach into this module's path
+    helpers. (The private-cross-import ratchet flagged exactly that: an internal two
+    planes need is an interface that has not been declared yet.)
+    """
+    try:
+        base = _ROOT / _safe(conn)
+        if not base.exists():
+            return []
+        return sorted(p.name for p in base.iterdir() if p.is_dir())
+    except Exception:
+        return []
 
 
 def load_overrides(conn: str, schema: str) -> list[OntologyOverride]:
@@ -353,6 +400,9 @@ def bind_overrides(
     """
     table = _probe_table(ov, graph)
     for field, value in ov.fields.items():
+        if field in _EXISTENCE_FIELDS:
+            _bind_existence(ov, field, value, explain)
+            continue
         if field not in _SQL_FIELDS or not str(value or "").strip():
             continue
         probe = _probe_sql(field, str(value), table)
@@ -363,6 +413,43 @@ def bind_overrides(
             err = f"{type(exc).__name__}: {exc}"
         ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
     return ov
+
+
+def _bind_existence(ov: OntologyOverride, field: str, value: Any,
+                    explain: Callable[[str], Optional[str]]) -> None:
+    """Bind a table-naming field by probing that the table can be read.
+
+    Unlike the SQL fields this ALWAYS writes a binding entry — including for an empty
+    or malformed value. `verified` is `all(...) if binding else True`, so a field that
+    nobody validated is reported as verified; for a routing target that would mean
+    telling the model to prefer a table that need not exist. An unbound entry is the
+    honest answer and the enforcement paths skip it.
+
+    The probe is the smallest possible read (`SELECT 1 FROM t WHERE 1=0`) through the
+    same non-executing seam the SQL fields use, so a name that is not a table — or is
+    a VIEW on a connection whose schema rendering excludes views — fails here rather
+    than silently annotating a prompt with something the model cannot see.
+    """
+    table = preferred_table(value)
+    if not table:
+        ov.binding[field] = {"bound": False, "note": "no table named"}
+        return
+    if not _IDENT_RE.match(table):
+        ov.binding[field] = {"bound": False, "note": f"{table!r} is not a table identifier"}
+        return
+    err = None
+    try:
+        err = explain(f"SELECT 1 FROM {table} WHERE 1=0")
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+    ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
+
+
+#: A table identifier, optionally schema-qualified. The probe interpolates the value
+#: into SQL, so anything outside this shape is refused before it reaches the DB rather
+#: than being escaped — this store is human-authored and an identifier has no reason to
+#: contain a quote, a space or a semicolon.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 def _probe_table(ov: OntologyOverride, graph: Optional[OntologyGraph]) -> str:

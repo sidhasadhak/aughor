@@ -110,6 +110,15 @@ class OntologyEntity(BaseModel):
     terminal_states: list[str] = Field(default_factory=list)
     active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
 
+    # Routing guidance (Wave 2 / Layer 1.1) — "for questions of this shape, query
+    # {table} rather than this entity's own table". Human-authored only: it arrives
+    # through the override store, which existence-binds the named table first, and an
+    # unbound value is never enforced. Shape: {"table", "scope", "reason"}. Advisory
+    # by construction — enforcement ADDS the preferred table to the schema the model
+    # sees and never removes the deprecated one, because scope matching is fuzzy and
+    # adding information is safe where removing it is not.
+    use_instead: Optional[dict] = None
+
     # Named segments — composable, reusable saved filters over this entity's rows.
     # Auto-generated from lifecycle states; enriched by exploration findings.
     # Keyed by Segment.id for fast lookup.

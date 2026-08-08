@@ -466,6 +466,24 @@ def _linker_budgets() -> tuple[int, int, int]:
         return 4, 8, 20_000
 
 
+def _routing_twins(question: str, keep_tables: set[str],
+                   connection_id: str | None) -> list[str]:
+    """Preferred tables a human routed to, for tables already in the keep-set.
+
+    Never raises: guidance that cannot be loaded must cost the linker nothing. The
+    schema name is not threaded here — the linker is called with a connection id
+    only, and the override store's default scope is what the ontology writes.
+    """
+    if not connection_id:
+        return []
+    try:
+        from aughor.ontology.routing import preferred_for
+        return preferred_for(question, keep_tables, connection_id)
+    except Exception:
+        logger.debug("linker: routing guidance unavailable", exc_info=True)
+        return []
+
+
 def link_schema(
     question: str,
     schema_str: str,
@@ -543,6 +561,13 @@ def link_schema(
         return schema_str
 
     keep_tables = {b["table"].lower() for s, b in scored_tables[:top_k_tables] if s > 0}
+    # Routing guidance (Wave 2 / 1.1) — the linker is the SECOND door to the prompt.
+    # The retriever adds a preferred twin to its own keep-set; if the packer here then
+    # dropped that twin, the guidance would be a feature with both ends built and no
+    # middle. Same additive rule: the deprecated table stays. Resolved AFTER scoring
+    # so a preferred table that already scored well is not double-counted, and folded
+    # into `always` so it rides the same pin the explicit parameter uses.
+    always = always | {t.lower() for t in _routing_twins(question, keep_tables, connection_id)}
     for table_name in always:
         keep_tables.add(table_name)
     # Guarantee at least the single best-scoring table survives.

@@ -9818,6 +9818,7 @@ export interface components {
             lifecycle_states?: string[] | null;
             /** Terminal States */
             terminal_states?: string[] | null;
+            use_instead?: components["schemas"]["_UseInstead"] | null;
         };
         /** _ExtractFieldReq */
         _ExtractFieldReq: {
@@ -10230,6 +10231,28 @@ export interface components {
             } | null;
             /** Sql */
             sql?: string | null;
+        };
+        /**
+         * _UseInstead
+         * @description Routing guidance: query ``table`` rather than this entity's own table.
+         *
+         *     ``scope`` says WHEN ("general sales calculations"); empty means always. ``reason``
+         *     is the author's own words, shown to the model and never parsed. The named table is
+         *     existence-bound on write — an unbound rule is stored but never enforced.
+         */
+        _UseInstead: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
+            /** Table */
+            table: string;
         };
     };
     responses: never;

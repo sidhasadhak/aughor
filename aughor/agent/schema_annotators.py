@@ -34,6 +34,51 @@ def _enrichment(conn, base: str) -> str:
         schema_name=getattr(conn, "_schema_name", None) or "default")
 
 
+def _routing(conn, base: str) -> str:
+    """Annotate tables a human has routed away from (Wave 2 / Layer 1.1).
+
+    The retriever and the linker put the preferred table INTO the prompt; this makes
+    the model understand why it is there. Both halves are needed — a preferred table
+    with no explanation is just another table, and an explanation whose table was
+    filtered out is advice the model cannot follow.
+
+    Written as a `  -- ` comment under the `TABLE:` header, the shape every other
+    table-level annotation uses; inline `[...]` column annotations are parsed
+    elsewhere and must not be imitated here.
+    """
+    from aughor.ontology.routing import routing_rules
+
+    rules = routing_rules(_cid(conn), getattr(conn, "_schema_name", None) or "default")
+    if not rules:
+        return base   # no guidance stored ⇒ byte-identical, by construction
+
+    import re as _re
+
+    by_table: dict[str, list] = {}
+    for rule in rules:
+        by_table.setdefault(rule.deprecated.strip().lower().rsplit(".", 1)[-1], []).append(rule)
+    preferred: dict[str, list] = {}
+    for rule in rules:
+        preferred.setdefault(rule.preferred.strip().lower().rsplit(".", 1)[-1], []).append(rule)
+
+    out: list[str] = []
+    for line in base.split("\n"):
+        out.append(line)
+        m = _re.match(r"^TABLE:\s+([\w.]+)", line)
+        if not m:
+            continue
+        bare = m.group(1).strip().lower().rsplit(".", 1)[-1]
+        for rule in by_table.get(bare, []):
+            scope = f" for {rule.scope}" if rule.scope else ""
+            because = f" — {rule.reason}" if rule.reason else ""
+            credit = f" ({rule.source}{', ' + rule.edited_at if rule.edited_at else ''})"
+            out.append(f"  -- ⚠ prefer {rule.preferred}{scope}{because}{credit}")
+        for rule in preferred.get(bare, []):
+            scope = f" for {rule.scope}" if rule.scope else ""
+            out.append(f"  -- ✓ preferred over {rule.deprecated}{scope}")
+    return "\n".join(out)
+
+
 def _exploration(conn, base: str) -> str:
     from aughor.explorer.store import render_exploration_annotations
     expl_block = render_exploration_annotations(_cid(conn))
@@ -375,3 +420,6 @@ def register() -> None:
     register_schema_annotator("enrichment", _enrichment, phase="all")
     register_schema_annotator("intelligence", _intelligence, phase="heavy")
     register_schema_annotator("exploration", _exploration, phase="all")
+    # Routing guidance runs on BOTH phases: it is the human's own instruction, and a
+    # cheap `get_schema()` answer must honour it exactly as a deep build does.
+    register_schema_annotator("routing", _routing, phase="all")

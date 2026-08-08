@@ -8,9 +8,12 @@ string silently, so the agent always gets a usable context.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from aughor.tools.table_names import same_table
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_COLLECTION = "aughor_schema"
 TABLE_THRESHOLD = 12  # below this, skip retrieval and pass the full schema
@@ -141,13 +144,14 @@ def retrieve_relevant_schema(
 
     try:
         return _retrieve(hypothesis, full_schema_str, top_k_tables,
-                         scope_key(connection_id, schema_name))
+                         scope_key(connection_id, schema_name),
+                         connection_id=connection_id, schema_name=schema_name)
     except Exception:
         return full_schema_str
 
 
 def _retrieve(hypothesis: str, full_schema_str: str, top_k_tables: int,
-              scope: str = "") -> str:
+              scope: str = "", *, connection_id: str = "", schema_name: str = "") -> str:
     from aughor.semantic.embedder import embed_one
     from aughor.semantic.vector_store import search, collection_count
 
@@ -176,7 +180,28 @@ def _retrieve(hypothesis: str, full_schema_str: str, top_k_tables: int,
     if not relevant_tables:
         return full_schema_str
 
+    # Routing guidance (Wave 2 / 1.1): if a table a human has redirected survived the
+    # top-k, its preferred twin joins the keep-set. ADDITIVE — the deprecated table is
+    # never dropped, because scope matching is fuzzy and the cost of guessing wrong
+    # must be one extra table, never a missing one. No override ⇒ empty list ⇒ the
+    # keep-set is untouched and this call is byte-identical to before.
+    relevant_tables.extend(_preferred_twins(hypothesis, relevant_tables,
+                                            connection_id, schema_name))
     return _filter_schema(full_schema_str, set(relevant_tables))
+
+
+def _preferred_twins(hypothesis: str, tables: list[str],
+                     connection_id: str, schema_name: str) -> list[str]:
+    """Preferred tables to add to this keep-set. Never raises — guidance that fails
+    to load must cost the retrieval nothing."""
+    if not connection_id:
+        return []
+    try:
+        from aughor.ontology.routing import preferred_for
+        return preferred_for(hypothesis, tables, connection_id, schema_name)
+    except Exception:
+        logger.debug("retriever: routing guidance unavailable", exc_info=True)
+        return []
 
 
 def _keep(table: str | None, keep_tables: set[str]) -> bool:
