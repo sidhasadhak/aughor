@@ -82,6 +82,70 @@ def _parse(iso: Optional[str]) -> Optional[datetime]:
 
 # ── condition evaluation ─────────────────────────────────────────────────────────
 
+# ── Delivery claims (Layer 4.1a) ──────────────────────────────────────────────
+# An OUTWARD send — a brief in someone's inbox, a webhook at someone's endpoint —
+# cannot be taken back, and the engine wrote its only durable record AFTER dispatching
+# it. Anything that killed the process in between (a deploy, an OOM, a serverless
+# timeout) left no evidence the send happened, so the next tick fired the same period
+# again. The claim closes that window by writing the intent BEFORE the act, which is
+# the same shape as the tombstone principle: reversing or repeating durable intent has
+# to consult a durable record, and the record has to exist before the thing it guards.
+#
+# Deliberately the Ledger's transactional kv rather than `try_claim`: a claim is a
+# LEASE, which expires — and an expiring guard on an irreversible send is a guard that
+# eventually stops guarding.
+_CLAIM_STORE = "automation_delivery_claims"
+
+#: What an uncertain delivery means, in one sentence. Deliberately the same shape as
+#: the kernel's UNCERTAIN_RESULT for interrupted jobs — "we do not know" is one fact
+#: and should read the same wherever it surfaces.
+UNCERTAIN_DELIVERY = "it may already have been delivered, so it was not retried"
+
+#: Effect kinds that reach a person. Only these are claimed: a claim narrows when an
+#: automation may run again, and paying that for a purely internal effect (a rebuild, a
+#: governed write with its own idempotency) would restrict work that was never at risk.
+OUTWARD_EFFECT_KINDS = frozenset({"notify", "brief"})
+
+
+def has_outward_effect(automation: Automation) -> bool:
+    """Whether this automation can reach a person on a tick."""
+    return any(e.kind in OUTWARD_EFFECT_KINDS for e in automation.effects)
+
+
+def last_delivery_claim(automation_id: str) -> str:
+    """When this automation last *attempted* an outward send, or ``""``.
+
+    Read by due-ness alongside the run row. Best-effort: if the ledger cannot be
+    reached the claim reads empty, which degrades to exactly the pre-4.1a behaviour
+    rather than blocking every automation on a store hiccup.
+    """
+    try:
+        from aughor.kernel.ledger import Ledger
+        return str(Ledger.default().kv_get(_CLAIM_STORE, automation_id, "") or "")
+    except Exception:
+        logger.debug("automations: delivery claim unreadable", exc_info=True)
+        return ""
+
+
+def claim_delivery(automation_id: str, started_at: str) -> bool:
+    """Record that an outward send is ABOUT to happen. Returns whether it stuck.
+
+    A claim that fails to write is reported, never swallowed into a silent send: the
+    caller decides, and it decides to deliver anyway. Refusing to send because the
+    bookkeeping failed would trade a rare duplicate for a certain missed brief, and a
+    brief that never arrives is the worse failure.
+    """
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().kv_put(_CLAIM_STORE, automation_id, started_at)
+        return True
+    except Exception:
+        logger.warning("automations: could not claim delivery for %s — sending anyway, "
+                       "so a crash in this window could duplicate it", automation_id,
+                       exc_info=True)
+        return False
+
+
 def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> tuple[bool, str]:
     """True when the cron matched at some point between the last run and ``now``.
 
@@ -98,6 +162,14 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
 
     prev_run = last_run(automation.id)
     prev = _parse(prev_run.started_at) if prev_run else None
+    # A DELIVERY CLAIM counts as a previous run for due-ness (4.1a). The run row is
+    # written after the effects; the claim is written before them. Reading only the run
+    # row means a process that died between the send and the write looks like it never
+    # ran, and the next tick re-sends the same period — to a real person. Whichever is
+    # later wins, so a claim can only ever hold a period back, never push it forward.
+    claimed = _parse(last_delivery_claim(automation.id) or "")
+    if claimed is not None and (prev is None or claimed > prev):
+        prev = claimed
     if prev is None:
         return True, f"schedule({cond.cron}): first run"
 
@@ -246,8 +318,19 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
         headline=automation.name,
         trigger_id=trigger_id,
         triggered_at=now_iso_z(),
+        # 4.1a — stable across every attempt of THIS delivery, so a receiver can drop
+        # the duplicate our own inner HTTP retry may produce. Keyed by the automation
+        # and the period, never by a fresh timestamp (which is what `triggered_at` is,
+        # and why the receiver could not tell a retry from a new alert).
+        delivery_key=f"{automation.id}:{last_delivery_claim(automation.id) or 'unclaimed'}",
     ))
-    ok = getattr(log, "status", "") == "ok"
+    _status = getattr(log, "status", "")
+    if _status == "timeout":
+        # It may have arrived. Saying "failed" would license a retry, and a retried
+        # maybe-delivered webhook is the duplicate this layer exists to prevent.
+        return EffectOutcome(kind=effect.kind, target=trigger_id, status="uncertain",
+                             message=f"delivery timed out — {UNCERTAIN_DELIVERY}")
+    ok = _status == "ok"
     return EffectOutcome(kind=effect.kind, target=trigger_id,
                          status="executed" if ok else "failed",
                          message=getattr(log, "error", None) or "")
@@ -263,10 +346,15 @@ def _dispatch_brief(effect: Effect, automation: Automation) -> EffectOutcome:
         return EffectOutcome(kind=effect.kind, target=sub_id, status="dispatch_error",
                              message=f"unknown brief subscription: {sub_id}")
     result = deliver_subscription(sub) or {}
-    ok = result.get("status") == "ok"
+    _status = result.get("status")
+    if _status == "timeout":
+        # Same reasoning as notify: an email whose send timed out may be in an inbox.
+        return EffectOutcome(kind=effect.kind, target=sub_id, status="uncertain",
+                             message=f"delivery timed out — {UNCERTAIN_DELIVERY}")
+    ok = _status == "ok"
     return EffectOutcome(kind=effect.kind, target=sub_id,
                          status="executed" if ok else "failed",
-                         message=str(result.get("error") or result.get("status") or ""))
+                         message=str(result.get("error") or _status or ""))
 
 
 def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -482,6 +570,12 @@ def run_automation(
         return _finish(AutomationRun(**base, outcome="not_fired", reason=reason))
 
     # 3 — effects, in declared order (the first step that can cause a side effect)
+    #
+    # 4.1a — claim BEFORE the irreversible part. From here on a crash leaves durable
+    # evidence that this period was attempted, so the next tick holds rather than
+    # re-sending. Only outward effects are claimed (see OUTWARD_EFFECT_KINDS).
+    if persist and has_outward_effect(automation):
+        claim_delivery(automation.id, started)
     sleep_budget = [MAX_RETRY_SLEEP_SECONDS]
     outcomes = [
         _run_effect(effect, automation, dispatch_fn,

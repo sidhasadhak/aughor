@@ -76,6 +76,11 @@ class ActionPayload:
     headline:         Optional[str]
     trigger_id:       str
     triggered_at:     str
+    #: Idempotency key for THIS delivery, stable across every attempt (4.1a). Empty for
+    #: callers that have no period to key on. `triggered_at` cannot serve: it is stamped
+    #: fresh per attempt, so a receiver could not tell our retry from a new alert — and
+    #: `_post` retries twice on a 15s timeout, which a slow-but-successful receiver hits.
+    delivery_key:     str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +91,7 @@ class ActionPayload:
             "headline":         self.headline,
             "trigger_id":       self.trigger_id,
             "triggered_at":     self.triggered_at,
+            "delivery_key":     self.delivery_key,
             "source":           "aughor",
         }
 
