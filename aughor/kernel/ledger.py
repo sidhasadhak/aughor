@@ -634,6 +634,29 @@ class Ledger:
             )
             return cur.rowcount == 1
 
+    def lapsed_claim_owner(self, scope: str) -> str:
+        """The owner of a LAPSED claim on ``scope``, or ``""``.
+
+        Wave 4 (4.1c): ``try_claim`` returns a bare bool, so a caller cannot tell a
+        fresh claim from stealing a dead worker's lease — and that difference is a
+        fact the next worker needs: the slice it is about to run was already started
+        by someone who never finished, so recorded findings may be half-written.
+
+        Deliberately a separate read rather than a richer ``try_claim`` return: this
+        is ADVISORY (it decides a cautionary sentence, never correctness), and the
+        claim itself must stay one atomic statement. It races with the upsert that
+        follows — another worker can take the scope in between — but a false positive
+        costs one extra sentence of caution and a false negative costs nothing, which
+        is the right way round for a marker.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT owner FROM claims WHERE scope = ? AND lease_until < ?",
+                (scope, now),
+            ).fetchone()
+        return (row[0] if row else "") or ""
+
     def renew_claim(self, scope: str, owner: str, lease_s: float) -> bool:
         """Extend a held claim. False when the claim lapsed and someone else took it
         — the worker must STOP, its work now belongs to the new owner."""
