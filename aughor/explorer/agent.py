@@ -2497,9 +2497,16 @@ class SchemaExplorer:
             # hiccup must not stop a single-process exploration.
             self._release_held_claim()   # the previous domain is done — free its slice
             _claim_scope = f"explore:{self._store_key}:{domain}"
+            _resumed_after_interrupt = False
             try:
                 from aughor.kernel.ledger import Ledger
                 _claim_ledger = Ledger.default()
+                # 4.1c — is this claim a STEAL? A lapsed lease means a worker started
+                # this domain and never finished it, so whatever it recorded may be
+                # half-written. Read before claiming, because the claim erases the
+                # evidence. Advisory only (see `lapsed_claim_owner`).
+                _resumed_after_interrupt = bool(
+                    _claim_ledger.lapsed_claim_owner(_claim_scope))
                 if not _claim_ledger.try_claim(_claim_scope, self._worker_id,
                                                lease_s=_DOMAIN_LEASE_S):
                     logger.info("[explorer:%s] Phase 8: domain %s is another worker's slice — skipping",
@@ -2510,6 +2517,17 @@ class SchemaExplorer:
                 from aughor.kernel.errors import tolerate
                 tolerate(_cl_exc, "domain claim is best-effort; single-process exploration proceeds",
                          counter="explorer.domain_claim")
+
+            if _resumed_after_interrupt:
+                # Tell the model its own history has a gap. Without this it re-runs a
+                # domain that already has findings recorded and simply repeats them —
+                # the interruption is invisible from inside the prompt, so the model
+                # has no way to know that "no findings yet" and "findings written by a
+                # worker that died mid-write" look identical to it.
+                logger.info("[explorer:%s] domain %s resumed after an interrupted slice — "
+                            "marking its context", self.connection_id, domain)
+                from aughor.stats import bump
+                bump("explorer.resumed_after_interrupt")
 
             # Derive: profile metrics lead the angle checklist; generic angles remain
             # as fallback. The column-feasibility gate downstream drops any that don't
@@ -2626,6 +2644,22 @@ class SchemaExplorer:
                     f"  • [{i.get('angle','')}] {i.get('finding','')}"
                     for i in domain_insights
                 ) or "  (none yet)"
+                # The ONE shared sentence for interrupted work — same constant the
+                # kernel stamps on an orphaned job and the web client shows on a
+                # dropped stream, so the fact reads identically wherever it surfaces.
+                from aughor.kernel.jobs import UNCERTAIN_RESULT
+                if _resumed_after_interrupt:
+                    # 4.1c — tell the model its own history has a gap. This list is
+                    # where it reads what has already been found, and an interrupted
+                    # worker's half-written findings look exactly like complete ones
+                    # from in here. Naming the gap is what stops it either repeating
+                    # work or trusting a record that was never finished.
+                    existing_findings = (
+                        f"  ⚠ the previous pass over this domain was interrupted mid-work — "
+                        f"{UNCERTAIN_RESULT}. Treat the findings below as unverified: "
+                        f"confirm one before building on it, and do not assume the list "
+                        f"is complete.\n" + existing_findings
+                    )
 
                 # Angle-diversity nudge — POSITIVE grounding only. The structural-dedup gate
                 # drops exact repeats, but a domain can still circle one THEME at different

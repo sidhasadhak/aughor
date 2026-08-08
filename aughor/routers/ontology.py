@@ -658,7 +658,7 @@ def _explain_for(connection_id: str):
 
 def _bind_and_persist(connection_id: str, schema: str, ov):
     """EXPLAIN-bind the override's SQL fields, persist it, and return (ov, graph)."""
-    from aughor.ontology.overrides import bind_overrides, save_override
+    from aughor.ontology.overrides import EXISTENCE_FIELDS, bind_overrides, save_override
     graph = _get_ontology_graph(connection_id, schema)
     try:
         explain, close = _explain_for(connection_id)
@@ -666,8 +666,18 @@ def _bind_and_persist(connection_id: str, schema: str, ov):
             bind_overrides(ov, graph, explain)
         finally:
             close()
-    except Exception:
-        pass  # binding is best-effort; unbound SQL simply won't earn `verified`
+    except Exception as exc:
+        # Binding is best-effort for SQL fields: unbound SQL simply won't earn
+        # `verified`. But an EXISTENCE field must never come back with an empty
+        # binding — `verified` is `all(...) if binding else True`, so silence there
+        # reads as "checked and fine" for a table nobody could look for. When the
+        # connection itself is unreachable, say THAT rather than nothing.
+        for field in ov.fields:
+            if field in EXISTENCE_FIELDS and field not in ov.binding:
+                ov.binding[field] = {
+                    "bound": False,
+                    "note": f"could not reach the connection to check: {str(exc)[:160]}",
+                }
     save_override(connection_id, schema, ov)
     return ov, graph
 
@@ -702,6 +712,137 @@ def override_ontology_entity(
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return _override_result(ov)
+
+
+class _RoutingProposal(BaseModel):
+    """A volunteered correction: "for X questions you should have used table Y"."""
+    table: str
+    scope: str = ""
+    reason: str = ""
+    #: Where this came from, so a proposal can be traced back to the turn that
+    #: produced it. Wave-L rule: evidence must point at a run that EXISTS.
+    evidence: str = ""
+
+
+@router.post("/ontology/entities/{entity_id}/routing-proposal",
+             dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def propose_entity_routing(
+    entity_id: str,
+    body: _RoutingProposal,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Capture a routing correction as a PENDING proposal (Wave 2 / Layer 1.1).
+
+    Never applies it. The proposal is stored in its own field, so enforcement — which
+    reads only ``use_instead`` — cannot see it: "a proposal changes nothing" is true by
+    construction rather than by a status check someone has to remember. It IS
+    existence-bound here though, while the person who volunteered it is still present,
+    so a typo is reported now instead of at accept time.
+
+    Merges into any existing override for the entity rather than replacing the file,
+    so proposing does not wipe a description or an active filter that is already there.
+    """
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import (
+        PROPOSED_FIELD, OntologyOverride, find_override)
+
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = dict(existing.fields) if existing else {}
+    fields[PROPOSED_FIELD] = {
+        "table": body.table.strip(),
+        "scope": body.scope.strip(),
+        "reason": body.reason.strip(),
+        "evidence": body.evidence.strip(),
+    }
+    ov = OntologyOverride(
+        target_kind="entity", target_id=entity_id, fields=fields,
+        source=(existing.source if existing else "human"),
+        binding=dict(existing.binding) if existing else {},
+    )
+    ov, graph = _bind_and_persist(connection_id, effective, ov)
+    if graph is not None and entity_id not in graph.entities:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _proposal_result(entity_id, ov)
+
+
+@router.get("/ontology/routing-proposals", dependencies=[gate(Capability.ONTOLOGY_VIEW)])
+def list_routing_proposals(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Every pending routing proposal for this connection — the review surface.
+
+    Each carries its bind verdict, so the reviewer sees "this table does not exist"
+    before accepting rather than after.
+    """
+    from aughor.ontology.overrides import PROPOSED_FIELD, load_overrides
+
+    effective = _resolve_schema(connection_id, schema_name)
+    out = []
+    for ov in load_overrides(connection_id, effective):
+        if ov.target_kind == "entity" and ov.fields.get(PROPOSED_FIELD):
+            out.append(_proposal_result(ov.target_id, ov))
+    return {"proposals": out, "connection_id": connection_id, "schema_name": effective}
+
+
+@router.post("/ontology/entities/{entity_id}/routing-proposal/accept",
+             dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def accept_entity_routing(
+    entity_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Promote a pending proposal to the live routing rule — the human click (C4).
+
+    This is the ONLY path from proposed to enforced. Refuses a proposal that did not
+    existence-bind: accepting a rule that names a table nobody can read would put a
+    dead pointer into every prompt for this connection.
+    """
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)
+    from aughor.ontology.overrides import (
+        PROPOSED_FIELD, ROUTING_FIELD, OntologyOverride, find_override)
+
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    proposed = (existing.fields.get(PROPOSED_FIELD) if existing else None)
+    if not proposed:
+        raise HTTPException(status_code=404,
+                            detail=f"no pending routing proposal for '{entity_id}'")
+    if not existing.sql_field_ok(PROPOSED_FIELD):
+        note = (existing.binding.get(PROPOSED_FIELD) or {}).get("note") or "did not bind"
+        raise HTTPException(
+            status_code=409,
+            detail=f"this proposal never bound ({note}) — it would route to a table "
+                   "that cannot be read, so it cannot be accepted")
+
+    fields = dict(existing.fields)
+    fields[ROUTING_FIELD] = {k: v for k, v in proposed.items() if k != "evidence"}
+    fields.pop(PROPOSED_FIELD, None)
+    binding = {k: v for k, v in existing.binding.items() if k != PROPOSED_FIELD}
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                          source="human", binding=binding,
+                          note=f"routing accepted from proposal ({proposed.get('evidence') or 'no evidence'})")
+    ov, _graph = _bind_and_persist(connection_id, effective, ov)
+    return _override_result(ov)
+
+
+def _proposal_result(entity_id: str, ov) -> dict:
+    """One proposal, with the before/after a reviewer needs to judge it."""
+    from aughor.ontology.overrides import PROPOSED_FIELD, ROUTING_FIELD
+
+    bind = ov.binding.get(PROPOSED_FIELD) or {}
+    return {
+        "entity_id": entity_id,
+        "proposed": ov.fields.get(PROPOSED_FIELD) or {},
+        # What is live today, so the reviewer sees what accepting would REPLACE.
+        "current": ov.fields.get(ROUTING_FIELD) or None,
+        "bound": bool(bind.get("bound")),
+        "bind_note": bind.get("note") or "",
+    }
 
 
 @router.put("/ontology/kinetic-actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

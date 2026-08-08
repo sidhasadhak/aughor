@@ -288,3 +288,63 @@ def test_clarify_gate_interrupt_and_resume_roundtrip():
     ran_after = [k for ev in app.stream(None, config=cfg) for k in ev]
     assert "ada_cross_section" in ran_after                  # resumed through the passthrough to the branch
     assert app.get_state(cfg).next == ()                     # and the run completed
+
+
+# ── Wave 3 / 2.3 leftovers ───────────────────────────────────────────────────
+
+def test_an_unmatched_choice_binds_the_default_but_records_nothing(monkeypatch):
+    """The fallback must not become a durable claim about what the user chose.
+
+    `crystallize_user_choice` writes at USER authority, which outranks a probe and
+    persists for the whole connection — so a stale or garbled resume would teach the
+    system a reading nobody picked. The run still binds the governed default so it
+    can finish; that is our decision, not the user's answer.
+    """
+    from aughor.routers import investigations as I
+
+    wrote = []
+    monkeypatch.setattr("aughor.semantic.ambiguity_ledger.crystallize_user_choice",
+                        lambda *a, **k: wrote.append(a))
+
+    merged = {"_clarify_pending": {"subject": "refund rate", "readings": [
+        {"label": "by count", "sql": "SELECT 1"},
+        {"label": "by value", "sql": "SELECT 2"},
+    ]}}
+    patch = I._apply_clarify_choice(merged, "something the user never picked", "c")
+
+    assert patch["_ada_intake"]["metric_sql"] == "SELECT 1", "the run still binds the default"
+    assert wrote == [], "an unmatched choice must not be crystallized"
+
+
+def test_a_matched_choice_is_still_crystallized(monkeypatch):
+    """The real answer is still remembered — that is the whole point of the ledger."""
+    from aughor.routers import investigations as I
+
+    wrote = []
+    monkeypatch.setattr("aughor.semantic.ambiguity_ledger.crystallize_user_choice",
+                        lambda *a, **k: wrote.append(a))
+
+    merged = {"_clarify_pending": {"subject": "refund rate", "readings": [
+        {"label": "by count", "sql": "SELECT 1"},
+        {"label": "by value", "sql": "SELECT 2"},
+    ]}}
+    patch = I._apply_clarify_choice(merged, "by value", "c")
+
+    assert patch["_ada_intake"]["metric_sql"] == "SELECT 2"
+    assert len(wrote) == 1
+
+
+def test_agui_forwards_allow_clarify():
+    """The native /ask body has carried `allow_clarify` since Wave 2; this door did
+    not, leaving an AG-UI consumer unable to decline a pause it cannot answer."""
+    from ag_ui.core import RunAgentInput
+
+    from aughor.routers.agui import ask_request_from
+
+    def _build(props):
+        return ask_request_from(RunAgentInput(
+            thread_id="t", run_id="r", state={}, messages=[], tools=[], context=[],
+            forwarded_props=props))
+
+    assert _build({"connection_id": "c"}).allow_clarify is True, "default unchanged"
+    assert _build({"connection_id": "c", "allow_clarify": False}).allow_clarify is False

@@ -116,6 +116,12 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
         purpose=str(_forwarded(inp, "purpose") or ""),
         agent_id=_forwarded(inp, "agent_id"),
         skip_clarify=bool(_forwarded(inp, "skip_clarify", False)),
+        # Whether this run may PAUSE to ask which reading was meant. Forwarded (and
+        # defaulted True, so an existing caller is unchanged) because the native /ask
+        # body has carried it since Wave 2 and this door did not — leaving an AG-UI
+        # consumer unable to decline a pause it has no way to answer. Layer 3's
+        # converse turns are exactly that consumer: they pass False by construction.
+        allow_clarify=bool(_forwarded(inp, "allow_clarify", True)),
         clarify_reading=_forwarded(inp, "clarify_reading") or "",
         clarify_subject=_forwarded(inp, "clarify_subject") or "",
         clarify_source=_forwarded(inp, "clarify_source") or "",

@@ -87,6 +87,20 @@ def _error_event(exc: "BaseException | None" = None, *, message: str = "",
     return error_event(exc, message=message, reason=reason)
 
 
+#: The follow-up ask, shared by both branches of the quick path's merged
+#: narrative+follow-ups call (Wave 2 / 2.1). The deep paths build the whole prompt from
+#: `aughor/agent/followups.py`; here the ask has to ride inside the narrative prompt,
+#: because merging the two into ONE narrator call is what stopped this path spending
+#: two round-trips per answer. Same voice instruction either way: a chip is typed into
+#: the composer verbatim when clicked, so it must read as the user's own words.
+_FOLLOWUP_CLAUSE = (
+    "suggest exactly 3 follow-up questions written AS THE USER would type them "
+    "(max 12 words each) — concrete operations on THIS result, using its real column "
+    "names: change the grouping, change the window, filter to a segment, or chase the "
+    "biggest mover. Never write about the user ('the user could…'); write what they "
+    "would say ('break this out by region')."
+)
+
 #: What each guard flag means, in the voice the narrator should explain it in. Only
 #: the flags that CHANGED or QUALIFIED the answer appear — a guard that ran and found
 #: nothing is not news, and narrating it would train the reader to skip the prose.
@@ -96,6 +110,11 @@ _GUARD_PROSE = {
     "narration_inversion": "this value varies by group and is not uniform across every row",
     "measure_grain": "the measure may be summed at the wrong grain (per-unit vs per-line)",
     "id_arithmetic": "the total multiplies a measure by an id/key column, so its magnitude is unreliable",
+    # Not a guard rewrite — an assumption the user asked us to make. It belongs in the
+    # same breath as the rest: everything here is something the reader must account for
+    # when reading the number (Wave 3 / 2.3).
+    "assumed": "the question had more than one reasonable reading and you asked for a "
+               "best guess, so ONE reading was chosen — say which one you answered",
 }
 
 
@@ -1254,6 +1273,7 @@ async def _stream_chat(
     skip_clarify: bool = False,
     purpose: str = "",
     schema_scope: Optional[str] = None,
+    assumed_default: bool = False,
 ) -> AsyncGenerator[str, None]:
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1815,7 +1835,13 @@ async def _stream_chat(
         final_sql = answer.sql
         # Trust-receipt provenance signals — recorded ONLY when a guard
         # demonstrably fires this turn (honest lineage, not aspirational).
-        _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False}
+        _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False,
+                 # Wave 3 / 2.3 — the user pressed "Answer anyway": the question was
+                 # open to more than one reading and they asked for a best guess. That
+                 # is an ASSUMPTION the answer rests on, and until now it was recorded
+                 # nowhere — `guard:ambiguous_question` fires off re-derived complexity,
+                 # not off the user's own decision to skip.
+                 "assumed": bool(assumed_default)}
         # The semantic compiler offers a grounded reference query as a HINT in the prompt above;
         # it no longer OVERRIDES the LLM. Overriding served confidently-wrong answers whenever the
         # compiler could not faithfully express the question — a computed late-delivery condition, a
@@ -2271,6 +2297,12 @@ async def _stream_chat(
                 _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
             if _rcpt.get("id_arithmetic"):
                 _guards.append(("flagged", "guard:id_arithmetic", "a measure was multiplied by an id/key column; magnitude caveated inline"))
+            if _rcpt.get("assumed"):
+                # The user's own "answer anyway" — a DISCLOSED assumption, recorded on
+                # the receipt so the reader can see what the answer rests on.
+                _guards.append(("flagged", "guard:assumed_reading",
+                                "the question was open to more than one reading and a best guess was requested; "
+                                "one reading was chosen and is disclosed in the answer"))
             if _cx.ambiguous:
                 # The #1 NL2SQL challenge (ambiguity): the question was under-specified.
                 # Surface it honestly on the receipt rather than silently guessing.
@@ -2343,12 +2375,12 @@ async def _stream_chat(
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
                     "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
                     "invent values, and bold never licenses invented precision." + _ts_clause + " "
-                    "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
+                    "Then (2) " + _FOLLOWUP_CLAUSE
                 )
             else:
                 _system = (
-                    "Given a user question and its answer, suggest exactly 3 concise follow-up data questions "
-                    "(max 12 words each). Leave the narrative empty."
+                    "Given a user question and its answer, " + _FOLLOWUP_CLAUSE
+                    + " Leave the narrative empty."
                 )
             _rows_label = (
                 f"Results (TIME SERIES — series start then the {len(_sample_rows) - 1} most "
@@ -3038,8 +3070,20 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("answer_report", {"answer_report": ada, "investigation_id": inv_id, "query_mode": "investigate", "mode": "investigate"})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
-                    fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)
+                    # 2.1 — the executed queries are right here in `qh`; this site used
+                    # to send only the question and a headline, so the suggestions could
+                    # not name a real column.
+                    fq: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(
+                            question,
+                            headline=(ada.get("headline", "") if isinstance(ada, dict)
+                                      else str(ada)[:200]),
+                            **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3104,8 +3148,14 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
-                    fqx: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FollowUpBase)
+                    fqx: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(question, headline=er.headline,
+                                           **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqx.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3120,10 +3170,16 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id, "query_mode": merged.get("query_mode")})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
                     rep = merged["report"]
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
-                    fqr: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FollowUpBase)
+                    fqr: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(question, headline=str(summary)[:300],
+                                           **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3211,13 +3267,26 @@ def _apply_clarify_choice(merged: dict, clarify_choice: Optional[str], connectio
     readings = pending.get("readings") or []
     if not readings:
         return {}
-    chosen = next((r for r in readings if r.get("label") == clarify_choice), readings[0])
+    matched = next((r for r in readings if r.get("label") == clarify_choice), None)
+    chosen = matched if matched is not None else readings[0]
     patch: dict = {"_clarify_pending": None}
     if chosen.get("sql"):
         intake = dict(merged.get("_ada_intake") or {})
         intake["metric_sql"] = chosen["sql"]
         intake["metric_is_ratio"] = bool(chosen.get("is_ratio"))
         patch["_ada_intake"] = intake
+    if matched is None:
+        # The run still binds the governed default so it can finish — but that is OUR
+        # fallback, not the user's answer, and it must not be written down as one.
+        # `crystallize_user_choice` records at USER authority, which outranks a probe
+        # and persists for the whole connection: a stale or garbled resume would
+        # durably teach the system a reading nobody picked. Provenance is required,
+        # and there is no provenance here.
+        logger.info("[clarify] resume choice %r matched no reading; binding the governed "
+                    "default for this run WITHOUT crystallizing it", clarify_choice)
+        from aughor.stats import bump
+        bump("deep_analysis.clarify_unmatched")
+        return patch
     try:
         from aughor.org.context import current_org_id
         from aughor.semantic.ambiguity_ledger import Reading, crystallize_user_choice
@@ -3837,7 +3906,11 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             _stream_chat(req.question, conn_id, req.history, request,
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
-                         schema_scope=req.schema_name),
+                         schema_scope=req.schema_name,
+                         # "Answer anyway" = skipped WITHOUT supplying a reading. When a
+                         # reading did come back the choice is recorded and crystallized,
+                         # so there is nothing to disclose.
+                         assumed_default=bool(req.skip_clarify and not req.clarify_reading)),
             budget=_insight_budget(conn_id),
         ):
             yield sse
