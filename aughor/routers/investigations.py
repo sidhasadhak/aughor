@@ -87,6 +87,20 @@ def _error_event(exc: "BaseException | None" = None, *, message: str = "",
     return error_event(exc, message=message, reason=reason)
 
 
+#: The follow-up ask, shared by both branches of the quick path's merged
+#: narrative+follow-ups call (Wave 2 / 2.1). The deep paths build the whole prompt from
+#: `aughor/agent/followups.py`; here the ask has to ride inside the narrative prompt,
+#: because merging the two into ONE narrator call is what stopped this path spending
+#: two round-trips per answer. Same voice instruction either way: a chip is typed into
+#: the composer verbatim when clicked, so it must read as the user's own words.
+_FOLLOWUP_CLAUSE = (
+    "suggest exactly 3 follow-up questions written AS THE USER would type them "
+    "(max 12 words each) — concrete operations on THIS result, using its real column "
+    "names: change the grouping, change the window, filter to a segment, or chase the "
+    "biggest mover. Never write about the user ('the user could…'); write what they "
+    "would say ('break this out by region')."
+)
+
 #: What each guard flag means, in the voice the narrator should explain it in. Only
 #: the flags that CHANGED or QUALIFIED the answer appear — a guard that ran and found
 #: nothing is not news, and narrating it would train the reader to skip the prose.
@@ -2343,12 +2357,12 @@ async def _stream_chat(
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
                     "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
                     "invent values, and bold never licenses invented precision." + _ts_clause + " "
-                    "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
+                    "Then (2) " + _FOLLOWUP_CLAUSE
                 )
             else:
                 _system = (
-                    "Given a user question and its answer, suggest exactly 3 concise follow-up data questions "
-                    "(max 12 words each). Leave the narrative empty."
+                    "Given a user question and its answer, " + _FOLLOWUP_CLAUSE
+                    + " Leave the narrative empty."
                 )
             _rows_label = (
                 f"Results (TIME SERIES — series start then the {len(_sample_rows) - 1} most "
@@ -3038,8 +3052,20 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("answer_report", {"answer_report": ada, "investigation_id": inv_id, "query_mode": "investigate", "mode": "investigate"})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
-                    fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)
+                    # 2.1 — the executed queries are right here in `qh`; this site used
+                    # to send only the question and a headline, so the suggestions could
+                    # not name a real column.
+                    fq: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(
+                            question,
+                            headline=(ada.get("headline", "") if isinstance(ada, dict)
+                                      else str(ada)[:200]),
+                            **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3104,8 +3130,14 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
-                    fqx: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FollowUpBase)
+                    fqx: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(question, headline=er.headline,
+                                           **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqx.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3120,10 +3152,16 @@ async def _stream_investigation(
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id, "query_mode": merged.get("query_mode")})
                 try:
+                    from aughor.agent.followups import (
+                        artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
                     rep = merged["report"]
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
-                    fqr: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FollowUpBase)
+                    fqr: _FollowUpBase = _gp("narrator").complete(
+                        system=followup_system(),
+                        user=followup_user(question, headline=str(summary)[:300],
+                                           **artifact_from_history(qh)),
+                        response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate

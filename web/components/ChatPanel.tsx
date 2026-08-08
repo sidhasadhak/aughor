@@ -857,7 +857,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       <ChatMessage
                         turn={turn}
                         connectionId={connectionId}
-                        onFollowUp={(q) => handleSend(q)}
+                        // Wave 2 / 2.1 — tag the turn so chip adoption is QUERYABLE. A
+                        // clicked follow-up was indistinguishable from a typed question,
+                        // so "do the suggestions get used" had no answer. `purpose` is
+                        // the existing starter-provenance column (investigations.purpose),
+                        // so this needs no new store.
+                        onFollowUp={(q) => handleSend(q, undefined, { purpose: "followup" })}
                         onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                         onShowSource={setSourcePanel}
                         onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
