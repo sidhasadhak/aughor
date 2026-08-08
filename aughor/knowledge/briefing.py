@@ -239,6 +239,36 @@ def _build_user_prompt(
 #
 # Only UNCITED findings are listed: the top-N are already in the prompt above, in full.
 
+# ── Recompose (Wave 3 / 4.2b) — the truncation backstop ───────────────────────
+# A brief that hits the output ceiling cannot be recovered by asking again: the ceiling
+# is ours and rides every request, so the reliability layer correctly declines both the
+# failover and the bounded repair. The only move left is to ask for LESS. Half the
+# citations, and a system clause that says so — one extra call, spent only when the
+# alternative is no brief at all.
+_RECOMPOSE_FINDINGS = 4
+_RECOMPOSE_CLAUSE = (
+    "\n\nIMPORTANT: your previous attempt was cut off by the length limit. Be "
+    "materially briefer this time — at most 200 words in total, and cite only the "
+    "findings given below. A complete short brief is worth more than a truncated long "
+    "one; do not trail off."
+)
+
+
+def _is_truncation(exc: BaseException) -> bool:
+    """True when a completion failed by hitting the output ceiling.
+
+    Reads the typed diagnosis the provider raises rather than matching on message
+    text — `StructuredOutputError` exists precisely so callers can branch on WHY.
+    Anything unrecognised is NOT a truncation, so an unrelated failure keeps its
+    original path instead of being quietly re-asked as a shorter brief.
+    """
+    try:
+        from aughor.llm.reliability import TRUNCATED, StructuredOutputError
+        return isinstance(exc, StructuredOutputError) and exc.diagnosis.failure == TRUNCATED
+    except Exception:
+        return False
+
+
 _DIGEST_MAX_PER_DOMAIN = 12     # findings listed per domain before the tail is counted, not shown
 _DIGEST_MAX_CHARS = 4000        # whole-digest budget; the narrator's window is far larger
 
@@ -518,12 +548,43 @@ def generate_narrative(
         import logging as _l
         _l.getLogger(__name__).debug("briefing: org_context unavailable: %s", _e)
 
-    result: BriefingNarrative = provider.complete(
-        system=_SYSTEM_MULTI if multi_schema else _SYSTEM,
-        user=user_prompt,
-        response_model=BriefingNarrative,
-        temperature=0.3,
-    )
+    _system = _SYSTEM_MULTI if multi_schema else _SYSTEM
+    try:
+        result: BriefingNarrative = provider.complete(
+            system=_system, user=user_prompt,
+            response_model=BriefingNarrative, temperature=0.3,
+        )
+    except Exception as exc:
+        # Wave 3 / 4.2b — recompose, and ONLY on a truncation.
+        #
+        # A truncated brief is the one failure the layers below deliberately refuse to
+        # touch: re-asking hits the same ceiling (it is ours, sent on every backend),
+        # so `should_failover` declines the chain and `salvage` spends no repair. The
+        # result is a brief that simply dies — which is what the ~25-finding incident
+        # was.
+        #
+        # So the recovery is not a retry, it is a SMALLER BRIEF: fewer cited findings
+        # and an explicitly shorter target, composed once. Deliberately not a revival
+        # of the LLM tree-reduce this module deleted (see the note further up): that
+        # ran on EVERY brief and spent ~5 calls compressing a kilobyte. This one runs
+        # only when the alternative is no brief at all.
+        if not _is_truncation(exc):
+            raise
+        import logging as _l
+        _l.getLogger(__name__).warning(
+            "briefing: narrative hit the output ceiling — recomposing a shorter brief "
+            "from %d findings instead of %d", _RECOMPOSE_FINDINGS, len(top[:8]))
+        from aughor.stats import bump
+        bump("briefing.recompose")
+        short_prompt = _build_user_prompt(
+            top[:_RECOMPOSE_FINDINGS], patterns[:2], macro_context,
+            coverage_digest=coverage, multi_schema=multi_schema,
+            currency_sym=currency_sym,
+        )
+        result = provider.complete(
+            system=_system + _RECOMPOSE_CLAUSE, user=short_prompt,
+            response_model=BriefingNarrative, temperature=0.3,
+        )
 
     # Currency-normalise the synthesis (and the cited source findings below): the narrator
     # echoes a '$' straight from a finding's prose, and for a non-USD business every '$' figure

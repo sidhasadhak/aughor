@@ -123,3 +123,65 @@ def test_generate_narrative_makes_exactly_one_llm_call(fake):
     assert result["narrative"] == "Synthesis [1]."
     assert len(fake.calls) == 1
     assert "FULL COVERAGE" in fake.calls[0]                  # and it still carried the breadth
+
+
+# ── Recompose: the truncation backstop (Wave 3 / Layer 4.2b) ─────────────────
+
+def _truncation_error():
+    from aughor.llm.reliability import TRUNCATED, Diagnosis, StructuredOutputError
+    return StructuredOutputError(Diagnosis(TRUNCATED, "hit the output token ceiling"))
+
+
+def test_is_truncation_reads_the_typed_diagnosis():
+    from aughor.knowledge.briefing import _is_truncation
+    from aughor.llm.reliability import (
+        SCHEMA_MISMATCH, Diagnosis, StructuredOutputError)
+
+    assert _is_truncation(_truncation_error())
+    assert not _is_truncation(StructuredOutputError(Diagnosis(SCHEMA_MISMATCH, "wrong shape")))
+    assert not _is_truncation(RuntimeError("truncated"))   # message text is not evidence
+
+
+class _TruncateOnceProvider(FakeProvider):
+    """Truncates the first attempt, answers the second — a brief that would have died."""
+
+    def __init__(self):
+        super().__init__()
+        self.systems: list[str] = []
+
+    def complete(self, *, system, user, response_model, temperature=0.1):
+        self.systems.append(system)
+        if not self.calls:
+            self.calls.append(user)
+            raise _truncation_error()
+        return super().complete(system=system, user=user,
+                                response_model=response_model, temperature=temperature)
+
+
+def test_a_truncated_brief_is_recomposed_shorter_not_re_asked(monkeypatch):
+    """Re-asking is provably useless — the ceiling is ours and rides every request —
+    so the recovery asks for LESS, exactly once."""
+    fp = _TruncateOnceProvider()
+    monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
+
+    data = {"sales": _domain("s", 7), "support": _domain("p", 7)}
+    result = generate_narrative(data, patterns=[], connection_id="c")
+
+    assert result["narrative"] == "Synthesis [1].", "the brief survived instead of dying"
+    assert len(fp.calls) == 2, "exactly one recompose — never a retry storm"
+    assert "cut off by the length limit" in fp.systems[1]
+    assert len(fp.calls[1]) < len(fp.calls[0]), "the second prompt must be SMALLER"
+
+
+def test_a_non_truncation_failure_is_not_recomposed(monkeypatch):
+    """Only truncation earns the extra call; every other failure keeps its own path."""
+    class _Down(FakeProvider):
+        def complete(self, **kw):
+            self.calls.append(kw.get("user", ""))
+            raise RuntimeError("the endpoint is down")
+
+    fp = _Down()
+    monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
+    with pytest.raises(RuntimeError):
+        generate_narrative({"sales": _domain("s", 7)}, patterns=[], connection_id="c")
+    assert len(fp.calls) == 1, "a transport failure must not spend a second call here"

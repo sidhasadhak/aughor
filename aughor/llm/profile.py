@@ -59,7 +59,9 @@ class ModelProfile:
     #: (successor of the `max_rows=12` default in `investigate._results_to_text`).
     interpret_max_rows: int
     #: Output-token ceiling per call (successor of `provider._MAX_OUTPUT_TOKENS` = 4096;
-    #: the 4096 default demonstrably truncated a ~25-finding briefing outright).
+    #: the 4096 default demonstrably truncated a ~25-finding briefing outright). This
+    #: is the ceiling for THIS profile's own role — see :func:`role_output_cap`, which
+    #: the provider calls with the role and model of the request it is about to send.
     max_output_tokens: int
     #: Attempts instructor may spend inside one structured call. Deliberately 1 for
     #: EVERY tier: this is retry ECONOMICS (Wave R1's normalizer + bounded repair own
@@ -102,6 +104,9 @@ _BASELINE = dict(
     linker_top_tables=4,
     linker_top_cols=8,
     context_table_cap=10,
+    # Every role at the old constant — BASELINE is "the behaviour everything was
+    # measured against", so it stays byte-identical.
+    role_output_tokens={"coder": 4_096, "narrator": 4_096, "fast": 4_096},
 )
 
 # Large-context families this deployment actually runs (llm_config.json history +
@@ -119,6 +124,15 @@ _CAPABLE = dict(
     linker_top_tables=24,
     linker_top_cols=24,
     context_table_cap=24,
+    # The narrator is the role that was measured TRUNCATING (a ~25-finding briefing
+    # died at 4096), and prose does not carry the reasoning-token runaway risk that
+    # made a high ceiling dangerous for structured calls — so it gets real headroom.
+    # `fast` deliberately does NOT take the capable bump: it is the cheap-by-
+    # declaration tier (phase interprets, classifies, the evidence digest), where a
+    # bigger ceiling buys nothing and costs the run's largest per-call multiplier.
+    # A ceiling is not a target; the only risk of a high one is a runaway, and the
+    # deadline plus reasoning-effort caps bound that independently.
+    role_output_tokens={"coder": 8_192, "narrator": 12_288, "fast": 4_096},
 )
 
 #: Model-id prefix → tier. Longest-prefix match; the `:free`/`:cloud` suffix is not
@@ -173,6 +187,22 @@ def tier_for(model: str) -> dict:
         if base.startswith(prefix) and len(prefix) > best_len:
             best, best_len = tier, len(prefix)
     return dict(best) if best is not None else dict(_BASELINE)
+
+
+def role_output_cap(role: str, model: str) -> int:
+    """The output-token ceiling for ``role`` on ``model`` (Wave 3 / 4.2a).
+
+    Public because the provider needs it at request-build time, where it holds the
+    role and the model but not a resolved profile — and re-resolving the binding
+    there would ignore the fallback link actually about to serve the call.
+
+    An unknown role falls back to the tier's own ``max_output_tokens``, which is the
+    pre-4.2a number for every tier — so a role added to :data:`ROLES` without a cap
+    behaves exactly as it did before rather than inheriting someone else's budget.
+    """
+    tier = tier_for(model)
+    caps = tier.get("role_output_tokens") or {}
+    return int(caps.get(role, tier["max_output_tokens"]))
 
 
 def _rpm_budget(model: str) -> Optional[int]:
@@ -236,7 +266,11 @@ def profile_for(role: str = "coder", *, model: Optional[str] = None) -> ModelPro
     # authority. (`AUGHOR_REASONING_EFFORT` is applied by the provider itself at
     # request-build time; it is mirrored here so readers of the profile see the
     # effective value, not just the tier default.)
-    max_out = max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", tier["max_output_tokens"]))
+    # Role-sized (4.2a): the profile a caller asks for describes the budgets THAT
+    # role will really run under, so `profile_for("narrator").max_output_tokens` is
+    # the narrator's ceiling rather than a tier-wide number no call actually uses.
+    max_out = max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS",
+                                role_output_cap(role, eff_model)))
     attempts = max(1, _int_env("AUGHOR_LLM_STRUCTURED_ATTEMPTS", tier["structured_attempts"]))
     effort = os.getenv("AUGHOR_REASONING_EFFORT", tier["reasoning_effort"]).strip().lower() \
         or tier["reasoning_effort"]

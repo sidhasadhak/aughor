@@ -141,16 +141,28 @@ _MAX_OUTPUT_TOKENS = 4096
 _REASONING_EFFORT_DEFAULT = "low"
 
 
-def _max_output_tokens() -> int:
-    """Cap on generated tokens per call (AUGHOR_MAX_OUTPUT_TOKENS).
+def _max_output_tokens(role: str = "coder", model: str = "") -> int:
+    """Cap on generated tokens for ONE call (AUGHOR_MAX_OUTPUT_TOKENS).
 
     The default is model-sized (A1 ModelProfile): a capable large-context binding
     gets 8192 — the 4096 floor demonstrably truncated a ~25-finding briefing — and
-    an unknown model keeps the old 4096. The env var still wins outright."""
+    an unknown model keeps the old 4096. The env var still wins outright.
+
+    Wave 3 (4.2a) makes it ROLE-sized as well. This function used to take no
+    arguments and resolve ``"coder"``'s model unconditionally, so a narrator writing
+    a long brief and a `fast` throwaway both generated under whatever ceiling the
+    CODER's binding implied — the one role that was never asking for the headroom.
+    Now the ceiling follows the role: a narrator gets room to finish, and `fast`,
+    which is cheap by declaration, does not inherit a capable binding's bump.
+
+    ``model`` is the model actually being called, so a fallback link is sized by the
+    binding that will really serve the request rather than the primary's.
+    """
     default = _MAX_OUTPUT_TOKENS
     try:
-        from aughor.llm.profile import tier_for
-        default = int(tier_for(_active_model(_active_backend(), "coder"))["max_output_tokens"])
+        from aughor.llm.profile import role_output_cap
+        default = role_output_cap(role or "coder",
+                                  model or _active_model(_active_backend(), role or "coder"))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "profile tier unreadable — legacy output ceiling",
@@ -1445,7 +1457,7 @@ class LLMProvider:
         temperature = _effective_temperature(temperature, backend)
         if backend == "anthropic":
             endpoint = client.messages
-            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model,
                           max_retries=_structured_attempts(),
@@ -1457,7 +1469,7 @@ class LLMProvider:
         else:
             endpoint = client.chat.completions
             kwargs = dict(model=model, temperature=temperature, response_model=response_model,
-                          max_tokens=_max_output_tokens(),
+                          max_tokens=_max_output_tokens(role, model),
                           max_retries=_structured_attempts(),
                           messages=[{"role": "system", "content": system},
                                     {"role": "user", "content": user}])
@@ -1566,7 +1578,7 @@ class LLMProvider:
             create_partial = getattr(client.messages, "create_partial", None)
             if create_partial is None:
                 raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
-            kwargs = dict(model=model, max_tokens=_max_output_tokens(), system=system,
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), system=system,
                           messages=[{"role": "user", "content": user}],
                           response_model=response_model,
                           # Sent only under a run-scoped pin — see _complete_on.
@@ -1635,7 +1647,7 @@ class LLMProvider:
         # It is deliberately NOT part of the degrade ladder below: `max_tokens` is core OpenAI,
         # every compat shim takes it, and a cap that can be silently dropped is not a cap.
         base_kwargs = dict(model=model, temperature=temperature, stream=True,
-                           max_tokens=_max_output_tokens(),
+                           max_tokens=_max_output_tokens(role, model),
                            messages=[{"role": "system", "content": sys_prompt},
                                      {"role": "user", "content": user}])
         extra = _reasoning_extra_body(backend)
