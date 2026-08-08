@@ -114,6 +114,31 @@ class RateLimitError(Exception):
 
 
 @dataclass(frozen=True)
+class FauxToolCall:
+    """The model answering through a TOOL CALL rather than message content.
+
+    Two things need this. Today: instructor's TOOLS mode is how several real bindings
+    deliver structured output (``_build_gemini_client`` defaults to it; the ollama
+    reasoning models use it to keep ``<think>`` tokens out of the JSON), and
+    ``reliability.response_text`` has a whole branch for reading
+    ``tool_calls[0].function.arguments`` that no test could reach while the faux
+    backend only ever set ``content``.
+
+    And next: a tool-choosing loop needs to script *which* tool the model picked.
+    ``name`` carries that choice, so a test can assert the model was offered a
+    pipeline and took it.
+
+    ``payload`` is the arguments — a dict, or a raw string when the test wants to
+    exercise malformed arguments. With a ``response_model`` in play it is validated
+    exactly as content would be, because that is what instructor does with them.
+    """
+
+    payload: Any
+    name: str = "structured_output"
+    id: str = "call_faux_1"
+
+
+@dataclass(frozen=True)
 class FauxTruncation:
     """A response cut off at the output ceiling: ``finish_reason="length"`` plus a
     (typically unbalanced) partial body. Classifies TRUNCATED — the class that must
@@ -230,14 +255,29 @@ def _messages_parts(kwargs: dict) -> tuple[str, str]:
 
 
 def _completion(text: str, *, system: str, user: str,
-                finish_reason: str = "stop") -> SimpleNamespace:
+                finish_reason: str = "stop",
+                tool_call: Optional["FauxToolCall"] = None) -> SimpleNamespace:
     """A raw completion shaped the way ``reliability.response_text`` /
     ``_finish_reason`` / ``provider._extract_usage`` read it. Usage is a crude
     chars//4 estimate — nonzero on purpose, so metering paths are exercised with
-    real-looking numbers instead of silent zeros."""
+    real-looking numbers instead of silent zeros.
+
+    With ``tool_call``, the payload rides ``tool_calls[0].function.arguments`` and
+    ``content`` is None — the shape instructor's TOOLS mode produces, which is what
+    the reasoning-model bindings actually use (gemini by default, and any ollama
+    model matching the tools list). Until now the faux backend could only speak
+    through ``content``, so that whole extraction branch was unreachable in a test.
+    """
+    _tool_calls = None
+    if tool_call is not None:
+        _tool_calls = [SimpleNamespace(
+            id=tool_call.id, type="function",
+            function=SimpleNamespace(name=tool_call.name, arguments=text),
+        )]
     return SimpleNamespace(
         choices=[SimpleNamespace(
-            message=SimpleNamespace(content=text, tool_calls=None),
+            message=SimpleNamespace(content=None if tool_call else text,
+                                    tool_calls=_tool_calls),
             finish_reason=finish_reason,
             text=None,
         )],
@@ -296,6 +336,11 @@ def _realize(item: Any, response_model: Optional[type], *, system: str, user: st
         text = item.model_dump_json()
         return item, _completion(text, system=system, user=user)
 
+    tool_call: Optional[FauxToolCall] = None
+    if isinstance(item, FauxToolCall):
+        tool_call = item
+        item = item.payload
+
     if isinstance(item, dict):
         text = json.dumps(item)
         payload: Any = item
@@ -305,7 +350,7 @@ def _realize(item: Any, response_model: Optional[type], *, system: str, user: st
             payload = json.loads(text)
         except ValueError:
             payload = None
-    completion = _completion(text, system=system, user=user)
+    completion = _completion(text, system=system, user=user, tool_call=tool_call)
     if response_model is None:
         return text, completion
     if payload is not None:
@@ -322,7 +367,7 @@ def _realize(item: Any, response_model: Optional[type], *, system: str, user: st
 #: Everything a test needs, importable as one name (the fixture returns this module).
 __all__ = [
     "FauxResponsesExhausted", "FauxTruncation", "FauxRateLimit",
-    "FauxQuotaExhausted", "FauxCall", "FauxClient", "CAPABLE_MODEL",
+    "FauxQuotaExhausted", "FauxCall", "FauxClient", "FauxToolCall", "CAPABLE_MODEL",
     "set_responses", "push_responses", "calls", "pending",
     "reset", "build_client",
 ]
