@@ -480,6 +480,44 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
   }
 }
 
+// Frames the backend emits that change no rendered turn state. They still reach the
+// debug event log (`logEvent` runs on every frame, above the switch) — what they do not
+// do is reach the UI. The switch has no permissive fallthrough, so before this list
+// existed an unhandled frame and a misspelled one were indistinguishable, and nine
+// frame types were reaching no consumer with nobody aware of it. Naming them is the
+// difference between "we decided not to render this" and "we never noticed".
+//
+//   explore_plan · subq_answer — incremental only. The terminal `explore_report` carries
+//     the same `sub_questions` / `subq_answers` arrays, so the end state is normally
+//     complete. Caveat: that terminal copy comes from `_reduced_subq_answers`, which
+//     falls back to the clobbered list on a checkpoint read error — in that case these
+//     frames were the only other copy of the per-sub-question evidence.
+//   start — the run id it carries is harvested by the `invId` line above the switch,
+//     which is the only part the UI needs; the rest is a stream-opening marker.
+//   learning · activations — per-run receipts, emitted from a loop over a tuple of names
+//     rather than as literals, which is why they hid from the first pass of the parity
+//     test. Both are flag-gated and no surface renders either.
+//   compiled · trusted — emitted by the quick body (`_stream_chat`); nothing renders them.
+//   fanout — also `_stream_chat`, but every emission is immediately paired with a
+//     `guard_receipt` frame describing the same intervention, and that one IS rendered.
+//     So the interpretation reaches the user; only the hub/satellite detail does not.
+//   paused — KNOWN GAP, not a decision, but DORMANT rather than live: its branch is
+//     reached only when the graph arms the `ada_synthesize` interrupt, which needs
+//     `hitl=True`, and no web caller sets it (only a direct API or `/agui/run` caller
+//     can). If it ever does fire, its sibling branch `plan_pending` IS handled while
+//     this one is not, so the run would finish the turn (a `done` follows immediately)
+//     looking like a completed, empty answer, and the hypotheses and evidence scores it
+//     carried would never reach the user. Rendering it needs a paused turn state and a
+//     resume affordance — tracked separately, not fixed here.
+const UNRENDERED_FRAMES = new Set([
+  "explore_plan", "subq_answer", "start", "learning", "activations",
+  "compiled", "fanout", "trusted", "paused",
+]);
+
+// Types already warned about this session — a per-frame warning would drown the signal
+// the first time a high-frequency `*_delta` frame loses its consumer.
+const warnedFrames = new Set<string>();
+
 export async function consumeStream(
   res: Response,
   dispatch: (a: ChatAction) => void,
@@ -692,6 +730,26 @@ export async function consumeStream(
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string, detail: toErrorDetail(p) }); break;
             case "done":         dispatch({ type: "DONE", receiptId: (p.has_receipt ? (p.inv_id as string) : null) }); break;
+            default: {
+              // A frame nobody claims. Known-unrendered ones stay quiet; anything else is
+              // either a new backend frame that never got a consumer or a misspelled wire
+              // name, and both used to look exactly like success. The NODE_ENV test comes
+              // FIRST so the whole branch folds away statically in a production build —
+              // with the Set lookup first the minifier has to keep it.
+              if (process.env.NODE_ENV !== "production") {
+                const frameType = String(p.type);
+                if (!UNRENDERED_FRAMES.has(frameType) && !warnedFrames.has(frameType)) {
+                  warnedFrames.add(frameType);
+                  if (typeof console !== "undefined") {
+                    console.warn(
+                      `[investigationStream] no consumer for SSE frame "${frameType}" — ` +
+                        `it was dropped. Add a case above, or add it to UNRENDERED_FRAMES with the reason.`
+                    );
+                  }
+                }
+              }
+              break;
+            }
           }
         } catch { /* malformed chunk — skip */ }
       }
