@@ -46,15 +46,32 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 On first boot Aughor provisions a synthetic DuckDB fixture (`data/aughor.duckdb`)
 so you have something to query immediately. No real data required.
 
-> **Most of `data/` is gitignored, but two paths are deliberately not:**
-> `data/context_graph/` (the Wave-C connection knowledge graph) and
-> `data/ontology_overrides/` (the human override overlay). Those are
-> *version-controllable artifacts* — reviewable in a diff and shippable to a
-> teammate — so a new file appearing there after you run the app is the artifact
-> asking to be reviewed, not stray runtime state. Commit it if it describes a
-> connection worth sharing; otherwise leave it untracked. Don't add them to
-> `.gitignore`: `data/*.json` is non-recursive on purpose so these nested files
-> stay trackable.
+> **Most of `data/` is gitignored, but four paths are deliberately not:**
+> `data/context_graph/` (the Wave-C connection knowledge graph),
+> `data/ontology_overrides/` (the human override overlay),
+> `data/ontology_docs/` (the R8 Merkle doc tree) and
+> `data/ontology_column_config/` (the R11 per-column config). Each store's own
+> docstring declares it a *version-controllable artifact* — reviewable in a diff and
+> shippable to a teammate — so a new file appearing there after you run the app is
+> the artifact asking to be reviewed, not stray runtime state. Commit it if it
+> describes a connection worth sharing; otherwise leave it untracked. Don't add them
+> to `.gitignore`: `data/*.json` is non-recursive on purpose so these nested files
+> stay trackable, and ignoring them once silently negated a whole wave's
+> distribution mechanic.
+>
+> **This repo is public.** These artifacts carry table and column names, so if you
+> connect a private dataset, keep its artifacts out of the tree by pointing the
+> stores somewhere else rather than ignoring them — `AUGHOR_ONTOLOGY_DOCS_DIR` and
+> `AUGHOR_COLUMN_CONFIG_ROOT` are read at call time:
+>
+> ```bash
+> export AUGHOR_ONTOLOGY_DOCS_DIR=~/.aughor/ontology_docs
+> export AUGHOR_COLUMN_CONFIG_ROOT=~/.aughor/ontology_column_config
+> ```
+>
+> Both are rebuilt on demand (the doc tree is Merkle-checksummed and incremental),
+> so deleting a generated tree costs a rebuild, not data — unless an entry carries
+> `source: human`, which a defaults refresh never overwrites.
 
 ## Running the checks
 
