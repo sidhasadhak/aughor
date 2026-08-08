@@ -14,8 +14,30 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Tick the platform scheduler
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -sf --max-time 290 \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://aughor-platform.vercel.app/cron/tick?window_s=660" \
-            | head -c 500
+          # A tick that does not tick must not report success. The first version of
+          # this step piped curl into `head`, so the STEP's exit status was head's —
+          # and with the repo secret unset, every run since this workflow landed sent
+          # `Authorization: Bearer ` (empty), got a 401, and went green. ~144 runs a
+          # day of a scheduler that never fired, with a checkmark on each. Two
+          # independent fixes, because either alone would have hidden it:
+          #   1. an explicit missing-secret check that names the remedy, and
+          #   2. reading curl's OWN status (-w) instead of a pipeline's.
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET is not set on this repository — the platform " \
+                 "refuses an unauthenticated tick (aughor/routers/cron.py), so the " \
+                 "fine-grained half of the clock is dead. Set it to the SAME value as " \
+                 "the aughor-platform Vercel project's CRON_SECRET."
+            exit 1
+          fi
+          code=$(curl -s --max-time 290 -o body.txt -w '%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://aughor-platform.vercel.app/cron/tick?window_s=660")
+          head -c 500 body.txt; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::/cron/tick answered $code — the tick did not run." \
+                 "401/403 means this repo's CRON_SECRET disagrees with the Vercel one."
+            exit 1
+          fi
