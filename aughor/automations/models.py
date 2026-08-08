@@ -220,6 +220,11 @@ class EffectOutcome(BaseModel):
     status: Literal[
         "executed", "failed", "skipped",
         "criterion_failed", "approval_required", "invalid_params", "dispatch_error",
+        # 4.1a — the send may or may not have landed. Distinct from "failed", which
+        # asserts it did not: a webhook that times out AFTER the receiver has it is
+        # reported as a failure by every layer below, and retrying that is how one
+        # alert becomes two. Never retried; "failed" still is.
+        "uncertain",
     ]
     message: str = ""      # authored criterion message / error, verbatim — never paraphrased
     attempts: int = 1
