@@ -17,6 +17,18 @@ from aughor.licensing import Capability, gate
 router = APIRouter(tags=["ontology"])
 
 
+class _UseInstead(BaseModel):
+    """Routing guidance: query ``table`` rather than this entity's own table.
+
+    ``scope`` says WHEN ("general sales calculations"); empty means always. ``reason``
+    is the author's own words, shown to the model and never parsed. The named table is
+    existence-bound on write — an unbound rule is stored but never enforced.
+    """
+    table: str
+    scope: str = ""
+    reason: str = ""
+
+
 class _EntityOverride(BaseModel):
     description: Optional[str] = None
     active_filter: Optional[str] = None
@@ -24,6 +36,11 @@ class _EntityOverride(BaseModel):
     exclude_when: Optional[list[str]] = None
     lifecycle_states: Optional[list[str]] = None
     terminal_states: Optional[list[str]] = None
+    # NOTE: this model is narrower than `_EDITABLE["entity"]` — `display_name` and
+    # `domain` are editable in the store but have never been reachable through this
+    # endpoint. Anything absent here is dropped by the `model_dump()` filter below, so
+    # a new editable field must be added in BOTH places or it silently does nothing.
+    use_instead: Optional[_UseInstead] = None
 
 
 class _ActionOverride(BaseModel):

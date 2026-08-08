@@ -87,6 +87,41 @@ def _error_event(exc: "BaseException | None" = None, *, message: str = "",
     return error_event(exc, message=message, reason=reason)
 
 
+#: What each guard flag means, in the voice the narrator should explain it in. Only
+#: the flags that CHANGED or QUALIFIED the answer appear — a guard that ran and found
+#: nothing is not news, and narrating it would train the reader to skip the prose.
+_GUARD_PROSE = {
+    "grounded": "the first draft's number did not match the result cells, so it was corrected",
+    "defan": "the SQL was rewritten to stop a join counting rows more than once",
+    "narration_inversion": "this value varies by group and is not uniform across every row",
+    "measure_grain": "the measure may be summed at the wrong grain (per-unit vs per-line)",
+    "id_arithmetic": "the total multiplies a measure by an id/key column, so its magnitude is unreliable",
+}
+
+
+def _guard_note(rcpt: dict) -> str:
+    """The guard interventions of this turn, as an instruction to the narrator.
+
+    Wave 2 / 2.2. The receipts already reach the UI as frames; this puts them in front
+    of the ANSWERING model so a correction is explained in the answer's own voice —
+    "restriction becomes visible direction" — instead of arriving only as a clause
+    appended to the headline.
+
+    Explicitly asks for one plain sentence and forbids re-deriving the number: the
+    model must explain what happened, not relitigate the corrected value.
+    """
+    notes = [prose for key, prose in _GUARD_PROSE.items() if rcpt.get(key)]
+    e1 = rcpt.get("e1_messages") or []
+    if e1:
+        notes.append("a trust check flagged the result: " + "; ".join(str(m) for m in e1[:2]))
+    if not notes:
+        return ""
+    return ("\n\nWHAT THE GUARDS DID — explain this to the user in ONE plain sentence, "
+            "in your own words, as part of the narrative. Do not restate the number and "
+            "do not apologise; say what it means for reading the answer:\n- "
+            + "\n- ".join(notes))
+
+
 def _explore_subq_event(a) -> dict:
     """The `subq_answer` progress-event payload for one completed sub-question (T3-3: per-subq
     evidence + progress, so the wave path isn't a multi-minute silent gap). Carries the sub-question's
@@ -2144,6 +2179,10 @@ async def _stream_chat(
                         f"{(_grounded_headline or '').rstrip('. ')} — caution: {_e1_msgs}"
                     )
                     _rcpt["e1_checks"] = [t.pattern for t in _e1_hits]
+                    # Patterns are identifiers for the receipt; the MESSAGES are the
+                    # prose the narrator needs (2.2) — "ratio_denominator" told to a
+                    # reader explains nothing.
+                    _rcpt["e1_messages"] = [t.message for t in _e1_hits[:2]]
                     logger.info("[chat] E1 trust-check caveat applied to headline: %s",
                                 [t.pattern for t in _e1_hits])
                     yield _sse("guard_receipt", {
@@ -2322,14 +2361,27 @@ async def _stream_chat(
             if _resolution is not None and _resolution.caveat:
                 _res_note = (f"\n\nGROUNDED FACT — state this once, honestly, and do NOT speculate "
                              f"about other tables or grains: {_resolution.caveat}.")
+            # Wave 2 / 2.2 — the narration half of the guard receipts.
+            #
+            # `_grounded_headline`, not `answer.headline`: the headline the USER sees
+            # (line ~2174) is the one the grounding rewrite corrected and the guards
+            # appended their cautions to. The narrator was being handed the RAW model
+            # claim, so the prose could confidently restate a number the headline had
+            # already retracted — the answer disagreeing with itself, by construction.
+            #
+            # `_guard_note` then lets the model SPEAK those interventions instead of
+            # the user meeting them only as a clause bolted onto the headline. The
+            # guards are already visible as receipt frames (A4/B2); this is the other
+            # half of P1 — the answering model sees them too.
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
-                f"Answer: {answer.headline}\n"
+                f"Answer: {_grounded_headline}\n"
                 f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
                 f"{_res_note}"
+                f"{_guard_note(_rcpt)}"
             )
             # CK-0.2 token-streaming (flag `ask.stream_text`, default ON): stream the
             # narrative as `narrative_delta` frames while the narrator writes it, then let
