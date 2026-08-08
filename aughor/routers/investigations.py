@@ -3267,13 +3267,26 @@ def _apply_clarify_choice(merged: dict, clarify_choice: Optional[str], connectio
     readings = pending.get("readings") or []
     if not readings:
         return {}
-    chosen = next((r for r in readings if r.get("label") == clarify_choice), readings[0])
+    matched = next((r for r in readings if r.get("label") == clarify_choice), None)
+    chosen = matched if matched is not None else readings[0]
     patch: dict = {"_clarify_pending": None}
     if chosen.get("sql"):
         intake = dict(merged.get("_ada_intake") or {})
         intake["metric_sql"] = chosen["sql"]
         intake["metric_is_ratio"] = bool(chosen.get("is_ratio"))
         patch["_ada_intake"] = intake
+    if matched is None:
+        # The run still binds the governed default so it can finish — but that is OUR
+        # fallback, not the user's answer, and it must not be written down as one.
+        # `crystallize_user_choice` records at USER authority, which outranks a probe
+        # and persists for the whole connection: a stale or garbled resume would
+        # durably teach the system a reading nobody picked. Provenance is required,
+        # and there is no provenance here.
+        logger.info("[clarify] resume choice %r matched no reading; binding the governed "
+                    "default for this run WITHOUT crystallizing it", clarify_choice)
+        from aughor.stats import bump
+        bump("deep_analysis.clarify_unmatched")
+        return patch
     try:
         from aughor.org.context import current_org_id
         from aughor.semantic.ambiguity_ledger import Reading, crystallize_user_choice
