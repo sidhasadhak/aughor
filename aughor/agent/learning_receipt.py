@@ -16,8 +16,9 @@ one run, combining two sources:
   * **runtime events** — the ``LearningSignals`` the run accumulated (``kernel/metering.py``):
     resolutions crystallized, trusted plan-as-programs replayed.
 
-Flag-gated (``learning.receipt``, default-off → returns ``None`` → no receipt section, no SSE event, output
-byte-identical). Returns ``None`` when nothing happened, so an all-zero receipt never adds noise.
+Unconditional since the flag endgame graduated ``learning.receipt`` (its off-path is deleted; the
+tombstone lives in ``kernel/flags.py``). Returns ``None`` when nothing happened, so an all-zero
+receipt never adds noise — that emptiness, not a flag, is what keeps a quiet run byte-identical.
 """
 from __future__ import annotations
 

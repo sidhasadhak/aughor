@@ -977,11 +977,17 @@ def delete_ontology_override(
     """Remove a human override so the auto-derived value is restored on next read."""
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override
+    from typing import get_args
+
+    from aughor.ontology.overrides import TargetKind, delete_override
     # "segment" is accepted as the current spelling and mapped to the FROZEN store kind
     # "object_set" — the override store's directory name and YAML value (overrides.TargetKind).
     kind = "object_set" if kind == "segment" else kind
-    if kind not in ("entity", "object_set", "computed_property", "metric"):
+    # Read the store's own vocabulary instead of restating it. The hand-copied tuple that
+    # used to live here omitted "action", so a kinetic action could be written by
+    # PUT /ontology/kinetic-actions/{id} (target_kind="action") and then never deleted —
+    # a list that has to be kept in sync by hand eventually is not.
+    if kind not in get_args(TargetKind):
         raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")
     effective = _resolve_schema(connection_id, schema_name)
     removed = delete_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
