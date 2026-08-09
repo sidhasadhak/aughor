@@ -46,6 +46,44 @@ of weight:
 site async for no gain — the loop's own work is blocking either way — and it would make the
 faux-backed tests (currently plain sync functions) markedly harder to read.
 
+## 2b. Step 1 is DONE, and step 2 was measured (2026-08-09, later same day)
+
+**Step 1 landed** — the dead `request` parameter is gone from `_stream_chat` and its two
+call sites. 221 ask/chat/investigation tests green. It was exactly the pure subtraction
+predicted above.
+
+**Step 2's cost is now measured rather than guessed.** Inside `_stream_chat`'s ~1,400
+lines:
+
+| | count |
+|---|---|
+| `await` | 23 — **22 are `asyncio.to_thread`, 1 is `asyncio.gather`** |
+| `async for` | 0 |
+| `yield` | 49 |
+
+**There is no genuinely async I/O in the body.** Every await offloads *synchronous* work
+to a thread so the event loop keeps streaming. This is the strongest possible confirmation
+of §2's recommendation: the computation is sync, and `async def` buys only the streaming
+interface. A sync `_answer_core` is not a compromise — it is what the code already is.
+
+**But the extraction is not a copy-paste**, and this is the part to plan for rather than
+discover. The 49 yields are *interleaved* with the computation (progress frames emitted
+as work proceeds), so a core that merely `return`s at the end would lose them. The shape
+that works:
+
+- `_answer_core(..., emit: Callable[[str, dict], None]) -> AnswerResult` — sync, calling
+  `emit(type, payload)` where the generator currently yields, and calling the `to_thread`
+  targets **directly** (it is already on a worker thread).
+- `_stream_chat` becomes the streaming adapter: run `_answer_core` in a thread with an
+  `emit` that pushes onto a queue, and yield from that queue until the core returns.
+  That queue is a real concurrency design — write it deliberately, with a test for the
+  ordering and for the core raising mid-stream.
+- `answer_question` (converse tool, already on a worker thread via `run_in_executor`)
+  calls `_answer_core` with `emit=lambda *a: None` — **no bridge, no `asyncio.run`**.
+
+Budget step 2 as its own session. It is mechanical but wide: 49 emit sites must keep their
+current ORDER (the #280 guard catches a dropped frame, not a reordered one).
+
 ## 3. Order of operations
 
 Each step ends green; do not batch them.
