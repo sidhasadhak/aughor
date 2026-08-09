@@ -151,6 +151,38 @@ def converse_tools(connection_id: str) -> list[ToolSpec]:
     ]
 
 
+def converse_available() -> bool:
+    """Whether the converse body may serve a turn (`ask.converse`, EXPERIMENT, off).
+
+    Read at CALL time, never at import: a module-level read makes the flag unflippable
+    in a running process and silently turns `monkeypatch.setenv` into a no-op — the trap
+    that once had tests spending the real LLM budget.
+    """
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled("ask.converse")
+
+
+def converse(connection_id: str, question: str, *, extra_context: Optional[str] = None,
+             provider=None, max_steps: Optional[int] = None):
+    """Answer one question as a conversation rather than a compiled query spec.
+
+    The whole body in one place: state-not-instructions prompt, the connection's tools,
+    the loop. Returns the :class:`LoopResult` so the caller sees the STEPS as well as
+    the answer — the route receipt Wave 6 measures is built from those, and an answer
+    with no record of how it was reached is the thing the receipts exist to prevent.
+    """
+    from aughor.agent.tool_loop import run_tool_loop
+    from aughor.llm.provider import get_provider
+
+    return run_tool_loop(
+        provider or get_provider("coder"),
+        converse_system_prompt(connection_id, extra_context),
+        question,
+        converse_tools(connection_id),
+        max_steps=max_steps,
+    )
+
+
 def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> str:
     """State, not instructions (the plan's rule for this prompt).
 

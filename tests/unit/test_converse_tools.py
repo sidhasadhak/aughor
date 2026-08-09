@@ -136,3 +136,41 @@ def test_the_system_prompt_states_rather_than_scripts(fake_conn):
     assert "superstore" in prompt
     assert "caveat" in prompt.lower()
     assert "run_sql" not in prompt, "routing belongs in the tool descriptions, once"
+
+
+def test_converse_is_off_by_default(monkeypatch):
+    """`ask.converse` is an EXPERIMENT. Off means /ask behaves exactly as today."""
+    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    assert ct.converse_available() is False
+
+
+def test_the_flag_is_read_at_call_time_not_import_time(monkeypatch):
+    """A module-level read makes the flag unflippable in a running process and turns
+    `monkeypatch.setenv` into a no-op — the trap that once had tests spending the real
+    LLM budget."""
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
+    assert ct.converse_available() is True
+    monkeypatch.delenv("AUGHOR_ASK_CONVERSE")
+    assert ct.converse_available() is False
+
+
+def test_converse_answers_end_to_end_through_the_loop(monkeypatch, fake_conn):
+    """The body in one call: prompt + tools + loop, with the steps preserved so a route
+    receipt can be built from them."""
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+                        lambda *a, **k: _Result())
+    set_responses([
+        FauxToolCall(payload={"sql": "SELECT count(*) FROM analytics.orders"}, name="run_sql"),
+        "there were 412 orders",
+    ])
+
+    result = ct.converse("c1", "how many orders?",
+                         provider=LLMProvider(backend="faux", role="coder"))
+
+    assert result.answer == "there were 412 orders"
+    assert [s.tool for s in result.steps] == ["run_sql"]
+    assert result.steps[0].ok is True
