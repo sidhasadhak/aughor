@@ -1476,7 +1476,15 @@ function layerFromUrl(): IntelLayer | null {
 export default function Home() {
   // v2 nav IA: land on the Briefing (the intelligence digest), not the Home
   // overview — unless the URL names a screen (S1: deep links win).
-  const [tab, setTab] = useState<NavTab>(() => tabFromUrl() ?? "intelligence");
+  //
+  // This starts at the default rather than reading the URL in the initializer. `/` is
+  // statically prerendered, so the server cannot see `?tab=` — a URL-seeded initial
+  // state therefore renders one screen on the server and a different one on the
+  // client, which is the hydration mismatch that regenerated this whole tree (the
+  // server said Briefing was the active nav item while the client said Data Canvas).
+  // The deep link is applied just below instead, after mount. Same for intelLayer and
+  // the `?table=` entity link.
+  const [tab, setTab] = useState<NavTab>("intelligence");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
@@ -1492,18 +1500,39 @@ export default function Home() {
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
-  const [intelLayer, setIntelLayer] = useState<IntelLayer>(() => layerFromUrl() ?? "briefing");
+  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
-  const [initialGraphTable] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") return undefined;
-    return new URLSearchParams(window.location.search).get("table") ?? undefined;
-  });
+  const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
+
+  // S1 — deep links win, applied after mount so the first client render still matches
+  // the server's HTML. Whatever this sets is recorded as pending, because the URL-sync
+  // effect below runs in the SAME commit as this one — still closed over the default
+  // tab — and would otherwise rewrite `?tab=canvases` to `?tab=intelligence` before the
+  // link ever reached state, silently destroying the deep link it was meant to honour.
+  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: IntelLayer | null } | null>(null);
+  useEffect(() => {
+    const t = tabFromUrl();
+    const l = layerFromUrl();
+    const table = new URLSearchParams(window.location.search).get("table");
+    if (t) setTab(t);
+    if (l) setIntelLayer(l);
+    if (table) setInitialGraphTable(table);
+    if (t || l) pendingDeepLink.current = { tab: t, layer: l };
+  }, []);
+
   // S1 — keep the URL in step with the screen: a tab change PUSHES (back works
   // across screens), a connection change REPLACES (no history spam), and
   // popstate restores the screen the URL names.
   const urlSyncReady = useRef(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Hold off until a deep link read at mount has actually reached state; writing now
+    // would replace the URL that is still being read from.
+    const pending = pendingDeepLink.current;
+    if (pending) {
+      if ((pending.tab && tab !== pending.tab) || (pending.layer && intelLayer !== pending.layer)) return;
+      pendingDeepLink.current = null;
+    }
     const params = new URLSearchParams(window.location.search);
     const urlTab = params.get("tab");
     const urlConn = params.get("conn");
