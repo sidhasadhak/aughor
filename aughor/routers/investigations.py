@@ -6,7 +6,9 @@ import json
 import logging
 import os
 import re
-from typing import AsyncGenerator, Literal, Optional
+import threading
+from dataclasses import dataclass, field
+from typing import AsyncGenerator, Callable, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -1246,10 +1248,12 @@ def _execute_chat_sql(db, sql: str, *, label: str = "chat"):
     without touching execution semantics (the span is a no-op when the obs flags
     are off).
 
-    Called inside ``asyncio.to_thread`` by design: the sink's sqlite write then
-    happens on the worker thread instead of blocking the streaming event loop.
-    Contextvars — trace id, span stack, identity — propagate into the thread, so
-    the row lands correlated.
+    Called off the event loop by design: the sink's sqlite write then happens on a
+    worker thread instead of blocking the stream. It used to get there through its
+    own ``asyncio.to_thread``; now the whole of ``_answer_core`` is already on that
+    thread, so this is a direct call and the property is inherited rather than
+    re-established. Contextvars — trace id, span stack, identity — are copied at
+    the one remaining hop, so the row still lands correlated.
     """
     from aughor import telemetry
     attrs: dict = {"sql": sql, "query_id": label}
@@ -1263,17 +1267,122 @@ def _execute_chat_sql(db, sql: str, *, label: str = "chat"):
         return result
 
 
-async def _stream_chat(
+@dataclass
+class _AnswerCoreResult:
+    """What a quick answer IS, once the frames are someone else's problem.
+
+    The SSE frames are the ordered LOG of the turn; this is its terminal state.
+    Both matter, and they carry different things: `emit` says what happened and
+    when, this says what the answer came out as. A caller with a no-op emit —
+    the converse `answer_question` tool — sees only this, which is why
+    ``guard_receipts`` lives here as well as on the wire. Its sibling tool
+    ``run_sql`` already returns ``guard_receipts`` and ``caveats`` in its dict and
+    the converse system prompt tells the model to narrate exactly those; a core
+    that only emitted them would make the richer tool the weaker one.
+
+    Everything copied off ``_ChatAnswer`` is COPIED, never aliased: the caveat
+    guards rewrite ``chart_type`` and merge into ``chart_config`` in place, so
+    handing back the model object would hand back something still being mutated.
+    """
+
+    #: How the turn ended — one per `return` in the core, so a caller can tell a
+    #: refusal ("abstained") from a failure ("query_failed") without parsing prose.
+    outcome: str
+    error: str = ""
+
+    # ── the answer ───────────────────────────────────────────────────────────
+    #: The GROUNDED headline, after the currency pass — never `answer.headline`,
+    #: which is the model's pre-execution prediction (what `headline_delta` types).
+    headline: str = ""
+    sql: str = ""
+    columns: list = field(default_factory=list)
+    rows: list = field(default_factory=list)          # untruncated; the wire caps at 10k
+    row_count: Optional[int] = None
+
+    # ── why it is trustworthy ────────────────────────────────────────────────
+    guard_receipts: list[dict] = field(default_factory=list)
+    receipt: dict = field(default_factory=dict)
+    caveats: list[str] = field(default_factory=list)
+
+    # ── copied out of _ChatAnswer ────────────────────────────────────────────
+    chart_type: str = "auto"
+    chart_config: dict = field(default_factory=dict)
+    intent: str = ""
+    approach: list[str] = field(default_factory=list)
+    tables_used: list = field(default_factory=list)
+
+    # ── path-specific ────────────────────────────────────────────────────────
+    mode: str = ""                       # "final_text" on the two no-SQL paths only
+    clarify: Optional[dict] = None
+    escalate: Optional[dict] = None
+    inv_id: str = ""
+    receipt_id: str = ""
+    trusted: list = field(default_factory=list)
+    playbook_refs: list = field(default_factory=list)
+    narrative: Optional[dict] = None
+    followups: list[str] = field(default_factory=list)
+
+
+#: Stream terminator, not an outcome. `_run_core`'s `finally` pushes it on BOTH the
+#: return and the raise path; the consumer breaks on it and then awaits the future,
+#: which is where success-vs-raise is actually decided.
+_CORE_DONE = object()
+
+
+class _CoreCancelled(BaseException):
+    """The client went away; stop paying for the rest of the turn.
+
+    A ``BaseException`` for the same reason ``BudgetExceeded`` is one (see
+    ``_metered_stream``): the core is riddled with fail-open ``except Exception:
+    tolerate(...)`` blocks, and an ``Exception``-derived cancellation would be
+    swallowed by the nearest one and the core would sail on.
+    """
+
+
+def _answer_core(
     question: str,
     connection_id: str,
     history: list[ChatHistoryTurn],
+    *,
+    emit: Callable[[str, dict], None],
+    cancelled: Callable[[], bool] = lambda: False,
     session_id: str = "",
     canvas_id: Optional[str] = None,
     skip_clarify: bool = False,
     purpose: str = "",
     schema_scope: Optional[str] = None,
     assumed_default: bool = False,
-) -> AsyncGenerator[str, None]:
+) -> "_AnswerCoreResult":
+    """Answer one question, synchronously, reporting progress through ``emit``.
+
+    This is the whole quick-answer pipeline, and it is SYNC because it always was:
+    every ``await`` it used to carry was an ``asyncio.to_thread`` around blocking
+    work, offloaded so the event loop could keep streaming. The ``async def`` bought
+    the streaming INTERFACE, not the computation — so the interface moved out to
+    ``_stream_chat`` and the computation stayed here, where a plain function call
+    can reach it. That is what lets the converse ``answer_question`` tool run the
+    real answer path instead of a reimplementation of it.
+
+    ``emit`` takes the same frame name and flat payload ``_sse`` does, so the
+    wrapper's job is to re-encode that pair verbatim. Callers that want the answer
+    without the narration pass a no-op and read the returned ``_AnswerCoreResult``.
+    (Written without a call-shaped example on purpose: the frame-parity guard parses
+    this file as text, and prose that looks like an emission site is read as one.)
+
+    ``cancelled()`` is checked where waiting actually happens (the two 250 ms poll
+    ticks that straddle the coder and narrator round-trips); ``emit`` itself raises
+    ``_CoreCancelled`` once the wrapper has set the flag. Nothing interrupts a
+    blocking call mid-flight — there is no cancel primitive on any of these
+    connections — so cancellation is cooperative and honest about its granularity.
+    """
+    #: Guard receipts go BOTH ways, through one helper, so the frame and the return
+    #: value cannot drift apart: nine sites, one place that decides what a receipt is.
+    receipts: list[dict] = []
+
+    def _receipt(payload: dict) -> None:
+        receipts.append(payload)
+        emit("guard_receipt", payload)
+
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
     # dataset and carry schema_name=None with a table-list scope, so the
@@ -1308,17 +1417,28 @@ async def _stream_chat(
         # a terminal state, not a hiccup. Classified explicitly because the generic
         # fallback says "retrying is usually safe", and re-asking a question against a
         # connection that is not there fails identically every time.
-        yield _sse("error", _error_event(e, reason="not_found"))
-        return
+        emit("error", _error_event(e, reason="not_found"))
+        return _AnswerCoreResult(outcome="not_found", error=str(e))
     except Exception as e:
         # The connection exists but would not open (server down, bad credentials in the
         # DSN, network). That one IS worth retrying, so it keeps the classifier's verdict.
-        yield _sse("error", _error_event(e, message=f"Could not connect: {e}"))
-        return
+        emit("error", _error_event(e, message=f"Could not connect: {e}"))
+        return _AnswerCoreResult(outcome="connect_failed",
+                                 error=f"Could not connect: {e}")
 
     # Effective currency symbol for prose: tables/charts already honour the org currency,
     # but the LLM authored ledes in '$'. Resolve once; applied to headline + narrative below.
     _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
+
+    # Terminal state the frames below also carry. Declared here, not at the emit
+    # sites, so every one of the six early returns can hand back a fully-formed
+    # result instead of a partially-bound one.
+    _esc_event: Optional[dict] = None
+    _tables_used: list = []
+    _playbook_refs: list = []
+    _receipt_id = ""
+    _followups: list[str] = []
+    _narrative_dict: Optional[dict] = None
 
     try:
         from aughor.agent.prompts import CHAT_PROMPT
@@ -1374,30 +1494,51 @@ async def _stream_chat(
             from aughor.playbook.retriever import retrieve_for_metric_and_phases
             return retrieve_for_metric_and_phases([question], limit=4)
 
-        async def _safe(fn):
+        def _safe(fn):
             try:
-                return await asyncio.to_thread(fn)
+                return fn()
             except Exception:
                 return ""
 
-        async def _safe_list(fn):
+        def _safe_list(fn):
             try:
-                return await asyncio.to_thread(fn)
+                return fn()
             except Exception:
                 return []
 
-        (
-            schema, kb_patterns_section, conn_kb_section, sql_examples_section,
-            exploration_section, causal_section, document_section,
-            pb_entries,
-        ) = await asyncio.gather(
+        # A DEDICATED pool, not the default executor: the core itself already
+        # occupies a default-executor worker, and eight producers submitted back
+        # into the same bounded pool by enough concurrent turns is a classic
+        # thread-pool deadlock (every worker waiting on work only that pool can
+        # run). ContextThreadPoolExecutor is the codebase's idiom for this and
+        # copies contextvars per worker, so the metering accumulator and job id
+        # reach all eight — the property `asyncio.gather` had for free.
+        # Only `_get_schema_cached` is unwrapped, so it is the only member that can
+        # raise; reading its future FIRST reproduces gather's return_exceptions=False
+        # behaviour at the same point. `with` then waits for the seven best-effort
+        # fetches before propagating, where gather would abandon them — a deliberate
+        # difference: they hold HTTP connections and the turn is dying anyway.
+        # And it DECLARES itself (Wave R5): the prelude was concurrent before too, but as
+        # an `asyncio.gather`, which the parallel-safety checkpoint cannot see. Writing it
+        # as a thread pool without the label would have made a region that was merely
+        # invisible into one that looks accounted for — so the ratchet in
+        # `test_parallel_safety.py` is right to insist, and this is the honest label.
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("ask.prelude_context"), ContextThreadPoolExecutor(
+                max_workers=8, thread_name_prefix="ask-prelude") as _prelude:
             # WCH-12: the connection-scoped schema cache (300s TTL) — was bypassed
             # here, re-walking information_schema on EVERY chat. Cache miss still
             # introspects; hits within the window skip it.
-            asyncio.to_thread(_get_schema_cached, connection_id, db),
-            _safe(_kb), _safe(_ckb), _safe(_sqlex),
-            _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
-        )
+            _f_schema = _prelude.submit(_get_schema_cached, connection_id, db)
+            _f_ctx = [_prelude.submit(_safe, _fn)
+                      for _fn in (_kb, _ckb, _sqlex, _expl, _causal, _docs)]
+            _f_pb = _prelude.submit(_safe_list, _pb_match)
+            schema = _f_schema.result()
+            (kb_patterns_section, conn_kb_section, sql_examples_section,
+             exploration_section, causal_section, document_section) = [
+                _f.result() for _f in _f_ctx]
+            pb_entries = _f_pb.result()
 
         # Restrict the schema to the canvas's scoped tables. Table-list scopes on
         # multi-dataset connections have schema_name=None, so the schema_name
@@ -1462,9 +1603,7 @@ async def _stream_chat(
                     )
                 except Exception:
                     semantic_layer_section = ""
-                data_catalog = await asyncio.to_thread(
-                    lambda: build_data_catalog(db, linked_tables)
-                )
+                data_catalog = build_data_catalog(db, linked_tables)
                 if data_catalog:
                     schema = data_catalog
         except Exception:
@@ -1508,24 +1647,24 @@ async def _stream_chat(
                         # renders for a no-SQL answer (final_text/definitional path).
                         # The previous `answer` event had no frontend handler, so the
                         # turn rendered blank. `mode` tags it so it shows as a Quick turn.
-                        yield _sse("mode", {"query_mode": "final_text"})
-                        yield _sse("headline", {"headline": _answer_text})
-                        yield _sse("done", {})
+                        emit("mode", {"query_mode": "final_text"})
+                        emit("headline", {"headline": _answer_text})
+                        emit("done", {})
                         try:
-                            await asyncio.to_thread(
-                                lambda: save_chat_turn(
-                                    question=question, connection_id=connection_id,
-                                    headline=_answer_text[:2000], sql="", session_id=session_id,
-                                    columns=[], rows=[], chart_type="none", tables_used=[],
-                                    intent="", approach=[],
-                                    canvas_id=canvas_id,
-                                )
+                            save_chat_turn(
+                                question=question, connection_id=connection_id,
+                                headline=_answer_text[:2000], sql="", session_id=session_id,
+                                columns=[], rows=[], chart_type="none", tables_used=[],
+                                intent="", approach=[],
+                                canvas_id=canvas_id,
                             )
                         except Exception as exc:
                             from aughor.kernel.errors import tolerate
                             tolerate(exc, "definitional-answer turn save is best-effort; the answer was already streamed",
                                      counter="chat.turn_save")
-                        return
+                        return _AnswerCoreResult(
+                            outcome="kb_definitional", mode="final_text",
+                            headline=_answer_text, guard_receipts=receipts)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "KB-grounded definitional fast-path is best-effort; falling through to the SQL answer path",
@@ -1677,23 +1816,26 @@ async def _stream_chat(
         _abstain_ok = not is_followup(question)
         if _resolution is not None and _resolution.feasibility == "not_answerable" and _abstain_ok:
             _abstain = _resolution.caveat
-            yield _sse("mode", {"query_mode": "final_text"})
-            yield _sse("headline", {"headline": _abstain})
-            yield _sse("done", {})
+            emit("mode", {"query_mode": "final_text"})
+            emit("headline", {"headline": _abstain})
+            emit("done", {})
             try:
-                await asyncio.to_thread(lambda: save_chat_turn(
+                save_chat_turn(
                     question=question, connection_id=connection_id, headline=_abstain[:2000],
                     sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
-                    tables_used=[], intent="", approach=[], canvas_id=canvas_id))
+                    tables_used=[], intent="", approach=[], canvas_id=canvas_id)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "abstention turn save is best-effort; the message was already streamed",
                          counter="chat.resolve_abstain_save")
-            yield _sse("followups", {"questions": [
+            _followups = [
                 "What values are available to filter by?",
                 "Show the same measure without that filter",
-            ]})
-            return
+            ]
+            emit("followups", {"questions": _followups})
+            return _AnswerCoreResult(
+                outcome="abstained", mode="final_text", headline=_abstain,
+                followups=_followups, guard_receipts=receipts)
 
         # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
         # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
@@ -1746,17 +1888,18 @@ async def _stream_chat(
                 from aughor.agent.ambiguity_probe import (is_structural_suspect, generate_candidate_readings,
                                                assess_structural_ambiguity)
                 if is_structural_suspect(question):
-                    _cands = await asyncio.to_thread(generate_candidate_readings, question, schema)
+                    _cands = generate_candidate_readings(question, schema)
                     if len(_cands) >= 2:
                         def _probe_ex(_sql):
                             _r = db.execute("ambiguity_probe", _sql)
                             return (not _r.error, _r.rows or [], _r.error or "")
-                        _sv = await asyncio.to_thread(
-                            assess_structural_ambiguity, question, _cands, _probe_ex)
+                        _sv = assess_structural_ambiguity(question, _cands, _probe_ex)
                         if _sv.ambiguous:
-                            yield _sse("clarify", _sv.to_event())
-                            yield _sse("done", {})
-                            return
+                            _clarify = _sv.to_event()
+                            emit("clarify", _clarify)
+                            emit("done", {})
+                            return _AnswerCoreResult(outcome="clarify", clarify=_clarify,
+                                                     guard_receipts=receipts)
             except Exception:
                 logger.debug("ambiguity probe failed; proceeding to answer", exc_info=True)
 
@@ -1815,8 +1958,14 @@ async def _stream_chat(
                 return _HL_EMPTY
 
         while True:
-            _hitem = await asyncio.to_thread(_hl_poll)
+            _hitem = _hl_poll()
             if _hitem is _HL_EMPTY:
+                # Cancellation checkpoint. This branch ticks every 250 ms for the
+                # whole coder round-trip — one of the two longest un-emitting
+                # stretches of the turn — so a client that left stops paying here
+                # rather than at the next frame.
+                if cancelled():
+                    raise _CoreCancelled()
                 continue
             if _hitem is None:
                 break
@@ -1825,8 +1974,8 @@ async def _stream_chat(
             _hnow = _htime.monotonic()
             if len(_hitem) - _hl_last_len >= 6 or _hnow - _hl_last_ts > 0.120:
                 _hl_last_len, _hl_last_ts = len(_hitem), _hnow
-                yield _sse("headline_delta", {"headline": _hitem})
-        await asyncio.to_thread(_hl_thread.join)
+                emit("headline_delta", {"headline": _hitem})
+        _hl_thread.join()
         if "exc" in _hl_result:
             raise _hl_result["exc"]
         answer: _ChatAnswer = _hl_result["ans"]
@@ -1851,7 +2000,7 @@ async def _stream_chat(
             _norm = lambda s: " ".join((s or "").lower().split())
             if _norm(final_sql) == _norm(_compiled_sql):
                 _rcpt["compiled"] = True
-                yield _sse("compiled", {
+                emit("compiled", {
                     "intent_type": _compiled_intent.intent_type,
                     "entity": _compiled_intent.entity or _compiled_intent.table,
                     "measure": _compiled_intent.measure or _compiled_intent.metric,
@@ -1899,9 +2048,9 @@ async def _stream_chat(
                         final_sql = _rw
                         _adopted = True
                         _rcpt["defan"] = True
-                        yield _sse("sql", {"sql": final_sql})
-                        yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
-                        yield _sse("guard_receipt", {
+                        emit("sql", {"sql": final_sql})
+                        emit("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
+                        _receipt({
                             "guard": "fanout_defan", "action": "rewrote_sql",
                             "detail": (f"join fans out {_ff.hub_root} across "
                                        f"{', '.join(_ff.satellites or [])} - replaced with the "
@@ -1909,8 +2058,8 @@ async def _stream_chat(
                             "before": _before_sql[:2000], "after": final_sql[:2000]})
                 if not _adopted:
                     _fanout_fix_hint = _ff.to_prompt_text()
-                    yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
-                    yield _sse("guard_receipt", {
+                    emit("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
+                    _receipt({
                         "guard": "fanout_defan", "action": "hinted",
                         "detail": ("fan-out detected but no provable rewrite exists; the "
                                    "repair hint goes back to the model instead")})
@@ -1934,18 +2083,16 @@ async def _stream_chat(
                         "\nGUARD ALREADY APPLIED: the SQL was de-fanned (pre-aggregated "
                         "to avoid join over-counting) - preserve that structure in your fix.")
                 _before_lint = final_sql
-                _lint_fix = await asyncio.to_thread(
-                    lambda: _writer.fix(
-                        final_sql,
-                        "SQL quality issues detected before execution",
-                        hint=_lint_hint_txt,
-                        max_retries=1,
-                    )
+                _lint_fix = _writer.fix(
+                    final_sql,
+                    "SQL quality issues detected before execution",
+                    hint=_lint_hint_txt,
+                    max_retries=1,
                 )
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
                     _rcpt["lint"] = True
-                    yield _sse("guard_receipt", {
+                    _receipt({
                         "guard": "sql_lint", "action": "rewrote_sql",
                         "detail": "; ".join(i.message for i in _lint_issues[:3])[:400],
                         "before": _before_lint[:2000], "after": final_sql[:2000]})
@@ -1990,7 +2137,7 @@ async def _stream_chat(
         if final_sql:
             try:
                 from aughor.sql.join_guard import check_filter_value_domains
-                _fw = await asyncio.to_thread(check_filter_value_domains, db, final_sql)
+                _fw = check_filter_value_domains(db, final_sql)
                 if _fw:
                     _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
             except Exception as _e:
@@ -2052,9 +2199,7 @@ async def _stream_chat(
         if final_sql:
             try:
                 from aughor.sql.safety import preflight_repair
-                final_sql, _pf_receipt = await asyncio.to_thread(
-                    preflight_repair, db, final_sql, schema
-                )
+                final_sql, _pf_receipt = preflight_repair(db, final_sql, schema)
             except Exception as _e:
                 logger.debug("chat pre-flight validation is best-effort; skipped: %s", _e)
 
@@ -2065,8 +2210,8 @@ async def _stream_chat(
         if final_sql and _resolution is not None and _resolution.entity_bindings:
             try:
                 from aughor.sql.grounded_literals import enforce_grounded_literals
-                final_sql, _gl_repairs = await asyncio.to_thread(
-                    enforce_grounded_literals, final_sql, _resolution.entity_bindings,
+                final_sql, _gl_repairs = enforce_grounded_literals(
+                    final_sql, _resolution.entity_bindings,
                     getattr(db, "dialect", "duckdb"), db.dry_run,
                 )
                 if _gl_repairs:
@@ -2077,8 +2222,8 @@ async def _stream_chat(
             except Exception as _gl_exc:
                 logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
 
-        yield _sse("sql", {"sql": final_sql})
-        result = await asyncio.to_thread(_execute_chat_sql, db, final_sql)
+        emit("sql", {"sql": final_sql})
+        result = _execute_chat_sql(db, final_sql)
 
         from aughor.agent.investigate import _zero_row_suspicious
         _chat_zero_diag = None
@@ -2102,15 +2247,13 @@ async def _stream_chat(
             )
             _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint, _chasm_fix_hint]))
             try:
-                fix = await asyncio.to_thread(
-                    lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
-                )
+                fix = _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=2)
                 if fix.ok:
-                    retry = await asyncio.to_thread(_execute_chat_sql, db, fix.sql)
+                    retry = _execute_chat_sql(db, fix.sql)
                     if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
                         final_sql = fix.sql
                         result = retry
-                        yield _sse("sql", {"sql": final_sql})
+                        emit("sql", {"sql": final_sql})
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "post-execution SQL repair is best-effort; serving the original result/error",
@@ -2119,17 +2262,25 @@ async def _stream_chat(
         if result.error:
             from aughor.agent.escalate import assess_escalation
             _esc = assess_escalation(question, columns=result.columns, rows=result.rows, error=result.error)
-            if _esc.should_offer:
-                yield _sse("escalate", _esc.to_event())
-            yield _sse("error", _error_event(message=result.error, reason="query_failed"))
-            return
+            _esc_event = _esc.to_event() if _esc.should_offer else None
+            if _esc_event is not None:
+                emit("escalate", _esc_event)
+            emit("error", _error_event(message=result.error, reason="query_failed"))
+            return _AnswerCoreResult(
+                outcome="query_failed", error=result.error, sql=final_sql,
+                columns=list(result.columns or []), rows=list(result.rows or []),
+                row_count=result.row_count, guard_receipts=receipts,
+                receipt=dict(_rcpt), caveats=list(result.caveats or []),
+                escalate=_esc_event, intent=answer.intent,
+                approach=list(answer.approach or []),
+                trusted=list(_trusted_used or []))
 
         # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
         _rcpt["grounded"] = (_grounded_headline or "") != (answer.headline or "")
         if _rcpt["grounded"]:
-            yield _sse("guard_receipt", {
+            _receipt({
                 "guard": "headline_grounding", "action": "rewrote_headline",
                 "detail": ("the model's headline was a pre-execution prediction; it was "
                            "re-grounded in the rows the query actually returned"),
@@ -2147,7 +2298,7 @@ async def _stream_chat(
             )
             _rcpt["narration_inversion"] = True
             logger.info("[chat] narration-inversion caveat applied to headline")
-            yield _sse("guard_receipt", {
+            _receipt({
                 "guard": "narration_inversion", "action": "caveated_headline",
                 "detail": ("a per-group value was stated as universal over a varying "
                            "result; the claim now carries its qualification")})
@@ -2164,7 +2315,7 @@ async def _stream_chat(
             )
             _rcpt["measure_grain"] = True
             logger.info("[chat] measure-grain caveat applied to headline")
-            yield _sse("guard_receipt", {
+            _receipt({
                 "guard": "measure_grain", "action": "caveated_headline",
                 "detail": ("a measure may be summed at the wrong grain "
                            "(per-unit vs per-line); the total carries a caution")})
@@ -2179,7 +2330,7 @@ async def _stream_chat(
                 )
                 _rcpt["id_arithmetic"] = True
                 logger.info("[chat] id-arithmetic caveat applied to headline")
-                yield _sse("guard_receipt", {
+                _receipt({
                     "guard": "id_arithmetic", "action": "caveated_headline",
                     "detail": ("the total multiplies a measure by an id/key column; "
                                "the magnitude is flagged untrustworthy")})
@@ -2210,7 +2361,7 @@ async def _stream_chat(
                     _rcpt["e1_messages"] = [t.message for t in _e1_hits[:2]]
                     logger.info("[chat] E1 trust-check caveat applied to headline: %s",
                                 [t.pattern for t in _e1_hits])
-                    yield _sse("guard_receipt", {
+                    _receipt({
                         "guard": "e1_trust_checks", "action": "caveated_headline",
                         "detail": _e1_msgs[:400]})
             except Exception as _e:
@@ -2219,7 +2370,7 @@ async def _stream_chat(
         _chart_before = answer.chart_type
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         if answer.chart_type != _chart_before:
-            yield _sse("guard_receipt", {
+            _receipt({
                 "guard": "concentration_pareto", "action": "overrode_chart",
                 "detail": ("the question asks about concentration (80/20) over a ranked "
                            "measure; a Pareto states that claim, the picked chart did not"),
@@ -2232,43 +2383,45 @@ async def _stream_chat(
         _exh = quick_exhibit(result.columns, result.rows, answer.chart_type)
         if _exh:
             answer.chart_config = {**(answer.chart_config or {}), "exhibit": _exh}
-        yield _sse("columns", {"columns": result.columns})
-        yield _sse("rows", {"rows": result.rows[:10000]})
+        emit("columns", {"columns": result.columns})
+        emit("rows", {"rows": result.rows[:10000]})
         _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)
-        yield _sse("headline", {"headline": _grounded_headline})
-        yield _sse("chart_type", {"chart_type": answer.chart_type})
+        emit("headline", {"headline": _grounded_headline})
+        emit("chart_type", {"chart_type": answer.chart_type})
         if answer.chart_config:
-            yield _sse("chart_config", {"chart_config": answer.chart_config})
-        yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
+            emit("chart_config", {"chart_config": answer.chart_config})
+        _tables_used = _extract_tables(final_sql)
+        emit("tables_used", {"tables": _tables_used})
         if answer.intent or answer.approach:
-            yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
+            emit("analysis", {"intent": answer.intent, "steps": answer.approach})
         if pb_entries:
-            yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
+            _playbook_refs = _pb_serialize(pb_entries)
+            emit("playbook_refs", {"items": _playbook_refs})
         if _trusted_used:
-            yield _sse("trusted", {"items": _trusted_used})
+            emit("trusted", {"items": _trusted_used})
 
         # Phase 5 — progressive escalation: if the cheap answer is inconclusive (empty on an
         # analytical question, or a causal "why" answered by a single figure), OFFER a deep
         # investigation (a suggestion the user clicks — not a forced re-run).
         from aughor.agent.escalate import assess_escalation
         _esc = assess_escalation(question, columns=result.columns, rows=result.rows)
-        if _esc.should_offer:
-            yield _sse("escalate", _esc.to_event())
+        _esc_event = _esc.to_event() if _esc.should_offer else None
+        if _esc_event is not None:
+            emit("escalate", _esc_event)
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when
         # the post-answer enrichment (inspect + follow-ups) finishes.
         _chat_inv_id = ""
         try:
-            _chat_inv_id = await asyncio.to_thread(
-                lambda: save_chat_turn(
-                    question=question, connection_id=connection_id, headline=_grounded_headline or question,
-                    sql=final_sql or "", session_id=session_id, columns=result.columns,
-                    rows=result.rows, chart_type=answer.chart_type,
-                    tables_used=_extract_tables(final_sql or ""),
-                    intent=answer.intent, approach=answer.approach,
-                    canvas_id=canvas_id, purpose=purpose,
-                )
+            _chat_inv_id = save_chat_turn(
+                question=question, connection_id=connection_id,
+                headline=_grounded_headline or question,
+                sql=final_sql or "", session_id=session_id, columns=result.columns,
+                rows=result.rows, chart_type=answer.chart_type,
+                tables_used=_extract_tables(final_sql or ""),
+                intent=answer.intent, approach=answer.approach,
+                canvas_id=canvas_id, purpose=purpose,
             )
         except Exception as exc:
             from aughor.kernel.errors import tolerate
@@ -2320,11 +2473,12 @@ async def _stream_chat(
             # Surface the per-run receipts live (Wave 1·E4 learning · E3 activations); each is flag-gated.
             for _evt in ("learning", "activations"):
                 if _receipts.get(_evt):
-                    yield _sse(_evt, _receipts[_evt])
+                    emit(_evt, _receipts[_evt])
             # WP-10: hand the UI the stable receipt id so "Why this number" opens the unified
             # public receipt (GET /receipt/{id}) — one contract across every answer mode.
             if _receipts.get("receipt_id"):
-                yield _sse("receipt_id", {"receipt_id": _receipts["receipt_id"]})
+                _receipt_id = _receipts["receipt_id"]
+                emit("receipt_id", {"receipt_id": _receipt_id})
 
             # Self-improving loop: notice ontology gaps from this real query (e.g. a
             # currency measure aggregated with no canonical metric covering it) and
@@ -2341,7 +2495,7 @@ async def _stream_chat(
                          counter="chat.ontology_gaps")
 
         # Carry the turn id so the client can fetch this answer's Trust Receipt.
-        yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
+        emit("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
         # ONE narrator call produces BOTH the narrative and the follow-up
@@ -2475,8 +2629,12 @@ async def _stream_chat(
                     return _POLL_EMPTY
 
             while True:
-                _item = await asyncio.to_thread(_pa_poll)
+                _item = _pa_poll()
                 if _item is _POLL_EMPTY:
+                    # The other 250 ms heartbeat, straddling the narrator call —
+                    # same cancellation checkpoint as the coder drain above.
+                    if cancelled():
+                        raise _CoreCancelled()
                     continue
                 if _item is None:
                     break
@@ -2486,13 +2644,13 @@ async def _stream_chat(
                 if len(_item) - _last_len >= 12 or _now - _last_ts > 0.150:
                     _last_len, _last_ts = len(_item), _now
                     _delta_payload = {"narrative": _apply_currency(_item, _cur_sym)}
-                    yield _sse("narrative_delta", _delta_payload)
+                    emit("narrative_delta", _delta_payload)
                     # DUAL-EMIT, one release only: the retired `insight_delta` name
                     # carries the IDENTICAL payload so a client deployed before the
                     # rename keeps typing the partial. Delete once no such client
                     # remains; the frontend already prefers `narrative_delta`.
-                    yield _sse("insight_delta", _delta_payload)
-            await asyncio.to_thread(_pa_thread.join)
+                    emit("insight_delta", _delta_payload)
+            _pa_thread.join()
             if "exc" in _pa_result:
                 raise _pa_result["exc"]
             _pa: _PostAnswer = _pa_result["pa"]
@@ -2503,25 +2661,26 @@ async def _stream_chat(
                     "trend": _pa.trend,
                     "confidence": _pa.confidence,
                 }
-                yield _sse("narrative", _narrative_dict)
+                emit("narrative", _narrative_dict)
                 # DUAL-EMIT, one release only: the retired `insight` name carries the
                 # IDENTICAL payload (same dict object) so a client deployed before the
                 # rename still receives the terminal value. Delete once no such client
                 # remains; the frontend already prefers `narrative`.
-                yield _sse("insight", _narrative_dict)
+                emit("insight", _narrative_dict)
                 # Persist so the narrative survives page reload / history navigation.
                 # The stored key stays `report_json["insight"]` (db/history.py) — a
                 # persisted identity; renaming it would orphan every stored turn.
                 if _chat_inv_id:
                     try:
                         from aughor.db.history import update_chat_turn_insight
-                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _narrative_dict))
+                        update_chat_turn_insight(_chat_inv_id, _narrative_dict)
                     except Exception as exc:
                         from aughor.kernel.errors import tolerate
                         tolerate(exc, "narrative persistence is best-effort; it was already streamed this session",
                                  counter="chat.insight_persist")
             if _pa.questions:
-                yield _sse("followups", {"questions": _pa.questions[:3]})
+                _followups = list(_pa.questions[:3])
+                emit("followups", {"questions": _followups})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "post-answer narrative/follow-up enrichment is best-effort; the answer is already done",
@@ -2539,12 +2698,10 @@ async def _stream_chat(
         if _resolution is None:
             try:
                 from aughor.sql.inspect import inspect as _inspect_sql
-                _ir = await asyncio.to_thread(
-                    lambda: _inspect_sql(question, final_sql, result.columns, result.rows,
-                                         schema=_full_schema)
-                )
+                _ir = _inspect_sql(question, final_sql, result.columns, result.rows,
+                                   schema=_full_schema)
                 if not _ir.valid and _ir.issues:
-                    yield _sse("inspect_warning", {
+                    emit("inspect_warning", {
                         "issues":        _ir.issues,
                         "suggested_fix": _ir.suggested_fix,
                     })
@@ -2553,8 +2710,29 @@ async def _stream_chat(
                 tolerate(exc, "post-answer semantic inspect is best-effort validation; skipping the warning",
                          counter="chat.inspect")
 
-    except Exception as e:
-        yield _sse("error", _error_event(e))
+        return _AnswerCoreResult(
+            outcome="answered",
+            headline=_grounded_headline or "",
+            sql=final_sql or "",
+            columns=list(result.columns or []),
+            rows=list(result.rows or []),
+            row_count=result.row_count,
+            guard_receipts=receipts,
+            receipt=dict(_rcpt),
+            caveats=list(result.caveats or []),
+            chart_type=answer.chart_type,
+            chart_config=dict(answer.chart_config or {}),
+            intent=answer.intent,
+            approach=list(answer.approach or []),
+            tables_used=_tables_used,
+            escalate=_esc_event,
+            inv_id=_chat_inv_id,
+            receipt_id=_receipt_id,
+            trusted=list(_trusted_used or []),
+            playbook_refs=_playbook_refs,
+            narrative=_narrative_dict,
+            followups=_followups,
+        )
     finally:
         try:
             db.close()
@@ -2562,6 +2740,82 @@ async def _stream_chat(
             from aughor.kernel.errors import tolerate
             tolerate(exc, "chat stream connection close is best-effort cleanup",
                      counter="chat.db_close")
+
+
+async def _stream_chat(
+    question: str,
+    connection_id: str,
+    history: list[ChatHistoryTurn],
+    session_id: str = "",
+    canvas_id: Optional[str] = None,
+    skip_clarify: bool = False,
+    purpose: str = "",
+    schema_scope: Optional[str] = None,
+    assumed_default: bool = False,
+) -> AsyncGenerator[str, None]:
+    """The streaming half: run ``_answer_core`` on a worker thread and yield what it says.
+
+    A nested function cannot yield on behalf of its caller, so the moment the core's
+    48 ``yield _sse(...)`` became ``emit(...)`` the function stopped streaming — the
+    queue below is what gives it back, and why the two changes had to land together.
+
+    The bridge is the repo's existing sync->async frame bridge (``agent/progress.py``,
+    feeding the deep path): one producer thread, ``call_soon_threadsafe`` scheduling
+    each ``put_nowait`` on the loop in FIFO order, so emission order survives the hop
+    and an unbounded queue means the producer never stalls. What changes semantically
+    is that a slow client no longer back-pressures the computation: the answer is
+    computed and persisted at full speed and the queue buffers. Depth is bounded in
+    practice because both delta loops are already throttled at the source.
+
+    How the wrapper knows finished-from-raised: it does not ask the sentinel, it
+    awaits the future. ``_CORE_DONE`` only terminates the STREAM; ``await fut`` then
+    either returns the result or re-raises the core's exception inside this frame,
+    where the ``except Exception -> error`` below and ``_metered_stream``'s
+    ``BudgetExceeded`` handler both still work exactly as they did when this was one
+    function.
+    """
+    loop = asyncio.get_running_loop()
+    frames: asyncio.Queue = asyncio.Queue()
+    cancel = threading.Event()
+
+    def _emit(t: str, p: dict) -> None:        # runs on the CORE thread
+        if cancel.is_set():
+            raise _CoreCancelled()
+        loop.call_soon_threadsafe(frames.put_nowait, (t, p))
+
+    def _run_core():
+        try:
+            return _answer_core(
+                question, connection_id, history, emit=_emit, cancelled=cancel.is_set,
+                session_id=session_id, canvas_id=canvas_id, skip_clarify=skip_clarify,
+                purpose=purpose, schema_scope=schema_scope,
+                assumed_default=assumed_default,
+            )
+        finally:
+            loop.call_soon_threadsafe(frames.put_nowait, _CORE_DONE)
+
+    fut = asyncio.ensure_future(asyncio.to_thread(_run_core))
+    try:
+        while True:
+            item = await frames.get()
+            if item is _CORE_DONE:
+                break
+            _frame_type, _frame_payload = item
+            yield _sse(_frame_type, _frame_payload)
+        await fut                              # success vs raise is decided HERE
+    except _CoreCancelled:
+        pass
+    except Exception as e:
+        yield _sse("error", _error_event(e))
+    finally:
+        cancel.set()
+        if not fut.done():
+            # The core cannot be interrupted mid-call, and awaiting it here would
+            # hold teardown for the rest of the turn. Retrieve the exception in a
+            # callback instead, so an orphan that raises does not log
+            # "Task exception was never retrieved".
+            fut.add_done_callback(lambda f: f.cancelled() or f.exception())
+
 
 
 # ── Investigation streaming ───────────────────────────────────────────────────
