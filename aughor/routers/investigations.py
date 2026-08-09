@@ -1267,7 +1267,6 @@ async def _stream_chat(
     question: str,
     connection_id: str,
     history: list[ChatHistoryTurn],
-    request: Request,
     session_id: str = "",
     canvas_id: Optional[str] = None,
     skip_clarify: bool = False,
@@ -3488,7 +3487,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     # The legacy door gets the same session log as /ask — it has its own endpoint
     # rather than going through build_ask_stream, so without this it stays dark.
     stream = stream_with_session_log(
-        _stream_chat(req.question, conn_id, req.history, request,
+        _stream_chat(req.question, conn_id, req.history,
                      session_id=req.session_id, canvas_id=req.canvas_id),
         question=req.question, conn_id=conn_id, door="chat",
         canvas_id=req.canvas_id or "")
@@ -3919,7 +3918,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             yield sse
     else:
         async for sse in _metered_stream(
-            _stream_chat(req.question, conn_id, req.history, request,
+            _stream_chat(req.question, conn_id, req.history,
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
                          schema_scope=req.schema_name,
