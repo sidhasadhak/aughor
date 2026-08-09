@@ -84,6 +84,33 @@ that works:
 Budget step 2 as its own session. It is mechanical but wide: 49 emit sites must keep their
 current ORDER (the #280 guard catches a dropped frame, not a reordered one).
 
+## 2c. Step 2 CANNOT land alone — verified 2026-08-09
+
+The map's step 2 ("replace the 49 `yield _sse(t, p)` with `emit(t, p)` appending to a list,
+run the golden transcript against the list") is a **verification-only** intermediate, not a
+shippable state. Python semantics force this: a nested function cannot yield on behalf of
+its caller — an `emit` that contains `yield` becomes its own generator and the enclosing
+function stops being one. Verified directly:
+
+```python
+def gen():
+    def emit(x):
+        yield x        # makes emit a generator, NOT gen
+    emit(1)
+list(gen())            # TypeError: 'NoneType' object is not iterable
+```
+
+So the moment the 49 yields become `emit()` calls, `_stream_chat` stops streaming and every
+frame arrives only after the turn completes — a visible regression (no progressive output,
+no `headline_delta` typing, no live scan). **Steps 2 and 3 must therefore land in the SAME
+change**: the emit rewrite plus the queue-and-thread wrapper that restores streaming.
+
+That makes the real unit of work: 49 call-site rewrites across ~1,300 lines, a
+producer/consumer bridge, and the disconnect/cleanup story from §5 — all verified against
+`tests/integration/test_stream_chat_transcript.py`, which exists for exactly this and is
+already green. Budget it as one focused session; do not start it with a partial context
+window, because a half-rewritten generator neither streams nor collects.
+
 ## 3. Order of operations
 
 Each step ends green; do not batch them.
