@@ -1097,6 +1097,17 @@ def render_ontology_annotations(graph: OntologyGraph) -> str:
             for f in entity.default_filters[:2]:
                 lines.append(f"    NOTE: {f}")
 
+        # `exclude_when` is the other half of the same glossary extraction
+        # (`_extract_default_filters` returns both), but until now only the filters
+        # half was ever rendered — the exclusions were stored, editable and typed in
+        # the web client while reaching no prompt at all. These are human sentences
+        # matched by _NOT_IN_HINT, not SQL, so they are framed as a caution the model
+        # must reason about rather than a fragment it can paste. Same [:2] cap as its
+        # sibling: this block is question-scoped and token cost is the reason.
+        if entity.exclude_when:
+            for x in entity.exclude_when[:2]:
+                lines.append(f"    EXCLUDES (rows the business does not count here): {x}")
+
     # Actions section
     if graph.actions:
         lines.append("")
