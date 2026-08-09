@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
+from aughor.kernel.concurrency import ContextThreadPoolExecutor
 from aughor.db.history import (
     complete_investigation,
     create_investigation,
@@ -1287,6 +1288,11 @@ class _AnswerCoreResult:
 
     #: How the turn ended — one per `return` in the core, so a caller can tell a
     #: refusal ("abstained") from a failure ("query_failed") without parsing prose.
+    #: DELIBERATE terminal states only: an unexpected infrastructure failure produces
+    #: no result at all — the core RAISES, through the `finally` that closes the
+    #: connection, and the caller owns the envelope (the SSE wrapper renders the
+    #: terminal `error` frame; the converse tool loop records a failed step). Pinned
+    #: by a bridge test; do not add a catch-all outcome without moving both callers.
     outcome: str
     error: str = ""
 
@@ -1329,6 +1335,34 @@ class _AnswerCoreResult:
 _CORE_DONE = object()
 
 
+def _answer_core_workers() -> int:
+    """Pool size for `_ANSWER_CORE_POOL` — a deployment knob, read once at import."""
+    try:
+        return max(1, int(os.getenv("AUGHOR_ANSWER_CORE_WORKERS", "8")))
+    except ValueError:
+        return 8
+
+
+#: The answer core's OWN bounded pool — never the loop's default executor.
+#:
+#: A core occupies its worker for the WHOLE turn, provider round-trips included — tens
+#: of seconds — while the default executor (`api.py` sizes it min(32, cpu+4)) is shared
+#: by every router's short `run_in_executor` hop (metrics, catalog, system, query,
+#: actions). Parking turns there let a handful of concurrent questions head-of-line
+#: block an unrelated millisecond hop for the length of a turn (measured with a
+#: 1-worker probe: 3.4 s wait vs 0.66 s max before the split). A dedicated pool bounds
+#: concurrent turns instead of starving neighbours: the (N+1)th question queues HERE,
+#: visibly, rather than freezing unrelated endpoints invisibly.
+#:
+#: `ContextThreadPoolExecutor` rather than the stdlib one because it copies contextvars
+#: per submitted task — the property `asyncio.to_thread` gave and an explicit-executor
+#: `run_in_executor` does not — so the metering accumulator and job id reach the core
+#: regardless of whether `api.py`'s lifespan ever installed the context DEFAULT
+#: executor (tests, MCP, and any non-lifespan caller never run that install).
+_ANSWER_CORE_POOL = ContextThreadPoolExecutor(
+    max_workers=_answer_core_workers(), thread_name_prefix="answer-core")
+
+
 class _CoreCancelled(BaseException):
     """The client went away; stop paying for the rest of the turn.
 
@@ -1369,11 +1403,16 @@ def _answer_core(
     (Written without a call-shaped example on purpose: the frame-parity guard parses
     this file as text, and prose that looks like an emission site is read as one.)
 
-    ``cancelled()`` is checked where waiting actually happens (the two 250 ms poll
-    ticks that straddle the coder and narrator round-trips); ``emit`` itself raises
-    ``_CoreCancelled`` once the wrapper has set the flag. Nothing interrupts a
-    blocking call mid-flight — there is no cancel primitive on any of these
-    connections — so cancellation is cooperative and honest about its granularity.
+    ``cancelled()`` is checked three ways: ``emit`` raises ``_CoreCancelled`` once the
+    wrapper has set the flag, the two 250 ms poll ticks that straddle the coder and
+    narrator round-trips check it, and ``_checkpoint()`` runs before each silent paid
+    phase (the context gather, the resolver, the compiler, the ambiguity probe, the
+    execute) — because the happy path emits NOTHING between opening the connection and
+    the first headline delta, and a disconnect there used to buy the whole prelude.
+    Nothing interrupts a blocking call mid-flight — there is no cancel primitive on any
+    of these connections — so cancellation is cooperative and honest about its
+    granularity: the turn stops at the next checkpoint, closes ``db`` on the way out,
+    and emits no partial terminal frames.
     """
     #: Guard receipts go BOTH ways, through one helper, so the frame and the return
     #: value cannot drift apart: nine sites, one place that decides what a receipt is.
@@ -1382,6 +1421,18 @@ def _answer_core(
     def _receipt(payload: dict) -> None:
         receipts.append(payload)
         emit("guard_receipt", payload)
+
+    def _checkpoint() -> None:
+        # Cooperative cancellation for the stretches that EMIT nothing. `emit` raises
+        # once the wrapper sets the flag and both 250 ms poll loops check it too — but
+        # the happy path's prelude (context gather, prompt assembly, resolution,
+        # compilation, the ambiguity probe) is silent, so a client that disconnected
+        # there used to keep paying: the whole context fan-out plus up to three provider
+        # round-trips before the first drain tick noticed. Checked before each paid
+        # phase; the raise unwinds through the `finally` below, so the connection is
+        # closed at the checkpoint and no partial terminal frames are emitted.
+        if cancelled():
+            raise _CoreCancelled()
 
     # Resolve canvas scope so table names resolve correctly AND the model only
     # sees in-scope tables. Multi-dataset connections (local_upload) expose every
@@ -1426,10 +1477,6 @@ def _answer_core(
         return _AnswerCoreResult(outcome="connect_failed",
                                  error=f"Could not connect: {e}")
 
-    # Effective currency symbol for prose: tables/charts already honour the org currency,
-    # but the LLM authored ledes in '$'. Resolve once; applied to headline + narrative below.
-    _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
-
     # Terminal state the frames below also carry. Declared here, not at the emit
     # sites, so every one of the six early returns can hand back a fully-formed
     # result instead of a partially-bound one.
@@ -1441,6 +1488,14 @@ def _answer_core(
     _narrative_dict: Optional[dict] = None
 
     try:
+        _checkpoint()   # the client can be gone before the turn starts paying
+        # Effective currency symbol for prose: tables/charts already honour the org
+        # currency, but the LLM authored ledes in '$'. Resolve once; applied to headline
+        # + narrative below. INSIDE the try on purpose: this used to run between
+        # `_es.open()` and the block whose `finally` closes `db`, so a raise here leaked
+        # the connection (instrumented: opened=1 closed=0, on the pre-split tree too).
+        # Everything that runs after the open belongs under the `finally` that owns it.
+        _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
         from aughor.agent.prompts import CHAT_PROMPT
         from aughor.llm.provider import get_provider
         # Shared grounding producers (Rec 5): the same block functions the
@@ -1523,7 +1578,6 @@ def _answer_core(
         # as a thread pool without the label would have made a region that was merely
         # invisible into one that looks accounted for — so the ratchet in
         # `test_parallel_safety.py` is right to insist, and this is the honest label.
-        from aughor.kernel.concurrency import ContextThreadPoolExecutor
         from aughor.kernel.parallel_safety import fanout_region as _fanout_region
         with _fanout_region("ask.prelude_context"), ContextThreadPoolExecutor(
                 max_workers=8, thread_name_prefix="ask-prelude") as _prelude:
@@ -1539,6 +1593,7 @@ def _answer_core(
              exploration_section, causal_section, document_section) = [
                 _f.result() for _f in _f_ctx]
             pb_entries = _f_pb.result()
+        _checkpoint()   # the gather is the prelude's longest silent stretch
 
         # Restrict the schema to the canvas's scoped tables. Table-list scopes on
         # multi-dataset connections have schema_name=None, so the schema_name
@@ -1791,6 +1846,7 @@ def _answer_core(
         # the question, which is wasted work (cost + latency) when the verdict is
         # an honest abstention. Best-effort: a resolver failure leaves `_resolution`
         # None and the answer proceeds ungrounded rather than not at all.
+        _checkpoint()   # before the resolver — the first of the prelude's paid calls
         _resolution = None
         try:
             from aughor.semantic.answer_resolution import resolve as _resolve_answer
@@ -1842,6 +1898,7 @@ def _answer_core(
         # from the verified ontology instead of free-form generation. The LLM still writes the
         # headline/chart/approach around it, but the executed SQL is the compiled one — which
         # can't hallucinate columns or fan out. Coverage-gated + fallback-safe (None → no-op).
+        _checkpoint()   # before the compiler round-trip
         _compiled_sql = None
         _compiled_intent = None
         if os.getenv("AUGHOR_COMPILER", "1").strip().lower() in ("1", "true", "yes", "on"):
@@ -1883,6 +1940,7 @@ def _answer_core(
         # their results materially diverge (the labels become grounded chips). LLM machinery + N
         # executions, so it is opt-in (AUGHOR_AMBIGUITY_CLARIFY) and fail-open. Greenlit by the measurement
         # chain (evals/ambiguity_eval + evals/its_structural).
+        _checkpoint()   # before the ambiguity probe (an LLM call plus N executions)
         if (not skip_clarify and _ambiguity_probe_enabled()):
             try:
                 from aughor.agent.ambiguity_probe import (is_structural_suspect, generate_candidate_readings,
@@ -2222,6 +2280,7 @@ def _answer_core(
             except Exception as _gl_exc:
                 logger.debug("grounded-literal enforcement skipped: %s", _gl_exc)
 
+        _checkpoint()   # before the user-facing execute — the query is not free either
         emit("sql", {"sql": final_sql})
         result = _execute_chat_sql(db, final_sql)
 
@@ -2794,7 +2853,11 @@ async def _stream_chat(
         finally:
             loop.call_soon_threadsafe(frames.put_nowait, _CORE_DONE)
 
-    fut = asyncio.ensure_future(asyncio.to_thread(_run_core))
+    # On the dedicated pool, not `asyncio.to_thread`: to_thread borrows a DEFAULT-executor
+    # worker for the whole turn, and that pool is shared with every router's short
+    # offload hop — see `_ANSWER_CORE_POOL` for the measured head-of-line blocking this
+    # caused. The pool copies contextvars per task, so metering still crosses the hop.
+    fut = loop.run_in_executor(_ANSWER_CORE_POOL, _run_core)
     try:
         while True:
             item = await frames.get()
