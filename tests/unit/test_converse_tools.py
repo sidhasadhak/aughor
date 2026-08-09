@@ -96,6 +96,84 @@ def test_empty_sql_is_an_answer_not_a_crash(fake_conn):
     assert "error" in ct.run_sql("c1", {"sql": "   "})
 
 
+def test_answer_question_runs_the_real_core_with_a_noop_emit(monkeypatch):
+    """The tool is a second CALLER of the answer path, never a second answer path: it
+    hands `answer_core` a no-op emit and reads the terminal state — guard receipts
+    included, because a headline without the guard record is the thing this product
+    exists not to hand people. Rows deliberately stay behind (the headline is the
+    answer; rows spend the window)."""
+    from aughor.routers import investigations as inv
+
+    got: dict = {}
+
+    def fake_core(question, connection_id, history, *, emit, **kw):
+        got.update(question=question, connection_id=connection_id, history=history)
+        emit("headline", {"headline": "streamed"})   # must vanish, not crash or collect
+        return inv._AnswerCoreResult(
+            outcome="answered", headline="Total is **412**", sql="SELECT 412",
+            columns=["n"], rows=[[412]], row_count=1,
+            guard_receipts=[{"guard": "headline_grounding", "action": "rewrote_headline"}],
+            caveats=["approximate"],
+        )
+
+    monkeypatch.setattr(inv, "answer_core", fake_core)
+
+    out = ct.answer_question("c1", {"question": "how many?"})
+
+    assert got == {"question": "how many?", "connection_id": "c1", "history": []}
+    assert out["outcome"] == "answered"
+    assert out["headline"] == "Total is **412**"
+    assert out["sql"] == "SELECT 412"
+    assert out["columns"] == ["n"] and out["row_count"] == 1
+    assert out["guard_receipts"][0]["guard"] == "headline_grounding"
+    assert out["caveats"] == ["approximate"]
+    assert "rows" not in out
+    assert "error" not in out, "a clean turn must not carry an empty error key"
+
+
+def test_answer_question_reports_a_failed_turn_as_a_value(monkeypatch):
+    """A deliberate terminal failure (`query_failed`) is a RESULT the model can narrate
+    and recover from — outcome plus the error, never a raise."""
+    from aughor.routers import investigations as inv
+
+    monkeypatch.setattr(inv, "answer_core", lambda *a, **k: inv._AnswerCoreResult(
+        outcome="query_failed", error="Binder Error: no such column"))
+
+    out = ct.answer_question("c1", {"question": "q"})
+
+    assert out["outcome"] == "query_failed"
+    assert "Binder Error" in out["error"]
+
+
+def test_answer_question_without_a_question_is_an_answer_not_a_crash():
+    assert "error" in ct.answer_question("c1", {})
+
+
+def test_converse_can_choose_answer_question_through_the_loop(monkeypatch, fake_conn):
+    """The loop-level proof of the wiring: the model names the tool, the loop finds it
+    in the registered set, the arguments parse, and the terminal state survives the
+    JSON hop back into the conversation."""
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+    from aughor.routers import investigations as inv
+
+    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setattr(inv, "answer_core", lambda *a, **k: inv._AnswerCoreResult(
+        outcome="answered", headline="Total is **412**", sql="SELECT 412",
+        columns=["n"], rows=[[412]], row_count=1))
+    set_responses([
+        FauxToolCall(payload={"question": "how many orders?"}, name="answer_question"),
+        "there are 412",
+    ])
+
+    result = ct.converse("c1", "how many orders?",
+                         provider=LLMProvider(backend="faux", role="coder"))
+
+    assert result.answer == "there are 412"
+    assert [s.tool for s in result.steps] == ["answer_question"]
+    assert result.steps[0].ok is True
+
+
 def test_describe_table_finds_a_table_by_bare_name(fake_conn):
     """Models write `orders`, schemas store `analytics.orders`."""
     out = ct.describe_table("c1", {"table": "orders"})

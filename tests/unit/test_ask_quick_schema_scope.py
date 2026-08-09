@@ -14,7 +14,7 @@ from __future__ import annotations
 import inspect
 
 from aughor.canvas.scope import resolve_execution_scope
-from aughor.routers.investigations import _stream_chat
+from aughor.routers.investigations import _answer_core, _stream_chat
 
 
 def test_stream_chat_accepts_a_schema_scope():
@@ -27,8 +27,16 @@ def test_quick_branch_forwards_the_requested_schema():
     assert "schema_scope=req.schema_name" in src
 
 
-def test_stream_chat_hands_the_scope_to_the_resolver():
-    assert "schema_scope=schema_scope" in inspect.getsource(_stream_chat)
+def test_the_answer_core_hands_the_scope_to_the_resolver():
+    """Reads `_answer_core`, not `_stream_chat`.
+
+    The `resolve_execution_scope` call this protects moved into the sync core when the
+    streaming interface split off. `_stream_chat` still contains the literal
+    `schema_scope=schema_scope` — it forwards the argument to the core — so pointed at the
+    wrapper this assertion would keep passing while the call it exists to guard sat in
+    another function: green, and guarding nothing.
+    """
+    assert "schema_scope=schema_scope" in inspect.getsource(_answer_core)
 
 
 # ── The platform behaviour the wiring now reaches ─────────────────────────────

@@ -107,18 +107,35 @@ def run_tool_loop(
     tools: list[ToolSpec],
     *,
     max_steps: Optional[int] = None,
+    on_step: Optional[Callable[[LoopStep], None]] = None,
 ) -> LoopResult:
     """Run one converse turn to an answer, or until the budget runs out.
 
     The loop is deliberately dumb about content: it dispatches what the model asked
     for, hands back what the tool returned, and asks again. Everything that makes an
     answer trustworthy lives inside the tools.
+
+    ``on_step`` is called with each :class:`LoopStep` the instant it is recorded — the
+    turn's only progress seam. A streaming caller needs it for two things a returned
+    ``LoopResult`` cannot give: frames while the turn is still running, and a
+    CANCELLATION checkpoint (raise from the callback and the loop unwinds), which is
+    what stops a departed client from paying for the remaining provider round-trips.
+    Default ``None`` so every existing caller — the ten-turn receipt included — runs
+    the identical code path it ran before.
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
     budget = max_steps if max_steps is not None else _budget(provider)
     history: list[dict] = []
     steps: list[LoopStep] = []
+
+    def _record(step: LoopStep) -> None:
+        """Append and announce, together. Three branches record a step and all three
+        must reach the caller — a progress seam that only reports the SUCCESSFUL
+        branch would show a turn recovering from nothing."""
+        steps.append(step)
+        if on_step is not None:
+            on_step(step)
 
     for _ in range(budget):
         turn: ToolTurn = provider.complete_with_tools(
@@ -127,7 +144,7 @@ def run_tool_loop(
         if turn.malformed:
             # The model DID choose — it just wrote the arguments badly. Telling it so is
             # what lets it retry; silence would read as "the tool returned nothing".
-            steps.append(LoopStep(tool="?", arguments={}, ok=False, detail=turn.malformed))
+            _record(LoopStep(tool="?", arguments={}, ok=False, detail=turn.malformed))
             history.extend(_exchange(None, f"Your tool arguments could not be parsed: "
                                            f"{turn.malformed}. Try again with valid JSON."))
             continue
@@ -142,8 +159,8 @@ def run_tool_loop(
             # A hallucinated tool name. Naming the real ones back is cheaper than a
             # wasted step, and the model almost always corrects on the next turn.
             offered = ", ".join(sorted(by_name)) or "(none)"
-            steps.append(LoopStep(tool=call.name, arguments=call.arguments, ok=False,
-                                  detail="no such tool"))
+            _record(LoopStep(tool=call.name, arguments=call.arguments, ok=False,
+                             detail="no such tool"))
             history.extend(_exchange(call, f"No tool named {call.name!r}. Available: {offered}."))
             continue
 
@@ -156,10 +173,10 @@ def run_tool_loop(
             # and discard every step already paid for.
             logger.warning("tool_loop: %s raised (%s)", call.name, str(exc)[:200])
             ok, payload = False, f"{type(exc).__name__}: {exc}"
-        steps.append(LoopStep(tool=call.name, arguments=call.arguments, ok=ok,
-                              detail="" if ok else payload,
-                              result_chars=len(payload),
-                              prompt_chars=_history_chars(history)))
+        _record(LoopStep(tool=call.name, arguments=call.arguments, ok=ok,
+                         detail="" if ok else payload,
+                         result_chars=len(payload),
+                         prompt_chars=_history_chars(history)))
         history.extend(_exchange(call, payload))
 
     # Budget spent. The turn is not an error — it is an answer we did not reach, and

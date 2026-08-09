@@ -509,9 +509,17 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
 //     looking like a completed, empty answer, and the hypotheses and evidence scores it
 //     carried would never reach the user. Rendering it needs a paused turn state and a
 //     resume affordance — tracked separately, not fixed here.
+//   converse_step — the converse body's per-step tool trace (`ask.converse`, EXPERIMENT,
+//     default off). It is on the wire and in the session log, which is where the flag's
+//     exit receipt reads it; no turn-state field or renderer for a tool trail exists yet,
+//     and adding one is a UI design call this step does not make. The turn never looks
+//     frozen without it: the tools' own frames (`sql`, `rows`, `guard_receipt`) are
+//     forwarded, and the model's `headline` and `done` close it. Because the flag is
+//     default off, no shipping client can receive this frame until someone flips it.
+//     Give it a `case` when the flag graduates, or delete both together.
 const UNRENDERED_FRAMES = new Set([
   "explore_plan", "subq_answer", "start", "learning", "activations",
-  "compiled", "fanout", "trusted", "paused",
+  "compiled", "fanout", "trusted", "paused", "converse_step",
 ]);
 
 // Types already warned about this session — a per-frame warning would drown the signal
