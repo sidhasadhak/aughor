@@ -2801,6 +2801,15 @@ def _answer_core(
                      counter="chat.db_close")
 
 
+#: The public seam for the converse `answer_question` tool (aughor/agent/converse_tools.py)
+#: — a second caller of the SAME body the SSE wrapper streams from, which is what makes
+#: tool/direct parity hold by construction rather than by assertion. Public on purpose:
+#: the private-import ratchet (test_kernel_contracts) is right that another module should
+#: not reach for an `_internal`, and an alias beats a rename that would orphan the
+#: transcript, bridge and scope nets all pointing at `_answer_core`.
+answer_core = _answer_core
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,

@@ -11,6 +11,12 @@ chokepoint every other path uses — and returns `{result, guard_receipts}` so t
 narrates what the guards ACTUALLY did rather than reconstructing a plausible story. The
 collector that makes this possible shipped in #279 with no consumer; this is it.
 
+`answer_question` is the inversion at full scale — Wave 5's closing step. The entire
+quick-answer pipeline, the SAME `answer_core` the `/ask` fast path streams from, offered
+as one tool: the model chooses WHEN to run it, and everything about HOW stays inside.
+One body with two callers is what makes the tool/direct parity invariant hold by
+construction instead of by vigilance.
+
 Descriptions are the routing policy (P3): there is no intent classifier, so the wording
 here is the entire basis on which the model picks. They are written for a reader who
 must choose between them, not for documentation.
@@ -72,6 +78,46 @@ def _receipt_dict(receipt: Any) -> dict:
             if hasattr(receipt, k)}
 
 
+def answer_question(connection_id: str, args: dict) -> dict:
+    """Run the WHOLE quick-answer pipeline for one natural-language question.
+
+    This is Wave 5's point: the tool calls the same ``answer_core`` the `/ask` fast
+    path streams from — schema linking, governed metrics, grounded generation, the
+    guard battery, execution and repair — with a no-op ``emit``, reading the turn's
+    terminal state instead of its frames. One body, two callers, so the tool's answer
+    and the direct path's answer agree BY CONSTRUCTION; the parity test exists to keep
+    it that way, not to make it true.
+
+    The headline is the answer, so rows deliberately do not ride along — ``columns``
+    and ``row_count`` preview the result's shape without spending the context window
+    the rest of the conversation needs. ``history`` is empty on purpose: the converse
+    loop's own transcript is the conversation; the pipeline gets each question fresh.
+    An infrastructure failure inside the core RAISES (that is its documented
+    contract), and the tool loop already reports a raising tool body to the model as a
+    failed step — a deliberate outcome such as ``query_failed`` comes back as a value
+    with its error alongside.
+    """
+    from aughor.routers.investigations import answer_core
+
+    question = str(args.get("question") or "").strip()
+    if not question:
+        return {"error": "no question supplied"}
+
+    result = answer_core(question, connection_id, [], emit=lambda t, p: None)
+    out = {
+        "outcome": result.outcome,
+        "headline": result.headline,
+        "sql": result.sql,
+        "columns": list(result.columns or []),
+        "row_count": result.row_count,
+        "caveats": list(result.caveats or []),
+        "guard_receipts": [_receipt_dict(r) for r in (result.guard_receipts or [])],
+    }
+    if result.error:
+        out["error"] = result.error
+    return out
+
+
 def list_tables(connection_id: str, args: dict) -> dict:
     """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table."""
     conn = _connection(connection_id)
@@ -109,6 +155,14 @@ _TABLE_PARAMS = {
     "properties": {"table": {"type": "string", "description": "Table name."}},
     "required": ["table"],
 }
+_QUESTION_PARAMS = {
+    "type": "object",
+    "properties": {"question": {
+        "type": "string",
+        "description": "The analytical question, in plain language, as the user asked it.",
+    }},
+    "required": ["question"],
+}
 
 
 def converse_tools(connection_id: str) -> list[ToolSpec]:
@@ -120,12 +174,28 @@ def converse_tools(connection_id: str) -> list[ToolSpec]:
     """
     return [
         ToolSpec(
+            name="answer_question",
+            description=(
+                "Answer a complete analytical question in the user's own words. The "
+                "full guarded answer pipeline runs — metric grounding, SQL generation, "
+                "execution, automatic repair, the guard battery — and returns the "
+                "grounded headline conclusion plus the SQL it ran, the guard receipts "
+                "and any caveats. Use this when the user asks a whole question and you "
+                "have not already framed the query; use run_sql when you have exact SQL "
+                "you want executed."
+            ),
+            parameters=_QUESTION_PARAMS,
+            run=lambda a: answer_question(connection_id, a),
+        ),
+        ToolSpec(
             name="run_sql",
             description=(
                 "Run one SELECT against this warehouse and get back the rows plus the "
-                "guard receipts — what the safety checks did to your query. Prefer this "
-                "for any question that needs real numbers. Read `caveats`: a query can "
-                "succeed and still be misleading, and you must say so when it is."
+                "guard receipts — what the safety checks did to your query. Use this "
+                "for a specific query you have already framed yourself; a complete "
+                "analytical question belongs to answer_question. Read `caveats`: a "
+                "query can succeed and still be misleading, and you must say so when "
+                "it is."
             ),
             parameters=_SQL_PARAMS,
             run=lambda a: run_sql(connection_id, a),
