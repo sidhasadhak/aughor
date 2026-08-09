@@ -155,6 +155,37 @@ def test_empty_turn_is_still_a_turn():
     assert _parse_tool_turn(object()) == ToolTurn(text=None)
 
 
+def test_history_reaches_the_model_so_a_loop_can_progress(provider):
+    """A loop is a conversation that grows. Without the tool results going back, the
+    model re-decides from the same two messages every step and picks the same tool
+    forever — a loop that spends its whole budget re-running one query."""
+    from aughor.llm import faux
+
+    history = [
+        {"role": "assistant", "content": None,
+         "tool_calls": [{"id": "call_1", "type": "function",
+                         "function": {"name": "run_sql", "arguments": '{"sql": "SELECT 1"}'}}]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "412"},
+    ]
+    set_responses(["there were 412 orders"])
+
+    provider.complete_with_tools("sys", "how many orders?", _TOOLS, history=history)
+
+    sent = faux.calls()[-1].kwargs["messages"]
+    assert [m["role"] for m in sent] == ["system", "user", "assistant", "tool"]
+    assert sent[-1]["content"] == "412", "the tool's result never reached the model"
+
+
+def test_first_turn_sends_no_history(provider):
+    """Omitted rather than empty: the opening turn is just system + question."""
+    from aughor.llm import faux
+
+    set_responses(["hi"])
+    provider.complete_with_tools("sys", "q", _TOOLS)
+
+    assert [m["role"] for m in faux.calls()[-1].kwargs["messages"]] == ["system", "user"]
+
+
 def test_a_dead_primary_falls_over_and_still_returns_the_choice(provider, monkeypatch):
     """An agent loop makes several calls per user turn, so a link that dies mid-loop must
     not take the turn with it. The chain has to carry a TOOL turn, not just a structured

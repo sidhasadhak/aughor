@@ -1384,6 +1384,7 @@ class LLMProvider:
         user: str,
         tools: list[dict],
         *,
+        history: Optional[list[dict]] = None,
         temperature: float = 0.1,
     ) -> "ToolTurn":
         """One agent turn: the model either speaks, or it chooses a tool.
@@ -1406,6 +1407,12 @@ class LLMProvider:
         ``tools`` are OpenAI-shaped function specs. Returns a :class:`ToolTurn`; a model
         that answers in prose gives ``text``, one that picks a tool gives ``tool_call``.
 
+        ``history`` carries the turns since the question — the assistant's tool calls and
+        the ``role="tool"`` results answering them — appended after the user message. A
+        loop is a conversation that GROWS, and without this the model would re-decide from
+        the same two messages every step and pick the same tool forever. Omitted on the
+        first turn, which is why it is optional rather than a required message list.
+
         NOT YET EXERCISED AGAINST A LIVE BACKEND: ``response_model=None`` is faux-proven
         and is instructor's documented pass-through, but no run has confirmed it on a
         real provider — verify before converse serves traffic. The anthropic branch is
@@ -1421,11 +1428,11 @@ class LLMProvider:
         # so a wasted round trip per call is paid once per step, not once per question.
         if _in_quota_cooldown(self.backend) and self._tools_fallbacks():
             return self._tools_via_fallback(
-                system, user, tools, temperature,
+                system, user, tools, temperature, history,
                 RuntimeError(f"{self.backend} is in quota cooldown (allowance exhausted)"))
         try:
             return self._tools_on(self._client, self.backend, self._model,
-                                  system, user, tools, temperature)
+                                  system, user, tools, temperature, history=history)
         except Exception as primary_exc:
             if _is_quota_exhausted(primary_exc):
                 _mark_quota_exhausted(self.backend)
@@ -1435,7 +1442,8 @@ class LLMProvider:
                 raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
             if not _should_failover(primary_exc) or not self._tools_fallbacks():
                 raise
-            return self._tools_via_fallback(system, user, tools, temperature, primary_exc)
+            return self._tools_via_fallback(system, user, tools, temperature, history,
+                                            primary_exc)
 
     def _tools_fallbacks(self) -> list[str]:
         """Fallback links that can actually serve a tool call.
@@ -1447,7 +1455,8 @@ class LLMProvider:
         return [b for b in self._fallback_candidates() if b != "anthropic"]
 
     def _tools_via_fallback(self, system: str, user: str, tools: list[dict],
-                            temperature: float, primary_exc: BaseException) -> "ToolTurn":
+                            temperature: float, history: Optional[list[dict]],
+                            primary_exc: BaseException) -> "ToolTurn":
         """Walk the chain for one tool turn. Raises ``primary_exc`` if every link fails."""
         for backend in self._tools_fallbacks():
             fb = self._fallback_provider(backend)
@@ -1457,7 +1466,8 @@ class LLMProvider:
                            self.backend, str(primary_exc)[:120], backend, fb._model)
             try:
                 return self._tools_on(fb._client, backend, fb._model,
-                                      system, user, tools, temperature, fallback=True)
+                                      system, user, tools, temperature,
+                                      history=history, fallback=True)
             except Exception as fb_exc:
                 if _is_quota_exhausted(fb_exc):
                     _mark_quota_exhausted(backend)
@@ -1469,6 +1479,7 @@ class LLMProvider:
 
     def _tools_on(self, client, backend: str, model: str, system: str, user: str,
                   tools: list[dict], temperature: float, *,
+                  history: Optional[list[dict]] = None,
                   fallback: bool = False) -> "ToolTurn":
         """One tool turn against ONE binding. The per-backend half of the call, split out
         so the fallback walk reuses it exactly — the primary and every link run the same
@@ -1480,8 +1491,8 @@ class LLMProvider:
             model=model,
             temperature=_effective_temperature(temperature, backend),
             max_tokens=_max_output_tokens(self.role, model),
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
+            messages=([{"role": "system", "content": system},
+                       {"role": "user", "content": user}] + list(history or [])),
             tools=tools,
             tool_choice="auto",
             response_model=None,
