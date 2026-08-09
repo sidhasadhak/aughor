@@ -57,7 +57,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "say 'deep analysis'",
     ),
     "insight": (
-        r"(?i)insight", CODE_ROOTS, (),
+        r"(?i)insight", CODE_ROOTS,
+        # Exempt because it names the WIRE frames verbatim: `insight` and `insight_delta`
+        # are SSE event types on the /chat stream, and a transcript test that renamed them
+        # would assert a contract the backend does not speak. Same reason api.ts and
+        # uiMessageAdapter.ts are exempt from `investigation_in_web`.
+        ("tests/integration/test_stream_chat_transcript.py",),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
