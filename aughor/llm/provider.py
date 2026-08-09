@@ -1416,20 +1416,77 @@ class LLMProvider:
                 "complete_with_tools speaks the OpenAI-compatible chat surface; the "
                 "anthropic binding uses client.messages and needs its own translation."
             )
+        # Same posture as `complete()`: a primary already known to be out of allowance is
+        # skipped rather than re-probed. An agent loop makes SEVERAL calls per user turn,
+        # so a wasted round trip per call is paid once per step, not once per question.
+        if _in_quota_cooldown(self.backend) and self._tools_fallbacks():
+            return self._tools_via_fallback(
+                system, user, tools, temperature,
+                RuntimeError(f"{self.backend} is in quota cooldown (allowance exhausted)"))
+        try:
+            return self._tools_on(self._client, self.backend, self._model,
+                                  system, user, tools, temperature)
+        except Exception as primary_exc:
+            if _is_quota_exhausted(primary_exc):
+                _mark_quota_exhausted(self.backend)
+            # A model id the primary does not serve is a CONFIGURATION fault, and
+            # failing over is what hides it — same reasoning as `complete()`.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
+            if not _should_failover(primary_exc) or not self._tools_fallbacks():
+                raise
+            return self._tools_via_fallback(system, user, tools, temperature, primary_exc)
+
+    def _tools_fallbacks(self) -> list[str]:
+        """Fallback links that can actually serve a tool call.
+
+        `anthropic` is filtered out rather than tried and caught: it speaks
+        `client.messages`, so it would raise NotImplementedError on every link walk and
+        turn a real outage into a confusing second error.
+        """
+        return [b for b in self._fallback_candidates() if b != "anthropic"]
+
+    def _tools_via_fallback(self, system: str, user: str, tools: list[dict],
+                            temperature: float, primary_exc: BaseException) -> "ToolTurn":
+        """Walk the chain for one tool turn. Raises ``primary_exc`` if every link fails."""
+        for backend in self._tools_fallbacks():
+            fb = self._fallback_provider(backend)
+            if fb is None:
+                continue
+            logger.warning("provider: %s failed on a tool turn (%s); falling back to %s %s",
+                           self.backend, str(primary_exc)[:120], backend, fb._model)
+            try:
+                return self._tools_on(fb._client, backend, fb._model,
+                                      system, user, tools, temperature, fallback=True)
+            except Exception as fb_exc:
+                if _is_quota_exhausted(fb_exc):
+                    _mark_quota_exhausted(backend)
+                logger.warning("provider: tool-turn fallback %s also failed (%s)",
+                               backend, str(fb_exc)[:120])
+                if not _should_failover(fb_exc):
+                    break
+        raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
+
+    def _tools_on(self, client, backend: str, model: str, system: str, user: str,
+                  tools: list[dict], temperature: float, *,
+                  fallback: bool = False) -> "ToolTurn":
+        """One tool turn against ONE binding. The per-backend half of the call, split out
+        so the fallback walk reuses it exactly — the primary and every link run the same
+        code path, which is what keeps a chain-served turn honest."""
         from aughor.kernel import metering
 
-        endpoint = self._client.chat.completions
+        endpoint = client.chat.completions
         kwargs: dict[str, Any] = dict(
-            model=self._model,
-            temperature=_effective_temperature(temperature, self.backend),
-            max_tokens=_max_output_tokens(self.role, self._model),
+            model=model,
+            temperature=_effective_temperature(temperature, backend),
+            max_tokens=_max_output_tokens(self.role, model),
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}],
             tools=tools,
             tool_choice="auto",
             response_model=None,
         )
-        extra = _reasoning_extra_body(self.backend)
+        extra = _reasoning_extra_body(backend)
         if extra:
             kwargs["extra_body"] = extra
 
@@ -1443,9 +1500,9 @@ class LLMProvider:
         pt, ct = _extract_usage(raw)
         metering.record_llm(pt, ct, _ms)
         _pt, _ct = _usage_or_none(raw)
-        _record_llm_call(backend=self.backend, model=self._model, role=self.role,
+        _record_llm_call(backend=backend, model=model, role=self.role,
                          prompt_tokens=_pt, completion_tokens=_ct, ms=_ms, retries=0,
-                         temperature=temperature, fallback=False, system=system,
+                         temperature=temperature, fallback=fallback, system=system,
                          user=user, output=_out)
         metering.check_budget()
         return _parse_tool_turn(raw, _out)

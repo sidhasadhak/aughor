@@ -155,6 +155,78 @@ def test_empty_turn_is_still_a_turn():
     assert _parse_tool_turn(object()) == ToolTurn(text=None)
 
 
+def test_a_dead_primary_falls_over_and_still_returns_the_choice(provider, monkeypatch):
+    """An agent loop makes several calls per user turn, so a link that dies mid-loop must
+    not take the turn with it. The chain has to carry a TOOL turn, not just a structured
+    one — that is the part `complete()`'s existing failover does not cover."""
+    from aughor.llm.provider import ToolCall, ToolTurn
+
+    served: list[str] = []
+    primary = provider.backend
+
+    def _fake_tools_on(self, client, backend, model, *args, **kwargs):
+        served.append(backend)
+        if backend == primary:
+            raise RuntimeError("primary is down")
+        return ToolTurn(tool_call=ToolCall(name="run_sql", arguments={"sql": "SELECT 1"}))
+
+    monkeypatch.setattr(provider, "_tools_fallbacks", lambda: ["openrouter"])
+    monkeypatch.setattr(provider, "_fallback_provider", lambda b: provider)
+    monkeypatch.setattr(type(provider), "_tools_on", _fake_tools_on)
+
+    turn = provider.complete_with_tools("sys", "q", _TOOLS)
+
+    assert turn.chose_tool
+    assert served == [primary, "openrouter"], (
+        f"expected the primary to be tried then the link to serve it, got {served}")
+
+
+def test_quota_cooldown_skips_the_primary_without_probing_it(provider, monkeypatch):
+    """The wasted round trip is paid once per LOOP STEP, not once per question — which is
+    why re-probing a spent primary is worse here than on the structured path."""
+    import aughor.llm.provider as prov
+
+    probed: list[str] = []
+    monkeypatch.setattr(prov, "_in_quota_cooldown", lambda b: b == provider.backend)
+    monkeypatch.setattr(provider, "_tools_fallbacks", lambda: ["openrouter"])
+    monkeypatch.setattr(provider, "_fallback_provider", lambda b: provider)
+
+    def _served(self, client, backend, model, *a, **k):
+        probed.append(backend)
+        from aughor.llm.provider import ToolTurn
+        return ToolTurn(text="ok")
+
+    monkeypatch.setattr(type(provider), "_tools_on", _served)
+
+    provider.complete_with_tools("sys", "q", _TOOLS)
+
+    assert probed == ["openrouter"], f"spent primary was probed anyway: {probed}"
+
+
+def test_anthropic_is_never_offered_as_a_tool_fallback(provider, monkeypatch):
+    """It speaks `client.messages`, so walking to it would raise NotImplementedError on
+    every link and bury the real outage under a second, confusing error."""
+    monkeypatch.setattr(provider, "_fallback_candidates",
+                        lambda: ["anthropic", "openrouter"])
+
+    assert provider._tools_fallbacks() == ["openrouter"]
+
+
+def test_every_link_failing_surfaces_the_original_cause(provider, monkeypatch):
+    """The caller's real problem is whatever took the primary down, not the last link."""
+    monkeypatch.setattr(provider, "_tools_fallbacks", lambda: ["openrouter"])
+    monkeypatch.setattr(provider, "_fallback_provider", lambda b: provider)
+
+    def _always_dead(self, client, backend, *a, **k):
+        raise RuntimeError("primary is down" if backend == provider.backend
+                           else "link also down")
+
+    monkeypatch.setattr(type(provider), "_tools_on", _always_dead)
+
+    with pytest.raises(RuntimeError, match="primary is down"):
+        provider.complete_with_tools("sys", "q", _TOOLS)
+
+
 def _fake_completion(*, name: str, arguments: str, content=None):
     from types import SimpleNamespace
     return SimpleNamespace(choices=[SimpleNamespace(
