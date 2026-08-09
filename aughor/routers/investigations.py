@@ -3601,14 +3601,19 @@ async def _stream_investigation(
                     # 2.1 — the executed queries are right here in `qh`; this site used
                     # to send only the question and a headline, so the suggestions could
                     # not name a real column.
-                    fq: _FollowUpBase = _gp("narrator").complete(
-                        system=followup_system(),
-                        user=followup_user(
-                            question,
-                            headline=(ada.get("headline", "") if isinstance(ada, dict)
-                                      else str(ada)[:200]),
-                            **artifact_from_history(qh)),
-                        response_model=_FollowUpBase)
+                    # to_thread, like every other LLM call on this path: `complete` is
+                    # synchronous down to a blocking TLS read, and this generator runs ON
+                    # the event loop — calling it inline froze the whole API (every route,
+                    # /health included) for the length of the round-trip.
+                    fq: _FollowUpBase = await asyncio.to_thread(
+                        lambda: _gp("narrator").complete(
+                            system=followup_system(),
+                            user=followup_user(
+                                question,
+                                headline=(ada.get("headline", "") if isinstance(ada, dict)
+                                          else str(ada)[:200]),
+                                **artifact_from_history(qh)),
+                            response_model=_FollowUpBase))
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3676,11 +3681,14 @@ async def _stream_investigation(
                     from aughor.agent.followups import (
                         artifact_from_history, followup_system, followup_user)
                     from aughor.llm.provider import get_provider as _gp
-                    fqx: _FollowUpBase = _gp("narrator").complete(
-                        system=followup_system(),
-                        user=followup_user(question, headline=er.headline,
-                                           **artifact_from_history(qh)),
-                        response_model=_FollowUpBase)
+                    # to_thread — see the ada_synthesize site above: inline, this blocks
+                    # the event loop for the whole LLM round-trip.
+                    fqx: _FollowUpBase = await asyncio.to_thread(
+                        lambda: _gp("narrator").complete(
+                            system=followup_system(),
+                            user=followup_user(question, headline=er.headline,
+                                               **artifact_from_history(qh)),
+                            response_model=_FollowUpBase))
                     yield _sse("followups", {"questions": fqx.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
@@ -3700,11 +3708,14 @@ async def _stream_investigation(
                     from aughor.llm.provider import get_provider as _gp
                     rep = merged["report"]
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
-                    fqr: _FollowUpBase = _gp("narrator").complete(
-                        system=followup_system(),
-                        user=followup_user(question, headline=str(summary)[:300],
-                                           **artifact_from_history(qh)),
-                        response_model=_FollowUpBase)
+                    # to_thread — see the ada_synthesize site above: inline, this blocks
+                    # the event loop for the whole LLM round-trip.
+                    fqr: _FollowUpBase = await asyncio.to_thread(
+                        lambda: _gp("narrator").complete(
+                            system=followup_system(),
+                            user=followup_user(question, headline=str(summary)[:300],
+                                               **artifact_from_history(qh)),
+                            response_model=_FollowUpBase))
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception as exc:
                     from aughor.kernel.errors import tolerate
