@@ -54,6 +54,13 @@ class LoopStep:
     arguments: dict
     ok: bool
     detail: str = ""
+    #: Characters this step's tool result added to the conversation.
+    result_chars: int = 0
+    #: Characters of history sent to the model on the turn that PRODUCED this step.
+    #: The interesting one: history is re-sent whole on every turn, so a result
+    #: fetched once is paid for again on each later turn. That re-sending — not any
+    #: repeated query — is what 4.3's handles actually remove.
+    prompt_chars: int = 0
 
 
 @dataclass
@@ -66,6 +73,25 @@ class LoopResult:
     @property
     def used_tools(self) -> bool:
         return bool(self.steps)
+
+    @property
+    def injected_chars(self) -> int:
+        """Total tool-result characters sent to the model across the whole turn.
+
+        Not the sum of result sizes — the sum of what was RE-SENT. A 40 KB result
+        fetched on step 1 of a 5-step turn is transmitted 4 more times. This is the
+        quantity a handle registry would replace with a preview plus an id, and it is
+        the half of 4.3's pre-check that repeat-counting never measured.
+        """
+        return sum(s.prompt_chars for s in self.steps)
+
+    @property
+    def reinjection_ratio(self) -> float:
+        """`injected_chars` over the bytes actually fetched. 1.0 means nothing was ever
+        re-sent; 3.0 means the average result rode along three times. Handles are worth
+        building when this is high, EVEN IF no query is ever repeated."""
+        fetched = sum(s.result_chars for s in self.steps)
+        return (self.injected_chars / fetched) if fetched else 0.0
 
 
 def _budget(provider: LLMProvider) -> int:
@@ -131,12 +157,20 @@ def run_tool_loop(
             logger.warning("tool_loop: %s raised (%s)", call.name, str(exc)[:200])
             ok, payload = False, f"{type(exc).__name__}: {exc}"
         steps.append(LoopStep(tool=call.name, arguments=call.arguments, ok=ok,
-                              detail="" if ok else payload))
+                              detail="" if ok else payload,
+                              result_chars=len(payload),
+                              prompt_chars=_history_chars(history)))
         history.extend(_exchange(call, payload))
 
     # Budget spent. The turn is not an error — it is an answer we did not reach, and
     # saying so plainly beats presenting a half-derived guess as a conclusion.
     return LoopResult(answer=None, steps=steps, stop_reason="budget")
+
+
+def _history_chars(history: list[dict]) -> int:
+    """Characters of prior conversation re-sent on this turn. Measured BEFORE the new
+    exchange is appended, so it is what the model was actually shown when it decided."""
+    return sum(len(str(m.get("content") or "")) for m in history)
 
 
 def _exchange(call, content: str) -> list[dict]:
