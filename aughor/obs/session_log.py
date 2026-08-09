@@ -307,6 +307,73 @@ def tool_reliability(*, org_id: Optional[str] = None, scan: int = 5000) -> list[
     return sorted(out, key=lambda a: a["calls"], reverse=True)
 
 
+def route_mix(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
+    """Which BODY served each `/ask` turn — the route receipt (Wave 6).
+
+    This is `ask.converse`'s graduation input: the flag's stated exit is the headline
+    receipt, the parity invariant, AND data on the converse/fast-path ratio, because the
+    question "should conversation become the default door" is a measurement, not a taste.
+
+    Folded from two kinds rather than one, which is the whole reason this function exists.
+    The converse body logs itself (`tool_call` named `ask.converse`); every `/ask` turn
+    logs a `final_response`. Counting only the first gives a numerator with nothing to
+    divide it by — a ratio whose denominator was never recorded is the shape of mistake
+    this codebase keeps paying for. So the denominator is every finished `/ask` turn, and
+    a turn is `fast_path` exactly when it finished without a converse marker.
+
+    `converse_turns` counts DISTINCT trace ids, not markers: one turn emits one marker
+    today, but counting rows would silently become a lie the moment it emits two.
+
+    Returns totals plus the per-turn tool/cost detail converse recorded, so "converse is
+    chosen more" and "converse costs more" are answerable from one read.
+    """
+    from aughor.kernel.ledger import Ledger
+    ledger = Ledger.default()
+
+    finals = ledger.session_events(kind=FINAL_RESPONSE, org_id=org_id, limit=scan)
+    ask_finals = [e for e in finals if (e.get("name") or "") == "ask"]
+
+    marks = ledger.session_events(kind=TOOL_CALL, org_id=org_id, limit=scan)
+    converse_marks = [e for e in marks if (e.get("name") or "") == "ask.converse"]
+    converse_traces = {e.get("trace_id") for e in converse_marks if e.get("trace_id")}
+
+    total = len(ask_finals)
+    # Intersect with FINISHED turns: a converse marker whose turn never completed (crash,
+    # disconnect) must not inflate the share of a denominator it is not in.
+    converse = len({e.get("trace_id") for e in ask_finals
+                    if e.get("trace_id") in converse_traces})
+    steps = [int(e.get("row_count") or 0) for e in converse_marks]
+    payloads = [e.get("payload") or {} for e in converse_marks]
+
+    def _avg(vals):
+        vals = [v for v in vals if isinstance(v, (int, float))]
+        return round(sum(vals) / len(vals), 2) if vals else 0.0
+
+    return {
+        "ask_turns": total,
+        "converse_turns": converse,
+        "fast_path_turns": total - converse,
+        # None, not 0.0, when nothing has run: a share of zero turns is undefined, and
+        # reporting 0% would read as "converse is never chosen".
+        "converse_share": round(converse / total, 3) if total else None,
+        "converse_mean_steps": _avg(steps),
+        "converse_mean_injected_chars": _avg([p.get("injected_chars") for p in payloads]),
+        "converse_stop_reasons": _tally(p.get("stop_reason") for p in payloads),
+        "converse_tools": _tally(t for p in payloads for t in (p.get("tools") or [])),
+        # Markers without a finished turn — visible rather than silently dropped, because
+        # a rising count here means turns are dying mid-conversation.
+        "converse_unfinished": len(converse_traces) - converse,
+    }
+
+
+def _tally(values) -> dict:
+    out: dict[str, int] = {}
+    for v in values:
+        if v:
+            out[str(v)] = out.get(str(v), 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: kv[1], reverse=True))
+
+
 def model_usage(*, org_id: Optional[str] = None, scan: int = 5000) -> list[dict]:
     """Per-model call counts, token totals, latency and failure rate.
 
