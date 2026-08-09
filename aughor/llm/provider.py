@@ -645,6 +645,92 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     return instructor.from_anthropic(raw)
 
 
+class ToolCall(BaseModel):
+    """The model's choice of tool, with the arguments it supplied.
+
+    ``arguments`` is the PARSED object. The wire carries a JSON string, and a model that
+    emits malformed JSON is a routine event rather than an exceptional one — so parsing
+    happens once, here, instead of at every call site where a silent ``json.loads``
+    failure would read as "the model chose nothing".
+    """
+    name: str
+    arguments: dict
+    id: str = ""
+
+
+class ToolTurn(BaseModel):
+    """One turn's outcome: prose, or a tool choice — never both, never neither.
+
+    Kept as a value rather than a raised exception or a bare tuple because "the model
+    decided to look something up" is an ordinary result the loop must branch on, and P2
+    says failures are values. ``malformed`` records a tool call whose arguments would not
+    parse: the model did choose, and the loop deserves to know that rather than seeing an
+    empty turn it will misread as silence.
+    """
+    text: Optional[str] = None
+    tool_call: Optional[ToolCall] = None
+    malformed: Optional[str] = None
+    #: The reply hit the output ceiling before producing anything usable. Distinct from
+    #: an empty turn on purpose: a REASONING model spends output budget on thinking
+    #: tokens, so it can exhaust `max_tokens` having emitted no content and no tool call.
+    #: Reported as "the model declined" that is a lie about a budget problem, and the fix
+    #: (raise the ceiling) is nothing like the fix for a model that chose to say nothing.
+    truncated: bool = False
+
+    @property
+    def chose_tool(self) -> bool:
+        return self.tool_call is not None
+
+
+def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
+    """Read one OpenAI-compatible completion as a :class:`ToolTurn`.
+
+    Tool calls are checked BEFORE content because the TOOLS-mode shape sets
+    ``content`` to None and puts the payload on ``tool_calls[0].function.arguments``;
+    reading content first would see an empty answer and report silence where there was
+    a decision.
+    """
+    choices = getattr(raw, "choices", None) or []
+    message = getattr(choices[0], "message", None) if choices else None
+    calls = getattr(message, "tool_calls", None) if message is not None else None
+
+    if calls:
+        fn = getattr(calls[0], "function", None)
+        name = str(getattr(fn, "name", "") or "")
+        rawargs = getattr(fn, "arguments", "") or ""
+        try:
+            parsed = json.loads(rawargs) if isinstance(rawargs, str) else dict(rawargs)
+        except (ValueError, TypeError):
+            return ToolTurn(malformed=f"{name}: arguments were not valid JSON: {rawargs!r}")
+        if not isinstance(parsed, dict):
+            return ToolTurn(malformed=f"{name}: arguments were {type(parsed).__name__}, not an object")
+        return ToolTurn(tool_call=ToolCall(name=name, arguments=parsed,
+                                           id=str(getattr(calls[0], "id", "") or "")))
+
+    # A reasoning model's reply can live on `reasoning`/`reasoning_content` while
+    # `content` stays null. Read those too rather than reporting silence — but only as a
+    # fallback, because when both are present `content` is the answer and the reasoning
+    # is the working.
+    content = getattr(message, "content", None) if message is not None else None
+    if not content and message is not None:
+        for field in ("reasoning_content", "reasoning"):
+            alt = getattr(message, field, None)
+            if isinstance(alt, str) and alt.strip():
+                content = alt
+                break
+
+    finish = getattr(choices[0], "finish_reason", None) if choices else None
+    if not content and finish == "length":
+        return ToolTurn(truncated=True)
+
+    if content is None and fallback_text is not None:
+        # instructor with `response_model=None` hands the passthrough value back as the
+        # first tuple element; prefer the completion but do not lose a reply that only
+        # arrived there.
+        content = fallback_text if isinstance(fallback_text, str) else None
+    return ToolTurn(text=content)
+
+
 def _extract_usage(raw) -> tuple[int, int]:
     """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
     best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
@@ -1312,6 +1398,172 @@ class LLMProvider:
         from aughor.control_plane.inference import capability_for
 
         return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
+
+    def complete_with_tools(
+        self,
+        system: str,
+        user: str,
+        tools: list[dict],
+        *,
+        history: Optional[list[dict]] = None,
+        temperature: float = 0.1,
+    ) -> "ToolTurn":
+        """One agent turn: the model either speaks, or it chooses a tool.
+
+        This is the capability the converse body (Layer 3) needs and the transport has
+        never had — ``complete()`` asks for a *shape* (instructor validates a
+        ``response_model``), while an agent turn asks a *question* whose answer may be
+        "call this tool with these arguments". Structured output and tool choice are the
+        same wire feature used for opposite purposes, which is why this is a sibling of
+        ``complete()`` rather than a parameter on it: bolting a tools list onto the
+        structured path would entangle two call shapes and put every existing caller's
+        behaviour at risk. Nothing here changes ``_complete_on``.
+
+        It deliberately goes through ``chat.completions.create_with_completion`` — the
+        one surface ``FauxClient`` duck-types — so every converse turn is scriptable
+        offline with zero credentials, which is the whole point of the Layer 0
+        investment. Calling the raw OpenAI client directly would be simpler and would
+        silently forfeit that.
+
+        ``tools`` are OpenAI-shaped function specs. Returns a :class:`ToolTurn`; a model
+        that answers in prose gives ``text``, one that picks a tool gives ``tool_call``.
+
+        ``history`` carries the turns since the question — the assistant's tool calls and
+        the ``role="tool"`` results answering them — appended after the user message. A
+        loop is a conversation that GROWS, and without this the model would re-decide from
+        the same two messages every step and pick the same tool forever. Omitted on the
+        first turn, which is why it is optional rather than a required message list.
+
+        NOT YET EXERCISED AGAINST A LIVE BACKEND: ``response_model=None`` is faux-proven
+        and is instructor's documented pass-through, but no run has confirmed it on a
+        real provider — verify before converse serves traffic. The anthropic branch is
+        unsupported here (it speaks ``client.messages``, a different surface).
+        """
+        if self.backend == "anthropic":
+            raise NotImplementedError(
+                "complete_with_tools speaks the OpenAI-compatible chat surface; the "
+                "anthropic binding uses client.messages and needs its own translation."
+            )
+        # Same posture as `complete()`: a primary already known to be out of allowance is
+        # skipped rather than re-probed. An agent loop makes SEVERAL calls per user turn,
+        # so a wasted round trip per call is paid once per step, not once per question.
+        if _in_quota_cooldown(self.backend) and self._tools_fallbacks():
+            return self._tools_via_fallback(
+                system, user, tools, temperature, history,
+                RuntimeError(f"{self.backend} is in quota cooldown (allowance exhausted)"))
+        try:
+            return self._tools_on(self._client, self.backend, self._model,
+                                  system, user, tools, temperature, history=history)
+        except Exception as primary_exc:
+            if _is_quota_exhausted(primary_exc):
+                _mark_quota_exhausted(self.backend)
+            # A model id the primary does not serve is a CONFIGURATION fault, and
+            # failing over is what hides it — same reasoning as `complete()`.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
+            if not _should_failover(primary_exc) or not self._tools_fallbacks():
+                raise
+            return self._tools_via_fallback(system, user, tools, temperature, history,
+                                            primary_exc)
+
+    def _tools_fallbacks(self) -> list[str]:
+        """Fallback links that can actually serve a tool call.
+
+        `anthropic` is filtered out rather than tried and caught: it speaks
+        `client.messages`, so it would raise NotImplementedError on every link walk and
+        turn a real outage into a confusing second error.
+        """
+        return [b for b in self._fallback_candidates() if b != "anthropic"]
+
+    def _tools_via_fallback(self, system: str, user: str, tools: list[dict],
+                            temperature: float, history: Optional[list[dict]],
+                            primary_exc: BaseException) -> "ToolTurn":
+        """Walk the chain for one tool turn. Raises ``primary_exc`` if every link fails."""
+        for backend in self._tools_fallbacks():
+            fb = self._fallback_provider(backend)
+            if fb is None:
+                continue
+            logger.warning("provider: %s failed on a tool turn (%s); falling back to %s %s",
+                           self.backend, str(primary_exc)[:120], backend, fb._model)
+            try:
+                return self._tools_on(fb._client, backend, fb._model,
+                                      system, user, tools, temperature,
+                                      history=history, fallback=True)
+            except Exception as fb_exc:
+                if _is_quota_exhausted(fb_exc):
+                    _mark_quota_exhausted(backend)
+                logger.warning("provider: tool-turn fallback %s also failed (%s)",
+                               backend, str(fb_exc)[:120])
+                if not _should_failover(fb_exc):
+                    break
+        raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
+
+    def _tools_on(self, client, backend: str, model: str, system: str, user: str,
+                  tools: list[dict], temperature: float, *,
+                  history: Optional[list[dict]] = None,
+                  fallback: bool = False) -> "ToolTurn":
+        """One tool turn against ONE binding. The per-backend half of the call, split out
+        so the fallback walk reuses it exactly — the primary and every link run the same
+        code path, which is what keeps a chain-served turn honest."""
+        from aughor.kernel import metering
+
+        endpoint = client.chat.completions
+        kwargs: dict[str, Any] = dict(
+            model=model,
+            temperature=_effective_temperature(temperature, backend),
+            max_tokens=_max_output_tokens(self.role, model),
+            messages=([{"role": "system", "content": system},
+                       {"role": "user", "content": user}] + list(history or [])),
+            tools=tools,
+            tool_choice="auto",
+            response_model=None,
+        )
+        extra = _reasoning_extra_body(backend)
+        if extra:
+            kwargs["extra_body"] = extra
+
+        _t0 = time.monotonic()
+        _out, raw = endpoint.create_with_completion(**kwargs)
+        _ms = (time.monotonic() - _t0) * 1000.0
+
+        # instructor's `response_model=None` pass-through hands the completion back as the
+        # FIRST element and None as the second — the opposite of the structured path,
+        # where the first is the validated object and the second is the raw response.
+        # Found only by a live call: the faux backend returns both halves non-None, so no
+        # offline test could reach this. Without the swap the turn parses to nothing
+        # (no choices on None) AND `_extract_usage(None)` returns (0, 0), so every live
+        # tool turn read as an empty reply that cost zero tokens — silent on both counts.
+        if raw is None:
+            raw = _out
+
+        # Metered exactly like a structured call. A turn the model spends choosing a tool
+        # costs the same tokens as one it spends answering, and a loop that runs untracked
+        # is how a free-tier allowance disappears without a line item.
+        pt, ct = _extract_usage(raw)
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(raw)
+        _record_llm_call(backend=backend, model=model, role=self.role,
+                         prompt_tokens=_pt, completion_tokens=_ct, ms=_ms, retries=0,
+                         temperature=temperature, fallback=fallback, system=system,
+                         user=user, output=_out)
+        metering.check_budget()
+        turn = _parse_tool_turn(raw, _out)
+        if (turn.tool_call is None and not turn.text and not turn.malformed
+                and not turn.truncated):
+            # Neither a choice, nor words, nor a stated failure. That is the transport
+            # failing to READ a reply, not a model with nothing to say — and a silent
+            # empty turn reads downstream as "the model declined", which is a different
+            # and much more plausible-looking lie. Name the shape so the gap is findable.
+            try:
+                msg = raw.choices[0].message
+                shape = {k: type(getattr(msg, k, None)).__name__
+                         for k in ("content", "tool_calls", "reasoning", "reasoning_content")}
+            except Exception:            # noqa: BLE001 - diagnosis must not mask the event
+                shape = {"raw": type(raw).__name__}
+            logger.warning(
+                "provider: %s/%s returned a tool turn this parser could not read "
+                "(no tool_call, no text). Message shape: %s", backend, model, shape)
+        return turn
 
     def complete(
         self,

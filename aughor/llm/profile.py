@@ -68,6 +68,10 @@ class ModelProfile:
     #: the budget at near-zero request cost), not a capability cap — a stronger model
     #: does not make instructor's blind full-prompt re-ask a better trade.
     structured_attempts: int
+    #: Max tool-choosing turns per converse question (Layer 3's loop budget). Lives here
+    #: rather than as a module constant because it is a capability knob, and ModelProfile
+    #: exists so those stop coming back as constants.
+    tool_loop_steps: int
     #: Reasoning effort for backends that expose it ("low"|"medium"|"high").
     reasoning_effort: str
     #: A3 linker budgets — rank bounds for the schema-linking pre-filter; the char
@@ -107,6 +111,11 @@ _BASELINE = dict(
     # Every role at the old constant — BASELINE is "the behaviour everything was
     # measured against", so it stays byte-identical.
     role_output_tokens={"coder": 4_096, "narrator": 4_096, "fast": 4_096},
+    # How many tool-choosing turns one converse question may spend. A ceiling, not a
+    # target: the model stops when it has an answer. BASELINE is deliberately tight —
+    # a weaker model that has not converged in four steps is usually looping, and each
+    # step is a whole request against a 1,000/day free-tier allowance.
+    tool_loop_steps=4,
 )
 
 # Large-context families this deployment actually runs (llm_config.json history +
@@ -133,6 +142,9 @@ _CAPABLE = dict(
     # A ceiling is not a target; the only risk of a high one is a runaway, and the
     # deadline plus reasoning-effort caps bound that independently.
     role_output_tokens={"coder": 8_192, "narrator": 12_288, "fast": 4_096},
+    # A capable model can afford to look something up, be wrong, and recover — which is
+    # the whole argument for a loop over a single shot.
+    tool_loop_steps=8,
 )
 
 #: Model-id prefix → tier. Longest-prefix match; the `:free`/`:cloud` suffix is not
@@ -283,6 +295,7 @@ def profile_for(role: str = "coder", *, model: Optional[str] = None) -> ModelPro
         interpret_max_rows=tier["interpret_max_rows"],
         max_output_tokens=max_out,
         structured_attempts=attempts,
+        tool_loop_steps=max(1, _int_env("AUGHOR_TOOL_LOOP_STEPS", tier["tool_loop_steps"])),
         reasoning_effort=effort,
         linker_top_tables=tier["linker_top_tables"],
         linker_top_cols=tier["linker_top_cols"],

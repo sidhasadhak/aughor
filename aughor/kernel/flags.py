@@ -81,6 +81,7 @@ FLAG_ENV = {
     # deployment posture DISSOLVED into the per-request `allow_clarify` field (the
     # honest home: whether a run may pause is a property of the caller, not the env).
     # Receipts on the FLAG_DEFAULT tombstone below.
+    "ask.converse": "AUGHOR_ASK_CONVERSE",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -261,6 +262,10 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "ask.converse": {
+        "label": "Answer through a conversation, not a single compiled query",
+        "description": "Add a THIRD body behind /ask: a real agent turn whose tools wrap the existing guarded pipelines. The model chooses which tool the conversation needs — including the tool of just answering — instead of every message being compiled as a query spec. Guards are unchanged and stay INSIDE the tools; the deterministic quick/deep bodies survive as the fast path and gain a caller. Off by default → /ask behaves exactly as today.",
+    },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Unlocks the already-built explore wave from /ask. Off by default.",
@@ -350,6 +355,12 @@ EXPERIMENT: dict = {
                           "cross-source benefit — author a cross-source suite first",
     # "plan.program" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
     # tombstone) — the adopt-or-kill question was settled as KILL, not measured.
+    "ask.converse": "does a conversation answer better than a compiled query spec? Exit is "
+                    "the headline receipt: a 10-turn scripted session in CI via the faux "
+                    "backend, plus the parity invariant (a converse-wrapped answer_question "
+                    "and the direct fast path agree for the same question), plus route-receipt "
+                    "data on the converse/fast-path ratio. Graduation makes converse a "
+                    "permanent third body and the flag dies",
     "explore.route_wide": "do landscape questions answer better through the explore wave? "
                           "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
                           "is_wide_question fires on 0/102 of the reference suite "
