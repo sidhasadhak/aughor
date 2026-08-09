@@ -18,9 +18,16 @@ get_provider("narrator").complete(...))` forty lines above. Nothing about the ca
 looked wrong; the omission is invisible by inspection, which is what makes it a rot guard
 and not a code-review item.
 
-The rule: a call to a provider method in `_LLM_METHODS` is allowed inside an `async def`
-only underneath `asyncio.to_thread` / `run_in_executor`, or inside a nested plain `def`
-(a worker function or thread target, which is the other pattern this codebase uses).
+Fixing those three did not end it. A run still stalled for seconds at the very end, and
+trapping the stack mid-stall found a second shape in the same generator: a synchronous
+`_write_answer_receipt` whose graph write goes out over TLS (`b"".join` over an httpx
+chunk iterator, 2121 of 2123 samples in `poll(2)`). An LLM-only guard passed clean over
+it. So the rule this file enforces is the general one — blocking I/O off the loop — and
+`complete()` is only its most familiar instance.
+
+The rule: a call named in `_BLOCKING` is allowed inside an `async def` only underneath
+`asyncio.to_thread` / `run_in_executor`, or inside a nested plain `def` (a worker
+function or thread target, which is the other pattern this codebase uses).
 """
 from __future__ import annotations
 
@@ -31,6 +38,16 @@ import pytest
 
 #: Provider entry points that block. Each one ends in a synchronous SDK call.
 _LLM_METHODS = {"complete", "complete_streaming", "complete_with_tools"}
+
+#: Helpers that reach the network by a route other than the provider, found the same
+#: way and in the same generator. `_write_answer_receipt` writes the ledger AND calls
+#: `note_finding`, whose graph write goes out over TLS; `_try_salvage` runs a synthesis.
+#: An LLM-only guard passed clean over both, which is why this list exists: the rule is
+#: "blocking I/O off the loop", and `complete()` is only its most obvious instance. Add
+#: to this set whenever a sync helper that touches the network gains an async caller.
+_BLOCKING_HELPERS = {"_write_answer_receipt", "_try_salvage"}
+
+_BLOCKING = _LLM_METHODS | _BLOCKING_HELPERS
 
 #: Anything that moves the call off the loop thread.
 _OFFLOADERS = {"to_thread", "run_in_executor"}
@@ -48,7 +65,7 @@ def _callee(node: ast.Call) -> str | None:
 
 
 def _blocking_llm_calls_on_async_paths() -> list[str]:
-    """Every `<provider>.complete*()` reachable on an event-loop thread."""
+    """Every blocking call in `_BLOCKING` reachable on an event-loop thread."""
     found: list[str] = []
 
     def visit(node: ast.AST, on_loop: bool, offloaded: bool, path: pathlib.Path) -> None:
@@ -66,7 +83,7 @@ def _blocking_llm_calls_on_async_paths() -> list[str]:
                 name = _callee(child)
                 if name in _OFFLOADERS:
                     child_offloaded = True
-                elif name in _LLM_METHODS and child_on_loop and not offloaded:
+                elif name in _BLOCKING and child_on_loop and not offloaded:
                     found.append(
                         f"{path.relative_to(_PACKAGE.parent)}:{child.lineno} "
                         f"{ast.unparse(child.func)}(...)"
@@ -134,15 +151,27 @@ def test_the_guard_can_actually_see_a_violation():
                     name = _callee(child)
                     if name in _OFFLOADERS:
                         child_offloaded = True
-                    elif name in _LLM_METHODS and child_on_loop and not offloaded:
+                    elif name in _BLOCKING and child_on_loop and not offloaded:
                         hits += 1
                 visit(child, child_on_loop, child_offloaded)
 
         visit(tree, False, False)
         return hits
 
+    # The second shape: not an LLM call at all, and the reason _BLOCKING_HELPERS exists.
+    helper_shape = ast.parse(
+        "import asyncio\n"
+        "async def stream():\n"
+        "    yield 1\n"
+        "    rcpt = _write_answer_receipt(kind='ada_report', question='q')\n"
+    )
+
     assert scan(offending) == 1, "the guard would not have caught the original defect"
     assert scan(legitimate) == 0, "the guard flags the correct patterns as violations"
+    assert scan(helper_shape) == 1, (
+        "the guard would not have caught the residual end-of-run stall, which was a "
+        "blocking helper rather than a provider call"
+    )
 
 
 @pytest.mark.parametrize("method", sorted(_LLM_METHODS))

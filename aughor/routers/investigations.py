@@ -3634,14 +3634,19 @@ async def _stream_investigation(
                 # silently. Same edge shape as the chat path, so one receipt reader serves both.
                 _ada_guards = [("trusted", f"query:{(_t.get('question') or '')[:60]}", _t.get("note"))
                                for _t in ((merged.get("_ada_intake") or {}).get("trusted_used") or [])]
-                _ada_rcpt = _write_answer_receipt(
-                    kind="ada_report", natural_key=f"ada:{connection_id}:{inv_id}",
-                    question=question, sqls=_ada_sqls(ada) or [r.sql for r in qh if getattr(r, "sql", None)],
-                    headline=(ada.get("headline", "") if isinstance(ada, dict) else ""),
-                    schema=full_schema, connection_id=connection_id, canvas_id=canvas_id,
-                    guard_edges=_ada_guards,
-                    payload_extra={"investigation_id": inv_id},
-                )
+                # to_thread for the same reason as the follow-up call above: the receipt
+                # write reaches the ledger AND `note_finding`, whose graph write goes out
+                # over TLS. Inline it blocked the loop for seconds at the end of every
+                # run — the residual stall that survived fixing the LLM calls.
+                _ada_rcpt = await asyncio.to_thread(
+                    lambda: _write_answer_receipt(
+                        kind="ada_report", natural_key=f"ada:{connection_id}:{inv_id}",
+                        question=question, sqls=_ada_sqls(ada) or [r.sql for r in qh if getattr(r, "sql", None)],
+                        headline=(ada.get("headline", "") if isinstance(ada, dict) else ""),
+                        schema=full_schema, connection_id=connection_id, canvas_id=canvas_id,
+                        guard_edges=_ada_guards,
+                        payload_extra={"investigation_id": inv_id},
+                    ))
                 # WP-10: hand the UI the unified receipt id so a deep answer opens the same
                 # "Why this number" drawer as a quick answer (GET /receipt/{id}).
                 if _ada_rcpt.get("receipt_id"):
@@ -3727,7 +3732,8 @@ async def _stream_investigation(
 
         if timed_out:
             # Even on timeout, salvage a partial report from gathered evidence first.
-            salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
+            salvaged = await asyncio.to_thread(
+                _try_salvage, merged, inv_id, question, connection_id, schema=full_schema)
             if salvaged:
                 yield salvaged
             else:
@@ -3739,7 +3745,8 @@ async def _stream_investigation(
             # query errored and the loop exhausted its iterations. First try a
             # best-effort synthesis from whatever evidence exists; only if there's
             # genuinely nothing to salvage do we surface a terminal stall message.
-            salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
+            salvaged = await asyncio.to_thread(
+                _try_salvage, merged, inv_id, question, connection_id, schema=full_schema)
             if salvaged:
                 yield salvaged
             else:
@@ -3749,7 +3756,11 @@ async def _stream_investigation(
     except Exception as e:
         # An unhandled node exception still shouldn't lose partial work — salvage
         # a best-effort report from gathered evidence before surfacing the error.
-        salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
+        # to_thread: salvage runs a synthesis, so inline it would block the loop on the
+        # very path where the run is already in trouble. Safe to await here — this
+        # catches Exception, so a CancelledError teardown never reaches it.
+        salvaged = await asyncio.to_thread(
+            _try_salvage, merged, inv_id, question, connection_id, schema=full_schema)
         if salvaged:
             yield salvaged
         else:
