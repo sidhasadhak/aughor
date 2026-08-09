@@ -24,13 +24,23 @@ must choose between them, not for documentation.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
 
 _MAX_PREVIEW_ROWS = 20
+
+#: What a tool reports while it runs — ``(frame_type, payload)``, the same vocabulary
+#: ``answer_core`` already emits. A no-op by default so the tool set stays usable from
+#: a plain sync caller; a streaming caller supplies one and the pipeline's own frames
+#: reach the user instead of being computed and discarded.
+Emit = Callable[[str, dict], None]
+
+
+def _noop_emit(frame_type: str, payload: dict) -> None:
+    return None
 
 
 def _connection(connection_id: str):
@@ -78,15 +88,29 @@ def _receipt_dict(receipt: Any) -> dict:
             if hasattr(receipt, k)}
 
 
-def answer_question(connection_id: str, args: dict) -> dict:
+def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
+                    session_id: str = "", canvas_id: Optional[str] = None,
+                    user_question: str = "") -> dict:
     """Run the WHOLE quick-answer pipeline for one natural-language question.
 
     This is Wave 5's point: the tool calls the same ``answer_core`` the `/ask` fast
     path streams from — schema linking, governed metrics, grounded generation, the
-    guard battery, execution and repair — with a no-op ``emit``, reading the turn's
-    terminal state instead of its frames. One body, two callers, so the tool's answer
-    and the direct path's answer agree BY CONSTRUCTION; the parity test exists to keep
-    it that way, not to make it true.
+    guard battery, execution and repair — reading the turn's terminal state as its
+    return value. One body, two callers, so the tool's answer and the direct path's
+    answer agree BY CONSTRUCTION; the parity test exists to keep it that way, not to
+    make it true.
+
+    ``emit`` is the pipeline's live frame channel. Defaulted to a no-op so a plain
+    caller sees only the terminal state, but a STREAMING caller passes the real one:
+    the SQL, the rows and the guard receipts then reach the user as they are produced,
+    exactly as they do on the fast path. Not forwarding them would mean rebuilding the
+    same frames from this dict at a second emission site — a copy guaranteed to drift.
+
+    ``session_id`` / ``canvas_id`` / ``user_question`` are the TURN'S IDENTITY, not the
+    tool's. The core persists a history row, and without these it would file the
+    model's rephrased sub-question against no session at all — a turn the user could
+    not find again. ``user_question`` labels the row with what the person actually
+    asked, while the pipeline still runs on the model's framing.
 
     The headline is the answer, so rows deliberately do not ride along — ``columns``
     and ``row_count`` preview the result's shape without spending the context window
@@ -103,7 +127,9 @@ def answer_question(connection_id: str, args: dict) -> dict:
     if not question:
         return {"error": "no question supplied"}
 
-    result = answer_core(question, connection_id, [], emit=lambda t, p: None)
+    result = answer_core(question, connection_id, [], emit=emit or _noop_emit,
+                         session_id=session_id, canvas_id=canvas_id,
+                         persist_question=user_question or question)
     out = {
         "outcome": result.outcome,
         "headline": result.headline,
@@ -165,12 +191,20 @@ _QUESTION_PARAMS = {
 }
 
 
-def converse_tools(connection_id: str) -> list[ToolSpec]:
+def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
+                   session_id: str = "", canvas_id: Optional[str] = None,
+                   user_question: str = "") -> list[ToolSpec]:
     """The tool set for one connection.
 
     Bound to the connection by closure rather than taking it as a model-supplied
     argument: the model should not be able to name a connection it was not given, and a
     tool that cannot express the wrong connection cannot be talked into it.
+
+    The turn's identity (``emit``, ``session_id``, ``canvas_id``, ``user_question``)
+    binds the same way and for the same reason. It is context the CALLER owns and the
+    model must not be able to state: a tool that could name its own session could file
+    a turn into someone else's history. Every one of them is optional, so the tool set
+    stays constructible from a bare sync caller.
     """
     return [
         ToolSpec(
@@ -185,7 +219,9 @@ def converse_tools(connection_id: str) -> list[ToolSpec]:
                 "you want executed."
             ),
             parameters=_QUESTION_PARAMS,
-            run=lambda a: answer_question(connection_id, a),
+            run=lambda a: answer_question(connection_id, a, emit=emit,
+                                          session_id=session_id, canvas_id=canvas_id,
+                                          user_question=user_question),
         ),
         ToolSpec(
             name="run_sql",
@@ -233,13 +269,21 @@ def converse_available() -> bool:
 
 
 def converse(connection_id: str, question: str, *, extra_context: Optional[str] = None,
-             provider=None, max_steps: Optional[int] = None):
+             provider=None, max_steps: Optional[int] = None,
+             on_step=None, tool_emit: Optional[Emit] = None,
+             session_id: str = "", canvas_id: Optional[str] = None):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
     the loop. Returns the :class:`LoopResult` so the caller sees the STEPS as well as
     the answer — the route receipt Wave 6 measures is built from those, and an answer
     with no record of how it was reached is the thing the receipts exist to prevent.
+
+    Two channels a STREAMING caller supplies and a sync one does not. ``on_step`` fires
+    as each step is recorded — the turn's progress, and its cancellation checkpoint.
+    ``tool_emit`` is handed to the tools, so a pipeline running inside a tool streams
+    its own frames rather than computing them into silence. Both default to None: a
+    caller that only wants the answer gets exactly the code path it got before.
     """
     from aughor.agent.tool_loop import run_tool_loop
     from aughor.llm.provider import get_provider
@@ -248,8 +292,10 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         provider or get_provider("coder"),
         converse_system_prompt(connection_id, extra_context),
         question,
-        converse_tools(connection_id),
+        converse_tools(connection_id, emit=tool_emit, session_id=session_id,
+                       canvas_id=canvas_id, user_question=question),
         max_steps=max_steps,
+        on_step=on_step,
     )
 
 

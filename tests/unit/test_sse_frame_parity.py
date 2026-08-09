@@ -49,11 +49,12 @@ _EMIT = r"(?:_sse|(?<![\w.])emit)"
 _DYNAMIC_SITES: dict[str, frozenset[str]] = {
     # investigations.py: `for _evt in ("learning", "activations"): emit(_evt, ...)`
     "_evt": frozenset({"learning", "activations"}),
-    # investigations.py `_stream_chat`: `yield _sse(_frame_type, _frame_payload)` — the
-    # queue consumer re-serializing what `_answer_core` already emitted. It contributes NO
-    # names of its own: every tuple it yields was created by an `emit("literal", …)` call
-    # the parser has already read. Declared empty rather than filtered out, so the site
-    # stays visible here instead of being invisible to the parser.
+    # investigations.py, THREE relay sites, all making the same claim: `_stream_chat` and
+    # `_stream_converse` re-serializing what the bridge handed them, and `_stream_converse`'s
+    # `_forward` passing a tool's frames on unchanged. None contributes a name of its own —
+    # every tuple they carry was created by an `emit("literal", …)` call the parser has
+    # already read. Declared empty rather than filtered out, so the sites stay visible here
+    # instead of being invisible to the parser; the two tests below check the claim.
     "_frame_type": frozenset(),
 }
 
@@ -105,22 +106,57 @@ def test_no_unreadable_emission_sites():
     )
 
 
+def _top_level_body(marker: str) -> str:
+    """The source of one top-level function, from its `def` to the next one."""
+    src = _BACKEND.read_text()
+    body = src[src.index(marker):]
+    end = re.search(r"\n(?:@|async def |def |class )", body[1:])
+    return body[: end.start()] if end else body
+
+
 def test_the_relay_really_does_only_relay():
     """`_frame_type` is declared above as carrying no names of its own. That is a claim
     about `_stream_chat`, so check it instead of trusting it: the wrapper may encode the
     relayed tuple and its own terminal `error`, and nothing else. A third `_sse(...)` there
     would be a frame the parser cannot see, which is the exact hole `_DYNAMIC_SITES` exists
     to close."""
-    src = _BACKEND.read_text()
-    start = src.index("async def _stream_chat(")
-    body = src[start:]
-    end = re.search(r"\n(?:@|async def |def |class )", body[1:])
-    body = body[: end.start()] if end else body
+    body = _top_level_body("async def _stream_chat(")
 
     first_args = re.findall(r"_sse\(\s*([^,)]+)\s*,", body)
     assert sorted(first_args) == ['"error"', "_frame_type"], (
         f"_stream_chat encodes frames the parser cannot read: {first_args}. Every other "
         "frame must be named literally at an `emit(\"…\")` call inside `_answer_core`."
+    )
+
+
+def test_the_converse_relay_relays_too_and_names_its_own_frames_literally():
+    """The same claim, for the second body — otherwise the converse path is an UNGUARDED
+    copy of the guarded one, and a green guard over an unguarded seam is worse than none.
+
+    Two halves, because the converse wrapper does two things `_stream_chat` does not. It
+    ENCODES (the `_sse` half, identical contract: the relayed tuple plus its own terminal
+    `error`). And it MINTS — the turn's own `converse_step` / `mode` / `headline` / `done`
+    — which is exactly why those must be literal here: a frame the converse body invented
+    behind a variable would reach the wire while the parity gate below reported full
+    coverage.
+    """
+    body = _top_level_body("async def _stream_converse(")
+
+    first_args = re.findall(r"_sse\(\s*([^,)]+)\s*,", body)
+    assert sorted(first_args) == ['"error"', "_frame_type"], (
+        f"_stream_converse encodes frames the parser cannot read: {first_args}."
+    )
+
+    minted = re.findall(rf'(?<![\w.])emit\(\s*"({_NAME})"', body)
+    assert set(minted) >= {"converse_step", "headline", "done"}, (
+        f"the converse body no longer names its own terminal frames literally: {minted}. "
+        "A turn that emits no `headline` renders empty, and one that emits no `done` never "
+        "finishes — both are silent, and both are what these literals make checkable."
+    )
+    dynamic = {v for v in re.findall(rf'(?<![\w.])emit\(\s*({_NAME})\s*,', body)}
+    assert dynamic <= {"_frame_type"}, (
+        f"the converse body emits through undeclared variable(s) {sorted(dynamic)} — "
+        "register them in _DYNAMIC_SITES or name the frame literally."
     )
 
 

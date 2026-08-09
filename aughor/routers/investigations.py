@@ -1386,6 +1386,7 @@ def _answer_core(
     purpose: str = "",
     schema_scope: Optional[str] = None,
     assumed_default: bool = False,
+    persist_question: str = "",
 ) -> "_AnswerCoreResult":
     """Answer one question, synchronously, reporting progress through ``emit``.
 
@@ -1413,10 +1414,19 @@ def _answer_core(
     of these connections — so cancellation is cooperative and honest about its
     granularity: the turn stops at the next checkpoint, closes ``db`` on the way out,
     and emits no partial terminal frames.
+
+    ``persist_question`` labels the saved history row when the question the PIPELINE
+    ran is not the question the USER asked — which is exactly the converse case: the
+    model rephrases, and a row filed under the rephrasing is a turn its owner cannot
+    find again. It is a label only. Everything that decides the answer still reads
+    ``question``, so an unset ``persist_question`` leaves every caller byte-identical.
     """
     #: Guard receipts go BOTH ways, through one helper, so the frame and the return
     #: value cannot drift apart: nine sites, one place that decides what a receipt is.
     receipts: list[dict] = []
+
+    #: What the saved turn is FILED under. Defaults to the question that was answered.
+    _persist_q = persist_question or question
 
     def _receipt(payload: dict) -> None:
         receipts.append(payload)
@@ -1707,7 +1717,7 @@ def _answer_core(
                         emit("done", {})
                         try:
                             save_chat_turn(
-                                question=question, connection_id=connection_id,
+                                question=_persist_q, connection_id=connection_id,
                                 headline=_answer_text[:2000], sql="", session_id=session_id,
                                 columns=[], rows=[], chart_type="none", tables_used=[],
                                 intent="", approach=[],
@@ -1877,7 +1887,7 @@ def _answer_core(
             emit("done", {})
             try:
                 save_chat_turn(
-                    question=question, connection_id=connection_id, headline=_abstain[:2000],
+                    question=_persist_q, connection_id=connection_id, headline=_abstain[:2000],
                     sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
                     tables_used=[], intent="", approach=[], canvas_id=canvas_id)
             except Exception as exc:
@@ -2474,7 +2484,7 @@ def _answer_core(
         _chat_inv_id = ""
         try:
             _chat_inv_id = save_chat_turn(
-                question=question, connection_id=connection_id,
+                question=_persist_q, connection_id=connection_id,
                 headline=_grounded_headline or question,
                 sql=final_sql or "", session_id=session_id, columns=result.columns,
                 rows=result.rows, chart_type=answer.chart_type,
@@ -2810,6 +2820,72 @@ def _answer_core(
 answer_core = _answer_core
 
 
+async def _core_frames(
+    run: Callable[[Callable[[str, dict], None], Callable[[], bool]], object],
+) -> AsyncGenerator[tuple, None]:
+    """Run a sync body on the answer pool and yield the ``(type, payload)`` pairs it emits.
+
+    The sync->async frame bridge, once, for both bodies that need it. It yields TUPLES,
+    never encoded SSE, and that is deliberate on two counts: the caller decides the
+    envelope, and this function names no frame — so the frame-parity guard, which reads
+    this file as text, still finds every frame declared at a literal emission site
+    rather than hidden behind a shared relay.
+
+    ``run(emit, cancelled)`` is the body. ``emit`` takes a frame name and a flat payload
+    and raises ``_CoreCancelled`` once the consumer has gone away; ``cancelled()`` is the
+    same signal for the stretches that emit nothing.
+
+    The mechanism is the repo's existing sync->async bridge (``agent/progress.py``,
+    feeding the deep path): one producer thread, ``call_soon_threadsafe`` scheduling each
+    ``put_nowait`` on the loop in FIFO order, so emission order survives the hop, and an
+    unbounded queue so the producer never stalls. What changes semantically is that a
+    slow client no longer back-pressures the computation: the answer is computed and
+    persisted at full speed and the queue buffers. Depth is bounded in practice because
+    both delta loops are throttled at the source.
+
+    How a caller knows finished-from-raised: it does not ask the sentinel, this awaits
+    the future. ``_CORE_DONE`` only terminates the STREAM; ``await fut`` then either
+    returns the body's result or re-raises its exception INSIDE the consumer's frame,
+    where an ``except Exception -> error`` and ``_metered_stream``'s ``BudgetExceeded``
+    handler both work exactly as they did when this was one function.
+    """
+    loop = asyncio.get_running_loop()
+    frames: asyncio.Queue = asyncio.Queue()
+    cancel = threading.Event()
+
+    def _emit(t: str, p: dict) -> None:        # runs on the WORKER thread
+        if cancel.is_set():
+            raise _CoreCancelled()
+        loop.call_soon_threadsafe(frames.put_nowait, (t, p))
+
+    def _work():
+        try:
+            return run(_emit, cancel.is_set)
+        finally:
+            loop.call_soon_threadsafe(frames.put_nowait, _CORE_DONE)
+
+    # On the dedicated pool, not `asyncio.to_thread`: to_thread borrows a DEFAULT-executor
+    # worker for the whole turn, and that pool is shared with every router's short
+    # offload hop — see `_ANSWER_CORE_POOL` for the measured head-of-line blocking this
+    # caused. The pool copies contextvars per task, so metering still crosses the hop.
+    fut = loop.run_in_executor(_ANSWER_CORE_POOL, _work)
+    try:
+        while True:
+            item = await frames.get()
+            if item is _CORE_DONE:
+                break
+            yield item
+        await fut                              # success vs raise is decided HERE
+    finally:
+        cancel.set()
+        if not fut.done():
+            # The body cannot be interrupted mid-call, and awaiting it here would
+            # hold teardown for the rest of the turn. Retrieve the exception in a
+            # callback instead, so an orphan that raises does not log
+            # "Task exception was never retrieved".
+            fut.add_done_callback(lambda f: f.cancelled() or f.exception())
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -2825,69 +2901,177 @@ async def _stream_chat(
 
     A nested function cannot yield on behalf of its caller, so the moment the core's
     48 ``yield _sse(...)`` became ``emit(...)`` the function stopped streaming — the
-    queue below is what gives it back, and why the two changes had to land together.
+    bridge in :func:`_core_frames` is what gives it back, and why the two changes had to
+    land together.
 
-    The bridge is the repo's existing sync->async frame bridge (``agent/progress.py``,
-    feeding the deep path): one producer thread, ``call_soon_threadsafe`` scheduling
-    each ``put_nowait`` on the loop in FIFO order, so emission order survives the hop
-    and an unbounded queue means the producer never stalls. What changes semantically
-    is that a slow client no longer back-pressures the computation: the answer is
-    computed and persisted at full speed and the queue buffers. Depth is bounded in
-    practice because both delta loops are already throttled at the source.
-
-    How the wrapper knows finished-from-raised: it does not ask the sentinel, it
-    awaits the future. ``_CORE_DONE`` only terminates the STREAM; ``await fut`` then
-    either returns the result or re-raises the core's exception inside this frame,
-    where the ``except Exception -> error`` below and ``_metered_stream``'s
-    ``BudgetExceeded`` handler both still work exactly as they did when this was one
-    function.
+    All this adds to the bridge is the ENVELOPE: re-encode each relayed pair, and render
+    a raised failure as the terminal ``error`` frame. `aclose()` is explicit because the
+    bridge is now a nested generator: without it, a client that leaves mid-turn would
+    leave the inner generator's cancellation to whenever the garbage collector got
+    around to it, and the core would keep paying in the meantime.
     """
-    loop = asyncio.get_running_loop()
-    frames: asyncio.Queue = asyncio.Queue()
-    cancel = threading.Event()
+    def _run(emit, cancelled):
+        return _answer_core(
+            question, connection_id, history, emit=emit, cancelled=cancelled,
+            session_id=session_id, canvas_id=canvas_id, skip_clarify=skip_clarify,
+            purpose=purpose, schema_scope=schema_scope,
+            assumed_default=assumed_default,
+        )
 
-    def _emit(t: str, p: dict) -> None:        # runs on the CORE thread
-        if cancel.is_set():
-            raise _CoreCancelled()
-        loop.call_soon_threadsafe(frames.put_nowait, (t, p))
-
-    def _run_core():
-        try:
-            return _answer_core(
-                question, connection_id, history, emit=_emit, cancelled=cancel.is_set,
-                session_id=session_id, canvas_id=canvas_id, skip_clarify=skip_clarify,
-                purpose=purpose, schema_scope=schema_scope,
-                assumed_default=assumed_default,
-            )
-        finally:
-            loop.call_soon_threadsafe(frames.put_nowait, _CORE_DONE)
-
-    # On the dedicated pool, not `asyncio.to_thread`: to_thread borrows a DEFAULT-executor
-    # worker for the whole turn, and that pool is shared with every router's short
-    # offload hop — see `_ANSWER_CORE_POOL` for the measured head-of-line blocking this
-    # caused. The pool copies contextvars per task, so metering still crosses the hop.
-    fut = loop.run_in_executor(_ANSWER_CORE_POOL, _run_core)
+    _bridge = _core_frames(_run)
     try:
-        while True:
-            item = await frames.get()
-            if item is _CORE_DONE:
-                break
-            _frame_type, _frame_payload = item
+        async for _frame_type, _frame_payload in _bridge:
             yield _sse(_frame_type, _frame_payload)
-        await fut                              # success vs raise is decided HERE
     except _CoreCancelled:
         pass
     except Exception as e:
         yield _sse("error", _error_event(e))
     finally:
-        cancel.set()
-        if not fut.done():
-            # The core cannot be interrupted mid-call, and awaiting it here would
-            # hold teardown for the rest of the turn. Retrieve the exception in a
-            # callback instead, so an orphan that raises does not log
-            # "Task exception was never retrieved".
-            fut.add_done_callback(lambda f: f.cancelled() or f.exception())
+        await _bridge.aclose()
 
+
+#: Inner frames a converse turn does NOT forward. The rule: forward what describes the
+#: WORK, suppress what describes the TURN'S LIFECYCLE — because only the wrapper knows
+#: when a converse turn is over, and a tool does not.
+#:
+#: * ``done`` is the one that matters. Relayed raw, the client's DONE action fires while
+#:   the model is still deciding whether to call another tool: the turn renders finished
+#:   mid-conversation. Its ``inv_id``/``has_receipt`` are real, though, so they are kept
+#:   and re-issued on the converse turn's own ``done`` rather than thrown away.
+#: * ``error`` marks a DELIBERATE terminal state the core then returns from. Here that
+#:   comes back to the model as a value it can recover from, so a red terminal frame
+#:   followed by more work would be a lie about the turn.
+#: * ``clarify`` — the inner core may hit the ambiguity probe and offer chips on a
+#:   sub-question the user never asked.
+#: * ``followups`` are about the model's sub-question, not the user's.
+#: * ``mode`` — the wrapper decides ``final_text`` for the whole turn; a forwarded inner
+#:   one would mislabel a turn that did produce SQL.
+_CONVERSE_SUPPRESSED = frozenset({"done", "error", "clarify", "followups", "mode"})
+
+
+async def _stream_converse(
+    question: str,
+    connection_id: str,
+    history: list[ChatHistoryTurn],
+    session_id: str = "",
+    canvas_id: Optional[str] = None,
+) -> AsyncGenerator[str, None]:
+    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
+
+    Same shape as :func:`_stream_chat` — the shared bridge, a different body — and
+    deliberately so: one copy of the concurrency design, two bodies riding it.
+
+    What the user sees is mostly frames they already know. A converse turn that calls
+    ``answer_question`` runs the SAME ``answer_core`` the fast path streams from, so its
+    ``sql`` / ``columns`` / ``rows`` / ``guard_receipt`` frames mean exactly what they
+    always meant and are forwarded verbatim. Synthesizing them instead from the tool's
+    returned dict would be a second emission site for the same values, guaranteed to
+    drift from the first; suppressing them would make the SMARTER path the one with no
+    visible receipts, which is the wrong asymmetry to build.
+
+    Only ``converse_step`` is new, because only "the model chose a tool" is new. The
+    turn's terminal ``headline`` is the model's own prose and lands last, where the
+    client's replace-semantics make it win over the tool's inner headline — which is
+    what lets a converse turn render with no frontend work at all.
+
+    Budget exhaustion ends on a ``headline``, not an ``error``: the loop's own comment
+    is the argument ("an answer we did not reach" beats a half-derived guess), and an
+    ``error`` frame renders red and discards the step trail the user can already see.
+    The machine-readable marker rides on ``done`` instead.
+    """
+    def _run(emit, cancelled):
+        from aughor.agent.converse_tools import converse
+        from aughor.obs import session_log
+
+        turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False}
+
+        def _forward(_frame_type: str, _frame_payload: dict) -> None:
+            """The tools' frames, minus the lifecycle. Named ``_frame_type`` on purpose:
+            it is the same relay claim `_stream_chat` makes — every name it carries was
+            declared literally at an ``emit`` call the frame-parity parser already read."""
+            if _frame_type == "done":
+                # Keep the inner turn's identity; it is the row "Why this number" hangs
+                # off. Taken as a PAIR so a later tool without a receipt cannot leave
+                # `has_receipt` true against a different turn's id.
+                if _frame_payload.get("inv_id"):
+                    turn["inv_id"] = _frame_payload["inv_id"]
+                    turn["has_receipt"] = bool(_frame_payload.get("has_receipt"))
+                return
+            if _frame_type in _CONVERSE_SUPPRESSED:
+                return
+            if _frame_type == "sql":
+                turn["sql"] = True
+            emit(_frame_type, _frame_payload)
+
+        def _on_step(step) -> None:
+            # The loop's ONLY cancellation checkpoint. `answer_core` checkpoints inside
+            # itself, so the gap this closes is BETWEEN steps: without it a client that
+            # left still buys every remaining provider round-trip.
+            if cancelled():
+                raise _CoreCancelled()
+            turn["steps"] += 1
+            emit("converse_step", {
+                "index": turn["steps"],
+                "tool": step.tool,
+                "arguments": {k: str(v)[:400] for k, v in (step.arguments or {}).items()},
+                "ok": step.ok,
+                "detail": str(step.detail or "")[:500],
+                "result_chars": step.result_chars,
+            })
+            # The trail, in the log the flag's exit receipt reads. `name=step.tool` folds
+            # into the existing per-tool reliability aggregate, which is the honest place
+            # for it — these ARE tool calls.
+            session_log.emit(session_log.TOOL_CALL_RESULT, name=step.tool,
+                             conn_id=connection_id, ok=step.ok,
+                             payload={"body": "converse", "detail": str(step.detail or "")})
+
+        result = converse(connection_id, question,
+                          extra_context=build_history_section(history),
+                          on_step=_on_step, tool_emit=_forward,
+                          session_id=session_id, canvas_id=canvas_id)
+
+        answer = (result.answer or "").strip()
+        if not answer:
+            answer = (
+                f"I ran out of steps before reaching an answer ({len(result.steps)} tool "
+                "calls). What each step found is above — ask a narrower question and I "
+                "can finish it."
+            )
+        if not turn["sql"]:
+            # No SQL this turn ⇒ the same shape the core's own no-SQL paths use, so a
+            # text-only converse answer renders exactly like a definitional one does.
+            emit("mode", {"query_mode": "final_text"})
+        emit("headline", {"headline": answer})
+        emit("done", {"inv_id": turn["inv_id"], "has_receipt": turn["has_receipt"],
+                      "body": "converse", "stop_reason": result.stop_reason,
+                      "steps": len(result.steps)})
+
+        # Wave 6's input: which body served this turn, and what it cost. Emitted HERE,
+        # not sniffed off the wire by `stream_with_session_log` — widening that sniff
+        # would change what an OFF-state run logs too.
+        session_log.emit(
+            session_log.TOOL_CALL, name="ask.converse", conn_id=connection_id,
+            ok=bool(result.answer), row_count=len(result.steps),
+            payload={"body": "converse", "stop_reason": result.stop_reason,
+                     "tools": [s.tool for s in result.steps],
+                     "injected_chars": result.injected_chars,
+                     "reinjection_ratio": round(result.reinjection_ratio, 2)},
+        )
+        return result
+
+    _bridge = _core_frames(_run)
+    try:
+        async for _frame_type, _frame_payload in _bridge:
+            yield _sse(_frame_type, _frame_payload)
+    except _CoreCancelled:
+        pass
+    except Exception as e:
+        # The ONLY terminal error on this path: something escaped `converse()` itself —
+        # a dead provider, a 401. A tool that raises never gets here; the loop already
+        # records it as a failed step the model can recover from.
+        yield _sse("error", _error_event(e))
+    finally:
+        await _bridge.aclose()
 
 
 # ── Investigation streaming ───────────────────────────────────────────────────
@@ -3919,6 +4103,26 @@ def _federation_eligible(req) -> bool:
     )
 
 
+def _converse_eligible(req, route) -> bool:
+    """Whether this ``/ask`` turn may be served by the converse body instead of the quick one.
+
+    Flag first, for the short-circuit: ``converse_available()`` reads ``ask.converse`` at
+    CALL time (never at import), which is what keeps the experiment flippable in a running
+    process — a module-level read turns ``monkeypatch.setenv`` into a no-op and is how tests
+    once spent the real LLM budget.
+
+    Everything else is a turn that already has a body: a ``deep`` route belongs to the
+    investigation path, and the escalation, dossier-drill and seeded-SQL flags each carry
+    a pinned starting point the conversation would ignore. Converse swaps the quick BODY;
+    it does not take over the door.
+    """
+    from aughor.agent.converse_tools import converse_available
+    return bool(
+        converse_available() and route.depth != "deep"
+        and not req.escalate and not req.insight_id and not req.seed_sql
+    )
+
+
 def _federation_candidates(conn_id: str, cap: int = 15) -> list[str]:
     """Org-visible connection ids (the current one first) — the candidate pool for cross-source
     selection on the ``/ask`` path. Bounded so a large connection roster can't blow up the selector."""
@@ -4144,12 +4348,17 @@ async def record_overview_drill(req: OverviewDrillRequest) -> None:
 
 
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
-    """The unified door: decide depth, emit the `route` receipt, then delegate to the
-    existing quick (Insight) or deep (ADA/explore) body unchanged.
+    """The unified door: decide depth, emit the `route` receipt, then delegate to a body.
 
-    The depth call is license-safe — a deep route degrades to quick when the
-    connection lacks DEEP_ANALYSIS — and the legacy `deep`/`insight_id` flags still
-    drive the "Investigate deeper" escalation and the dossier drill through one door.
+    THREE bodies now, not two: quick, deep (ADA/explore), and — behind `ask.converse`,
+    an EXPERIMENT that is off by default — the conversational one. The two originals are
+    unchanged; converse swaps which body answers a quick turn, never which door it
+    entered by, so the overview branch, the clarify gate and federation all still run
+    first exactly as they did.
+
+    The depth call is license-safe — a deep route degrades to quick when the connection
+    lacks DEEP_ANALYSIS — and the legacy escalation and dossier-drill flags still reach
+    the deep body through this one door.
     """
     from aughor.agent.ask_router import decide_ask_route
     from aughor.licensing import has_capability
@@ -4222,9 +4431,17 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         insight_id=req.insight_id, has_deep=has_deep,
         mode_override=req.mode,   # R13 — a named starter's declared path
     )
+    # Decided BEFORE the receipt is emitted, so the receipt can say which body served the
+    # turn — that key is Wave 6's population-level converse/fast-path ratio. It is a KEY on
+    # an existing frame, not a new frame: the dispatcher reads named keys, so an extra one
+    # is inert, and minting a second routing frame for the same decision would be exactly
+    # the parallel vocabulary this wave is trying not to create.
+    _use_converse = _converse_eligible(req, route)
     _route_ev = route.to_event()
     if req.purpose:
         _route_ev["purpose"] = req.purpose   # R13/R10 — starter provenance on the receipt
+    if _use_converse:
+        _route_ev["body"] = "converse"
     yield _sse("route", _route_ev)
 
     if route.depth == "deep":
@@ -4243,7 +4460,14 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         ):
             yield sse
     else:
-        async for sse in _metered_stream(
+        # The two quick bodies are PEERS under one meter, not two parallel branches with
+        # two budget lookups: whichever answers, a turn costs what the same governed
+        # budget allows. Converse needs it more, not less — it makes SEVERAL provider
+        # calls where the fast path makes a handful.
+        _body = (
+            _stream_converse(req.question, conn_id, req.history,
+                             session_id=req.session_id, canvas_id=req.canvas_id)
+            if _use_converse else
             _stream_chat(req.question, conn_id, req.history,
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
@@ -4251,9 +4475,9 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                          # "Answer anyway" = skipped WITHOUT supplying a reading. When a
                          # reading did come back the choice is recorded and crystallized,
                          # so there is nothing to disclose.
-                         assumed_default=bool(req.skip_clarify and not req.clarify_reading)),
-            budget=_insight_budget(conn_id),
-        ):
+                         assumed_default=bool(req.skip_clarify and not req.clarify_reading))
+        )
+        async for sse in _metered_stream(_body, budget=_insight_budget(conn_id)):
             yield sse
 
 
