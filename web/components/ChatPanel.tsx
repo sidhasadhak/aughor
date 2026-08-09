@@ -134,7 +134,11 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        disabled={streaming}
+        /* P5 — the input is NEVER disabled. A user who has thought of the next question
+           while an answer streams should be able to type it; sending interrupts the run
+           in flight (useChat.ask aborts before it starts, and the backend stops the core
+           at its next checkpoint). Disabling here made the product argue with the user
+           about whose turn it was. */
         placeholder={multiline ? "Ask anything about your data…" : "Ask your question…"}
         className="w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
       />
@@ -196,7 +200,6 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
           <select
             value={agentId ?? ""}
             onChange={(e) => setAgentId(e.target.value)}
-            disabled={streaming}
             title="Answer as a saved agent (its instructions, documents and connection apply)"
             style={{
               marginLeft: 8, marginRight: "auto", padding: "3px 8px", fontSize: 11, fontWeight: 500,
@@ -241,7 +244,6 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
           <button
             onClick={() => fileInputRef.current?.click()}
             title="Attach file (PDF, CSV)"
-            disabled={streaming}
             className="flex items-center justify-center rounded-[var(--r3)] transition-colors disabled:opacity-30"
             style={{
               width: 30, height: 30,
@@ -662,7 +664,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
-    if (!question || state.streaming) return;
+    // Only an EMPTY question is refused. Sending while a turn streams is not an error —
+    // it is the interrupt: `ask` aborts the in-flight request before starting, and the
+    // backend's core stops at its next cancellation checkpoint rather than running on for
+    // a client that has moved on. Refusing here (as this did) made an enabled input worse
+    // than a disabled one: it accepted the text and silently dropped it.
+    if (!question) return;
     setInput("");
     // Upload attached file first, then send the question
     if (attachedFile) {
