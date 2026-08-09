@@ -55,11 +55,20 @@ class RunMetrics:
     completion_tokens: int = 0
     total_tokens: int = 0
     query_count: int = 0
+    #: Distinct queries this run ISSUED, by normalised SQL. The gap between this and
+    #: `query_count` is the 4.3 pre-check's real measure: how much of a run is spent
+    #: re-asking something it already knows. Counting artifacts instead would measure
+    #: what SURVIVED into the final state, which is a different and much smaller number.
+    distinct_queries: int = 0
     rows_returned: int = 0
     llm_ms: float = 0.0
     query_ms: float = 0.0
     learning: LearningSignals = field(default_factory=LearningSignals)
     activations: list = field(default_factory=list)   # self-gating guards that fired this run (E3)
+    #: Normalised-SQL fingerprints seen, backing `distinct_queries`. Excluded from
+    #: `to_dict` (below) so the Trust Receipt's cost blob stays byte-identical — this is
+    #: an instrument, not a billed quantity.
+    _sql_seen: set = field(default_factory=set, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         # The COST view — learning signals and capability activations ride the same run accumulator but
@@ -68,6 +77,11 @@ class RunMetrics:
         d = asdict(self)
         d.pop("learning", None)
         d.pop("activations", None)
+        # The 4.3 instrument is NOT a billed quantity, and `_sql_seen` is a set that no
+        # JSON encoder accepts. Both leave here so the receipt's cost blob is unchanged
+        # by their existence — read `distinct_queries` off the live RunMetrics instead.
+        d.pop("_sql_seen", None)
+        d.pop("distinct_queries", None)
         return d
 
 
@@ -119,14 +133,21 @@ def record_llm(prompt_tokens: int = 0, completion_tokens: int = 0, ms: float = 0
         tolerate(exc, "llm metering", counter="metering")
 
 
-def record_query(rows: int = 0, ms: float = 0.0) -> None:
-    """Attribute one warehouse query (rows returned + wall-time) to the active run. No-op if none."""
+def record_query(rows: int = 0, ms: float = 0.0, sql: str = "") -> None:
+    """Attribute one warehouse query (rows returned + wall-time) to the active run. No-op if none.
+
+    ``sql`` is optional and used only for `distinct_queries` — normalised on whitespace
+    and case, never stored, so this cannot become a second copy of the query log.
+    """
     m = _current.get()
     if m is None:
         return
     try:
         with _lock:
             m.query_count += 1
+            if sql and sql.strip():
+                m._sql_seen.add(" ".join(sql.split()).lower())
+                m.distinct_queries = len(m._sql_seen)
             m.rows_returned += int(rows or 0)
             m.query_ms += float(ms or 0.0)
     except Exception as exc:  # never let metering break a query

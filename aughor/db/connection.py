@@ -205,7 +205,7 @@ def _security_post(
     # Per-run compute metering — best-effort, no-op outside a metered run.
     try:
         from aughor.kernel import metering
-        metering.record_query(getattr(result, "row_count", 0) or 0, duration_ms)
+        metering.record_query(getattr(result, "row_count", 0) or 0, duration_ms, sql)
     except Exception as _m_exc:
         from aughor.kernel.errors import tolerate
         tolerate(_m_exc, "query metering", counter="metering")
