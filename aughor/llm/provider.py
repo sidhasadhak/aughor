@@ -1516,7 +1516,22 @@ class LLMProvider:
                          temperature=temperature, fallback=fallback, system=system,
                          user=user, output=_out)
         metering.check_budget()
-        return _parse_tool_turn(raw, _out)
+        turn = _parse_tool_turn(raw, _out)
+        if turn.tool_call is None and not turn.text and not turn.malformed:
+            # Neither a choice, nor words, nor a stated failure. That is the transport
+            # failing to READ a reply, not a model with nothing to say — and a silent
+            # empty turn reads downstream as "the model declined", which is a different
+            # and much more plausible-looking lie. Name the shape so the gap is findable.
+            try:
+                msg = raw.choices[0].message
+                shape = {k: type(getattr(msg, k, None)).__name__
+                         for k in ("content", "tool_calls", "reasoning", "reasoning_content")}
+            except Exception:            # noqa: BLE001 - diagnosis must not mask the event
+                shape = {"raw": type(raw).__name__}
+            logger.warning(
+                "provider: %s/%s returned a tool turn this parser could not read "
+                "(no tool_call, no text). Message shape: %s", backend, model, shape)
+        return turn
 
     def complete(
         self,
