@@ -645,6 +645,71 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     return instructor.from_anthropic(raw)
 
 
+class ToolCall(BaseModel):
+    """The model's choice of tool, with the arguments it supplied.
+
+    ``arguments`` is the PARSED object. The wire carries a JSON string, and a model that
+    emits malformed JSON is a routine event rather than an exceptional one — so parsing
+    happens once, here, instead of at every call site where a silent ``json.loads``
+    failure would read as "the model chose nothing".
+    """
+    name: str
+    arguments: dict
+    id: str = ""
+
+
+class ToolTurn(BaseModel):
+    """One turn's outcome: prose, or a tool choice — never both, never neither.
+
+    Kept as a value rather than a raised exception or a bare tuple because "the model
+    decided to look something up" is an ordinary result the loop must branch on, and P2
+    says failures are values. ``malformed`` records a tool call whose arguments would not
+    parse: the model did choose, and the loop deserves to know that rather than seeing an
+    empty turn it will misread as silence.
+    """
+    text: Optional[str] = None
+    tool_call: Optional[ToolCall] = None
+    malformed: Optional[str] = None
+
+    @property
+    def chose_tool(self) -> bool:
+        return self.tool_call is not None
+
+
+def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
+    """Read one OpenAI-compatible completion as a :class:`ToolTurn`.
+
+    Tool calls are checked BEFORE content because the TOOLS-mode shape sets
+    ``content`` to None and puts the payload on ``tool_calls[0].function.arguments``;
+    reading content first would see an empty answer and report silence where there was
+    a decision.
+    """
+    choices = getattr(raw, "choices", None) or []
+    message = getattr(choices[0], "message", None) if choices else None
+    calls = getattr(message, "tool_calls", None) if message is not None else None
+
+    if calls:
+        fn = getattr(calls[0], "function", None)
+        name = str(getattr(fn, "name", "") or "")
+        rawargs = getattr(fn, "arguments", "") or ""
+        try:
+            parsed = json.loads(rawargs) if isinstance(rawargs, str) else dict(rawargs)
+        except (ValueError, TypeError):
+            return ToolTurn(malformed=f"{name}: arguments were not valid JSON: {rawargs!r}")
+        if not isinstance(parsed, dict):
+            return ToolTurn(malformed=f"{name}: arguments were {type(parsed).__name__}, not an object")
+        return ToolTurn(tool_call=ToolCall(name=name, arguments=parsed,
+                                           id=str(getattr(calls[0], "id", "") or "")))
+
+    content = getattr(message, "content", None) if message is not None else None
+    if content is None and fallback_text is not None:
+        # instructor with `response_model=None` hands the passthrough value back as the
+        # first tuple element; prefer the completion but do not lose a reply that only
+        # arrived there.
+        content = fallback_text if isinstance(fallback_text, str) else None
+    return ToolTurn(text=content)
+
+
 def _extract_usage(raw) -> tuple[int, int]:
     """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
     best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
@@ -1312,6 +1377,78 @@ class LLMProvider:
         from aughor.control_plane.inference import capability_for
 
         return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
+
+    def complete_with_tools(
+        self,
+        system: str,
+        user: str,
+        tools: list[dict],
+        *,
+        temperature: float = 0.1,
+    ) -> "ToolTurn":
+        """One agent turn: the model either speaks, or it chooses a tool.
+
+        This is the capability the converse body (Layer 3) needs and the transport has
+        never had — ``complete()`` asks for a *shape* (instructor validates a
+        ``response_model``), while an agent turn asks a *question* whose answer may be
+        "call this tool with these arguments". Structured output and tool choice are the
+        same wire feature used for opposite purposes, which is why this is a sibling of
+        ``complete()`` rather than a parameter on it: bolting a tools list onto the
+        structured path would entangle two call shapes and put every existing caller's
+        behaviour at risk. Nothing here changes ``_complete_on``.
+
+        It deliberately goes through ``chat.completions.create_with_completion`` — the
+        one surface ``FauxClient`` duck-types — so every converse turn is scriptable
+        offline with zero credentials, which is the whole point of the Layer 0
+        investment. Calling the raw OpenAI client directly would be simpler and would
+        silently forfeit that.
+
+        ``tools`` are OpenAI-shaped function specs. Returns a :class:`ToolTurn`; a model
+        that answers in prose gives ``text``, one that picks a tool gives ``tool_call``.
+
+        NOT YET EXERCISED AGAINST A LIVE BACKEND: ``response_model=None`` is faux-proven
+        and is instructor's documented pass-through, but no run has confirmed it on a
+        real provider — verify before converse serves traffic. The anthropic branch is
+        unsupported here (it speaks ``client.messages``, a different surface).
+        """
+        if self.backend == "anthropic":
+            raise NotImplementedError(
+                "complete_with_tools speaks the OpenAI-compatible chat surface; the "
+                "anthropic binding uses client.messages and needs its own translation."
+            )
+        from aughor.kernel import metering
+
+        endpoint = self._client.chat.completions
+        kwargs: dict[str, Any] = dict(
+            model=self._model,
+            temperature=_effective_temperature(temperature, self.backend),
+            max_tokens=_max_output_tokens(self.role, self._model),
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+            tools=tools,
+            tool_choice="auto",
+            response_model=None,
+        )
+        extra = _reasoning_extra_body(self.backend)
+        if extra:
+            kwargs["extra_body"] = extra
+
+        _t0 = time.monotonic()
+        _out, raw = endpoint.create_with_completion(**kwargs)
+        _ms = (time.monotonic() - _t0) * 1000.0
+
+        # Metered exactly like a structured call. A turn the model spends choosing a tool
+        # costs the same tokens as one it spends answering, and a loop that runs untracked
+        # is how a free-tier allowance disappears without a line item.
+        pt, ct = _extract_usage(raw)
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(raw)
+        _record_llm_call(backend=self.backend, model=self._model, role=self.role,
+                         prompt_tokens=_pt, completion_tokens=_ct, ms=_ms, retries=0,
+                         temperature=temperature, fallback=False, system=system,
+                         user=user, output=_out)
+        metering.check_budget()
+        return _parse_tool_turn(raw, _out)
 
     def complete(
         self,
