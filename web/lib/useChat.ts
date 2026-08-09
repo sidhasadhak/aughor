@@ -6,6 +6,7 @@ import {
   consumeStream,
   newSessionId,
   MAX_LOG,
+  type ChatAction,
   type ChatTurn,
   type DebugEvent,
 } from "./investigationStream";
@@ -60,6 +61,26 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
+  // ── Two streams can now overlap ─────────────────────────────────────────────
+  // Until P5 the composer refused to send while a turn was streaming, so exactly one
+  // request was ever in flight and every "the last turn is my turn" assumption below
+  // held for free. An interrupt breaks that: between the abort and the superseded
+  // stream noticing it, two calls are alive at once. Every reducer action targets
+  // turns[length-1], so without these two seams the OLD stream writes the NEW turn.
+
+  // Drop a superseded stream's actions. Once its controller is aborted the call has
+  // lost its claim on the conversation: its terminal DONE would settle the turn that
+  // replaced it (born "done" milliseconds after ASK, while its own answer is still
+  // streaming in), and any frame already parsed in the chunk that was in flight would
+  // write the old turn's body into the new one.
+  const untilAborted = (signal: AbortSignal) => (a: ChatAction) => { if (!signal.aborted) dispatch(a); };
+
+  // Release the shared abort handle ONLY if it still points at this call's controller.
+  // A superseded call returns AFTER its replacement has installed a new controller, so
+  // an unconditional `abortRef.current = null` throws away the LIVE stream's handle —
+  // leaving stop() and the next interrupt with nothing to abort.
+  const releaseController = (c: AbortController) => { if (abortRef.current === c) abortRef.current = null; };
+
   async function ask(question: string, connectionId: string, mode: "auto" | "ask" | "investigate" = "auto", opts: { skipCache?: boolean; canvasId?: string; schema?: string | null; insightId?: string; seedSql?: string | null; seedContext?: string; deep?: boolean; depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string; clarifySubject?: string; clarifySource?: string; agentId?: string; requestMode?: "investigate" | "explore"; purpose?: string } = {}) {
     const id = Math.random().toString(36).slice(2);
     // The turn's initial mode is corrected by the `route` event for auto turns
@@ -67,6 +88,14 @@ export function useChat() {
     // the lightweight one until the router's verdict lands (it arrives first).
     // A starter's requestMode always routes deep, so start those as "investigate".
     const initialMode: "ask" | "investigate" = mode === "investigate" || opts.requestMode ? "investigate" : "ask";
+
+    // An interrupt — the user sent this while a turn was still streaming. Settle the
+    // OUTGOING turn now, while it is still turns[length-1] and therefore still the turn
+    // every action addresses. Once ASK appends the new turn nothing can reach the old
+    // one again, and it would spin forever. This mirrors stop(), which likewise ends a
+    // turn the user walked away from as "done" rather than inventing a failure.
+    if (stateRef.current.streaming) dispatch({ type: "DONE" });
+
     dispatch({ type: "ASK", id, question, mode: initialMode });
 
     // Cancel any in-flight request
@@ -74,6 +103,9 @@ export function useChat() {
     const controller = new AbortController();
     abortRef.current = controller;
     const { signal } = controller;
+    // Everything this call reports goes through `emit`, so the moment it is superseded
+    // it stops being able to write to a conversation that has moved on without it.
+    const emit = untilAborted(signal);
 
     // History of the last 3 completed quick (ask) turns — fed to /chat and /ask.
     const chatHistory = (): ChatHistoryTurn[] => {
@@ -119,8 +151,8 @@ export function useChat() {
             clarifySubject: opts.clarifySubject, clarifySource: opts.clarifySource,
             insightId: opts.insightId, deep: opts.deep,
             requestMode: opts.requestMode, purpose: opts.purpose,   // R13 starter route parity
-          }, dispatch, signal, logEvent);
-          abortRef.current = null;
+          }, emit, signal, logEvent);
+          releaseController(controller);
           return;
         }
         res = await fetch(`${getApiBase()}/ask`, {
@@ -170,15 +202,18 @@ export function useChat() {
       }
     } catch (err) {
       if ((err as Error)?.name === "AbortError") {
-        dispatch({ type: "DONE" });
+        // Superseded (or stopped) before the response arrived. The turn this call owned
+        // was already settled — by the interrupt above, or by stop() — so this DONE has
+        // no turn left to end; `emit` drops it rather than ending the next one.
+        emit({ type: "DONE" });
       } else {
-        dispatch({ type: "ERROR", message: "Network error — is the server running?" });
+        emit({ type: "ERROR", message: "Network error — is the server running?" });
       }
       return;
     }
 
-    await consumeStream(res, dispatch, signal, logEvent);
-    abortRef.current = null;
+    await consumeStream(res, emit, signal, logEvent);
+    releaseController(controller);
   }
 
   // P3 editable plan gate: approve the paused sub-question plan (keeping the chosen
@@ -189,15 +224,16 @@ export function useChat() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const emit = untilAborted(controller.signal);
     let res: Response;
     try {
       res = await resumeInvestigationPlan(invId, keepSubquestions);
     } catch {
-      dispatch({ type: "ERROR", message: "Failed to resume the investigation." });
+      emit({ type: "ERROR", message: "Failed to resume the investigation." });
       return;
     }
-    await consumeStream(res, dispatch, controller.signal, logEvent);
-    abortRef.current = null;
+    await consumeStream(res, emit, controller.signal, logEvent);
+    releaseController(controller);
   }
 
   // Reject the pending plan — cancel the paused investigation.
@@ -214,15 +250,16 @@ export function useChat() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const emit = untilAborted(controller.signal);
     let res: Response;
     try {
       res = await resumeInvestigationClarify(invId, choice);
     } catch {
-      dispatch({ type: "ERROR", message: "Failed to resume the investigation." });
+      emit({ type: "ERROR", message: "Failed to resume the investigation." });
       return;
     }
-    await consumeStream(res, dispatch, controller.signal, logEvent);
-    abortRef.current = null;
+    await consumeStream(res, emit, controller.signal, logEvent);
+    releaseController(controller);
   }
 
   function restore(turns: ChatTurn[]) {
