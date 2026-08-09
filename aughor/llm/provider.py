@@ -670,6 +670,12 @@ class ToolTurn(BaseModel):
     text: Optional[str] = None
     tool_call: Optional[ToolCall] = None
     malformed: Optional[str] = None
+    #: The reply hit the output ceiling before producing anything usable. Distinct from
+    #: an empty turn on purpose: a REASONING model spends output budget on thinking
+    #: tokens, so it can exhaust `max_tokens` having emitted no content and no tool call.
+    #: Reported as "the model declined" that is a lie about a budget problem, and the fix
+    #: (raise the ceiling) is nothing like the fix for a model that chose to say nothing.
+    truncated: bool = False
 
     @property
     def chose_tool(self) -> bool:
@@ -701,7 +707,22 @@ def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
         return ToolTurn(tool_call=ToolCall(name=name, arguments=parsed,
                                            id=str(getattr(calls[0], "id", "") or "")))
 
+    # A reasoning model's reply can live on `reasoning`/`reasoning_content` while
+    # `content` stays null. Read those too rather than reporting silence — but only as a
+    # fallback, because when both are present `content` is the answer and the reasoning
+    # is the working.
     content = getattr(message, "content", None) if message is not None else None
+    if not content and message is not None:
+        for field in ("reasoning_content", "reasoning"):
+            alt = getattr(message, field, None)
+            if isinstance(alt, str) and alt.strip():
+                content = alt
+                break
+
+    finish = getattr(choices[0], "finish_reason", None) if choices else None
+    if not content and finish == "length":
+        return ToolTurn(truncated=True)
+
     if content is None and fallback_text is not None:
         # instructor with `response_model=None` hands the passthrough value back as the
         # first tuple element; prefer the completion but do not lose a reply that only
@@ -1517,7 +1538,8 @@ class LLMProvider:
                          user=user, output=_out)
         metering.check_budget()
         turn = _parse_tool_turn(raw, _out)
-        if turn.tool_call is None and not turn.text and not turn.malformed:
+        if (turn.tool_call is None and not turn.text and not turn.malformed
+                and not turn.truncated):
             # Neither a choice, nor words, nor a stated failure. That is the transport
             # failing to READ a reply, not a model with nothing to say — and a silent
             # empty turn reads downstream as "the model declined", which is a different

@@ -269,3 +269,40 @@ def _fake_completion(*, name: str, arguments: str, content=None):
         ),
         finish_reason="tool_calls",
     )])
+
+
+def test_a_reasoning_models_reply_is_not_reported_as_silence():
+    """Reasoning models leave `content` null and put the reply on `reasoning`. Reading
+    only `content` reports an empty turn, which downstream reads as "the model declined"
+    — a confident lie about a model that answered."""
+    from types import SimpleNamespace
+    raw = SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content=None, tool_calls=None,
+                                reasoning="the orders table has 412 rows"),
+        finish_reason="stop")])
+
+    assert _parse_tool_turn(raw).text == "the orders table has 412 rows"
+
+
+def test_content_wins_over_reasoning_when_both_are_present():
+    """The reasoning is the working, not the answer."""
+    from types import SimpleNamespace
+    raw = SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content="412", tool_calls=None, reasoning="let me think"),
+        finish_reason="stop")])
+
+    assert _parse_tool_turn(raw).text == "412"
+
+
+def test_a_truncated_turn_is_distinct_from_an_empty_one():
+    """A reasoning model can exhaust `max_tokens` on thinking tokens having emitted
+    nothing. Calling that "declined" is a lie about a budget problem, and the fix (raise
+    the ceiling) is nothing like the fix for a model that chose to say nothing."""
+    from types import SimpleNamespace
+    raw = SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content=None, tool_calls=None), finish_reason="length")])
+
+    turn = _parse_tool_turn(raw)
+
+    assert turn.truncated is True
+    assert turn.text is None and not turn.chose_tool
