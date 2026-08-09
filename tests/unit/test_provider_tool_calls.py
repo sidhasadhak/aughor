@@ -306,3 +306,48 @@ def test_a_truncated_turn_is_distinct_from_an_empty_one():
 
     assert turn.truncated is True
     assert turn.text is None and not turn.chose_tool
+
+
+def test_instructor_passthrough_shape_is_handled(monkeypatch, provider):
+    """The defect a live call found and no offline test could.
+
+    instructor's `response_model=None` pass-through returns (completion, None) — the
+    OPPOSITE of the structured path, where the first element is the validated object and
+    the second is the raw response. Faux returns both halves non-None, so this shape was
+    unreachable offline. Untreated, the turn parses to nothing AND usage reads (0, 0):
+    an empty reply that appears to cost zero tokens.
+    """
+    from types import SimpleNamespace
+
+    completion = _fake_completion(name="run_sql", arguments='{"sql": "SELECT 1"}')
+    completion.usage = SimpleNamespace(prompt_tokens=11, completion_tokens=7)
+    monkeypatch.setattr(
+        provider._client.chat.completions, "create_with_completion",
+        lambda **kw: (completion, None))          # the live shape
+
+    turn = provider.complete_with_tools("sys", "q", _TOOLS)
+
+    assert turn.chose_tool, "the pass-through completion was dropped on the floor"
+    assert turn.tool_call.arguments == {"sql": "SELECT 1"}
+
+
+def test_the_passthrough_turn_is_still_metered(monkeypatch, provider):
+    """The half that fails silently. `_extract_usage(None)` returns (0, 0) honestly, so
+    an unswapped pass-through meters every live tool turn as free — and a loop that
+    appears to cost nothing is how an allowance disappears with no line item."""
+    from types import SimpleNamespace
+
+    from aughor.kernel import metering
+
+    completion = _fake_completion(name="run_sql", arguments='{"sql": "SELECT 1"}')
+    completion.usage = SimpleNamespace(prompt_tokens=11, completion_tokens=7)
+    monkeypatch.setattr(
+        provider._client.chat.completions, "create_with_completion",
+        lambda **kw: (completion, None))
+    recorded: list[tuple] = []
+    monkeypatch.setattr(metering, "record_llm",
+                        lambda pt, ct, ms: recorded.append((pt, ct)))
+
+    provider.complete_with_tools("sys", "q", _TOOLS)
+
+    assert recorded == [(11, 7)], f"live tool turns metered as {recorded}, not (11, 7)"

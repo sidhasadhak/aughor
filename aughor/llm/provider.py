@@ -1526,6 +1526,16 @@ class LLMProvider:
         _out, raw = endpoint.create_with_completion(**kwargs)
         _ms = (time.monotonic() - _t0) * 1000.0
 
+        # instructor's `response_model=None` pass-through hands the completion back as the
+        # FIRST element and None as the second — the opposite of the structured path,
+        # where the first is the validated object and the second is the raw response.
+        # Found only by a live call: the faux backend returns both halves non-None, so no
+        # offline test could reach this. Without the swap the turn parses to nothing
+        # (no choices on None) AND `_extract_usage(None)` returns (0, 0), so every live
+        # tool turn read as an empty reply that cost zero tokens — silent on both counts.
+        if raw is None:
+            raw = _out
+
         # Metered exactly like a structured call. A turn the model spends choosing a tool
         # costs the same tokens as one it spends answering, and a loop that runs untracked
         # is how a free-tier allowance disappears without a line item.
