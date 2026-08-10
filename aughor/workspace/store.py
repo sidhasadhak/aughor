@@ -9,6 +9,7 @@ who never explicitly create a Workspace.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from pathlib import Path
@@ -22,6 +23,8 @@ from aughor.db.backend import connect_store
 
 _DB_PATH = resolve_db_path("AUGHOR_WORKSPACES_DB", Path(__file__).parent.parent.parent / "data" / "workspaces.db")
 DEFAULT_WORKSPACE_ID = "default"
+
+logger = logging.getLogger(__name__)
 
 # Schema evolution (DATA-05). The `workspaces` base table is v1; changes are Migration(v>=2).
 _MIGRATIONS = [
@@ -165,6 +168,78 @@ def delete_workspace(workspace_id: str) -> bool:
     affected = c.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,)).rowcount
     c.commit()
     return affected > 0
+
+
+def drop_connection_everywhere(conn_id: str) -> int:
+    """Remove a connection id from every workspace's membership. Returns how many
+    workspaces changed.
+
+    Deleting a connection used to leave its id behind in every workspace that held
+    it. `connection_ids` is documented as "references entries in the connection
+    registry", so those became dangling references, and every workspace-scoped
+    picker intersects membership against the live registry — so a ghost is silently
+    dropped and a workspace whose members are ALL ghosts renders as having no
+    connections at all. Measured on one machine: the Default workspace listed ten
+    members of which three existed.
+
+    Called from `registry.delete_connection`, so it covers every delete path rather
+    than only the HTTP route.
+    """
+    changed = 0
+    for ws in list_workspaces():
+        ids = list(ws.connection_ids or [])
+        if conn_id not in ids:
+            continue
+        update_workspace(ws.id, connection_ids=[i for i in ids if i != conn_id])
+        changed += 1
+    return changed
+
+
+def prune_dangling_members() -> dict[str, list[str]]:
+    """Drop membership ids with no connection behind them, for workspaces that
+    already carry them. Returns {workspace_id: [removed ids]}.
+
+    A repair rather than a migration: it is idempotent, needs no schema version, and
+    stays correct if a connection disappears by some path that never calls
+    `delete_connection`. Runs at startup beside `ensure_default_workspace`.
+
+    SCOPED TO ONE ORG, and that is the whole safety argument. `list_workspaces()`
+    returns every org's workspaces, while `list_connections()` returns only the
+    CURRENT org's (plus shared builtins). Comparing the two directly would read
+    another tenant's perfectly valid members as ghosts and delete them — a far worse
+    outcome than the bug being fixed. So only workspaces belonging to the org whose
+    connections were just listed are touched.
+
+    Best-effort by construction — the registry lookup is the only thing that can
+    fail here, and a membership list that cannot be verified must be left ALONE
+    rather than emptied. Wiping membership because a lookup errored would turn a
+    transient fault into the exact symptom this repairs.
+    """
+    org = current_org_id() or DEFAULT_ORG_ID
+    try:
+        from aughor.db.registry import list_connections
+        live = {c["id"] for c in list_connections(org_id=org)}
+    except Exception:
+        logger.warning("workspace membership prune skipped: connection registry unreadable",
+                       exc_info=True)
+        return {}
+    if not live:
+        # An empty registry is indistinguishable here from a failed read, and
+        # emptying every workspace is not a repair.
+        return {}
+    removed: dict[str, list[str]] = {}
+    for ws in list_workspaces():
+        if ws.org_id != org:
+            continue                      # another tenant's membership is not ours to judge
+        ids = list(ws.connection_ids or [])
+        ghosts = [i for i in ids if i not in live]
+        if not ghosts:
+            continue
+        update_workspace(ws.id, connection_ids=[i for i in ids if i in live])
+        removed[ws.id] = ghosts
+        logger.info("workspace %s: dropped %d dangling connection id(s): %s",
+                    ws.id, len(ghosts), ", ".join(ghosts))
+    return removed
 
 
 # ── Workspace scope (data-path tenancy) ───────────────────────────────────────

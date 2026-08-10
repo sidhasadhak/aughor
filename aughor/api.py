@@ -358,8 +358,17 @@ async def _migrate_upload_storage() -> None:
 
 async def _ensure_default_workspace() -> None:
     try:
-        from aughor.workspace.store import ensure_default_workspace
+        from aughor.workspace.store import ensure_default_workspace, prune_dangling_members
         ensure_default_workspace()
+        # Repair memberships that already reference deleted connections. Before the
+        # delete path cleaned up after itself, every removed connection stayed a
+        # member forever; a workspace whose members are all ghosts renders as having
+        # no connections at all. Idempotent, so it stays correct if a connection ever
+        # disappears by a path that does not call `delete_connection`.
+        pruned = prune_dangling_members()
+        if pruned:
+            logger.info("Workspace membership repair: dropped %d dangling id(s) across %d "
+                        "workspace(s)", sum(len(v) for v in pruned.values()), len(pruned))
     except Exception as exc:
         logger.warning("Workspace migration failed (non-fatal): %s", exc)
 
