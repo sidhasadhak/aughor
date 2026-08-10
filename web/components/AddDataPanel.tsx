@@ -82,40 +82,60 @@ function LogoBox({ type, size = 36 }: { type: string; size?: number }) {
   );
 }
 
+// A tile whose driver is not installed on the server. `available` is optional on
+// purpose: an older backend omits it, and "unknown" must read as offerable rather
+// than greying out every tile against a server that simply hasn't been redeployed.
+const isUnavailable = (info: ConnectorTypeInfo) => info.available === false;
+
+// What to say instead of letting the user fill in a form that cannot succeed. The
+// module name is the useful part — it is what an operator installs — so it is shown
+// rather than a generic "unavailable".
+function missingNote(info: ConnectorTypeInfo): string {
+  const mods = info.missing ?? [];
+  if (mods.length === 0) return "Driver not installed on the server";
+  return `Driver not installed on the server: ${mods.join(", ")}`;
+}
+
 function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => void }) {
   const m = meta(info.type);
+  const off = isUnavailable(info);
   return (
-    <Button variant="ghost" onClick={onClick}
+    <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal whitespace-normal items-stretch justify-start ${SVG_SIZE_AUTO}`}
-      style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 10, cursor: "pointer",
-        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%" }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
+      style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 10, cursor: off ? "not-allowed" : "pointer",
+        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%",
+        opacity: off ? 0.55 : 1 }}
+      onMouseEnter={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
+      onMouseLeave={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
     >
       <LogoBox type={info.type} size={34} />
       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{m.label}</span>
-      <span style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{m.blurb}</span>
+      <span style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{off ? missingNote(info) : m.blurb}</span>
     </Button>
   );
 }
 
 function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => void }) {
   const m = meta(info.type);
+  const off = isUnavailable(info);
   return (
-    <Button variant="ghost" onClick={onClick}
+    <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal justify-start ${SVG_SIZE_AUTO}`}
-      style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, cursor: "pointer",
-        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%" }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
+      style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, cursor: off ? "not-allowed" : "pointer",
+        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%",
+        opacity: off ? 0.55 : 1 }}
+      onMouseEnter={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
+      onMouseLeave={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
     >
       <LogoBox type={info.type} size={34} />
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
-          {m.badge && <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
+          {off
+            ? <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--t3) 16%, transparent)", color: "var(--t3)", whiteSpace: "nowrap" }}>NOT INSTALLED</span>
+            : m.badge && <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
         </span>
-        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.blurb}</span>
+        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{off ? missingNote(info) : m.blurb}</span>
       </span>
     </Button>
   );
@@ -597,6 +617,10 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
   const isUpload = picked?.type === "local_upload";
 
   const pick = (info: ConnectorTypeInfo) => {
+    // The tiles are already disabled, so this only catches a caller that isn't a
+    // tile. Opening the form would end at the ImportError this change exists to
+    // pre-empt, which is worth a line to prevent.
+    if (isUnavailable(info)) return;
     setPicked(info); setError("");
     setName(meta(info.type).label);
     setValues(Object.fromEntries(info.fields.map(f => [f.key, ""])));
