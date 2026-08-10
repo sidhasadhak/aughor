@@ -260,38 +260,55 @@ async def run_birth(
                      counter="obs.popularity", conn_id=conn_id)
             _emit("popularity", "failed", error=str(exc)[:300])
 
-    # These two do not depend on each other, and running them in sequence was costing
-    # the whole of the shorter one. Measured on a 38-table schema: intelligence 7.6s
-    # then popularity 8.9s — 16.5s before exploration could even be handed off, and the
-    # first `exploration.phase` is the only thing the Briefing reacts to, so that was
-    # 16.5s of a screen saying nothing.
+    async def _exploration_step() -> bool:
+        _emit("exploration", "started")
+        try:
+            res = await spawn_explorer(conn_id, canvas_id=canvas_id,
+                                       tables_filter=tables_filter, schema_name=schema_name)
+            ok = bool(res.get("ok"))
+            # "already running" / "connection not ready" are handoff declines, not crashes.
+            _emit("exploration", "done" if ok else "skipped",
+                  job_id=res.get("job_id"), reason=res.get("reason"))
+            return ok
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth exploration handoff failed", counter="birth.job", conn_id=conn_id)
+            _emit("exploration", "failed", error=str(exc)[:300])
+            return False
+
+    # EXPLORATION GOES FIRST, and the prep runs alongside it.
     #
-    # Independence is a property of what popularity READS, not a guess: `mine_popularity`
-    # takes its SQL from the query log and task history and parses it with sqlglot. It
-    # never opens the user's data connection and never reads the ontology, profiles or
-    # doc tree that `build_intelligence` writes. The old comment said "mine popularity
-    # while the understanding is fresh", which reads like a dependency and is only an
-    # ordering preference.
+    # It used to go last, so the first `exploration.phase` — the only event the Briefing
+    # reacts to — could not exist until the prep finished. Measured on a 38-table schema
+    # that was 16.5 seconds of a screen showing exactly what it showed before the click.
+    # The prep was never a precondition: phases 3-7 need no ontology, which is why the
+    # gate that does need one sits before PHASE 8, roughly ten seconds in, and why the
+    # rite already promised "an intelligence failure still lets exploration run".
+    #
+    # What made this unsafe before, and no longer does: that Phase-8 gate builds the
+    # ontology when it finds none, so an early exploration could reach it mid-build and
+    # start a SECOND concurrent build of the same thing. `build_intelligence` is now
+    # single-flight per (connection, schema), so the gate's call waits for the build
+    # already running here and then hits its cache. The ordering below is only correct
+    # BECAUSE of that guard — moving it back without one reintroduces the race.
+    #
+    # `spawn_explorer` only submits a supervised job (its readiness check is `db.test()`,
+    # not "is intelligence built"), so this returns in milliseconds and the exploration
+    # then runs concurrently with the two steps below.
+    exploration_ok = await _exploration_step()
+
+    # These two do not depend on each other either. Independence is a property of what
+    # popularity READS, not a guess: `mine_popularity` takes its SQL from the query log
+    # and task history and parses it with sqlglot — it never opens the user's data
+    # connection and never reads the ontology, profiles or doc tree that
+    # `build_intelligence` writes. The old comment said "mine popularity while the
+    # understanding is fresh", which reads like a dependency and is only a preference.
     #
     # `gather` and not `TaskGroup`: each step already swallows its own failures (the rite
     # is resilient by contract — the job fails only when NOTHING was accomplished), and a
     # TaskGroup would cancel the sibling on the first raise, turning a best-effort mining
     # hiccup into a lost intelligence build.
     intelligence_ok, _ = await asyncio.gather(_intelligence_step(), _popularity_step())
-
-    _emit("exploration", "started")
-    exploration_ok = False
-    try:
-        res = await spawn_explorer(conn_id, canvas_id=canvas_id,
-                                   tables_filter=tables_filter, schema_name=schema_name)
-        exploration_ok = bool(res.get("ok"))
-        # "already running" / "connection not ready" are handoff declines, not crashes.
-        _emit("exploration", "done" if exploration_ok else "skipped",
-              job_id=res.get("job_id"), reason=res.get("reason"))
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "birth exploration handoff failed", counter="birth.job", conn_id=conn_id)
-        _emit("exploration", "failed", error=str(exc)[:300])
 
     summary = {"connection_id": conn_id, "schema": schema_name,
                "canvas_id": canvas_id, "steps": steps}

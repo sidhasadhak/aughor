@@ -268,3 +268,69 @@ async def test_popularity_failure_does_not_lose_the_intelligence_build(monkeypat
     assert db.built, "a popularity failure cancelled the intelligence build"
     assert _step(summary, "intelligence") == ["started", "done"]
     assert _step(summary, "popularity") == ["started", "failed"]
+
+
+# ── exploration is handed off BEFORE the prep steps, not after ──────────────
+
+
+@pytest.mark.anyio
+async def test_exploration_is_handed_off_before_the_prep_steps(monkeypatch):
+    """The whole point: the first exploration.phase must not wait on prep.
+
+    Asserting the summary merely CONTAINS an exploration step would pass on the old
+    order too. The claim is about sequence, so the assertion is about sequence — the
+    handoff must be recorded before either prep step has finished.
+    """
+    order: list[str] = []
+
+    class _RecordingDB(_FakeDB):
+        def build_intelligence(self):
+            time.sleep(0.15)
+            order.append("intelligence")
+            return super().build_intelligence()
+
+    db = _RecordingDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+
+    def _slow_popularity(conn_id):
+        time.sleep(0.15)
+        order.append("popularity")
+        class _Sig:
+            n_queries = 3
+            table_counts = {"t": 3}
+        return _Sig()
+
+    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _slow_popularity)
+
+    async def _fake_spawn(conn_id, **kw):
+        order.append("exploration")
+        return {"ok": True, "reason": None, "job_id": "job-first"}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
+
+    summary = await _shared.run_birth("connOrder")
+
+    assert order[0] == "exploration", (
+        f"exploration must be handed off first; actual order was {order}")
+    assert _step(summary, "exploration") == ["started", "done"]
+    assert _step(summary, "intelligence") == ["started", "done"]
+    assert _step(summary, "popularity") == ["started", "done"]
+
+
+@pytest.mark.anyio
+async def test_a_declined_handoff_still_runs_the_prep(monkeypatch):
+    """"already running" is a decline, not a crash — the prep must still happen, or
+    moving the handoff earlier would have made a declined exploration skip the build."""
+    db = _FakeDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+
+    async def _declined(conn_id, **kw):
+        return {"ok": False, "reason": "already running", "job_id": None}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _declined)
+
+    summary = await _shared.run_birth("connDeclined")
+
+    assert _step(summary, "exploration") == ["started", "skipped"]
+    assert db.built, "a declined handoff skipped the intelligence build"
+    assert _step(summary, "intelligence") == ["started", "done"]
