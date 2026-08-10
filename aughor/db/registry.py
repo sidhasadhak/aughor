@@ -391,6 +391,22 @@ def delete_connection(conn_id: str) -> bool:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "pool eviction on delete is best-effort; the connection no longer exists",
                  counter="registry.pool.evict")
+    # Drop the id from every workspace that held it. Membership referenced the
+    # registry and nothing removed it here, so a deleted connection stayed a member
+    # forever — and since every workspace-scoped picker intersects membership with
+    # the live registry, those ghosts are invisible until they are ALL that is left,
+    # at which point the workspace renders as having no connections at all.
+    # Only on a genuine delete: hiding a builtin keeps its artifacts, and its
+    # membership should survive a later restore.
+    if deleted:
+        try:
+            from aughor.workspace.store import drop_connection_everywhere
+            drop_connection_everywhere(conn_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "workspace membership cleanup on delete is best-effort; "
+                          "the startup prune repairs what this misses",
+                     counter="registry.workspace.membership")
     return deleted
 
 
