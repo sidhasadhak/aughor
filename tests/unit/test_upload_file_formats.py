@@ -208,3 +208,106 @@ def test_an_edited_file_is_transcoded_again(conn, tmp_path) -> None:
 
     assert second != first, "an edited file served the stale transcode"
     assert "naïve" in second.read_text(encoding="utf-8")
+
+
+# ── the workspace materializes once, not per connection ─────────────────────
+
+
+def test_a_second_connection_reuses_the_materialized_workspace(tmp_path, monkeypatch) -> None:
+    """The connector is built fresh on every connection open and used to rebuild the
+    whole workspace each time — 4.7s for 58 tables, 9.7s once a 96 MB CSV joined
+    them, paid by every catalog browse and every explorer spawn."""
+    from aughor.control_plane import vending
+    from aughor.connectors.file import local_upload as lu
+
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
+    lu.evict_base("reuse_test")
+
+    builds = {"n": 0}
+    real = lu.LocalUploadConnection._materialize
+
+    def counting(self):
+        builds["n"] += 1
+        return real(self)
+
+    monkeypatch.setattr(lu.LocalUploadConnection, "_materialize", counting)
+
+    a = lu.LocalUploadConnection(dsn="local://", connection_id="reuse_test")
+    a.ingest_file(_write(tmp_path, "seed.csv", b"id,name\n1,alpha\n"),
+                  table_name="seed", schema="main")
+
+    # The ingest changed the files, so the NEXT open must rebuild — that is the
+    # invalidation working, and counting it as reuse would hide a stale workspace.
+    b = lu.LocalUploadConnection(dsn="local://", connection_id="reuse_test")
+    builds["n"] = 0
+
+    c = lu.LocalUploadConnection(dsn="local://", connection_id="reuse_test")
+    d = lu.LocalUploadConnection(dsn="local://", connection_id="reuse_test")
+
+    assert builds["n"] == 0, (
+        f"the workspace was re-materialized {builds['n']} times with no file change")
+    assert d.execute("__t__", "SELECT count(*) FROM main.seed").rows
+    assert b.execute("__t__", "SELECT count(*) FROM main.seed").rows
+    assert c.execute("__t__", "SELECT count(*) FROM main.seed").rows
+
+
+def test_a_new_upload_invalidates_the_cached_workspace(tmp_path, monkeypatch) -> None:
+    """Reuse must never serve a workspace that no longer matches its files."""
+    from aughor.control_plane import vending
+    from aughor.connectors.file import local_upload as lu
+
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
+    lu.evict_base("inval_test")
+
+    a = lu.LocalUploadConnection(dsn="local://", connection_id="inval_test")
+    a.ingest_file(_write(tmp_path, "one.csv", b"id\n1\n"), table_name="one", schema="main")
+
+    b = lu.LocalUploadConnection(dsn="local://", connection_id="inval_test")
+    names = {r[0] for r in b.execute(
+        "__t__", "SELECT table_name FROM information_schema.tables").rows}
+    assert "one" in names, f"a table uploaded a moment ago was not visible: {sorted(names)}"
+
+
+def test_each_connection_keeps_its_own_search_path(tmp_path, monkeypatch) -> None:
+    """Cursors share the data but NOT the session. This is the property that makes
+    sharing safe: `search_path` is scoped per connection precisely so one schema's
+    query cannot resolve to a sibling's same-named table."""
+    from aughor.control_plane import vending
+    from aughor.connectors.file import local_upload as lu
+
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
+    lu.evict_base("path_test")
+
+    seed = lu.LocalUploadConnection(dsn="local://", connection_id="path_test")
+    seed.ingest_file(_write(tmp_path, "a.csv", b"v\n1\n"), table_name="t", schema="alpha")
+    seed.ingest_file(_write(tmp_path, "b.csv", b"v\n2\n"), table_name="t", schema="beta")
+
+    ca = lu.LocalUploadConnection(dsn="local://", connection_id="path_test", schema_name="alpha")
+    cb = lu.LocalUploadConnection(dsn="local://", connection_id="path_test", schema_name="beta")
+
+    assert ca.execute("__t__", "SELECT v FROM t").rows[0][0] == "1"
+    assert cb.execute("__t__", "SELECT v FROM t").rows[0][0] == "2", (
+        "a shared database let one schema's bare table name resolve to another's")
+
+
+def test_a_reader_clone_shares_rather_than_rebuilds(tmp_path, monkeypatch) -> None:
+    """`make_reader` exists to make reads parallel; rebuilding per reader made each
+    one pay a full workspace materialization."""
+    from aughor.control_plane import vending
+    from aughor.connectors.file import local_upload as lu
+
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
+    lu.evict_base("reader_test")
+
+    c = lu.LocalUploadConnection(dsn="local://", connection_id="reader_test")
+    c.ingest_file(_write(tmp_path, "r.csv", b"id\n5\n"), table_name="r", schema="main")
+
+    builds = {"n": 0}
+    real = lu.LocalUploadConnection._materialize
+    monkeypatch.setattr(lu.LocalUploadConnection, "_materialize",
+                        lambda self: (builds.__setitem__("n", builds["n"] + 1), real(self))[1])
+
+    reader = c.make_reader()
+
+    assert builds["n"] == 0, "make_reader re-materialized the workspace"
+    assert reader.execute("__t__", "SELECT id FROM main.r").rows[0][0] == "5"
