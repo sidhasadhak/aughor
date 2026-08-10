@@ -572,6 +572,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       }
     }
     setStarters(FALLBACK_STARTERS);
+    // No connection yet — ask the backend nothing. `selectedConn` is DERIVED and reads
+    // "" for as long as the workspace clamp is fail-closed (and again whenever the
+    // active connection is deleted), and this panel is mounted on every tab, so that
+    // window used to spend two requests on a connection with no id on every single
+    // load. The prewarm is the one that draws blood: an empty path segment makes
+    // Vercel's EDGE answer `/connections//prewarm` with a 308 before the request ever
+    // reaches the app, an edge redirect carries no Access-Control-Allow-Origin, so the
+    // browser blocks it and the UI paints "Failed to fetch" — an error belonging to a
+    // request that should never have been made, sitting on top of whatever the user
+    // was actually doing. Settle on the fallback starters instead of a spinner: with
+    // no connections at all this state is the destination, not a way station. The
+    // effect re-runs the moment a real id arrives.
+    if (!connectionId) {
+      setLoadingStarters(false);
+      return;
+    }
     setLoadingStarters(true);
     // R5 — composer-open prewarm (the Databricks preload analog): warm the profile
     // cache + entity-value samples before the first question. Fire-and-forget; the
