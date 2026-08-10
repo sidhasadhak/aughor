@@ -22,6 +22,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
 from aughor.db.connection import MAX_ROWS, QueryResult
 from aughor.kernel.errors import tolerate
@@ -197,6 +198,7 @@ class SQLiteConnection(Connector):
         from aughor.kernel.registries.schema_annotators import run_annotators
         return run_annotators(self, base, phase="fast")
 
+    @single_flight_build
     def build_intelligence(self) -> str:
         """Heavy path: raw structure + the registered HEAVY schema annotators
         (enrichment + value profiles + the structural/semantic ontology + exploration)."""
