@@ -53,7 +53,8 @@ export function useChat() {
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortRef = useRef<AbortController | null>(null);
-  // Stable session ID for the lifetime of this chat tab mount
+  // Stable session ID for the lifetime of this chat tab mount — unless a resumed
+  // conversation adopts its own (see `adoptSession`).
   const sessionIdRef = useRef(newSessionId());
   // Debug event log — ring buffer, never triggers re-render; callers read on demand
   const eventLogRef = useRef<DebugEvent[]>([]);
@@ -262,8 +263,13 @@ export function useChat() {
     releaseController(controller);
   }
 
-  function restore(turns: ChatTurn[]) {
-    // Assign a stable session ID that matches the restored session
+  function restore(turns: ChatTurn[], sessionId?: string) {
+    // Adopt the restored conversation's own id, which this comment has always claimed
+    // happened and which nothing actually did: without it a follow-up asked after a
+    // restore is filed under a FRESH session, so the conversation the user is looking at
+    // and the conversation being written to are two different rows. Reading a session
+    // back and then continuing it are the same act; they have to share an id.
+    if (sessionId) sessionIdRef.current = sessionId;
     dispatch({ type: "RESTORE", turns });
   }
 
