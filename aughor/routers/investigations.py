@@ -1435,6 +1435,16 @@ def _answer_core(
     #: not part of an answer. Consumed by the cancel handler at the bottom.
     _seen: dict = {}
 
+    #: Whether this turn already wrote its own history row. The answer path keeps working
+    #: after it emits `done` — narrative, insight and follow-ups are all post-answer — so a
+    #: client that leaves during that tail cancels a turn that is, as far as the user is
+    #: concerned, finished and saved. Without this the cancel handler wrote a SECOND row
+    #: for it, and the conversation came back with the answer followed by a phantom
+    #: interrupted copy of the same question. Caught by reloading mid-enrichment; no unit
+    #: test would have posed it, because it only exists in the gap between `done` and the
+    #: end of the function.
+    _turn_persisted = False
+
     def _record(name: str, payload: dict) -> None:
         if name == "headline":
             _seen["headline"] = payload.get("headline") or _seen.get("headline") or ""
@@ -2523,6 +2533,7 @@ def _answer_core(
                 intent=answer.intent, approach=answer.approach,
                 canvas_id=canvas_id, purpose=purpose,
             )
+            _turn_persisted = True
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "chat turn save is best-effort; the answer was already streamed (turn just won't appear in history)",
@@ -2848,7 +2859,7 @@ def _answer_core(
         # Best-effort by construction. A turn the user abandoned must not be able to raise
         # on its way out, so a failed flush is swallowed and the cancellation continues.
         try:
-            if _seen.get("headline") or _seen.get("sql"):
+            if not _turn_persisted and (_seen.get("headline") or _seen.get("sql")):
                 save_chat_turn(
                     question=_persist_q, connection_id=connection_id,
                     headline=_seen.get("headline") or question,

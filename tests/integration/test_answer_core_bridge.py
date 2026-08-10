@@ -452,3 +452,43 @@ def test_a_turn_interrupted_before_it_produced_anything_is_not_persisted(
 
     assert get_session_turns(session) == [], (
         "a turn that produced nothing should leave no history row")
+
+
+def test_a_turn_that_already_saved_does_not_also_save_an_interrupted_copy(
+        monkeypatch, builtin_conn_id):
+    """The gap between `done` and the end of the function is a real place to be cancelled.
+
+    The answer path keeps working after it emits `done` — narrative, insight and
+    follow-ups are all post-answer — so a client that leaves during that tail cancels a
+    turn the user considers finished, and which has already written its history row. The
+    first version of the interrupted flush wrote a SECOND row for it, and reloading came
+    back with the answer followed by a phantom interrupted copy of the same question.
+
+    Found by reloading the browser mid-enrichment, not by a unit test: nothing would have
+    thought to pose it, because the window only exists between the last frame the user
+    sees and the last line the function runs.
+    """
+    from aughor.db.history import get_session_turns
+
+    _stub_providers_with_ungrounded_headline(monkeypatch)
+
+    session = "post-done-cancel-" + uuid.uuid4().hex[:8]
+    seen: list[tuple[str, dict]] = []
+
+    # Walk away only once the turn has emitted `done` — i.e. after its own persist ran.
+    def cancelled() -> bool:
+        return any(t == "done" for t, _ in seen)
+
+    try:
+        inv._answer_core("How many rows are there?", builtin_conn_id, [],
+                         emit=lambda t, p: seen.append((t, p)),
+                         cancelled=cancelled, session_id=session)
+    except inv._CoreCancelled:
+        pass   # whether the tail reaches a checkpoint is timing; either way one row.
+
+    turns = get_session_turns(session)
+    assert len(turns) == 1, (
+        f"expected exactly one row for one turn, got {len(turns)}: "
+        f"{[(t['question'], t['status']) for t in turns]}")
+    assert turns[0]["status"] == "complete", (
+        "the turn answered before the client left — it must not be filed as interrupted")

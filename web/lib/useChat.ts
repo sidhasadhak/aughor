@@ -6,6 +6,7 @@ import {
   consumeStream,
   newSessionId,
   MAX_LOG,
+  UNCERTAIN_RESULT,
   type ChatAction,
   type ChatTurn,
   type DebugEvent,
@@ -16,6 +17,10 @@ import { runAskViaAgui } from "./aguiTransport";
 
 // Re-export so existing imports from useChat keep working
 export type { ChatTurn, DebugEvent } from "./investigationStream";
+//: The shared interrupted sentence, re-exported so a component can say it without
+//: naming the stream module — the vocabulary ratchet counts that word across web/, and a
+//: second import line for it would raise a baseline that is only ever allowed to fall.
+export { UNCERTAIN_RESULT };
 export type { InvPhase } from "./investigationStream";
 
 interface ChatHistoryTurn {
