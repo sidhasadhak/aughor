@@ -368,9 +368,15 @@ class PgConnection:
     def __init__(self, url: str, *, schema: str, dict_rows: bool = False):
         import psycopg2
 
+        from aughor.db.dsn import split_dsn
+
         self._dict_rows = dict_rows
         self._schema = schema
-        self._pg = psycopg2.connect(url)
+        # Query params lifted into kwargs — psycopg2's URI parser rejects a value
+        # containing `=` and any parameter it does not know, and this is the connection
+        # the whole platform's state rides on. See aughor/db/dsn.py.
+        base, params, _dropped = split_dsn(url)
+        self._pg = psycopg2.connect(base, **params)
         with self._pg.cursor() as cur:
             # Identifier built from a sanitized stem + hex hash — not user input —
             # but quote it anyway so nothing depends on that remaining true.
