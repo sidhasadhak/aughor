@@ -2713,10 +2713,21 @@ export function BriefingPanel({
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
-              <Button
-                variant="secondary" size="xs"
-                disabled={controlsLocked} onClick={runExplorer}
-              >{explorerPending === "Starting…" ? "Starting…" : "Start"}</Button>
+              {/* "Start" only when starting is the honest verb — nothing has run yet.
+                  A completed run already has findings on screen behind these controls,
+                  and offering to start one implies none exists; the two things you can
+                  actually do to it are add intelligence or redo it, which is what
+                  Trigger Intel and Refresh are. `runRefresh` IS the restart
+                  (`restartExplorer`), so Start alongside it was also a duplicate.
+                  This is the taxonomy `BriefingEmpty` already uses one level down —
+                  "Start exploration" for never, "Restart exploration" for failed —
+                  which the control bar was contradicting. */}
+              {explorerStatus?.phase !== "complete" && (
+                <Button
+                  variant="secondary" size="xs"
+                  disabled={controlsLocked} onClick={runExplorer}
+                >{explorerPending === "Starting…" ? "Starting…" : "Start"}</Button>
+              )}
               {explorerStatus?.phase === "complete" && (
                 <Button
                   variant="secondary" size="xs"
