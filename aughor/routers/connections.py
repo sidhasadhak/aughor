@@ -810,9 +810,16 @@ async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
         info = await loop.run_in_executor(None, lambda: db.analyze_file(tmp_path))
         info["filename"] = tmp_path.name
         return info
-    except Exception:
+    except Exception as exc:
         logger.exception("file analyze failed")
-        raise HTTPException(status_code=400, detail="Analyze failed")
+        # The reason goes to the CALLER, not only the server log. "Analyze failed"
+        # was all the UI could ever say, so a user could not tell a non-UTF-8 CSV
+        # from a missing DuckDB extension from a genuinely corrupt file — and
+        # neither could anyone helping them without shell access to the logs.
+        # DuckDB's own messages are good ("This file is not utf-8 encoded", and it
+        # even suggests the fix); passing them through is strictly better than
+        # replacing them with nothing.
+        raise HTTPException(status_code=400, detail=f"Analyze failed: {exc}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

@@ -83,10 +83,102 @@ _SUPPORTED_EXTENSIONS = {
     ".tsv":     "read_csv_auto",
     ".parquet": "read_parquet",
     ".parq":    "read_parquet",
-    ".xlsx":    "read_excel",
-    ".xls":     "read_excel",
+    # `read_excel` does not exist — the function DuckDB ships in its `excel`
+    # extension is `read_xlsx`. Every spreadsheet upload failed on
+    # "Table Function with name read_excel does not exist", which the API then
+    # reported as a bare "Analyze failed".
+    ".xlsx":    "read_xlsx",
+    ".xls":     "read_xlsx",
     ".json":    "read_json_auto",
 }
+
+# DuckDB reads UTF-8 and refuses anything else with "Invalid unicode (byte sequence
+# mismatch) detected. This file is not utf-8 encoded", and a CSV exported from Excel
+# on Windows is cp1252 — one accented character was enough to fail an upload.
+#
+# `latin-1` is DuckDB's name for the single-byte Western European family and decodes
+# cp1252/ISO-8859-1 bytes; DuckDB rejects both of THOSE as encoding names, so do not
+# "fix" this by adding them.
+#
+# The fallback CANNOT be an ordered try-list, which is what this was first written as.
+# latin-1 maps every one of the 256 byte values to a character, so it never raises —
+# it "succeeds" on a UTF-16 file and yields column names like `ÿþi\x00d\x00`. Trying
+# encodings in turn therefore cannot distinguish them; the BOM can, and it is exactly
+# what UTF-16 writers emit for this purpose.
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+_NOT_UTF8 = "not utf-8 encoded"
+
+
+def _fallback_encoding(path: Path) -> str:
+    """The encoding to retry a non-UTF-8 CSV with."""
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(2)
+    except OSError:
+        return "latin-1"
+    return "utf-16" if head in _UTF16_BOMS else "latin-1"
+
+
+def _quote(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
+def _reader_expr(path: Path, *, encoding: str | None = None) -> str:
+    """The DuckDB table-function call that reads `path`."""
+    reader = _SUPPORTED_EXTENSIONS.get(path.suffix.lower(), "read_csv_auto")
+    if encoding and reader == "read_csv_auto":
+        return f"read_csv('{_quote(path)}', encoding='{encoding}')"
+    return f"{reader}('{_quote(path)}')"
+
+
+def _ensure_excel_extension(con) -> None:
+    """Load DuckDB's `excel` extension, which is where `read_xlsx` lives.
+
+    Best-effort: a machine with no extension repository access still reads every
+    other format, and the spreadsheet path fails with DuckDB's own message rather
+    than an import error from here.
+    """
+    try:
+        con.execute("INSTALL excel")
+    except Exception:
+        logger.debug("duckdb excel extension install skipped", exc_info=True)
+    try:
+        con.execute("LOAD excel")
+    except Exception:
+        logger.debug("duckdb excel extension load failed", exc_info=True)
+
+
+def readable_source(con, path: Path) -> str:
+    """A reader expression that actually opens this file on `con`.
+
+    Spreadsheets need an extension loaded first. CSVs may not be UTF-8 — and the
+    only way to know is to try, because DuckDB decides while parsing. So probe with
+    a one-row read and fall back through `_CSV_ENCODINGS`; anything that fails for a
+    reason OTHER than encoding is re-raised untouched, so a genuinely broken file
+    still reports what is wrong with it instead of being retried pointlessly.
+    """
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        _ensure_excel_extension(con)
+        return _reader_expr(path)
+
+    src = _reader_expr(path)
+    if path.suffix.lower() not in (".csv", ".tsv"):
+        return src
+    try:
+        con.execute(f"SELECT * FROM {src} LIMIT 1").fetchall()
+        return src
+    except Exception as exc:
+        if _NOT_UTF8 not in str(exc).lower():
+            raise           # a genuinely broken file keeps its own error
+    enc = _fallback_encoding(path)
+    candidate = _reader_expr(path, encoding=enc)
+    try:
+        con.execute(f"SELECT * FROM {candidate} LIMIT 1").fetchall()
+    except Exception:
+        return src          # let the caller surface DuckDB's own UTF-8 message
+    logger.info("%s is not UTF-8; reading it as %s", path.name, enc)
+    return candidate
 
 # Allow-list of cast targets we let the UI request (prevents SQL injection via
 # the column_types map — values are interpolated into CREATE TABLE ... AS).
@@ -422,10 +514,8 @@ class LocalUploadConnection(Connector):
             raise ValueError(
                 f"Unsupported file type: {ext}. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
             )
-        reader = _SUPPORTED_EXTENSIONS[ext]
-        src = f"{reader}('{file_path.as_posix()}')"
-
         con = duckdb.connect(":memory:")
+        src = readable_source(con, file_path)
         try:
             desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
             columns: list[dict] = []
@@ -606,12 +696,10 @@ class LocalUploadConnection(Connector):
         reader's raw output rather than an already-materialized table.
         """
         skip = skip or set()
-        ext = path.suffix.lower()
-        reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
-        src = f"{reader}('{path.as_posix()}')"
         found: dict = {}
         con = duckdb.connect(":memory:")
         try:
+            src = readable_source(con, path)
             for row in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall():
                 name, dtype = row[0], str(row[1])
                 if name in skip or not dtype.upper().startswith("VARCHAR"):
@@ -681,9 +769,7 @@ class LocalUploadConnection(Connector):
         schema_contract: dict | None = None,
         column_transforms: dict | None = None,
     ) -> None:
-        ext = path.suffix.lower()
-        reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
-        src = f"{reader}('{path.as_posix()}')"
+        src = readable_source(self._duckdb, path)
         select_sql = self._build_select(src, column_types, schema_contract,
                                         column_transforms)
         fq = f'"{schema}"."{table_name}"'
