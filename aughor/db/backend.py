@@ -89,10 +89,21 @@ def connect_store(
         return conn
     if default is None:
         default = default_for_path(path)
-    return PgConnection(
-        os.environ[DB_URL_ENV],
-        schema=_schema_name(path, default),
-        dict_rows=row_factory,
+    schema = _schema_name(path, default)
+    # One connection per (schema, dict_rows) per THREAD, reused. Opening one costs a
+    # handshake to the database plus CREATE SCHEMA + SET search_path + commit, and
+    # requests make several — measured at 10.9s for /catalog/tree in production with
+    # the function already warm. `dict_rows` is part of the key because it decides the
+    # cursor factory, so the two shapes must not be handed each other's connection.
+    # See aughor/db/store_pool.py for why ownership is by thread rather than checkout.
+    from aughor.db import store_pool
+    return store_pool.acquire(
+        f"{schema}|{int(bool(row_factory))}",
+        lambda: PgConnection(
+            os.environ[DB_URL_ENV],
+            schema=schema,
+            dict_rows=row_factory,
+        ),
     )
 
 
