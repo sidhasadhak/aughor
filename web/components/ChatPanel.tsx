@@ -557,7 +557,20 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   useEffect(() => {
     // `resumeId`, not `restoreSessionId`: a reload resuming from `?chat=` must not be
     // cleared out from under the restore that is about to run.
-    if (!resumeId) clear();
+    //
+    // Dropping the id belongs HERE, to the reset, and nowhere else. Keying it off "the
+    // turn list is empty" looked equivalent and is not: a resumed conversation is also
+    // empty for as long as its fetch is in flight, so that version deleted the id a beat
+    // before the turns arrived — and the id is the only handle the conversation has.
+    if (!resumeId) {
+      clear();
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("chat")) {
+        params.delete("chat");
+        const qs = params.toString();
+        window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+      }
+    }
     setStarters(FALLBACK_STARTERS);
     setLoadingStarters(true);
     // R5 — composer-open prewarm (the Databricks preload analog): warm the profile
@@ -589,11 +602,28 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   useEffect(() => {
     if (!resumeId) return;
-    fetch(`${getApiBase()}/chat-sessions/${resumeId}/turns`)
-      .then(r => r.ok ? r.json() : [])
+    let cancelled = false;
+
+    // "Is this chat still generating?" — the reconnect half of P5.2, and the reason this
+    // is a retry rather than a fetch. A reload does not find a settled conversation: it
+    // CAUSES the turn it interrupted to settle. The client goes away, the backend notices
+    // at its next cancellation checkpoint, and only then writes the partial. Ask once and
+    // you race that write and lose — the session reads empty a beat before its last turn
+    // exists. Measured: the row landed, and the single-shot version had already given up.
+    //
+    // Bounded and silent. It gives up after ~12s rather than polling forever, and an
+    // empty session (a stale or shared link) simply stays empty — the same outcome as
+    // before, reached a few seconds later.
+    const attempt = (tries: number) => {
+      fetch(`${getApiBase()}/chat-sessions/${resumeId}/turns`)
+        .then(r => r.ok ? r.json() : [])
       .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; status?: string; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
-        if (!turns.length) return;
-        restore(turns.map(t => ({
+          if (cancelled) return;
+          if (!turns.length) {
+            if (tries > 0) setTimeout(() => { if (!cancelled) attempt(tries - 1); }, 1500);
+            return;
+          }
+          restore(turns.map(t => ({
           id: t.id,
           question: t.question,
           mode: "ask" as const,
@@ -658,9 +688,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           reportStream: null,
           clarifyingQuestions: [],
           clarifyingContext: "",
-        })), resumeId);
-      })
-      .catch(() => {});
+          })), resumeId);
+        })
+        .catch(() => {});
+    };
+    attempt(8);
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -676,12 +709,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // erasing the other's keys.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!state.turns.length) return;   // see below: emptiness is not a reason to forget
     const params = new URLSearchParams(window.location.search);
-    const want = state.turns.length > 0 ? sessionId : null;
-    if ((params.get("chat") || null) === want) return;
-    if (want) params.set("chat", want); else params.delete("chat");
-    const qs = params.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    if (params.get("chat") === sessionId) return;
+    params.set("chat", sessionId);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }, [state.turns.length, sessionId]);
 
   // ── Scroll: follow the newest content while pinned to the bottom, release
