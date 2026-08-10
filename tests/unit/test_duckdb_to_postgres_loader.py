@@ -125,3 +125,40 @@ def test_dry_run_touches_no_database(tmp_path, capsys):
     assert rc == 0
     assert "3 rows" in out.replace(",", "")
     assert "nothing written" in out
+
+
+# ── the DSN a real provider actually hands you ────────────────────────────────
+
+@pytest.mark.parametrize("dsn, expect_params, expect_dropped", [
+    # The plain case, unchanged.
+    ("postgres://u:p@h:5432/db?sslmode=require", {"sslmode": "require"}, []),
+    # Supabase appends a vendor marker libpq has never heard of. psycopg2's URI parser
+    # rejects the whole string over it: "invalid URI query parameter: supa".
+    ("postgres://u:p@h:5432/db?sslmode=require&supa=base-pooler.x",
+     {"sslmode": "require"}, ["supa"]),
+    # A value containing '=' — "extra key/value separator", the error that stopped the
+    # first real run of this loader. parse_qsl splits on the FIRST '=' and keeps the rest.
+    ("postgres://u:p@h:5432/db?options=-c%20search_path=public&sslmode=require",
+     {"options": "-c search_path=public", "sslmode": "require"}, []),
+])
+def test_provider_query_parameters_survive_the_uri_parser(dsn, expect_params, expect_dropped):
+    base, params, dropped = loader._split_dsn(dsn)
+    psycopg2 = pytest.importorskip("psycopg2")
+    psycopg2.extensions.parse_dsn(base)      # the base must now be parseable at all
+    assert params == expect_params
+    assert dropped == expect_dropped
+
+
+def test_a_dsn_with_no_query_string_is_left_exactly_alone():
+    """The common case must not be rewritten on its way through."""
+    dsn = "postgresql://u:p@h:5432/db"
+    assert loader._split_dsn(dsn) == (dsn, {}, [])
+
+
+def test_credentials_are_never_returned_in_the_dropped_list():
+    """Whatever is reported back to the operator gets printed. Only parameter NAMES may
+    appear there — never a value, and never the userinfo."""
+    _, _, dropped = loader._split_dsn(
+        "postgres://admin:hunter2@h:5432/db?supa=base-pooler.x&weird=secretvalue")
+    assert dropped == ["supa", "weird"]
+    assert not any("hunter2" in d or "secretvalue" in d for d in dropped)
