@@ -82,6 +82,17 @@ _TYPE_MAP = {
 
 BATCH = 5000
 
+#: Markers of a DSN that was copied from an example and never filled in. Worth detecting
+#: rather than letting the driver fail on it: a placeholder produces the same
+#: `OperationalError` as a genuinely unreachable host, and the two want opposite replies.
+_PLACEHOLDER_MARKS = ("…", "...", "<", ">", "your-", "your_", "your ", "example.com",
+                      "USER:PASSWORD", "HOST", "DBNAME", "changeme")
+
+
+def _looks_unfilled(dsn: str) -> bool:
+    host = dsn.split("@")[-1] if "@" in dsn else dsn
+    return any(m in host for m in _PLACEHOLDER_MARKS)
+
 
 def _pg_type(duck_type: str) -> str:
     t = (duck_type or "").upper().strip()
@@ -109,10 +120,34 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
     import psycopg2
     from psycopg2.extras import execute_values
 
+    # The target is checked FIRST, before the source is opened or a single line is
+    # printed. Connecting last meant a bad DSN produced a cheerful "14 tables" header and
+    # then a failure, which reads as "it got partway through" when nothing had been
+    # touched at all — and on a buffered stdout the two even arrived out of order.
+    pg = None
+    if not dry_run:
+        try:
+            pg = psycopg2.connect(dsn, connect_timeout=10)
+        except psycopg2.OperationalError as exc:
+            print(f"could not connect to Postgres: "
+                  f"{str(exc).strip().splitlines()[0]}", file=sys.stderr)
+            if _looks_unfilled(dsn):
+                print("\nThat DSN still contains a placeholder — substitute the real one:\n"
+                      "    AUGHOR_DEFAULT_POSTGRES_DSN='postgresql://USER:PASSWORD@HOST:5432/DBNAME' \\\n"
+                      f"        uv run python scripts/{Path(__file__).name} "
+                      f"{duckdb_path} --wipe", file=sys.stderr)
+            else:
+                print("\nCheck the host is reachable and the credentials are right. "
+                      "`--dry-run` needs no database at all if you only want to see "
+                      "what would be copied.", file=sys.stderr)
+            return 2
+
     duck = ddb.connect(str(duckdb_path), read_only=True)
     found = _tables(duck, None)
     if not found:
         print(f"{duckdb_path.name}: no tables", file=sys.stderr)
+        duck.close()
+        if pg: pg.close()
         return 1
 
     # The DuckDB schema is the default target schema, so `luxexperience.orders` stays
@@ -122,6 +157,8 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
     if target_schema is None and len(schemas) > 1:
         print(f"{duckdb_path.name} spans {sorted(schemas)} — name one with --schema",
               file=sys.stderr)
+        duck.close()
+        if pg: pg.close()
         return 2
     dest = target_schema or next(iter(schemas))
 
@@ -130,6 +167,8 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
         missing = only - {t for _, t in selected}
         if missing:
             print(f"not in {duckdb_path.name}: {sorted(missing)}", file=sys.stderr)
+            duck.close()
+            if pg: pg.close()
             return 2
 
     print(f"{duckdb_path.name} → postgres schema \"{dest}\"  ({len(selected)} tables)")
@@ -139,9 +178,9 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
             cols = duck.execute(f'DESCRIBE "{s}"."{t}"').fetchall()
             print(f"  {t:28} {n:9,} rows  {len(cols):3} cols")
         print("dry run — nothing written")
+        duck.close()
         return 0
 
-    pg = psycopg2.connect(dsn)
     try:
         cur = pg.cursor()
         cur.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = %s",
