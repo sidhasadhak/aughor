@@ -187,3 +187,84 @@ def test_canvas_create_triggers_birth(client, monkeypatch):
     assert calls[0]["tables_filter"] == ["kpi_daily"]
 
 
+
+
+# ── the two prep steps run CONCURRENTLY (measured 7.6s + 8.9s when sequential) ──
+
+
+@pytest.mark.anyio
+async def test_intelligence_and_popularity_overlap(monkeypatch):
+    """They are independent, so they must overlap — not merely both happen.
+
+    Asserting "both ran" would pass just as happily on the sequential version this
+    replaced, which is exactly the shape of test that lets a regression back in. The
+    claim is about time, so the assertion is about time: each step records its own
+    interval and the two must intersect.
+    """
+    marks: dict[str, tuple[float, float]] = {}
+
+    class _SlowDB(_FakeDB):
+        def build_intelligence(self):
+            t0 = time.monotonic()
+            time.sleep(0.30)
+            marks["intelligence"] = (t0, time.monotonic())
+            return super().build_intelligence()
+
+    db = _SlowDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+
+    def _slow_popularity(conn_id):
+        t0 = time.monotonic()
+        time.sleep(0.30)
+        marks["popularity"] = (t0, time.monotonic())
+        class _Sig:
+            n_queries = 7
+            table_counts = {"orders": 7}
+        return _Sig()
+
+    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _slow_popularity)
+
+    async def _fake_spawn(conn_id, **kw):
+        return {"ok": True, "reason": None, "job_id": "job-par"}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
+
+    wall_t0 = time.monotonic()
+    summary = await _shared.run_birth("connPar")
+    wall = time.monotonic() - wall_t0
+
+    assert _step(summary, "intelligence") == ["started", "done"]
+    assert _step(summary, "popularity") == ["started", "done"]
+
+    (i0, i1), (p0, p1) = marks["intelligence"], marks["popularity"]
+    overlap = min(i1, p1) - max(i0, p0)
+    assert overlap > 0, (
+        f"steps did not overlap — intelligence {i0:.3f}–{i1:.3f}, popularity {p0:.3f}–{p1:.3f}"
+    )
+    # Sequential would be ~0.60s; concurrent ~0.30s. The midpoint is a generous line
+    # that still fails loudly if the gather is ever unwound back into two awaits.
+    assert wall < 0.55, f"wall clock {wall:.3f}s suggests the steps ran in sequence"
+
+
+@pytest.mark.anyio
+async def test_popularity_failure_does_not_lose_the_intelligence_build(monkeypatch):
+    """`gather`, not `TaskGroup`: a best-effort mining hiccup must not cancel its
+    sibling. This is the specific regression the concurrency change could introduce."""
+    db = _FakeDB()
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+
+    def _boom(conn_id):
+        raise RuntimeError("miner exploded")
+
+    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _boom)
+
+    async def _fake_spawn(conn_id, **kw):
+        return {"ok": True, "reason": None, "job_id": "job-x"}
+
+    monkeypatch.setattr(_shared, "spawn_explorer", _fake_spawn)
+
+    summary = await _shared.run_birth("connBoom")
+
+    assert db.built, "a popularity failure cancelled the intelligence build"
+    assert _step(summary, "intelligence") == ["started", "done"]
+    assert _step(summary, "popularity") == ["started", "failed"]

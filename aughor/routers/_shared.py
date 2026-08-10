@@ -214,9 +214,6 @@ async def run_birth(
     loop = asyncio.get_running_loop()
     from aughor.db.connection import open_connection_for, open_connection_for_with_schema
 
-    _emit("intelligence", "started")
-    intelligence_ok = False
-
     def _build():
         db = (open_connection_for_with_schema(conn_id, schema_name)
               if schema_name else open_connection_for(conn_id))
@@ -232,31 +229,55 @@ async def run_birth(
             except Exception:
                 logger.debug("birth: connection close failed", exc_info=True)
 
-    try:
-        last_build = await loop.run_in_executor(None, _build)
-        lb = last_build if isinstance(last_build, dict) else {}
-        intelligence_ok = bool(lb.get("ok", True))
-        _emit("intelligence", "done" if intelligence_ok else "failed",
-              stage=lb.get("stage"), error=lb.get("error"))
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "birth intelligence step failed; exploration still runs",
-                 counter="birth.job", conn_id=conn_id)
-        _emit("intelligence", "failed", error=str(exc)[:300])
+    async def _intelligence_step() -> bool:
+        _emit("intelligence", "started")
+        try:
+            last_build = await loop.run_in_executor(None, _build)
+            lb = last_build if isinstance(last_build, dict) else {}
+            ok = bool(lb.get("ok", True))
+            _emit("intelligence", "done" if ok else "failed",
+                  stage=lb.get("stage"), error=lb.get("error"))
+            return ok
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth intelligence step failed; exploration still runs",
+                     counter="birth.job", conn_id=conn_id)
+            _emit("intelligence", "failed", error=str(exc)[:300])
+            return False
 
-    # R14 — mine query popularity while the understanding is fresh (deterministic,
-    # sqlglot only). A mining hiccup never dents the rite.
-    _emit("popularity", "started")
-    try:
-        from aughor.sql.popularity import refresh_popularity
-        sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
-        _emit("popularity", "done", n_queries=sig.n_queries,
-              tables=len(sig.table_counts))
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "birth popularity step is best-effort",
-                 counter="obs.popularity", conn_id=conn_id)
-        _emit("popularity", "failed", error=str(exc)[:300])
+    # R14 — mine query popularity (deterministic, sqlglot only). A mining hiccup never
+    # dents the rite.
+    async def _popularity_step() -> None:
+        _emit("popularity", "started")
+        try:
+            from aughor.sql.popularity import refresh_popularity
+            sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
+            _emit("popularity", "done", n_queries=sig.n_queries,
+                  tables=len(sig.table_counts))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth popularity step is best-effort",
+                     counter="obs.popularity", conn_id=conn_id)
+            _emit("popularity", "failed", error=str(exc)[:300])
+
+    # These two do not depend on each other, and running them in sequence was costing
+    # the whole of the shorter one. Measured on a 38-table schema: intelligence 7.6s
+    # then popularity 8.9s — 16.5s before exploration could even be handed off, and the
+    # first `exploration.phase` is the only thing the Briefing reacts to, so that was
+    # 16.5s of a screen saying nothing.
+    #
+    # Independence is a property of what popularity READS, not a guess: `mine_popularity`
+    # takes its SQL from the query log and task history and parses it with sqlglot. It
+    # never opens the user's data connection and never reads the ontology, profiles or
+    # doc tree that `build_intelligence` writes. The old comment said "mine popularity
+    # while the understanding is fresh", which reads like a dependency and is only an
+    # ordering preference.
+    #
+    # `gather` and not `TaskGroup`: each step already swallows its own failures (the rite
+    # is resilient by contract — the job fails only when NOTHING was accomplished), and a
+    # TaskGroup would cancel the sibling on the first raise, turning a best-effort mining
+    # hiccup into a lost intelligence build.
+    intelligence_ok, _ = await asyncio.gather(_intelligence_step(), _popularity_step())
 
     _emit("exploration", "started")
     exploration_ok = False
