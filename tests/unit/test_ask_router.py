@@ -195,6 +195,17 @@ def _events(text: str) -> list[dict]:
 
 @pytest.fixture
 def ask_client(monkeypatch):
+    # These tests are about the DOOR's quick/deep dispatch, so the third body is pinned
+    # off explicitly rather than left to whatever the environment happens to say. It was
+    # implicit before, and `AUGHOR_ASK_CONVERSE=1 pytest` made five of them fail — not
+    # because anything broke, but because converse legitimately serves the eligible quick
+    # turn, so neither marker is emitted. A test that only passes in one flag state
+    # without saying so is the flip-simulation trap: the off state was reachable several
+    # ways and this suite happened to take one of them.
+    # The on state has its own coverage below (test_ask_converse_on_serves_the_quick_turn)
+    # and in test_converse_route_off_state.py.
+    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+
     async def fake_chat(*a, **k):
         yield inv._sse("quick_marker", {})
 
@@ -228,6 +239,37 @@ def test_ask_simple_question_routes_to_quick_body(ask_client, monkeypatch):
     assert evs[0]["type"] == "route" and evs[0]["depth"] == "quick"
     assert any(e["type"] == "quick_marker" for e in evs)
     assert not any(e["type"] == "deep_marker" for e in evs)
+
+
+def test_ask_converse_on_serves_the_quick_turn(ask_client, monkeypatch):
+    """The other side of the flag, at the DOOR rather than at the eligibility function.
+
+    `test_converse_route_off_state.py` pins `_converse_eligible` in both states, but that
+    is the predicate; nothing asserted that the endpoint actually dispatches to the third
+    body when it says yes. That gap is why turning the flag on read as five broken tests
+    instead of one documented routing change: the suite could say the quick body served
+    the turn, and could say converse was eligible, but never that converse SERVED it.
+
+    Note what stays true with converse on — the `route` receipt still says quick. Converse
+    swaps the BODY, it does not take over the door, so a graduation that changed the depth
+    verdict would still be caught by the tests above.
+    """
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
+
+    async def fake_converse(*a, **k):
+        yield inv._sse("converse_marker", {})
+
+    monkeypatch.setattr(inv, "_stream_converse", fake_converse)
+    _set_cap(monkeypatch, True)
+
+    r = ask_client.post("/ask", json={"question": "What is total revenue?",
+                                      "connection_id": "c1"})
+    assert r.status_code == 200
+    evs = _events(r.text)
+    assert evs[0]["type"] == "route" and evs[0]["depth"] == "quick"
+    assert any(e["type"] == "converse_marker" for e in evs), (
+        "the flag is on and the turn is eligible, so the converse body should have served it")
+    assert not any(e["type"] == "quick_marker" for e in evs)
 
 
 def test_ask_causal_question_routes_to_deep_body(ask_client, monkeypatch):
