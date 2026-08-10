@@ -182,7 +182,7 @@ class _OpenCaptureRequest(BaseModel):
 
 
 @router.get("/obs/route-mix")
-def route_mix(scan: int = 5000):
+def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     """Which BODY served each `/ask` turn — `ask.converse`'s route receipt (Wave 6).
 
     The fold has existed and been tested since #288 with **no caller anywhere**: no route,
@@ -201,12 +201,21 @@ def route_mix(scan: int = 5000):
 
     `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
     zero turns is undefined, and 0% would read as "converse is never chosen".
+
+    The numbers are WINDOWED, and `window` in the response says how. The flag is off by
+    default, so most of the log predates converse being able to run at all; counting those
+    turns put a denominator around a population they were never part of, and the first
+    live reading said 0.016 when the honest figure was 4 of 4. The window defaults to the
+    first converse turn. `since_seq` overrides it — the flag's flip, a deploy, the start
+    of a trial — and `window.lifetime_ask_turns` still reports the whole log, so nothing
+    is hidden by narrowing it.
     """
     return {
         "measured": True,
         "recording": True,
         **session_log.route_mix(org_id=current_org_id() or None,
-                                scan=max(1, min(int(scan), 20000))),
+                                scan=max(1, min(int(scan), 20000)),
+                                since_seq=since_seq),
     }
 
 
