@@ -83,10 +83,255 @@ _SUPPORTED_EXTENSIONS = {
     ".tsv":     "read_csv_auto",
     ".parquet": "read_parquet",
     ".parq":    "read_parquet",
-    ".xlsx":    "read_excel",
-    ".xls":     "read_excel",
+    # `read_excel` does not exist — the function DuckDB ships in its `excel`
+    # extension is `read_xlsx`. Every spreadsheet upload failed on
+    # "Table Function with name read_excel does not exist", which the API then
+    # reported as a bare "Analyze failed".
+    ".xlsx":    "read_xlsx",
+    ".xls":     "read_xlsx",
     ".json":    "read_json_auto",
 }
+
+# DuckDB reads UTF-8 and refuses anything else with "Invalid unicode (byte sequence
+# mismatch) detected. This file is not utf-8 encoded", and a CSV exported from Excel
+# on Windows is cp1252 — one accented character was enough to fail an upload.
+#
+# `latin-1` is DuckDB's name for the single-byte Western European family and decodes
+# cp1252/ISO-8859-1 bytes; DuckDB rejects both of THOSE as encoding names, so do not
+# "fix" this by adding them.
+#
+# The fallback CANNOT be an ordered try-list, which is what this was first written as.
+# latin-1 maps every one of the 256 byte values to a character, so it never raises —
+# it "succeeds" on a UTF-16 file and yields column names like `ÿþi\x00d\x00`. Trying
+# encodings in turn therefore cannot distinguish them; the BOM can, and it is exactly
+# what UTF-16 writers emit for this purpose.
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+_NOT_UTF8 = "not utf-8 encoded"
+
+
+def _fallback_encoding(path: Path) -> str:
+    """The encoding to retry a non-UTF-8 CSV with."""
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(2)
+    except OSError:
+        return "latin-1"
+    return "utf-16" if head in _UTF16_BOMS else "latin-1"
+
+
+def _quote(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
+def _reader_expr(path: Path, *, encoding: str | None = None) -> str:
+    """The DuckDB table-function call that reads `path`."""
+    reader = _SUPPORTED_EXTENSIONS.get(path.suffix.lower(), "read_csv_auto")
+    if encoding and reader == "read_csv_auto":
+        return f"read_csv('{_quote(path)}', encoding='{encoding}')"
+    return f"{reader}('{_quote(path)}')"
+
+
+def _ensure_excel_extension(con) -> None:
+    """Load DuckDB's `excel` extension, which is where `read_xlsx` lives.
+
+    Best-effort: a machine with no extension repository access still reads every
+    other format, and the spreadsheet path fails with DuckDB's own message rather
+    than an import error from here.
+    """
+    try:
+        con.execute("INSTALL excel")
+    except Exception:
+        logger.debug("duckdb excel extension install skipped", exc_info=True)
+    try:
+        con.execute("LOAD excel")
+    except Exception:
+        logger.debug("duckdb excel extension load failed", exc_info=True)
+
+
+#: (source path, size, mtime) → the UTF-8 copy already produced for it.
+#
+# The cache is the whole point, not an optimisation. This connector is constructed
+# fresh on every connection open and re-reads every uploaded file, so an uncached
+# transcode re-encodes each non-UTF-8 file EVERY time — for a 96 MB CSV that is a
+# ~96 MB write per open, into a new temp directory nobody deletes. Thirty-four of
+# them (2.7 GB) accumulated before this was caught, and the API died with them.
+_TRANSCODE_CACHE: dict[tuple[str, int, int], Path] = {}
+_TRANSCODE_LOCK = threading.Lock()
+
+#: connection id → (signature it was built from, the materialized DuckDB).
+#
+# One entry per connection, replaced when the signature changes. Not an LRU: there is
+# exactly one workspace per connection, so this holds as many databases as there are
+# upload-backed connections, and a stale one is dropped the moment its files change.
+_BASE_DBS: dict[str, tuple[tuple, "duckdb.DuckDBPyConnection"]] = {}
+_BASE_LOCK = threading.Lock()
+
+
+def _shared_base(conn_id: str, upload_dir: Path, signature: tuple, *, build):
+    """The materialized database for this connection, building it only when the
+    files it was built from have changed.
+
+    The lock is held ACROSS the build, deliberately. Two connections opening at once
+    on a cold cache would otherwise both materialize the whole workspace — the exact
+    duplicated work this exists to remove — and the second would then evict the
+    first's database while cursors were still reading from it. Serializing means the
+    second waits for a build it can use.
+    """
+    with _BASE_LOCK:
+        cached = _BASE_DBS.get(conn_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        stale = cached[1] if cached is not None else None
+        con = build()
+        _BASE_DBS[conn_id] = (signature, con)
+    if stale is not None:
+        # Outside the lock: closing is not instant, and nothing new can reach this
+        # handle now. Live cursors on it keep working until their owners close them —
+        # DuckDB keeps the database alive while a cursor references it — so a request
+        # already mid-flight is not pulled out from under.
+        try:
+            stale.close()
+        except Exception:
+            logger.debug("closing the superseded workspace database failed", exc_info=True)
+    return con
+
+
+def evict_base(conn_id: str) -> bool:
+    """Drop a connection's materialized database. Returns whether one was held."""
+    with _BASE_LOCK:
+        entry = _BASE_DBS.pop(conn_id, None)
+    if entry is None:
+        return False
+    try:
+        entry[1].close()
+    except Exception:
+        logger.debug("evict: closing the workspace database failed", exc_info=True)
+    return True
+
+
+def _transcode_to_utf8(path: Path) -> Path | None:
+    """A UTF-8 copy of `path`, or None if it could not be produced.
+
+    The last resort, and the only one that cannot be defeated by the file. DuckDB's
+    `encoding=` accepts a short list of names and still parses the bytes itself, so a
+    file it dislikes for any reason stays unreadable. Decoding in Python does not
+    have that problem: cp1252 with `errors="replace"` maps every byte sequence to
+    SOMETHING, so the read always succeeds and at worst a few undecodable characters
+    become U+FFFD — visible in the preview, and far better than refusing the upload.
+
+    cp1252 rather than latin-1 because it is the encoding Excel on Windows actually
+    writes, and it decodes the 0x80-0x9F range (curly quotes, en dashes, €) that
+    latin-1 maps to control characters — the range the file that prompted this
+    actually contains.
+
+    Keyed on (path, size, mtime) so an edited or replaced file transcodes again
+    rather than serving a stale copy, and written under ONE directory per process so
+    the copies are findable and bounded instead of scattered across /tmp.
+    """
+    import codecs
+    import tempfile
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_size, int(stat.st_mtime))
+
+    with _TRANSCODE_LOCK:
+        cached = _TRANSCODE_CACHE.get(key)
+        if cached is not None and cached.exists():
+            return cached
+
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+        text = raw.decode("utf-16", errors="replace")
+    else:
+        text = raw.decode("cp1252", errors="replace")
+
+    try:
+        root = Path(tempfile.gettempdir()) / "aughor-utf8"
+        # One sub-directory per (file, size, mtime) so distinct files never collide
+        # on name, and a re-transcode of the same file reuses its slot.
+        import hashlib
+        stamp = hashlib.sha1(f"{key}".encode()).hexdigest()[:12]
+        out_dir = root / stamp
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / path.name
+        out.write_text(text, encoding="utf-8")
+    except OSError:
+        logger.debug("utf-8 transcode could not be written", exc_info=True)
+        return None
+
+    with _TRANSCODE_LOCK:
+        _TRANSCODE_CACHE[key] = out
+    logger.info("%s: transcoded to UTF-8 once (%.1f MB) — cached for reuse",
+                path.name, stat.st_size / 1_048_576)
+    return out
+
+
+def readable_source(con, path: Path) -> str:
+    """A reader expression that actually opens this file on `con`.
+
+    Spreadsheets need an extension loaded first. For CSVs the encoding is only
+    knowable by trying, because DuckDB decides while parsing, so this escalates:
+
+      1. read it as-is (UTF-8, the overwhelmingly common case),
+      2. re-read with DuckDB's own `encoding=`, chosen by BOM,
+      3. transcode to UTF-8 ourselves and read that.
+
+    Step 3 exists because step 2 is not guaranteed. A real 53-column export failed at
+    BOTH 1 and 2 while a synthetic file of the same shape passed, and the failure was
+    invisible: the old code discarded the fallback's error and re-reported the
+    original UTF-8 one, so the logs said the retry had never been tried. Whatever that
+    file did, decoding it in Python cannot fail — and if it somehow does, the message
+    now names every attempt instead of only the first.
+
+    Anything failing for a reason OTHER than encoding is re-raised untouched, so a
+    genuinely broken file still reports what is wrong with it.
+    """
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        _ensure_excel_extension(con)
+        return _reader_expr(path)
+
+    src = _reader_expr(path)
+    if path.suffix.lower() not in (".csv", ".tsv"):
+        return src
+    try:
+        con.execute(f"SELECT * FROM {src} LIMIT 1").fetchall()
+        return src
+    except Exception as exc:
+        if _NOT_UTF8 not in str(exc).lower():
+            raise           # a genuinely broken file keeps its own error
+        first_error = exc
+
+    enc = _fallback_encoding(path)
+    candidate = _reader_expr(path, encoding=enc)
+    try:
+        con.execute(f"SELECT * FROM {candidate} LIMIT 1").fetchall()
+        logger.info("%s is not UTF-8; reading it as %s", path.name, enc)
+        return candidate
+    except Exception as retry_error:
+        logger.info("%s: encoding=%s did not work either (%s) — transcoding",
+                    path.name, enc, str(retry_error)[:200])
+
+    utf8_copy = _transcode_to_utf8(path)
+    if utf8_copy is not None:
+        transcoded = _reader_expr(utf8_copy)
+        try:
+            con.execute(f"SELECT * FROM {transcoded} LIMIT 1").fetchall()
+            logger.info("%s: read via a UTF-8 transcode", path.name)
+            return transcoded
+        except Exception as transcode_error:
+            raise RuntimeError(
+                f"{path.name} could not be read as UTF-8, as {enc}, or after "
+                f"transcoding to UTF-8. Original error: {first_error}. "
+                f"After transcoding: {transcode_error}"
+            ) from transcode_error
+    return src              # transcode unavailable — surface DuckDB's own message
 
 # Allow-list of cast targets we let the UI request (prevents SQL injection via
 # the column_types map — values are interpolated into CREATE TABLE ... AS).
@@ -181,20 +426,74 @@ class LocalUploadConnection(Connector):
             from aughor.kernel.errors import tolerate
             tolerate(exc, "upload-store materialization is best-effort; local files serve",
                      counter="uploads.mirror_down", conn_id=connection_id or None)
-        self._duckdb = duckdb.connect(":memory:")
-        # Alias the handle under the name the DuckDB intelligence-build path expects
-        # (build_intelligence / profilers read ._conn). LocalUpload is DuckDB-backed,
-        # so this lets it reuse DuckDBConnection.build_intelligence (see below).
-        self._conn = self._duckdb
         # Tables materialized from a read-only seed DB (e.g. the sample catalog).
         self._seed_path = (meta or {}).get("seed_duckdb")
         self._seeded: set[tuple[str, str]] = set()
         self._seed_failed: str | None = None  # reason string when seeding broke
         # Seed schemas/tables the user removed — loaded BEFORE seeding so re-seed skips them.
         self._removed_seed_schemas, self._removed_seed_tables = self._load_tombstone()
-        self._seed_from_duckdb()        # sample/demo tables (read-only)
-        self._reload_existing_files()   # user uploads (override seeds on clash)
-        self._set_search_path()         # resolve bare names across user schemas
+
+        # Materialize ONCE per (connection, file set) and hand out cursors after that.
+        #
+        # This connector is constructed fresh on every connection open, and it used to
+        # rebuild the entire workspace each time: a new :memory: DuckDB, re-seeded, and
+        # every uploaded file re-read into it. Measured at 4.7s for 58 tables, 99.8% of
+        # it in `_reload_existing_files`, and 9.7s once a 96 MB CSV joined them. Every
+        # catalog browse, every schema fetch, every explorer spawn paid that.
+        #
+        # A DuckDB cursor is the right sharing primitive here, verified rather than
+        # assumed: cursors share the database but keep their OWN session, so
+        # `search_path` — which this class sets differently per schema scope and which
+        # exists to stop one schema's query resolving to a sibling's same-named table —
+        # stays per-connection. Closing a cursor leaves the base and its siblings alive.
+        base = _shared_base(self._connection_id, self._upload_dir, self._seed_signature(),
+                            build=self._materialize)
+        self._duckdb = base.cursor()
+        # Alias the handle under the name the DuckDB intelligence-build path expects
+        # (build_intelligence / profilers read ._conn). LocalUpload is DuckDB-backed,
+        # so this lets it reuse DuckDBConnection.build_intelligence (see below).
+        self._conn = self._duckdb
+        self._set_search_path()         # per-cursor: resolve bare names for THIS scope
+
+    def _seed_signature(self) -> tuple:
+        """What the materialized database was built FROM.
+
+        Any change here means the cached database no longer represents the files, so
+        it is rebuilt. Size and mtime are included because a re-upload under the same
+        name is the common edit, and a name-only key would serve the old table
+        forever. The tombstone is included because removing a seed table changes what
+        gets materialized without touching any data file.
+        """
+        parts: list[tuple] = []
+        try:
+            for f in sorted(self._upload_dir.rglob("*")):
+                if not _is_data_file(f):
+                    continue
+                try:
+                    st = f.stat()
+                except OSError:
+                    continue
+                parts.append((str(f.relative_to(self._upload_dir)), st.st_size, int(st.st_mtime)))
+        except OSError:
+            logger.debug("upload dir scan failed; treating as empty", exc_info=True)
+        tomb = self._upload_dir / _TOMBSTONE_FILE
+        tomb_stamp = int(tomb.stat().st_mtime) if tomb.exists() else 0
+        return (str(self._seed_path or ""), tomb_stamp, tuple(parts))
+
+    def _materialize(self) -> "duckdb.DuckDBPyConnection":
+        """Build the database this connection reads from — the expensive path."""
+        con = duckdb.connect(":memory:")
+        prev = getattr(self, "_duckdb", None)
+        self._duckdb = con
+        self._conn = con
+        try:
+            self._seed_from_duckdb()        # sample/demo tables (read-only)
+            self._reload_existing_files()   # user uploads (override seeds on clash)
+        finally:
+            if prev is not None:
+                self._duckdb = prev
+                self._conn = prev
+        return con
 
     def _set_search_path(self) -> None:
         """Point search_path so bare table names resolve to the RIGHT schema.
@@ -422,10 +721,8 @@ class LocalUploadConnection(Connector):
             raise ValueError(
                 f"Unsupported file type: {ext}. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
             )
-        reader = _SUPPORTED_EXTENSIONS[ext]
-        src = f"{reader}('{file_path.as_posix()}')"
-
         con = duckdb.connect(":memory:")
+        src = readable_source(con, file_path)
         try:
             desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
             columns: list[dict] = []
@@ -606,12 +903,10 @@ class LocalUploadConnection(Connector):
         reader's raw output rather than an already-materialized table.
         """
         skip = skip or set()
-        ext = path.suffix.lower()
-        reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
-        src = f"{reader}('{path.as_posix()}')"
         found: dict = {}
         con = duckdb.connect(":memory:")
         try:
+            src = readable_source(con, path)
             for row in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall():
                 name, dtype = row[0], str(row[1])
                 if name in skip or not dtype.upper().startswith("VARCHAR"):
@@ -681,9 +976,7 @@ class LocalUploadConnection(Connector):
         schema_contract: dict | None = None,
         column_transforms: dict | None = None,
     ) -> None:
-        ext = path.suffix.lower()
-        reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
-        src = f"{reader}('{path.as_posix()}')"
+        src = readable_source(self._duckdb, path)
         select_sql = self._build_select(src, column_types, schema_contract,
                                         column_transforms)
         fq = f'"{schema}"."{table_name}"'
@@ -909,23 +1202,31 @@ class LocalUploadConnection(Connector):
         return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
 
     def make_reader(self) -> "LocalUploadConnection":
-        """Return a fresh clone safe for use in a parallel thread."""
+        """Return a clone safe for use in a parallel thread.
+
+        A cursor off the same database, not a rebuild. This used to re-seed and
+        re-read every uploaded file per reader — so the parallelism that exists to
+        make reads FASTER paid a full workspace materialization for each one, ~5s
+        before a 96 MB CSV was added and ~10s after.
+
+        The cursor gives the isolation that mattered: its own session, so this
+        reader's `search_path` cannot be changed by the connection it came from,
+        while the data underneath is shared rather than copied.
+        """
         clone = LocalUploadConnection.__new__(LocalUploadConnection)
         clone._connection_id = self._connection_id
         clone._schema_name = self._schema_name
         clone._upload_dir = self._upload_dir
-        clone._duckdb = duckdb.connect(":memory:")
+        clone._cap = getattr(self, "_cap", None)
         clone._seed_path = self._seed_path
-        clone._seeded = set()
-        # Carry the seed tombstones onto the clone BEFORE seeding — `_seed_from_duckdb` reads them to
-        # skip user-removed seed schemas/tables. `make_reader` bypasses `__init__` (which normally
-        # sets these via `_load_tombstone`), so without this the clone raised AttributeError on every
-        # seed attach (fail-open, but log-spamming — and it dropped the tombstone filter). Copy as new
-        # sets so the clone honours the same removals without sharing the parent's mutable state.
+        clone._seeded = set(self._seeded)
+        clone._seed_failed = self._seed_failed
+        # Copy as new sets so the clone honours the same removals without sharing the
+        # parent's mutable state.
         clone._removed_seed_schemas = set(self._removed_seed_schemas)
         clone._removed_seed_tables = set(self._removed_seed_tables)
-        clone._seed_from_duckdb()
-        clone._reload_existing_files()
+        clone._duckdb = self._duckdb.cursor()
+        clone._conn = clone._duckdb
         clone._set_search_path()
         return clone
 

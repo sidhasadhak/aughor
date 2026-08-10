@@ -174,6 +174,13 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
   const [chosen, setChosen]     = useState<Record<string, string>>({});  // col -> type
   const [newSchema, setNewSchema] = useState("");
   const [addingSchema, setAddingSchema] = useState(false);
+  // Remount key for the file inputs. Selecting the SAME file twice fires no `change`
+  // event unless the picker is cleared first, and the obvious way to clear it —
+  // `inputRef.current.value = ""` — assigns through the value tracker React installs
+  // on every input. React then sees a value on an input whose props declare none and
+  // warns that an uncontrolled input is becoming controlled. Remounting resets
+  // `files` just as well and never touches the tracker.
+  const [pickerKey, setPickerKey] = useState(0);
 
   // Bulk-import state (skip per-file review; ingest many files into one schema)
   const [mode, setMode]           = useState<"review" | "bulk">("review");
@@ -214,7 +221,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     if (!list || list.length === 0) return;
     const arr = Array.from(list);
     analyzeNext(arr);
-    if (inputRef.current) inputRef.current.value = "";
+    setPickerKey(k => k + 1);      // re-selecting the same file must still fire change
   }, [analyzeNext]);
 
   const commit = useCallback(async () => {
@@ -270,7 +277,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
       setError((ex as Error).message);
     } finally {
       setBulkBusy(false);
-      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      setPickerKey(k => k + 1);      // same reason as the review picker
     }
   }, [bulkSchema, reload, onAdded]);
 
@@ -466,7 +473,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           transition: "all .12s",
         }}
       >
-        <input ref={inputRef} type="file" accept={ACCEPT} multiple hidden
+        <input key={`review-${pickerKey}`} ref={inputRef} type="file" accept={ACCEPT} multiple hidden
           onChange={e => handleFiles(e.target.files)} />
         <BrandLogo type="local_upload" size={30} />
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginTop: 10 }}>
@@ -511,7 +518,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
             transition: "all .12s", opacity: bulkBusy ? 0.7 : 1,
           }}
         >
-          <input ref={bulkInputRef} type="file" accept={ACCEPT} multiple hidden
+          <input key={`bulk-${pickerKey}`} ref={bulkInputRef} type="file" accept={ACCEPT} multiple hidden
             onChange={e => bulkUpload(e.target.files)} />
           <BrandLogo type="local_upload" size={30} />
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginTop: 10 }}>
