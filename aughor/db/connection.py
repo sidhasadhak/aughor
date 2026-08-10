@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 import sqlglot
 
+from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
@@ -830,6 +831,7 @@ class DuckDBConnection(DatabaseConnection):
         base = render_raw_schema(self._conn, self._schema_name, self._connection_id or "fixture")
         return run_annotators(self, base, phase="fast")
 
+    @single_flight_build
     def build_intelligence(self) -> str:
         """Heavy path: profiles + ontology + enrichment. Call this from a background task, never on the hot path.
 

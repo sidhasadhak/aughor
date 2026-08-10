@@ -45,6 +45,7 @@ from pathlib import Path
 
 import duckdb
 
+from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.control_plane.vending import STORAGE_ROOT, vend_storage
@@ -230,6 +231,7 @@ class LocalUploadConnection(Connector):
             tolerate(exc, "search_path routing is best-effort; qualified names still resolve",
                      counter="workspace.search_path", conn_id=self._connection_id)
 
+    @single_flight_build
     def build_intelligence(self) -> str:
         """Build the heavy intelligence (profiles + ontology + enrichment) for this
         uploaded/seeded Workspace.
