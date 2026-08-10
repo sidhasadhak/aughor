@@ -210,19 +210,26 @@ def test_unwrapping_never_raises():
 
 # ── the real route ────────────────────────────────────────────────────────────
 
-def test_a_failed_ask_ends_in_one_typed_error_frame():
+def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
     """End to end through the real ASGI app: a `/ask` that cannot run must end in exactly
     one terminal frame, and that frame must be classified.
 
     This is also where the classification was caught being WRONG: a missing connection
     fell through to `unknown`, whose default is retryable=True — telling the user that
     re-asking against a connection that does not exist is "usually safe". It is not; it
-    fails identically every time."""
+    fails identically every time.
+
+    `ask.converse` is pinned off: this asserts the FAST PATH's error envelope, and with
+    the third body serving the turn the same missing connection surfaces through the tool
+    loop instead (`tool_loop: list_tables raised`), which is a different envelope and a
+    separate claim. Pinned explicitly so the test says which door it is describing."""
     import json
 
     from fastapi.testclient import TestClient
 
     from aughor.api import app
+
+    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
 
     r = TestClient(app).post("/ask", json={"question": "what were sales last month?",
                                            "connection_id": "no-such-connection-xyz"})

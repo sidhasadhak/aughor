@@ -81,14 +81,21 @@ def _all_events(**kw):
 
 
 @pytest.fixture(autouse=True)
-def _own_the_log():
+def _own_the_log(monkeypatch):
     """Each test owns the table AND the capture window. The kernel ledger is a
     session-scoped tmp DB shared by the whole run, so without this the log
     accumulates across tests and any global assertion silently reads someone
     else's events. The window lives in the same ledger and is just as leaky: one
-    left open would silently record prompt CONTENT into a later test's payloads."""
+    left open would silently record prompt CONTENT into a later test's payloads.
+
+    It owns the FLAG state for the same reason. These tests reconstruct a quick `/ask`
+    turn from what the fast path logs; with `ask.converse` on, the converse body serves
+    that turn and logs a different shape, so the assertions describe a door the run is
+    not using. Pinned off explicitly — `route_mix` above is precisely the reader that
+    counts BOTH shapes, and it sets its own events rather than driving a live turn."""
     from aughor.obs import prompt_window
 
+    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
     Ledger.default().session_events_clear()
     prompt_window.close_window()
     yield

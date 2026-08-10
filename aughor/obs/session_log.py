@@ -73,12 +73,37 @@ def enabled() -> bool:
     return True
 
 
-def _clip(value: Any) -> Any:
-    """Cap strings; leave scalars alone; stringify the rest (payloads are JSON)."""
+#: How much of a list/dict payload value survives, and how deep the walk goes. Bounds
+#: exist so preserving structure cannot turn one event into an unbounded row.
+_MAX_ITEMS = 50
+_MAX_DEPTH = 3
+
+
+def _clip(value: Any, _depth: int = 0) -> Any:
+    """Cap strings, leave scalars alone, and keep lists/dicts as lists/dicts.
+
+    The old rule stringified everything that was not a scalar, on the reasoning that
+    "payloads are JSON". That is the argument for the opposite: JSON carries arrays and
+    objects natively, and `str()` is precisely what destroys them. A writer that passed
+    `{"tools": ["list_tables", "run_sql"]}` had it stored as the *repr*
+    `"['list_tables', 'run_sql']"`, so `route_mix`'s tool tally — iterating what it
+    reasonably assumed was a list — counted CHARACTERS, and reported
+    `{"'": 4, "l": 3, "s": 3, ...}` as the tools a conversation used.
+
+    Nothing was reading the repr back (no `literal_eval` anywhere), so this is a
+    fidelity fix with no parsing counterpart to update. Anything still exotic — a model,
+    an exception, a set — stringifies exactly as before.
+    """
     if isinstance(value, str):
         return value[:_MAX_TEXT]
     if isinstance(value, (int, float, bool)) or value is None:
         return value
+    if _depth < _MAX_DEPTH:
+        if isinstance(value, (list, tuple)):
+            return [_clip(v, _depth + 1) for v in list(value)[:_MAX_ITEMS]]
+        if isinstance(value, dict):
+            return {str(k): _clip(v, _depth + 1)
+                    for k, v in list(value.items())[:_MAX_ITEMS]}
     return str(value)[:_MAX_TEXT]
 
 

@@ -181,6 +181,35 @@ class _OpenCaptureRequest(BaseModel):
     reason: str = ""
 
 
+@router.get("/obs/route-mix")
+def route_mix(scan: int = 5000):
+    """Which BODY served each `/ask` turn — `ask.converse`'s route receipt (Wave 6).
+
+    The fold has existed and been tested since #288 with **no caller anywhere**: no route,
+    no UI. A graduation input nobody can read is not an input, and this router exists
+    precisely because `session_events` once had "four in-process readers and zero HTTP
+    exposure" — the same gap, one fold later.
+
+    Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: with the
+    flag on, converse serves every quick turn that is not an escalation, a dossier drill
+    or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
+    graduation change", which is genuinely unknown until traffic runs — but it does not
+    answer "does a conversation answer better". That question belongs to the other two
+    parts of the flag's exit criterion, the scripted faux receipt and the parity
+    invariant, and reading this number as a quality signal would be a proxy standing in
+    for the real measure.
+
+    `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
+    zero turns is undefined, and 0% would read as "converse is never chosen".
+    """
+    return {
+        "measured": True,
+        "recording": True,
+        **session_log.route_mix(org_id=current_org_id() or None,
+                                scan=max(1, min(int(scan), 20000))),
+    }
+
+
 @router.get("/obs/prompt-capture")
 def prompt_capture_status():
     """Is anything being recorded right now, and for how much longer?"""

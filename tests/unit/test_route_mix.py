@@ -121,3 +121,42 @@ def test_a_missing_trace_id_never_becomes_a_turn(monkeypatch, bad):
                                             "row_count": 1, "payload": {}}])
 
     assert session_log.route_mix()["converse_turns"] == 0
+
+
+# ── the write path, which the fold's own tests never crossed ──────────────────
+
+def test_tool_names_survive_the_round_trip_through_the_store():
+    """Every test above hands `route_mix` a payload it built by hand. That is the right
+    shape for pinning the fold, and it is also how a real defect stayed invisible while
+    the fold was fully covered: no test ever put a payload THROUGH `emit` and read it
+    back, so nothing exercised the one step that could change it.
+
+    It did. `_clip` stringified anything that was not a scalar, so
+    `{"tools": ["list_tables", "run_sql"]}` was stored as the repr
+    `"['list_tables', 'run_sql']"`. `converse_tools` then iterated a string and tallied
+    CHARACTERS — the live receipt reported `{"'": 4, "l": 3, "s": 3, ...}` as the tools a
+    conversation had used. Only reading the endpoint against real data showed it, which
+    is the argument for the endpoint as much as for the fix.
+    """
+    from aughor.kernel.ledger import Ledger
+
+    ledger = Ledger.default()
+    ledger.session_events_clear()
+    try:
+        session_log.emit(session_log.FINAL_RESPONSE, name="ask",
+                         trace_id="rt1", payload={"answered": True})
+        session_log.emit(session_log.TOOL_CALL, name="ask.converse", trace_id="rt1",
+                         row_count=2,
+                         payload={"body": "converse", "stop_reason": "answered",
+                                  "tools": ["list_tables", "run_sql"],
+                                  "injected_chars": 1000})
+
+        mix = session_log.route_mix()
+
+        assert mix["converse_turns"] == 1
+        assert mix["converse_tools"] == {"list_tables": 1, "run_sql": 1}, (
+            "tool names must survive emit->store->read; a character histogram here means "
+            "a payload value was stringified on the way in"
+        )
+    finally:
+        ledger.session_events_clear()
