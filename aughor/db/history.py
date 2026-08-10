@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 
 _DB_PATH = resolve_db_path("AUGHOR_HISTORY_DB", Path(__file__).parent.parent.parent / "data" / "history.db")
 
-InvStatus = Literal["running", "complete", "timed_out", "failed", "paused"]
+#: ``interrupted`` joined for the turn a user stopped or walked away from. It is
+#: deliberately neither ``complete`` (no verified answer was produced) nor ``failed``
+#: (nothing went wrong) — the same distinction ``JobState`` draws with its own
+#: ``INTERRUPTED``, and the one the frontend's ``UNCERTAIN_RESULT`` sentence exists for.
+InvStatus = Literal["running", "complete", "timed_out", "failed", "paused", "interrupted"]
 
 
 # ── Kernel event spine (K2) — investigation lifecycle ─────────────────────────
@@ -271,8 +275,9 @@ def save_chat_turn(
     insight: dict | None = None,
     overview_report: dict | None = None,
     purpose: str = "",
+    status: InvStatus = "complete",
 ) -> str:
-    """Persist a completed chat turn as a history row, linked to a session and
+    """Persist a chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
     scope to the specific Canvas rather than the whole connection.
     ``purpose`` (R10) — the named starter's tag when this turn was one.
@@ -287,6 +292,12 @@ def save_chat_turn(
     gave — a per-agent page that reads confidently and counts a fraction.
     (``asyncio.to_thread``, which every caller uses, copies the context, so the
     persona survives the hop to the worker thread.)
+
+    ``status`` defaults to ``complete`` because for most of this function's life that
+    was the only turn worth saving — the persist runs after the answer is ready. An
+    interrupted turn now saves too, as ``interrupted``, and the distinction has to reach
+    the row: a partial answer filed as ``complete`` claims a verified result nobody
+    produced, and every reader that counts completed turns would quietly count it.
     """
     try:
         from aughor.custom_agents.context import current_agent
@@ -318,7 +329,7 @@ def save_chat_turn(
             report_json, kind, session_id, org_id, purpose, agent_id)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, canvas_id, now, now,
-         "complete", 0, 1, headline,
+         status, 0, 1, headline,
          json.dumps(report),
          "chat", sid, current_org_id(), purpose or "", agent_id),
     )
@@ -448,11 +459,17 @@ def reconcile_orphaned_investigations() -> int:
 
 def get_session_turns(session_id: str) -> list[dict]:
     """Return all chat turns for a session, oldest first.
-    Falls back to looking up by row id for single-turn legacy sessions."""
+    Falls back to looking up by row id for single-turn legacy sessions.
+
+    ``status`` rides along because not every saved turn is a finished one any more: a
+    turn the user interrupted is filed as ``interrupted`` with whatever it had produced.
+    A restore that dropped the column would render a partial answer as a complete one —
+    the turn would look finished and simply be missing its tail, which is worse than not
+    restoring it at all."""
     c = _conn()
     _ensure_schema(c)
     rows = c.execute(
-        """SELECT id, question, headline, report_json, started_at
+        """SELECT id, question, headline, report_json, started_at, status
            FROM investigations
            WHERE session_id = ? AND kind = 'chat'
            ORDER BY started_at ASC""",
@@ -461,7 +478,7 @@ def get_session_turns(session_id: str) -> list[dict]:
     # Fallback: maybe the caller passed a row id directly (old single-turn items)
     if not rows:
         rows = c.execute(
-            """SELECT id, question, headline, report_json, started_at
+            """SELECT id, question, headline, report_json, started_at, status
                FROM investigations
                WHERE id = ? AND kind = 'chat'""",
             (session_id,),
@@ -480,6 +497,9 @@ def get_session_turns(session_id: str) -> list[dict]:
         d["approach"]    = report.get("approach", [])
         d["insight"]     = report.get("insight", None)
         d["overview_report"] = report.get("overview_report", None)
+        # Legacy rows predate the column being written by this path; they were all
+        # complete by construction, so absence reads as complete rather than unknown.
+        d["status"] = d.get("status") or "complete"
         result.append(d)
     return result
 

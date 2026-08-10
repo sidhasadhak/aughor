@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -375,3 +376,79 @@ def test_the_core_answers_with_no_event_loop_anywhere(monkeypatch, builtin_conn_
     assert result.receipt["grounded"] is True
     assert "987,654" not in result.headline, "the fabricated number survived grounding"
     assert set(result.receipt) >= {"compiled", "defan", "grounded", "lint", "assumed"}
+
+
+# ── what an interrupted turn leaves behind ────────────────────────────────────
+
+def test_an_interrupted_turn_persists_what_the_user_already_saw(monkeypatch, builtin_conn_id):
+    """Stopping a turn used to throw the answer away.
+
+    The persist at the end of the happy path was the only writer, and every cancellation
+    checkpoint raises long before it — so a turn the user interrupted left no trace at
+    all: not in History, not in the session, nowhere. Reloading lost an answer they had
+    already partly read, and the "partial answers survive stop" promise had nothing
+    behind it on the server side.
+
+    The partial is recorded off the FRAMES rather than gathered from the core's locals at
+    cancel time, because the partial the user is looking at *is* the frames; reading it
+    anywhere else would build a second version of it that can disagree.
+
+    Filed as `interrupted`, never `complete`. A stopped turn has no verified answer, and
+    `complete` would both claim one and be counted as one by every reader that filters on
+    it.
+    """
+    from aughor.db.history import get_session_turns
+
+    _stub_providers_with_ungrounded_headline(monkeypatch)
+
+    session = "interrupted-session-" + uuid.uuid4().hex[:8]
+    seen: list[tuple[str, dict]] = []
+
+    # Walk away the moment the turn has produced something worth keeping. The first frame
+    # is a `headline_delta`, so cancelling on it is the case that matters — there IS a
+    # partial, and it used to be discarded. It also has to be a frame with checkpoints
+    # still AHEAD of it: `emit` here is a plain recorder that never raises, so the raise
+    # comes from `_checkpoint()`, and cancelling after the last one would simply let the
+    # turn finish (which is how this test first failed).
+    def cancelled() -> bool:
+        return any(t == "headline_delta" for t, _ in seen)
+
+    with pytest.raises(inv._CoreCancelled):
+        inv._answer_core("How many rows are there?", builtin_conn_id, [],
+                         emit=lambda t, p: seen.append((t, p)),
+                         cancelled=cancelled, session_id=session)
+
+    turns = get_session_turns(session)
+    assert len(turns) == 1, "the interrupted turn was not persisted at all"
+    turn = turns[0]
+    assert turn["status"] == "interrupted", (
+        f"filed as {turn['status']!r} — a stopped turn must not claim to be complete")
+    assert turn["question"] == "How many rows are there?"
+
+    last_headline = [p["headline"] for t, p in seen if t == "headline_delta"][-1]
+    assert turn["headline"] == last_headline, (
+        "the partial headline the user was reading is not what was stored")
+
+
+def test_a_turn_interrupted_before_it_produced_anything_is_not_persisted(
+        monkeypatch, builtin_conn_id):
+    """The other half: silence is not a partial answer.
+
+    A turn cancelled during the prelude — context gather, resolution, compilation, all of
+    which emit nothing — has produced nothing to survive. Writing a row for it would fill
+    History with empty questions that look like answers that failed, which is a worse lie
+    than the one this change fixes.
+    """
+    from aughor.db.history import get_session_turns
+
+    _stub_providers_with_ungrounded_headline(monkeypatch)
+
+    session = "empty-interrupt-" + uuid.uuid4().hex[:8]
+
+    with pytest.raises(inv._CoreCancelled):
+        inv._answer_core("How many rows are there?", builtin_conn_id, [],
+                         emit=lambda t, p: None,
+                         cancelled=lambda: True, session_id=session)
+
+    assert get_session_turns(session) == [], (
+        "a turn that produced nothing should leave no history row")
