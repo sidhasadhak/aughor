@@ -117,7 +117,13 @@ def _pg():
     purpose — vector ops have no sqlite meaning, so this does not ride the
     dialect-translation seam the relational stores use."""
     import psycopg2
-    conn = psycopg2.connect(os.environ["AUGHOR_DB_URL"])
+
+    from aughor.db.dsn import split_dsn
+
+    # Query params lifted into kwargs — see aughor/db/dsn.py. The same AUGHOR_DB_URL
+    # the stores use, so it carries the same provider query string.
+    _base, _params, _dropped = split_dsn(os.environ["AUGHOR_DB_URL"])
+    conn = psycopg2.connect(_base, **_params)
     cur = conn.cursor()
     cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{_PG_SCHEMA}"')
     # public stays on the path: CREATE EXTENSION installs the `vector` TYPE into

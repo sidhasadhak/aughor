@@ -94,45 +94,11 @@ def _looks_unfilled(dsn: str) -> bool:
     return any(m in host for m in _PLACEHOLDER_MARKS)
 
 
-#: libpq connection parameters worth forwarding. Anything else in the query string is a
-#: vendor marker rather than a connection setting — Supabase appends `supa=base-pooler.x`
-#: — and libpq rejects what it does not recognise, so unknown keys are dropped instead of
-#: being passed through to fail.
-_LIBPQ_PARAMS = frozenset({
-    "sslmode", "sslcert", "sslkey", "sslrootcert", "sslcrl", "sslpassword",
-    "application_name", "fallback_application_name", "connect_timeout",
-    "keepalives", "keepalives_idle", "keepalives_interval", "keepalives_count",
-    "target_session_attrs", "options", "client_encoding", "gssencmode",
-    "channel_binding", "passfile", "service", "replication",
-})
-
-
-def _split_dsn(dsn: str) -> tuple[str, dict, list[str]]:
-    """A URI plus its query parameters lifted into keyword arguments.
-
-    psycopg2 parses a `postgres://` URI itself, and its parser is stricter than the
-    connection strings real providers hand out. It rejects a query value containing `=`
-    ("extra key/value separator") and any parameter it does not recognise ("invalid URI
-    query parameter") — and Supabase's copy-paste DSN can carry both, which is how a
-    perfectly good connection string becomes a traceback before a single packet is sent.
-
-    `parse_qsl` splits on the FIRST `=` only, so `options=-c search_path=public` survives
-    intact as a value; handing it to psycopg2 as a keyword argument puts it past the URI
-    parser entirely. Vendor markers are dropped, and named, because silently discarding
-    part of what someone pasted is its own kind of confusing.
-    """
-    from urllib.parse import parse_qsl, urlparse, urlunparse
-
-    parsed = urlparse(dsn)
-    if not parsed.query:
-        return dsn, {}, []
-    params, dropped = {}, []
-    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
-        if key in _LIBPQ_PARAMS:
-            params[key] = value
-        else:
-            dropped.append(key)
-    return urlunparse(parsed._replace(query="")), params, dropped
+# The DSN splitting this script needed first now lives in the package, because the
+# application opens Postgres in three other places that had the identical bug. Importing
+# it keeps one implementation rather than two that can drift; the sibling migration
+# script already imports from `aughor` for the same reason.
+from aughor.db.dsn import split_dsn as _split_dsn  # noqa: E402
 
 
 def _pg_type(duck_type: str) -> str:

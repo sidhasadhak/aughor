@@ -977,13 +977,28 @@ class PostgresConnection(DatabaseConnection):
 
     def _connect(self):
         import psycopg2
+
+        from aughor.db.dsn import merge_options, split_dsn
+
+        # Query parameters are lifted out of the URI and passed as keyword arguments:
+        # psycopg2's own URI parser rejects a value containing `=` and any parameter it
+        # does not recognise, which is how a pasted Supabase DSN (`?sslmode=…&supa=…`)
+        # becomes a traceback before a packet is sent. See aughor/db/dsn.py.
+        base, params, _dropped = split_dsn(self._dsn)
+
         # Enforce read-only at the SESSION level (SEC-02 / INV-2). Aughor is a
         # read-only analyst over Postgres; the SQL safety gate is defence-in-depth,
         # but the connection itself must reject writes. `options=` applies BEFORE
         # any statement runs — even under autocommit each implicit txn inherits it,
         # so a write raises "cannot execute ... in a read-only transaction". (SET
         # search_path is a session command, not DML, so it is still permitted.)
-        self._conn = psycopg2.connect(self._dsn, options="-c default_transaction_read_only=on")
+        #
+        # The DSN may carry its OWN `options`, and passing the keyword twice is a
+        # TypeError, not a merge. They are combined with ours last, because libpq
+        # applies `-c` in order and the last wins — so a DSN cannot turn read-only off.
+        params["options"] = merge_options(
+            params.get("options"), "-c default_transaction_read_only=on")
+        self._conn = psycopg2.connect(base, **params)
         self.engine_read_only = True  # WP-1d — session-level read-only is enforced above
         self._conn.autocommit = True
         # Set search_path so unqualified table names resolve to the right schema
