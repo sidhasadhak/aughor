@@ -1428,6 +1428,47 @@ def _answer_core(
     #: What the saved turn is FILED under. Defaults to the question that was answered.
     _persist_q = persist_question or question
 
+    #: What the user has actually SEEN so far, recorded off the frames rather than
+    #: gathered from locals at cancel time. The partial the user is looking at IS the
+    #: frames — reading it anywhere else would be reconstructing a second version of it
+    #: that can disagree. Only the answer-shaped frames are kept; progress chatter is
+    #: not part of an answer. Consumed by the cancel handler at the bottom.
+    _seen: dict = {}
+
+    #: Whether this turn already wrote its own history row. The answer path keeps working
+    #: after it emits `done` — narrative, insight and follow-ups are all post-answer — so a
+    #: client that leaves during that tail cancels a turn that is, as far as the user is
+    #: concerned, finished and saved. Without this the cancel handler wrote a SECOND row
+    #: for it, and the conversation came back with the answer followed by a phantom
+    #: interrupted copy of the same question. Caught by reloading mid-enrichment; no unit
+    #: test would have posed it, because it only exists in the gap between `done` and the
+    #: end of the function.
+    _turn_persisted = False
+
+    def _record(name: str, payload: dict) -> None:
+        if name == "headline":
+            _seen["headline"] = payload.get("headline") or _seen.get("headline") or ""
+        elif name == "headline_delta":
+            # Replace-semantics, same as the client: the last delta is the whole text.
+            _seen["headline"] = payload.get("headline") or _seen.get("headline") or ""
+        elif name == "sql":
+            _seen["sql"] = payload.get("sql") or ""
+        elif name == "columns":
+            _seen["columns"] = list(payload.get("columns") or [])
+        elif name == "rows":
+            _seen["rows"] = list(payload.get("rows") or [])
+        elif name == "chart_type":
+            _seen["chart_type"] = payload.get("chart_type") or "auto"
+
+    _emit_inner = emit
+
+    def emit(name: str, payload: dict) -> None:   # noqa: F811 — deliberate rebind
+        # Record BEFORE forwarding: `emit` is also a cancellation checkpoint (it raises
+        # once the wrapper sets the flag), so recording after would drop the very frame
+        # the user was looking at when they walked away.
+        _record(name, payload)
+        _emit_inner(name, payload)
+
     def _receipt(payload: dict) -> None:
         receipts.append(payload)
         emit("guard_receipt", payload)
@@ -2492,6 +2533,7 @@ def _answer_core(
                 intent=answer.intent, approach=answer.approach,
                 canvas_id=canvas_id, purpose=purpose,
             )
+            _turn_persisted = True
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "chat turn save is best-effort; the answer was already streamed (turn just won't appear in history)",
@@ -2802,6 +2844,38 @@ def _answer_core(
             narrative=_narrative_dict,
             followups=_followups,
         )
+    except _CoreCancelled:
+        # The user stopped, or walked away and the client went with them. Everything the
+        # turn produced up to here was streamed and then, until now, dropped: the persist
+        # at the end of the happy path is the ONLY writer, and cancellation raises long
+        # before it. So an interrupted turn left no trace — not in History, not anywhere —
+        # and reloading the page lost an answer the user had already partly read.
+        #
+        # It is filed as `interrupted`, never `complete`: a turn stopped mid-flight has no
+        # verified answer, and "complete" would claim one. That is the same distinction
+        # `UNCERTAIN_RESULT` draws for a dropped stream — interrupted is not failed either,
+        # because nothing went wrong.
+        #
+        # Best-effort by construction. A turn the user abandoned must not be able to raise
+        # on its way out, so a failed flush is swallowed and the cancellation continues.
+        try:
+            if not _turn_persisted and (_seen.get("headline") or _seen.get("sql")):
+                save_chat_turn(
+                    question=_persist_q, connection_id=connection_id,
+                    headline=_seen.get("headline") or question,
+                    sql=_seen.get("sql") or "", session_id=session_id,
+                    columns=_seen.get("columns") or [], rows=_seen.get("rows") or [],
+                    chart_type=_seen.get("chart_type") or "none",
+                    tables_used=_extract_tables(_seen.get("sql") or ""),
+                    canvas_id=canvas_id, purpose=purpose,
+                    status="interrupted",
+                )
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "interrupted-turn flush is best-effort; the turn was already "
+                          "abandoned and the cancellation must not be blocked by it",
+                     counter="chat.interrupted_flush")
+        raise
     finally:
         try:
             db.close()

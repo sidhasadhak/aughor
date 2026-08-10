@@ -10,7 +10,7 @@ import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import CompassIcon        from "@atlaskit/icon/core/compass";
 import { uploadDocument, listUserAgents, recordOverviewDrill, type UserAgent } from "@/lib/api";
-import { useChat, type DebugEvent, type ChatTurn } from "@/lib/useChat";
+import { useChat, UNCERTAIN_RESULT, type DebugEvent, type ChatTurn } from "@/lib/useChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
 import type { OverviewReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -497,8 +497,33 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
   );
 }
 
+//: The `?chat=` id may be adopted exactly once per page load.
+//
+// A browser RELOAD and the "New conversation" button both remount this component — the
+// button resets it by bumping a React key — so mounting is not enough to tell them
+// apart, and a component that resumed on every mount would make "New conversation" reopen
+// the conversation the user just dismissed. A page load happens once; a reset can happen
+// all afternoon. Module scope is exactly that lifetime.
+let _urlSessionUnclaimed = true;
+
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
-  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, eventLogRef } = useChat();
+  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, sessionId, eventLogRef } = useChat();
+
+  // Read during the first render, into a ref, because both this component and page.tsx's
+  // URL-sync effect rewrite the query string — whichever ran first would erase the id
+  // before the restore below could read it. A ref initializer is safe here specifically
+  // because this value is never rendered: what made the nav mismatch in #290 was
+  // URL-seeded state that the server had no way to agree with, and a ref has no server
+  // rendering to disagree with.
+  const resumeIdRef = useRef<string | null>(null);
+  if (resumeIdRef.current === null && typeof window !== "undefined") {
+    const fromUrl = _urlSessionUnclaimed
+      ? new URLSearchParams(window.location.search).get("chat")
+      : null;
+    _urlSessionUnclaimed = false;
+    resumeIdRef.current = restoreSessionId || fromUrl || "";
+  }
+  const resumeId = resumeIdRef.current || null;
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
   // User-defined agents: the roster + the picked persona.
@@ -530,7 +555,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, []);
 
   useEffect(() => {
-    if (!restoreSessionId) clear();
+    // `resumeId`, not `restoreSessionId`: a reload resuming from `?chat=` must not be
+    // cleared out from under the restore that is about to run.
+    //
+    // Dropping the id belongs HERE, to the reset, and nowhere else. Keying it off "the
+    // turn list is empty" looked equivalent and is not: a resumed conversation is also
+    // empty for as long as its fetch is in flight, so that version deleted the id a beat
+    // before the turns arrived — and the id is the only handle the conversation has.
+    if (!resumeId) {
+      clear();
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("chat")) {
+        params.delete("chat");
+        const qs = params.toString();
+        window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+      }
+    }
     setStarters(FALLBACK_STARTERS);
     setLoadingStarters(true);
     // R5 — composer-open prewarm (the Databricks preload analog): warm the profile
@@ -561,16 +601,39 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, [connectionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!restoreSessionId) return;
-    fetch(`${getApiBase()}/chat-sessions/${restoreSessionId}/turns`)
-      .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
-        if (!turns.length) return;
-        restore(turns.map(t => ({
+    if (!resumeId) return;
+    let cancelled = false;
+
+    // "Is this chat still generating?" — the reconnect half of P5.2, and the reason this
+    // is a retry rather than a fetch. A reload does not find a settled conversation: it
+    // CAUSES the turn it interrupted to settle. The client goes away, the backend notices
+    // at its next cancellation checkpoint, and only then writes the partial. Ask once and
+    // you race that write and lose — the session reads empty a beat before its last turn
+    // exists. Measured: the row landed, and the single-shot version had already given up.
+    //
+    // Bounded and silent. It gives up after ~12s rather than polling forever, and an
+    // empty session (a stale or shared link) simply stays empty — the same outcome as
+    // before, reached a few seconds later.
+    const attempt = (tries: number) => {
+      fetch(`${getApiBase()}/chat-sessions/${resumeId}/turns`)
+        .then(r => r.ok ? r.json() : [])
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; status?: string; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
+          if (cancelled) return;
+          if (!turns.length) {
+            if (tries > 0) setTimeout(() => { if (!cancelled) attempt(tries - 1); }, 1500);
+            return;
+          }
+          restore(turns.map(t => ({
           id: t.id,
           question: t.question,
           mode: "ask" as const,
-          status: "done" as const,
+          // A turn the user stopped is restored as an ERROR, not as `done`. It carries
+          // whatever it had produced, and `done` would present that partial as the whole
+          // answer — a turn that looks finished and is simply missing its tail is a worse
+          // lie than not restoring it. `error` is the only terminal state the renderer has
+          // that shows the body AND says the tail is missing; the message is the shared
+          // interrupted sentence, so this reads the same as a mid-session interrupt.
+          status: (t.status === "interrupted" ? "error" : "done") as "error" | "done",
           guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
           scanItems: [], scanProgress: null,
           route: null,
@@ -608,8 +671,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           clarifyPending: null,
           analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
-          error: null,
-          errorDetail: null,   // a restored turn completed; there is no live error to classify
+          error: t.status === "interrupted"
+            ? `This answer was interrupted — ${UNCERTAIN_RESULT}.`
+            : null,
+          errorDetail: null,   // no live error to classify; an interrupt is not a failure
           startedAt: 0,
           elapsedMs: null,
           fromCache: false,
@@ -623,11 +688,33 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           reportStream: null,
           clarifyingQuestions: [],
           clarifyingContext: "",
-        })));
-      })
-      .catch(() => {});
+          })), resumeId);
+        })
+        .catch(() => {});
+    };
+    attempt(8);
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restoreSessionId]);
+  }, [resumeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── The conversation's id lives in the URL, so a reload resumes it ──────────
+  // Written once the conversation has something worth coming back to, and removed when it
+  // does not, so a stale id can never outlive the turns it names — reload after "New
+  // conversation" would otherwise reopen exactly what was just dismissed.
+  //
+  // `replaceState`, never `pushState`: continuing a conversation is not a navigation, and
+  // a history entry per turn would make Back walk the conversation instead of leaving the
+  // screen. Only the `chat` key is touched, and the rest of the query string is read fresh
+  // each time, so this and page.tsx's tab/conn/layer sync can both write without either
+  // erasing the other's keys.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!state.turns.length) return;   // see below: emptiness is not a reason to forget
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("chat") === sessionId) return;
+    params.set("chat", sessionId);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, [state.turns.length, sessionId]);
 
   // ── Scroll: follow the newest content while pinned to the bottom, release
   //    the moment the user scrolls up to read, snap back on completion. ───────
