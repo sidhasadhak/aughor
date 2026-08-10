@@ -161,3 +161,50 @@ def test_cp1252_only_characters_survive(conn, tmp_path) -> None:
 
     flat = str(info.get("preview") or info)
     assert "€" in flat and "–" in flat, f"cp1252-only characters were lost: {flat}"
+
+
+def test_the_transcode_happens_once_per_file(conn, tmp_path, monkeypatch) -> None:
+    """The connector is rebuilt on EVERY connection open and re-reads every file, so
+    an uncached transcode re-encodes the file each time — a ~96 MB write per open for
+    the CSV that prompted this, into a temp directory nobody deletes. Thirty-four of
+    them (2.7 GB) accumulated before it was caught.
+    """
+    from aughor.connectors.file import local_upload as lu
+
+    lu._TRANSCODE_CACHE.clear()
+    p = _write(tmp_path, "repeat.csv", "id,name\n1,café\n".encode("cp1252"))
+
+    calls = {"n": 0}
+    real_read = Path.read_bytes
+
+    def counting_read(self):
+        if self == p:
+            calls["n"] += 1
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read)
+
+    first = lu._transcode_to_utf8(p)
+    second = lu._transcode_to_utf8(p)
+    third = lu._transcode_to_utf8(p)
+
+    assert first == second == third, "each call produced a different copy"
+    assert calls["n"] == 1, f"the file was re-encoded {calls['n']} times, not cached"
+
+
+def test_an_edited_file_is_transcoded_again(conn, tmp_path) -> None:
+    """Cache on (path, size, mtime): re-uploading different content under the same
+    name must not serve the previous copy."""
+    import os
+    from aughor.connectors.file import local_upload as lu
+
+    lu._TRANSCODE_CACHE.clear()
+    p = _write(tmp_path, "changing.csv", "id,name\n1,café\n".encode("cp1252"))
+    first = lu._transcode_to_utf8(p)
+
+    p.write_bytes("id,name\n1,café\n2,naïve\n".encode("cp1252"))
+    os.utime(p, (0, 0))                       # force a distinct mtime
+    second = lu._transcode_to_utf8(p)
+
+    assert second != first, "an edited file served the stale transcode"
+    assert "naïve" in second.read_text(encoding="utf-8")

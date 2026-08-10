@@ -149,6 +149,17 @@ def _ensure_excel_extension(con) -> None:
         logger.debug("duckdb excel extension load failed", exc_info=True)
 
 
+#: (source path, size, mtime) → the UTF-8 copy already produced for it.
+#
+# The cache is the whole point, not an optimisation. This connector is constructed
+# fresh on every connection open and re-reads every uploaded file, so an uncached
+# transcode re-encodes each non-UTF-8 file EVERY time — for a 96 MB CSV that is a
+# ~96 MB write per open, into a new temp directory nobody deletes. Thirty-four of
+# them (2.7 GB) accumulated before this was caught, and the API died with them.
+_TRANSCODE_CACHE: dict[tuple[str, int, int], Path] = {}
+_TRANSCODE_LOCK = threading.Lock()
+
+
 def _transcode_to_utf8(path: Path) -> Path | None:
     """A UTF-8 copy of `path`, or None if it could not be produced.
 
@@ -161,10 +172,26 @@ def _transcode_to_utf8(path: Path) -> Path | None:
 
     cp1252 rather than latin-1 because it is the encoding Excel on Windows actually
     writes, and it decodes the 0x80-0x9F range (curly quotes, en dashes, €) that
-    latin-1 maps to control characters.
+    latin-1 maps to control characters — the range the file that prompted this
+    actually contains.
+
+    Keyed on (path, size, mtime) so an edited or replaced file transcodes again
+    rather than serving a stale copy, and written under ONE directory per process so
+    the copies are findable and bounded instead of scattered across /tmp.
     """
     import codecs
     import tempfile
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_size, int(stat.st_mtime))
+
+    with _TRANSCODE_LOCK:
+        cached = _TRANSCODE_CACHE.get(key)
+        if cached is not None and cached.exists():
+            return cached
 
     try:
         raw = path.read_bytes()
@@ -174,14 +201,26 @@ def _transcode_to_utf8(path: Path) -> Path | None:
         text = raw.decode("utf-16", errors="replace")
     else:
         text = raw.decode("cp1252", errors="replace")
+
     try:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="aughor-utf8-"))
-        out = tmp_dir / path.name
+        root = Path(tempfile.gettempdir()) / "aughor-utf8"
+        # One sub-directory per (file, size, mtime) so distinct files never collide
+        # on name, and a re-transcode of the same file reuses its slot.
+        import hashlib
+        stamp = hashlib.sha1(f"{key}".encode()).hexdigest()[:12]
+        out_dir = root / stamp
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / path.name
         out.write_text(text, encoding="utf-8")
-        return out
     except OSError:
         logger.debug("utf-8 transcode could not be written", exc_info=True)
         return None
+
+    with _TRANSCODE_LOCK:
+        _TRANSCODE_CACHE[key] = out
+    logger.info("%s: transcoded to UTF-8 once (%.1f MB) — cached for reuse",
+                path.name, stat.st_size / 1_048_576)
+    return out
 
 
 def readable_source(con, path: Path) -> str:
