@@ -711,3 +711,97 @@ is standing, verified end-to-end in a browser:
 platform; demo posture retired); an external queue backend when there is one to verify
 against; the fixture-builtin listing and the `connections//prewarm` double-slash
 (cosmetic); CI Postgres/pgvector services.
+
+---
+
+## Appendix C — production DATA-PLANE audit (2026-08-10)
+
+Appendix B established that the platform is live and that its STATE persists. This
+appendix is about the other half — whether there is anything in it to query — because
+the answer turned out to be no, and for reasons worth writing down rather than
+rediscovering.
+
+**Everything below was measured against production, not inferred.**
+
+### The link is fine; the shelves are empty
+
+From the deployed page itself, a cross-origin fetch to
+`aughor-platform.vercel.app/connections` returns **200** with CORS headers present. The
+API is reachable, the browser is allowed to call it, there is no stale base in
+localStorage. Every report of "the frontend cannot reach the backend" this session
+resolved to something else.
+
+What production actually holds: `workspace` (one table, **0 rows**), `fixture`
+(**no schemas at all**), `aughor_ops`. `fixture`'s DSN points at
+`/var/task/data/aughor.duckdb` — a file that was never deployed, because **no `.duckdb`
+is tracked in git**; `.gitignore` names them one by one. The demo databases exist on one
+laptop.
+
+### The registry is Postgres-backed, so UI-added connections PERSIST
+
+`db/registry.py` opens through `connect_store(REGISTRY_DB)`, which switches to Postgres
+whenever `AUGHOR_DB_URL` is set — and it is, via the Supabase integration's
+`POSTGRES_URL_NON_POOLING`. A `/workspaces` row created 2026-08-05 has survived every
+deploy since.
+
+**Consequence: a Postgres connection added through the Catalog UI is written to Supabase
+and survives.** `AUGHOR_DEFAULT_POSTGRES_DSN` is therefore optional, not required — the
+env var makes a global builtin (`mydb`, schema defaulting to `public`), while the UI route
+is per-workspace, visible, editable and needs no redeploy. Prefer the UI.
+
+### Only TWO connector drivers ship
+
+`pyproject.toml` declares exactly `duckdb` and `psycopg2-binary`. `/connectors/types`
+advertises fifteen. So **thirteen of the fifteen tiles in "Add data" cannot work in
+production** — MySQL, Snowflake, BigQuery, MotherDuck, Exasol, S3, Stripe, HubSpot,
+Salesforce and Google Sheets have no driver, and DuckDB/sqlite additionally need a local
+file path that a serverless filesystem does not durably provide (which is precisely why
+`fixture` lists no schemas).
+
+This is the same failure shape as the connection pointing at an undeployed file: a
+surface that looks configured and is not. The picker should report availability rather
+than offer every type unconditionally.
+
+### Correction: the `connections//prewarm` double slash is NOT cosmetic
+
+The standing note above calls it cosmetic. It is not.
+
+An empty connection id produces `/connections//prewarm`. **Vercel's edge** answers that
+with a `308` redirect (`server: Vercel`, `content-type: text/plain`) *before the request
+reaches the app* — and an edge redirect carries no `Access-Control-Allow-Origin`, so the
+browser blocks it and the UI paints **"Failed to fetch"**. It was reported as a broken
+upload.
+
+The id is empty because `selectedConn` is deliberately clamped to `""` until connections
+load and workspace membership is confirmed — a correct fail-closed guard that several
+components then fire requests with. Measured on one page load: every call goes out twice,
+once empty and once real —
+
+| request | status |
+|---|---|
+| `/connections//prewarm` | **0 (blocked)** |
+| `/suggestions?connection_id=` | **404** |
+| `/connections/workspace/prewarm` | 202 |
+| `/suggestions?connection_id=workspace` | 200 |
+
+The real requests succeed. The visible error belongs to a request that should never have
+been made, and it masks genuine failures — such as the ones a user gets from trying any of
+the thirteen unavailable connectors. `CommandPalette` already guards with
+`if (selectedConn)`; `ChatPanel` and `CatalogScreen` do not. **Not yet fixed.**
+
+### Getting data in
+
+`scripts/load_duckdb_to_postgres.py` (#296) copies a DuckDB file's tables into Postgres —
+the sibling of `migrate_sqlite_to_postgres.py`, which moves platform state and
+deliberately skips `*.duckdb`. Measured targets: Superstore 3 tables / 10,798 rows /
+~4 MB; LuxExperience 14 tables / 706,894 rows / ~95 MB of Postgres heap (the `.duckdb`
+files are 1.6 MB and 15 MB — DuckDB is compressed columnar, Postgres is an uncompressed
+row store, so ~6x is expected). Against Supabase's 500 MB free tier, budget ~150 MB with
+indexes.
+
+Uploads are a different path with a different home: `control_plane/object_store.py`
+mirrors vended storage to **Vercel Blob** when `BLOB_READ_WRITE_TOKEN` is present, and
+no-ops when it is not. Nothing reports which — not `/health`, not `/capabilities` — so
+whether an upload will survive a cold start is currently unknowable from outside. For a
+707k-row dataset Blob is the wrong home regardless: a cold instance runs `mirror_down` and
+rebuilds the whole in-memory DuckDB before serving anything.
