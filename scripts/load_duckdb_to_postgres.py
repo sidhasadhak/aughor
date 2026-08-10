@@ -196,35 +196,58 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
 
         total_rows = 0
         mismatches: list[str] = []
+        done: list[str] = []
         for src_schema, table in selected:
             cols = duck.execute(f'DESCRIBE "{src_schema}"."{table}"').fetchall()
             coldefs = ", ".join(f'"{c[0]}" {_pg_type(c[1])}' for c in cols)
             names = [c[0] for c in cols]
             collist = ", ".join(f'"{n}"' for n in names)
-
-            cur.execute(f'CREATE TABLE "{dest}"."{table}" ({coldefs})')
-            insert = f'INSERT INTO "{dest}"."{table}" ({collist}) VALUES %s'
-
             src_n = duck.execute(f'SELECT count(*) FROM "{src_schema}"."{table}"').fetchone()[0]
-            # Streamed in batches rather than fetched whole: order_items is ~191k rows,
-            # and a loader that needs the table to fit in memory is one that stops
-            # working exactly when the data gets interesting.
-            reader = duck.execute(f'SELECT {collist} FROM "{src_schema}"."{table}"')
-            copied = 0
-            while True:
-                batch = reader.fetchmany(BATCH)
-                if not batch:
-                    break
-                execute_values(cur, insert, batch, page_size=BATCH)
-                copied += len(batch)
-            pg.commit()
+
+            # Named before the work, and flushed. A 700k-row load over the internet takes
+            # minutes, and Python buffers stdout when it is not a terminal — so without
+            # this the whole thing looks hung until it is finished, which is exactly when
+            # someone decides it has hung and kills it.
+            print(f"  {table:28} {src_n:>9,} rows ", end="", flush=True)
+            try:
+                cur.execute(f'CREATE TABLE "{dest}"."{table}" ({coldefs})')
+                insert = f'INSERT INTO "{dest}"."{table}" ({collist}) VALUES %s'
+                reader = duck.execute(f'SELECT {collist} FROM "{src_schema}"."{table}"')
+                copied = 0
+                while True:
+                    batch = reader.fetchmany(BATCH)
+                    if not batch:
+                        break
+                    execute_values(cur, insert, batch, page_size=BATCH)
+                    copied += len(batch)
+                    if src_n > 50_000:          # a dot per batch on the big ones
+                        print(".", end="", flush=True)
+                pg.commit()
+            except Exception as exc:
+                # One table's failure ends the load, but it must not end it as a
+                # traceback. Earlier tables are already committed — each commits on its
+                # own, because a single transaction around 700k rows is its own risk — so
+                # the target is now PARTIAL, and the only safe next step is to say so and
+                # name it. A loader that dies silently mid-way leaves a database that
+                # looks loaded.
+                pg.rollback()
+                print(" FAILED", flush=True)
+                print(f"\n{type(exc).__name__} on {dest}.{table}: "
+                      f"{str(exc).strip().splitlines()[0]}", file=sys.stderr)
+                print(f"\n{len(done)} of {len(selected)} tables were copied before this "
+                      f"({', '.join(done) or 'none'}).\n"
+                      f"The target schema \"{dest}\" is now PARTIAL — it must not be used "
+                      f"as-is. Re-run the same command with --wipe to start clean.",
+                      file=sys.stderr)
+                return 1
 
             cur.execute(f'SELECT count(*) FROM "{dest}"."{table}"')
             got = cur.fetchone()[0]
             if got != src_n:
                 mismatches.append(f"{dest}.{table}: src={src_n} dst={got}")
             total_rows += copied
-            print(f"  {table:28} {copied:9,} rows{'  MISMATCH' if got != src_n else ''}")
+            done.append(table)
+            print(f" {'MISMATCH' if got != src_n else 'ok'}", flush=True)
 
         cur.close()
         print(f"TOTAL: {len(selected)} tables, {total_rows:,} rows")
