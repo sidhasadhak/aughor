@@ -121,3 +121,43 @@ def test_analyze_error_reaches_the_caller(tmp_path, monkeypatch) -> None:
     assert 'detail=f"Analyze failed: {exc}"' in src, (
         "the analyze route is hiding its cause again — the message must carry the "
         "underlying error, not a constant")
+
+
+def test_a_file_duckdb_refuses_in_every_encoding_is_transcoded(conn, tmp_path, monkeypatch) -> None:
+    """The escalation's last step, and the reason it exists.
+
+    A real 53-column export failed BOTH the plain read and the `encoding=` retry
+    while a synthetic file of the same shape passed, so the retry cannot be assumed
+    sufficient. Decoding in Python always produces something readable.
+
+    Simulated by making DuckDB reject the `encoding=` form, since the point is what
+    happens when that step does not save us.
+    """
+    from aughor.connectors.file import local_upload as lu
+
+    p = _write(tmp_path, "stubborn.csv", "id,name\n1,café\n".encode("cp1252"))
+
+    real_expr = lu._reader_expr
+
+    def _sabotage(path, *, encoding=None):
+        if encoding:
+            return "read_csv('/definitely/not/here.csv')"   # the retry now fails
+        return real_expr(path, encoding=None)
+
+    monkeypatch.setattr(lu, "_reader_expr", _sabotage)
+
+    info = conn.analyze_file(p)
+
+    assert [c["name"] for c in info["columns"]] == ["id", "name"]
+    assert "café" in str(info.get("preview") or info)
+
+
+def test_cp1252_only_characters_survive(conn, tmp_path) -> None:
+    """cp1252, not latin-1: the 0x80-0x9F range carries curly quotes, en dashes and
+    the euro sign, which latin-1 maps to control characters. Excel writes cp1252."""
+    p = _write(tmp_path, "curly.csv", 'id,name\n1,"€ smart–watch"\n'.encode("cp1252"))
+
+    info = conn.analyze_file(p)
+
+    flat = str(info.get("preview") or info)
+    assert "€" in flat and "–" in flat, f"cp1252-only characters were lost: {flat}"

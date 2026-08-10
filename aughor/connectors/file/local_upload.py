@@ -149,14 +149,60 @@ def _ensure_excel_extension(con) -> None:
         logger.debug("duckdb excel extension load failed", exc_info=True)
 
 
+def _transcode_to_utf8(path: Path) -> Path | None:
+    """A UTF-8 copy of `path`, or None if it could not be produced.
+
+    The last resort, and the only one that cannot be defeated by the file. DuckDB's
+    `encoding=` accepts a short list of names and still parses the bytes itself, so a
+    file it dislikes for any reason stays unreadable. Decoding in Python does not
+    have that problem: cp1252 with `errors="replace"` maps every byte sequence to
+    SOMETHING, so the read always succeeds and at worst a few undecodable characters
+    become U+FFFD — visible in the preview, and far better than refusing the upload.
+
+    cp1252 rather than latin-1 because it is the encoding Excel on Windows actually
+    writes, and it decodes the 0x80-0x9F range (curly quotes, en dashes, €) that
+    latin-1 maps to control characters.
+    """
+    import codecs
+    import tempfile
+
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+        text = raw.decode("utf-16", errors="replace")
+    else:
+        text = raw.decode("cp1252", errors="replace")
+    try:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="aughor-utf8-"))
+        out = tmp_dir / path.name
+        out.write_text(text, encoding="utf-8")
+        return out
+    except OSError:
+        logger.debug("utf-8 transcode could not be written", exc_info=True)
+        return None
+
+
 def readable_source(con, path: Path) -> str:
     """A reader expression that actually opens this file on `con`.
 
-    Spreadsheets need an extension loaded first. CSVs may not be UTF-8 — and the
-    only way to know is to try, because DuckDB decides while parsing. So probe with
-    a one-row read and fall back through `_CSV_ENCODINGS`; anything that fails for a
-    reason OTHER than encoding is re-raised untouched, so a genuinely broken file
-    still reports what is wrong with it instead of being retried pointlessly.
+    Spreadsheets need an extension loaded first. For CSVs the encoding is only
+    knowable by trying, because DuckDB decides while parsing, so this escalates:
+
+      1. read it as-is (UTF-8, the overwhelmingly common case),
+      2. re-read with DuckDB's own `encoding=`, chosen by BOM,
+      3. transcode to UTF-8 ourselves and read that.
+
+    Step 3 exists because step 2 is not guaranteed. A real 53-column export failed at
+    BOTH 1 and 2 while a synthetic file of the same shape passed, and the failure was
+    invisible: the old code discarded the fallback's error and re-reported the
+    original UTF-8 one, so the logs said the retry had never been tried. Whatever that
+    file did, decoding it in Python cannot fail — and if it somehow does, the message
+    now names every attempt instead of only the first.
+
+    Anything failing for a reason OTHER than encoding is re-raised untouched, so a
+    genuinely broken file still reports what is wrong with it.
     """
     if path.suffix.lower() in (".xlsx", ".xls"):
         _ensure_excel_extension(con)
@@ -171,14 +217,32 @@ def readable_source(con, path: Path) -> str:
     except Exception as exc:
         if _NOT_UTF8 not in str(exc).lower():
             raise           # a genuinely broken file keeps its own error
+        first_error = exc
+
     enc = _fallback_encoding(path)
     candidate = _reader_expr(path, encoding=enc)
     try:
         con.execute(f"SELECT * FROM {candidate} LIMIT 1").fetchall()
-    except Exception:
-        return src          # let the caller surface DuckDB's own UTF-8 message
-    logger.info("%s is not UTF-8; reading it as %s", path.name, enc)
-    return candidate
+        logger.info("%s is not UTF-8; reading it as %s", path.name, enc)
+        return candidate
+    except Exception as retry_error:
+        logger.info("%s: encoding=%s did not work either (%s) — transcoding",
+                    path.name, enc, str(retry_error)[:200])
+
+    utf8_copy = _transcode_to_utf8(path)
+    if utf8_copy is not None:
+        transcoded = _reader_expr(utf8_copy)
+        try:
+            con.execute(f"SELECT * FROM {transcoded} LIMIT 1").fetchall()
+            logger.info("%s: read via a UTF-8 transcode", path.name)
+            return transcoded
+        except Exception as transcode_error:
+            raise RuntimeError(
+                f"{path.name} could not be read as UTF-8, as {enc}, or after "
+                f"transcoding to UTF-8. Original error: {first_error}. "
+                f"After transcoding: {transcode_error}"
+            ) from transcode_error
+    return src              # transcode unavailable — surface DuckDB's own message
 
 # Allow-list of cast targets we let the UI request (prevents SQL injection via
 # the column_types map — values are interpolated into CREATE TABLE ... AS).
