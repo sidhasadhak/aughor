@@ -36,11 +36,27 @@ def _llm_readiness() -> dict:
 
 @router.get("/health")
 def health():
+    from aughor.control_plane.object_store import TOKEN_ENV, available
     from aughor.demo.setup import fixture_db_path
+    # Uploads are the one path whose durability is invisible from everywhere else.
+    # A vended capability's files live under /tmp on a serverless instance and are
+    # mirrored to Blob only when a token is configured; without one, mirror_up and
+    # mirror_down are no-ops and every upload silently lasts until the instance is
+    # recycled. Nothing reported that — not here, not /capabilities — so the failure
+    # presented as files that uploaded fine and were gone later.
     return {
         "status": "ok",
         "fixture_db": fixture_db_path().exists(),
         "llm": _llm_readiness(),
+        "object_store": {
+            "configured": available(),
+            "env": TOKEN_ENV,
+            "detail": (
+                "durable: uploads mirror to Vercel Blob"
+                if available()
+                else f"ephemeral: {TOKEN_ENV} unset, uploads live only on the serving instance"
+            ),
+        },
     }
 
 
@@ -235,14 +251,25 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
 
 @router.get("/connectors/types")
 def list_connector_types():
-    """Return all registered connector types with form field descriptors."""
-    from aughor.connectors.registry import REGISTRY, FORM_FIELDS, DSN_PREVIEWS
+    """Return all registered connector types with form field descriptors.
+
+    Each type carries whether its driver is importable HERE. The registry defers
+    driver imports to `connect()`, so without this the picker advertises fifteen
+    tiles on a deployment that can serve about half of them, and the user finds out
+    by filling in a form and getting an ImportError back. `available` is computed per
+    request rather than cached: it is a `find_spec` call per type, and an install can
+    change under a running process.
+    """
+    from aughor.connectors.registry import REGISTRY, FORM_FIELDS, DSN_PREVIEWS, missing_drivers
     types = []
     for conn_type in ["duckdb", "postgres"] + REGISTRY.supported_types():
+        missing = missing_drivers(conn_type)
         types.append({
             "type":        conn_type,
             "dsn_preview": DSN_PREVIEWS.get(conn_type, conn_type),
             "fields":      FORM_FIELDS.get(conn_type, []),
+            "available":   not missing,
+            "missing":     missing,
             "category":    (
                 "file"       if conn_type in ("local_upload", "s3", "sqlite") else
                 "warehouse"  if conn_type in ("bigquery", "snowflake", "mysql", "motherduck", "exasol") else

@@ -408,6 +408,13 @@ export interface ConnectorTypeInfo {
   dsn_preview: string;
   category: string;
   fields: Array<{ key: string; label: string; placeholder: string; secret: boolean }>;
+  /** Whether this connector's driver is importable on the server answering the
+   *  request. Optional so an older backend still renders — an absent field means
+   *  "unknown", which the UI treats as available rather than greying out the
+   *  entire picker against a server that simply hasn't been redeployed. */
+  available?: boolean;
+  /** Module names the connector imports that are missing there. */
+  missing?: string[];
 }
 
 export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {

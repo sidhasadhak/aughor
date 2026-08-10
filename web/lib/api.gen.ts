@@ -2268,6 +2268,13 @@ export interface paths {
         /**
          * List Connector Types
          * @description Return all registered connector types with form field descriptors.
+         *
+         *     Each type carries whether its driver is importable HERE. The registry defers
+         *     driver imports to `connect()`, so without this the picker advertises fifteen
+         *     tiles on a deployment that can serve about half of them, and the user finds out
+         *     by filling in a form and getting an ImportError back. `available` is computed per
+         *     request rather than cached: it is a `find_spec` call per type, and an install can
+         *     change under a running process.
          */
         get: operations["list_connector_types_connectors_types_get"];
         put?: never;

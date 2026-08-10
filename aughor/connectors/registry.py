@@ -147,6 +147,71 @@ FORM_FIELDS: dict[str, list[dict]] = {
 }
 
 
+# ── Driver requirements, so a type can say whether it can actually run ───────
+#
+# Every connector defers its driver import to `connect()` (or, for the REST ones, to
+# module import), which is right for startup cost and wrong for the UI: the picker
+# offered fifteen tiles and only found out which ones work when a user filled a form
+# in and it raised ImportError. The base install carries `duckdb` and `psycopg2`;
+# the rest live in the `warehouse` and `crm` extras, and Vercel installs base
+# dependencies only — so on the deployment most of this list is absent.
+#
+# Names are the module actually imported at the call site, not the distribution that
+# provides it, because that is what determines whether the import succeeds. Two of
+# them do not correspond to anything this project declares:
+#
+#   pyexasol  — imported by warehouse/exasol.py, declared in NO extra and not in the
+#               base dependencies. The exasol tile cannot work in any install of this
+#               project as it stands, including a full `[warehouse]` one.
+#   requests  — imported at MODULE level by the three REST connectors, while `[crm]`
+#               declares `stripe`, `hubspot-api-client` and `simple-salesforce`, none
+#               of which those modules import. It resolves today only transitively.
+#
+# Recording them here does not fix either — it makes the picker tell the truth about
+# them instead of failing at form-submit time.
+DRIVERS: dict[str, tuple[str, ...]] = {
+    "duckdb":       ("duckdb",),
+    "postgres":     ("psycopg2",),
+    "bigquery":     ("google.cloud.bigquery",),
+    "snowflake":    ("snowflake.connector",),
+    "mysql":        ("pymysql",),
+    "motherduck":   ("duckdb",),
+    "exasol":       ("pyexasol",),
+    "sqlite":       ("ibis",),
+    "local_upload": ("duckdb",),
+    "s3":           ("duckdb",),
+    "federated":    ("duckdb",),
+    "gsheets":      ("duckdb",),
+    "stripe":       ("requests",),
+    "hubspot":      ("requests",),
+    "salesforce":   ("requests",),
+}
+
+
+def missing_drivers(conn_type: str) -> list[str]:
+    """Module names this connector imports that are not installed here.
+
+    Uses `find_spec` rather than `import_module`: this is called to PAINT a picker,
+    so it must not execute connector code or pay an import cost for fifteen types on
+    every request. An unknown type reports nothing missing — it is not this
+    function's job to decide a type is unknown, and claiming a driver gap for one
+    would be a second wrong answer on top of the first.
+    """
+    import importlib.util
+
+    out: list[str] = []
+    for mod in DRIVERS.get(conn_type, ()):
+        try:
+            if importlib.util.find_spec(mod) is None:
+                out.append(mod)
+        except (ImportError, ValueError):
+            # A missing PARENT package raises rather than returning None, and a
+            # namespace package with no __spec__ raises ValueError. Both mean the
+            # same thing to a caller: the import at the call site would fail.
+            out.append(mod)
+    return out
+
+
 class ConnectorRegistry:
     """Lazy registry: type_string → connector class."""
 
