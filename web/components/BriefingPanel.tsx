@@ -2256,6 +2256,12 @@ export function BriefingPanel({
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
   const [explorerError, setExplorerError]     = useState<string | null>(null);
+  // The label of the action dispatched but not yet VISIBLE in the status ("Starting…").
+  // Measured: the POST behind Start answers in 42ms, so a spinner tied to the request
+  // lasts 42ms — below perception — while the phase it triggers takes seconds to appear.
+  // For ~17s the panel then showed the pre-click state with an enabled Start button, so
+  // the only feedback a click produced was none, and clicking again was invited.
+  const [explorerPending, setExplorerPending] = useState<string | null>(null);
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
@@ -2345,75 +2351,125 @@ export function BriefingPanel({
   //  2. Nothing re-polled status after a click — the 60s fallback interval was the
   //     only guarantee of visible change when kernel events are quiet.
   // `pollRef` is filled by the status-poll effect below; actions call it on completion.
-  const pollRef = useRef<() => void>(() => {});
+  const pollRef = useRef<() => Promise<ExplorerStatus | null>>(async () => null);
+
+  // Wait for a dispatched action to become VISIBLE, holding the pending label meanwhile.
+  //
+  // The old sequence polled once, immediately, and that poll almost always lost: the POST
+  // returns as soon as the job is accepted, before the phase moves, so the refresh spent
+  // on the click re-read the state the click was meant to change. Nothing polled again
+  // until a kernel event or the 60s fallback — measured at 17 seconds of a screen
+  // identical to the one before the click.
+  //
+  // So poll on a backoff until the phase differs from what it was, then hand back to the
+  // event path. The cap matters: an action whose phase never moves must not pin the
+  // controls forever, so after it the buttons return to the live status even if that
+  // status is unchanged. `seq` guards against a second click racing the first.
+  const confirmSeq = useRef(0);
+  const confirmAction = useCallback(async (label: string, phaseBefore: string | null) => {
+    const seq = ++confirmSeq.current;
+    setExplorerPending(label);
+    const backoff = [300, 500, 800, 1200, 1800, 2500, 3000, 3000, 3000, 3000, 3000, 3000];
+    for (const wait of backoff) {
+      await new Promise(r => setTimeout(r, wait));
+      if (confirmSeq.current !== seq) return;      // superseded by a newer action
+      const s = await pollRef.current();
+      if (confirmSeq.current !== seq) return;
+      if ((s?.phase ?? null) !== phaseBefore) break;
+    }
+    if (confirmSeq.current === seq) setExplorerPending(null);
+  }, []);
 
   /** Surface a 200-level refusal — strictly `ok === false`, because the canvas
    *  endpoints answer {status:"started"} with no `ok` at all (and fail by throwing).
    *  Trigger-intel fans out per schema and reports {results:[{schema, ok, reason}]} —
    *  show the first failing schema's reason. */
+  /** Shows the refusal, and REPORTS it: a refused action started nothing, so its caller
+   *  must not then wait for a phase change that is never coming. */
   const surfaceRefusal = useCallback(
-    (res: { ok?: boolean; status?: string; reason?: string; results?: { schema?: string | null; ok: boolean; reason?: string }[] }, fallback: string) => {
-      if (res.ok !== false) return;
+    (res: { ok?: boolean; status?: string; reason?: string; results?: { schema?: string | null; ok: boolean; reason?: string }[] }, fallback: string): boolean => {
+      if (res.ok !== false) return false;
       const failed = res.results?.find(r => !r.ok);
       const reason = res.reason ?? failed?.reason;
       const scope = failed?.schema ? `[${failed.schema}] ` : "";
       setExplorerError(reason ? `${scope}${reason}` : fallback);
+      return true;
     }, []);
 
   const runExplorer = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
     setExplorerBusy(true);
     setExplorerError(null);
     try {
       const res = canvasId ? await resumeCanvasExploration(canvasId)
                            : await startExplorer(connectionId, schema);
-      surfaceRefusal(res, "The explorer did not start");
-    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not start the explorer"); }
+      if (surfaceRefusal(res, "The explorer did not start")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Could not start the explorer");
+      setExplorerBusy(false);
+      return;                          // nothing started, so nothing to wait to become visible
+    }
     setExplorerBusy(false);
-    pollRef.current();
-  }, [connectionId, canvasId, schema, surfaceRefusal]);
+    confirmAction("Starting…", before);
+  }, [connectionId, canvasId, schema, surfaceRefusal, explorerStatus?.phase, confirmAction]);
 
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
     setExplorerBusy(true);
     setExplorerError(null);
     try {
       const res = canvasId ? await triggerCanvasDomainIntelligence(canvasId)
                            : await triggerDomainIntelligence(connectionId);
-      surfaceRefusal(res, "Intelligence did not trigger");
-    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Could not trigger intelligence"); }
+      if (surfaceRefusal(res, "Intelligence did not trigger")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Could not trigger intelligence");
+      setExplorerBusy(false);
+      return;
+    }
     setExplorerBusy(false);
-    pollRef.current();
-  }, [connectionId, canvasId, surfaceRefusal]);
+    confirmAction("Triggering…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
 
   // One-click refresh: clears stale findings and re-runs the full pipeline under the
   // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
   // the temporal window. The honest way to make a stale headline reliable + up to date.
   const runRefresh = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
     setExplorerBusy(true);
     setExplorerError(null);
     try {
       const res = canvasId ? await restartCanvasExploration(canvasId)
                            : await restartExplorer(connectionId);
-      surfaceRefusal(res, "The refresh did not start");
-    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Refresh failed"); }
+      if (surfaceRefusal(res, "The refresh did not start")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Refresh failed");
+      setExplorerBusy(false);
+      return;
+    }
     setExplorerBusy(false);
-    pollRef.current();
-  }, [connectionId, canvasId, surfaceRefusal]);
+    confirmAction("Refreshing…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
 
   const runStop = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
     setExplorerBusy(true);
     setExplorerError(null);
     try {
       const res = canvasId ? await stopCanvasExploration(canvasId)
                            : await stopExplorer(connectionId);
-      surfaceRefusal(res, "The explorer did not stop");
-    } catch (e) { setExplorerError(e instanceof Error ? e.message : "Stop failed"); }
+      if (surfaceRefusal(res, "The explorer did not stop")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Stop failed");
+      setExplorerBusy(false);
+      return;
+    }
     setExplorerBusy(false);
-    pollRef.current();
-  }, [connectionId, canvasId, surfaceRefusal]);
+    confirmAction("Stopping…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2437,22 +2493,37 @@ export function BriefingPanel({
     const scopeId = canvasId || connectionId;
     if (!scopeId) return;
     let mounted = true;
+    // Returns what it read, so an action can wait for its OWN effect to become visible
+    // instead of firing one poll that races the backend and loses.
     const poll = () => {
       const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId, schema);
-      req
-        .then(s => { if (mounted) setExplorerStatus(s); })
-        .catch(() => { if (mounted) setExplorerStatus(null); });
+      return req
+        .then(s => { if (mounted) setExplorerStatus(s); return s; })
+        .catch(() => { if (mounted) setExplorerStatus(null); return null; });
     };
     pollRef.current = poll;   // let the action handlers refresh status immediately
     poll();
+    // The subscription fires the callback ONCE PER EVENT, and events arrive in bursts —
+    // a single kernel tick was measured issuing NINE identical status requests in the
+    // same millisecond. Coalesce them: a burst schedules one refresh, not one each.
+    let burst: ReturnType<typeof setTimeout> | null = null;
+    const coalescedPoll = () => {
+      if (burst !== null) return;
+      burst = setTimeout(() => { burst = null; poll(); }, 120);
+    };
     // K2: phase-change events drive this; the interval is only a slow fallback
     // (was a 3s poll — the worst offender of the seven).
     const iv = setInterval(poll, 60_000);
-    const unsub = subscribeKernelEvents(() => poll(), {
+    const unsub = subscribeKernelEvents(coalescedPoll, {
       kinds: ["exploration.", "job.state"],
       ...(canvasId ? { canvasId } : { connId: connectionId }),
     });
-    return () => { mounted = false; clearInterval(iv); unsub(); };
+    return () => {
+      mounted = false;
+      clearInterval(iv);
+      if (burst !== null) clearTimeout(burst);
+      unsub();
+    };
   }, [connectionId, canvasId, schema]);
 
   // Auto-refresh the briefing the moment an exploration run reaches "complete" —
@@ -2594,37 +2665,45 @@ export function BriefingPanel({
             ✗ {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
           </span>
         )}
+        {/* A dispatched action, named, until the status shows it. Without this the only
+            feedback a click produced was a 42ms disabled flicker followed by seconds of
+            an unchanged screen — indistinguishable from a dead button. */}
+        {explorerPending && (
+          <span style={{ fontSize: 11, color: "var(--blue4)", fontWeight: 500 }}>
+            {explorerPending}
+          </span>
+        )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy} onClick={runExplorer}
-              >Start</Button>
+                disabled={explorerBusy || !!explorerPending} onClick={runExplorer}
+              >{explorerPending === "Starting…" ? "Starting…" : "Start"}</Button>
               {explorerStatus?.phase === "complete" && (
                 <Button
                   variant="secondary" size="xs"
-                  disabled={explorerBusy} onClick={runTriggerIntel}
-                >Trigger Intel</Button>
+                  disabled={explorerBusy || !!explorerPending} onClick={runTriggerIntel}
+                >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
               )}
               {explorerStatus?.phase === "complete" && (
                 <Button
                   variant="secondary" size="xs"
-                  disabled={explorerBusy} onClick={runRefresh}
+                  disabled={explorerBusy || !!explorerPending} onClick={runRefresh}
                   title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
-                >↻ Refresh</Button>
+                >{explorerPending === "Refreshing…" ? "Refreshing…" : "↻ Refresh"}</Button>
               )}
             </>
           ) : (
             <>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy} onClick={runStop}
-              >Stop</Button>
+                disabled={explorerBusy || !!explorerPending} onClick={runStop}
+              >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy} onClick={runRefresh}
-              >Restart</Button>
+                disabled={explorerBusy || !!explorerPending} onClick={runRefresh}
+              >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
             </>
           )}
         </div>
@@ -2633,7 +2712,10 @@ export function BriefingPanel({
       {isEmpty ? (
         <BriefingEmpty
           status={explorerStatus}
-          busy={explorerBusy}
+          // Its CTA already renders a spinner + "Working…" on `busy`; the bug was that
+          // `explorerBusy` tracked only the 42ms request, so that state was never seen.
+          // Holding it through the pending window is the whole fix for this surface.
+          busy={explorerBusy || !!explorerPending}
           onStart={runExplorer}
           onTrigger={runTriggerIntel}
           canvasId={canvasId}
