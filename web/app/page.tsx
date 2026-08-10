@@ -757,6 +757,21 @@ function HomeScreen({
       .then(r => r.json())
       .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 8) : []))
       .catch(() => {});
+    // The three stat tiles below are connection-scoped, and `selectedConn` is DERIVED —
+    // it reads "" while the workspace clamp is still fail-closed and again once the
+    // active connection is deleted. Asking about a connection with no id produced
+    // `/exploration//status` and `/exploration//domains`, whose empty path segment
+    // Vercel's EDGE answers with a 308 before the app is reached; an edge redirect
+    // carries no Access-Control-Allow-Origin, so the browser blocks it and Home paints
+    // "Failed to fetch". Blank the tiles instead — with no connection there is no number
+    // to show, and leaving the old one up would attribute a deleted connection's stats
+    // to whatever replaces it. `/investigations` above is workspace-scoped and stays.
+    if (!selectedConn) {
+      setExploration(null);
+      setOntology(null);
+      setDomainInsightCount(null);
+      return;
+    }
     getExplorationStatus(selectedConn).then(setExploration).catch(() => {});
     getOntology(selectedConn).then(setOntology).catch(() => {});
     getDomainInsights(selectedConn)
