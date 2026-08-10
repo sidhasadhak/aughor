@@ -5328,6 +5328,14 @@ export interface paths {
          *
          *     `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
          *     zero turns is undefined, and 0% would read as "converse is never chosen".
+         *
+         *     The numbers are WINDOWED, and `window` in the response says how. The flag is off by
+         *     default, so most of the log predates converse being able to run at all; counting those
+         *     turns put a denominator around a population they were never part of, and the first
+         *     live reading said 0.016 when the honest figure was 4 of 4. The window defaults to the
+         *     first converse turn. `since_seq` overrides it — the flag's flip, a deploy, the start
+         *     of a trial — and `window.lifetime_ask_turns` still reports the whole log, so nothing
+         *     is hidden by narrowing it.
          */
         get: operations["route_mix_obs_route_mix_get"];
         put?: never;
@@ -20188,6 +20196,7 @@ export interface operations {
         parameters: {
             query?: {
                 scan?: number;
+                since_seq?: number | null;
             };
             header?: never;
             path?: never;

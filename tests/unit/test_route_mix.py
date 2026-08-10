@@ -37,12 +37,12 @@ def _install(monkeypatch, finals, tools):
     monkeypatch.setattr(led.Ledger, "default", staticmethod(lambda: _FakeLedger(finals, tools)))
 
 
-def _final(trace, name="ask"):
-    return {"trace_id": trace, "name": name}
+def _final(trace, name="ask", seq=None):
+    return {"trace_id": trace, "name": name, "seq": seq}
 
 
-def _mark(trace, *, steps=2, stop="answered", tools=("run_sql",), injected=1000):
-    return {"trace_id": trace, "name": "ask.converse", "row_count": steps,
+def _mark(trace, *, steps=2, stop="answered", tools=("run_sql",), injected=1000, seq=None):
+    return {"trace_id": trace, "name": "ask.converse", "row_count": steps, "seq": seq,
             "payload": {"stop_reason": stop, "tools": list(tools),
                         "injected_chars": injected}}
 
@@ -160,3 +160,60 @@ def test_tool_names_survive_the_round_trip_through_the_store():
         )
     finally:
         ledger.session_events_clear()
+
+
+# ── the window ────────────────────────────────────────────────────────────────
+
+def test_turns_from_before_converse_could_run_are_not_in_the_denominator(monkeypatch):
+    """The defect this fold shipped with, and the reason the window exists.
+
+    `ask.converse` is off by default, so most of the log is traffic from before converse
+    could serve anything. Dividing by all of it puts turns in a denominator they were
+    never part of. Live, that read 0.016 when converse had served 4 of the 4 turns that
+    happened after the flag went on — understating by ~60x, in the receipt built to decide
+    whether conversation should become the default door.
+
+    A ratio's denominator must contain only things that could have had the property.
+    """
+    finals = [_final(f"old{i}", seq=i) for i in range(1, 101)]          # flag off
+    finals += [_final("new1", seq=201), _final("new2", seq=211)]        # flag on
+    # Marker BEFORE final, which is the real emission order — and the order that broke the
+    # first version of this window, because it filtered rows instead of turns.
+    _install(monkeypatch, finals,
+             [_mark("new1", seq=200), _mark("new2", seq=210)])
+
+    mix = session_log.route_mix()
+
+    assert mix["converse_turns"] == 2
+    assert mix["ask_turns"] == 2, (
+        "the 100 turns from before the first converse turn are not part of the population")
+    assert mix["converse_share"] == 1.0
+    assert mix["window"]["reason"] == "first_converse_turn"
+    assert mix["window"]["excluded_before_window"] == 100
+    assert mix["window"]["lifetime_ask_turns"] == 102, "the whole log is still reported"
+
+
+def test_since_seq_overrides_the_default_window(monkeypatch):
+    """An operator windows to a flip, a deploy, or the start of a trial."""
+    finals = [_final("a", seq=10), _final("b", seq=20), _final("c", seq=30)]
+    _install(monkeypatch, finals, [_mark("a", seq=11), _mark("c", seq=31)])
+
+    mix = session_log.route_mix(since_seq=25)
+
+    assert mix["ask_turns"] == 1 and mix["converse_turns"] == 1
+    assert mix["window"]["reason"] == "caller" and mix["window"]["from_seq"] == 25
+    assert mix["window"]["excluded_before_window"] == 2
+
+
+def test_with_no_converse_turn_the_window_is_the_whole_log_and_the_share_is_null(monkeypatch):
+    """Nothing to window to, and nothing to report. The share stays undefined rather than
+    zero — 0% would read as "converse is never chosen" when it has never been asked to."""
+    _install(monkeypatch, [_final("a", seq=1), _final("b", seq=2)], [])
+
+    mix = session_log.route_mix()
+
+    assert mix["converse_turns"] == 0
+    assert mix["ask_turns"] == 2, "no window means no exclusions"
+    assert mix["converse_share"] == 0.0 or mix["converse_share"] is None
+    assert mix["window"]["reason"] == "no_converse_turn_yet"
+    assert mix["window"]["excluded_before_window"] == 0

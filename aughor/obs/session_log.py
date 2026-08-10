@@ -332,7 +332,8 @@ def tool_reliability(*, org_id: Optional[str] = None, scan: int = 5000) -> list[
     return sorted(out, key=lambda a: a["calls"], reverse=True)
 
 
-def route_mix(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
+def route_mix(*, org_id: Optional[str] = None, scan: int = 5000,
+              since_seq: Optional[int] = None) -> dict:
     """Which BODY served each `/ask` turn — the route receipt (Wave 6).
 
     This is `ask.converse`'s graduation input: the flag's stated exit is the headline
@@ -343,8 +344,31 @@ def route_mix(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
     The converse body logs itself (`tool_call` named `ask.converse`); every `/ask` turn
     logs a `final_response`. Counting only the first gives a numerator with nothing to
     divide it by — a ratio whose denominator was never recorded is the shape of mistake
-    this codebase keeps paying for. So the denominator is every finished `/ask` turn, and
-    a turn is `fast_path` exactly when it finished without a converse marker.
+    this codebase keeps paying for.
+
+    THE WINDOW IS THE OTHER HALF OF THAT SAME MISTAKE, and this function shipped with it.
+    The flag is off by default, so most of the log is traffic from before converse could
+    run at all. Dividing by every turn ever recorded put 302 turns in a denominator that
+    could never have contained them, and the first live reading came back 0.016 when the
+    true figure was 4 of 4. A ratio's denominator must contain only things that could have
+    had the property — the rule this repo has now paid for seven times, here inside the
+    receipt built to answer the question.
+
+    So the window defaults to the FIRST converse turn in the log. Before that marker
+    converse was demonstrably serving nothing, which makes it the earliest point the
+    question is even askable. `since_seq` overrides it (the flag's flip, a deploy, the
+    start of a trial), and the window is reported back so the number is never read without
+    its scope. With no converse turn at all the window is the whole log and the share is
+    null — undefined, not zero.
+
+    Deep turns stay IN the denominator on purpose, and that is a different question from
+    the one above. They were never converse-eligible (`_converse_eligible` excludes
+    `depth == "deep"`, escalations, dossier drills and seeded SQL), but the flag asks how
+    much of the DOOR conversation would own, and a turn the router sent deep is still the
+    door's traffic. What that makes this is a share of all `/ask` turns, not a hit rate
+    over eligible ones — the label matters, and the honest one is on the field name.
+    Recording the router's verdict per turn would let both be reported; `user_request`
+    carries the REQUESTED depth ("auto"), which is not the same fact.
 
     `converse_turns` counts DISTINCT trace ids, not markers: one turn emits one marker
     today, but counting rows would silently become a lie the moment it emits two.
@@ -356,10 +380,48 @@ def route_mix(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
     ledger = Ledger.default()
 
     finals = ledger.session_events(kind=FINAL_RESPONSE, org_id=org_id, limit=scan)
-    ask_finals = [e for e in finals if (e.get("name") or "") == "ask"]
+    ask_finals_all = [e for e in finals if (e.get("name") or "") == "ask"]
 
-    marks = ledger.session_events(kind=TOOL_CALL, org_id=org_id, limit=scan)
-    converse_marks = [e for e in marks if (e.get("name") or "") == "ask.converse"]
+    marks_all = ledger.session_events(kind=TOOL_CALL, org_id=org_id, limit=scan)
+    converse_all = [e for e in marks_all if (e.get("name") or "") == "ask.converse"]
+
+    # Resolve the window before counting anything, so numerator and denominator can never
+    # be taken from different populations.
+    #
+    # The window is per TURN, not per row, and that distinction is load-bearing. A turn
+    # writes several rows — its converse marker and its final response at least — and
+    # their order is not fixed. Filtering rows individually splits a turn across the
+    # boundary: its marker counted in the numerator while its final sits outside the
+    # denominator, which is the very "two different populations" error this window exists
+    # to remove. Caught by the first test written against it, which read 1 of 2.
+    seq_by_trace: dict = {}
+    for e in (*ask_finals_all, *converse_all):
+        trace, seq = e.get("trace_id"), e.get("seq")
+        if trace is None or not isinstance(seq, int):
+            continue
+        prev = seq_by_trace.get(trace)
+        seq_by_trace[trace] = seq if prev is None else min(prev, seq)
+
+    converse_starts = [seq_by_trace[t] for t in
+                       {e.get("trace_id") for e in converse_all if e.get("trace_id")}
+                       if t in seq_by_trace]
+    if since_seq is not None:
+        window_from, window_reason = since_seq, "caller"
+    elif converse_starts:
+        window_from, window_reason = min(converse_starts), "first_converse_turn"
+    else:
+        window_from, window_reason = None, "no_converse_turn_yet"
+
+    def _in_window(e) -> bool:
+        if window_from is None:
+            return True
+        # An untimed row (no seq, or a trace with none) predates nothing and is kept —
+        # dropping it would let a storage gap quietly shrink the denominator.
+        start = seq_by_trace.get(e.get("trace_id"))
+        return start is None or start >= window_from
+
+    ask_finals = [e for e in ask_finals_all if _in_window(e)]
+    converse_marks = [e for e in converse_all if _in_window(e)]
     converse_traces = {e.get("trace_id") for e in converse_marks if e.get("trace_id")}
 
     total = len(ask_finals)
@@ -381,6 +443,15 @@ def route_mix(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
         # None, not 0.0, when nothing has run: a share of zero turns is undefined, and
         # reporting 0% would read as "converse is never chosen".
         "converse_share": round(converse / total, 3) if total else None,
+        # The scope every number above was computed in. Reported rather than assumed,
+        # because the failure this replaced was not a wrong calculation — it was a right
+        # calculation over the wrong population, and nothing in the response said so.
+        "window": {
+            "from_seq": window_from,
+            "reason": window_reason,
+            "excluded_before_window": len(ask_finals_all) - total,
+            "lifetime_ask_turns": len(ask_finals_all),
+        },
         "converse_mean_steps": _avg(steps),
         "converse_mean_injected_chars": _avg([p.get("injected_chars") for p in payloads]),
         "converse_stop_reasons": _tally(p.get("stop_reason") for p in payloads),
