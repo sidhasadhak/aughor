@@ -1509,15 +1509,46 @@ export default function Home() {
   // effect below runs in the SAME commit as this one — still closed over the default
   // tab — and would otherwise rewrite `?tab=canvases` to `?tab=intelligence` before the
   // link ever reached state, silently destroying the deep link it was meant to honour.
-  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: IntelLayer | null } | null>(null);
+  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: IntelLayer | null; canvas: string | null } | null>(null);
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
     const t = tabFromUrl();
     const l = layerFromUrl();
-    const table = new URLSearchParams(window.location.search).get("table");
+    const table = params.get("table");
+    const canvasId = params.get("canvas");
     if (t) setTab(t);
     if (l) setIntelLayer(l);
     if (table) setInitialGraphTable(table);
-    if (t || l) pendingDeepLink.current = { tab: t, layer: l };
+    if (t || l || canvasId) pendingDeepLink.current = { tab: t, layer: l, canvas: canvasId };
+
+    // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
+    // `?layer=` are their own values; `?canvas=` is only an id, and the workspace renders
+    // on the Canvas OBJECT — `tab === "canvas-workspace" && activeCanvas` — so until the
+    // roster arrives the tab is restored and the screen it names is blank. That is what
+    // made every canvas-workspace link decorative: the URL round-tripped and the pane did
+    // not. The wait is held below rather than raced.
+    if (!canvasId) return;
+    let dropped = false;
+    const settle = () => { if (pendingDeepLink.current) pendingDeepLink.current.canvas = null; };
+    getCanvases()
+      .then(all => {
+        if (dropped) return;
+        const found = all.find(c => c.id === canvasId) ?? null;
+        if (found) {
+          setActiveCanvas(found);
+          // Match what picking a canvas does, so a resumed workspace is scoped to the
+          // same connection a clicked one is. `?conn=` is written by the sync effect but
+          // never read back, so without this the canvas returns against the default.
+          const primaryConn = found.scopes[0]?.connection_id;
+          if (primaryConn) setSelectedConn(primaryConn);
+        }
+        // Settle either way. A canvas that has since been deleted must not hold the URL
+        // hostage forever — the screen falls back to the empty workspace and the stale id
+        // is dropped by the next sync, which is the honest outcome for a dead link.
+        settle();
+      })
+      .catch(settle);
+    return () => { dropped = true; };
   }, []);
 
   // S1 — keep the URL in step with the screen: a tab change PUSHES (back works
@@ -1530,19 +1561,28 @@ export default function Home() {
     // would replace the URL that is still being read from.
     const pending = pendingDeepLink.current;
     if (pending) {
-      if ((pending.tab && tab !== pending.tab) || (pending.layer && intelLayer !== pending.layer)) return;
+      // `pending.canvas` is still set while the roster is in flight. Writing now would
+      // delete the `?canvas=` that the fetch is on its way to resolve — the same
+      // self-erasing race the tab had before, one async hop longer.
+      if ((pending.tab && tab !== pending.tab) || (pending.layer && intelLayer !== pending.layer)
+          || pending.canvas) return;
       pendingDeepLink.current = null;
     }
     const params = new URLSearchParams(window.location.search);
     const urlTab = params.get("tab");
     const urlConn = params.get("conn");
     const urlLayer = params.get("layer");
+    const urlCanvas = params.get("canvas");
     const wantLayer = tab === "intelligence" ? intelLayer : null;
+    // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
+    // survive into screens it means nothing on.
+    const wantCanvas = tab === "canvas-workspace" ? (activeCanvas?.id ?? null) : null;
     if (urlTab === tab && (urlConn ?? "") === rawSelectedConn
-        && (urlLayer ?? null) === wantLayer) return;
+        && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas) return;
     params.set("tab", tab);
     if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
     if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
+    if (wantCanvas) params.set("canvas", wantCanvas); else params.delete("canvas");
     const next = `${window.location.pathname}?${params.toString()}`;
     if (!urlSyncReady.current || urlTab === tab) {
       window.history.replaceState(null, "", next);
@@ -1550,7 +1590,7 @@ export default function Home() {
     } else {
       window.history.pushState(null, "", next);
     }
-  }, [tab, rawSelectedConn, intelLayer]);
+  }, [tab, rawSelectedConn, intelLayer, activeCanvas]);
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
