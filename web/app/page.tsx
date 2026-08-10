@@ -1534,14 +1534,14 @@ export default function Home() {
       .then(all => {
         if (dropped) return;
         const found = all.find(c => c.id === canvasId) ?? null;
-        if (found) {
-          setActiveCanvas(found);
-          // Match what picking a canvas does, so a resumed workspace is scoped to the
-          // same connection a clicked one is. `?conn=` is written by the sync effect but
-          // never read back, so without this the canvas returns against the default.
-          const primaryConn = found.scopes[0]?.connection_id;
-          if (primaryConn) setSelectedConn(primaryConn);
-        }
+        // Only the canvas. The connection is NOT set from it, though clicking a canvas
+        // does exactly that: `?conn=` is already restored by the connections effect
+        // below, which deliberately lets a URL connection outrank the remembered one
+        // ("a shared URL must open on the data it was looking at"). Setting it here too
+        // would be a second async writer to the same state — the winner decided by which
+        // fetch returned last — and on a `?canvas=X&conn=Y` link it would overwrite the Y
+        // the user explicitly asked for.
+        if (found) setActiveCanvas(found);
         // Settle either way. A canvas that has since been deleted must not hold the URL
         // hostage forever — the screen falls back to the empty workspace and the stale id
         // is dropped by the next sync, which is the honest outcome for a dead link.
