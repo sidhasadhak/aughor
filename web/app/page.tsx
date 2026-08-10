@@ -765,7 +765,8 @@ function HomeScreen({
     // carries no Access-Control-Allow-Origin, so the browser blocks it and Home paints
     // "Failed to fetch". Blank the tiles instead — with no connection there is no number
     // to show, and leaving the old one up would attribute a deleted connection's stats
-    // to whatever replaces it. `/investigations` above is workspace-scoped and stays.
+    // to whatever replaces it. The deep-analysis fetch above is workspace-scoped, so it
+    // still runs without a connection and is deliberately left outside this guard.
     if (!selectedConn) {
       setExploration(null);
       setOntology(null);
