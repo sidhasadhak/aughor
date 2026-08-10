@@ -2023,6 +2023,16 @@ const PHASE_LABELS: Record<string, string> = {
   synthesis:         "composing cross-domain findings",
 };
 
+// The birth rite's steps, which run BEFORE the first exploration phase exists. Measured
+// on a 38-table schema: intelligence 7.6s, popularity 8.9s — so this names ~16.5s that
+// otherwise reads as a stalled Start button. Same voice as PHASE_LABELS: what it is
+// doing, not what it is called internally.
+const BIRTH_STEP_LABELS: Record<string, string> = {
+  intelligence: "Building intelligence…",
+  popularity:   "Reading query history…",
+  exploration:  "Starting exploration…",
+};
+
 function BriefingEmpty({
   status,
   busy,
@@ -2262,6 +2272,14 @@ export function BriefingPanel({
   // For ~17s the panel then showed the pre-click state with an enabled Start button, so
   // the only feedback a click produced was none, and clicking again was invited.
   const [explorerPending, setExplorerPending] = useState<string | null>(null);
+  // The birth-rite step currently running, from the `birth.step` events the backend
+  // already emits. Names the wait instead of leaving it blank.
+  const [birthStep, setBirthStep] = useState<string | null>(null);
+  // Locked while a request is in flight, while a dispatched action has not yet become
+  // visible, AND while a birth rite is running — including one this user did not start
+  // (a connection auto-explores on boot). Offering "Start" during a run in progress was
+  // itself part of what made the controls feel unreliable.
+  const controlsLocked = explorerBusy || !!explorerPending || !!birthStep;
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
   const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
   const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
@@ -2514,8 +2532,27 @@ export function BriefingPanel({
     // K2: phase-change events drive this; the interval is only a slow fallback
     // (was a 3s poll — the worst offender of the seven).
     const iv = setInterval(poll, 60_000);
-    const unsub = subscribeKernelEvents(coalescedPoll, {
-      kinds: ["exploration.", "job.state"],
+    // `birth.` is subscribed because the backend ALREADY narrates this wait and nobody
+    // was listening. A Start hands off to the birth rite, which runs two preparatory
+    // steps before exploration begins — measured at 7.6s (intelligence) and 8.9s
+    // (popularity, 4,785 queries over 38 tables). Only after both does the first
+    // `exploration.phase` arrive, which is the ONLY thing this panel used to react to.
+    // So ~16.5s of real, named work looked like a hang. The events carry `step` and a
+    // started/done status; showing them costs nothing and changes the wait from
+    // "nothing is happening" to "this is what is happening".
+    const unsub = subscribeKernelEvents(ev => {
+      if (ev.kind === "birth.step" || ev.kind === "birth.done") {
+        const p = (ev.payload ?? {}) as { step?: string; status?: string; schema?: string | null };
+        // Events for a sibling schema must not narrate THIS panel's wait.
+        const sameScope = !schema || !p.schema || p.schema === schema;
+        if (sameScope) {
+          if (ev.kind === "birth.done") setBirthStep(null);
+          else if (p.status === "started" && p.step) setBirthStep(p.step);
+        }
+      }
+      coalescedPoll();
+    }, {
+      kinds: ["exploration.", "job.state", "birth."],
       ...(canvasId ? { canvasId } : { connId: connectionId }),
     });
     return () => {
@@ -2668,9 +2705,9 @@ export function BriefingPanel({
         {/* A dispatched action, named, until the status shows it. Without this the only
             feedback a click produced was a 42ms disabled flicker followed by seconds of
             an unchanged screen — indistinguishable from a dead button. */}
-        {explorerPending && (
+        {(explorerPending || birthStep) && (
           <span style={{ fontSize: 11, color: "var(--blue4)", fontWeight: 500 }}>
-            {explorerPending}
+            {birthStep ? (BIRTH_STEP_LABELS[birthStep] ?? `${birthStep}…`) : explorerPending}
           </span>
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -2678,18 +2715,18 @@ export function BriefingPanel({
             <>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy || !!explorerPending} onClick={runExplorer}
+                disabled={controlsLocked} onClick={runExplorer}
               >{explorerPending === "Starting…" ? "Starting…" : "Start"}</Button>
               {explorerStatus?.phase === "complete" && (
                 <Button
                   variant="secondary" size="xs"
-                  disabled={explorerBusy || !!explorerPending} onClick={runTriggerIntel}
+                  disabled={controlsLocked} onClick={runTriggerIntel}
                 >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
               )}
               {explorerStatus?.phase === "complete" && (
                 <Button
                   variant="secondary" size="xs"
-                  disabled={explorerBusy || !!explorerPending} onClick={runRefresh}
+                  disabled={controlsLocked} onClick={runRefresh}
                   title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
                 >{explorerPending === "Refreshing…" ? "Refreshing…" : "↻ Refresh"}</Button>
               )}
@@ -2698,11 +2735,11 @@ export function BriefingPanel({
             <>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy || !!explorerPending} onClick={runStop}
+                disabled={controlsLocked} onClick={runStop}
               >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
               <Button
                 variant="secondary" size="xs"
-                disabled={explorerBusy || !!explorerPending} onClick={runRefresh}
+                disabled={controlsLocked} onClick={runRefresh}
               >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
             </>
           )}
@@ -2715,7 +2752,7 @@ export function BriefingPanel({
           // Its CTA already renders a spinner + "Working…" on `busy`; the bug was that
           // `explorerBusy` tracked only the 42ms request, so that state was never seen.
           // Holding it through the pending window is the whole fix for this surface.
-          busy={explorerBusy || !!explorerPending}
+          busy={controlsLocked}
           onStart={runExplorer}
           onTrigger={runTriggerIntel}
           canvasId={canvasId}
