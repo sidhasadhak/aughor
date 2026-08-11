@@ -19,7 +19,8 @@ async def get_catalog_tree(workspace_id: str | None = None):
     Scoped to `workspace_id`'s connections when given (data-path tenancy)."""
     loop = asyncio.get_running_loop()
 
-    def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
+    def _quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
+        """This catalog's schemas, or None when they could not be read at all."""
         try:
             db = open_connection_for(conn_id)
             meta = get_meta(conn_id)
@@ -88,8 +89,12 @@ async def get_catalog_tree(workspace_id: str | None = None):
                 rows = [r for r in rows if r[0] == schema_filter]
             db.close()
         except Exception as exc:
+            # None, NOT [] — the caller reconciles the metastore to whatever comes
+            # back, and an empty list means "this catalog has no schemas", which
+            # DELETES every schema row it has. "I could not look" and "there is
+            # nothing there" are different answers and must not share a value.
             logger.debug("catalog tree: schema query failed for %s: %s", conn_id, exc)
-            return []
+            return None
 
         schema_map: dict[str, list] = {}
         for schema, table_name, row_est in rows:
@@ -109,15 +114,25 @@ async def get_catalog_tree(workspace_id: str | None = None):
             cid = conn_info["id"]
             if allowed is not None and cid not in allowed:
                 continue  # not in the active workspace — don't surface its schema
-            schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
+            introspected = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
+            schemas = introspected or []
             # Keep the metastore's first-class Schema rows tracking live introspection
             # (catalog.schema namespace). Best-effort — never break the tree build.
-            try:
-                from aughor.metastore import set_catalog_schemas
-                set_catalog_schemas(cid, [s["name"] for s in schemas])
-            except Exception as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "metastore schema sync", counter="metastore.schema_sync")
+            #
+            # SKIPPED when introspection FAILED, because this reconcile deletes: a
+            # connection that could not be opened used to report zero schemas, and
+            # this call then removed every schema row the catalog had. A GET that
+            # destroys metadata whenever a database blinks is not a read. The next
+            # successful request re-inserted them, so the damage showed up as write
+            # churn rather than as an error — store_metastore had 1701 writes in
+            # production against single digits for every other store.
+            if introspected is not None:
+                try:
+                    from aughor.metastore import set_catalog_schemas
+                    set_catalog_schemas(cid, [s["name"] for s in schemas])
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "metastore schema sync", counter="metastore.schema_sync")
             entries.append({
                 "conn_id": cid,
                 "name": conn_info["name"],
