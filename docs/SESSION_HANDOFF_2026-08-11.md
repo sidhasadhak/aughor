@@ -139,11 +139,40 @@ materialized database without a restart.
    `sqlite3.Connection` has no `__dict__` to memoize on, so that path still runs the
    DDL every time.
 
-   ⚠️ **The predicted win is ~3.9 s → 0.7–0.9 s for `/catalog/tree`, and it is a
-   PREDICTION.** The last one in this slot was wrong. `/dev/stats` now carries
-   `store.schema_ddl.ran` / `.skipped` precisely so the check is a direct reading
-   rather than arithmetic: in steady state `ran` should plateau at roughly
-   stores × threads while `skipped` climbs with traffic.
+   ✅ **Shipped as #312 and MEASURED in production on `7f30c73`.** The prediction was
+   0.7–0.9 s for `/catalog/tree`; the measured mean is **0.729 s**. Six warm runs per
+   endpoint, interleaved so they share network conditions:
+
+   | endpoint | before #311 | after #311 | after #312 | total |
+   |---|---|---|---|---|
+   | `/health` (floor) | — | 0.22 s | 0.238 s | — |
+   | `/connections` | 1.7 s | 0.80 s | **0.72 s** | 2.4× |
+   | `/workspaces` | 6.5 s | 3.0 s | **1.22 s** | 5.3× |
+   | `/catalog/tree` | 10.9 s | 3.9 s | **0.73 s** | **14.9×** |
+
+   **The proof is not the timing — it is that the op-count gradient collapsed.** The
+   whole diagnosis rested on the residual being *proportional to the number of store
+   operations*. Residual over floor, by op count:
+
+   | | ~1 op | ~4 ops | ~7 ops | spread |
+   |---|---|---|---|---|
+   | before #312 | 0.58 s | 2.78 s | 3.68 s | **6.3×** |
+   | after #312 | 0.48 s | 0.98 s | 0.49 s | **1.0×** |
+
+   A 7-operation endpoint now costs the same as a 1-operation endpoint. That is the
+   claim, and nothing else would produce that shape.
+
+   🔑 **`/connections` barely moved, and that is the theory working, not failing.**
+   It makes ~1 store operation, so there is no second operation to amortise onto —
+   the first op on any connection still pays its DDL. Only endpoints that make
+   several store calls can win within a single request.
+
+   ⚠️ **The counters I added for this did NOT do their job.** `store.schema_ddl.ran`
+   / `.skipped` are per-PROCESS, and Vercel runs many. Every sample returned
+   `ran=1, skipped=0` from one idle instance while the load went to others — after 10
+   `/catalog/tree` requests. **A per-process counter cannot measure a multi-process
+   deployment**; it needs to be aggregated at the edge or logged per request. The
+   endpoint-residual signature above is what actually carried the proof.
 3. **`refresh_popularity` has no staleness check** — re-parses up to 5,000 statements
    every run (9.3 s measured). `save_popularity` already persists `mined_at` and
    `n_queries`, and nothing reads them.
