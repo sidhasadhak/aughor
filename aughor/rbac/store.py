@@ -19,6 +19,7 @@ from typing import List
 
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 from aughor.rbac.models import RoleAssignment
 from aughor.util.time import now_iso as _now
 
@@ -69,7 +70,7 @@ def assign_role(org_id: str, user_id: str, role: str) -> RoleAssignment:
     role = (role or "").strip().lower()
     now = _now()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         """
         INSERT INTO role_assignments (org_id, user_id, role, created_at, updated_at)
@@ -91,7 +92,7 @@ def revoke_role(org_id: str, user_id: str, role: str) -> bool:
     """Remove a role grant. Returns True when a row was actually removed."""
     role = (role or "").strip().lower()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     cur = c.execute(
         "DELETE FROM role_assignments WHERE org_id = ? AND user_id = ? AND role = ?",
         (org_id, user_id, role),
@@ -105,7 +106,7 @@ def revoke_role(org_id: str, user_id: str, role: str) -> bool:
 def roles_for_user(org_id: str, user_id: str) -> List[str]:
     """The role names held by ``user_id`` in ``org_id`` (deterministic order)."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT role FROM role_assignments WHERE org_id = ? AND user_id = ? ORDER BY role ASC",
         (org_id, user_id),
@@ -116,7 +117,7 @@ def roles_for_user(org_id: str, user_id: str) -> List[str]:
 def list_assignments(org_id: str) -> List[RoleAssignment]:
     """Every assignment in an org — the roster admin view (P3)."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT * FROM role_assignments WHERE org_id = ? ORDER BY user_id ASC, role ASC",
         (org_id,),
@@ -128,7 +129,7 @@ def count_assignments(org_id: str) -> int:
     """How many role grants exist in an org — 0 means "un-bootstrapped" (P3 uses
     this to make the org's first identified user its owner)."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     return c.execute(
         "SELECT COUNT(*) FROM role_assignments WHERE org_id = ?", (org_id,)
     ).fetchone()[0]

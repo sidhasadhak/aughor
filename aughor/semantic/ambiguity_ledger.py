@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 from aughor.db.migrations import run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 from aughor.semantic.lexical import tokenize
 
 _LOCK = threading.Lock()
@@ -94,7 +95,7 @@ def _fingerprint(text: str) -> str:
 def _conn() -> sqlite3.Connection:
     c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     return c
 
 

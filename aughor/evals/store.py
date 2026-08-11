@@ -27,6 +27,7 @@ from typing import Any, Optional
 from aughor.db.migrations import Migration, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 from aughor.org.context import current_org_id
 
 _DB_PATH = resolve_db_path("AUGHOR_EVALS_DB", Path("data/evals.db"))
@@ -50,7 +51,7 @@ def _now() -> str:
 def _connect() -> sqlite3.Connection:
     c = connect_store(_DB_PATH, check_same_thread=False)
     c.row_factory = sqlite3.Row
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     return c
 
 

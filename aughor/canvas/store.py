@@ -16,6 +16,7 @@ from typing import List, Optional
 from aughor.canvas.models import Canvas, CanvasScope, CanvasArtifact
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path("AUGHOR_CANVAS_DB", Path(__file__).parent.parent.parent / "data" / "canvases.db")
 
@@ -77,7 +78,7 @@ def create_canvas(
     now = _now()
     scopes_json = json.dumps([s.model_dump() for s in scopes])
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "INSERT INTO canvases (id, name, description, scopes_json, is_legacy, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -92,14 +93,14 @@ def create_canvas(
 
 def get_canvas(canvas_id: str) -> Optional[Canvas]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM canvases WHERE id = ?", (canvas_id,)).fetchone()
     return _row_to_canvas(row) if row else None
 
 
 def list_canvases(include_legacy: bool = True) -> List[Canvas]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if include_legacy:
         rows = c.execute("SELECT * FROM canvases ORDER BY updated_at DESC").fetchall()
     else:
@@ -163,7 +164,7 @@ def _record_revision(cv: Optional[Canvas]) -> None:
 
 def delete_canvas(canvas_id: str) -> bool:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     affected = c.execute("DELETE FROM canvases WHERE id = ?", (canvas_id,)).rowcount
     c.commit()
     return affected > 0
@@ -186,7 +187,7 @@ def delete_legacy_canvases() -> int:
     that remain from older installs so only user-created Canvases are shown.
     """
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     cur = c.execute("DELETE FROM canvases WHERE is_legacy = 1")
     try:
         c.commit()

@@ -15,6 +15,7 @@ from aughor.savedquery.models import SavedQuery
 from aughor.util.time import now_iso as _now
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path("AUGHOR_SAVEDQUERY_DB", Path(__file__).parent.parent.parent / "data" / "saved_queries.db")
 
@@ -71,7 +72,7 @@ def create_saved_query(
     now = _now()
     spec_json = json.dumps(spec or {})
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "INSERT INTO saved_queries (id, connection_id, name, sql, spec_json, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -86,14 +87,14 @@ def create_saved_query(
 
 def get_saved_query(query_id: str) -> Optional[SavedQuery]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM saved_queries WHERE id = ?", (query_id,)).fetchone()
     return _row_to_query(row) if row else None
 
 
 def list_saved_queries(connection_id: Optional[str] = None) -> List[SavedQuery]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if connection_id:
         rows = c.execute(
             "SELECT * FROM saved_queries WHERE connection_id = ? ORDER BY updated_at DESC",
@@ -118,7 +119,7 @@ def update_saved_query(
     new_spec = spec if spec is not None else existing.spec
     now = _now()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "UPDATE saved_queries SET name=?, sql=?, spec_json=?, updated_at=? WHERE id=?",
         (new_name, new_sql, json.dumps(new_spec or {}), now, query_id),
@@ -153,7 +154,7 @@ def _record_revision(q: Optional[SavedQuery]) -> None:
 
 def delete_saved_query(query_id: str) -> bool:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     affected = c.execute("DELETE FROM saved_queries WHERE id = ?", (query_id,)).rowcount
     c.commit()
     return bool(affected and affected > 0)

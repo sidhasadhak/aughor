@@ -51,6 +51,10 @@ one is not just a dictionary lookup:
 
 SQLite is deliberately NOT pooled: a local file open is microseconds, so pooling
 would add lifetime bugs in exchange for nothing.
+
+Reuse also makes `ensure_once` possible, which is where the rest of the latency was:
+a pooled connection can remember that it has already run its store's schema DDL, so
+the `CREATE TABLE IF NOT EXISTS` block stops being replayed on every operation.
 """
 from __future__ import annotations
 
@@ -136,6 +140,80 @@ def acquire(key: str, factory: Callable[[], Any]) -> Any:
     _neutralize_close(conn)
     bucket[key] = conn
     return conn
+
+
+def ensure_once(conn: Any, ensure: Callable[[Any], None]) -> bool:
+    """Run a store's schema DDL once per CONNECTION rather than once per operation.
+
+    Every store opens with `CREATE TABLE IF NOT EXISTS` (plus indexes, plus
+    `run_migrations`, plus a commit) before its first real statement. On SQLite that
+    idiom is free — the statements never leave the process. On Postgres each one is a
+    round trip, and stores replay the whole block on EVERY operation:
+
+        metastore   9 statements per operation
+        workspace  11
+        dashboard   6
+        savedquery  3
+        org         2
+        canvas      2
+
+    Pooling the connection (see `acquire`) removed the handshake but not this, which is
+    why production latency kept tracking the number of store operations after #311.
+    Measured warm against production, the residual over the `/health` floor came to
+    64-94 ms per statement on three independent endpoints — one round trip each:
+
+        /connections   0.58s over floor,  ~9 statements
+        /workspaces    2.78s over floor, ~42 statements
+        /catalog/tree  3.68s over floor, ~39 statements
+
+    The DDL is idempotent, so replaying it is harmless — merely expensive. Running it
+    once per connection keeps the guarantee that any connection handed out has its
+    tables, while paying for it once instead of per operation.
+
+    SQLITE IS UNCHANGED, BY CONSTRUCTION
+    ------------------------------------
+    Two independent reasons, either one sufficient. `connect_store` does not pool
+    SQLite, so every call gets a brand-new connection whose memo is empty. And a raw
+    `sqlite3.Connection` has no `__dict__`, so the memo cannot be attached to one at
+    all — that path runs `ensure` every time, exactly as before.
+
+    Returns True when `ensure` actually ran, for tests.
+
+    Both outcomes are counted into `/dev/stats` (`store.schema_ddl.ran` /
+    `.skipped`), so the next production check reads the claim directly instead of
+    inferring it from endpoint arithmetic — which is how the residual this fixes had
+    to be found in the first place. In steady state `ran` plateaus at roughly
+    stores × threads while `skipped` keeps climbing.
+    """
+    key = f"{ensure.__module__}.{ensure.__qualname__}"
+    done = getattr(conn, "_ensured", None)
+    if done is None:
+        done = set()
+        try:
+            conn._ensured = done
+        except AttributeError:
+            # A raw sqlite3.Connection rejects attributes. Nothing to memoize on, and
+            # nothing to gain — this connection was opened for this operation alone.
+            _count("ran")
+            ensure(conn)
+            return True
+    if key in done:
+        _count("skipped")
+        return False
+    _count("ran")
+    ensure(conn)
+    # Added only on success: a failed CREATE must not mark the schema as present.
+    done.add(key)
+    return True
+
+
+def _count(outcome: str) -> None:
+    """Best-effort — a diagnostic counter must never be able to break a store."""
+    try:
+        from aughor.stats import stats
+        stats.inc(f"store.schema_ddl.{outcome}")
+    except Exception:
+        logger.debug("store pool: schema-ddl counter failed", exc_info=True)
 
 
 def evict_all() -> int:
