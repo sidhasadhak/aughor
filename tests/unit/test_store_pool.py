@@ -225,6 +225,61 @@ def test_connect_store_reuses_on_the_postgres_path(monkeypatch) -> None:
     assert len(built) == 2 and built[1][2] is True
 
 
+# ── bounds: the pool cannot grow without limit ────────────────────────────────
+
+def test_an_idle_connection_is_closed_after_the_ttl() -> None:
+    """"Forever" is fine for a long-lived server and wrong for serverless: 19 stores
+    per thread against a Postgres connection ceiling, and nothing outside this
+    module ever closed one."""
+    conn = store_pool.acquire("s", _FakeConn)
+    stamps = store_pool._stamps()
+    stamps["s"] = stamps["s"] - (store_pool._TTL + 1)     # age it past the TTL
+
+    fresh = store_pool.acquire("other", _FakeConn)
+
+    assert fresh is not conn
+    assert conn._pg.closed == 1, "an expired connection was dropped but never closed"
+    assert store_pool.pooled_count() == 1
+
+
+def test_a_thread_holds_no_more_than_the_cap(monkeypatch) -> None:
+    monkeypatch.setattr(store_pool, "_MAX_PER_THREAD", 3)
+    for i in range(6):
+        store_pool.acquire(f"store_{i}", _FakeConn)
+    assert store_pool.pooled_count() == 3
+
+
+def test_the_cap_evicts_the_least_recently_used_and_closes_it(monkeypatch) -> None:
+    monkeypatch.setattr(store_pool, "_MAX_PER_THREAD", 2)
+    a = store_pool.acquire("a", _FakeConn)
+    store_pool.acquire("b", _FakeConn)
+    store_pool.acquire("a", _FakeConn)          # touch 'a' — now 'b' is the oldest
+
+    store_pool.acquire("c", _FakeConn)          # over the cap; 'b' must go
+
+    keys = set(store_pool._bucket())
+    assert keys == {"a", "c"}, f"evicted the wrong connection: kept {keys}"
+    assert a._pg.closed == 0, "evicted a recently used connection"
+
+
+def test_the_connection_just_handed_out_is_never_the_one_evicted(monkeypatch) -> None:
+    """The caller is about to use it — trimming it would hand back a dead object."""
+    monkeypatch.setattr(store_pool, "_MAX_PER_THREAD", 1)
+    store_pool.acquire("old", _FakeConn)
+    newest = store_pool.acquire("new", _FakeConn)
+
+    assert newest._pg.closed == 0, "the pool closed the connection it just returned"
+    assert set(store_pool._bucket()) == {"new"}
+
+
+def test_reuse_still_works_inside_the_ttl() -> None:
+    """The bound must not cost the reuse it exists to make safe."""
+    a = store_pool.acquire("s", _FakeConn)
+    b = store_pool.acquire("s", _FakeConn)
+    assert a is b
+    assert _FakeConn.built == 1
+
+
 # ── ensure_once: the schema DDL stops being replayed per operation ─────────────
 
 def _ddl(counter: list):
