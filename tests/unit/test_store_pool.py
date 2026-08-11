@@ -225,6 +225,44 @@ def test_connect_store_reuses_on_the_postgres_path(monkeypatch) -> None:
     assert len(built) == 2 and built[1][2] is True
 
 
+# ── thread identity: does the pool's own premise hold? ────────────────────────
+
+def test_a_repeat_acquire_on_one_thread_is_not_counted_as_a_new_thread() -> None:
+    """These counters exist to decide whether thread-local pooling can work at all
+    in production, so they have to mean what their names say."""
+    from aughor.stats import stats
+
+    def n(k: str) -> int:
+        return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
+
+    a0, t0 = n("acquire"), n("thread_new")
+    for _ in range(4):
+        store_pool.acquire("s", _FakeConn)
+
+    assert n("acquire") - a0 == 4
+    assert n("thread_new") - t0 <= 1, "one thread was counted as several"
+
+
+def test_a_second_thread_counts_as_new() -> None:
+    from aughor.stats import stats
+
+    def n(k: str) -> int:
+        return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
+
+    store_pool.acquire("s", _FakeConn)          # this thread is now known
+    t0 = n("thread_new")
+
+    def worker():
+        store_pool.acquire("s", _FakeConn)
+        store_pool.evict_all()
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+
+    assert n("thread_new") - t0 == 1
+
+
 # ── bounds: the pool cannot grow without limit ────────────────────────────────
 
 def test_an_idle_connection_is_closed_after_the_ttl() -> None:

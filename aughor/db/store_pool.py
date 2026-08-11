@@ -99,6 +99,37 @@ def _stamps() -> dict[str, float]:
     return s
 
 
+def _note_thread() -> None:
+    """Count acquires, and how many of them came from a thread never seen before.
+
+    The pool keys connections to a THREAD, so it can only ever hit if threads
+    outlive a request. Production says they do not: an instance 1709s old still
+    reported `store.schema_ddl.skipped=0`, and six requests to one endpoint opened
+    eighteen connections without reusing one. That points at a fresh thread per
+    invocation — but it is an inference, and the fix it implies is large.
+
+    These two counters decide it directly:
+      new ≈ acquires  → every acquire is on a brand-new thread; thread-local
+                        pooling cannot work here and the mechanism must change.
+      new ≪ acquires  → threads DO persist, the inference is wrong, and the real
+                        cause of the misses is somewhere else entirely.
+
+    "Have I been here before?" is answered from THREAD-LOCAL state, not from a set
+    of thread identifiers. Two reasons, and the first is disqualifying: the OS
+    recycles identifiers, so a genuinely new thread can inherit a dead one's id and
+    be counted as already-seen — which would under-report exactly the thing being
+    measured and wrongly clear the hypothesis. The second is that a set would grow
+    by one entry per request forever if threads really are per-invocation, which is
+    the very scenario under test.
+    """
+    fresh = not getattr(_local, "seen", False)
+    if fresh:
+        _local.seen = True
+    _count("acquire", "store.pool")
+    if fresh:
+        _count("thread_new", "store.pool")
+
+
 def _close_now(conn: Any) -> None:
     """Physically close, bypassing the no-op `close` the pool installed."""
     try:
@@ -189,6 +220,7 @@ def acquire(key: str, factory: Callable[[], Any]) -> Any:
     """
     if _DISABLED:
         return factory()
+    _note_thread()
     bucket = _bucket()
     stamps = _stamps()
     now = time.time()
@@ -274,13 +306,13 @@ def ensure_once(conn: Any, ensure: Callable[[Any], None]) -> bool:
     return True
 
 
-def _count(outcome: str) -> None:
+def _count(outcome: str, prefix: str = "store.schema_ddl") -> None:
     """Best-effort — a diagnostic counter must never be able to break a store."""
     try:
         from aughor.stats import stats
-        stats.inc(f"store.schema_ddl.{outcome}")
+        stats.inc(f"{prefix}.{outcome}")
     except Exception:
-        logger.debug("store pool: schema-ddl counter failed", exc_info=True)
+        logger.debug("store pool: counter failed", exc_info=True)
 
 
 def evict_all() -> int:
