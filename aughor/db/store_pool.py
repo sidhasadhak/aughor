@@ -55,6 +55,44 @@ would add lifetime bugs in exchange for nothing.
 Reuse also makes `ensure_once` possible, which is where the rest of the latency was:
 a pooled connection can remember that it has already run its store's schema DDL, so
 the `CREATE TABLE IF NOT EXISTS` block stops being replayed on every operation.
+
+⚠️ THIS POOL TAKES A SERVERLESS DEPLOYMENT DOWN — OFF BY DEFAULT THERE
+----------------------------------------------------------------------
+Everything above is true of a long-lived server and false of Vercel. Enabling this
+pool in production caused a TOTAL outage: every route, including `/health`, failed
+with FUNCTION_INVOCATION_FAILED. Verified by isolating one variable — the same
+commit (240f182) boots and serves 200s with the pool off, and does not boot with it
+on.
+
+Why the failure is total rather than a slow endpoint: **the app cannot boot without
+store access.** `api.py`'s lifespan runs ten steps that hit Postgres before the
+first request is served — `_ensure_default_org`, `_ensure_default_workspace`,
+`_sync_metastore`, `_validate_connections`, `_start_explorers` among them. Lose the
+stores and you lose boot, not just a route.
+
+And the arithmetic does not fit:
+
+    19 platform stores, each its own connection per thread
+    x  several threads per instance
+    x  several instances, all cold at once on a deploy
+    ------------------------------------------------------
+       far more than the ~60 connection ceiling on a small Postgres
+
+Holding connections is the whole point of a pool and is exactly what cannot be
+afforded here. `_MAX_PER_THREAD` bounds ONE thread; nothing bounds the process, and
+nothing can bound the fleet. A failed boot spawns more instances, which open more
+connections, which is self-reinforcing.
+
+**Do not "fix" this by raising the cap.** The lever that works on this deployment is
+FEWER STORE OPERATIONS PER REQUEST, not cheaper ones — see the `/catalog/tree`
+reconcile that wrote to the metastore on every read. Pooling was the wrong tool for
+a fleet of short-lived processes sharing one small ceiling.
+
+A related correction, recorded because the reasoning error is the reusable part:
+connection exhaustion was dismissed early on by measuring 8 connections in use of
+60 — a measurement taken while the pool was DISABLED, i.e. in the one state where
+the mechanism under test cannot occur. The hypothesis was not tested; something
+adjacent to it was.
 """
 from __future__ import annotations
 
@@ -66,7 +104,26 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-_DISABLED = os.getenv("AUGHOR_STORE_POOL_DISABLED", "").strip().lower() in ("1", "true", "yes", "on")
+def _resolve_disabled() -> bool:
+    """Off by default where it is known to break, on by default where it helps.
+
+    This used to read one env var, so production stayed up only because that var
+    happened to be set — and deleting it took the whole deployment down within
+    minutes. A safety property that depends on someone remembering an env var is
+    not a safety property; the code has to know where it is running.
+
+    An explicit value still wins in BOTH directions, so a serverless deployment
+    can opt back in to measure, and a server can opt out.
+    """
+    raw = os.getenv("AUGHOR_STORE_POOL_DISABLED", "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return bool(os.getenv("VERCEL"))     # unset: safe where the fleet shares a ceiling
+
+
+_DISABLED = _resolve_disabled()
 
 #: Bounds, mirroring `aughor/db/pool.py` (`AUGHOR_POOL_TTL` / `AUGHOR_POOL_MAX_IDLE`).
 #: "The thread keeps its connection forever" is fine for a long-lived server and wrong
