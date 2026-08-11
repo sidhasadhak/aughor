@@ -61,11 +61,23 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
 _DISABLED = os.getenv("AUGHOR_STORE_POOL_DISABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+#: Bounds, mirroring `aughor/db/pool.py` (`AUGHOR_POOL_TTL` / `AUGHOR_POOL_MAX_IDLE`).
+#: "The thread keeps its connection forever" is fine for a long-lived server and wrong
+#: for serverless: there are NINETEEN platform stores, each taking its own connection
+#: per thread, and Postgres has a hard connection ceiling (~60 on smaller Supabase
+#: plans). Nothing outside this module ever closed one — `close()` is a deliberate
+#: no-op — so a deployment that spreads work across threads and instances could hold
+#: connections open without limit. The data pool has bounded itself from the start;
+#: this one did not, and that asymmetry was the defect.
+_TTL = float(os.getenv("AUGHOR_STORE_POOL_TTL", "300"))
+_MAX_PER_THREAD = max(1, int(os.getenv("AUGHOR_STORE_POOL_MAX", "8")))
 
 _local = threading.local()
 
@@ -76,6 +88,82 @@ def _bucket() -> dict[str, Any]:
         b = {}
         _local.conns = b
     return b
+
+
+def _stamps() -> dict[str, float]:
+    """Last-used time per key, for this thread. Parallel to `_bucket`."""
+    s = getattr(_local, "stamps", None)
+    if s is None:
+        s = {}
+        _local.stamps = s
+    return s
+
+
+def _note_thread() -> None:
+    """Count acquires, and how many of them came from a thread never seen before.
+
+    The pool keys connections to a THREAD, so it can only ever hit if threads
+    outlive a request. Production says they do not: an instance 1709s old still
+    reported `store.schema_ddl.skipped=0`, and six requests to one endpoint opened
+    eighteen connections without reusing one. That points at a fresh thread per
+    invocation — but it is an inference, and the fix it implies is large.
+
+    These two counters decide it directly:
+      new ≈ acquires  → every acquire is on a brand-new thread; thread-local
+                        pooling cannot work here and the mechanism must change.
+      new ≪ acquires  → threads DO persist, the inference is wrong, and the real
+                        cause of the misses is somewhere else entirely.
+
+    "Have I been here before?" is answered from THREAD-LOCAL state, not from a set
+    of thread identifiers. Two reasons, and the first is disqualifying: the OS
+    recycles identifiers, so a genuinely new thread can inherit a dead one's id and
+    be counted as already-seen — which would under-report exactly the thing being
+    measured and wrongly clear the hypothesis. The second is that a set would grow
+    by one entry per request forever if threads really are per-invocation, which is
+    the very scenario under test.
+    """
+    fresh = not getattr(_local, "seen", False)
+    if fresh:
+        _local.seen = True
+    _count("acquire", "store.pool")
+    if fresh:
+        _count("thread_new", "store.pool")
+
+
+def _close_now(conn: Any) -> None:
+    """Physically close, bypassing the no-op `close` the pool installed."""
+    try:
+        getattr(conn, "_real_close", conn.close)()
+    except Exception:
+        logger.debug("store pool: physical close failed", exc_info=True)
+
+
+def _drop(bucket: dict, stamps: dict, key: str) -> None:
+    conn = bucket.pop(key, None)
+    stamps.pop(key, None)
+    if conn is not None:
+        _close_now(conn)
+
+
+def _reap(bucket: dict, stamps: dict, now: float) -> int:
+    """Close this thread's connections idle past the TTL. Returns how many."""
+    stale = [k for k, t in stamps.items() if now - t > _TTL]
+    for k in stale:
+        _drop(bucket, stamps, k)
+    return len(stale)
+
+
+def _trim(bucket: dict, stamps: dict) -> int:
+    """Hold at most `_MAX_PER_THREAD`, closing the least recently used first.
+
+    The connection just handed out is the most recent, so it is never the one
+    evicted — the caller is about to use it.
+    """
+    n = 0
+    while len(bucket) > _MAX_PER_THREAD and stamps:
+        _drop(bucket, stamps, min(stamps, key=lambda k: stamps[k]))
+        n += 1
+    return n
 
 
 def _is_reusable(conn: Any) -> bool:
@@ -123,22 +211,33 @@ def _neutralize_close(conn: Any) -> None:
 
 
 def acquire(key: str, factory: Callable[[], Any]) -> Any:
-    """This thread's connection for `key`, building one if it has none."""
+    """This thread's connection for `key`, building one if it has none.
+
+    Bounded on the way through: connections idle past `_TTL` are closed first, and
+    the thread never holds more than `_MAX_PER_THREAD`. Both really close the
+    socket — dropping the reference alone would leave the server side established
+    until the object was collected, which is the leak this is here to prevent.
+    """
     if _DISABLED:
         return factory()
+    _note_thread()
     bucket = _bucket()
+    stamps = _stamps()
+    now = time.time()
+    _reap(bucket, stamps, now)
+
     conn = bucket.get(key)
     if conn is not None:
         if _is_reusable(conn):
+            stamps[key] = now
             return conn
-        bucket.pop(key, None)
-        try:
-            getattr(conn, "_real_close", conn.close)()
-        except Exception:
-            logger.debug("store pool: discarding an unusable connection failed", exc_info=True)
+        _drop(bucket, stamps, key)
+
     conn = factory()
     _neutralize_close(conn)
     bucket[key] = conn
+    stamps[key] = now
+    _trim(bucket, stamps)
     return conn
 
 
@@ -207,13 +306,13 @@ def ensure_once(conn: Any, ensure: Callable[[Any], None]) -> bool:
     return True
 
 
-def _count(outcome: str) -> None:
+def _count(outcome: str, prefix: str = "store.schema_ddl") -> None:
     """Best-effort — a diagnostic counter must never be able to break a store."""
     try:
         from aughor.stats import stats
-        stats.inc(f"store.schema_ddl.{outcome}")
+        stats.inc(f"{prefix}.{outcome}")
     except Exception:
-        logger.debug("store pool: schema-ddl counter failed", exc_info=True)
+        logger.debug("store pool: counter failed", exc_info=True)
 
 
 def evict_all() -> int:
@@ -231,6 +330,7 @@ def evict_all() -> int:
         except Exception:
             logger.debug("store pool: close during evict failed", exc_info=True)
     bucket.clear()
+    _stamps().clear()
     return n
 
 
