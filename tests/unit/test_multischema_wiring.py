@@ -91,3 +91,68 @@ def test_digest_exploration_section_reads_real_insights(tmp_path):
     assert expl is not None, "exploration section still dead"
     assert expl.items == ["APAC SMB revenue dropped 38.8% on the outage day."]
     assert all("quarantined" not in i for i in expl.items)
+
+
+# ── a failure must not be reportable as health ────────────────────────────────
+#
+# `_agg_phase` treated FAILED as terminal and collapsed every terminal phase to
+# COMPLETE — answering "has it stopped running?" when the caller asked "did it
+# work?". Combined with a hardcoded `error: None` in the status route, a
+# connection whose schemas had all failed reported: phase complete, error null,
+# and the failures visible only in `per_schema`, which nothing surfaced.
+
+def test_all_schemas_failed_is_not_reported_as_complete(tmp_path):
+    _seed(tmp_path, "c1__sales", phase="failed")
+    _seed(tmp_path, "c1__ops", phase="failed")
+
+    agg = store.load_aggregate("c1")
+
+    assert agg["phase"] == "failed", (
+        f"every schema failed and the connection reported {agg['phase']!r}")
+
+
+def test_a_run_where_some_schemas_succeeded_still_completes(tmp_path):
+    """Not everything terminal is a failure — those schemas really did finish, and
+    their findings are real. Turning a partial success into FAILED would trade one
+    lie for another."""
+    _seed(tmp_path, "c1__sales", phase="complete")
+    _seed(tmp_path, "c1__ops", phase="failed")
+
+    assert store.load_aggregate("c1")["phase"] == "complete"
+
+
+def test_a_still_running_schema_keeps_reporting_its_live_phase(tmp_path):
+    _seed(tmp_path, "c1__sales", phase="complete")
+    _seed(tmp_path, "c1__ops", phase="distribution")
+
+    assert store.load_aggregate("c1")["phase"] == "distribution"
+
+
+def test_the_status_route_names_the_schemas_that_failed(tmp_path):
+    """A phase is one word and cannot say WHICH schemas fell over, so a partly
+    failed run needs the error field to say it — the field that was hardcoded None."""
+    from aughor.routers.exploration import get_exploration_status
+
+    _seed(tmp_path, "c1__sales", phase="complete")
+    _seed(tmp_path, "c1__ops", phase="failed")
+    _seed(tmp_path, "c1__hr", phase="failed")
+
+    status = get_exploration_status("c1")
+
+    assert status["phase"] == "complete"
+    assert status["error"], "a run with two failed schemas reported no error"
+    assert "2 of 3" in status["error"]
+    assert "ops" in status["error"] and "hr" in status["error"]
+
+
+def test_a_clean_run_still_reports_no_error(tmp_path):
+    """The guard must not invent failures — a healthy run stays healthy."""
+    from aughor.routers.exploration import get_exploration_status
+
+    _seed(tmp_path, "c1__sales", phase="complete")
+    _seed(tmp_path, "c1__ops", phase="complete")
+
+    status = get_exploration_status("c1")
+
+    assert status["phase"] == "complete"
+    assert status["error"] is None

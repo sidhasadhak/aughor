@@ -115,8 +115,23 @@ def schema_run_keys(connection_id: str) -> list[str]:
 
 
 def _agg_phase(phases: list[str]) -> str:
+    """The connection's phase, from its per-schema phases.
+
+    FAILED is terminal, but terminal is not success. Collapsing every terminal
+    phase to COMPLETE answered "has it stopped running?" when the caller asked
+    "did it work?" — so a connection whose schemas had ALL failed reported a
+    healthy completion, and the only trace was `per_schema`, which nothing
+    surfaced. Reported as: status healthy, `error: null`, most schemas failed.
+
+    A mixed run still reports COMPLETE, which is honest — those schemas really
+    did finish and their findings are real. The failures in that case are named
+    by the `error` field instead (see `routers/exploration.py`), because a phase
+    is one word and cannot say which schemas fell over.
+    """
     terminal = {ExplorationPhase.COMPLETE.value, ExplorationPhase.FAILED.value}
     if phases and all(p in terminal for p in phases):
+        if all(p == ExplorationPhase.FAILED.value for p in phases):
+            return ExplorationPhase.FAILED.value      # nothing succeeded
         return ExplorationPhase.COMPLETE.value
     for p in phases:                      # any schema still running → report its live phase
         if p not in terminal:

@@ -249,6 +249,26 @@ class FixAllRequest(BaseModel):
 
 # ── Connection-scoped ─────────────────────────────────────────────────────────
 
+def _restored_error(state: dict) -> str | None:
+    """Name the schemas that failed, for a run restored from disk.
+
+    This field was hardcoded to `None`, so a restored exploration could not report
+    a failure at all — the status said `error: null` while `per_schema` recorded
+    most schemas as failed, and a caller had to know to cross-check a second field
+    to find out. A partly-failed run also still reports phase COMPLETE (correctly:
+    some schemas did finish), which leaves this as the only place the failures can
+    be said out loud.
+
+    The live explorer sets its own `error`; this is the restored path only.
+    """
+    per = state.get("per_schema") or {}
+    failed = sorted(s for s, p in per.items() if p == ExplorationPhase.FAILED.value)
+    if not failed:
+        return None
+    shown = ", ".join(failed[:5]) + (f" (+{len(failed) - 5} more)" if len(failed) > 5 else "")
+    return f"{len(failed)} of {len(per)} schemas failed to explore: {shown}"
+
+
 @router.get("/exploration/{conn_id}/status")
 def get_exploration_status(conn_id: str, schema: str | None = None):
     explorer = _explorer_for(conn_id, schema)
@@ -274,7 +294,7 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "first_insight_at": state.get("first_insight_at"),
         "first_insight_seconds": elapsed_seconds(state.get("started_at"), state.get("first_insight_at")),
         "completed_at": state.get("completed_at"),
-        "error": None,
+        "error": _restored_error(state),
         "domain_intel_skipped": state.get("domain_intel_skipped", False),
         "domain_intel_note": state.get("domain_intel_note"),
         # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.
