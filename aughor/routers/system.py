@@ -143,7 +143,7 @@ class _Suggestions(BaseModel):
 async def get_suggestions(connection_id: str = BUILTIN_ID):
     """Return 6 starter questions tailored to the schema of the given connection."""
     from aughor.semantic.suggestions_cache import (
-        schema_fingerprint, get_cached, store as cache_store,
+        schema_fingerprint, get_cached, store as cache_store, compute_once,
     )
     from aughor.db.connection import open_connection_for
 
@@ -184,8 +184,13 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
             if _starters is not None:
                 out["starters"] = _starters
             return out
-    except Exception:
-        pass
+    except Exception as _c_exc:
+        # A configured-but-down backend lands here on EVERY request, and the cost of
+        # not knowing is a 40s+ model call each time. Degrade, but leave a trace —
+        # this was silent, and silence is why it went unnoticed.
+        from aughor.kernel.errors import tolerate
+        tolerate(_c_exc, "suggestions cache read is best-effort; falling back to the model",
+                 counter="suggestions.cache_read", conn_id=connection_id or None)
 
     enrichment = ""
     try:
@@ -234,14 +239,20 @@ async def get_suggestions(connection_id: str = BUILTIN_ID):
         return [s.model_dump() for s in result.suggestions]
 
     try:
-        suggestions = await loop.run_in_executor(None, _llm_work)
+        # Single-flighted: concurrent requests for the same (connection, schema) share
+        # one model call instead of each buying the identical answer.
+        suggestions = await loop.run_in_executor(
+            None, lambda: compute_once(connection_id, fingerprint, _llm_work))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
         cache_store(connection_id, fingerprint, suggestions)
-    except Exception:
-        pass
+    except Exception as _s_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_s_exc, "suggestions cache write is best-effort; the process-local "
+                         "layer still holds it for this process",
+                 counter="suggestions.cache_write", conn_id=connection_id or None)
 
     out = {"suggestions": suggestions, "cached": False}
     if _starters is not None:
