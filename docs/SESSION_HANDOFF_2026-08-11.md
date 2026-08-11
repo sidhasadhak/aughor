@@ -18,7 +18,7 @@ under most of the platform's local slowness.
 | → first `exploration.phase` | ~25 s | **2.4 s** warm, ~21 s cold-per-process |
 | workspace connection open | 4.7 s (58 tables) → 9.7 s with a 96 MB CSV | **0.00 s** after the first |
 | `make_reader()` per parallel reader | ~10 s | **0.00 s** |
-| prod `/catalog/tree` | **10.9 s** warm | pooled — **NOT yet verified in production** |
+| prod `/catalog/tree` | **10.9 s** warm | **3.9 s** — verified in production 2026-08-11 |
 
 Cold-per-process is now the honest cost: the workspace materializes once per process,
 then every open is free.
@@ -87,10 +87,37 @@ materialized database without a restart.
    (4) are loaded in Supabase and unreachable. Add a Postgres connection through the
    Catalog UI (the registry is Postgres-backed, so it persists). **Requires the operator
    — credentials must not be handled by the agent.**
-2. **Verify #311 in production.** `is_postgres()` is false locally, so CI never exercised
-   the pooled branch. The check is one request: `/catalog/tree` should drop from **10.9 s**
-   to roughly 1–2 s. If it does not, the diagnosis was wrong and the change should be
-   reconsidered rather than defended.
+2. ~~**Verify #311 in production.**~~ **Done 2026-08-11 — it works, but the predicted
+   number was wrong.** Measured warm, same process (`/dev/stats` `uptime_seconds`
+   increments across invocations, so per-process caches really are alive):
+
+   | endpoint | store ops | before | after |
+   |---|---|---|---|
+   | `/health` (no store) | 0 | — | **0.22 s** ← floor |
+   | `/connections` | ~1 | 1.7 s | **0.80 s** |
+   | `/workspaces` | ~3–4 | 6.5 s | **3.0 s** |
+   | `/catalog/tree` | ~7 | 10.9 s | **3.9 s** |
+
+   The diagnosis was right and the change should stay: every endpoint improved, and
+   `/connections` at 1.7 → 0.80 s is the clean proof the pool is being hit at all.
+
+   **But 1–2 s was optimistic, and the reason matters.** The speedup is roughly
+   *uniform* (2.2–2.8×) rather than largest where the op count is highest. If pooling
+   had removed the whole per-op cost, `/catalog/tree` (7 ops) would have collapsed
+   toward the floor while `/connections` (1 op) barely moved. Instead a residual
+   survives that still scales with op count — ~0.55 s per store operation, stable
+   across eight consecutive requests, so it is not cold-start noise.
+
+   **Pooling removed the handshake; it did not remove the per-operation cost.** The
+   next lever is therefore the *number* of store operations per request, not the cost
+   of holding a connection — e.g. `/catalog/tree` writes `set_catalog_schemas` once
+   per connection on every single tree read.
+
+   ⚠️ **Not yet attributed**: what the ~0.55 s per op actually is. Candidates are
+   round-trip distance (the function runs in `iad1`) and multiple statements per
+   logical operation. Deciding needs server-side timing — `/dev/stats` has a
+   `timings` map that is empty on this path — and that means deploying an
+   instrumented build, so it was not guessed at here.
 3. **`refresh_popularity` has no staleness check** — re-parses up to 5,000 statements
    every run (9.3 s measured). `save_popularity` already persists `mined_at` and
    `n_queries`, and nothing reads them.
