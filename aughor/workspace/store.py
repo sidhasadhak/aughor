@@ -20,6 +20,7 @@ from aughor.workspace.models import Workspace
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path("AUGHOR_WORKSPACES_DB", Path(__file__).parent.parent.parent / "data" / "workspaces.db")
 DEFAULT_WORKSPACE_ID = "default"
@@ -101,7 +102,7 @@ def create_workspace(
     ids_json = json.dumps(connection_ids or [])
     override_json = json.dumps(settings_override or {})
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "INSERT INTO workspaces (id, org_id, name, description, connection_ids_json, is_default, settings_override_json, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -118,14 +119,14 @@ def create_workspace(
 
 def get_workspace(workspace_id: str) -> Optional[Workspace]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
     return _row_to_workspace(row) if row else None
 
 
 def list_workspaces() -> List[Workspace]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     # Default workspace sorts first, then most-recently updated.
     rows = c.execute(
         "SELECT * FROM workspaces ORDER BY is_default DESC, updated_at DESC"
@@ -149,7 +150,7 @@ def update_workspace(
     new_ids = connection_ids if connection_ids is not None else existing.connection_ids
     new_override = settings_override if settings_override is not None else existing.settings_override
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "UPDATE workspaces SET name=?, description=?, connection_ids_json=?, settings_override_json=?, updated_at=? WHERE id=?",
         (new_name, new_desc, json.dumps(new_ids), json.dumps(new_override or {}), now, workspace_id),
@@ -164,7 +165,7 @@ def delete_workspace(workspace_id: str) -> bool:
     if not existing or existing.is_default:
         return False
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     affected = c.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,)).rowcount
     c.commit()
     return affected > 0

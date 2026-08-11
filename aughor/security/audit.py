@@ -21,6 +21,7 @@ from typing import Any
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path("AUGHOR_AUDIT_DB", Path("data/audit.db"))
 
@@ -103,7 +104,7 @@ class AuditLogger:
                 trace_id = ""
         c = _connect()
         try:
-            _ensure_schema(c)
+            ensure_once(c, _ensure_schema)
             c.execute(
                 """INSERT INTO audit_log
                    (id, ts, connection_id, hypothesis_id, sql_digest, sql_full,
@@ -128,7 +129,7 @@ class AuditLogger:
         """Return recent records, newest first. Optional filters by connection/verdict."""
         c = _connect()
         try:
-            _ensure_schema(c)
+            ensure_once(c, _ensure_schema)
             clauses: list[str] = []
             params: list[Any] = []
             if connection_id:
@@ -151,7 +152,7 @@ class AuditLogger:
         """Aggregate stats: totals, blocked count, suspicious count, PII redactions."""
         c = _connect()
         try:
-            _ensure_schema(c)
+            ensure_once(c, _ensure_schema)
             where = "WHERE connection_id = ?" if connection_id else ""
             params = (connection_id,) if connection_id else ()
             row = c.execute(

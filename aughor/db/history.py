@@ -21,6 +21,7 @@ from typing import Any, Literal, Optional
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 from aughor.org.context import DEFAULT_ORG_ID, current_org_id
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,7 @@ def create_investigation(
     """
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -186,7 +187,7 @@ def complete_investigation(
     headline = report_dict.get("headline", "") if report_dict else ""
 
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         """UPDATE investigations SET
             completed_at = ?,
@@ -230,7 +231,7 @@ def complete_investigation(
 def pause_investigation(inv_id: str) -> None:
     """Mark an investigation as paused, awaiting human feedback."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "UPDATE investigations SET status = 'paused' WHERE id = ?",
         (inv_id,),
@@ -247,7 +248,7 @@ def fail_investigation(inv_id: str, status: InvStatus = "timed_out") -> None:
     Deliberately does NOT index — partial results must not pollute the cache.
     """
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "UPDATE investigations SET completed_at = ?, status = ? WHERE id = ?",
         (_now(), status, inv_id),
@@ -309,7 +310,7 @@ def save_chat_turn(
     sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     report = {
         "headline": headline,
         "sql": sql,
@@ -343,7 +344,7 @@ def update_chat_turn_insight(inv_id: str, insight: dict | None) -> bool:
     if not insight:
         return False
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute(
         "SELECT report_json FROM investigations WHERE id = ? AND kind = 'chat'",
         (inv_id,),
@@ -365,7 +366,7 @@ def last_activity_by_canvas() -> dict[str, str]:
     """Return {canvas_id: most-recent investigation started_at} for ranking
     Canvases by their latest activity."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         """SELECT canvas_id, MAX(started_at) AS last
            FROM investigations
@@ -388,7 +389,7 @@ def sweep_stale_running(max_age_minutes: int = 60) -> int:
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT id, connection_id, canvas_id FROM investigations "
         "WHERE status = 'running' AND started_at < ?",
@@ -415,7 +416,7 @@ def list_orphaned_running_investigations() -> list[dict]:
     fresh process has nothing genuinely running). Each carries what crash-recovery
     needs; `id` is also the LangGraph checkpoint thread_id."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT id, connection_id, canvas_id, question FROM investigations WHERE status = 'running'"
     ).fetchall()
@@ -438,7 +439,7 @@ def reconcile_orphaned_investigations() -> int:
     `investigation.failed` event for each, so the event spine narrates the
     recovery the same way the kernel narrates orphaned jobs. Returns the count."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT id, connection_id, canvas_id FROM investigations WHERE status = 'running'"
     ).fetchall()
@@ -467,7 +468,7 @@ def get_session_turns(session_id: str) -> list[dict]:
     the turn would look finished and simply be missing its tail, which is worse than not
     restoring it at all."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         """SELECT id, question, headline, report_json, started_at, status
            FROM investigations
@@ -509,7 +510,7 @@ def delete_investigation(inv_id: str) -> bool:
     its ``id`` OR a whole chat session by ``session_id`` (history collapses chat
     turns into one item keyed by session_id). Returns True if anything deleted."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     cursor = c.execute(
         "DELETE FROM investigations WHERE id = ? OR session_id = ?",
         (inv_id, inv_id),
@@ -524,7 +525,7 @@ def purge_connection(connection_id: str) -> int:
     """Delete every investigation/chat row for a connection (catalog delete
     cascade). Returns the number of rows removed."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     n = c.execute("DELETE FROM investigations WHERE connection_id = ?",
                   (connection_id,)).rowcount
     c.commit()
@@ -539,7 +540,7 @@ def purge_schema(connection_id: str, schema: str,
     OR its stored SQL/report references the schema-qualified ``schema.`` (the form aughor
     emits, since it pins search_path and qualifies tables)."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     like = f"%{schema}.%"
     ids = {
         r["id"] for r in c.execute(
@@ -566,7 +567,7 @@ def list_investigation_ids(connection_id: str, canvas_id: Optional[str] = None,
     """Return investigation IDs in a scope, newest-first. Used to scope the evidence
     ledger (which keys only by investigation_id) to a connection / canvas."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if canvas_id:
         rows = c.execute(
             "SELECT id FROM investigations WHERE connection_id = ? AND canvas_id = ? "
@@ -587,7 +588,7 @@ def all_investigation_ids(connection_ids: Optional[list[str]] = None) -> list[st
     ``connection_ids=None`` means platform-wide; an empty list means none. Used by
     the bulk-clear cascade to resolve evidence/vector cleanup before deleting rows."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if connection_ids is None:
         rows = c.execute("SELECT id FROM investigations").fetchall()
     elif not connection_ids:
@@ -606,7 +607,7 @@ def investigation_connection_ids(connection_ids: Optional[list[str]] = None) -> 
     """Distinct, non-empty connection ids that have investigations (optionally within
     a given set) — lets the bulk-clear cascade purge vector points by connection."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if connection_ids is None:
         rows = c.execute(
             "SELECT DISTINCT connection_id FROM investigations "
@@ -630,7 +631,7 @@ def purge_ids(inv_ids: list[str]) -> int:
     if not inv_ids:
         return 0
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     ph = ",".join("?" for _ in inv_ids)
     n = c.execute(f"DELETE FROM investigations WHERE id IN ({ph})", inv_ids).rowcount
     c.commit()
@@ -641,7 +642,7 @@ def purge_ids(inv_ids: list[str]) -> int:
 def list_investigations(limit: int = 50) -> list[dict]:
     """Return summary rows newest-first, collapsing chat turns into one item per session."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
 
     # DATA-06: when identity is enforced, a caller sees only their own org's history.
     # current_org_id() is reliable here — _OrgContextMiddleware binds it for the
@@ -723,7 +724,7 @@ def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
     if not agent_id:
         return []
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     from aughor.security.authz import require_identity_enabled
     _org, _op = (" AND org_id = ?", [current_org_id()]) if require_identity_enabled() else ("", [])
     inv_rows = c.execute(
@@ -773,7 +774,7 @@ def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
 def get_investigation(inv_id: str) -> Optional[dict]:
     """Return the full investigation record including parsed JSON fields."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute(
         "SELECT * FROM investigations WHERE id = ?", (inv_id,)
     ).fetchone()

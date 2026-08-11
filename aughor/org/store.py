@@ -16,6 +16,7 @@ from aughor.org.models import Org
 from aughor.util.time import now_iso as _now
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path("AUGHOR_ORGS_DB", Path(__file__).parent.parent.parent / "data" / "orgs.db")
 
@@ -59,7 +60,7 @@ def create_org(
     oid = org_id or DEFAULT_ORG_ID
     now = _now()
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         "INSERT INTO orgs (id, name, region, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (oid, name, region, now, now),
@@ -70,14 +71,14 @@ def create_org(
 
 def get_org(org_id: str) -> Optional[Org]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM orgs WHERE id = ?", (org_id,)).fetchone()
     return _row_to_org(row) if row else None
 
 
 def list_orgs() -> List[Org]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute("SELECT * FROM orgs ORDER BY created_at ASC").fetchall()
     return [_row_to_org(r) for r in rows]
 

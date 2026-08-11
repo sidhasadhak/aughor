@@ -18,6 +18,7 @@ from aughor.dashboard.models import CardProvenance, CardRefresh, DashboardCard
 from aughor.util.time import now_iso as _now
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
 
 _DB_PATH = resolve_db_path(
     "AUGHOR_DASHBOARD_DB", Path(__file__).parent.parent.parent / "data" / "dashboard_cards.db"
@@ -125,7 +126,7 @@ def upsert_card(card: DashboardCard) -> DashboardCard:
     now = _now()
     cid = card.id or uuid.uuid4().hex[:8]
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     existing = c.execute(
         "SELECT created_at FROM dashboard_cards WHERE id = ?", (cid,)
     ).fetchone()
@@ -190,7 +191,7 @@ def _record_revision(card: Optional[DashboardCard]) -> None:
 
 def get_card(card_id: str) -> Optional[DashboardCard]:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM dashboard_cards WHERE id = ?", (card_id,)).fetchone()
     return _row_to_card(row) if row else None
 
@@ -198,7 +199,7 @@ def get_card(card_id: str) -> Optional[DashboardCard]:
 def get_layout(connection_id: str, user_id: str) -> dict:
     """The saved cockpit layout ({card_id: {x, y, w, h}}) for a user on a connection ({} if none)."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     row = c.execute(
         "SELECT layout_json FROM card_layouts WHERE connection_id = ? AND user_id = ?",
         (connection_id, user_id),
@@ -209,7 +210,7 @@ def get_layout(connection_id: str, user_id: str) -> dict:
 def set_layout(connection_id: str, user_id: str, layout: dict) -> None:
     """Persist a user's cockpit layout (position + size per card) for a connection."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     c.execute(
         """INSERT INTO card_layouts (connection_id, user_id, layout_json, updated_at)
            VALUES (?,?,?,?)
@@ -226,7 +227,7 @@ def get_viz_configs(scope_key: str, user_id: str) -> dict:
     Returned whole rather than per-chart: a brief renders many charts at once, and one fetch
     on mount beats N round-trips as rows expand."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         "SELECT target_id, config_json FROM viz_configs WHERE scope_key = ? AND user_id = ?",
         (scope_key, user_id),
@@ -239,7 +240,7 @@ def set_viz_config(scope_key: str, target_id: str, user_id: str, config: dict) -
     must leave no trace, so a later change to the default is picked up rather than shadowed by
     a stored copy of the old one."""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     if not config:
         c.execute(
             "DELETE FROM viz_configs WHERE scope_key = ? AND target_id = ? AND user_id = ?",
@@ -273,7 +274,7 @@ def list_cards(
         clauses.append("scope_ref = ?"); params.append(scope_ref)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     rows = c.execute(
         f"SELECT * FROM dashboard_cards{where} ORDER BY updated_at DESC", params
     ).fetchall()
@@ -282,7 +283,7 @@ def list_cards(
 
 def delete_card(card_id: str) -> bool:
     c = _conn()
-    _ensure_schema(c)
+    ensure_once(c, _ensure_schema)
     affected = c.execute("DELETE FROM dashboard_cards WHERE id = ?", (card_id,)).rowcount
     c.commit()
     return bool(affected and affected > 0)

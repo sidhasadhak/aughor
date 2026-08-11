@@ -113,11 +113,37 @@ materialized database without a restart.
    of holding a connection — e.g. `/catalog/tree` writes `set_catalog_schemas` once
    per connection on every single tree read.
 
-   ⚠️ **Not yet attributed**: what the ~0.55 s per op actually is. Candidates are
-   round-trip distance (the function runs in `iad1`) and multiple statements per
-   logical operation. Deciding needs server-side timing — `/dev/stats` has a
-   `timings` map that is empty on this path — and that means deploying an
-   instrumented build, so it was not guessed at here.
+   **Attributed, same day — it was schema DDL replayed per operation.** Every store
+   opens with its `CREATE TABLE IF NOT EXISTS` block (plus indexes, plus
+   `run_migrations`, plus a commit) before its first real statement. Counted by
+   running each store's `_ensure_schema` against an in-memory SQLite connection:
+
+   | store | statements per operation |
+   |---|---|
+   | `workspace` | **11** |
+   | `metastore` | **9** |
+   | `dashboard` | 6 |
+   | `savedquery` | 3 |
+   | `org`, `canvas` | 2 |
+
+   On SQLite that idiom is free — the statements never leave the process. On Postgres
+   each one is a round trip. The arithmetic closes: dividing each endpoint's residual
+   by its statement count gives **64 / 66 / 94 ms** for `/connections`,
+   `/workspaces`, `/catalog/tree` — three independent endpoints landing on one
+   round-trip cost.
+
+   Pooling removed the handshake and left this, because the DDL ran on every
+   *operation* rather than every *connection*. Fixed by `store_pool.ensure_once`,
+   which memoizes the DDL on the pooled connection — 69 call sites across 22 stores.
+   SQLite is unchanged by construction: it is never pooled, and a raw
+   `sqlite3.Connection` has no `__dict__` to memoize on, so that path still runs the
+   DDL every time.
+
+   ⚠️ **The predicted win is ~3.9 s → 0.7–0.9 s for `/catalog/tree`, and it is a
+   PREDICTION.** The last one in this slot was wrong. `/dev/stats` now carries
+   `store.schema_ddl.ran` / `.skipped` precisely so the check is a direct reading
+   rather than arithmetic: in steady state `ran` should plateau at roughly
+   stores × threads while `skipped` climbs with traffic.
 3. **`refresh_popularity` has no staleness check** — re-parses up to 5,000 statements
    every run (9.3 s measured). `save_popularity` already persists `mined_at` and
    `n_queries`, and nothing reads them.
