@@ -218,9 +218,17 @@ def acquire(key: str, factory: Callable[[], Any]) -> Any:
     socket — dropping the reference alone would leave the server side established
     until the object was collected, which is the leak this is here to prevent.
     """
-    if _DISABLED:
-        return factory()
+    # Counted BEFORE the opt-out, deliberately. With the counter below this guard,
+    # "the pool is switched off" and "the pool is on and never reuses" produced an
+    # IDENTICAL reading — acquire=0 either way — and that ambiguity cost a wrong
+    # diagnosis: missing reuse in production was read as evidence that every request
+    # got a fresh thread, and nearly bought a rewrite of the pool as process-wide.
+    # The pool was simply disabled. A diagnostic whose silence has two explanations
+    # is not a diagnostic.
     _note_thread()
+    if _DISABLED:
+        _count("disabled", "store.pool")
+        return factory()
     bucket = _bucket()
     stamps = _stamps()
     now = time.time()
