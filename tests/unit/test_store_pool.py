@@ -536,3 +536,27 @@ def test_a_real_store_stops_replaying_its_ddl_across_operations(monkeypatch) -> 
 
     assert len(ran) == 1, (
         f"schema DDL ran {len(ran)}x across 3 store operations — it is still per-operation")
+
+
+# ── the default cannot depend on someone remembering an env var ───────────────
+
+@pytest.mark.parametrize("raw,vercel,expected,why", [
+    ("",       "1", True,  "serverless with nothing set must default to OFF"),
+    ("",       "",  False, "a long-lived server must still get the pool"),
+    ("0",      "1", False, "an explicit opt-IN must win, so serverless can measure"),
+    ("false",  "1", False, "same, spelled differently"),
+    ("1",      "",  True,  "an explicit opt-OUT must win on a server too"),
+    ("garbage", "1", True, "an unrecognised value is not an opt-in"),
+])
+def test_the_pool_default_knows_where_it_is_running(monkeypatch, raw, vercel, expected, why):
+    """Production stayed up only because an env var happened to be set, and deleting
+    it took the whole deployment down within minutes — every route, including
+    /health, because the app cannot boot without store access. A safety property
+    that depends on someone remembering a variable is not a safety property."""
+    monkeypatch.setenv("AUGHOR_STORE_POOL_DISABLED", raw)
+    if vercel:
+        monkeypatch.setenv("VERCEL", vercel)
+    else:
+        monkeypatch.delenv("VERCEL", raising=False)
+
+    assert store_pool._resolve_disabled() is expected, why
