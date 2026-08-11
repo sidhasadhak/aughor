@@ -62,6 +62,15 @@ def is_postgres() -> bool:
     return url.startswith("postgres://") or url.startswith("postgresql://")
 
 
+def _count_backend(kind: str) -> None:
+    """Best-effort — a diagnostic must never be able to break a store open."""
+    try:
+        from aughor.stats import stats
+        stats.inc(f"store.backend.{kind}")
+    except Exception:
+        pass        # no logger in this module, and a counter is not worth one
+
+
 def connect_store(
     path: Union[str, Path],
     default: Union[str, Path, None] = None,
@@ -81,12 +90,19 @@ def connect_store(
     rows) on either backend.
     """
     if not is_postgres():
+        # Counted because this branch is INVISIBLE from outside and its consequences
+        # are not: on a read-only/ephemeral host these stores are SQLite files under
+        # /tmp, so the connection registry, workspaces and history live and die with
+        # the instance. `acquire` is never reached either, which is a second way for
+        # the pool counters to read zero. Naming the branch keeps the two apart.
+        _count_backend("sqlite")
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         conn = tune(sqlite3.connect(str(p), check_same_thread=check_same_thread))
         if row_factory:
             conn.row_factory = sqlite3.Row
         return conn
+    _count_backend("postgres")
     if default is None:
         default = default_for_path(path)
     schema = _schema_name(path, default)

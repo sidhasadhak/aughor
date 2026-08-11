@@ -177,6 +177,45 @@ def test_disabled_opts_out_entirely() -> None:
         store_pool._DISABLED = False
 
 
+def test_a_disabled_pool_still_counts_and_says_so() -> None:
+    """The ambiguity that cost a wrong diagnosis: with the counter below the
+    opt-out, "switched off" and "on but never reusing" both read acquire=0. In
+    production that silence was read as evidence of a fresh thread per request and
+    nearly bought a rewrite. A diagnostic whose zero has two meanings is not one."""
+    from aughor.stats import stats
+
+    def n(k: str) -> int:
+        return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
+
+    a0, d0 = n("acquire"), n("disabled")
+    store_pool._DISABLED = True
+    try:
+        store_pool.acquire("s", _FakeConn)
+        store_pool.acquire("s", _FakeConn)
+    finally:
+        store_pool._DISABLED = False
+
+    assert n("acquire") - a0 == 2, "a disabled pool reported no traffic at all"
+    assert n("disabled") - d0 == 2, "nothing distinguished 'off' from 'never reused'"
+
+
+def test_the_backend_branch_is_named(tmp_path, monkeypatch) -> None:
+    """`connect_store` taking the SQLite branch is invisible from outside, and its
+    consequences are not — on an ephemeral host the registry and workspaces live and
+    die with the instance. It is also a SECOND way for the pool counters to read
+    zero, so the two have to be tellable apart."""
+    from aughor.stats import stats
+    from aughor.db import backend
+
+    def n(k: str) -> int:
+        return stats.snapshot()["counters"].get(f"store.backend.{k}", 0)
+
+    monkeypatch.setattr(backend, "is_postgres", lambda: False)
+    s0 = n("sqlite")
+    backend.connect_store(tmp_path / "a.db").close()
+    assert n("sqlite") - s0 == 1
+
+
 def test_sqlite_is_not_pooled(tmp_path, monkeypatch) -> None:
     """A local file open is microseconds; pooling it would add lifetime bugs for no
     gain, so `connect_store` must not route SQLite through the pool."""
