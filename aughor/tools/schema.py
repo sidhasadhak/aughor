@@ -613,7 +613,6 @@ def apply_schema_enrichment(
     auto-collected iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort)."""
     from aughor.semantic.autoseed import seed_missing_tables
     from aughor.semantic.metrics import build_metrics_block
-    from aughor.semantic.retriever import build_schema_index
     # R11 — prune per-column-config-hidden columns (and sample-disabled value
     # enumerations) from the schema text FIRST, so every downstream reader — join
     # hints, metrics filtering, schema linking, the coder prompt — sees the pruned
@@ -638,9 +637,19 @@ def apply_schema_enrichment(
     # in scope here and simply wasn't passed.
     seed_missing_tables(raw, schema=schema_name, connection_id=connection_id)
     enriched = apply_glossary(raw, schema=schema_name)
-    # best-effort; keeps vector index fresh after glossary changes. Scoped, so this
-    # connection's points can neither overwrite nor answer for another's.
-    build_schema_index(connection_id=connection_id or "", schema_name=schema_name or "")
+    # The vector index is NOT rebuilt here. This function runs on every `get_schema`
+    # — the request that merely DISPLAYS a schema — and rebuilding embeds the whole
+    # thing. Where the embedder is unreachable that call retries with backoff, and
+    # the display waits on work that cannot succeed: measured at 80-96s in
+    # production against one 21-column table, against 0.94s locally where the
+    # embedder answers.
+    #
+    # Nothing is lost. `retriever._retrieve` already builds on first use when the
+    # collection is empty, so the index still exists when semantic retrieval wants
+    # it; and `_intelligence` (the HEAVY phase, background) refreshes it after a
+    # glossary change, which is the freshness this call was here for. Fourteen lines
+    # below, this file already states the principle it was breaking: "the schema
+    # hot-path never depends on the vector store unless explicitly turned on".
     join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints
