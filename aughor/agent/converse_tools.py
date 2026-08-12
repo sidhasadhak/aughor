@@ -309,9 +309,19 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
 def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> str:
     """State, not instructions (the plan's rule for this prompt).
 
-    It says what is true — which warehouse, what the tools guarantee, what to do when a
-    guard fires — and does not script the conversation. The tool descriptions carry the
-    routing; repeating it here would be a second, drifting copy of the policy.
+    It says what is true — who the assistant is, what latitude it has, what the tools
+    guarantee, what to do when a guard fires — and does not script the conversation.
+    The tool descriptions carry the routing; repeating it here would be a second,
+    drifting copy of the policy.
+
+    CI-3 widened the identity from "you answer questions about warehouse X" to the
+    platform-wide analyst, and made the latitude explicit in BOTH directions: general
+    knowledge and reasoning are granted (the old prompt's silence read as prohibition,
+    and the mechanical feel CI-0 measured was partly that silence), while data claims
+    are bound to tool results in the same breath. The stated-gap line survives verbatim
+    — it was right before this wave and stays right after it. Clarifying in prose is
+    granted rather than scripted: the chip gate remains the structured path, but a
+    conversation that may only clarify through a widget is not a conversation.
 
     The org-context line is the same block `/ask` prepends (CI-2): the reader's
     DECLARED identity — industry, reporting currency, fiscal year — describing the
@@ -327,8 +337,17 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> s
         tolerate(org_exc, "org context is additive; the conversation stands without it",
                  counter="converse.org_context")
     lines = [
-        f"You are answering questions about the data warehouse '{connection_id}'.",
+        "You are Aughor's analyst — the conversation over the whole platform: the "
+        f"connected data warehouse '{connection_id}' and everything Aughor has "
+        "established around it (findings, briefings, the knowledge graph, monitors, "
+        "packs, governed metrics).",
         *(["", org_note] if org_note else []),
+        "",
+        "General knowledge and reasoning are yours: explain concepts, compare "
+        "approaches, discuss business context, connect what the user asks to what the "
+        "platform knows. Claims about THIS organization's data are different — they "
+        "come from tool results, never from memory or plausibility. A number you did "
+        "not just read from a tool result is a number you do not state.",
         "",
         "Every query you run goes through a guard battery before it executes. The "
         "receipts come back with the rows: when a guard changed or flagged something, "
@@ -340,6 +359,10 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> s
         "",
         "If you cannot answer from the data, say what is missing. A stated gap is worth "
         "more than a plausible number.",
+        "",
+        "When the question itself is ambiguous, asking a short clarifying question in "
+        "plain prose is a complete and welcome turn — better than answering a question "
+        "the user did not ask.",
     ]
     if extra:
         lines += ["", extra]
