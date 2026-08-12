@@ -1734,12 +1734,17 @@ def _answer_core(
         )
         if definitional:
             try:
-                from aughor.semantic.kb_retriever import has_strong_kb_match, retrieve_for_planning
+                # READER register, never the planning one: retrieve_for_planning is a
+                # prompt-injection block ("RELEVANT SQL AND DOMAIN PATTERNS (apply when
+                # writing queries): …") and this path's output IS the user's answer —
+                # eleven stored turns carry that block verbatim as their headline
+                # (CI-0 finding 4).
+                from aughor.semantic.kb_retriever import has_strong_kb_match, retrieve_for_reader
                 if has_strong_kb_match(question, threshold=0.75, top_k=3):
-                    kb_answer = retrieve_for_planning(question, top_k=3) or ""
-                    # Also pull connection KB
+                    kb_answer = retrieve_for_reader(question, top_k=3) or ""
+                    # Also pull connection KB — same register rule.
                     try:
-                        from aughor.semantic.connection_kb import retrieve_for_question as _ckb_fn
+                        from aughor.semantic.connection_kb import retrieve_for_reader as _ckb_fn
                         ckb = _ckb_fn(question, connection_id)
                         if ckb:
                             kb_answer = kb_answer + "\n\n" + ckb

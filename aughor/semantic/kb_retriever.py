@@ -218,6 +218,55 @@ def _format_for_fix(hits: list[dict]) -> str:
     return "\n".join(p for p in parts if p is not None)
 
 
+def retrieve_for_reader(question: str, top_k: int = 3) -> str:
+    """The knowledge base rendered as an ANSWER to the person who asked.
+
+    ``retrieve_for_planning`` writes a prompt-injection block — its first line is an
+    instruction to a model, its ``──`` rules are section scaffolding — and the
+    definitional chat path once emitted it verbatim as eleven stored turns'
+    user-facing headline (CI-0 finding 4: "RELEVANT SQL AND DOMAIN PATTERNS (apply
+    when writing queries): …" as the answer to "what is the average delivery time
+    by service level?"). Same retrieval, different register: definition first,
+    caveats in plain speech, SQL as a fenced example — nothing addressed to
+    someone else. Empty string on any failure, so the caller's fallthrough to the
+    live-SQL answer path still works."""
+    if not KB_ENABLED or not KB_PATH:
+        return ""
+    try:
+        if not _ensure_indexed():
+            return ""
+        hits = _search(question, top_k=top_k)
+        if not hits:
+            return ""
+        return _format_for_reader(hits)
+    except Exception:
+        return ""
+
+
+def _format_for_reader(hits: list[dict]) -> str:
+    parts: list[str] = []
+    for h in hits:
+        title = (h.get("title") or "").strip()
+        body: list[str] = []
+        defn = (h.get("business_definition") or h.get("what_it_does") or "").strip()
+        if defn:
+            body.append(defn)
+        mn = h.get("metric_nature", {})
+        if isinstance(mn, dict) and (mn.get("common_misconception") or "").strip():
+            body.append(f"Common misconception: {mn['common_misconception']}")
+        dqs = [q for q in (h.get("diagnostic_questions") or [])[:2] if q]
+        if dqs:
+            body.append("Questions this usually implies: " + " · ".join(dqs))
+        tmpl = (h.get("sql_example") or h.get("template") or "").strip()
+        if tmpl:
+            body.append(f"Typical SQL shape:\n```sql\n{tmpl}\n```")
+        if not body:
+            continue
+        parts.append((f"**{title}** — " if title else "") + body[0])
+        parts.extend(body[1:])
+    return "\n\n".join(parts)
+
+
 def _format_for_planning(hits: list[dict]) -> str:
     parts: list[str] = ["RELEVANT SQL AND DOMAIN PATTERNS (apply when writing queries):"]
     for h in hits:
