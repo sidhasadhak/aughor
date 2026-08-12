@@ -505,6 +505,59 @@ def get_session_turns(session_id: str) -> list[dict]:
     return result
 
 
+class _ReconstructedTurn:
+    """A stored chat turn re-shaped to the attributes ``build_history_section`` reads
+    (question · sql · columns · headline · key_rows). A tiny value object rather than a
+    ``ChatHistoryTurn`` import, so the platform's history store never depends on a
+    router request model. ``key_rows`` is derived from the stored rows the same way the
+    client derives it — the first few rows — so a reference like "the top one" resolves
+    against real values whether the history came from the client or the store."""
+    __slots__ = ("question", "sql", "columns", "headline", "key_rows")
+
+    def __init__(self, question, sql, columns, headline, key_rows):
+        self.question = question
+        self.sql = sql
+        self.columns = columns
+        self.headline = headline
+        self.key_rows = key_rows
+
+
+def reconstruct_session_history(session_id: str, *, limit: int = 12) -> list:
+    """Rebuild a session's recent chat turns from the store, oldest→newest (CI-1).
+
+    The conversation's memory is a property of the SESSION, not of whichever client
+    happens to be holding it: a reload, a second device, an MCP client, a scheduled
+    task or any non-web caller all address the same `session_id` and should see the
+    same history. The web client sends its own in-memory `history`, which is fresher
+    than the store (the save is best-effort and races the next turn); this is the
+    fallback for every caller that sends none.
+
+    Interrupted turns are excluded — a half-finished answer is not context to compose
+    on. Empty on any error or unknown session (the caller then simply injects nothing,
+    exactly as before CI-1)."""
+    if not session_id:
+        return []
+    try:
+        turns = get_session_turns(session_id)
+    except Exception:
+        return []
+    out: list = []
+    for t in turns:
+        if (t.get("status") or "complete") != "complete":
+            continue
+        if not (t.get("question") or "").strip():
+            continue
+        rows = t.get("rows") or []
+        out.append(_ReconstructedTurn(
+            question=t.get("question", ""),
+            sql=t.get("sql", "") or "",
+            columns=t.get("columns", []) or [],
+            headline=t.get("headline", "") or "",
+            key_rows=[r for r in rows[:3]],
+        ))
+    return out[-limit:]
+
+
 def delete_investigation(inv_id: str) -> bool:
     """Delete a history line item. Matches either a single investigation row by
     its ``id`` OR a whole chat session by ``session_id`` (history collapses chat
