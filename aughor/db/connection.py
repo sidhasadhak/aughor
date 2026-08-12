@@ -1175,8 +1175,31 @@ class PostgresConnection(DatabaseConnection):
         if hints:
             schema_str += "\n\n" + hints
 
+        # FAST, like every other connector: this is the hot path. It ran the HEAVY
+        # phase, which profiles every column's values — measured at 80.5s against
+        # one 21-column table, on the request the Briefing needs merely to DISPLAY
+        # table and column names. `build_intelligence` below is where that belongs,
+        # and its own docstring has always said so: "never on the hot path".
         from aughor.kernel.registries.schema_annotators import run_annotators
-        return run_annotators(self, schema_str, phase="heavy")
+        return run_annotators(self, schema_str, phase="fast")
+
+    def build_intelligence(self) -> str:
+        """Heavy path: profiles + ontology + enrichment. Background task only.
+
+        This did not exist. `DatabaseConnection` declares no default, so the birth
+        rite's `db.build_intelligence()` raised AttributeError for every Postgres
+        connection and its intelligence step failed — which is why the heavy phase
+        had been moved into `get_schema`, the one place that did run. Two faults
+        with one cause: profiling never ran where it was meant to, and always ran
+        where it must not.
+
+        Mirrors DuckDBConnection: render the raw schema, then the HEAVY annotators
+        (enrichment + value profiles + the structural/semantic ontology +
+        exploration), which set `self._ontology` / `self.last_build`.
+        """
+        from aughor.kernel.registries.schema_annotators import run_annotators
+        base = self.get_schema()          # the fast rendering, samples and hints included
+        return run_annotators(self, base, phase="heavy")
 
     def _detect_sql_hints(self, columns: list) -> str:
         """
