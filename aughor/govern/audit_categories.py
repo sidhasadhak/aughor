@@ -84,24 +84,21 @@ def uncategorized_kinds(emitted_kinds: set[str]) -> list[str]:
 
 
 def _ledger_events(kind: str, limit: int) -> list[dict]:
-    """⚠ NOT tenant-scoped, unlike the other two sinks — and deliberately left so.
+    """Journal events for one governance kind, tenant-scoped (DATA-06).
 
-    The ``events`` table has no ``org_id`` COLUMN (only ``seq/at/kind/conn_id/canvas_id/
-    job_id/payload/trace_id``), so the org can only come from the payload — and coverage
-    is partial, measured 2026-08-12 on the live ledger: ``action.approval`` carries
-    ``payload.org_id`` on 50 of 50 rows, ``govern.tag`` on 0 of 4. A fail-closed payload
-    filter would therefore scope one governance category correctly and silently empty
-    another, which is a worse failure than the one it fixes (a governance surface that
-    quietly shows nothing reads as "a quiet week").
-
-    The real fix is a tenant column on ``events`` plus producers that stamp it; until
-    then this sink is admin-gated (``/audit/feed`` requires ADMIN_MANAGE_ORG) but
-    cross-tenant. Tracked separately — do not "fix" it with a payload filter.
+    Scoped on the ``org_id`` COLUMN (ledger Migration 8), never on ``payload.org_id``:
+    payload coverage was measured partial on the live ledger — ``action.approval``
+    carried it on 50 of 50 rows, ``govern.tag`` on 0 of 4 — so a payload filter would
+    have scoped one governance category correctly and silently emptied another, which
+    reads as "a quiet week" rather than as a bug. ``emit`` stamps the column from the
+    ambient tenant, so every kind is covered whether or not its producer remembers.
     """
     from aughor.kernel.ledger import Ledger
+    from aughor.security.authz import tenant_scope
 
     try:
-        return Ledger.default().events(kind=kind, limit=limit) or []
+        return Ledger.default().events(kind=kind, limit=limit,
+                                       org_id=tenant_scope()) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 

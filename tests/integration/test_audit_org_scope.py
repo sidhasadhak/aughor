@@ -115,3 +115,41 @@ def test_governance_feed_audit_sink_is_scoped(client, monkeypatch, two_org_rows)
         pytest.skip("RBAC denied the admin-gated feed for this principal")
     blob = str(r.json())
     assert "secret_b" not in blob, "the feed must not carry another org's SQL"
+
+
+# ── the ledger sink: scoped by COLUMN, not by payload ────────────────────────────
+
+def test_ledger_events_are_tenant_stamped_and_filterable():
+    """The column exists, `emit` stamps it from the ambient tenant, and the reader
+    filters on it. Asserted on `govern.tag` specifically: it is the kind whose PAYLOAD
+    carried org_id on 0 of 4 live rows, so it is exactly what a payload filter would
+    have silently emptied."""
+    from aughor.kernel.ledger import Ledger
+    ledger = Ledger.default()
+    with using_org("ledgerscope_a"):
+        ledger.emit("govern.tag", {"tag": "certified"}, conn_id="ledger-conn-a")
+    with using_org("ledgerscope_b"):
+        ledger.emit("govern.tag", {"tag": "certified"}, conn_id="ledger-conn-b")
+
+    a = ledger.events(kind="govern.tag", org_id="ledgerscope_a", limit=50)
+    b = ledger.events(kind="govern.tag", org_id="ledgerscope_b", limit=50)
+    assert [e["conn_id"] for e in a] == ["ledger-conn-a"]
+    assert [e["conn_id"] for e in b] == ["ledger-conn-b"]
+
+    unfiltered = {e["conn_id"] for e in ledger.events(kind="govern.tag", limit=50)}
+    assert {"ledger-conn-a", "ledger-conn-b"} <= unfiltered, \
+        "no org filter (localhost) still sees every tenant's rows"
+
+
+def test_governance_feed_ledger_sink_is_scoped(client, monkeypatch):
+    """The feed's third sink — the one this branch first left open — now scopes too."""
+    from aughor.kernel.ledger import Ledger
+    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    with using_org("ledgerfeed_b"):
+        Ledger.default().emit("govern.tag", {"tag": "b-only-secret-tag"},
+                              conn_id="ledgerfeed-conn-b")
+    r = client.get("/audit/feed", params={"category": "governance_change", "limit": 500},
+                   headers={"X-Aughor-Org": "ledgerfeed_a"})
+    if r.status_code == 403:
+        pytest.skip("RBAC denied the admin-gated feed for this principal")
+    assert "b-only-secret-tag" not in str(r.json())
