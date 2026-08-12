@@ -177,37 +177,53 @@ def _shared_base(conn_id: str, upload_dir: Path, signature: tuple, *, build):
     duplicated work this exists to remove — and the second would then evict the
     first's database while cursors were still reading from it. Serializing means the
     second waits for a build it can use.
+
+    A SUPERSEDED DATABASE IS RELEASED, NEVER CLOSED
+    ------------------------------------------------
+    This used to call `stale.close()`, on the reasoning that "DuckDB keeps the
+    database alive while a cursor references it, so a request already mid-flight is
+    not pulled out from under". The first half is true. The conclusion is not:
+    closing the parent invalidates its cursors immediately, whoever is using them.
+
+    Measured directly — one reader thread, one `close()` from another:
+
+        close the parent while a cursor reads  →  SIGSEGV (or a raised Error;
+                                                  it is a race, so it varies)
+        drop the last reference instead        →  the reader never notices
+
+    Both crash modes were seen in CI on the same day: a SIGSEGV and a SIGABRT, each
+    with one thread inside `close()` and another inside `execute`. Intermittent
+    precisely because it needs the close to land mid-query. A dead interpreter takes
+    the whole process with it, which on serverless is every route at once.
+
+    Dropping the reference is enough, and is what the original comment believed
+    closing would do: the cursor holds the database open, so it stays valid until the
+    last one goes, and is then collected. Verified in isolation — a cursor whose
+    parent is unreferenced and garbage-collected keeps reading correctly.
     """
     with _BASE_LOCK:
         cached = _BASE_DBS.get(conn_id)
         if cached is not None and cached[0] == signature:
             return cached[1]
-        stale = cached[1] if cached is not None else None
         con = build()
+        # Replacing the entry drops this dict's reference to the superseded database.
+        # That is the whole eviction: no `close()`, because live cursors are still
+        # reading from it and closing would invalidate them under load.
         _BASE_DBS[conn_id] = (signature, con)
-    if stale is not None:
-        # Outside the lock: closing is not instant, and nothing new can reach this
-        # handle now. Live cursors on it keep working until their owners close them —
-        # DuckDB keeps the database alive while a cursor references it — so a request
-        # already mid-flight is not pulled out from under.
-        try:
-            stale.close()
-        except Exception:
-            logger.debug("closing the superseded workspace database failed", exc_info=True)
     return con
 
 
 def evict_base(conn_id: str) -> bool:
-    """Drop a connection's materialized database. Returns whether one was held."""
+    """Drop a connection's materialized database. Returns whether one was held.
+
+    Released rather than closed, for the same reason as `_shared_base`: an evict can
+    land while another thread is mid-query on a cursor, and closing the parent
+    invalidates that cursor immediately. Popping the entry is the eviction — the next
+    open builds a fresh database, and this one lives exactly as long as the cursors
+    still reading it.
+    """
     with _BASE_LOCK:
-        entry = _BASE_DBS.pop(conn_id, None)
-    if entry is None:
-        return False
-    try:
-        entry[1].close()
-    except Exception:
-        logger.debug("evict: closing the workspace database failed", exc_info=True)
-    return True
+        return _BASE_DBS.pop(conn_id, None) is not None
 
 
 def _transcode_to_utf8(path: Path) -> Path | None:
