@@ -63,10 +63,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         #   test_stream_chat_transcript — `insight` / `insight_delta` are SSE event types.
         #   test_converse_route_off_state, probe_converse_turn — `insight_id` is a field on
         #     AskRequest; both construct request shapes to prove the /ask door's behaviour.
+        #   ci0_scorecard — `insight` is the FROZEN report_json key quick-turn prose is
+        #     stored under; the CI-0 scorecard reads the historical store as written.
         # Same reason api.ts and uiMessageAdapter.ts are exempt from `investigation_in_web`.
         ("tests/integration/test_stream_chat_transcript.py",
          "tests/unit/test_converse_route_off_state.py",
-         "scripts/probe_converse_turn.py"),
+         "scripts/probe_converse_turn.py",
+         "scripts/ci0_scorecard.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),

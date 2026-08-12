@@ -28,6 +28,7 @@ import logging
 import os
 import random
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -1056,6 +1057,40 @@ def _is_transient(exc: BaseException) -> bool:
     return any(k in msg for k in _TRANSIENT_MSGS)
 
 
+def _caller_attribution() -> Optional[str]:
+    """Which prompt SITE spent these tokens — the first stack frame outside the
+    LLM/observability plumbing, as ``module:function`` (PE-1).
+
+    Automatic rather than a ``template=`` kwarg threaded through call sites: an
+    opt-in label covers only the sites that remembered to pass it and rots as
+    prompts move, while the stack answers for every call — including ones added
+    after this line was written. "Top prompt templates by token spend" must be
+    a dashboard read, not an instrumentation project. Frames in ``aughor.llm``
+    (provider, reliability, failover) and ``aughor.obs`` are plumbing, never the
+    spender; the first frame outside them that lives in ``aughor.`` is the site.
+    A call issued directly by non-aughor code (tests, scripts) attributes to its
+    immediate caller so nothing folds into an anonymous bucket silently. The walk
+    starts at this function's own caller and lets the MODULE FILTER skip the
+    plumbing — a fixed frame depth would break the moment an intermediate helper
+    appeared (and already differs between the production path and a direct call)."""
+    try:
+        frame = sys._getframe(1)
+    except Exception:
+        return None
+    fallback = None
+    for _ in range(40):
+        if frame is None:
+            break
+        mod = frame.f_globals.get("__name__", "") or ""
+        if not mod.startswith(("aughor.llm", "aughor.obs")):
+            if fallback is None:
+                fallback = f"{mod}:{frame.f_code.co_name}"
+            if mod.startswith("aughor."):
+                return f"{mod}:{frame.f_code.co_name}"
+        frame = frame.f_back
+    return fallback
+
+
 def _record_llm_call(*, backend: str, model: str, role: str,
                      prompt_tokens: Optional[int], completion_tokens: Optional[int],
                      ms: float, ok: bool = True, error_class: Optional[str] = None,
@@ -1090,6 +1125,7 @@ def _record_llm_call(*, backend: str, model: str, role: str,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         retries=retries or None,
         payload={"role": role, "fallback": fallback, "streamed": streamed,
+                 **({"caller": _c} if (_c := _caller_attribution()) else {}),
                  **(extra or {}),
                  **({"temperature": temperature} if temperature is not None else {}),
                  **({"usage_reported": False} if prompt_tokens is None

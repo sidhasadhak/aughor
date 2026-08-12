@@ -510,6 +510,60 @@ def model_usage(*, org_id: Optional[str] = None, scan: int = 5000) -> list[dict]
     return sorted(out, key=lambda a: a["calls"], reverse=True)
 
 
+def prompt_weight(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
+    """Prompt-token spend per CALL SITE — which templates the token budget actually
+    goes to (PE-1). The prompt-economy work starts from a measured top-N, not an
+    RTF export of one specimen; this is that measurement, folded from the same
+    per-call records ``model_usage`` reads, keyed by the ``caller`` attribution
+    the provider stamps on every call.
+
+    Shares are computed over calls that REPORTED usage; calls without usage are
+    counted per site (``calls_without_usage``) rather than folded into zero — a
+    site served by a backend that omits usage must not read as free. Events from
+    before the attribution existed fold into a visible ``(unattributed)`` row,
+    never silently dropped: the coverage of the measurement is part of the
+    measurement."""
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().session_events(kind=LLM_CALL, org_id=org_id, limit=scan)
+    agg: dict[str, dict] = {}
+    reported_prompt_total = 0
+    for e in rows:
+        p = e.get("payload") or {}
+        caller = p.get("caller") or "(unattributed)"
+        a = agg.setdefault(caller, {
+            "caller": caller, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
+            "calls_without_usage": 0, "roles": {}, "models": {},
+        })
+        a["calls"] += 1
+        if e.get("prompt_tokens") is None and e.get("completion_tokens") is None:
+            a["calls_without_usage"] += 1
+        else:
+            pt = int(e.get("prompt_tokens") or 0)
+            a["prompt_tokens"] += pt
+            a["completion_tokens"] += int(e.get("completion_tokens") or 0)
+            reported_prompt_total += pt
+        role = p.get("role")
+        if role:
+            a["roles"][role] = a["roles"].get(role, 0) + 1
+        if e.get("model"):
+            a["models"][e["model"]] = a["models"].get(e["model"], 0) + 1
+    sites = []
+    for a in agg.values():
+        reported = a["calls"] - a["calls_without_usage"]
+        a["mean_prompt_tokens"] = round(a["prompt_tokens"] / reported, 1) if reported else None
+        a["prompt_share"] = (round(a["prompt_tokens"] / reported_prompt_total, 3)
+                             if reported_prompt_total else None)
+        a["roles"] = dict(sorted(a["roles"].items(), key=lambda kv: kv[1], reverse=True))
+        a["models"] = dict(sorted(a["models"].items(), key=lambda kv: kv[1], reverse=True))
+        sites.append(a)
+    sites.sort(key=lambda a: (a["prompt_tokens"], a["calls"]), reverse=True)
+    return {
+        "sites": sites,
+        "scanned_calls": len(rows),
+        "reported_prompt_tokens": reported_prompt_total,
+    }
+
+
 def keep_days() -> int:
     """Retention window in days (0 = keep forever). Enforced on write."""
     return int(os.environ.get("AUGHOR_SESSION_LOG_KEEP_DAYS", "14") or 0)
