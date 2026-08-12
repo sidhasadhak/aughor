@@ -19,6 +19,19 @@ Env vars (still honoured as the layer-2 fallback):
   AUGHOR_BACKEND, AUGHOR_CODER_MODEL, AUGHOR_NARRATOR_MODEL, AUGHOR_FAST_NARRATOR_MODEL,
   AUGHOR_MODEL, OLLAMA_BASE_URL, LMSTUDIO_BASE_URL, GROQ_API_KEY, TOGETHER_API_KEY,
   ANTHROPIC_API_KEY, GEMINI_API_KEY, AUGHOR_FALLBACK_MODEL, AUGHOR_FALLBACK_DISABLED.
+
+Operator note — the precedence trap (CI-5a, pinned by test_ci5a_model_resolution):
+  Choosing a BACKEND in the Settings UI disables the AUGHOR_*_MODEL env overrides,
+  even when the UI chose no models: the env model names were tuned for the env
+  backend, and applying "llama3:8b" to an openrouter binding would 404 every call
+  (see _active_model). Consequences worth knowing cold:
+  * SERVERLESS (Vercel): the runtime config file cannot persist across cold starts,
+    so a UI model choice silently reverts and the env vars are the ONLY durable
+    model configuration — set backend AND per-role models together in the env.
+  * LOCAL: a data/llm_config.json with a "backend" key makes AUGHOR_*_MODEL a
+    silent no-op. This is why AUGHOR_BACKEND=faux does not make a dry run on a
+    machine whose config file names a backend — the printed binding from
+    get_provider() is the only authority on what a script will hit.
 """
 from __future__ import annotations
 

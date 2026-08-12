@@ -1795,6 +1795,38 @@ def _fallback_headline(summary: str) -> str:
     return first[:160].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
 
 
+def _fast_synthesis_rescue(system: str, user: str, response_model):
+    """One bounded attempt on the FAST role before the deterministic fallback (CI-5a).
+
+    CI-0 measured 28% of deep reports shipping as machine-stitched fallbacks, and a
+    single slow narrator call is all it takes to get there. The fast binding is cheap
+    by declaration (it never takes the capable output bump), so this costs one bounded
+    call and can only convert fallbacks into reports: a rescue that fails lands exactly
+    where the run was already headed, visibly degraded. The PE-2 checks run on whatever
+    this returns — a faster model does not buy a less-verified report. Timeout its own
+    env (``AUGHOR_SYNTH_FAST_TIMEOUT_S``), deliberately shorter than the narrator's:
+    the user has already waited one full timeout by the time this runs."""
+    import concurrent.futures as _cf
+    import os as _os
+    timeout = float(_os.getenv("AUGHOR_SYNTH_FAST_TIMEOUT_S", "60"))
+    ex = _cf.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = ex.submit(lambda: _provider("fast").complete(
+            system=system, user=user, response_model=response_model))
+        out = fut.result(timeout=timeout)
+        from aughor.stats import stats as _s
+        _s.inc("deep_analysis.synthesis_fast_rescue")
+        return out
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "fast-role synthesis rescue failed; the deterministic fallback "
+                      "report ships (visibly degraded)",
+                 counter="deep_analysis.synthesis_fast_rescue_failed")
+        return None
+    finally:
+        ex.shutdown(wait=False)
+
+
 def _degraded_report(question: str, phases: list, intake_data: dict, *,
                      contradiction_report: Optional[dict] = None,
                      orchestration_plan: Optional[dict] = None,
@@ -7226,6 +7258,13 @@ def ada_synthesize(state: AgentState) -> dict:
     finally:
         # Don't block the investigation on a hung LLM call — abandon the worker, keep the fallback.
         _synth_ex.shutdown(wait=False)
+
+    # CI-5a — before conceding to the deterministic fallback, one bounded attempt on
+    # the FAST role. A slow narrator was the whole cause of the 28% fallback rate;
+    # a cheap model writing a real (and still PE-2-checked) report beats a machine
+    # stitching summaries every time.
+    if synth is None:
+        synth = _fast_synthesis_rescue(_synth_system, synth_prompt, ADASynthesisModel)
 
     # PE-2 — verify what the prompt used to lecture about. The sign/waterfall/grounding/
     # question-addressed contracts moved out of ~1,700 tokens of per-call prose into
