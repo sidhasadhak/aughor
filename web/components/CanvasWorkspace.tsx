@@ -600,7 +600,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
 
   // History line-item → navigate.  Investigations open the detail report in the
   // History tab; chat sessions restore the conversation in the Chat tab (passing
-  // a chat id to the investigation detail panel would just render blank — the bug
+  // a chat id to the deep-analysis detail panel would just render blank — the bug
   // behind "choosing a line item does not take me there").
   const handleHistoryOpen = (id: string, kind: "investigation" | "chat") => {
     if (kind === "chat") {

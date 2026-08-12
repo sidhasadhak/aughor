@@ -651,6 +651,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           // interrupted sentence, so this reads the same as a mid-session interrupt.
           status: (t.status === "interrupted" ? "error" : "done") as "error" | "done",
           guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
+          converseSteps: [],   // CI-6a: the tool trail is live-stream evidence too
           scanItems: [], scanProgress: null,
           route: null,
           agent: null,

@@ -474,7 +474,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   const [saving, setSaving] = useState(false);
   // The personas an `investigate` effect may run as (Wave H1). Empty when the
   // roster is empty — the picker then simply doesn't render, and
-  // an unbound investigation is still the default.
+  // an unbound deep-analysis run is still the default.
   const [agents, setAgents] = useState<UserAgent[]>([]);
   useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
 

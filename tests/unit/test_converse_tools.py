@@ -216,6 +216,39 @@ def test_the_system_prompt_states_rather_than_scripts(fake_conn):
     assert "run_sql" not in prompt, "routing belongs in the tool descriptions, once"
 
 
+def test_the_identity_is_the_platform_not_one_warehouse(fake_conn):
+    """CI-3. The old identity — 'you answer questions about warehouse X' — was the
+    single-warehouse voice the roadmap diagnosed; the new one is the platform-wide
+    analyst, with the warehouse as one of the things it knows."""
+    prompt = ct.converse_system_prompt("superstore")
+
+    assert "You are answering questions about the data warehouse" not in prompt
+    assert "platform" in prompt
+    assert "findings" in prompt and "briefings" in prompt
+
+
+def test_latitude_is_granted_in_both_directions(fake_conn):
+    """General knowledge is allowed AND data claims are bound to tools — the two
+    halves of CI-3's latitude, stated in the same prompt so neither reads as the
+    whole rule."""
+    prompt = ct.converse_system_prompt("c1")
+
+    assert "General knowledge and reasoning are yours" in prompt
+    assert "tool result" in prompt, "the data-claims boundary must be stated"
+
+
+def test_the_stated_gap_line_survives_the_rewrite(fake_conn):
+    """The roadmap's parenthetical: keep that line — it's right."""
+    assert ("A stated gap is worth more than a plausible number"
+            in ct.converse_system_prompt("c1"))
+
+
+def test_clarifying_in_prose_is_granted(fake_conn):
+    """A conversation that may only clarify through the chip widget is not a
+    conversation — the prompt grants the prose path without scripting it."""
+    assert "clarifying question" in ct.converse_system_prompt("c1")
+
+
 def test_converse_is_off_by_default(monkeypatch):
     """`ask.converse` is an EXPERIMENT. Off means /ask behaves exactly as today."""
     monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)

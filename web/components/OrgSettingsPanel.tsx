@@ -21,6 +21,7 @@ import {
 import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
 import { Button } from "@/components/ui/button";
+import { OrgByokSection } from "@/components/OrgByokSection";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -195,6 +196,9 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
         </div>
         <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
       </div>
+
+      {/* Models & keys (CI-5b) — org scope only: the BYOK row is per-org, not per-workspace */}
+      {scope === "app" && <OrgByokSection />}
 
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

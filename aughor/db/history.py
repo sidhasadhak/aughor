@@ -513,6 +513,53 @@ def get_session_turns(session_id: str) -> list[dict]:
     return result
 
 
+def list_chat_sessions(connection_id: Optional[str] = None, *, limit: int = 30) -> list[dict]:
+    """Recent chat sessions, newest activity first — the threads rail's read (CI-6a).
+
+    One row per session: its id, the FIRST question as the title (what the user opened
+    the thread with), the turn count, and the latest activity. Org-scoped with the same
+    predicate ``get_session_turns`` uses — a rail that listed another tenant's thread
+    titles would leak questions, which are content. No-op in localhost mode.
+    """
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = ((" AND org_id = ?", [current_org_id()])
+                 if require_identity_enabled() else ("", []))
+    _conn_sql, _conn_p = ((" AND connection_id = ?", [connection_id])
+                         if connection_id else ("", []))
+    rows = c.execute(
+        f"""SELECT session_id,
+                   MIN(started_at) AS first_at,
+                   MAX(started_at) AS last_at,
+                   COUNT(*) AS turns
+           FROM investigations
+           WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''
+                 {_conn_sql}{_org}
+           GROUP BY session_id
+           ORDER BY last_at DESC
+           LIMIT ?""",
+        (*_conn_p, *_op, max(1, min(int(limit), 100))),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        first = c.execute(
+            f"""SELECT question FROM investigations
+               WHERE session_id = ? AND kind = 'chat'{_org}
+               ORDER BY started_at ASC LIMIT 1""",
+            (d["session_id"], *_op),
+        ).fetchone()
+        out.append({
+            "session_id": d["session_id"],
+            "title": (first["question"] if first else "") or "(untitled)",
+            "turns": d["turns"],
+            "last_at": d["last_at"],
+        })
+    c.close()
+    return out
+
+
 class _ReconstructedTurn:
     """A stored chat turn re-shaped to the attributes ``build_history_section`` reads
     (question · sql · columns · headline · key_rows). A tiny value object rather than a

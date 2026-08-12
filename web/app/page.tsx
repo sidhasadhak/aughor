@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 
 // Always-eager: on the critical path at first render
 import { ChatPanel } from "@/components/ChatPanel";
+import { ThreadsRail } from "@/components/ThreadsRail";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
@@ -2099,15 +2100,43 @@ export default function Home() {
                         setChatKey(k => k + 1);
                       }}
                     />
-                  : <ChatPanel
-                      key={chatKey}
-                      connectionId={selectedConn}
-                      canvasId={activeCanvas?.id}
-                      restoreSessionId={selectedChatSessionId}
-                      initialQuestion={chatInitialQuestion}
-                      initialMode={chatInitialMode}
-                      initialInsightId={chatInitialInsightId}
-                    />
+                  : (
+                    /* CI-6a — the threads rail beside the panel: the visible half of the
+                       session memory CI-1 built. Selection rides the SAME remount
+                       mechanism the history restore uses. */
+                    <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+                      {selectedConn && (
+                        <ThreadsRail
+                          connectionId={selectedConn}
+                          activeSessionId={selectedChatSessionId}
+                          onSelect={(sid) => {
+                            setSelectedHistoryInvId(null);
+                            setSelectedChatSessionId(sid);
+                            setChatKey(k => k + 1);
+                          }}
+                          onNew={() => {
+                            setSelectedChatSessionId(null);
+                            setSelectedHistoryInvId(null);
+                            setChatInitialQuestion(undefined);
+                            setChatInitialInsightId(undefined);
+                            setChatInitialMode("investigate");
+                            setChatKey(k => k + 1);
+                          }}
+                        />
+                      )}
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+                        <ChatPanel
+                          key={chatKey}
+                          connectionId={selectedConn}
+                          canvasId={activeCanvas?.id}
+                          restoreSessionId={selectedChatSessionId}
+                          initialQuestion={chatInitialQuestion}
+                          initialMode={chatInitialMode}
+                          initialInsightId={chatInitialInsightId}
+                        />
+                      </div>
+                    </div>
+                  )
                 }
             </div>
 
