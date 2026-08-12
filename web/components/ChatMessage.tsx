@@ -39,6 +39,7 @@ import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
+import { ToolTrail } from "@/components/ToolTrail";
 import { FixItForm } from "@/components/FixItForm";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import { ContextRibbon } from "@/components/ContextRibbon";
@@ -1408,6 +1409,10 @@ export function ChatMessage({
       {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} onShowSource={onShowSource} />
       )}
+
+      {/* ── CI-6a: the converse body's tool trail — which tools the model chose this
+             turn; renders nothing on quick/deep turns (no steps) ── */}
+      <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />
 
       {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
              nothing when no guard fired (most turns) ── */}

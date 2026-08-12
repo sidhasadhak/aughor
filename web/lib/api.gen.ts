@@ -1546,6 +1546,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Sessions Route
+         * @description Recent chat sessions for the threads rail (CI-6a) — id, opening question as the
+         *     title, turn count, last activity. Org-scoped in the store, like the turns read.
+         */
+        get: operations["list_chat_sessions_route_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-sessions/{session_id}/turns": {
         parameters: {
             query?: never;
@@ -13589,6 +13610,38 @@ export interface operations {
                 "application/json": components["schemas"]["ChatRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_route_chat_sessions_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

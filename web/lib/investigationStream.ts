@@ -66,6 +66,16 @@ export interface GuardReceipt {
   after?: string;
 }
 
+/** CI-6a — one converse tool step: the model chose a tool, and this is the record.
+ *  Mirrors the backend's `converse_step` frame; rendered by the ToolTrail organ. */
+export interface ConverseStep {
+  index: number;
+  tool: string;
+  ok: boolean;
+  detail: string;
+  resultChars: number;
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
@@ -73,6 +83,9 @@ export interface ChatTurn {
   status: "loading" | "done" | "error";
   /** A4 — guard interventions in arrival order, both quick and deep paths. */
   guardReceipts: GuardReceipt[];
+  /** CI-6a — the converse body's tool trail, in step order. Empty on quick/deep
+   *  turns and on restored history (steps are live-stream evidence, like receipts). */
+  converseSteps: ConverseStep[];
   /** B3 — live scan progress (deep runs): dimensions completed so far, and the
    *  running counts, so the surface can render a Task list instead of silence. */
   scanItems: string[];
@@ -230,6 +243,7 @@ export type ChatAction =
   | { type: "ESCALATE";     escalate: NonNullable<ChatTurn["escalate"]> }
   | { type: "SQL";          sql: string }
   | { type: "GUARD_RECEIPT"; receipt: GuardReceipt }
+  | { type: "CONVERSE_STEP"; step: ConverseStep }
   | { type: "SCAN_PROGRESS"; done: number; total: number; current: string }
   | { type: "COLUMNS";      columns: string[] }
   | { type: "ROWS";         rows: unknown[][] }
@@ -313,6 +327,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   clarify: null,
   escalate: null,
   guardReceipts: [],
+  converseSteps: [],
   scanItems: [], scanProgress: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
@@ -371,6 +386,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "GUARD_RECEIPT":
       return updateLast(state, t => ({ ...t, guardReceipts: [...t.guardReceipts, action.receipt] }));
+    case "CONVERSE_STEP":
+      return updateLast(state, t => ({ ...t, converseSteps: [...t.converseSteps, action.step] }));
     case "SCAN_PROGRESS":
       return updateLast(state, t => ({
         ...t,
@@ -509,17 +526,9 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
 //     looking like a completed, empty answer, and the hypotheses and evidence scores it
 //     carried would never reach the user. Rendering it needs a paused turn state and a
 //     resume affordance — tracked separately, not fixed here.
-//   converse_step — the converse body's per-step tool trace (`ask.converse`, EXPERIMENT,
-//     default off). It is on the wire and in the session log, which is where the flag's
-//     exit receipt reads it; no turn-state field or renderer for a tool trail exists yet,
-//     and adding one is a UI design call this step does not make. The turn never looks
-//     frozen without it: the tools' own frames (`sql`, `rows`, `guard_receipt`) are
-//     forwarded, and the model's `headline` and `done` close it. Because the flag is
-//     default off, no shipping client can receive this frame until someone flips it.
-//     Give it a `case` when the flag graduates, or delete both together.
 const UNRENDERED_FRAMES = new Set([
   "explore_plan", "subq_answer", "start", "learning", "activations",
-  "compiled", "fanout", "trusted", "paused", "converse_step",
+  "compiled", "fanout", "trusted", "paused",
 ]);
 
 // Types already warned about this session — a per-frame warning would drown the signal
@@ -621,6 +630,16 @@ export async function consumeStream(
                 detail: (p.detail as string) ?? "",
                 before: p.before as string | undefined,
                 after: p.after as string | undefined,
+              } });
+              break;
+            case "converse_step":
+              // CI-6a — the converse body's tool trail, rendered by ToolTrail.
+              dispatch({ type: "CONVERSE_STEP", step: {
+                index: (p.index as number) ?? 0,
+                tool: (p.tool as string) ?? "",
+                ok: p.ok !== false,
+                detail: (p.detail as string) ?? "",
+                resultChars: (p.result_chars as number) ?? 0,
               } });
               break;
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;

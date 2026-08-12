@@ -5303,6 +5303,14 @@ def reindex_investigations():
     return {"indexed": indexed, "skipped": skipped}
 
 
+@router.get("/chat-sessions")
+def list_chat_sessions_route(conn_id: Optional[str] = None, limit: int = 30):
+    """Recent chat sessions for the threads rail (CI-6a) — id, opening question as the
+    title, turn count, last activity. Org-scoped in the store, like the turns read."""
+    from aughor.db.history import list_chat_sessions
+    return list_chat_sessions(conn_id, limit=limit)
+
+
 @router.get("/chat-sessions/{session_id}/turns")
 def get_chat_session_turns(session_id: str):
     turns = get_session_turns(session_id)
