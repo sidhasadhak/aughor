@@ -1981,6 +1981,24 @@ def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
     return detect_contradictions(phases).to_prompt_section()
 
 
+def _trim_to_boundary(text: str, budget: int) -> str:
+    """Trim to ``budget`` at a sentence end when one exists past the halfway mark,
+    else at a word boundary with an ellipsis — never mid-word (PE-4).
+
+    The CI-0 specimen fed the narrator bullets ending "poor ef" and "This indicates
+    low": inputs damaged by a raw ``[:200]`` slice, inside a prompt demanding
+    precision. A model reasoning over a half-word is being asked to guess."""
+    text = (text or "").strip()
+    if len(text) <= budget:
+        return text
+    cut = text[:budget]
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", cut)]
+    if ends and ends[-1] >= budget // 2:
+        return cut[:ends[-1]]
+    words = cut.rsplit(" ", 1)[0].rstrip(" ,;:—-")
+    return (words or cut) + "…"
+
+
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     lines = []
     for p in phases:
@@ -1994,7 +2012,7 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
             lines.append(f"  ⚠ CAVEAT: {c}")
         for f in p["findings"]:
             if not f["error"] and f["interpretation"]:
-                lines.append(f"  • {f['title']}: {f['interpretation'][:200]}")
+                lines.append(f"  • {f['title']}: {_trim_to_boundary(f['interpretation'], 200)}")
     return "\n".join(lines)
 
 
@@ -4936,6 +4954,50 @@ def _causal_split(dimensions: list) -> "tuple[list, list]":
     return pop, event
 
 
+def _degenerate_seed_verdict(conn, metric_table: str, dimensions: list,
+                             metric_label: str) -> Optional[str]:
+    """A plain-language verdict when the seed cannot support the investigation it
+    asks for, or None when the premise holds (PE-5).
+
+    Two tells, both from the $14 specimen, both checkable for the price of one
+    COUNT(*): the metric's own table is trivially small (an investigation of a
+    2-row scratch table is an answer, not a scan), and every drill-down dimension
+    lives in a DIFFERENT schema than the metric (the cross-schema Trigger-Intel
+    contamination — whatever the scan ranks, it will not be ranking the metric's
+    own rows). Fail-open: any error means "run the investigation", because a
+    wrongly-refused real question costs more than a wasted run."""
+    try:
+        if not metric_table or "." not in metric_table:
+            return None
+        rows = None
+        res = conn.execute("__xsec_premise__", f"SELECT COUNT(*) FROM {metric_table}")
+        if res and not res.error and res.rows and res.rows[0]:
+            try:
+                rows = float(str(res.rows[0][0]).replace(",", ""))
+            except (TypeError, ValueError):
+                rows = None
+        metric_schema = metric_table.rsplit(".", 1)[0].lower()
+        dim_schemas = {d.rsplit(".", 2)[0].lower()
+                       for d in (dimensions or []) if d.count(".") >= 2}
+        cross_schema = bool(dim_schemas) and metric_schema not in dim_schemas
+        if rows is not None and rows <= 3 and cross_schema:
+            return (
+                f"The premise doesn't hold up: '{metric_label}' resolves to "
+                f"{metric_table}, which holds only ~{rows:,.0f} row(s) — while every "
+                "drill-down dimension lives in a different schema "
+                f"({', '.join(sorted(dim_schemas))}). A dimensional scan would rank a "
+                "different dataset than the metric it claims to explain. Check whether "
+                f"{metric_table} is a scratch/test table and re-ask against the schema "
+                "the dimensions come from."
+            )
+        return None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "premise gate is fail-open — a wrongly-refused real question "
+                      "costs more than a wasted run", counter="deep_analysis.premise_gate")
+        return None
+
+
 @_telemetry.node_span("ada_cross_section")
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
@@ -4979,6 +5041,23 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # causal dimensions to the front and auto-drills event-only dims to WHY instead
     # of stopping and merely recommending it. Skipped only under a dims override
     # (the caller pinned the scan's dimensions — drilling would defy the pin).
+    # PE-5 — the degenerate-seed gate, only on the clean top-level scan (a sub-lens
+    # inherits the top-level verdict; gating it twice would double the phase). The $14
+    # specimen burned an entire run — every dimensional query, a 3.8k-token synthesis
+    # prompt, a failed model call, a shipped fallback report — on a seed whose metric
+    # table held ~2 rows while every dimension lived in another schema. One cheap
+    # COUNT(*) up front answers the premise honestly instead.
+    if dims_override is None:
+        _degenerate = _degenerate_seed_verdict(conn, metric_table, dimensions, metric_label)
+        if _degenerate:
+            state["_degenerate_seed"] = _degenerate
+            phase = _phase_result(
+                _phase_id, _phase_title, _phase_emoji, "complete",
+                _degenerate, [],
+            )
+            return {"investigation_phases": phases + [phase],
+                    "_cross_section_summary": _degenerate}
+
     _causal_drill = dims_override is None
     _why_event_dims: list = []
     if _causal_drill:
@@ -7040,6 +7119,7 @@ def ada_synthesize(state: AgentState) -> dict:
             retrieve_for_metric_and_phases,
             build_playbook_prompt_section,
             build_causal_playbook_section,
+            filter_by_approach,
         )
         labels: list[str] = []
         if intake_data.get("metric_label"):
@@ -7049,6 +7129,11 @@ def ada_synthesize(state: AgentState) -> dict:
                 labels.append(phase["title"])
         labels.append(question)
         matched = retrieve_for_metric_and_phases(labels, limit=5)
+        # PE-3: a cross-sectional report never receives change-triggered entries —
+        # the specimen carried five "When GMV up…" patterns it was told to PREFER,
+        # inside a prompt whose own note said the question is not temporal.
+        matched = filter_by_approach(
+            matched, cross_sectional=bool(intake_data.get("cross_sectional")))
         causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
         playbook_section = causal_section + build_playbook_prompt_section(matched)
     except Exception as _exc:
@@ -7141,6 +7226,50 @@ def ada_synthesize(state: AgentState) -> dict:
     finally:
         # Don't block the investigation on a hung LLM call — abandon the worker, keep the fallback.
         _synth_ex.shutdown(wait=False)
+
+    # PE-2 — verify what the prompt used to lecture about. The sign/waterfall/grounding/
+    # question-addressed contracts moved out of ~1,700 tokens of per-call prose into
+    # deterministic checks; a draft that fails gets ONE retry with the exact violations
+    # named (a targeted fix beats prophylaxis on every call), and a draft that still
+    # fails ships with its violations disclosed and its confidence capped — never a loop,
+    # never a silent pass.
+    if synth is not None:
+        try:
+            from aughor.agent.report_checks import run_report_checks
+            _violations = run_report_checks(synth, question, evidence_log)
+            if _violations:
+                from aughor.stats import stats as _st
+                _st.inc("deep_analysis.report_check_retry")
+                try:
+                    _fix_user = (synth_prompt
+                                 + "\n\nYOUR PREVIOUS DRAFT FAILED THESE DETERMINISTIC "
+                                   "CHECKS — fix exactly these, change nothing else:\n- "
+                                 + "\n- ".join(_violations))
+                    _retry = _provider("narrator").complete(
+                        system=_synth_system, user=_fix_user,
+                        response_model=ADASynthesisModel)
+                    if _retry is not None:
+                        synth = _retry
+                        _violations = run_report_checks(synth, question, evidence_log)
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "report-check retry is best-effort; the first draft "
+                                   "ships with its violations disclosed",
+                             counter="deep_analysis.report_check_retry_failed")
+                if _violations:
+                    from aughor.stats import stats as _st2
+                    _st2.inc("deep_analysis.report_check_violations_shipped")
+                    if synth.confidence == "HIGH":
+                        synth.confidence = "MEDIUM"
+                    synth.confidence_justification = (
+                        (synth.confidence_justification or "").rstrip()
+                        + " Deterministic checks flagged: " + " ".join(_violations)
+                    ).strip()
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "report checks are best-effort; an unverified report is the "
+                           "pre-PE-2 behaviour, not a failure",
+                     counter="deep_analysis.report_checks")
 
     # Save causal proposals from this investigation (outcome-gated promotion)
     inv_id = state.get("investigation_id") or ""

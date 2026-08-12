@@ -579,9 +579,14 @@ phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding; bo
 
 # ── Phase 6: Synthesis — attribution waterfall ────────────────────────────────
 
+# PE-2: the per-call template carries ONLY what changes per call. The writing contract
+# lives in the SYSTEM prompt (a stable prefix providers can cache); the field-level
+# rules ride the response schema's own descriptions; and the correctness contracts the
+# old 1,700-token instruction tail lectured about (signs, waterfall sums, grounding,
+# question-addressed) are now VERIFIED by aughor/agent/report_checks.py after the model
+# writes — one named-violation retry beats prophylaxis on every call. The specimen this
+# dieted measured 45% static boilerplate against 22% evidence.
 ADA_SYNTHESIZE_PROMPT = """\
-You are a senior data analyst writing an executive investigation report.
-
 ORIGINAL QUESTION: {question}
 
 INVESTIGATION FINDINGS BY PHASE:
@@ -600,105 +605,56 @@ FULL EVIDENCE (query results by phase):
 
 {external_context_section}
 
-Write a complete, honest investigation report.
-
-WRITING STYLE (clean published brief):
-  • headline: one sentence, max 16 words, lead with the answer. No "Investigation into…" preamble.
-  • executive_summary: 2–4 tight sentences that lead with the finding. Wrap each decisive number
-    in **double asterisks** for bold (e.g. **$2.1M**, **-18%**, **42%**). Drop hedging words
-    ("appears", "seems") when the evidence is strong, and cut "as we can see" scaffolding.
-  • recommendations[].action: start with an imperative verb; bold the key lever or number.
-  Bold marks numbers already traceable to the evidence — it never licenses inventing precision.
-
-GROUNDING (critical — every number must trace to a query result above):
-  • State a number ONLY if it appears in FULL EVIDENCE above. Do NOT estimate, round-trip, or
-    compute a new figure in your head.
-  • This applies especially to SHARES and PROPORTIONS ("X% of total", "accounts for X%",
-    "contributes X%"): state a share ONLY if a query actually returned it. NEVER divide two numbers
-    yourself to manufacture a percentage — that is the #1 source of fabricated figures. If no query
-    computed the share, describe it qualitatively ("a small share", "the largest contributor")
-    instead of inventing a percentage.
-  • If a number you want to cite is not in the evidence, drop it rather than approximate it.
-
-MATERIALITY & CAUSAL HONESTY (do not manufacture a signal where there is none):
-  • Before asserting a difference, "driver", or cause, confirm it is MATERIAL. If the top-line gap the
-    question asks about is negligible (e.g. new vs returning AOV differ by <1%, or the segment values
-    all cluster within a couple of percent), SAY SO plainly — "the difference is negligible / not
-    meaningful" — and do NOT slice into ever-finer sub-segments to surface a cherry-picked cell-level
-    reversal and present it as the answer. A large gap inside one tiny segment is noise, not a driver.
-  • Statistical ≠ practical significance: at high row counts a sub-1% change yields a huge z-score yet
-    is not a real signal. Do not call it a trend/driver/significant; set confidence to MEDIUM or LOW.
-  • If the evidence scanned does NOT explain WHY, say "the data analysed does not reveal the cause" and
-    name what to check next — do NOT invent a plausible mechanism (a "large denominator", a "scale
-    discount", etc.) that no query supports. An honest "cause not determined" beats a confident wrong
-    story, and contradicting yourself (e.g. "not driven by order value" then "driven by a large
-    order-value denominator") is worse than either.
-
-IMPORTANT — ANSWER THE QUESTION ASKED:
-  If the user asked "which channel/region/product/segment had most influence", answer that question
-  directly in the headline and executive summary — even if the overall metric change is within
-  normal statistical variance. Do NOT let "no anomaly detected" prevent you from reporting the
-  dimensional breakdown the user requested. When the baseline is statistically normal:
-  • Lead with the key dimensional finding (e.g. "Channel X accounts for 42% of February orders")
-  • Then contextualise the baseline (e.g. "the MoM volume decline is calendar-driven, not a signal")
-  • Still populate the attribution waterfall with dimensional contributors
-
-SIGN CONVENTION (critical — keep signs consistent EVERYWHERE):
-  Losses and declines are NEGATIVE; gains and improvements are POSITIVE. This applies to
-  total_change_label AND every attribution_waterfall entry AND every number in executive_summary.
-  • total_change_label: signed by the direction of the overall change (e.g. "-$330K" for a
-    decline, "+$120K" for growth).
-  • Within each waterfall entry, amount_label and pct_of_total MUST share the SAME sign: a cause
-    that pushed the metric DOWN is negative in both; a cause that pushed it UP (a partial offset)
-    is positive in both. Never pair a positive pct with a negative amount or vice versa.
-  • The signed waterfall contributions must net to the direction of total_change_label.
-  The SAME quantity must never read positive in one place and negative in another.
-
-ATTRIBUTION WATERFALL:
-  Build a waterfall that accounts for the total observed change.
-  Each entry: a root cause, its estimated contribution ($ or % of gap), controllability, structural vs. transient.
-  The waterfall entries should sum to approximately 100% of the total change.
-  If some portion is unexplained, include an "Unexplained / residual" entry.
-  Use only numbers traceable to query results above. Do NOT fabricate values.
-
-EVIDENCE TRACEABILITY RULE:
-  Every number in headline, executive_summary, and waterfall must be traceable to a specific
-  query result above. If a finding could not be measured, use qualitative language ("the data
-  suggests…", "a material share…") rather than invented precision.
-
-CONFIDENCE ASSESSMENT:
-  HIGH   = multiple phases converge on the same root cause; attribution ~100%; z-score confirmed
-  MEDIUM = primary cause identified but some attribution gaps; limited dimensional data
-  LOW    = multiple plausible causes; data insufficient to discriminate; high residual
-
-RECOMMENDATIONS:
-  For each CONTROLLABLE root cause OR material gap, provide a specific, actionable recommendation
-  with: action, expected_impact (quantified if possible), owner (team/function), timeline.
-  You MUST produce at least one recommendation whenever the findings expose a lever the business
-  can pull — a low-utilization segment, a leakage driver, a concentrated risk. A missing cost
-  column (so profit can't be computed) is NOT a reason to leave recommendations empty: recommend
-  investigating/closing the worst gap or reviewing the leading driver, quantifying the gap where
-  the evidence supports it (never invent a number). Leave empty ONLY when every query failed or
-  the finding is genuinely "nothing actionable here".
-  If METRIC TARGETS are provided above, prioritise root causes where the current value
-  exceeds the warning or critical threshold — those are the highest-urgency items.
-
-CLOSING SUMMARY (closing_summary):
-  A 1-2 sentence BOTTOM LINE that CLOSES the report — the single most important takeaway and
-  what it implies for the business. It restates the conclusion crisply and is DISTINCT from
-  executive_summary (which OPENS the report); do not copy it verbatim. Plain prose, no preamble.
-
-DATA GAPS:
-  List every hypothesis that could NOT be tested due to missing schema (no sessions table,
-  no inventory table, etc.) with what data would be needed.
-
-CAUSAL LINKS:
-  Extract directional cause→effect relationships you identified with reasonable evidence.
-  These will be stored as proposals and only promoted to a causal knowledge graph if a
-  human later confirms the recommendations were effective.
-  Format: from_signal (upstream cause) → to_signal (downstream effect).
-  Only include links you can defend from the evidence above. Leave empty if none.
+Write the complete, honest investigation report.
 """
+
+
+#: The whole writing contract, compressed to what a capable model needs stated once.
+#: Lives in the SYSTEM prompt: stable across calls (cacheable prefix), and read before
+#: the evidence rather than after 3,000 tokens of it.
+SYNTHESIS_CORE_RULES = """REPORT RULES:
+- headline: max 16 words, answering the question ASKED — a breakdown question gets its \
+dimensional answer even when the overall change is normal variance.
+- Every number must appear in FULL EVIDENCE. Never estimate or derive one — a share no \
+query returned is described qualitatively, never manufactured.
+- If the evidence does not explain WHY, say "the data analysed does not reveal the \
+cause" and name what to check next. A negligible spread is negligible — say so; never \
+present a tiny sub-segment reversal as the driver.
+- Signs: losses/declines NEGATIVE, gains POSITIVE, the same quantity never flips sign \
+anywhere. Waterfall entries account for ~100% of the change (add "Unexplained / \
+residual" if short); amount_label and pct_of_total share their sign.
+- confidence: HIGH = phases converge, attribution ~complete · MEDIUM = cause found, \
+gaps remain · LOW = evidence cannot discriminate.
+- recommendations: for controllable causes and material gaps; at least one whenever a \
+lever exists (a missing cost column is not a reason to go empty); prioritise metric \
+targets in warning/critical.
+- closing_summary: the bottom line that CLOSES the report, never a copy of \
+executive_summary. data_gaps: hypotheses this schema cannot test. causal_links: only \
+cause→effect pairs the evidence defends."""
+
+
+#: The long-form register of the same rules, kept for BASELINE-tier models — the small
+#: free models these paragraphs were originally written against, which demonstrably
+#: fabricated shares and flipped signs without them. A capable model gets the short
+#: contract above and the post-generation checks; a baseline model keeps the guidance.
+#: (PE-2's tiering rule: prose that a stronger model makes unnecessary is a RESTRICTION
+#: — scale it with the model; the CHECKS are verification and run for every tier.)
+BASELINE_GUARDRAILS = """\
+GROUNDING (critical): state a number ONLY if it appears in FULL EVIDENCE. This applies
+especially to SHARES ("X% of total"): never divide two numbers yourself to manufacture a
+percentage — if no query computed the share, say "a small share" / "the largest
+contributor" instead. Drop a number you cannot find above rather than approximating it.
+
+MATERIALITY: before asserting a "driver" or cause, confirm it is MATERIAL. If the values
+cluster within a couple of percent, say "the difference is negligible" — do NOT slice
+into ever-finer sub-segments for a cherry-picked reversal. At high row counts a sub-1%
+change is statistically significant and practically meaningless: not a trend, not a
+driver; cap confidence at MEDIUM.
+
+SIGN CONVENTION: total_change_label is signed by the overall direction ("-$330K" decline,
+"+$120K" growth); each waterfall entry's amount_label and pct_of_total share ONE sign
+(down-pushers negative, offsets positive); the signed contributions net to the direction
+of total_change_label."""
 
 # ── Pydantic response models for structured LLM outputs ──────────────────────
 
@@ -854,4 +810,15 @@ def synthesis_system_prompt() -> str:
         "Every number must trace to the evidence log. No fabrication. "
         "Be definitive where evidence is strong; honest about uncertainty where it isn't."
     )
-    return base + "\n\n" + ARGUMENT_STYLE_ADDENDUM
+    parts = [base, ARGUMENT_STYLE_ADDENDUM, SYNTHESIS_CORE_RULES]
+    # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
+    # narrators. Fail to the conservative register — an unresolvable binding means a
+    # bare harness or broken config, exactly where the verbose guidance is safest.
+    try:
+        from aughor.llm.profile import profile_for
+        capable = profile_for("narrator").capable
+    except Exception:
+        capable = False
+    if not capable:
+        parts.append(BASELINE_GUARDRAILS)
+    return "\n\n".join(parts)

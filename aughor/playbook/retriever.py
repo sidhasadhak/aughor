@@ -74,6 +74,29 @@ def retrieve_for_metric_and_phases(
     return [e for _, e in scored[:limit]]
 
 
+_TEMPORAL_TRIGGER_RE = re.compile(
+    r"\b(up|down|flat|increas\w*|decreas\w*|spik\w*|drop\w*|rising|falling|"
+    r"grew|fell|declin\w*|trend\w*|mom|yoy|month.over.month|year.over.year)\b",
+    re.IGNORECASE,
+)
+
+
+def filter_by_approach(entries: list[PlaybookEntry], *,
+                       cross_sectional: bool) -> list[PlaybookEntry]:
+    """Drop entries whose trigger describes a CHANGE from a cross-sectional prompt (PE-3).
+
+    The measured specimen injected five "When GMV up…" playbook entries — 428 tokens,
+    every one a temporal pattern — into a report whose own note said "this is NOT a
+    period-over-period decline", and told the model to PREFER them. A ranking of
+    where value sits has no "up"; guidance about movement is noise there at best and
+    a wrong-frame invitation at worst. Temporal prompts keep everything: a change
+    question can still benefit from a level-shaped intervention."""
+    if not cross_sectional:
+        return entries
+    return [e for e in entries
+            if not _TEMPORAL_TRIGGER_RE.search(e.trigger_condition or "")]
+
+
 def build_playbook_prompt_section(entries: list[PlaybookEntry]) -> str:
     """
     Render matched playbook entries as a prompt block for ADA synthesis.
