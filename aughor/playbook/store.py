@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from aughor.playbook.models import PlaybookEntry
 
-_DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "playbook.json"
+
+def _default_path() -> Path:
+    """Where the playbook lives — ``AUGHOR_PLAYBOOK_PATH`` overrides.
+
+    Resolved at CALL time, not import, so a deployment can point it somewhere
+    writable. Alone among the platform's stores this had no override, and on a
+    read-only serverless filesystem every seed and every version append failed
+    against the bundle's `data/` — 43 times in one 30-minute window.
+    """
+    env = os.environ.get("AUGHOR_PLAYBOOK_PATH", "").strip()
+    return Path(env) if env else _BUNDLED_PATH
+
+
+_BUNDLED_PATH = Path(__file__).parent.parent.parent / "data" / "playbook.json"
 
 # A play's CONTENT — what a consumer actually relied on. The receipt fingerprints THESE
 # fields only, so a meta-only update (outcomes refreshing the success rate, or a draft→active
@@ -33,7 +47,7 @@ def compute_receipt(entry: PlaybookEntry) -> str:
 
 
 def _load_raw(path: Path | None = None) -> list[dict]:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     if not p.exists():
         return []
     with open(p) as f:
@@ -42,7 +56,7 @@ def _load_raw(path: Path | None = None) -> list[dict]:
 
 
 def _save_raw(entries: list[dict], path: Path | None = None) -> None:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(entries, f, indent=2)
@@ -69,7 +83,7 @@ def get_entry(entry_id: str, path: Path | None = None) -> PlaybookEntry | None:
 # play's edit history is auditable and its past advice is never silently rewritten.
 
 def _versions_path(path: Path | None = None) -> Path:
-    return (path or _DEFAULT_PATH).parent / "playbook_versions.json"
+    return (path or _default_path()).parent / "playbook_versions.json"
 
 
 def _append_version(snapshot: dict, path: Path | None = None) -> None:
