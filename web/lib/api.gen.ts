@@ -2045,6 +2045,13 @@ export interface paths {
         /**
          * Refresh Schema Cache
          * @description Bust the server-side schema cache for a connection and return the fresh schema.
+         *
+         *     `?timings=1` also returns a per-stage breakdown of the rebuild. It is reported in
+         *     THIS response rather than through `/dev/stats` because that registry is
+         *     per-process and a serverless deployment answers from many instances — a counter
+         *     read around an 89-second refresh showed no change at all, having been served by
+         *     an instance that did none of the work. Timings from the same response come from
+         *     the instance that did it.
          */
         post: operations["refresh_schema_cache_connections__conn_id__schema_refresh_post"];
         delete?: never;
@@ -14375,7 +14382,9 @@ export interface operations {
     };
     refresh_schema_cache_connections__conn_id__schema_refresh_post: {
         parameters: {
-            query?: never;
+            query?: {
+                timings?: boolean;
+            };
             header?: never;
             path: {
                 conn_id: string;

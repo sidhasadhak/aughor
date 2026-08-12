@@ -611,6 +611,7 @@ def apply_schema_enrichment(
     importing the agent. ``query_log_annotation`` (facts mined from real query history —
     learned joins / value domains / formulas) is appended last; when empty it is
     auto-collected iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort)."""
+    from aughor.kernel.stage_timer import stage as _stage
     from aughor.semantic.autoseed import seed_missing_tables
     from aughor.semantic.metrics import build_metrics_block
     # R11 — prune per-column-config-hidden columns (and sample-disabled value
@@ -624,9 +625,10 @@ def apply_schema_enrichment(
                 apply_column_config_to_schema,
                 load_column_configs,
             )
-            _col_cfg = load_column_configs(connection_id, schema_name or "default")
-            if _col_cfg:
-                raw = apply_column_config_to_schema(raw, _col_cfg)
+            with _stage("enrich.column_config"):
+                _col_cfg = load_column_configs(connection_id, schema_name or "default")
+                if _col_cfg:
+                    raw = apply_column_config_to_schema(raw, _col_cfg)
         except Exception as _cc_exc:
             from aughor.kernel.errors import tolerate
             tolerate(_cc_exc, "column-config schema pruning is best-effort",
@@ -635,8 +637,10 @@ def apply_schema_enrichment(
     # write from THIS schema can no longer overwrite a same-named table in another (the
     # `orders` collision — five competing entries in one store). `schema_name` was already
     # in scope here and simply wasn't passed.
-    seed_missing_tables(raw, schema=schema_name, connection_id=connection_id)
-    enriched = apply_glossary(raw, schema=schema_name)
+    with _stage("enrich.seed_missing_tables"):
+        seed_missing_tables(raw, schema=schema_name, connection_id=connection_id)
+    with _stage("enrich.apply_glossary"):
+        enriched = apply_glossary(raw, schema=schema_name)
     # The vector index is NOT rebuilt here. This function runs on every `get_schema`
     # — the request that merely DISPLAYS a schema — and rebuilding embeds the whole
     # thing. Where the embedder is unreachable that call retries with backoff, and
@@ -650,13 +654,15 @@ def apply_schema_enrichment(
     # glossary change, which is the freshness this call was here for. Fourteen lines
     # below, this file already states the principle it was breaking: "the schema
     # hot-path never depends on the vector store unless explicitly turned on".
-    join_hints = infer_joins(enriched)
+    with _stage("enrich.infer_joins"):
+        join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints
     # Filter metrics against THIS schema so a globally-stored metric that
     # references columns absent here (another connection's metric) doesn't leak
     # a wrong formula into the prompt.
-    metrics_block = build_metrics_block(schema_text=enriched, connection_id=connection_id or "")
+    with _stage("enrich.metrics"):
+        metrics_block = build_metrics_block(schema_text=enriched, connection_id=connection_id or "")
     if metrics_block:
         enriched += "\n\n" + metrics_block
     if profile_annotation:
