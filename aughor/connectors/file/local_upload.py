@@ -395,6 +395,130 @@ def _safe_ident(name: str, fallback: str = "table") -> str:
     return s[:63]
 
 
+def uploaded_tables(connection_id: str, meta: dict | None = None) -> dict[str, list[str]] | None:
+    """``{schema: [table, …]}`` for an uploads connection, read from its FILES.
+
+    Opening the connection materializes every uploaded file into DuckDB — measured
+    at 9.56s of a 9.87s `/catalog/tree` locally, 97% of it — and a catalog listing
+    wants only the NAMES, which the upload directory and its sidecars already carry.
+    This answers from those, touching no database.
+
+    A module-level function rather than a method **on purpose**: a method would
+    require constructing the connector, and construction is precisely the expensive
+    thing. (Making construction lazy instead was tried and reverted: the shared
+    database is closed on rebuild in the belief that live cursors pin it, and a
+    connection that has not yet built its cursor pins nothing — parallel ingest
+    segfaulted.)
+
+    A **seeded** connection also materializes tables from a read-only seed database
+    that no uploaded file describes, so those are merged in — read from the seed's
+    own catalogue, which is a file open and one query. Only the `CREATE TABLE AS`
+    copy is expensive, and naming a table does not require copying it.
+
+    Returns ``None`` only when the question genuinely cannot be answered from
+    metadata — storage would not resolve, or the seed catalogue would not open — so
+    the caller falls back to querying rather than silently under-reporting.
+
+    Tombstoned schemas and tables are excluded, because the materialized database
+    excludes them too — the tombstone, not the file's presence, is the authority on
+    what the user removed, and a listing that disagreed would resurrect deletions.
+    """
+    try:
+        root = vend_storage(connection_id).root
+    except Exception:
+        logger.debug("uploaded_tables: storage vending failed for %s", connection_id,
+                     exc_info=True)
+        return None
+    # The files under this root ARE the truth; on a serverless instance they arrive
+    # from the object store first. Best-effort, exactly as the connector's own open is.
+    try:
+        from aughor.control_plane.object_store import mirror_down
+        mirror_down(root, f"uploads/{connection_id}" if connection_id else "uploads")
+    except Exception:
+        logger.debug("uploaded_tables: mirror_down is best-effort", exc_info=True)
+
+    removed_schemas: set = set()
+    removed_tables: set = set()
+    try:
+        tomb = root / _TOMBSTONE_FILE
+        if tomb.exists():
+            data = json.loads(tomb.read_text())
+            removed_schemas = set(data.get("schemas") or [])
+            removed_tables = set(data.get("tables") or [])
+    except Exception:
+        logger.debug("uploaded_tables: tombstone unreadable; treating as empty",
+                     exc_info=True)
+
+    out: dict[str, list[str]] = {}
+    try:
+        dirs = sorted(root.iterdir())
+    except FileNotFoundError:
+        # Nothing uploaded yet. That is a real, EMPTY answer — not a failure to
+        # answer. Returning None here would send the caller off to materialize the
+        # database precisely for the connection that has nothing in it.
+        return {}
+    except OSError:
+        logger.debug("uploaded_tables: upload root unreadable for %s", connection_id,
+                     exc_info=True)
+        return None
+    for sdir in dirs:
+        if not sdir.is_dir() or sdir.name in removed_schemas:
+            continue
+        for f in sorted(sdir.iterdir()):
+            if not _is_data_file(f):
+                continue
+            cfg = LocalUploadConnection._read_sidecar(f)
+            table = cfg.get("table_name") or _safe_ident(f.stem)
+            if f"{sdir.name}.{table}" in removed_tables:
+                continue
+            out.setdefault(sdir.name, []).append(table)
+
+    seed = (meta or {}).get("seed_duckdb")
+    if seed:
+        seeded = _seed_table_names(seed, removed_schemas, removed_tables)
+        if seeded is None:
+            return None            # cannot name the seed's tables — go and query
+        for schema, tables in seeded.items():
+            have = set(out.get(schema, ()))
+            # Uploads override seeds on a name clash (as `_reload_existing_files`
+            # does), so a name already contributed by a file is not added twice.
+            out.setdefault(schema, []).extend(t for t in tables if t not in have)
+    return out
+
+
+def _seed_table_names(seed_path: str, removed_schemas: set, removed_tables: set):
+    """What a seed database contributes, by NAME, without copying any of it.
+
+    `_seed_from_duckdb` reads exactly this list and then does `CREATE TABLE … AS`
+    per row. The copy is the cost; the catalogue query is a file open. Tombstoned
+    entries are skipped here for the same reason they are skipped there.
+
+    None means the catalogue could not be read at all — distinct from an empty seed,
+    because the caller treats None as "fall back and query".
+    """
+    p = Path(seed_path)
+    if not p.exists():
+        return {}
+    try:
+        con = duckdb.connect(p.as_posix(), read_only=True)
+        try:
+            rows = con.execute(
+                "SELECT schema_name, table_name FROM duckdb_tables() WHERE internal = false"
+            ).fetchall()
+        finally:
+            con.close()
+    except Exception:
+        logger.debug("uploaded_tables: seed catalogue unreadable at %s", seed_path,
+                     exc_info=True)
+        return None
+    named: dict[str, list[str]] = {}
+    for schema, table in rows:
+        if schema in removed_schemas or f"{schema}.{table}" in removed_tables:
+            continue
+        named.setdefault(schema, []).append(table)
+    return named
+
+
 class LocalUploadConnection(Connector):
     connector_category = "file"
     dialect = "duckdb"

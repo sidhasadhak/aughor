@@ -22,9 +22,28 @@ async def get_catalog_tree(workspace_id: str | None = None):
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
         """This catalog's schemas, or None when they could not be read at all."""
         try:
-            db = open_connection_for(conn_id)
             meta = get_meta(conn_id)
             schema_filter = meta.get("schema_name")
+            # An uploads connection answers from its FILES — WITHOUT being opened.
+            #
+            # Its schema and table names live in the upload directory and the per-file
+            # sidecars, while OPENING the connection materializes every file into
+            # DuckDB: measured at 9.56s of a 9.87s tree locally, 97% of it, spent to
+            # learn names that were on disk the whole time. Serverless cold-starts far
+            # too often to ever reach the warm cache, so it paid that on every request.
+            #
+            # The branch is BEFORE `open_connection_for` deliberately — going through
+            # the connector at all is what costs, so a listing must never construct one.
+            if conn_type == "local_upload":
+                from aughor.connectors.file.local_upload import uploaded_tables
+                by_schema = uploaded_tables(conn_id, meta)
+                if by_schema is not None:      # None → seeded/unreadable, query instead
+                    return [
+                        {"name": s, "tables": [{"name": t, "row_count": 0} for t in sorted(ts)]}
+                        for s, ts in sorted(by_schema.items())
+                        if not schema_filter or s == schema_filter
+                    ]
+            db = open_connection_for(conn_id)
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
