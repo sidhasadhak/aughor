@@ -84,6 +84,20 @@ def uncategorized_kinds(emitted_kinds: set[str]) -> list[str]:
 
 
 def _ledger_events(kind: str, limit: int) -> list[dict]:
+    """⚠ NOT tenant-scoped, unlike the other two sinks — and deliberately left so.
+
+    The ``events`` table has no ``org_id`` COLUMN (only ``seq/at/kind/conn_id/canvas_id/
+    job_id/payload/trace_id``), so the org can only come from the payload — and coverage
+    is partial, measured 2026-08-12 on the live ledger: ``action.approval`` carries
+    ``payload.org_id`` on 50 of 50 rows, ``govern.tag`` on 0 of 4. A fail-closed payload
+    filter would therefore scope one governance category correctly and silently empty
+    another, which is a worse failure than the one it fixes (a governance surface that
+    quietly shows nothing reads as "a quiet week").
+
+    The real fix is a tenant column on ``events`` plus producers that stamp it; until
+    then this sink is admin-gated (``/audit/feed`` requires ADMIN_MANAGE_ORG) but
+    cross-tenant. Tracked separately — do not "fix" it with a payload filter.
+    """
     from aughor.kernel.ledger import Ledger
 
     try:
@@ -140,9 +154,13 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
     """
     from aughor.kernel.ledger import Ledger
     from aughor.obs.session_log import LLM_CALL
+    from aughor.security.authz import tenant_scope
 
     try:
-        rows = Ledger.default().session_events(kind=LLM_CALL, limit=limit) or []
+        # Tenant-scoped (DATA-06): session events carry an org_id column, and a model-call
+        # row names the model another org runs and what it costs them.
+        rows = Ledger.default().session_events(kind=LLM_CALL, limit=limit,
+                                               org_id=tenant_scope()) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -164,11 +182,16 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
 
 
 def _from_audit_table(limit: int) -> list[AuditEvent]:
-    """The append-only query-execution log — the one non-Ledger sink."""
+    """The append-only query-execution log — the one non-Ledger sink.
+
+    Tenant-scoped (DATA-06): each event's ``detail`` is the whole audit row, ``sql_full``
+    included, so an unscoped feed hands one org's statements to another org's admin.
+    """
     try:
         from aughor.security.audit import AuditLogger
+        from aughor.security.authz import tenant_scope
 
-        records = AuditLogger.recent(limit=limit) or []
+        records = AuditLogger.recent(limit=limit, org_id=tenant_scope()) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 

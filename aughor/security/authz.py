@@ -126,6 +126,26 @@ def check_owner(kind: str, resource_id: Optional[str], principal: Optional[Princ
 
 # ── Read-path tenancy: org-scope list/read endpoints ─────────────────────────────
 
+def tenant_scope() -> Optional[str]:
+    """The org id a cross-tenant STORE READ must filter by, or ``None`` for no filter.
+
+    The companion to :func:`org_visible_conn_ids` for stores that carry their own
+    ``org_id`` column (the audit log, session events): filter on the tenant the row was
+    WRITTEN with rather than on the set of connections that happen to be registered now.
+    The difference is not cosmetic — a local audit log holds 8,558 rows whose connection
+    has since been deleted, and a scope derived from the live registry would re-expose
+    every one of them.
+
+    ``None`` exactly when identity is off, which is what keeps single-tenant installs
+    byte-identical: there, one tenant owns every row and a filter could only remove the
+    operator's own history.
+    """
+    if not require_identity_enabled():
+        return None
+    from aughor.org.context import current_org_id
+    return current_org_id() or None
+
+
 def org_visible_conn_ids() -> Optional[set[str]]:
     """The connection ids visible to the current request's org, or ``None`` (no org
     filter) in localhost / identity-off mode — DATA-06 read-path scoping.
