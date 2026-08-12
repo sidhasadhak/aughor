@@ -1325,6 +1325,12 @@ class LocalUploadConnection(Connector):
             self._duckdb.execute(sql)
             rows_raw = self._duckdb.fetchall()
             columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
+            from aughor.db.connection import offer_typed_rows
+            offer_typed_rows(
+                rows_raw[:MAX_ROWS],
+                truncated=len(rows_raw) > MAX_ROWS,
+                types=[str(d[1]) for d in self._duckdb.description] if self._duckdb.description else [],
+            )
             rows = [
                 [str(v) if v is not None else "NULL" for v in row]
                 for row in rows_raw[:MAX_ROWS]

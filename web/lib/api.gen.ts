@@ -7030,7 +7030,8 @@ export interface paths {
         };
         /**
          * Get Audit Log
-         * @description Recent audit log entries. Filter by connection_id and/or verdict.
+         * @description Recent audit log entries. Filter by connection_id, verdict and/or label (the
+         *     surface that issued the SQL, e.g. ``query_workbench`` — the history rail's filter).
          */
         get: operations["get_audit_log_security_audit_get"];
         put?: never;
@@ -10148,10 +10149,22 @@ export interface components {
             /** Conn Id */
             conn_id: string;
             /**
+             * Format
+             * @default legacy
+             * @enum {string}
+             */
+            format: "legacy" | "typed";
+            /**
              * Limit
              * @default 500
              */
             limit: number;
+            /**
+             * Source
+             * @default query_builder
+             * @enum {string}
+             */
+            source: "query_builder" | "query_workbench";
             /** Sql */
             sql: string;
             /**
@@ -23087,6 +23100,7 @@ export interface operations {
                 limit?: number;
                 connection_id?: string | null;
                 verdict?: string | null;
+                label?: string | null;
             };
             header?: never;
             path?: never;

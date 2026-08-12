@@ -11,16 +11,33 @@ from pydantic import BaseModel
 from aughor.licensing import Capability, gate
 
 
-def _saved_query_owner_guard(request: Request) -> None:
-    """Object-level authz (SEC-05 / DATA-06): a by-id saved-query route is reachable
-    only by the org that owns its connection. No-op on the many other query routes
-    (no ``query_id``) and in localhost mode."""
+def _query_owner_guard(request: Request) -> None:
+    """Object-level authz (SEC-05 / DATA-06): a by-id route on this router is reachable
+    only by the org that owns the resource. Covers ``query_id`` (saved queries) and
+    ``conn_id`` path params (measure-grains, distinct, cache invalidation) — the
+    connections router's own guard does not see routes mounted here. No-op on routes
+    without those params and in localhost mode."""
     from aughor.security.authz import check_owner, get_principal
     if (qid := request.path_params.get("query_id")):
         check_owner("saved_query", qid, get_principal(request))
+    if (cid := request.path_params.get("conn_id")):
+        check_owner("connection", cid, get_principal(request))
 
 
-router = APIRouter(tags=["query"], dependencies=[Depends(_saved_query_owner_guard)])
+def _check_conn_org(request: Request, *conn_ids: str) -> None:
+    """DATA-06 for body-carried connection ids: 403 when any id belongs to another
+    org. The path-param guard above cannot see request bodies, so every handler
+    that resolves a ``conn_id`` from its body calls this before touching the
+    connection. No-op in localhost mode and for the shared builtins (their org
+    resolves to None), same as ``check_owner`` everywhere else."""
+    from aughor.security.authz import check_owner, get_principal
+    principal = get_principal(request)
+    for cid in conn_ids:
+        if cid:
+            check_owner("connection", cid, principal)
+
+
+router = APIRouter(tags=["query"], dependencies=[Depends(_query_owner_guard)])
 
 
 class _QueryRunRequest(BaseModel):
@@ -29,6 +46,16 @@ class _QueryRunRequest(BaseModel):
     limit: int = 500
     use_cache: bool = False
     use_bulk: bool = False
+    # SE-0: "typed" returns JSON-native rows (real null, not the string "NULL"),
+    # columns_typed [{name, type}] and an explicit truncated flag. The default
+    # keeps the legacy stringified shape byte-identical.
+    format: Literal["legacy", "typed"] = "legacy"
+    # SE-0: which user surface issued the SQL — the audit/safety label. An
+    # allow-list, never free text: a client-chosen label reaches gate_user_sql
+    # and the audit log, and a dunder-shaped one would match the internal-query
+    # bypass and skip PII redaction + audit entirely (the original
+    # __querybuilder__ bug, pinned in test_query_safety_gate.py).
+    source: Literal["query_builder", "query_workbench"] = "query_builder"
 
 
 def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
@@ -55,21 +82,118 @@ def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
         return None
 
 
+def _json_cell(v):
+    """A DB value as a JSON-native cell: real null, native numbers/strings/bools,
+    ISO strings for temporal types, strings for everything JSON can't say
+    (bytes, UUIDs, intervals). Decimal → float: this is a display path, and the
+    legacy string shape remains available where exactness matters."""
+    import datetime as _dt
+    import decimal as _dec
+    import math as _math
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, float):
+        return v if _math.isfinite(v) else str(v)
+    if isinstance(v, _dec.Decimal):
+        return float(v)
+    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+        return v.isoformat()
+    if isinstance(v, (list, tuple)):
+        return [_json_cell(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _json_cell(x) for k, x in v.items()}
+    return str(v)
+
+
+def _infer_col_type(values) -> str:
+    """Column type from the first non-null Python value — the fallback for cursors
+    whose description carries no types (sqlite3). bool before int (bool subclasses
+    int), datetime before date (same reason)."""
+    import datetime as _dt
+    import decimal as _dec
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            return "BOOLEAN"
+        if isinstance(v, int):
+            return "BIGINT"
+        if isinstance(v, float):
+            return "DOUBLE"
+        if isinstance(v, _dec.Decimal):
+            return "NUMERIC"
+        if isinstance(v, _dt.datetime):
+            return "TIMESTAMP"
+        if isinstance(v, _dt.date):
+            return "DATE"
+        if isinstance(v, _dt.time):
+            return "TIME"
+        if isinstance(v, (bytes, memoryview)):
+            return "BLOB"
+        if isinstance(v, str):
+            return "VARCHAR"
+        return "UNKNOWN"
+    return "UNKNOWN"
+
+
+def _typed_response(result, payload: dict, limit: int, duration_ms: float,
+                    receipt_id, caveats: list[str]) -> dict:
+    """Assemble the format:"typed" response from an execute_typed payload. Rows are
+    sliced back to the requested limit (the n+1 probe row never leaves the server);
+    the probe row arriving is what makes `truncated` honest."""
+    from aughor.tools.schema import norm_type
+    rows = payload.get("rows") or []
+    truncated = bool(payload.get("truncated"))
+    if limit > 0 and len(rows) > limit:
+        rows, truncated = rows[:limit], True
+    cols = list(result.columns or [])
+    raw_types = [str(t) for t in (payload.get("types") or [])]
+    if len(raw_types) != len(cols):
+        raw_types = [""] * len(cols)
+
+    def _one_type(idx: int, raw: str) -> str:
+        raw = (raw or "").strip()
+        if not raw or raw.lower() == "none":
+            return _infer_col_type(r[idx] for r in rows)
+        return norm_type(raw)
+
+    columns_typed = [{"name": c, "type": _one_type(i, raw_types[i])} for i, c in enumerate(cols)]
+    return {
+        "columns": cols,
+        "columns_typed": columns_typed,
+        "rows": [[_json_cell(v) for v in row] for row in rows],
+        "row_count": len(rows),
+        "truncated": truncated,
+        "duration_ms": round(duration_ms, 1),
+        "sql": result.sql,
+        "cached": False,
+        "error": result.error,
+        "receipt_id": receipt_id,
+        "caveats": caveats,
+        "format": "typed",
+    }
+
+
 @router.post("/query/run")
-async def query_run(body: _QueryRunRequest):
+async def query_run(body: _QueryRunRequest, request: Request):
     """Execute a SQL query against a registered connection."""
     import time as _t
     from aughor.db.connection import open_connection_for, gate_user_sql
 
+    _check_conn_org(request, body.conn_id)
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
+    if body.format == "typed" and body.use_bulk:
+        # bulk_read reaches ConnectorX directly and has no typed capture; refusing
+        # is honest where silently serving strings under a "typed" label is not.
+        raise HTTPException(status_code=400, detail="format 'typed' is not supported with use_bulk")
 
     # Safety gate on the RAW user SQL — before cache, wrapping, or dispatch.
     # The Query Builder is user-exposed, so user SQL goes through the same
     # SafetyChecker + audit as the chat path. This lives here (not only in the
     # connection layer) because bulk_read() reaches ConnectorX directly and the
     # runner wraps the SQL in a subquery before execute() ever sees it.
-    blocked = gate_user_sql(body.conn_id, "query_builder", body.sql)
+    blocked = gate_user_sql(body.conn_id, body.source, body.sql)
     if blocked is not None:
         return {
             "columns": [],
@@ -80,6 +204,7 @@ async def query_run(body: _QueryRunRequest):
             "cached": False,
             "error": blocked.error,
             "receipt_id": None,          # a blocked query has no receipt
+            "caveats": [],
         }
 
     # Under an active RBAC row policy these cached rows are post-RLS, but the cache is consulted before the
@@ -87,8 +212,12 @@ async def query_run(body: _QueryRunRequest):
     # principal's rows leak to another. `tenancy` is None (legacy key) until `rbac.row_policy` is live for an
     # identified user; it is computed here in the request context that also drives enforcement (the default
     # executor copies contextvars into `_work`), and reused for the paired put below.
+    # Typed responses never touch the result cache: cached rows are stringified,
+    # and a typed run wraps at LIMIT n+1 (the truncation probe), so caching its
+    # result would let the legacy path serve one extra row later. Skip both sides.
+    _typed = body.format == "typed"
     tenancy = None
-    if body.use_cache:
+    if body.use_cache and not _typed:
         from aughor.db.connection import result_cache_tenancy
         from aughor.db.matcache import get_cached
         tenancy = result_cache_tenancy()
@@ -103,6 +232,7 @@ async def query_run(body: _QueryRunRequest):
                 "cached": True,
                 "error": None,
                 "receipt_id": _write_builder_receipt(body.conn_id, body.sql),
+                "caveats": list(getattr(cached, "caveats", []) or []),
             }
 
     try:
@@ -113,39 +243,51 @@ async def query_run(body: _QueryRunRequest):
     _sql_to_run = body.sql
     _use_bulk   = body.use_bulk
     _limit      = body.limit
+    _source     = body.source
 
     def _work():
         t0 = _t.monotonic()
+        typed_payload = None
         try:
             if _use_bulk:
                 result = db.bulk_read(_sql_to_run, limit=_limit)
             else:
                 sql = _sql_to_run.strip().rstrip(";")
                 if _limit > 0:
-                    sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit}"
-                result = db.execute("query_builder", sql)
+                    # Typed runs fetch one extra row as the truncation probe: the
+                    # subquery wrap hides whether the raw query had more rows, so
+                    # row n+1 arriving is the only honest "there was more" signal.
+                    sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit + 1 if _typed else _limit}"
+                if _typed:
+                    result, typed_payload = db.execute_typed(_source, sql)
+                else:
+                    result = db.execute(_source, sql)
         finally:
             try:
                 db.close()
             except Exception:
                 pass
-        return result, (_t.monotonic() - t0) * 1000
+        return result, typed_payload, (_t.monotonic() - t0) * 1000
 
     loop = asyncio.get_running_loop()
     try:
-        result, duration_ms = await loop.run_in_executor(None, _work)
+        result, typed_payload, duration_ms = await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    if body.use_cache and not result.error:
+    if body.use_cache and not _typed and not result.error:
         from aughor.db.matcache import put_cache
         put_cache(body.conn_id, body.sql, result, tenancy=tenancy)
 
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
     receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
+    caveats = list(getattr(result, "caveats", []) or [])
 
-    return {
+    if _typed and typed_payload is not None:
+        return _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+
+    legacy = {
         "columns": result.columns,
         "rows": result.rows,
         "row_count": result.row_count,
@@ -154,7 +296,13 @@ async def query_run(body: _QueryRunRequest):
         "cached": False,
         "error": result.error,
         "receipt_id": receipt_id,
+        "caveats": caveats,
     }
+    if _typed:
+        # The connector has no typed capture (or the security post-pass disarmed
+        # it) — say so instead of serving strings under a "typed" label.
+        legacy["format"] = "legacy"
+    return legacy
 
 
 # ── Semantic operators over SQL result text ────────────────────────────────────
@@ -191,7 +339,7 @@ def _wrap_limited(sql: str, limit: int) -> str:
 
 
 @router.post("/query/semantic", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
-async def query_semantic(body: _SemanticOpRequest):
+async def query_semantic(body: _SemanticOpRequest, request: Request):
     """Apply a semantic operator (filter / extract / top_k / aggregate over a text column) to a result.
 
     Re-runs the SQL server-side (authoritative — never trusts client-sent rows), then applies the
@@ -199,6 +347,7 @@ async def query_semantic(body: _SemanticOpRequest):
     from aughor.db.connection import gate_user_sql, open_connection_for
     from aughor.semops.operators import apply_step
 
+    _check_conn_org(request, body.conn_id)
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
     # Safety gate on the RAW user SQL — same contract as /query/run: the runner
@@ -295,13 +444,14 @@ class _CrossSourceJoinRequest(BaseModel):
 
 
 @router.post("/query/cross-source-join")
-async def query_cross_source_join(body: _CrossSourceJoinRequest):
+async def query_cross_source_join(body: _CrossSourceJoinRequest, request: Request):
     """Join a result from ONE connection to a table on ANOTHER, N+1-free (batched foreach).
 
     The direct entry point for cross-source joins (the Rec 2 engine); the federated planner targets
     the same `cross_source_join`. Always available since flag endgame Wave 2 (2026-08-06;
     the route is the whole surface — calling it is the consent, receipt 41ec864723fb). The
     left SQL goes through the same safety gate as the Query Builder."""
+    _check_conn_org(request, body.left_conn_id, body.right_conn_id)
     for field in ("left_conn_id", "left_sql", "left_key", "right_conn_id", "right_table", "right_key"):
         if not (getattr(body, field) or "").strip():
             raise HTTPException(status_code=400, detail=f"{field} is required")
@@ -338,7 +488,7 @@ class _FederatedAnswerRequest(BaseModel):
 
 
 @router.post("/query/federated-answer")
-async def query_federated_answer(body: _FederatedAnswerRequest):
+async def query_federated_answer(body: _FederatedAnswerRequest, request: Request):
     """Answer a natural-language question that spans TWO OR MORE connections (Rec 2, Stage 3).
 
     One LLM call grounds every schema and emits a structured plan (an ordered list of grounded
@@ -353,6 +503,7 @@ async def query_federated_answer(body: _FederatedAnswerRequest):
         raise HTTPException(status_code=400, detail="question is required")
     if len(body.conn_ids) < 2:
         raise HTTPException(status_code=400, detail="at least two conn_ids are required")
+    _check_conn_org(request, *body.conn_ids)
 
     from aughor.agent.federated_planner import answer_federated
     reconcile = body.reconcile if body.reconcile is not None else True
@@ -380,7 +531,7 @@ class _AutoFederatedRequest(BaseModel):
 
 
 @router.post("/query/auto-federated-answer")
-async def query_auto_federated_answer(body: _AutoFederatedRequest):
+async def query_auto_federated_answer(body: _AutoFederatedRequest, request: Request):
     """Answer a question WITHOUT being told which connections it spans (Rec 2, answer-path).
 
     A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
@@ -394,6 +545,7 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest):
         raise HTTPException(status_code=400, detail="question is required")
     if len(body.conn_ids) < 2:
         raise HTTPException(status_code=400, detail="at least two candidate conn_ids are required")
+    _check_conn_org(request, *body.conn_ids)
 
     from aughor.agent.connection_selector import select_connections
     from aughor.agent.federated_planner import answer_federated
@@ -436,12 +588,13 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest):
 
 
 @router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
-async def query_semantic_text_columns(body: _QueryRunRequest):
+async def query_semantic_text_columns(body: _QueryRunRequest, request: Request):
     """Detect which columns of a query's result read as free text — the operator candidates the UI
     should offer. Re-runs the SQL server-side and inspects the values (rows carry no dtypes)."""
     from aughor.db.connection import open_connection_for
     from aughor.semops.operators import detect_text_columns
 
+    _check_conn_org(request, body.conn_id)
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
     try:
@@ -555,7 +708,7 @@ class _QueryValidateRequest(BaseModel):
 
 
 @router.post("/query/validate")
-def query_validate(body: _QueryValidateRequest):
+def query_validate(body: _QueryValidateRequest, request: Request):
     """On-demand governed validation of an answer's query: re-run the deterministic guard
     battery against the live connection — fan-out / chasm (static), join value-domain and
     filter value-domain (live probes) — and return a structured verdict. Each guard is
@@ -564,6 +717,7 @@ def query_validate(body: _QueryValidateRequest):
     from aughor.db.connection import open_connection_for
     from aughor.kernel.errors import tolerate
 
+    _check_conn_org(request, body.conn_id)
     if not (body.sql or "").strip():
         raise HTTPException(status_code=400, detail="sql is required")
     try:
@@ -674,13 +828,14 @@ class _SemanticContextRequest(BaseModel):
 
 
 @router.post("/query/semantic-context")
-def query_semantic_context(body: _SemanticContextRequest):
+def query_semantic_context(body: _SemanticContextRequest, request: Request):
     """Resolve the Semantic plane (AL-05) for a question — what the platform knows about it:
     governed metrics, the ontology object model, the cached business profile, and whether the
     knowledge base covers it. The plane's read-only introspection surface; the same `resolve()`
     is what orchestration will attach to the live answer path. Reads caches only (no DB connect)."""
     if not (body.conn_id or "").strip():
         raise HTTPException(status_code=400, detail="conn_id is required")
+    _check_conn_org(request, body.conn_id)
     from aughor.semantic.context import resolve
     return resolve(body.question or "", body.conn_id, body.schema_name).summary()
 
@@ -693,7 +848,7 @@ class _CapabilityAnswerRequest(BaseModel):
 
 
 @router.post("/query/capability-answer")
-def query_capability_answer(body: _CapabilityAnswerRequest):
+def query_capability_answer(body: _CapabilityAnswerRequest, request: Request):
     """Answer a data question end-to-end through the Capability plane (AL-02): one
     `CapabilityPipeline` runs generate (NL→SQL) → validate (`trust.verify`) → execute → interpret
     and returns the whole result. The non-streaming, template-driven counterpart to /ask —
@@ -701,6 +856,7 @@ def query_capability_answer(body: _CapabilityAnswerRequest):
     single gate, calling it is the consent)."""
     if not (body.question or "").strip():
         raise HTTPException(status_code=400, detail="question is required")
+    _check_conn_org(request, body.conn_id)
     from aughor.db.connection import open_connection_for
     try:
         db = open_connection_for(body.conn_id)
@@ -783,7 +939,7 @@ class _ChatFeedbackRequest(BaseModel):
 
 
 @router.post("/chat/feedback")
-def chat_feedback(body: _ChatFeedbackRequest):
+def chat_feedback(body: _ChatFeedbackRequest, request: Request):
     """Record a helpful/unhelpful signal (and optional note) on a chat answer. Journaled to
     the ledger as a ``chat.feedback`` event so it rides the audit trail; fail-open.
 
@@ -792,6 +948,7 @@ def chat_feedback(body: _ChatFeedbackRequest):
     popularity feed, so thumbs teach ranking through the one existing signal path.
     Monotone by design: counters only grow — an unhelpful verdict journals the
     event (audit + future consumers) but never decrements a prior."""
+    _check_conn_org(request, body.conn_id)
     from aughor.kernel.errors import tolerate
     try:
         from aughor.kernel.ledger import Ledger

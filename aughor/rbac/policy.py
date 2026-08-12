@@ -68,6 +68,17 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/chat"): P.ANALYSIS_RUN,
     ("POST", "/ask"): P.ANALYSIS_RUN,
     ("POST", "/investigate"): P.ANALYSIS_RUN,
+    # SE-0 — user SQL and its siblings run analysis against the warehouse, same tier
+    # as /ask (they execute; the pure helpers build-sql/decompile/postproc stay at
+    # the write floor). Object-level org scoping is separate (query.py DATA-06).
+    ("POST", "/query/run"): P.ANALYSIS_RUN,
+    ("POST", "/query/semantic"): P.ANALYSIS_RUN,
+    ("POST", "/query/semantic/text-columns"): P.ANALYSIS_RUN,
+    ("POST", "/query/cross-source-join"): P.ANALYSIS_RUN,
+    ("POST", "/query/federated-answer"): P.ANALYSIS_RUN,
+    ("POST", "/query/auto-federated-answer"): P.ANALYSIS_RUN,
+    ("POST", "/query/validate"): P.ANALYSIS_RUN,
+    ("POST", "/query/capability-answer"): P.ANALYSIS_RUN,
 
     # ── Resource delete / export (more specific than the write floor) ──
     ("DELETE", "/investigations"): P.RESOURCE_DELETE,

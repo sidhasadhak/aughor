@@ -125,8 +125,12 @@ class AuditLogger:
         limit: int = 100,
         connection_id: str | None = None,
         verdict: str | None = None,
+        label: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return recent records, newest first. Optional filters by connection/verdict."""
+        """Return recent records, newest first. Optional filters by connection/verdict/label
+        (``label`` matches the ``hypothesis_id`` column — the surface that issued the SQL,
+        e.g. ``query_builder`` / ``query_workbench`` — which is what makes the SQL editor's
+        history rail a filtered read of this log, SE-0)."""
         c = _connect()
         try:
             ensure_once(c, _ensure_schema)
@@ -138,6 +142,9 @@ class AuditLogger:
             if verdict:
                 clauses.append("verdict = ?")
                 params.append(verdict)
+            if label:
+                clauses.append("hypothesis_id = ?")
+                params.append(label)
             where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             rows = c.execute(
                 f"SELECT * FROM audit_log {where} ORDER BY ts DESC LIMIT ?",

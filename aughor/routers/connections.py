@@ -83,9 +83,13 @@ def get_connections(request: Request):
     from aughor.security.authz import get_principal
     _p = get_principal(request)
     conns = list_connections(org_id=_p.org_id if _p else None)
+    from aughor.db.connection import connection_traits
     for c in conns:
         s = get_connection_settings(c.get("id", ""))
         c["briefings_enabled"] = s.get("briefings_enabled", True) is not False
+        # SE-0: dialect-aware clients need the connection's SQL surface. From class
+        # attributes only — no connection is opened on this list route.
+        c.update(connection_traits(c.get("conn_type", "")))
     return conns
 
 

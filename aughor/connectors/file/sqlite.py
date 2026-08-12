@@ -126,6 +126,10 @@ class SQLiteConnection(Connector):
             cur = self._conn.execute(sql)
             rows = cur.fetchmany(MAX_ROWS)
             columns = [d[0] for d in cur.description] if cur.description else []
+            from aughor.db.connection import offer_typed_rows
+            # sqlite3's description carries no types (d[1] is always None) — pass
+            # none and let the caller infer per-column types from the values.
+            offer_typed_rows(rows, truncated=len(rows) >= MAX_ROWS, types=[])
             result = QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,

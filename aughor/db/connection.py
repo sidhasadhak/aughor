@@ -124,6 +124,69 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
     return None
 
 
+# ── SE-0: typed result capture ─────────────────────────────────────────────────
+# Legacy execute() stringifies every value ('NULL' for a real NULL), which the agent
+# prompt contract depends on. The typed path captures the RAW row values and cursor
+# types as a side channel at the same materialisation site, via a same-thread
+# ContextVar sink: execute() signatures stay untouched (legacy byte-identical by
+# construction), and — unlike an instance attribute — a pooled, reused connection
+# object can't leak one request's capture into another's.
+from contextvars import ContextVar as _ContextVar
+
+_TYPED_SINK: _ContextVar[dict | None] = _ContextVar("aughor_typed_sink", default=None)
+
+
+def _offer_typed_rows(rows, *, truncated: bool, types: list[str]) -> None:
+    """Called by an executor at its row-materialisation site, BEFORE stringification.
+    No-op unless an execute_typed() call is active on this thread. ``rows`` must be
+    the same slice the legacy result will carry — _security_post mirrors its budget
+    slice and PII redaction onto this sink positionally, which requires alignment."""
+    sink = _TYPED_SINK.get()
+    if sink is None:
+        return
+    sink["rows"] = [list(r) for r in rows]
+    sink["types"] = list(types)
+    sink["truncated"] = bool(truncated)
+    sink["armed"] = True
+
+
+def _typed_mirror_slice(max_rows: int) -> None:
+    """Mirror _security_post's budget slice onto an active typed sink. Fail closed:
+    any surprise disarms the capture rather than risking a typed row the legacy
+    path dropped."""
+    sink = _TYPED_SINK.get()
+    if sink is None or not sink.get("armed"):
+        return
+    try:
+        sink["rows"] = sink["rows"][:max_rows]
+    except Exception:
+        sink["armed"] = False
+
+
+def _typed_mirror_redaction(before, after) -> None:
+    """Mirror PII redaction positionally onto an active typed sink: every cell the
+    scanner changed gets the redacted STRING in the typed rows too. On any shape
+    mismatch the capture disarms — a typed value that skipped redaction must never
+    leave the process."""
+    sink = _TYPED_SINK.get()
+    if sink is None or not sink.get("armed"):
+        return
+    try:
+        rows = sink["rows"]
+        if len(rows) != len(after) or len(before) != len(after):
+            sink["armed"] = False
+            return
+        for i, (b_row, a_row) in enumerate(zip(before, after)):
+            if len(rows[i]) != len(a_row) or len(b_row) != len(a_row):
+                sink["armed"] = False
+                return
+            for j, (b, a) in enumerate(zip(b_row, a_row)):
+                if b != a:
+                    rows[i][j] = a
+    except Exception:
+        sink["armed"] = False
+
+
 def gate_user_sql(connection_id: str, label: str, sql: str) -> QueryResult | None:
     """Safety gate for **user-issued** SQL (Query Builder / bulk read).
 
@@ -159,7 +222,11 @@ def _security_post(
         from aughor.security.audit   import AuditLogger
         from aughor.security.sandbox import get_budget
 
-        # 1. Row budget — truncate silently
+        # 1. Row budget — truncate silently. Carry caveats/annotations through the
+        # reconstruction: the budget slice must shorten the rows, not silently
+        # discard the guard findings attached to the result (SE-0 forwards caveats
+        # to the caller, so dropping them here would blank exactly the runs the
+        # budget touched).
         budget = get_budget(connection_id)
         if len(result.rows) > budget.max_rows:
             result = QueryResult(
@@ -169,11 +236,15 @@ def _security_post(
                 rows=result.rows[:budget.max_rows],
                 row_count=result.row_count,
                 error=result.error,
+                caveats=result.caveats,
+                annotations=result.annotations,
             )
+            _typed_mirror_slice(budget.max_rows)
 
         # 2. PII redaction
         pii_count = 0
         if result.columns and result.rows:
+            _pre_scan_rows = result.rows
             scan = PiiScanner.scan_and_redact(result.columns, result.rows)
             if scan.redacted_count > 0:
                 result = QueryResult(
@@ -183,8 +254,11 @@ def _security_post(
                     rows=scan.rows,
                     row_count=result.row_count,
                     error=result.error,
+                    caveats=result.caveats,
+                    annotations=result.annotations,
                 )
                 pii_count = scan.redacted_count
+                _typed_mirror_redaction(_pre_scan_rows, scan.rows)
 
         # 3. Audit log
         AuditLogger.log(
@@ -231,6 +305,13 @@ def security_post(connection_id: str, hypothesis_id: str, sql: str,
                   result: "QueryResult", duration_ms: float) -> "QueryResult":
     """Post-execution PII redaction + audit + budget. Returns the (possibly modified) result."""
     return _security_post(connection_id, hypothesis_id, sql, result, duration_ms)
+
+
+def offer_typed_rows(rows, *, truncated: bool, types: list[str]) -> None:
+    """SE-0 typed capture at an out-of-module connector's materialisation site —
+    the public face of ``_offer_typed_rows`` (same contract), so connectors never
+    import leading-underscore internals."""
+    _offer_typed_rows(rows, truncated=truncated, types=types)
 
 
 def _row_policy_principal() -> "tuple[str, str, list[str]] | None":
@@ -494,6 +575,26 @@ class DatabaseConnection(ABC):
 
     @abstractmethod
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult: ...
+
+    def execute_typed(self, hypothesis_id: str, sql: str) -> "tuple[QueryResult, dict | None]":
+        """SE-0: run ``execute()`` while capturing raw (pre-stringification) row values
+        and cursor types as a side channel. Returns ``(result, payload)`` where the
+        legacy ``result`` is byte-identical to a plain ``execute()`` and ``payload`` is
+        ``{rows, types, truncated}`` — or ``None`` when this connector has no capture
+        site, the label is internal (internal queries skip the PII/audit post-pass, so
+        a typed capture there would be an unredacted side channel), or the security
+        post-pass disarmed the capture (fail closed, never a redaction bypass)."""
+        if _is_internal_query(hypothesis_id):
+            return self.execute(hypothesis_id, sql), None
+        token = _TYPED_SINK.set({})
+        try:
+            result = self.execute(hypothesis_id, sql)
+            sink = _TYPED_SINK.get()
+        finally:
+            _TYPED_SINK.reset(token)
+        if result.error or not sink or not sink.get("armed"):
+            return result, None
+        return result, sink
 
     @abstractmethod
     def get_schema(self) -> str: ...
@@ -807,6 +908,11 @@ class DuckDBConnection(DatabaseConnection):
             self._conn.execute(sql)
             rows = self._conn.fetchall()
             columns = [d[0] for d in self._conn.description] if self._conn.description else []
+            _offer_typed_rows(
+                rows[:max_rows],
+                truncated=len(rows) > max_rows,
+                types=[str(d[1]) for d in self._conn.description] if self._conn.description else [],
+            )
             result = QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,
@@ -1097,6 +1203,11 @@ class PostgresConnection(DatabaseConnection):
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)
                 total = cur.rowcount if cur.rowcount >= 0 else len(rows)
+                _offer_typed_rows(
+                    rows,
+                    truncated=total > len(rows),
+                    types=[_pg_type_name(desc[1]) for desc in cur.description] if cur.description else [],
+                )
                 result = QueryResult(
                     hypothesis_id=hypothesis_id,
                     sql=sql,
@@ -1360,6 +1471,34 @@ def open_connection(
             connection_id=connection_id,
             meta=meta or {},
         )
+
+
+def connection_traits(conn_type: str) -> dict:
+    """SE-0: ``dialect`` + ``writes_native_sql`` for a connector TYPE, read from
+    CLASS attributes — no connection is opened. A dialect-aware client (the SQL
+    editor's grammar/formatter pick) cannot exist without this, and instantiating
+    every connection to ask would be an N-connection open on a list route.
+
+    Unknown types — and registered connectors whose optional driver isn't
+    installed (importing the class module raises) — answer ``None`` values:
+    the client must degrade to a generic grammar, never guess."""
+    cls = None
+    if conn_type in ("duckdb", "aughor_ops"):
+        cls = DuckDBConnection
+    elif conn_type == "postgres":
+        cls = PostgresConnection
+    elif conn_type:
+        try:
+            from aughor.connectors.registry import REGISTRY
+            cls = REGISTRY.get_class(conn_type)
+        except Exception:
+            cls = None
+    if cls is None:
+        return {"dialect": None, "writes_native_sql": None}
+    return {
+        "dialect": getattr(cls, "dialect", "duckdb"),
+        "writes_native_sql": bool(getattr(cls, "writes_native_sql", False)),
+    }
 
 
 def open_connection_for(conn_id: str) -> DatabaseConnection:
