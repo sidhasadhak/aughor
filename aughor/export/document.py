@@ -233,6 +233,15 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     ) if m]
 
     blocks: list[Block] = []
+    # Degraded-report notice FIRST: the specimen PDF's only admission that synthesis
+    # failed sat inside confidence_justification on the last page.
+    if rep.get("degraded"):
+        blocks.append(Block(
+            "prose", tag="Note",
+            text=("⚠ Narrative synthesis was unavailable — this report is assembled "
+                  "directly from the phase findings. The queries ran; the framing is "
+                  "provisional."),
+        ))
     if rep.get("executive_summary"):
         blocks.append(_h("Executive summary"))
         blocks.append(_p(rep["executive_summary"]))
@@ -265,6 +274,8 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
         _n = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", s or "")).strip()
         if ph.get("summary") and _n(ph["summary"]) not in _n(rep.get("executive_summary") or ""):
             blocks.append(_p(ph["summary"]))
+        for _cav in ph.get("caveats") or []:
+            blocks.append(Block("prose", tag="Caveat", text=f"⚠ {_cav}"))
         for f in ph["findings"]:
             if f.get("error"):
                 continue

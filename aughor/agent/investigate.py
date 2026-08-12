@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Optional
 
 from aughor.agent.state import (
     AgentState,
+    AnswerReport,
     InvestigationFinding,
     InvestigationPhaseResult,
     PhaseKeyNumber,
@@ -727,6 +728,7 @@ def _phase_result(
     summary: str,
     findings: list[InvestigationFinding],
     skipped_reason: Optional[str] = None,
+    caveats: Optional[list[str]] = None,
 ) -> InvestigationPhaseResult:
     return InvestigationPhaseResult(
         phase_id=phase_id,
@@ -736,6 +738,7 @@ def _phase_result(
         summary=summary,
         findings=findings,
         skipped_reason=skipped_reason,
+        caveats=list(caveats or []),
     )
 
 
@@ -1792,6 +1795,71 @@ def _fallback_headline(summary: str) -> str:
     return first[:160].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
 
 
+def _degraded_report(question: str, phases: list, intake_data: dict, *,
+                     contradiction_report: Optional[dict] = None,
+                     orchestration_plan: Optional[dict] = None,
+                     plan_reconciliation: Optional[dict] = None) -> "AnswerReport":
+    """The deterministic report assembled when narrative synthesis fails — shaped so it
+    LOOKS assembled, not authored.
+
+    Two rules, both paid for by a shipped specimen (a five-page executive PDF whose
+    title was an internal fan-out caveat, with the admission on the last page):
+
+    1. **The headline never promotes phase prose.** The old assembler headlined the
+       first phase summary verbatim — whatever it happened to be, including a machine
+       caveat, including summaries from OLDER cached phases that still carry the ⚠
+       prefix. A degraded report's honest headline is its SUBJECT (the question),
+       because there is no synthesized answer to state.
+    2. **The degradation is first-class** (``degraded: True``) so the renderer can say
+       so at the TOP. A sentence inside confidence_justification renders at the bottom
+       of a confident-looking document — the reader must not need page four to learn
+       page one was machine-stitched.
+
+    Phase caveats are carried into the executive summary explicitly labelled, never
+    fused into the stitched prose."""
+    _xsec = bool(intake_data.get("cross_sectional"))
+    def _clean(s):
+        return re.sub(r"\s+", " ", re.sub(r"\*+", "", (s or ""))).strip()
+    _summaries = [_clean(p.get("summary")) for p in phases
+                  if p.get("phase_id") != "intake"
+                  and p.get("status") not in ("skipped", "error")
+                  and _clean(p.get("summary"))]
+    q = _clean(question)
+    headline = (_fallback_headline(q) if q
+                else "Phase findings (no synthesized answer)")
+    exec_summary = (" ".join(_summaries))[:900] or \
+        "See the individual phase findings below for details."
+    caveats = [c for p in phases for c in (p.get("caveats") or []) if c]
+    if caveats:
+        exec_summary = (exec_summary + " ⚠ Caveats: "
+                        + " ".join(dict.fromkeys(caveats)))[:1200]
+    return AnswerReport(
+        headline=headline,
+        executive_summary=exec_summary,
+        closing_summary="",   # a deterministic report authors no separate bottom line
+        metric=intake_data.get("metric_label", ""),
+        observation_period=(intake_data.get("data_coverage_label", "") if _xsec
+                            else intake_data.get("observation_label", "")),
+        metric_definition=_metric_definition_receipt(intake_data),
+        comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+        total_change_label="",
+        phases=phases,
+        attribution_waterfall=[],
+        confidence="LOW",
+        confidence_justification=(
+            "Narrative synthesis was unavailable (the model was slow or failed); this report is "
+            "assembled deterministically from the phase findings, so treat the framing as "
+            "provisional even though the underlying queries ran."
+        ),
+        recommendations=[],
+        data_gaps=[],
+        contradiction_report=contradiction_report,
+        orchestration_plan=orchestration_plan,
+        plan_reconciliation=plan_reconciliation,
+        degraded=True,
+    )
+
+
 def _fmt_compact_num(v: float) -> str:
     """1951747 → '1.95M' — the compact scale every chart axis already speaks; a key
     number sitting beside that chart must not read '1951747.00'."""
@@ -1919,6 +1987,11 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
         if p.get("_hidden"):
             continue                 # pruned to nothing — its summary was the noise
         lines.append(f"[{p['phase_name']}] {p['summary']}")
+        # Phase caveats render as their own labelled lines, next to the findings they
+        # qualify — never fused into the summary prose (which downstream consumers
+        # promote into headlines and executive summaries).
+        for c in p.get("caveats") or []:
+            lines.append(f"  ⚠ CAVEAT: {c}")
         for f in p["findings"]:
             if not f["error"] and f["interpretation"]:
                 lines.append(f"  • {f['title']}: {f['interpretation'][:200]}")
@@ -5251,6 +5324,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # phase that renders it — the temporal tile, a baseline chart — is corrupt too. Record a terminal
     # signal that synthesis uses to scrub those and to state the true level instead of the artifact.
     _suppressed_ratio: Optional[dict] = None
+    _phase_caveats: list[str] = []
     _eff_caveat = _numeric_fanout or _run.fanout_caveat
     if _eff_caveat:
         def _finding_fanned(f):
@@ -5282,7 +5356,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                 _suppressed_ratio = {"metric_label": metric_label, "caveat": _eff_caveat,
                                      "true_global_str": _gstr, "repaired": bool(_rep)}
             else:
-                summary = f"⚠ {_eff_caveat} " + (summary or "")
+                # STRUCTURED, not prepended: a caveat glued into the summary becomes
+                # whatever the summary becomes — the fallback assembler once promoted
+                # it to the headline of an executive report (the "$14" specimen). The
+                # per-finding trust_caveat is already set above; this is the phase-level
+                # copy each consumer renders in its own register.
+                _phase_caveats.append(_eff_caveat)
 
     # Global-ratio plausibility guard (fix 1+2): for a composite-ratio metric, a conditioned
     # denominator (denominator inner-joined through the numerator's event table) or any broken ratio
@@ -5322,6 +5401,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         _phase_id, _phase_title, _phase_emoji,
         "complete" if any(not f["error"] for f in findings) else "partial",
         summary, findings,
+        caveats=_phase_caveats,
     )
     result_phases = phases + [phase]
     # Auto-drill WHERE→WHY: the rate scan above localised WHERE the metric concentrates; now compose the
@@ -7309,38 +7389,11 @@ def ada_synthesize(state: AgentState) -> dict:
             plan_reconciliation=plan_reconciliation,
         )
     else:
-        # Issue-1 fix — when the narrator is slow/failed, assemble a DETERMINISTIC report from the
-        # phase summaries instead of a bare "synthesis failed". Every phase already produced a
-        # one-line summary; stitch them into a readable headline + exec summary so a stalled narrator
-        # never costs the user the analysis that actually ran. (Frugal: no extra model call.)
-        _xsec = bool(intake_data.get("cross_sectional"))
-        _clean = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", (s or ""))).strip()
-        _summaries = [_clean(p.get("summary")) for p in phases
-                      if p.get("phase_id") != "intake"
-                      and p.get("status") not in ("skipped", "error")
-                      and _clean(p.get("summary"))]
-        _headline = _fallback_headline(_summaries[0]) if _summaries \
-            else "Investigation complete — see the phase findings below."
-        _exec = (" ".join(_summaries))[:900] or "See the individual phase findings below for details."
-        answer_report = AnswerReport(
-            headline=_headline,
-            executive_summary=_exec,
-            closing_summary="",   # deterministic fallback report carries no separate bottom line
-            metric=intake_data.get("metric_label", ""),
-            observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
-            metric_definition=_metric_definition_receipt(intake_data),
-            comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
-            total_change_label="",
-            phases=phases,
-            attribution_waterfall=[],
-            confidence="LOW",
-            confidence_justification=(
-                "Narrative synthesis was unavailable (the model was slow or failed); this report is "
-                "assembled deterministically from the phase findings, so treat the framing as "
-                "provisional even though the underlying queries ran."
-            ),
-            recommendations=[],
-            data_gaps=[],
+        # Issue-1 fix — when the narrator is slow/failed, assemble a DETERMINISTIC report
+        # from the phase summaries instead of a bare "synthesis failed", and SAY SO where
+        # the reader starts (see _degraded_report).
+        answer_report = _degraded_report(
+            question, phases, intake_data,
             contradiction_report=contradiction_report.to_dict(),
             orchestration_plan=orchestration_plan,
             plan_reconciliation=plan_reconciliation,

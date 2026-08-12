@@ -71,6 +71,9 @@ interface InvestigationPhase {
   summary: string;
   findings: InvestigationFinding[];
   skipped_reason?: string;
+  // Machine caveats qualifying this phase (fan-out etc.) — structured, no longer fused
+  // into `summary`; absent on older cached phases.
+  caveats?: string[];
   _hidden?: boolean;   // pruned by the relevance pass (nothing that moves the reader) — don't render
 }
 
@@ -102,6 +105,10 @@ export interface AnswerReport {
   confidence_justification: string;
   recommendations: AnswerRecommendation[];
   data_gaps: string[];
+  // True when narrative synthesis failed and the report was assembled deterministically
+  // from phase summaries — rendered as a banner at the TOP, because the admission used
+  // to live only in confidence_justification at the bottom of a confident-looking page.
+  degraded?: boolean;
   // Phase-2 structural trust artifacts (Orchestrator) — optional; older reports omit them.
   contradiction_report?: {
     severity: string; count: number;
@@ -326,6 +333,12 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       {phase.summary && !isSkipped && (
         <div className="aug-fs-xs text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
       )}
+      {/* Phase caveats — the structured home of what used to be a ⚠-prefix fused into the
+          summary prose (and once promoted into a report headline). Rendered as an advisory,
+          visually distinct from findings. */}
+      {(phase.caveats ?? []).map((c, i) => (
+        <div key={`cav-${i}`} className="aug-fs-xs text-amber-400/90 leading-relaxed pl-2">⚠ {c}</div>
+      ))}
       {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
           not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
       {isRunning && findings.length === 0 && (
@@ -341,6 +354,12 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
               </div>
             )}
             {f.key_numbers?.length > 0 && <KeyNumbersInline metrics={f.key_numbers} />}
+            {/* The trust advisory was declared in this interface since the trust battery
+                shipped but rendered NOWHERE in web — only the CLI showed it. Both ends of
+                a feature existed while the feature did not. */}
+            {f.trust_caveat && (
+              <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {f.trust_caveat}</div>
+            )}
             {f.interpretation && <BriefProse text={f.interpretation} muted />}
           </div>
         );
@@ -387,6 +406,15 @@ export function InvestigationReportView({
 
   return (
     <Brief>
+      {/* Degraded-report banner FIRST: when synthesis failed, the reader learns it where
+          they start reading — not from confidence_justification on the last page. */}
+      {report.degraded && (
+        <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-amber-400/90"
+             style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
+          ⚠ Narrative synthesis was unavailable — this report is assembled directly from the
+          phase findings below. The queries ran; the framing is provisional.
+        </div>
+      )}
       <BriefHeadline>{report.headline}</BriefHeadline>
       {/* Skip a summary that only restates the headline (the fallback path can emit both
           from the same sentence) — one text, rendered once. */}

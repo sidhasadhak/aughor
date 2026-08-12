@@ -341,6 +341,11 @@ class InvestigationPhaseResult(TypedDict):
     summary: str        # one-sentence headline finding for this phase
     findings: list[InvestigationFinding]
     skipped_reason: Optional[str]
+    # Machine caveats that qualify this phase (fan-out, suppressed ratios) — STRUCTURED,
+    # never prepended into `summary`: a caveat glued into prose becomes whatever the
+    # prose becomes, and one shipped as the headline of an executive report (the "$14"
+    # specimen). Each consumer renders it in its own register; absent on older phases.
+    caveats: NotRequired[list[str]]
 
 
 class WaterfallEntry(TypedDict):
@@ -386,6 +391,12 @@ class AnswerReport(TypedDict):
     # `kinetic.agent_actions`, default off). Each `{action_id, status, ok, params, reasoning, message}`.
     # Optional/additive — absent on older reports and when the connection declares no actions; UI reads via .get().
     proposals: Optional[list]
+    # True when narrative synthesis failed and this report was assembled deterministically
+    # from phase summaries. First-class rather than a sentence inside
+    # confidence_justification, because the justification renders at the BOTTOM of a
+    # confident-looking document — the reader must know at the TOP that the framing is
+    # machine-stitched. Absent (falsy) on every synthesized report.
+    degraded: NotRequired[bool]
 
 
 class AgentState(TypedDict):
