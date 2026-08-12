@@ -469,20 +469,28 @@ def get_session_turns(session_id: str) -> list[dict]:
     restoring it at all."""
     c = _conn()
     ensure_once(c, _ensure_schema)
+    # DATA-06, same predicate `list_investigations` uses: a session's turns belong to the
+    # org that ran them. Session ids are random, but "unguessable" is not an authorization
+    # model — and CI-1's server-side memory reconstruction reads through here, so an
+    # unscoped read would let a leaked id inject another tenant's questions and results
+    # into this tenant's prompt. No-op in localhost mode.
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = ((" AND org_id = ?", [current_org_id()])
+                 if require_identity_enabled() else ("", []))
     rows = c.execute(
-        """SELECT id, question, headline, report_json, started_at, status
+        f"""SELECT id, question, headline, report_json, started_at, status
            FROM investigations
-           WHERE session_id = ? AND kind = 'chat'
+           WHERE session_id = ? AND kind = 'chat'{_org}
            ORDER BY started_at ASC""",
-        (session_id,),
+        (session_id, *_op),
     ).fetchall()
     # Fallback: maybe the caller passed a row id directly (old single-turn items)
     if not rows:
         rows = c.execute(
-            """SELECT id, question, headline, report_json, started_at, status
+            f"""SELECT id, question, headline, report_json, started_at, status
                FROM investigations
-               WHERE id = ? AND kind = 'chat'""",
-            (session_id,),
+               WHERE id = ? AND kind = 'chat'{_org}""",
+            (session_id, *_op),
         ).fetchall()
     c.close()
     result = []
@@ -626,14 +634,22 @@ def find_prior_answers(question: str, connection_id: str, *,
             return []
         c = _conn()
         ensure_once(c, _ensure_schema)
+        # DATA-06 — recall crosses SESSIONS, so it must not cross tenants: the row's own
+        # org is the predicate, the same one list_investigations uses. The route layer
+        # already blocks a cross-org conn_id (SE-0), which makes this defence in depth
+        # rather than the only guard — and the memory it feeds goes straight into a
+        # prompt, where a foreign row would arrive as this tenant's own history.
+        from aughor.security.authz import require_identity_enabled
+        _org, _op = ((" AND org_id = ?", [current_org_id()])
+                     if require_identity_enabled() else ("", []))
         rows = c.execute(
-            """SELECT id, question, headline, report_json, started_at, session_id
+            f"""SELECT id, question, headline, report_json, started_at, session_id
                FROM investigations
-               WHERE connection_id = ? AND kind = 'chat'
+               WHERE connection_id = ? AND kind = 'chat'{_org}
                  AND (status IS NULL OR status = 'complete')
                ORDER BY started_at DESC
                LIMIT 400""",
-            (connection_id,),
+            (connection_id, *_op),
         ).fetchall()
         c.close()
         out: list[dict] = []
