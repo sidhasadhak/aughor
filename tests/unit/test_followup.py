@@ -78,10 +78,17 @@ def test_non_followup_header_is_the_plain_reference_hint():
     assert "CONVERSATION HISTORY" in out and "FOLLOW-UP" not in out
 
 
-def test_only_the_last_three_turns_are_kept():
-    turns = [_turn(question=f"q{i}") for i in range(5)]
+def test_recent_turns_are_verbatim_older_ones_summarized():
+    # CI-1 raised the verbatim window (was a hardcoded 3) and stopped DROPPING older
+    # turns: they collapse to a deterministic one-line summary of their questions rather
+    # than vanishing, so a long conversation keeps its thread. The recent window still
+    # renders each turn's SQL/sample verbatim.
+    turns = [_turn(question=f"q{i}", sql=f"SELECT {i}") for i in range(8)]
     out = build_history_section(turns)
-    assert "q4" in out and "q1" not in out
+    assert "SELECT 7" in out, "the most recent turn renders verbatim"
+    assert "SELECT 0" not in out, "an old turn is not rendered verbatim"
+    assert "Earlier in this conversation" in out and "q0" in out, \
+        "but an old turn's question survives in the summary instead of being dropped"
 
 
 def test_deep_turn_carries_headline_even_without_sql():

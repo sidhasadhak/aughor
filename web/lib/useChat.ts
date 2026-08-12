@@ -125,7 +125,12 @@ export function useChat() {
           if (e) out.push(e);
         }
       }
-      return out.slice(-3);
+      // CI-1: send a slightly deeper tail than the server's verbatim window so the
+      // server can window it itself (recent verbatim + a summary of the rest). The
+      // server also reconstructs from the session store when this is empty, so a
+      // reload or a second device is no longer memoryless — but the live client's own
+      // turns are the freshest source, so keep sending them.
+      return out.slice(-8);
     };
 
     let res: Response;

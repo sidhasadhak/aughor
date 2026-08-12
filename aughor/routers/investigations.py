@@ -1193,6 +1193,88 @@ def _prior_turn_context(history) -> str:
     return ""
 
 
+def _history_window() -> int:
+    """Verbatim conversation-history window (turns rendered with SQL + sample rows).
+    Env-tunable (``AUGHOR_CHAT_HISTORY_WINDOW``); 4 by default — up from the original
+    hardcoded 3, still small because only recent turns carry resolvable references and
+    each verbatim turn costs prompt budget."""
+    import os as _os
+    try:
+        return int(_os.getenv("AUGHOR_CHAT_HISTORY_WINDOW", "4"))
+    except ValueError:
+        return 4
+
+
+def resolve_history(history, session_id: str):
+    """The effective conversation history for this turn (CI-1).
+
+    Prefer what the CLIENT sent — it is the freshest view of the turns the user is
+    looking at, and the store save races the next request. When the client sent none
+    but a ``session_id`` is set, reconstruct from the store so memory belongs to the
+    SESSION rather than to whichever client is holding it: a reload, another device, the
+    MCP server, a scheduled task, any non-web caller then all see the same thread.
+    Fail-open: reconstruction returns [] on any error, i.e. the exact pre-CI-1 behaviour
+    (inject nothing)."""
+    if history:
+        return history
+    if not session_id:
+        return history
+    try:
+        from aughor.db.history import reconstruct_session_history
+        return reconstruct_session_history(session_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "server-side history reconstruction is best-effort; the turn "
+                      "proceeds with no injected memory (pre-CI-1 behaviour)",
+                 counter="chat.history_reconstruct_failed")
+        return history
+
+
+def build_prior_answers_section(priors) -> str:
+    """Render the "you have asked this before" block (CI-1b).
+
+    Distinct from CONVERSATION HISTORY on purpose: those turns are THIS conversation and
+    are context to compose on; these are the same question answered in an EARLIER
+    session, and the only honest use of them is comparison. The instruction says exactly
+    that — answer from today's data, then say whether it moved — because a prior headline
+    restated as current is the staleness class this repo keeps paying for (a briefing
+    citing a deleted table, a cached finding outliving its rows).
+
+    Deliberately carries the headline and the date only, never the prior SQL: re-running
+    an old query is the model's decision to make from today's schema, not something to
+    copy."""
+    priors = list(priors or [])
+    if not priors:
+        return ""
+    lines = [
+        "PREVIOUSLY ASKED — this same question was answered in an earlier session. "
+        "Answer from TODAY's data first, then say plainly whether the picture is "
+        "unchanged or what moved. Never restate a previous answer as if it were current, "
+        "and never cite its numbers as this turn's evidence:",
+    ]
+    for p in priors:
+        when = str(p.get("asked_at", ""))[:10] or "an earlier session"
+        head = (p.get("headline") or "").strip() or "(no headline recorded)"
+        value = (p.get("prior_result") or "").strip()
+        # The VALUE is what makes this comparable. Most stored headlines are captions
+        # ("Returns table row count"), so a block carrying only titles would ask for a
+        # comparison it gave the model nothing to compare.
+        lines.append(f"  • {when}: {head}" + (f" — answered: {value}" if value else ""))
+    return "\n".join(lines) + "\n"
+
+
+def resolve_prior_answers(question: str, connection_id: str, session_id: str):
+    """Prior-session answers to this question, or []. Fail-open (CI-1b)."""
+    try:
+        from aughor.db.history import find_prior_answers
+        return find_prior_answers(question, connection_id, exclude_session=session_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "cross-session recall is best-effort; the turn answers without it",
+                 counter="chat.prior_answers_failed")
+        return []
+
+
 def build_history_section(history, *, followup: bool = False) -> str:
     """Render the conversation context injected into the chat SQL prompt.
 
@@ -1203,10 +1285,20 @@ def build_history_section(history, *, followup: bool = False) -> str:
     the most recent query as the base** (keep its metric/filters/grain/window unless the
     ask changes them), which is what makes "now break that down by region" reliable.
 
-    Duck-typed over ``ChatHistoryTurn`` so it is unit-testable with plain stand-ins."""
+    Duck-typed over ``ChatHistoryTurn`` so it is unit-testable with plain stand-ins.
+
+    CI-1: the most recent ``window`` turns render verbatim (SQL + sample rows); anything
+    older collapses to a single deterministic summary line naming those questions — no LLM
+    call, so a long conversation keeps its thread without paying to summarize every turn.
+    The verbatim window stays small because only the recent turns carry references worth
+    resolving; the summary line is enough for the model to know a topic was already
+    covered (the CI-0 "asked 52 times" case)."""
     if not history:
         return ""
-    recent = list(history)[-3:]
+    turns = list(history)
+    window = max(1, _history_window())
+    recent = turns[-window:]
+    older = turns[:-window]
     if followup:
         header = (
             "CONVERSATION HISTORY — THIS LOOKS LIKE A FOLLOW-UP. Treat the MOST RECENT query "
@@ -1218,6 +1310,12 @@ def build_history_section(history, *, followup: bool = False) -> str:
         header = ("CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'that', "
                   "'those', 'the top one', 'break down', 'compare to'):")
     lines = [header]
+    if older:
+        earlier = "; ".join(
+            (getattr(t, "question", "") or "").strip()[:80] for t in older[-8:]
+            if (getattr(t, "question", "") or "").strip())
+        if earlier:
+            lines.append(f"Earlier in this conversation ({len(older)} prior turn(s)): {earlier}")
     for i, t in enumerate(recent, 1):
         q = getattr(t, "question", "") or ""
         sql = getattr(t, "sql", "") or ""
@@ -1559,6 +1657,14 @@ def _answer_core(
 
         from aughor.agent.followup import is_followup
         history_section = build_history_section(history, followup=is_followup(question))
+        # CI-1b — cross-session recall. Appended to the same block so it reaches the
+        # prompt without a new parameter through the core's already-long signature; the
+        # section states its own register, so the two never read as one conversation.
+        # A follow-up is skipped: "now break that down" is not a repeat of anything, and
+        # matching it against a stored question would be noise at best.
+        if not is_followup(question):
+            history_section += build_prior_answers_section(
+                resolve_prior_answers(question, connection_id, session_id))
 
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
@@ -3104,8 +3210,13 @@ async def _stream_converse(
                              conn_id=connection_id, ok=step.ok,
                              payload={"body": "converse", "detail": str(step.detail or "")})
 
+        # CI-1b — the conversation body gets the same two memories the quick body does:
+        # this session's turns, and what this question was answered before elsewhere.
+        _memory = (build_history_section(history)
+                   + build_prior_answers_section(
+                       resolve_prior_answers(question, connection_id, session_id)))
         result = converse(connection_id, question,
-                          extra_context=build_history_section(history),
+                          extra_context=_memory,
                           on_step=_on_step, tool_emit=_forward,
                           session_id=session_id, canvas_id=canvas_id)
 
@@ -4538,11 +4649,26 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # is inert, and minting a second routing frame for the same decision would be exactly
     # the parallel vocabulary this wave is trying not to create.
     _use_converse = _converse_eligible(req, route)
+    # CI-1 — resolve the effective conversation history ONCE, here, before any body runs:
+    # the client's turns when it sent them, else a server-side reconstruction from the
+    # session store so a reload / another device / the MCP server / a scheduled task all
+    # get the memory the session already holds. Every downstream body reads req.history,
+    # so replacing it at this seam covers quick, converse, and deep at once.
+    _client_history = bool(req.history)
+    req.history = resolve_history(req.history, req.session_id)
     _route_ev = route.to_event()
     if req.purpose:
         _route_ev["purpose"] = req.purpose   # R13/R10 — starter provenance on the receipt
     if _use_converse:
         _route_ev["body"] = "converse"
+    # The route receipt measures the memory it injected — turns and chars — the same
+    # discipline PE-1 applied to prompt spend: a feature you cannot see the size of is
+    # one you cannot tell is working. `reconstructed` distinguishes server-rebuilt memory
+    # from client-supplied, which is exactly the gap CI-1 closed.
+    _hist = req.history or []
+    _route_ev["history_turns"] = len(_hist)
+    _route_ev["history_chars"] = len(build_history_section(_hist)) if _hist else 0
+    _route_ev["history_reconstructed"] = bool(_hist) and not bool(_client_history)
     yield _sse("route", _route_ev)
 
     if route.depth == "deep":
