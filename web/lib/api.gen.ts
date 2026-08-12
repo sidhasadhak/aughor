@@ -5285,6 +5285,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/obs/model-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Model Usage
+         * @description Per-model call counts, token totals, latency and failure rate.
+         *
+         *     The fold has existed since the per-call record shipped, with no HTTP
+         *     exposure — the same "reader with no route" gap this router's own history
+         *     warns about. Exposed alongside prompt-weight: one answers "which template
+         *     spends the tokens", the other "which model, and is it failing".
+         */
+        get: operations["model_usage_obs_model_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/obs/prompt-capture": {
         parameters: {
             query?: never;
@@ -5310,6 +5335,35 @@ export interface paths {
          * @description Close the window now. Idempotent.
          */
         delete: operations["prompt_capture_close_obs_prompt_capture_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/prompt-weight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prompt Weight
+         * @description Prompt-token spend per call site — which templates the budget goes to (PE-1).
+         *
+         *     The prompt-economy program (roadmap §2.6) starts from a measured top-N. One
+         *     specimen prompt measured 45% static boilerplate; this endpoint says whether
+         *     that site is 1% or 40% of the monthly spend, for every site at once, from
+         *     the ``caller`` attribution the provider stamps on each call. Sites served
+         *     by backends that report no usage show ``calls_without_usage`` rather than
+         *     reading as free; calls from before the attribution existed appear as an
+         *     explicit ``(unattributed)`` row — the coverage of the measurement is part
+         *     of the measurement.
+         */
+        get: operations["prompt_weight_obs_prompt_weight_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -20148,6 +20202,37 @@ export interface operations {
             };
         };
     };
+    model_usage_obs_model_usage_get: {
+        parameters: {
+            query?: {
+                scan?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     prompt_capture_status_obs_prompt_capture_get: {
         parameters: {
             query?: never;
@@ -20217,6 +20302,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    prompt_weight_obs_prompt_weight_get: {
+        parameters: {
+            query?: {
+                scan?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

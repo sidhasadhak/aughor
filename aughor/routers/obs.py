@@ -219,6 +219,37 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     }
 
 
+@router.get("/obs/prompt-weight")
+def prompt_weight(scan: int = 5000):
+    """Prompt-token spend per call site — which templates the budget goes to (PE-1).
+
+    The prompt-economy program (roadmap §2.6) starts from a measured top-N. One
+    specimen prompt measured 45% static boilerplate; this endpoint says whether
+    that site is 1% or 40% of the monthly spend, for every site at once, from
+    the ``caller`` attribution the provider stamps on each call. Sites served
+    by backends that report no usage show ``calls_without_usage`` rather than
+    reading as free; calls from before the attribution existed appear as an
+    explicit ``(unattributed)`` row — the coverage of the measurement is part
+    of the measurement."""
+    return {
+        "measured": True,
+        **session_log.prompt_weight(org_id=current_org_id() or None,
+                                    scan=max(1, min(int(scan), 20000))),
+    }
+
+
+@router.get("/obs/model-usage")
+def model_usage(scan: int = 5000):
+    """Per-model call counts, token totals, latency and failure rate.
+
+    The fold has existed since the per-call record shipped, with no HTTP
+    exposure — the same "reader with no route" gap this router's own history
+    warns about. Exposed alongside prompt-weight: one answers "which template
+    spends the tokens", the other "which model, and is it failing"."""
+    return {"models": session_log.model_usage(org_id=current_org_id() or None,
+                                              scan=max(1, min(int(scan), 20000)))}
+
+
 @router.get("/obs/prompt-capture")
 def prompt_capture_status():
     """Is anything being recorded right now, and for how much longer?"""
