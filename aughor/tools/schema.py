@@ -612,7 +612,6 @@ def apply_schema_enrichment(
     learned joins / value domains / formulas) is appended last; when empty it is
     auto-collected iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort)."""
     from aughor.kernel.stage_timer import stage as _stage
-    from aughor.semantic.autoseed import seed_missing_tables
     from aughor.semantic.metrics import build_metrics_block
     # R11 — prune per-column-config-hidden columns (and sample-disabled value
     # enumerations) from the schema text FIRST, so every downstream reader — join
@@ -637,8 +636,18 @@ def apply_schema_enrichment(
     # write from THIS schema can no longer overwrite a same-named table in another (the
     # `orders` collision — five competing entries in one store). `schema_name` was already
     # in scope here and simply wasn't passed.
-    with _stage("enrich.seed_missing_tables"):
-        seed_missing_tables(raw, schema=schema_name, connection_id=connection_id)
+    # Glossary seeding is NOT done here. It makes one LLM CALL PER unseeded TABLE, and
+    # this function runs on every `get_schema` — the request that merely DISPLAYS a
+    # schema. Instrumented in production, it was 51.05s of a 55.9s rebuild: 91%, while
+    # all the actual Postgres introspection came to 0.29s.
+    #
+    # And it never stopped: seeds are written to `data/glossary_generated.yaml`, which
+    # is read-only on serverless, so the fast-path that skips an already-seeded schema
+    # could never arm. `mark_complete`'s own tolerate message says exactly what that
+    # means — "schema re-seeds next time" — every time, forever.
+    #
+    # It now runs in `_intelligence` (the HEAVY phase, background), which is where work
+    # that calls a model belongs. A display must never wait on inference.
     with _stage("enrich.apply_glossary"):
         enriched = apply_glossary(raw, schema=schema_name)
     # The vector index is NOT rebuilt here. This function runs on every `get_schema`

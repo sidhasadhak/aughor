@@ -103,6 +103,22 @@ def _intelligence(conn, base: str) -> str:
     for j in jmap.get("joins", []):
         fk_hints.setdefault(j["t1"], set()).add(j["c1"])
 
+    # Seed glossary entries HERE — the heavy, background phase — not on the schema
+    # read path. It makes one LLM call per unseeded table; measured in production it
+    # was 51.05s of a 55.9s schema rebuild (91%), and it recurred on EVERY request
+    # because the seed is written to a read-only path on serverless, so the
+    # already-seeded fast-path could never arm. Best-effort for the same reason the
+    # rest of this block is: a model that will not answer must not fail the build.
+    try:
+        from aughor.semantic.autoseed import seed_missing_tables
+        seed_missing_tables(base, schema=getattr(conn, "_schema_name", None) or None,
+                            connection_id=cid or None)
+    except Exception as _seed_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_seed_exc, "glossary seeding is best-effort; the schema renders "
+                            "without generated terms", counter="autoseed.background",
+                 conn_id=cid or None)
+
     # Refresh the semantic index HERE — the heavy, background phase — not on the
     # schema read path where it used to live. Rebuilding embeds the whole schema, and
     # where the embedder is unreachable it retries with backoff: 80-96s in production
