@@ -25,6 +25,25 @@ if os.environ.get("VERCEL"):
     os.environ.setdefault("AUGHOR_STATE_DIR", "/tmp/aughor-state")
     os.environ.setdefault("AUGHOR_UPLOAD_DIR", "/tmp/aughor-uploads")
     Path(os.environ["AUGHOR_STATE_DIR"]).mkdir(parents=True, exist_ok=True)
+    # Four more stores still resolved to the BUNDLE's `data/`, which is read-only —
+    # so every write failed, loudly, on every boot. Measured over one 30-minute
+    # window in production: 43 boots, each logging a failed playbook seed, and 14
+    # `doctree: persist failed` plus 12 `column-config save is best-effort` on top.
+    #
+    # Redirecting loses nothing: `.vercelignore` excludes `/data/*` apart from five
+    # named files, so these paths ship EMPTY. There is no bundled content to read
+    # through to — the writes were failing against a directory that isn't there.
+    #
+    # `/tmp` is per-instance, so this makes them work WITHIN an instance and stops
+    # the noise; it is not durability. Anything that must survive a cold start needs
+    # a real store — for the LLM binding that means env (`AUGHOR_CODER_MODEL` and
+    # friends), which every instance reads identically, rather than the runtime
+    # config file whose edit reaches only the instance that served the request.
+    # setdefault, never assignment: an operator who has pointed a store at durable
+    # storage must keep their value.
+    from aughor.control_plane.writable_paths import writable_store_paths
+    for _var, _path in writable_store_paths(os.environ["AUGHOR_STATE_DIR"]).items():
+        os.environ.setdefault(_var, _path)
     # The Vercel-Supabase integration injects POSTGRES_URL_NON_POOLING; honour it
     # when AUGHOR_DB_URL isn't set explicitly. NON_POOLING deliberately: the stores
     # SET search_path per connection — session state that transaction-mode pooling
