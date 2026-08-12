@@ -323,8 +323,11 @@ def _fallback_model_for(backend: str, role: Role) -> str:
 _runtime: Optional[dict] = None
 _config_version = 0          # bumped on every config (re)load
 _cache_version = -1          # the version the _providers cache was built against
-_providers: dict[Role, "LLMProvider"] = {}
-# Providers pinned to an explicit model (per-agent override), keyed by (role, model).
+# Keyed (org_id, org_fingerprint, role) since CI-5b — a tenant's config change moves
+# only its own fingerprint, so one org's rebuild never evicts another's clients.
+_providers: dict[tuple, "LLMProvider"] = {}
+# Providers pinned to an explicit model (per-agent override), keyed
+# (org_id, org_fingerprint, role, model).
 _pinned_providers: dict[tuple, "LLMProvider"] = {}
 
 # Per-agent LLM model: a run can pin the model its LLM calls use (set by the kernel from
@@ -502,9 +505,32 @@ def default_models(backend: str) -> dict:
     return dict(_DEFAULT_MODELS.get(backend, {}))
 
 
-# ── Active accessors (runtime config → env → default) ─────────────────────────
+# ── Active accessors (org store → runtime config → env → default) ─────────────
+
+def _org_overlay() -> dict:
+    """The current org's BYOK config (CI-5b), or ``{}``.
+
+    Layered ABOVE the runtime file: the file cannot persist on serverless and is
+    deployment-global besides, while this row is per-tenant and store-backed. Reads
+    fail OPEN to the deployment config — a broken org store must degrade a tenant to
+    the operator's binding, never take inference down. Keys inside the overlay stay
+    encrypted; only :func:`_active_key` decrypts, at the moment a client is built.
+    """
+    try:
+        from aughor.llm.org_config import overlay_for
+        from aughor.org.context import current_org_id
+        return overlay_for(current_org_id())
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "org LLM overlay is fail-open; the deployment config serves",
+                 counter="llm.org_overlay")
+        return {}
+
 
 def _active_backend() -> str:
+    org_backend = (_org_overlay().get("backend") or "").strip()
+    if org_backend:
+        return org_backend
     return ((_cfg().get("backend") or os.getenv("AUGHOR_BACKEND") or "ollama")).strip()
 
 
@@ -520,6 +546,9 @@ def _active_base_url(backend: str) -> str:
 
 def _active_key(backend: str) -> str:
     from aughor.secretvault import decrypt_secret
+    org_enc = (_org_overlay().get("keys") or {}).get(backend)
+    if org_enc:
+        return decrypt_secret(org_enc) or ""
     enc = (_cfg().get("keys") or {}).get(backend)
     if enc:
         return decrypt_secret(enc) or ""
@@ -579,6 +608,16 @@ def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tup
 
 
 def _active_model(backend: str, role: Role) -> str:
+    org = _org_overlay()
+    org_model = (org.get("models") or {}).get(role)
+    if org_model:
+        return str(org_model).strip()
+    if org.get("backend"):
+        # The org chose a backend: every lower layer's model names (file config, the
+        # AUGHOR_*_MODEL env) were tuned for a DIFFERENT binding — the CI-5a
+        # precedence trap, one layer up. The org backend's built-in defaults apply.
+        d = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
+        return d.get(role) or d["narrator"]
     cfg = _cfg()
     cfg_model = (cfg.get("models") or {}).get(role)
     if cfg_model:
@@ -2070,28 +2109,52 @@ class LLMProvider:
                 and not _in_quota_cooldown(b)]
 
 
+def _org_cache_scope() -> tuple[str, str]:
+    """The (org_id, config-fingerprint) pair a cached provider was built for (CI-5b).
+
+    The fingerprint is the org row's ``updated_at``: an org save moves ITS
+    fingerprint, so exactly that tenant's next call rebuilds — no global
+    ``_config_version`` bump, no other tenant's cached clients touched, and none of
+    the reload-everything behaviour that cancels in-flight work. The default org
+    with no BYOK row scopes to ``("default", "")``, which is the pre-CI-5b cache
+    exactly.
+    """
+    try:
+        from aughor.llm.org_config import fingerprint
+        from aughor.org.context import current_org_id
+        org = current_org_id()
+        return org, fingerprint(org)
+    except Exception:
+        return "default", ""
+
+
 def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMProvider:
-    """Process-global provider for `role`. Rebuilds when the config changes.
+    """Provider for `role`, cached per (org, config-fingerprint). Rebuilds when the
+    deployment config changes (global version) or the current ORG's stored config
+    changes (its fingerprint moves) — the latter without touching any other tenant.
 
     When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
     ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
-    cached per ``(role, model)``. With no pin, the normal role-default provider is used, so
-    unpinned code is unaffected. The implicit run pin skips the ``fast`` tier so an agent
-    pin never promotes cheap interpret calls to a heavy model (see :func:`_pinned_model`)."""
+    cached per ``(org, role, model)``. With no pin, the normal role-default provider is
+    used, so unpinned code is unaffected. The implicit run pin skips the ``fast`` tier so
+    an agent pin never promotes cheap interpret calls to a heavy model
+    (see :func:`_pinned_model`)."""
     global _cache_version
     if _cache_version != _config_version:
         _providers.clear()
         _pinned_providers.clear()
         _cache_version = _config_version
+    scope = _org_cache_scope()
     pinned = _pinned_model(role, model)
     if pinned:
-        key = (role, pinned)
+        key = (*scope, role, pinned)
         if key not in _pinned_providers:
             _pinned_providers[key] = LLMProvider(_active_backend(), role, model=pinned)
         return _pinned_providers[key]
-    if role not in _providers:
-        _providers[role] = LLMProvider(_active_backend(), role)
-    return _providers[role]
+    cache_key = (*scope, role)
+    if cache_key not in _providers:
+        _providers[cache_key] = LLMProvider(_active_backend(), role)
+    return _providers[cache_key]
 
 
 # ── Config management (used by the /llm/config API) ───────────────────────────

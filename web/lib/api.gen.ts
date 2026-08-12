@@ -6319,6 +6319,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org-settings/llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Org Llm
+         * @description The current org's BYOK binding — backend, per-role models, which keys are SET.
+         *     Key values never leave the server, masked or otherwise.
+         */
+        get: operations["get_org_llm_org_settings_llm_get"];
+        /**
+         * Put Org Llm
+         * @description Merge a partial BYOK config for the current org. Gated like the deployment
+         *     config (SEC-10): keys and model bindings are admin-grade — an ungated caller
+         *     could pivot a tenant's inference to an attacker endpoint.
+         */
+        put: operations["put_org_llm_org_settings_llm_put"];
+        post?: never;
+        /**
+         * Delete Org Llm
+         * @description Drop the org's BYOK row entirely — it falls back to the deployment binding.
+         */
+        delete: operations["delete_org_llm_org_settings_llm_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/overview/drill": {
         parameters: {
             query?: never;
@@ -10145,6 +10176,21 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** _OrgLLMPatch */
+        _OrgLLMPatch: {
+            /** Allow Paid */
+            allow_paid?: boolean | null;
+            /** Backend */
+            backend?: string | null;
+            /** Keys */
+            keys?: {
+                [key: string]: unknown;
+            } | null;
+            /** Models */
+            models?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** _PostprocRequest */
         _PostprocRequest: {
@@ -21896,6 +21942,92 @@ export interface operations {
         parameters: {
             query?: {
                 workspace_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_org_llm_org_settings_llm_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_org_llm_org_settings_llm_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_OrgLLMPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_org_llm_org_settings_llm_delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
             };
             header?: never;
             path?: never;

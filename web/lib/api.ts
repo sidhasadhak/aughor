@@ -140,6 +140,47 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   return res.json();
 }
 
+// ── Org-scoped BYOK (CI-5b) — the org's own provider keys + per-role models ────
+export interface OrgLLMConfig {
+  configured: boolean;
+  backend: string;
+  models: Record<string, string>;
+  keys_set: Record<string, boolean>;
+  updated_at: string;
+}
+
+export interface OrgLLMPatch {
+  backend?: string;
+  models?: Record<string, string>;
+  keys?: Record<string, string>;
+  allow_paid?: boolean;
+}
+
+export async function getOrgLLM(): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`);
+  if (!res.ok) throw new Error("Failed to fetch org model settings");
+  return res.json();
+}
+
+export async function updateOrgLLM(patch: OrgLLMPatch): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to update org model settings");
+  }
+  return res.json();
+}
+
+export async function clearOrgLLM(): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear org model settings");
+  return res.json();
+}
+
 /** Agent Context surface (P2): re-derive the working context after a scope edit. */
 export interface RescopeResult {
   manifest: { tables: string[]; table_count: number; estimated_tokens: number; joins: { from: string; to: string; kind: string }[] };

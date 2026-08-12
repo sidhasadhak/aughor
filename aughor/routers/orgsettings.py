@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
+from aughor.licensing import Capability, gate
 from aughor.orgsettings import effective_settings, load_org_settings, save_org_settings
 from aughor.orgsettings.models import OrgSettings
 
@@ -54,3 +56,48 @@ def get_effective_settings(workspace_id: Optional[str] = Query(default=None)):
     """Resolved settings for a workspace: workspace override > app default > model
     default. With no workspace_id, returns the app-level settings as-is."""
     return effective_settings(workspace_id).model_dump()
+
+
+# ── CI-5b — org-scoped BYOK (the org's own provider keys + per-role models) ────────
+#
+# Deliberately NOT the deployment's POST /llm/config: that path reloads every cached
+# provider in the process — the reload that cancels a running exploration. These
+# endpoints write one org's store row and move only that org's cache fingerprint;
+# every other tenant's in-flight work never notices.
+
+class _OrgLLMPatch(BaseModel):
+    backend: Optional[str] = None       # "" clears back to the deployment default
+    models: Optional[dict] = None       # {coder?, narrator?, fast?}   ("" clears)
+    keys: Optional[dict] = None         # {openrouter?, anthropic?, …} ("" clears, masked = unchanged)
+    allow_paid: Optional[bool] = None   # paid OpenRouter models must be deliberate
+
+
+@router.get("/org-settings/llm")
+def get_org_llm():
+    """The current org's BYOK binding — backend, per-role models, which keys are SET.
+    Key values never leave the server, masked or otherwise."""
+    from aughor.llm.org_config import describe_org_config
+    from aughor.org.context import current_org_id
+    return describe_org_config(current_org_id())
+
+
+@router.put("/org-settings/llm", dependencies=[gate(Capability.SECURITY_SUITE)])
+def put_org_llm(patch: _OrgLLMPatch):
+    """Merge a partial BYOK config for the current org. Gated like the deployment
+    config (SEC-10): keys and model bindings are admin-grade — an ungated caller
+    could pivot a tenant's inference to an attacker endpoint."""
+    from aughor.llm.org_config import save_org_config
+    from aughor.org.context import current_org_id
+    try:
+        return save_org_config(current_org_id(), patch.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/org-settings/llm", dependencies=[gate(Capability.SECURITY_SUITE)])
+def delete_org_llm():
+    """Drop the org's BYOK row entirely — it falls back to the deployment binding."""
+    from aughor.llm.org_config import clear_org_config, describe_org_config
+    from aughor.org.context import current_org_id
+    clear_org_config(current_org_id())
+    return describe_org_config(current_org_id())
