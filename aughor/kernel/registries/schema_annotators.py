@@ -44,11 +44,14 @@ def clear() -> None:
 def run_annotators(conn: object, schema_str: str, *, phase: str) -> str:
     """Apply the registered annotators for ``phase`` (and ``"all"``) in registration
     order. Returns the raw schema unchanged if nothing applies."""
+    from aughor.kernel.stage_timer import stage
+
     out = schema_str
     for name, ph, fn in list(_ANNOTATORS):
         if ph == phase or ph == "all":
             try:
-                out = fn(conn, out)
+                with stage(f"annotator.{name}"):
+                    out = fn(conn, out)
             except Exception as e:
                 tolerate(e, f"schema annotator {name!r} ({phase}) is additive; "
                             "schema loads without it", counter=f"schema.annotator.{name}")

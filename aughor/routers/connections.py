@@ -277,8 +277,16 @@ async def connection_schema(conn_id: str):
 
 
 @router.post("/connections/{conn_id}/schema/refresh")
-async def refresh_schema_cache(conn_id: str):
-    """Bust the server-side schema cache for a connection and return the fresh schema."""
+async def refresh_schema_cache(conn_id: str, timings: bool = False):
+    """Bust the server-side schema cache for a connection and return the fresh schema.
+
+    `?timings=1` also returns a per-stage breakdown of the rebuild. It is reported in
+    THIS response rather than through `/dev/stats` because that registry is
+    per-process and a serverless deployment answers from many instances — a counter
+    read around an 89-second refresh showed no change at all, having been served by
+    an instance that did none of the work. Timings from the same response come from
+    the instance that did it.
+    """
     _invalidate_schema_cache(conn_id)
     loop = asyncio.get_running_loop()
     try:
@@ -287,11 +295,18 @@ async def refresh_schema_cache(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         def _work():
-            s = _get_schema_cached(conn_id, db)
+            # Collection starts HERE, inside the worker: `run_in_executor` does not
+            # carry context into the thread, and every stage runs below this line.
+            from aughor.kernel.stage_timer import collect
+            with collect() as stages:
+                s = _get_schema_cached(conn_id, db)
             db.close()
-            return s
-        schema = await loop.run_in_executor(None, _work)
-        return {"ok": True, "schema": schema}
+            return s, dict(stages)
+        schema, stages = await loop.run_in_executor(None, _work)
+        out = {"ok": True, "schema": schema}
+        if timings:
+            out["timings"] = dict(sorted(stages.items(), key=lambda kv: -kv[1]))
+        return out
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

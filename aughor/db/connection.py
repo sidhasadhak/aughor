@@ -1122,8 +1122,9 @@ class PostgresConnection(DatabaseConnection):
         ``TABLE: name  (N rows)`` header per table, two-space-indented ``column  type``
         lines under it, annotations injected inline, then the detected SQL hints.
         """
+        from aughor.kernel.stage_timer import stage as _stage
         try:
-            with self._conn.cursor() as cur:
+            with _stage("pg.information_schema"), self._conn.cursor() as cur:
                 cur.execute("""
                     SELECT table_name, column_name, data_type
                     FROM information_schema.columns
@@ -1138,7 +1139,8 @@ class PostgresConnection(DatabaseConnection):
             return f"No tables found in schema '{self._schema_name}'."
 
         from aughor.db.annotations import load_annotations, inject_into_schema_parts
-        _ann = load_annotations(self._connection_id or "postgres")
+        with _stage("pg.load_annotations"):
+            _ann = load_annotations(self._connection_id or "postgres")
 
         from collections import OrderedDict
         by_table: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
@@ -1156,7 +1158,7 @@ class PostgresConnection(DatabaseConnection):
             if parts:
                 parts.append("")
             try:
-                with self._conn.cursor() as cur2:
+                with _stage("pg.row_counts"), self._conn.cursor() as cur2:
                     cur2.execute(f"SELECT COUNT(*) FROM {table}")
                     count = cur2.fetchone()[0]
             except Exception:
@@ -1164,14 +1166,16 @@ class PostgresConnection(DatabaseConnection):
             parts.append(f"TABLE: {table}  ({count:,} rows)")
             inject_into_schema_parts(parts, table, None, _ann)
             # A2: one head scan per table so a column line says what it HOLDS.
-            samples = column_head_samples(
-                _run, '"' + table.replace('"', '""') + '"', [c for c, _ in cols])
+            with _stage("pg.head_samples"):
+                samples = column_head_samples(
+                    _run, '"' + table.replace('"', '""') + '"', [c for c, _ in cols])
             for col, dtype in cols:
                 parts.append(f"  {col}  {dtype}" + samples.get(col, ""))
                 inject_into_schema_parts(parts, table, col, _ann)
 
         schema_str = "\n".join(parts)
-        hints = self._detect_sql_hints(rows)  # also populates self._varchar_ts_cols
+        with _stage("pg.sql_hints"):
+            hints = self._detect_sql_hints(rows)  # also populates self._varchar_ts_cols
         if hints:
             schema_str += "\n\n" + hints
 
