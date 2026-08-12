@@ -90,6 +90,12 @@ class ModelProfile:
     #: The rate budget the parallel decision was derived from
     #: (0 = declared-unbounded, None = undeclared/unknown).
     rpm_budget: Optional[int]
+    #: True when the model earned a family tier above BASELINE (PE-2). Prompt builders
+    #: use it to TIER guardrail prose: a capable model gets the short contract and code
+    #: verifies its output; a baseline model keeps the long-form guidance the old
+    #: constants were written for. Defaulted so a hand-built profile (tests) reads as
+    #: baseline — the conservative register.
+    capable: bool = False
 
 
 # ── Tier tables ───────────────────────────────────────────────────────────────
@@ -302,6 +308,7 @@ def profile_for(role: str = "coder", *, model: Optional[str] = None) -> ModelPro
         context_table_cap=tier["context_table_cap"],
         parallel_waves=_parallel_waves(rpm),
         rpm_budget=rpm,
+        capable=(tier != dict(_BASELINE)),
     )
 
 

@@ -244,6 +244,17 @@ _MIGRATIONS = [
     Migration(6, "correlation key: trace_id on events",
               lambda c: add_column_if_missing(c, "events", "trace_id", "TEXT NOT NULL DEFAULT ''")),
     Migration(7, "session_events: measurable facts as columns", _add_session_event_measures),
+    # DATA-06 completion: `events` was the LAST audit sink with no tenant key, and the
+    # only one the governance feed could not scope — the org existed solely inside the
+    # payload, where coverage was partial (measured 2026-08-12: `action.approval` carried
+    # it on 50 of 50 rows, `govern.tag` on 0 of 4), so a payload filter would have scoped
+    # one governance category and silently emptied another. A column ends that: emit()
+    # stamps it from the ambient tenant, so all ~29 kinds gain it without a call site
+    # changing, exactly as Migration 6 did for trace_id. Back-fills to 'default', which
+    # is what every pre-migration row was written under.
+    Migration(8, "tenant key: org_id on events",
+              lambda c: add_column_if_missing(c, "events", "org_id",
+                                              "TEXT NOT NULL DEFAULT 'default'")),
 ]
 
 
@@ -691,22 +702,30 @@ class Ledger:
         query instead of an archaeology dig.
 
         ``trace_id`` defaults to the ambient run, so every kind correlates to the
-        run that caused it without a single call site being touched."""
+        run that caused it without a single call site being touched. ``org_id`` is
+        stamped the same way (DATA-06): the tenant is a property of WHO emitted the
+        event, never of what the caller remembered to pass, and a governance sink can
+        only be scoped by a column that is always there."""
         if trace_id is None:
             try:
                 from aughor.telemetry import current_trace_id
                 trace_id = current_trace_id()
             except Exception:
                 trace_id = ""
+        try:
+            from aughor.org.context import current_org_id
+            org_id = current_org_id() or "default"
+        except Exception:
+            org_id = "default"
         from aughor.db.backend import insert_returning_id
         with self._lock, self._conn:
             seq = insert_returning_id(
                 self._conn,
-                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (_now(), kind, conn_id, canvas_id, job_id,
                  json.dumps(payload, default=str) if payload is not None else None,
-                 trace_id or ""),
+                 trace_id or "", org_id),
                 pk="seq",
             )
         return seq
@@ -719,9 +738,17 @@ class Ledger:
         job_id: Optional[str] = None,
         trace_id: Optional[str] = None,
         since_seq: Optional[int] = None,
+        org_id: Optional[str] = None,
         limit: int = 200,
     ) -> list[dict]:
-        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id "
+        """Read journal events, newest first.
+
+        ``org_id`` is the tenant filter (DATA-06), mirroring ``session_events``:
+        ``None`` means no filter — localhost/identity-off, where one tenant owns
+        every row — and a value scopes to rows emitted under it. Rows written before
+        the tenant column existed read as ``'default'``, which is the org they in
+        fact ran under."""
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
              "FROM events WHERE 1=1")
         args: list[Any] = []
         if trace_id:
@@ -732,16 +759,18 @@ class Ledger:
             q += " AND conn_id=?"; args.append(conn_id)
         if job_id:
             q += " AND job_id=?"; args.append(job_id)
+        if org_id is not None:
+            q += " AND org_id=?"; args.append(org_id)
         if since_seq is not None:
             q += " AND seq>?"; args.append(since_seq)
         q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))
         with self._lock:
             rows = self._conn.execute(q, args).fetchall()
         out = []
-        for seq, at, k, c, cv, j, p, tid in rows:
+        for seq, at, k, c, cv, j, p, tid, oid in rows:
             out.append({
                 "seq": seq, "at": at, "kind": k, "conn_id": c,
-                "canvas_id": cv, "job_id": j, "trace_id": tid,
+                "canvas_id": cv, "job_id": j, "trace_id": tid, "org_id": oid,
                 "payload": json.loads(p) if p else None,
             })
         return out

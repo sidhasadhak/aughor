@@ -126,16 +126,28 @@ class AuditLogger:
         connection_id: str | None = None,
         verdict: str | None = None,
         label: str | None = None,
+        org_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent records, newest first. Optional filters by connection/verdict/label
         (``label`` matches the ``hypothesis_id`` column — the surface that issued the SQL,
         e.g. ``query_builder`` / ``query_workbench`` — which is what makes the SQL editor's
-        history rail a filtered read of this log, SE-0)."""
+        history rail a filtered read of this log, SE-0).
+
+        ``org_id`` is the TENANT filter (DATA-06). Every row is written with the tenant
+        that ran it, so the predicate is the row's own ``org_id`` rather than a set of
+        currently-registered connection ids: an audit row must stay scoped even after its
+        connection is deleted (8,558 such rows exist in one local log), and a read whose
+        scope depends on the registry's present state would re-expose them. ``None`` means
+        no tenant filter — localhost/identity-off, where a single tenant owns everything.
+        """
         c = _connect()
         try:
             ensure_once(c, _ensure_schema)
             clauses: list[str] = []
             params: list[Any] = []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
             if connection_id:
                 clauses.append("connection_id = ?")
                 params.append(connection_id)
@@ -155,13 +167,26 @@ class AuditLogger:
             c.close()
 
     @classmethod
-    def stats(cls, connection_id: str | None = None) -> dict[str, Any]:
-        """Aggregate stats: totals, blocked count, suspicious count, PII redactions."""
+    def stats(cls, connection_id: str | None = None,
+              org_id: str | None = None) -> dict[str, Any]:
+        """Aggregate stats: totals, blocked count, suspicious count, PII redactions.
+
+        ``org_id`` scopes to one tenant (DATA-06) — an aggregate over every org's
+        traffic is a leak of a quieter kind: it says how much SQL another tenant runs
+        and how often it is blocked. ``None`` = no tenant filter (localhost)."""
         c = _connect()
         try:
             ensure_once(c, _ensure_schema)
-            where = "WHERE connection_id = ?" if connection_id else ""
-            params = (connection_id,) if connection_id else ()
+            clauses: list[str] = []
+            params_l: list[Any] = []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params_l.append(org_id)
+            if connection_id:
+                clauses.append("connection_id = ?")
+                params_l.append(connection_id)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            params = tuple(params_l)
             row = c.execute(
                 f"""SELECT
                        COUNT(*)                                           AS total,

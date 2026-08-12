@@ -7084,8 +7084,13 @@ export interface paths {
         };
         /**
          * Get Audit Log
-         * @description Recent audit log entries. Filter by connection_id, verdict and/or label (the
-         *     surface that issued the SQL, e.g. ``query_workbench`` — the history rail's filter).
+         * @description Recent audit log entries for the CALLER'S org. Filter by connection_id, verdict
+         *     and/or label (the surface that issued the SQL, e.g. ``query_workbench`` — the
+         *     history rail's filter).
+         *
+         *     An explicit cross-org ``connection_id`` is a 403 rather than an empty list: with the
+         *     tenant filter alone the answer would be indistinguishable from "that connection ran
+         *     nothing", and a probe that cannot tell the two apart is still an information channel.
          */
         get: operations["get_audit_log_security_audit_get"];
         put?: never;
@@ -7105,7 +7110,7 @@ export interface paths {
         };
         /**
          * Get Audit Stats
-         * @description Aggregate audit stats (totals, blocked count, PII redactions).
+         * @description Aggregate audit stats (totals, blocked count, PII redactions) for the caller's org.
          */
         get: operations["get_audit_stats_security_audit_stats_get"];
         put?: never;
@@ -7125,7 +7130,12 @@ export interface paths {
         };
         /**
          * List Budgets
-         * @description List all non-default per-connection query budgets.
+         * @description Non-default per-connection query budgets, scoped to the caller's org.
+         *
+         *     The budget registry is keyed by connection id with no tenant column of its own, so
+         *     the scope comes from the connections the caller can see — the same resolution every
+         *     other conn-keyed store uses (``org_visible_conn_ids`` returns ``None``, i.e. no
+         *     filter, in localhost mode).
          */
         get: operations["list_budgets_security_budget_get"];
         put?: never;
@@ -7145,12 +7155,12 @@ export interface paths {
         };
         /**
          * Get Budget
-         * @description Return the active QueryBudget for a connection.
+         * @description Return the active QueryBudget for a connection (org-checked by the router guard).
          */
         get: operations["get_budget_security_budget__connection_id__get"];
         /**
          * Update Budget
-         * @description Override the QueryBudget for a connection.
+         * @description Override the QueryBudget for a connection (org-checked by the router guard).
          */
         put: operations["update_budget_security_budget__connection_id__put"];
         post?: never;

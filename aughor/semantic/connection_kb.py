@@ -244,32 +244,54 @@ def _lexical_rank(question: str, entries: list, top_k: int) -> list:
     return [e for _s, e in scored[:top_k]]
 
 
-def _render_block(entries: list) -> str:
+#: The PROMPT header — an instruction addressed to a model. Reader-facing renders
+#: must never carry it (see retrieve_for_reader).
+_PROMPT_HEADER = "DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"
+
+
+def _render_block(entries: list, header: str | None = _PROMPT_HEADER) -> str:
     if not entries:
         return ""
-    lines = ["DOMAIN KNOWLEDGE (use these definitions exactly when writing SQL):"]
+    lines = [header] if header else []
     for e in entries:
-        lines.append("")
+        if lines:
+            lines.append("")
         lines.append(e.render())
     return "\n".join(lines)
 
 
+def retrieve_for_reader(question: str, connection_id: str, top_k: int = _TOP_K) -> str:
+    """The same relevant entries rendered as part of an ANSWER — no instruction header.
+
+    ``retrieve_for_question`` writes a prompt block whose first line tells a MODEL what
+    to do with the definitions; the definitional chat path once appended that block
+    verbatim to the user's answer. A reader gets the entries' own prose and nothing
+    addressed to someone else."""
+    return _render_block(_relevant_entries(question, connection_id, top_k), header=None)
+
+
 def retrieve_for_question(question: str, connection_id: str, top_k: int = _TOP_K) -> str:
-    """Return a formatted block of relevant knowledge entries for *question*.
+    """Return a formatted block of relevant knowledge entries for *question*,
+    headed for PROMPT injection.
 
     Returns empty string if nothing is relevant or if the knowledge store is
     empty — callers should skip injecting when the result is falsy.
     """
+    return _render_block(_relevant_entries(question, connection_id, top_k))
+
+
+def _relevant_entries(question: str, connection_id: str, top_k: int = _TOP_K) -> list:
+    """The ranked relevant entries themselves — retrieval without a register."""
     entries = load_entries(connection_id)
     if not entries:
-        return ""
+        return []
     try:
         from aughor.semantic.embedder import embed_one
         from aughor.semantic.lexical import hybrid_rerank
         from aughor.semantic.vector_store import collection_count, search
         from qdrant_client.models import FieldCondition, Filter, MatchValue
         if collection_count(_COLLECTION) == 0:
-            return _render_block(_lexical_rank(question, entries, top_k))
+            return _lexical_rank(question, entries, top_k)
         # embed_one → a FLAT 768-vec (embed() nests [[…]] for a single string, which
         # Qdrant rejects — the original R7 note).
         vec = embed_one(question)
@@ -284,13 +306,13 @@ def retrieve_for_question(question: str, connection_id: str, top_k: int = _TOP_K
         # as before) — NOT the lexical fallback, which is only for when there is no vector
         # signal at all (Qdrant down / never indexed).
         if not cands:
-            return ""
+            return []
         # HYBRID rerank: blend vector score with BM25 over each entry's text so an exact
         # metric/column name surfaces; preserve the reranked order, then take top_k.
         cands = hybrid_rerank(question, cands, text_of=lambda c: by_id[c["entry_id"]].render())
-        return _render_block([by_id[c["entry_id"]] for c in cands][:top_k])
+        return [by_id[c["entry_id"]] for c in cands][:top_k]
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "connection-KB vector retrieval is best-effort; ranked lexical "
                       "fallback used (never unranked)", counter="connection_kb.retrieve")
-        return _render_block(_lexical_rank(question, entries, top_k))
+        return _lexical_rank(question, entries, top_k)
