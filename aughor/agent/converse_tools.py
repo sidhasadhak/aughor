@@ -205,7 +205,14 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     model must not be able to state: a tool that could name its own session could file
     a turn into someone else's history. Every one of them is optional, so the tool set
     stays constructible from a bare sync caller.
+
+    The four core tools here are the warehouse; the appended platform roster (CI-2)
+    is everything else the product knows — findings, the briefing, the knowledge
+    graph, monitors, packs, the platform itself — as reads with the same binding
+    rule. One list, because the model routes over one list.
     """
+    from aughor.agent.platform_tools import platform_tools
+
     return [
         ToolSpec(
             name="answer_question",
@@ -254,7 +261,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             parameters=_TABLE_PARAMS,
             run=lambda a: describe_table(connection_id, a),
         ),
-    ]
+    ] + platform_tools(connection_id)
 
 
 def converse_available() -> bool:
@@ -305,9 +312,23 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> s
     It says what is true — which warehouse, what the tools guarantee, what to do when a
     guard fires — and does not script the conversation. The tool descriptions carry the
     routing; repeating it here would be a second, drifting copy of the policy.
+
+    The org-context line is the same block `/ask` prepends (CI-2): the reader's
+    DECLARED identity — industry, reporting currency, fiscal year — describing the
+    organization using Aughor, never the data under analysis (the first line already
+    names that). Empty for an unconfigured org, so that prompt is unchanged.
     """
+    org_note = ""
+    try:
+        from aughor.orgsettings import org_context
+        org_note = org_context(reading="this conversation").rstrip("\n")
+    except Exception as org_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(org_exc, "org context is additive; the conversation stands without it",
+                 counter="converse.org_context")
     lines = [
         f"You are answering questions about the data warehouse '{connection_id}'.",
+        *(["", org_note] if org_note else []),
         "",
         "Every query you run goes through a guard battery before it executes. The "
         "receipts come back with the rows: when a guard changed or flagged something, "

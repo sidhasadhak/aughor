@@ -69,7 +69,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         ("tests/integration/test_stream_chat_transcript.py",
          "tests/unit/test_converse_route_off_state.py",
          "scripts/probe_converse_turn.py",
-         "scripts/ci0_scorecard.py"),
+         "scripts/ci0_scorecard.py",
+         # CI-2's findings tool reads the explorer store, whose frozen state key is the
+         # retired term; the test constructs fake states carrying the same key. Both
+         # already speak 'findings' everywhere the word is theirs to choose.
+         "aughor/agent/platform_tools.py",
+         "tests/unit/test_platform_tools.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
