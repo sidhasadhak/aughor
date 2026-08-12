@@ -25,8 +25,8 @@ def _req(**kw):
     return SimpleNamespace(**base)
 
 
-def _route(depth="quick"):
-    return SimpleNamespace(depth=depth)
+def _route(depth="quick", forced=None):
+    return SimpleNamespace(depth=depth, forced=forced)
 
 
 @pytest.fixture(autouse=True)
@@ -61,20 +61,19 @@ def test_the_flag_is_read_per_call_not_per_process(monkeypatch):
     assert _converse_eligible(_req(), _route("quick")) is False
 
 
-@pytest.mark.parametrize("field,value", [
-    ("escalate", True), ("insight_id", "ins_1"), ("seed_sql", "SELECT 1"),
-])
-def test_a_pinned_starting_point_keeps_the_deterministic_body(monkeypatch, field, value):
-    """Even flag-ON, three requests carry a starting point the conversation would ignore:
-    an escalation, a dossier drill, and seeded SQL each name where the answer must begin.
-    Converse swaps the quick BODY; it does not take over the door."""
+def test_an_escalation_keeps_the_deterministic_body(monkeypatch):
+    """Even flag-ON, the explicit "investigate deeper" is a command, not a question —
+    it keeps the investigation body. (The dossier-drill and seeded-SQL carve-outs
+    dissolved in CI-4: those turns now hand their origin TO the conversation; their
+    flag-ON contract lives in test_ci4_depth_as_tool.py.)"""
     monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
 
-    assert _converse_eligible(_req(**{field: value}), _route("quick")) is False
+    assert _converse_eligible(_req(escalate=True), _route("quick")) is False
 
 
 def test_deep_still_belongs_to_the_investigation_path(monkeypatch):
-    """Converse is a quick-body peer. A deep route has its own body and its own receipts."""
+    """Converse is a quick-body peer. A router-chosen deep route has its own body and
+    its own receipts — the dossier-forced case is the one exception (CI-4)."""
     monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
 
     assert _converse_eligible(_req(), _route("deep")) is False

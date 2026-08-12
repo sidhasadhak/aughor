@@ -121,7 +121,7 @@ def overlay_for(org_id: str) -> dict:
     return dict(row or {})
 
 
-def fingerprint(org_id: str) -> str:
+def config_stamp(org_id: str) -> str:
     """A cache-key component that changes when the org's config does.
 
     The provider cache keys on this, which is what makes an org save invalidate
@@ -133,7 +133,7 @@ def fingerprint(org_id: str) -> str:
     return overlay.get("updated_at", "") if overlay else ""
 
 
-def invalidate(org_id: str) -> None:
+def evict(org_id: str) -> None:
     with _LOCK:
         _cache.pop(org_id or DEFAULT_ORG_ID, None)
 
@@ -204,7 +204,7 @@ def save_org_config(org_id: str, patch: dict) -> dict:
         c.commit()
     finally:
         c.close()
-    invalidate(org_id)
+    evict(org_id)
     return describe_org_config(org_id)
 
 
@@ -217,7 +217,7 @@ def clear_org_config(org_id: str) -> None:
         c.commit()
     finally:
         c.close()
-    invalidate(org_id)
+    evict(org_id)
 
 
 def describe_org_config(org_id: str) -> dict:

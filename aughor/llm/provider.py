@@ -2120,10 +2120,10 @@ def _org_cache_scope() -> tuple[str, str]:
     exactly.
     """
     try:
-        from aughor.llm.org_config import fingerprint
+        from aughor.llm.org_config import config_stamp
         from aughor.org.context import current_org_id
         org = current_org_id()
-        return org, fingerprint(org)
+        return org, config_stamp(org)
     except Exception:
         return "default", ""
 

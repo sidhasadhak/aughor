@@ -74,7 +74,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # retired term; the test constructs fake states carrying the same key. Both
          # already speak 'findings' everywhere the word is theirs to choose.
          "aughor/agent/platform_tools.py",
-         "tests/unit/test_platform_tools.py"),
+         "tests/unit/test_platform_tools.py",
+         # CI-4's tests construct /ask request shapes carrying the frozen `insight_id`
+         # field — the same reason test_converse_route_off_state is exempt.
+         "tests/unit/test_ci4_depth_as_tool.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),

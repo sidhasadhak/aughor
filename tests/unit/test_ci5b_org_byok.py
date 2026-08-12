@@ -116,15 +116,15 @@ def test_an_org_save_moves_only_its_own_fingerprint():
                                 "keys": {"openrouter": "sk-1"}})
     with using_org("acme"):
         first = prov.get_provider("coder")
-    fp_before = oc.fingerprint("acme")
+    fp_before = oc.config_stamp("acme")
 
     oc.save_org_config("acme", {"keys": {"openrouter": "sk-2"}})
 
-    assert oc.fingerprint("acme") != fp_before
+    assert oc.config_stamp("acme") != fp_before
     with using_org("acme"):
         rebuilt = prov.get_provider("coder")
     assert rebuilt is not first, "a key rotation must rebuild the org's client"
-    assert oc.fingerprint("globex") == "", "another org's fingerprint moved"
+    assert oc.config_stamp("globex") == "", "another org's fingerprint moved"
 
 
 def test_masked_keys_round_trip_unchanged_and_empty_clears():

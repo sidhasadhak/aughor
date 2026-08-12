@@ -754,7 +754,7 @@ class InvestigateRequest(BaseModel):
     # already reads scan_context, so seeding is additive — no graph change.
     seed_sql: Optional[str] = None
     seed_context: str = ""
-    # Drilling into a known briefing finding: its insight id. When set (and not
+    # Drilling into a known briefing finding: its stored finding id. When set (and not
     # `deep`), the explorer's pre-computed Finding Dossier is served as the trace —
     # a deterministic ledger read, NOT a second ADA run. `deep` is the explicit
     # "Investigate deeper" escalation: run ADA, seeded with that dossier.
@@ -3140,6 +3140,7 @@ async def _stream_converse(
     history: list[ChatHistoryTurn],
     session_id: str = "",
     canvas_id: Optional[str] = None,
+    origin_prose: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
 
@@ -3212,9 +3213,13 @@ async def _stream_converse(
 
         # CI-1b — the conversation body gets the same two memories the quick body does:
         # this session's turns, and what this question was answered before elsewhere.
+        # CI-4 adds the third: the origin finding a seeded/dossier turn is ABOUT,
+        # rendered by the same code the deep path anchors on.
         _memory = (build_history_section(history)
                    + build_prior_answers_section(
                        resolve_prior_answers(question, connection_id, session_id)))
+        if origin_prose:
+            _memory = origin_prose + "\n\n" + _memory if _memory else origin_prose
         result = converse(connection_id, question,
                           extra_context=_memory,
                           on_step=_on_step, tool_emit=_forward,
@@ -3422,7 +3427,7 @@ async def _stream_investigation(
     # ── Tier 0: the trace is a READ, not a re-run ──────────────────────────────
     # Drilling into a known finding? The explorer already did the deep analysis and
     # captured it in the Finding Dossier. Serve that as the trace — a deterministic
-    # ledger lookup by insight id (no semantic-match guess, no ADA, no SQL, no LLM).
+    # ledger lookup by the finding's id (no semantic-match guess, no ADA, no SQL, no LLM).
     # `deep` is the explicit escalation past the dossier into a fresh investigation.
     if insight_id and not deep:
         try:
@@ -4323,16 +4328,47 @@ def _converse_eligible(req, route) -> bool:
     process — a module-level read turns ``monkeypatch.setenv`` into a no-op and is how tests
     once spent the real LLM budget.
 
-    Everything else is a turn that already has a body: a ``deep`` route belongs to the
-    investigation path, and the escalation, dossier-drill and seeded-SQL flags each carry
-    a pinned starting point the conversation would ignore. Converse swaps the quick BODY;
-    it does not take over the door.
+    CI-4 shrank the carve-outs, one at a time as the plan requires. The seeded-SQL and
+    dossier-drill flags stopped being bypasses: such a turn now carries its
+    origin finding INTO the conversation as context (see ``_origin_prose_for``), and the
+    conversation — which owns a ``deep_analysis`` tool — decides whether the question
+    needs the full investigation. A dossier drill is recognisable on the route as
+    ``forced == "dossier"``; it is deep by ROUTING convention, not because the user asked
+    for a report, which is exactly why the conversation may take it.
+
+    Two carve-outs remain, each with a live reason. ``escalate`` is the user's explicit
+    "investigate deeper" — a command, not a question, and spending a model turn to
+    re-decide it would be latency with no information. A router-chosen ``deep`` route
+    (minus the dossier case) keeps the dedicated body until the investigation's frames
+    can stream through a converse turn (the CI-6a renderer is the missing half).
     """
     from aughor.agent.converse_tools import converse_available
-    return bool(
-        converse_available() and route.depth != "deep"
-        and not req.escalate and not req.insight_id and not req.seed_sql
-    )
+    if not converse_available() or req.escalate:
+        return False
+    return route.depth != "deep" or route.forced == "dossier"
+
+
+async def _origin_prose_for(req, conn_id: str) -> str:
+    """The origin finding a seeded/dossier turn carries, rendered for the conversation.
+
+    One source of truth, two readers: ``_build_origin_finding`` is the SAME resolver the
+    deep path anchors on, and ``_render_origin_prose`` the same rendering the direct
+    branches inject — so the conversation is handed exactly what the investigation
+    would have been, never a re-derivation. Empty for a cold-start turn, and
+    best-effort: a finding that cannot be resolved must degrade the turn to a plain
+    conversation, not fail it.
+    """
+    if not (req.insight_id or req.seed_sql or req.seed_context):
+        return ""
+    try:
+        origin = await _build_origin_finding(conn_id, req.insight_id,
+                                             req.seed_context or "", req.seed_sql)
+        return _render_origin_prose(origin) if origin else ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an unresolvable origin finding degrades the turn to a plain "
+                 "conversation", counter="ask.converse_origin")
+        return ""
 
 
 def _federation_candidates(conn_id: str, cap: int = 15) -> list[str]:
@@ -4671,7 +4707,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     _route_ev["history_reconstructed"] = bool(_hist) and not bool(_client_history)
     yield _sse("route", _route_ev)
 
-    if route.depth == "deep":
+    if route.depth == "deep" and not _use_converse:
         async for sse in _investigation_job_streamed(
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
@@ -4693,7 +4729,10 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         # calls where the fast path makes a handful.
         _body = (
             _stream_converse(req.question, conn_id, req.history,
-                             session_id=req.session_id, canvas_id=req.canvas_id)
+                             session_id=req.session_id, canvas_id=req.canvas_id,
+                             # CI-4 — a seeded/dossier turn hands its finding to the
+                             # conversation instead of bypassing it.
+                             origin_prose=await _origin_prose_for(req, conn_id))
             if _use_converse else
             _stream_chat(req.question, conn_id, req.history,
                          session_id=req.session_id, canvas_id=req.canvas_id,

@@ -144,6 +144,52 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
     return out
 
 
+def deep_analysis(connection_id: str, args: dict) -> dict:
+    """Launch the autonomous deep analysis as a supervised background job (CI-4).
+
+    The conversation reaching for depth, not a second deep pipeline: the body is Wave
+    H5's neutral runner — the SAME ``build_ask_stream`` door every caller uses — so the
+    agent-refusal gates, budgets and receipts all apply exactly as they do when a person
+    presses the button. Submitted, never awaited: a deep run takes minutes, and a
+    conversation turn that blocked on it would hold the whole session hostage. The
+    return value is the HANDLE (job id, and where results land), which is what the
+    model needs to say something true about what it just started.
+
+    Capability-checked here as a VALUE rather than left to the route's silent
+    downgrade: a tool named deep_analysis that quietly served a quick answer would be
+    the tool lying about itself.
+    """
+    from aughor.licensing import Capability, has_capability
+
+    question = str(args.get("question") or "").strip()
+    if not question:
+        return {"error": "no question supplied"}
+    if not has_capability(Capability.DEEP_ANALYSIS, conn_id=connection_id):
+        return {"status": "unavailable",
+                "reason": "deep analysis is not included in this connection's plan"}
+
+    from aughor.runners import InvestigationRequest, run_investigation
+
+    run = run_investigation(
+        InvestigationRequest(question=question, connection_id=connection_id),
+        caller="converse",
+    )
+    out = {"status": run.status, "basis": run.basis}
+    if run.job_id:
+        out["job_id"] = run.job_id
+    if run.investigation_id:
+        out["investigation_id"] = run.investigation_id
+    if run.status == "executed" and run.basis == "submitted":
+        out["note"] = ("running in the background — the report lands in the Analysis "
+                       "panel and the fleet view when it completes (usually a few "
+                       "minutes)")
+    elif run.status == "refused":
+        out["reason"] = run.message
+    elif run.status == "failed":
+        out["error"] = run.message
+    return out
+
+
 def list_tables(connection_id: str, args: dict) -> dict:
     """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table."""
     conn = _connection(connection_id)
@@ -260,6 +306,19 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             ),
             parameters=_TABLE_PARAMS,
             run=lambda a: describe_table(connection_id, a),
+        ),
+        ToolSpec(
+            name="deep_analysis",
+            description=(
+                "Launch Aughor's autonomous multi-step deep analysis in the "
+                "background — hypotheses, verified evidence, a full report with "
+                "recommendations. For open-ended why / root-cause / driver questions "
+                "that one query cannot answer, and only with the user's clear intent: "
+                "it runs for minutes and spends real budget. Returns a handle, not "
+                "the report — tell the user where the result will land."
+            ),
+            parameters=_QUESTION_PARAMS,
+            run=lambda a: deep_analysis(connection_id, a),
         ),
     ] + platform_tools(connection_id)
 
