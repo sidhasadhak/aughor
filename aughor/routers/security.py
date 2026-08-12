@@ -12,10 +12,13 @@ def get_audit_log(
     limit: int = 100,
     connection_id: str | None = None,
     verdict: str | None = None,
+    label: str | None = None,
 ):
-    """Recent audit log entries. Filter by connection_id and/or verdict."""
+    """Recent audit log entries. Filter by connection_id, verdict and/or label (the
+    surface that issued the SQL, e.g. ``query_workbench`` — the history rail's filter)."""
     from aughor.security.audit import AuditLogger
-    return {"records": AuditLogger.recent(limit=limit, connection_id=connection_id, verdict=verdict)}
+    return {"records": AuditLogger.recent(limit=limit, connection_id=connection_id,
+                                          verdict=verdict, label=label)}
 
 
 @router.get("/security/audit/stats")
