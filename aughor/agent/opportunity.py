@@ -174,6 +174,52 @@ def segment_rates(
     return segs or None
 
 
+# Segments that are LIFECYCLE STAGES of one another are not performance peers:
+# benchmarking shipped orders against RETURNED ones proposes aspiring to the basket
+# size of orders that came back — mechanically hedged, semantically absurd (the CI-0
+# report specimen did exactly this, a €2.06M "opportunity"). Two tells, either
+# sufficient: the segment column is NAMED like a status dimension, or the segment
+# VALUES are mostly lifecycle vocabulary (catches an oddly-named column).
+_LIFECYCLE_COL_RE = re.compile(
+    r"(?i)(^|_)(status|state|stage|phase|lifecycle|disposition)(_|$)")
+_LIFECYCLE_VALUES = frozenset({
+    "pending", "processing", "open", "closed", "shipped", "delivered", "returned",
+    "cancelled", "canceled", "refunded", "returned_partial", "completed", "complete",
+    "failed", "paid", "unpaid", "active", "inactive", "in_transit", "in transit",
+    "on_hold", "on hold", "draft", "expired", "approved", "rejected", "fulfilled",
+})
+
+
+def _is_lifecycle_dimension(columns: list, rows: list) -> bool:
+    """True when the grid's segment column is a lifecycle/status dimension. Mirrors
+    segment_rates' column identification so the two never disagree about which
+    column holds the labels."""
+    if not columns or not rows:
+        return False
+    low = [str(c).lower() for c in columns]
+
+    def _idx(*names: str) -> Optional[int]:
+        for name in names:
+            if name in low:
+                return low.index(name)
+        return None
+
+    n_i = _idx("n", "count", "records", "n_records")
+    avg_i = _idx("avg_per_record")
+    val_i = _idx("metric_total", "val", "value")
+    seg_i = next((i for i in range(len(columns)) if i not in (n_i, avg_i, val_i)), None)
+    if seg_i is None:
+        return False
+    if _LIFECYCLE_COL_RE.search(str(columns[seg_i])):
+        return True
+    labels = {str(r[seg_i]).strip().lower() for r in rows if len(r) > seg_i}
+    labels.discard("")
+    if len(labels) < 2:
+        return False
+    hits = sum(1 for v in labels if v in _LIFECYCLE_VALUES)
+    return hits >= 2 and hits * 2 >= len(labels)
+
+
 def compute_opportunity(
     columns: list, rows: list, *, is_ratio: bool = False, is_percent: bool = False,
     lower_is_better: bool = False, volume_is_denominator: bool = False,
@@ -207,6 +253,10 @@ def compute_opportunity(
     # anything.
     min_segs = 2 if volume_is_denominator else 3
     if not columns or not rows or len(rows) < min_segs:
+        return None
+    # Lifecycle stages are not peers — "close the gap to the returned orders'
+    # basket size" is not an opportunity, whatever the arithmetic says.
+    if _is_lifecycle_dimension(columns, rows):
         return None
     segs = segment_rates(columns, rows, is_ratio=is_ratio)
     if not segs or len(segs) < min_segs:
