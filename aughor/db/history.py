@@ -558,6 +558,117 @@ def reconstruct_session_history(session_id: str, *, limit: int = 12) -> list:
     return out[-limit:]
 
 
+def _normalize_question(q: str) -> str:
+    """A question reduced to its comparable core: lowercase, whitespace collapsed,
+    trailing punctuation dropped. Deliberately NOT stemming or synonym-matching — the
+    near-miss case belongs to the semantic seam (``tools/prior_analyses``), and a
+    normaliser that guesses would surface a DIFFERENT question's answer as this one's
+    history, which is worse than surfacing nothing."""
+    import re as _re
+    return _re.sub(r"\s+", " ", (q or "").strip().lower()).rstrip("?.! ")
+
+
+def _compact_result(report: dict) -> str:
+    """The prior turn's answer VALUE in one short line, or "".
+
+    A single cell renders bare ("5009"); a small grid renders as up to three
+    ``label=value`` pairs. Bounded hard — this rides in a prompt, and a recall block
+    that pastes an old result set would both cost budget and invite the model to
+    quote stale rows instead of comparing against them."""
+    try:
+        cols = report.get("columns") or []
+        rows = report.get("rows") or []
+        # A STRING is iterable, and a stored report whose `rows` is one would render as
+        # a per-character list ("n; o; t") — the same shape as the route-mix payload bug
+        # where a stringified list was tallied by character. Require real sequences.
+        if not isinstance(rows, (list, tuple)) or not isinstance(cols, (list, tuple)):
+            return ""
+        if not rows or not cols:
+            return ""
+        if len(rows) == 1 and len(cols) == 1:
+            return str(rows[0][0])[:60]
+        parts = []
+        for r in rows[:3]:
+            if not r or not isinstance(r, (list, tuple)):
+                continue
+            label = str(r[0])[:28]
+            value = str(r[-1])[:20] if len(r) > 1 else ""
+            parts.append(f"{label}={value}" if value else label)
+        return "; ".join(parts)[:160]
+    except Exception:
+        return ""
+
+
+def find_prior_answers(question: str, connection_id: str, *,
+                       exclude_session: str = "", limit: int = 2) -> list[dict]:
+    """Answers this same question got in EARLIER sessions on this connection (CI-1b).
+
+    CI-0 measured 46 questions asked three or more times — "where are we losing money?"
+    52 times — each starting cold because conversation memory is per session. This is
+    the cross-session half: the same question, asked before, on the same data.
+
+    Matching is deterministic (normalised equality), for three reasons that all point
+    the same way: the measured repeats ARE verbatim repeats, so exact matching catches
+    the real case; it is one indexed SELECT with no embedding round-trip, which the
+    latency-sensitive quick path cannot afford (the semantic seam already serves the
+    deep path, where a round-trip is affordable); and a false match here would hand the
+    model another question's answer as this one's history — a fabrication channel, not
+    a recall feature.
+
+    Scoped to the connection (the same words against different data are a different
+    question) and excluding the current session (those turns are already the
+    conversation history). Newest first. Empty on any error."""
+    if not (question or "").strip() or not connection_id:
+        return []
+    try:
+        target = _normalize_question(question)
+        if not target:
+            return []
+        c = _conn()
+        ensure_once(c, _ensure_schema)
+        rows = c.execute(
+            """SELECT id, question, headline, report_json, started_at, session_id
+               FROM investigations
+               WHERE connection_id = ? AND kind = 'chat'
+                 AND (status IS NULL OR status = 'complete')
+               ORDER BY started_at DESC
+               LIMIT 400""",
+            (connection_id,),
+        ).fetchall()
+        c.close()
+        out: list[dict] = []
+        seen_sessions: set[str] = set()
+        for r in rows:
+            d = dict(r)
+            if _normalize_question(d.get("question", "")) != target:
+                continue
+            sid = d.get("session_id") or ""
+            if exclude_session and sid == exclude_session:
+                continue
+            if sid and sid in seen_sessions:
+                continue          # one answer per prior session, not every turn in it
+            seen_sessions.add(sid)
+            report = json.loads(d.pop("report_json") or "{}")
+            out.append({
+                "question": d.get("question", ""),
+                "headline": d.get("headline", "") or report.get("headline", ""),
+                "asked_at": d.get("started_at", ""),
+                "session_id": sid,
+                # The VALUE the prior turn produced, not just its title. Without it the
+                # recall block cannot support the comparison it asks for: most stored
+                # headlines are captions ("Returns table row count"), so "unchanged or
+                # what moved" would have nothing to be measured against. Live-checked
+                # against the most-repeated real question, whose two prior answers were
+                # both captions.
+                "prior_result": _compact_result(report),
+            })
+            if len(out) >= limit:
+                break
+        return out
+    except Exception:
+        return []
+
+
 def delete_investigation(inv_id: str) -> bool:
     """Delete a history line item. Matches either a single investigation row by
     its ``id`` OR a whole chat session by ``session_id`` (history collapses chat

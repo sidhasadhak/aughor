@@ -1230,6 +1230,51 @@ def resolve_history(history, session_id: str):
         return history
 
 
+def build_prior_answers_section(priors) -> str:
+    """Render the "you have asked this before" block (CI-1b).
+
+    Distinct from CONVERSATION HISTORY on purpose: those turns are THIS conversation and
+    are context to compose on; these are the same question answered in an EARLIER
+    session, and the only honest use of them is comparison. The instruction says exactly
+    that — answer from today's data, then say whether it moved — because a prior headline
+    restated as current is the staleness class this repo keeps paying for (a briefing
+    citing a deleted table, a cached finding outliving its rows).
+
+    Deliberately carries the headline and the date only, never the prior SQL: re-running
+    an old query is the model's decision to make from today's schema, not something to
+    copy."""
+    priors = list(priors or [])
+    if not priors:
+        return ""
+    lines = [
+        "PREVIOUSLY ASKED — this same question was answered in an earlier session. "
+        "Answer from TODAY's data first, then say plainly whether the picture is "
+        "unchanged or what moved. Never restate a previous answer as if it were current, "
+        "and never cite its numbers as this turn's evidence:",
+    ]
+    for p in priors:
+        when = str(p.get("asked_at", ""))[:10] or "an earlier session"
+        head = (p.get("headline") or "").strip() or "(no headline recorded)"
+        value = (p.get("prior_result") or "").strip()
+        # The VALUE is what makes this comparable. Most stored headlines are captions
+        # ("Returns table row count"), so a block carrying only titles would ask for a
+        # comparison it gave the model nothing to compare.
+        lines.append(f"  • {when}: {head}" + (f" — answered: {value}" if value else ""))
+    return "\n".join(lines) + "\n"
+
+
+def resolve_prior_answers(question: str, connection_id: str, session_id: str):
+    """Prior-session answers to this question, or []. Fail-open (CI-1b)."""
+    try:
+        from aughor.db.history import find_prior_answers
+        return find_prior_answers(question, connection_id, exclude_session=session_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "cross-session recall is best-effort; the turn answers without it",
+                 counter="chat.prior_answers_failed")
+        return []
+
+
 def build_history_section(history, *, followup: bool = False) -> str:
     """Render the conversation context injected into the chat SQL prompt.
 
@@ -1612,6 +1657,14 @@ def _answer_core(
 
         from aughor.agent.followup import is_followup
         history_section = build_history_section(history, followup=is_followup(question))
+        # CI-1b — cross-session recall. Appended to the same block so it reaches the
+        # prompt without a new parameter through the core's already-long signature; the
+        # section states its own register, so the two never read as one conversation.
+        # A follow-up is skipped: "now break that down" is not a repeat of anything, and
+        # matching it against a stored question would be noise at best.
+        if not is_followup(question):
+            history_section += build_prior_answers_section(
+                resolve_prior_answers(question, connection_id, session_id))
 
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
@@ -3157,8 +3210,13 @@ async def _stream_converse(
                              conn_id=connection_id, ok=step.ok,
                              payload={"body": "converse", "detail": str(step.detail or "")})
 
+        # CI-1b — the conversation body gets the same two memories the quick body does:
+        # this session's turns, and what this question was answered before elsewhere.
+        _memory = (build_history_section(history)
+                   + build_prior_answers_section(
+                       resolve_prior_answers(question, connection_id, session_id)))
         result = converse(connection_id, question,
-                          extra_context=build_history_section(history),
+                          extra_context=_memory,
                           on_step=_on_step, tool_emit=_forward,
                           session_id=session_id, canvas_id=canvas_id)
 
