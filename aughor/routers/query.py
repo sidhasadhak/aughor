@@ -40,6 +40,87 @@ def _check_conn_org(request: Request, *conn_ids: str) -> None:
 router = APIRouter(tags=["query"], dependencies=[Depends(_query_owner_guard)])
 
 
+# ── SE-3 F — cancellation and a time limit that actually bites ─────────────────
+
+class QueryAborted(Exception):
+    """A run ended early on purpose. ``reason`` is 'cancelled' or 'timeout'."""
+
+    def __init__(self, reason: str, elapsed_ms: float, limit_ms: float = 0.0):
+        self.reason = reason
+        self.elapsed_ms = elapsed_ms
+        self.limit_ms = limit_ms
+        super().__init__(reason)
+
+
+#: How often the watchdog looks up from the query to check the clock and the client.
+#: 250 ms bounds the overshoot past a deadline without making an idle wait busy.
+_WATCH_INTERVAL_S = 0.25
+
+
+async def _run_watched(db, work, *, request: Request, limit_ms: float):
+    """Run blocking ``work()`` in a thread, watched by the event loop.
+
+    Two things end a run early, and they are the same mechanism: the client went
+    away, or the budget expired. Both reach the engine through ``db.interrupt()``.
+
+    **Why the client's disconnect is the cancel signal, rather than a job id and a
+    second endpoint.** The roadmap sketched `POST /query/submit` → `{job_id}` with
+    cancel over the jobs surface. Measured against how this actually deploys, that
+    shape does not hold: a kernel job is an asyncio task in the invocation that
+    created it, so on serverless the task dies the moment `/query/submit` returns —
+    there is nothing left to poll. And a `/jobs/{id}/cancel` arriving at a second
+    instance cannot reach the connection blocking on the first. A disconnect travels
+    the SAME socket as the query it cancels, so it is routed correctly by
+    construction, needs no new endpoint, and makes the client's "Cancel" button an
+    `AbortController` rather than a distributed-systems problem.
+
+    **Why a watchdog rather than `asyncio.wait_for`.** Cancelling the *await* does
+    nothing to the thread: the executor keeps running the blocking call to
+    completion, holding a connection and burning warehouse time invisibly. Only the
+    engine's own abort ends it, so the timeout has to interrupt, then still wait for
+    the thread to unwind and close its connection in its own ``finally`` (the
+    interrupt-never-close rule from ``DatabaseConnection.interrupt``).
+
+    The abort is reported from what THIS function knows — that it asked the engine to
+    stop — not from whether the future raised, because ``execute()`` turns the
+    engine's interrupt into ``QueryResult.error`` rather than an exception. One
+    consequence, stated rather than hidden: a statement that finishes inside the same
+    watchdog tick in which the deadline expires is still reported as a timeout. At the
+    default 60 s limit that window is the last 250 ms, and "exceeded 60000ms" remains
+    true of a query that took 60.1 s.
+    """
+    loop = asyncio.get_running_loop()
+    fut = loop.run_in_executor(None, work)
+    started = loop.time()
+    deadline = started + (limit_ms / 1000.0) if limit_ms > 0 else None
+
+    while True:
+        done, _ = await asyncio.wait({fut}, timeout=_WATCH_INTERVAL_S)
+        if done:
+            return fut.result()
+
+        if deadline is not None and loop.time() >= deadline:
+            reason = "timeout"
+        elif await request.is_disconnected():
+            reason = "cancelled"
+        else:
+            continue
+
+        if not db.interrupt():
+            # This connector cannot abort a running statement. Waiting it out is the
+            # only honest option: returning now would strand a thread still holding
+            # the connection while telling the caller the query had stopped.
+            return await fut
+
+        # The engine raises on the worker thread; wait for it to unwind and close in
+        # its own `finally` before reporting, so no thread outlives this request.
+        try:
+            await fut
+        except Exception:
+            pass  # the interrupt IS the expected outcome here
+        raise QueryAborted(reason, (loop.time() - started) * 1000.0, limit_ms)
+
+
 class _QueryRunRequest(BaseModel):
     conn_id: str
     sql: str
@@ -269,9 +350,31 @@ async def query_run(body: _QueryRunRequest, request: Request):
                 pass
         return result, typed_payload, (_t.monotonic() - t0) * 1000
 
-    loop = asyncio.get_running_loop()
+    # SE-3 F — the budget's `max_time_ms` stops being decorative here. It has always
+    # been declared per connection and, until now, only ever compared against the
+    # elapsed time AFTER the query returned: a limit that names a runaway query
+    # instead of ending it (`security/sandbox.py`, "we cannot *cancel* an
+    # already-running query without connection-level support"). The connectors now
+    # have that support, so the same number becomes a real deadline.
+    #
+    # The workbench opts in; `query_builder` keeps the old wait-forever behaviour so
+    # this cannot change what an existing surface does on the day it ships.
+    from aughor.security.sandbox import get_budget
+    _limit_ms = get_budget(body.conn_id).max_time_ms if _source == "query_workbench" else 0.0
+
     try:
-        result, typed_payload, duration_ms = await loop.run_in_executor(None, _work)
+        result, typed_payload, duration_ms = await _run_watched(
+            db, _work, request=request, limit_ms=_limit_ms)
+    except QueryAborted as ab:
+        # 499 is nginx's "client closed request" — not an IANA code, but the accurate
+        # one, and it keeps a user-initiated cancel out of the 5xx error budget where
+        # it would read as the server breaking. A timeout IS ours to own, so it is 504.
+        if ab.reason == "timeout":
+            raise HTTPException(
+                status_code=504,
+                detail=(f"Query exceeded this connection's {ab.limit_ms:.0f}ms time limit "
+                        f"and was stopped after {ab.elapsed_ms:.0f}ms."))
+        raise HTTPException(status_code=499, detail="Query cancelled.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

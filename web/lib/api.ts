@@ -2710,23 +2710,47 @@ export interface TypedQueryResult {
   format: "typed";
 }
 
+/** Thrown when the user cancelled the run — distinct from a query that failed, because
+ *  it is not a fault and must not be reported as one. */
+export class QueryCancelled extends Error {
+  constructor() { super("Query cancelled."); this.name = "QueryCancelled"; }
+}
+
 export async function runWorkbenchQuery(
   connId: string,
   sql: string,
   limit = 500,
+  /** SE-3 F: abort this to cancel. Aborting the fetch closes the socket, which is
+   *  the server's cancel signal — it interrupts the engine mid-statement rather
+   *  than letting a runaway query finish into a response nobody will read. */
+  signal?: AbortSignal,
 ): Promise<TypedQueryResult> {
-  const res = await fetch(`${getApiBase()}/query/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      conn_id: connId, sql, limit,
-      use_cache: false, use_bulk: false,
-      format: "typed",
-      // Names this surface for the audit trail and for gate_user_sql's policy.
-      source: "query_workbench",
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}/query/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conn_id: connId, sql, limit,
+        use_cache: false, use_bulk: false,
+        format: "typed",
+        // Names this surface for the audit trail and for gate_user_sql's policy.
+        source: "query_workbench",
+      }),
+      signal,
+    });
+  } catch (e) {
+    // An aborted fetch rejects with AbortError. That is the user's own click coming
+    // back to them, so it becomes a typed cancellation rather than "Failed to fetch".
+    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) {
+      throw new QueryCancelled();
+    }
+    throw e;
+  }
   if (!res.ok) {
+    // 499 is the server observing the same abort. It can arrive when the response
+    // races the disconnect, so it means cancelled here too — never an error toast.
+    if (res.status === 499) throw new QueryCancelled();
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail ?? "Query failed");
   }
