@@ -25,7 +25,7 @@
  */
 import { forceLinting, linter, type Diagnostic } from "@codemirror/lint";
 import type { EditorView } from "@codemirror/view";
-import { validateSql } from "@/lib/query/parserClient";
+import { validateSql, isMetadataStatement } from "@/lib/query/parserClient";
 import { validateQuery, type QueryValidation } from "@/lib/api";
 
 /** Locate `needle` in `text`, case-insensitively, returning a CM range or null. */
@@ -131,8 +131,14 @@ export function sqlDiagnostics(opts: {
         return [];
       }
 
-      // Tier 1 — always, and always fast.
-      const syntax = await validateSql(sql);
+      // Tier 1 — always, and always fast. Except for a metadata statement: the
+      // client parser reads PostgreSQL grammar (nothing client-side speaks DuckDB),
+      // so it marks `DESCRIBE …` / `SHOW …` / `EXPLAIN …` as a syntax error while the
+      // server runs them happily. A red squiggle under a statement that just returned
+      // rows teaches the user to distrust every squiggle, which costs more than the
+      // ones it gets right. This is precisely the "tier-1 dialect guesswork" the
+      // two-tier design says to scope away — never the guard verdicts below.
+      const syntax = isMetadataStatement(sql) ? [] : await validateSql(sql);
       const tier1: Diagnostic[] = syntax.map(e => ({
         from: Math.min(e.from, sql.length),
         to: Math.min(Math.max(e.to, e.from + 1), sql.length),

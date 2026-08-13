@@ -259,7 +259,9 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
 async def query_run(body: _QueryRunRequest, request: Request):
     """Execute a SQL query against a registered connection."""
     import time as _t
-    from aughor.db.connection import open_connection_for, gate_user_sql
+    from aughor.db.connection import (
+        open_connection_for, gate_user_sql, is_metadata_statement,
+    )
 
     _check_conn_org(request, body.conn_id)
     if not body.sql.strip():
@@ -325,6 +327,9 @@ async def query_run(body: _QueryRunRequest, request: Request):
     _use_bulk   = body.use_bulk
     _limit      = body.limit
     _source     = body.source
+    # Only the workbench may run one, and only it skips the wrap — the connection
+    # layer gates the same capability on the same label.
+    _is_metadata = _source == "query_workbench" and is_metadata_statement(_sql_to_run)
 
     def _work():
         t0 = _t.monotonic()
@@ -334,7 +339,11 @@ async def query_run(body: _QueryRunRequest, request: Request):
                 result = db.bulk_read(_sql_to_run, limit=_limit)
             else:
                 sql = _sql_to_run.strip().rstrip(";")
-                if _limit > 0:
+                # SE-3 G — EXPLAIN/DESCRIBE/SHOW are not wrappable. The wrap is what
+                # broke EXPLAIN (a parser error on `SELECT * FROM (EXPLAIN …) __q`);
+                # these statements return a handful of rows by nature, so the LIMIT it
+                # carried has nothing to bound.
+                if _limit > 0 and not _is_metadata:
                     # Typed runs fetch one extra row as the truncation probe: the
                     # subquery wrap hides whether the raw query had more rows, so
                     # row n+1 arriving is the only honest "there was more" signal.

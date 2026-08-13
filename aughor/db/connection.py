@@ -518,7 +518,30 @@ _SQL_STRLIT = re.compile(r"'(?:[^']|'')*'")
 MAX_ROWS = 500
 
 
-def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
+#: SE-3 G — statements that answer questions ABOUT the query or the schema rather
+#: than returning data from it. They are reads, but they are not ``SELECT``s, so the
+#: root-type check below rejects them.
+_METADATA_HEAD = re.compile(r"^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b", re.IGNORECASE)
+
+#: Only this surface may run them. A capability the agent path never asked for is not
+#: widened for the agent path: `_run` passes the flag from its statement LABEL, the
+#: same way `_is_internal_query` already routes on it.
+_METADATA_LABELS = frozenset({"query_workbench"})
+
+
+def is_metadata_statement(sql: str) -> bool:
+    """True for EXPLAIN / DESCRIBE / SHOW — read-only, and NOT wrappable in a subquery.
+
+    The caller needs this twice: to let the statement past the SELECT-root check, and
+    to skip the ``SELECT * FROM (…) __q LIMIT n`` wrap. The wrap is what actually broke
+    EXPLAIN — measured 2026-08-13, `DESCRIBE` and `SHOW` already worked *because* of it
+    (wrapped, they parse as a Select and DuckDB accepts them as a subquery source),
+    while EXPLAIN cannot be a subquery source at all and died with a parser error.
+    """
+    return bool(_METADATA_HEAD.match(sql or ""))
+
+
+def _validate(sql: str, dialect: str = "duckdb", *, allow_metadata: bool = False) -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
     # The forbidden-keyword pre-scan targets mutation STATEMENTS; a keyword inside a
     # string literal ('sql.execute', 'please DELETE this') is data, not a statement,
@@ -535,6 +558,13 @@ def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
         parsed = sqlglot.parse_one(sql, read=dialect or "duckdb", error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
+    # A metadata read is allowed past the ROOT-TYPE check only — deliberately after
+    # the forbidden-keyword scan above, which is what keeps `EXPLAIN DELETE FROM t`
+    # rejected (verified: it still answers "Only SELECT statements are permitted").
+    # The mutation guard and the statement-kind rule are separate rules, and only the
+    # second one is being relaxed.
+    if allow_metadata and is_metadata_statement(sql):
+        return True, "ok"
     if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
         return False, f"Only SELECT is allowed, got {type(parsed).__name__}"
     return True, "ok"
@@ -929,7 +959,8 @@ class DuckDBConnection(DatabaseConnection):
     def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
+                               allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -1223,7 +1254,8 @@ class PostgresConnection(DatabaseConnection):
     def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
+                               allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
