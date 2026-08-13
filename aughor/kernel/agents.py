@@ -100,7 +100,13 @@ AGENTS: tuple[AgentCharter, ...] = (
         icon="radar",
         # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
         # ceiling + generous time for a slow warehouse query. Governable per-agent.
-        recommended_models={"openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"},
+        # NOT the `-reasoning` variant, though it is the faster one on paper: it
+        # returns EMPTY content for structured calls, which is what every agent call
+        # here is. Measured 2026-08-13 three ways — twice via Settings ▸ Models
+        # ("structured output empty: the model returned no content") and once through
+        # LLMProvider.complete() directly, where it only appeared to succeed because
+        # the fallback chain silently answered from gemini instead.
+        recommended_models={"openrouter": "nvidia/nemotron-3-nano-30b-a3b:free"},
         # threshold checks are near-trivial; 410ms and a 50k budget say pick the cheapest fast one
         default_budget=Budget(token_budget=50_000, time_budget_s=120)),
     AgentCharter(
