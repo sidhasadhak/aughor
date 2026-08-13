@@ -16,33 +16,8 @@ import { useState } from "react";
 import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { Button } from "@/components/ui/button";
+import { toCsv, toTsv, csvFilename, downloadCsv } from "@/lib/query/csv";
 import type { TypedQueryResult } from "@/lib/api";
-
-/** RFC-4180 escaping. A result set is arbitrary user data: a cell containing a comma,
- *  a quote or a newline must survive the round trip, or the export silently corrupts
- *  the rows it was meant to preserve. NULL exports as an EMPTY field rather than the
- *  `∅` display glyph — the glyph is for reading, and a spreadsheet should see a blank,
- *  not a symbol it would treat as text. */
-function toCsv(columns: string[], rows: (string | number | boolean | null)[][]): string {
-  const cell = (v: string | number | boolean | null) => {
-    if (v === null) return "";
-    const s = String(v);
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [columns.map(cell).join(","), ...rows.map(r => r.map(cell).join(","))].join("\r\n");
-}
-
-function download(name: string, body: string): void {
-  try {
-    const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8;" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = name;
-    a.click();
-    // Revoked on the next tick rather than immediately: some browsers have not yet
-    // read the blob when click() returns, and revoking early yields an empty file.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch { /* a blocked download must not take the panel down */ }
-}
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
 
@@ -146,10 +121,7 @@ export function ResultsPanel({
         <Button
           variant="ghost" size="xs" className="aug-fs-ui"
           title="Download these rows as CSV"
-          onClick={() => download(
-            `query-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
-            toCsv(result.columns, result.rows),
-          )}
+          onClick={() => downloadCsv(csvFilename(), toCsv(result.columns, result.rows))}
         >
           CSV
         </Button>
@@ -157,10 +129,7 @@ export function ResultsPanel({
           variant="ghost" size="xs" className="aug-fs-ui"
           title="Copy these rows to the clipboard, tab-separated (pastes into a spreadsheet)"
           onClick={() => {
-            // TSV, not CSV, for the clipboard: spreadsheets paste tab-separated text
-            // straight into cells, while CSV lands in a single column.
-            const tsv = [result.columns.join("\t"),
-              ...result.rows.map(r => r.map(v => (v === null ? "" : String(v))).join("\t"))].join("\n");
+            const tsv = toTsv(result.columns, result.rows);
             const settle = (s: "ok" | "fail") => {
               setCopyState(s);
               setTimeout(() => setCopyState(""), 1600);

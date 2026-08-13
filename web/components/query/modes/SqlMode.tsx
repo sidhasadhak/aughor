@@ -1,7 +1,12 @@
 "use client";
 
 /**
- * SE-1/SE-2 — SQL mode: schema on the left, editor over results, history on the right.
+ * SE-1/SE-2 — SQL mode: editor over results, history on the right.
+ *
+ * The catalog rail used to be this file's too. PR E moved it up to the workbench, where
+ * ONE rail serves both modes; what remains here is the insertion point it targets,
+ * published through `onInsertReady`. The rail decides WHAT to insert (a qualified table,
+ * a bare column); this file still owns WHERE, because the cursor is the editor's.
  *
  * This component owns the one decision the editor deliberately does not: **what runs**.
  * The rule is selection-if-any, else the statement under the cursor, else the whole
@@ -23,8 +28,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
-import { SchemaSidebar, type SidebarTable } from "@/components/query/SchemaSidebar";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import {
   TabsBar, newTab, readTabs, writeTabs, type EditorTab,
 } from "@/components/query/TabsBar";
@@ -51,20 +56,23 @@ function readLegacyDraft(connId: string): string {
 
 export function SqlMode({
   connId,
-  connectionName,
   engine,
   schema,
-  sidebarTables,
   defaultSchema,
+  onInsertReady,
+  onSavedBinding,
+  onSavableChange,
 }: {
   connId: string;
-  connectionName?: string;
   engine: EngineHint | null;
   /** `{ "table": ["col", …] }` for completion — owned by the workbench. */
   schema?: Record<string, string[]>;
-  /** The same catalog, with types, for the sidebar. */
-  sidebarTables?: SidebarTable[];
   defaultSchema?: string;
+  /** Hands the workbench's catalog rail a way to insert at this editor's cursor. */
+  onInsertReady?: (insert: (text: string) => void) => void;
+  /** Published ONCE; reads through refs so a keystroke never re-renders the workbench. */
+  onSavedBinding?: (binding: SavedQueryBinding) => void;
+  onSavableChange?: (savable: boolean) => void;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -72,7 +80,6 @@ export function SqlMode({
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
-  const [showSidebar, setShowSidebar] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
   const cursor = useRef(0);
@@ -178,8 +185,36 @@ export function SqlMode({
   const runRef = useRef(run);
   runRef.current = run;
 
-  // The editor column — tabs, toolbar, and the editor-over-results split. Held as a
-  // node so the catalog rail can wrap it in a ResizableSplit without duplicating it.
+  // ── The saved-query bar's binding ───────────────────────────────────────────
+  //
+  // A SQL-mode save writes `sql` with an EMPTY spec. That is not a lesser save: this
+  // mode's query IS its text, and inventing a builder spec for it would claim the
+  // composer could reproduce a statement it may not be able to decompile. The empty
+  // spec is what routes the query back here when it is loaded.
+  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
+  const loadRef = useRef<(q: { sql: string; name: string }) => void>(() => {});
+  const nameRef = useRef<() => string>(() => "Untitled query");
+  captureRef.current = () => (sqlText.trim() ? { sql: sqlText, spec: {} } : null);
+  loadRef.current = q => openInNewTab(q.sql, q.name);
+  // A tab the user renamed is a name they chose — better than anything derived. Only
+  // an untouched tab falls back to reading the query's own FROM clause.
+  nameRef.current = () => {
+    if (active && active.name && active.name !== "Query") return active.name;
+    const m = /\bfrom\s+([A-Za-z_][\w.$"]*)/i.exec(sqlText);
+    return m ? `${m[1].replace(/"/g, "")} query` : "Untitled query";
+  };
+
+  const savedBinding = useMemo<SavedQueryBinding>(() => ({
+    capture: () => captureRef.current?.() ?? null,
+    load: q => loadRef.current(q),
+    suggestName: () => nameRef.current(),
+  }), []);
+  useEffect(() => { onSavedBinding?.(savedBinding); }, [onSavedBinding, savedBinding]);
+
+  const savable = !!sqlText.trim();
+  useEffect(() => { onSavableChange?.(savable); }, [savable, onSavableChange]);
+
+  // The editor column — tabs, toolbar, and the editor-over-results split.
   const editorPane = (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         <TabsBar
@@ -215,15 +250,6 @@ export function SqlMode({
             disabled={!sqlText.trim()}
           >
             Format
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            className="aug-fs-ui"
-            onClick={() => setShowSidebar(s => !s)}
-            title="Show or hide the schema browser"
-          >
-            {showSidebar ? "Hide schema" : "Schema"}
           </Button>
           <Button
             variant="ghost"
@@ -269,7 +295,7 @@ export function SqlMode({
               onRun={() => void runRef.current()}
               onFormat={(text) => formatSql(text, engineRef.current)}
               onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
-              onReady={api => { editorApi.current = api; }}
+              onReady={api => { editorApi.current = api; onInsertReady?.(api.insert); }}
               schema={schema}
               defaultSchema={defaultSchema}
               dialect={cmDialect(engine)}
@@ -281,52 +307,30 @@ export function SqlMode({
     </div>
   );
 
-  // Catalog ▸ editor. The rail sets no width of its own — a pane that hardcodes one
-  // silently overrides the handle, which is exactly why this looked adjustable and
-  // was not.
-  const workspacePane = (
-    <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
-      {showSidebar ? (
-        <ResizableSplit
-          storageKey="sqlmode.catalog"
-          initial={260}
-          min={180}
-          max={560}
-          style={{ flex: 1, minWidth: 0, minHeight: 0 }}
-          left={
-            <SchemaSidebar
-              tables={sidebarTables ?? []}
-              connectionName={connectionName}
-              onInsert={text => editorApi.current?.insert(text)}
-            />
-          }
-          right={editorPane}
-        />
-      ) : editorPane}
-    </div>
-  );
-
-  const historyRail = (
-    <HistoryRail
-      connId={connId}
-      refreshKey={historyKey}
-      onRestore={sql => openInNewTab(sql, "History")}
-    />
-  );
-
   // `resizePane="second"` because history sits on the RIGHT: sizing the left pane
   // would make the rail's width whatever was left over, so it would drift every time
   // the window changed rather than staying where the user put it.
-  return showHistory ? (
+  //
+  // `collapsed` rather than rendering the split only when history is open: the
+  // conditional form changed the element tree, so every toggle remounted the editor
+  // beside it and took the undo history and cursor with it.
+  return (
     <ResizableSplit
       storageKey="sqlmode.history"
       resizePane="second"
       initial={280}
       min={200}
       max={560}
+      collapsed={!showHistory}
       style={{ flex: 1, minWidth: 0, minHeight: 0 }}
-      left={workspacePane}
-      right={historyRail}
+      left={editorPane}
+      right={
+        <HistoryRail
+          connId={connId}
+          refreshKey={historyKey}
+          onRestore={sql => openInNewTab(sql, "History")}
+        />
+      }
     />
-  ) : workspacePane;
+  );
 }

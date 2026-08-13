@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { compactNumber, formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/format";
 import {
-  getConnections, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
+  getMetrics, runDirectQuery,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
-  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp, decompileSql,
+  runSemanticOp, decompileSql,
   pinQueryToDashboard,
-  type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
-  type CatalogEntry, type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
+  type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
+  type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
   type DecompiledQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { WhyThisNumber } from "@/components/WhyThisNumber";
 import { type ChartCustom } from "@/components/Chart";
-import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
-import { IcoSchema, IcoTable } from "@/components/icons/catalog";
 import { useRichSchema } from "@/lib/schema-context";
+import { type RailColumn } from "@/components/query/CatalogRail";
+import { toCsv, csvFilename, downloadCsv, type CsvCell } from "@/lib/query/csv";
+import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType } from "@/components/charts/chartTypeInference";
@@ -222,10 +223,8 @@ let _s = 0;
 const uid = () => `qb${++_s}`;
 
 const NUM_T  = ["int","float","double","decimal","numeric","real","number","bigint","smallint","money","hugeint"];
-const DATE_T = ["date","time","timestamp","datetime","interval"];
 const isNum  = (t: string) => NUM_T.some(k  => t.toLowerCase().includes(k));
-const isDate = (t: string) => DATE_T.some(k => t.toLowerCase().includes(k));
-const dot    = (t: string) => isNum(t) ? "bg-emerald-500" : isDate(t) ? "bg-blue-400" : "bg-zinc-500";
+// The type dot moved to CatalogTree with the rail — one legend, one definition.
 const fmtMs  = (ms: number) => ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms/1000).toFixed(2)}s`;
 const fmtN   = (n: number) => formatCount(n);
 
@@ -258,13 +257,6 @@ function tableSchemaOf(name: string): string | undefined {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(0, i) : undefined;
 }
-
-const fmtRows = (rc: string | number | null | undefined) => {
-  if (rc == null || rc === "") return null;
-  const n = typeof rc === "string" ? parseInt(rc.replace(/[^0-9]/g, ""), 10) : rc;
-  if (!Number.isFinite(n)) return null;
-  return compactNumber(n, 1);
-};
 
 function measureExpr(m: MeasureItem, multi: boolean) {
   const qc = qualify(m.col, m.table, multi);
@@ -325,13 +317,6 @@ function buildAdjacency(joins: SchemaJoin[]): Map<string, Set<string>> {
   const link = (a: string, b: string) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a)!.add(b); };
   joins.forEach(j => { link(j.t1, j.t2); link(j.t2, j.t1); });
   return adj;
-}
-
-// How many distinct tables a given table can join to (relationship degree).
-function joinDegree(table: string, joins: SchemaJoin[]): number {
-  const s = new Set<string>();
-  joins.forEach(j => { if (j.t1 === table) s.add(j.t2); if (j.t2 === table) s.add(j.t1); });
-  return s.size;
 }
 
 // BFS the shortest path from any already-resolved table to `target`.
@@ -631,37 +616,6 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
-  col: SchemaColumn; tableName: string; onAddDim: () => void; onAddMeasure: () => void;
-}) {
-  return (
-    <div
-      draggable
-      onDragStart={e => e.dataTransfer.setData("application/x-col",
-        JSON.stringify({ name: col.name, type: col.type, table: tableName, is_fk: col.is_fk }))}
-      className="group flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/60 cursor-grab active:cursor-grabbing select-none transition-colors"
-    >
-      <svg width="8" height="11" viewBox="0 0 8 14" className="text-zinc-500 group-hover:text-zinc-300 shrink-0 transition-colors">
-        {[1,5,9,13].map(y=>[1,5].map(x=><circle key={`${x}${y}`} cx={x} cy={y} r="1.2" fill="currentColor"/>)).flat()}
-      </svg>
-      <span className={`w-2 h-2 rounded-[var(--r-pill)] shrink-0 ${dot(col.type)}`} />
-      <span className="aug-fs-sm font-mono text-zinc-200 truncate flex-1" title={`${col.name} (${col.type})`}>
-        {col.name}
-      </span>
-      <span className="hidden group-hover:inline aug-fs-xs text-zinc-500 font-mono shrink-0 uppercase">
-        {col.type.split(" ")[0].slice(0,6)}
-      </span>
-      {col.is_fk && <span className="aug-fs-xs text-zinc-500">FK</span>}
-      <div className="hidden group-hover:flex gap-0.5 shrink-0">
-        <Button variant="ghost" size="xs" onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
-          className="h-auto px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-blue-500/20 text-blue-400 hover:text-blue-400 hover:bg-blue-500/40 dark:hover:bg-blue-500/40 transition">D</Button>
-        <Button variant="ghost" size="xs" onMouseDown={e=>{e.stopPropagation();onAddMeasure();}} title="Add as metric"
-          className="h-auto px-1.5 py-0.5 rounded aug-fs-xs font-bold bg-violet-500/20 text-violet-400 hover:text-violet-400 hover:bg-violet-500/40 dark:hover:bg-violet-500/40 transition">M</Button>
-      </div>
-    </div>
-  );
-}
-
 function AggPicker({ col, table, onAdd, onCancel }: {
   col: SchemaColumn; table: string; onAdd: (m: MeasureItem) => void; onCancel: () => void;
 }) {
@@ -884,16 +838,12 @@ function ResultsPane({
     semResult ? `semantic: ${semResult.operator}` : null,
   ].filter(Boolean).join(" · ");
 
-  const exportCsv = () => {
-    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const csv = [view.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "query-results.csv";
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  };
+  // Shared with the SQL editor's panel. The escape this replaced tested `/[",\n]/`, so a
+  // cell holding a CARRIAGE RETURN went out unquoted and split its row in two.
+  const exportCsv = () => downloadCsv(
+    csvFilename(),
+    toCsv(view.columns, rows as CsvCell[][]),
+  );
 
   const handleCreateCanvas = async () => {
     if (!connId || !primaryTable) return;
@@ -1003,61 +953,99 @@ function ResultsPane({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, connections: connectionsProp }: {
-  initialConnId?: string;
+/**
+ * Everything the shared catalog rail needs in order to behave like the builder's own.
+ *
+ * PR E moved the rail out of this file and into the workbench, where ONE instance
+ * serves both modes. The rail must still be able to mark a primary table, auto-join on
+ * click, offer D/M on a column and hand a drag payload to the drop zones — so the
+ * builder hands those up as ready-made behaviours rather than exporting `primaryTable`,
+ * `joinedTables` and `schemaJoins` for the workbench to reason about. The shared
+ * component learns no builder concepts, and the builder keeps its state private.
+ *
+ * Every name crossing this boundary is the WAREHOUSE-QUALIFIED one the rail displays.
+ * Translation to the builder's own bare keys happens on this side, in `keyOf` — one
+ * rule, applied at one seam.
+ */
+export interface BuilderRailBinding {
+  isTableActive: (table: { name: string }) => boolean;
+  renderTableActions: (table: { name: string }) => React.ReactNode;
+  renderColumnActions: (column: RailColumn, table: { name: string }) => React.ReactNode;
+  onColumnDragStart: (e: React.DragEvent, column: RailColumn, table: { name: string }) => void;
+  onSelectTable: (qualified: string) => void;
+  onSelectColumn: (column: string, qualified: string) => void;
+  actionLabel: (name: string, kind: "table" | "column") => string;
+}
+
+export function QueryBuilder({
+  connId, onConnIdChange, onOpenCanvas, importRequest, onRailBinding,
+  onSavedBinding, onSavableChange, savedName,
+}: {
+  /** Owned by the workbench, so one picker drives both modes and the rail beside them. */
+  connId: string;
+  onConnIdChange: (id: string) => void;
   onOpenCanvas?: (canvas: Canvas) => void;
   /** A query handed in from Insights / Deep Analysis: load the SQL, switch to its
    *  connection, and run it. nonce-keyed so the same request fires exactly once. */
   importRequest?: { connId: string; sql: string; nonce: number };
-  /** Workspace-scoped connection list. When provided, the builder uses it instead
-   *  of fetching the global list — so it can't query outside the active workspace. */
-  connections?: Connection[];
+  /** Publishes the rail behaviours above whenever they change. */
+  onRailBinding?: (binding: BuilderRailBinding) => void;
+  /** Published ONCE — the binding reads through refs, so it never goes stale and
+   *  never re-renders the workbench on a keystroke. */
+  onSavedBinding?: (binding: SavedQueryBinding) => void;
+  /** Whether there is anything worth saving. A primitive, so the effect that reports
+   *  it settles to a no-op except on the empty↔non-empty transition. */
+  onSavableChange?: (savable: boolean) => void;
+  /** The saved query currently open, owned by the workbench's saved-query bar. Titles
+   *  the results so a saved query's output is headed by its NAME, not its table. */
+  savedName?: string;
 }) {
-  const [connectionsState, setConnections] = useState<Connection[]>([]);
-  const connections = connectionsProp ?? connectionsState;
-  const [connId,        setConnId]        = useState(initialConnId ?? "");
+  const setConnId = onConnIdChange;
   const { schema: builderSchema } = useRichSchema(connId);
+
+  /**
+   * The two vocabularies, and the single place they are reconciled.
+   *
+   * The rail (and the rich schema behind it) names a table the way the warehouse spells
+   * it — `analytics.order_items`. The builder keys everything by the BARE name, falling
+   * back to the qualified one only when two schemas expose the same bare name, because
+   * bare is what reads well in a chip and in generated SQL with `tableSchemas` supplying
+   * the qualification. Both directions are built from the same pass, so a name can make
+   * the round trip: derive one from the other by string surgery and they drift the first
+   * time a warehouse uses a three-part name.
+   */
+  const railKeys = useMemo(() => {
+    const toKey = new Map<string, string>();
+    const toQualified = new Map<string, string>();
+    const tables = builderSchema?.tables ?? [];
+    const bareCount: Record<string, number> = {};
+    tables.forEach(t => { const b = bareTable(t.name); bareCount[b] = (bareCount[b] || 0) + 1; });
+    tables.forEach(t => {
+      const key = bareCount[bareTable(t.name)] > 1 ? t.name : bareTable(t.name);
+      toKey.set(t.name, key);
+      toQualified.set(key, t.name);
+    });
+    return { toKey, toQualified };
+  }, [builderSchema]);
+  const railKeyOf = useCallback(
+    (qualified: string) => railKeys.toKey.get(qualified) ?? bareTable(qualified),
+    [railKeys],
+  );
   const [tableNames,    setTableNames]    = useState<string[]>([]);
   const [tableCols,     setTableCols]     = useState<Record<string,SchemaColumn[]>>({});
-  const [rowCounts,     setRowCounts]     = useState<Record<string,string|null>>({});
   const [schemaJoins,   setSchemaJoins]   = useState<SchemaJoin[]>([]);
   const [isolated,      setIsolated]      = useState<string[]>([]);
-  const [loadingTree,   setLoadingTree]   = useState(false);  // fast: catalog tree
-  const [loadingCols,   setLoadingCols]   = useState(false);  // slow: columns/joins/rowcounts
-  const [loadingTableCols, setLoadingTableCols] = useState<Set<string>>(new Set());
   const [joinHint,      setJoinHint]      = useState<string|null>(null);
 
   const [primaryTable, setPrimaryTable] = useState<string|null>(null);
   const [joinedTables, setJoinedTables] = useState<string[]>([]);
   const [showAddJoin,  setShowAddJoin]  = useState(false);
-  const [expandedTables, setExpandedTables] = useState<Record<string,boolean>>({});
-  const [expandedSchemas, setExpandedSchemas] = useState<Record<string,boolean>>({});
-  const [catEntry, setCatEntry] = useState<CatalogEntry|null>(null);
   const [tableSchemas, setTableSchemas] = useState<Record<string, string>>({});
-  const [allEntries, setAllEntries] = useState<CatalogEntry[]>([]);
-  const [expandedConns, setExpandedConns] = useState<Record<string,boolean>>({});
-  const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
   // Measure grains (additivity) for this connection — drives the metric-chip warnings.
   const [measureGrains, setMeasureGrains] = useState<Record<string, "per_unit"|"per_line">>({});
   const [grainQtyCols,  setGrainQtyCols]  = useState<string[]>([]);
-
-  // Fetch columns for a single table on-demand (fallback when rich schema is empty)
-  const fetchTableColumns = useCallback(async (table: string, schemaName?: string) => {
-    if (!connId || loadingTableCols.has(table)) return;
-    setLoadingTableCols(p => { const n = new Set(p); n.add(table); return n; });
-    try {
-      const cols = await getTableColumns(connId, table, schemaName);
-      if (cols.length > 0) {
-        setTableCols(prev => ({ ...prev, [table]: cols.map(c => ({ ...c, is_fk: false } as SchemaColumn)) }));
-      }
-    } catch (e) {
-      console.error(`[QueryBuilder] failed to load columns for ${table}:`, e);
-    } finally {
-      setLoadingTableCols(p => { const n = new Set(p); n.delete(table); return n; });
-    }
-  }, [connId, loadingTableCols]);
   const [showMetricsCatalog, setShowMetricsCatalog] = useState(false);
 
   const [dims,     setDims]     = useState<DimItem[]>([]);
@@ -1101,12 +1089,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const [nfVal,   setNfVal]   = useState("");
   const [nfDistinct, setNfDistinct] = useState<string[]>([]);  // distinct-value suggestions for the picker
 
-  // Saved queries (persistence) — savedId/savedName track the currently loaded saved query so
+  // Saved queries: the WORKBENCH's bar owns the list, the active pointer and the CRUD.
+  // This file keeps only the two things the bar cannot know — what the visual state IS
+  // (`buildSpec`) and how to put it back (`loadSaved`).
   // "Save" updates in place; the dropdown lists this connection's saved queries to load/delete.
-  const [savedList,   setSavedList]   = useState<SavedQuery[]>([]);
-  const [savedId,     setSavedId]     = useState<string|null>(null);
-  const [savedName,   setSavedName]   = useState("");
-  const [showSaved,   setShowSaved]   = useState(false);
   const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
   const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
@@ -1120,9 +1106,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const [legendPos,      setLegendPos]      = useState("");   // "" = default (right)
   const [xTitle,         setXTitle]         = useState("");
   const [yTitle,         setYTitle]         = useState("");
-  const [showSaveName, setShowSaveName] = useState(false);
-  const [saveName,    setSaveName]    = useState("");
-  const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
   // Pin to the briefing cockpit (Door 2) — the query is re-guarded on save, so a bad one is refused.
   const [showPinName, setShowPinName] = useState(false);
   const [pinName,     setPinName]     = useState("");
@@ -1130,81 +1113,46 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const [pinError,    setPinError]    = useState<string|null>(null);
 
   useEffect(() => { getMetrics().then(setMetrics).catch(()=>{}); }, []);
-  useEffect(() => {
-    // Workspace-scoped: use the provided list and keep connId inside it. Otherwise
-    // (standalone use) fall back to the global connection list.
-    if (connectionsProp) {
-      if (connectionsProp.length && !connectionsProp.find(c => c.id === connId)) setConnId(connectionsProp[0].id);
-      else if (!connectionsProp.length) setConnId("");
-      return;
-    }
-    getConnections().then(cs => { setConnections(cs); if (!connId && cs.length) setConnId(cs[0].id); }).catch(()=>{});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionsProp]);
 
   useEffect(() => {
     if (!connId) return;
-    setLoadingTree(true);
-    setLoadingCols(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]); setHaving([]);
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setVizType("auto"); setShowDataLabels(false); setChartTitle("");
     setColorScheme(""); setNumberFormat(""); setLegendPos(""); setXTitle(""); setYTitle("");
-    setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
+    setSql(""); setResult(null); setTableSchemas({});
 
-    // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
-    getCatalogTree()
-      .then(tree => {
-        const entries = tree.sections.flatMap(s => s.entries);
-        setAllEntries(entries);
-        const entry = entries.find(e => e.conn_id === connId) ?? null;
-        setCatEntry(entry);
-      const ts: Record<string, string> = {};
-      entry?.schemas.forEach(s => s.tables.forEach(t => { ts[t.name] = s.name; }));
-      setTableSchemas(ts);
-        // Active connection expanded by default; others collapsed.
-        setExpandedConns(prev => ({ ...Object.fromEntries(entries.map(e => [e.conn_id, false])), ...prev, [connId]: true }));
-        if (entry) {
-          setExpandedSchemas(Object.fromEntries(entry.schemas.map(s => [s.name, true])));
-          // seed table names so the hierarchy renders before getSchemaRich finishes
-          setTableNames(entry.schemas.flatMap(s => s.tables.map(t => t.name)));
-        }
-      })
-      .catch(() => setCatEntry(null))
-      .finally(() => setLoadingTree(false));
-
-    // Phase 2 — slower: rich schema adds columns, joins, row counts.
-    // Canonicalize the rich schema's qualified names ("analytics.order_items") to the bare key
-    // the catalog tree uses ("order_items"), so the catalog rows find their columns/joins.
-    // Collision guard: if two schemas expose the same bare name, keep BOTH dotted to stay
-    // unambiguous. Schema is recorded in tableSchemas so quoteTable re-qualifies at SQL time.
+    // The rich schema is the ONE source now. This used to run a `/catalog/tree` fetch
+    // first, for a hierarchy the rail needed before columns arrived — but the rail is
+    // the workbench's, it groups by the schema each table already carries, and that
+    // endpoint lists EVERY connection to answer about one. It was measured at 10.9s in
+    // production and its whole contribution here was schema names the rich schema also
+    // has. `tableSchemas` below is built from the same names it used to supply.
     if (!builderSchema) return;
-    // Same transform as before, now fed by the shared per-connection cache instead of
-    // this component's own fetch. The canonicalisation below is unchanged.
+    // Canonicalize the rich schema's qualified names ("analytics.order_items") to the bare
+    // key the builder uses ("order_items"). Collision guard: if two schemas expose the same
+    // bare name, keep BOTH dotted to stay unambiguous. Schema is recorded in tableSchemas
+    // so quoteTable re-qualifies at SQL time.
     const rich = builderSchema;
     {
-      const bareCount: Record<string, number> = {};
-      rich.tables.forEach(t => { const b = bareTable(t.name); bareCount[b] = (bareCount[b] || 0) + 1; });
-      const keyOf = (full: string) => (bareCount[bareTable(full)] > 1 ? full : bareTable(full));
+      const keyOf = railKeyOf;
 
       const names: string[] = [];
       const cols: Record<string,SchemaColumn[]> = {};
-      const rc: Record<string,string|null> = {};
       const schemaAdds: Record<string,string> = {};
       rich.tables.forEach(t => {
         const k = keyOf(t.name);
-        names.push(k); cols[k] = t.columns; rc[k] = t.row_count;
+        names.push(k); cols[k] = t.columns;
         const s = tableSchemaOf(t.name); if (s) schemaAdds[k] = s;
       });
       const joins = rich.joins.map(j => ({ ...j, t1: keyOf(j.t1), t2: keyOf(j.t2) }));
       const iso = (rich.isolated ?? []).map(keyOf);
-      setTableNames(names); setTableCols(cols); setRowCounts(rc);
-      setTableSchemas(prev => ({ ...prev, ...schemaAdds }));
+      setTableNames(names); setTableCols(cols);
+      setTableSchemas(schemaAdds);
       setSchemaJoins(joins); setIsolated(iso);
     }
-    setLoadingCols(false);
-  }, [connId, builderSchema]);
+  }, [connId, builderSchema, railKeyOf]);
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
@@ -1214,13 +1162,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t, having));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas,
       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain, having]);
-
-  // Load this connection's saved queries; reset the active saved-query pointer on switch.
-  useEffect(() => {
-    setSavedId(null); setSavedName("");
-    if (!connId) { setSavedList([]); return; }
-    listSavedQueries(connId).then(setSavedList).catch(() => setSavedList([]));
-  }, [connId]);
 
   // Fetch measure grains (additivity) for the connection — async/non-blocking; warnings appear
   // on metric chips once resolved (the first probe is slow on a wide warehouse, then cached).
@@ -1239,22 +1180,14 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     : undefined;
   const allCols   = allTables.flatMap(t => (tableCols[t]??[]).map(c => c.name));
   const qualCols  = isMulti ? allTables.flatMap(t => (tableCols[t]??[]).map(c => `${t}.${c.name}`)) : [];
-  const joinStatuses = primaryTable ? resolveJoins(primaryTable, joinedTables, schemaJoins) : [];
+  // Memoized because the rail binding depends on it: rebuilt per render, it would be a
+  // new array every time, so the binding would be new every time, so the effect that
+  // publishes it would fire every time — a render loop with the workbench.
+  const joinStatuses = useMemo(
+    () => (primaryTable ? resolveJoins(primaryTable, joinedTables, schemaJoins) : []),
+    [primaryTable, joinedTables, schemaJoins],
+  );
   const joinableOptions = tableNames.filter(t => t !== primaryTable && !joinedTables.includes(t));
-
-  // Catalog → Schema → Table grouping (mirrors the nav Catalog hierarchy).
-  // Use the catalog tree's schema grouping when available; fall back to a single
-  // synthetic schema built from the rich-schema table names.
-  const tableSet = new Set(tableNames);
-  const catSchemas: { name: string; tables: string[] }[] = catEntry
-    ? catEntry.schemas
-        .map(s => ({ name: s.name, tables: s.tables.map(t => t.name).filter(n => tableSet.has(n)) }))
-        .filter(s => s.tables.length > 0)
-    : [];
-  // Any rich-schema tables not represented in the catalog tree fall into "main".
-  const grouped = new Set(catSchemas.flatMap(s => s.tables));
-  const ungrouped = tableNames.filter(t => !grouped.has(t));
-  if (ungrouped.length) catSchemas.push({ name: catSchemas.length ? "other" : "main", tables: ungrouped });
 
   const flashHint = useCallback((msg: string) => {
     setJoinHint(msg);
@@ -1264,12 +1197,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const selectPrimary = useCallback((name: string, schema?: string) => {
     if (!name) return;
     if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
-    setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
+    setPrimaryTable(name); setJoinedTables([]);
     setDims([]); setMeasures([]); setFilters([]); setHaving([]); setOrderBy("");
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setVizType("auto"); setShowDataLabels(false); setChartTitle("");
     setColorScheme(""); setNumberFormat(""); setLegendPos(""); setXTitle(""); setYTitle("");
-    setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
+    setResult(null); setRunError(null); setAutoSql(true);
     const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
   }, [limit]);
@@ -1278,9 +1211,15 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   // the studied join graph. Returns true if the table is now reachable.
   const ensureTable = useCallback((table: string, schema?: string): boolean => {
     if (!table) return false;
-    // Auto-lookup schema from catalog tree if not explicitly passed
-    const resolvedSchema = schema ?? catEntry?.schemas.find(s => s.tables.some(t => t.name === table))?.name;
-    if (resolvedSchema) setTableSchemas(prev => ({ ...prev, [table]: resolvedSchema }));
+    // The rich schema recorded every table's schema when it loaded, so an explicit one
+    // is only needed for a caller that knows better.
+    const resolvedSchema = schema ?? tableSchemas[table];
+    // Bail when nothing changes. A fresh object here would be a new `tableSchemas`, hence
+    // a new `ensureTable`, hence a new rail binding published to the workbench, hence a
+    // re-render — on every click that resolved to the schema it already had.
+    if (resolvedSchema) {
+      setTableSchemas(prev => prev[table] === resolvedSchema ? prev : { ...prev, [table]: resolvedSchema });
+    }
     if (!primaryTable) { selectPrimary(table, resolvedSchema); return true; }
     if (table === primaryTable || joinedTables.includes(table)) return true;
     const resolved = new Set([primaryTable, ...joinedTables]);
@@ -1288,7 +1227,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     if (path && path.length) {
       const toAdd = path.filter(t => t !== primaryTable && !joinedTables.includes(t));
       setJoinedTables(p => [...p, ...toAdd.filter(t => !p.includes(t))]);
-      setExpandedTables(p => { const n = {...p}; toAdd.forEach(t => n[t] = true); return n; });
       setAutoSql(true);
       const hops = [primaryTable, ...joinedTables].slice(-1)[0];
       flashHint(toAdd.length > 1
@@ -1298,11 +1236,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     }
     // Unreachable — add it anyway so the user can wire the join manually in SQL.
     setJoinedTables(p => p.includes(table) ? p : [...p, table]);
-    setExpandedTables(p => ({...p, [table]: true}));
     setAutoSql(true);
     flashHint(`No join path to ${table} — add the ON clause manually in SQL`);
     return false;
-  }, [primaryTable, joinedTables, schemaJoins, selectPrimary, flashHint]);
+  }, [primaryTable, joinedTables, schemaJoins, selectPrimary, flashHint, tableSchemas]);
 
   const addJoin = useCallback((t: string) => { ensureTable(t); setShowAddJoin(false); }, [ensureTable]);
 
@@ -1341,6 +1278,98 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     const d = parseDrop(e);
     if (d) openMeasure(d.col, d.table);
   };
+
+  // ── The catalog rail's behaviour, handed to the workbench ────────────────────
+  //
+  // The rail is mounted once, above both modes, and shows the warehouse's qualified
+  // names. Everything below translates at the boundary (`railKeyOf`) and then speaks
+  // pure builder — so nothing outside this file has to know that a "primary table" or
+  // an auto-join exists.
+  const railBinding = useMemo<BuilderRailBinding>(() => {
+    const statusOf = (qualified: string) => {
+      const key = railKeyOf(qualified);
+      if (key === primaryTable) return { key, kind: "primary" as const };
+      if (joinedTables.includes(key)) return { key, kind: "joined" as const };
+      return { key, kind: "none" as const };
+    };
+    return {
+      isTableActive: t => statusOf(t.name).kind !== "none",
+
+      renderTableActions: t => {
+        const { key, kind } = statusOf(t.name);
+        if (kind === "primary") {
+          return <span className="aug-fs-ui shrink-0 font-medium" style={{ color: "var(--blue3)" }}>primary</span>;
+        }
+        if (kind === "joined") {
+          const js = joinStatuses.find(s => s.table === key);
+          return (
+            <span
+              title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : "no join — wire in SQL"}
+              className="aug-fs-ui shrink-0"
+              style={{ color: js?.join ? "var(--grn3)" : "var(--amb4)" }}
+            >
+              {js?.join ? "✓" : "⚠"}
+            </span>
+          );
+        }
+        if (isolated.includes(key)) {
+          return (
+            <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>
+              isolated
+            </span>
+          );
+        }
+        return (
+          <Button
+            variant="ghost" size="xs" onClick={() => ensureTable(key)} title="Add to query (auto-join)"
+            className="aug-fs-ui h-auto shrink-0 rounded px-1.5 py-0 font-normal leading-tight opacity-0 transition group-hover/tbl:opacity-100 hover:bg-transparent dark:hover:bg-transparent"
+            style={{ color: "var(--t4)" }}
+          >
+            + add
+          </Button>
+        );
+      },
+
+      renderColumnActions: (c, t) => {
+        const key = railKeyOf(t.name);
+        const col = { name: c.name, type: c.type ?? "", is_fk: !!c.is_fk } as SchemaColumn;
+        // onMouseDown, not onClick: the row is draggable, and a click that begins a drag
+        // never completes — these buttons went dead the moment the row got a grab handle.
+        return (
+          <div className="hidden shrink-0 gap-0.5 group-hover/col:flex">
+            <Button
+              variant="ghost" size="xs" title="Add as dimension"
+              onMouseDown={e => { e.stopPropagation(); addDim(c.name, key); }}
+              className="aug-fs-ui h-auto rounded bg-blue-500/20 px-1.5 py-0.5 font-bold text-blue-400 transition hover:bg-blue-500/40 hover:text-blue-400 dark:hover:bg-blue-500/40"
+            >
+              D
+            </Button>
+            <Button
+              variant="ghost" size="xs" title="Add as metric"
+              onMouseDown={e => { e.stopPropagation(); openMeasure(col, key); }}
+              className="aug-fs-ui h-auto rounded bg-violet-500/20 px-1.5 py-0.5 font-bold text-violet-400 transition hover:bg-violet-500/40 hover:text-violet-400 dark:hover:bg-violet-500/40"
+            >
+              M
+            </Button>
+          </div>
+        );
+      },
+
+      // The payload carries the BUILDER's key, because `parseDrop` on the other end
+      // looks the table up in builder state. The wire format is unchanged.
+      onColumnDragStart: (e, c, t) => e.dataTransfer.setData(
+        "application/x-col",
+        JSON.stringify({ name: c.name, type: c.type ?? "", table: railKeyOf(t.name), is_fk: !!c.is_fk }),
+      ),
+
+      onSelectTable: qualified => { ensureTable(railKeyOf(qualified)); },
+      onSelectColumn: (column, qualified) => addDim(column, railKeyOf(qualified)),
+      actionLabel: (name, kind) =>
+        kind === "table" ? `Add ${name} to the query (auto-join)` : `Add ${name} as a dimension`,
+    };
+  }, [railKeyOf, primaryTable, joinedTables, joinStatuses, isolated, ensureTable, addDim, openMeasure]);
+
+  useEffect(() => { onRailBinding?.(railBinding); }, [onRailBinding, railBinding]);
 
   const handleSqlChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setSql(e.target.value); setAutoSql(false);
@@ -1468,39 +1497,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     return ms ? `${primaryTable} · ${ms}` : `${primaryTable} query`;
   };
 
-  const refreshSavedList = useCallback(() => {
-    if (connId) listSavedQueries(connId).then(setSavedList).catch(() => {});
-  }, [connId]);
-
-  const doCreateSaved = async (name: string) => {
-    if (!connId || !name.trim()) return;
-    setSavingState("saving");
-    try {
-      const q = await createSavedQuery(connId, name.trim(), sql, buildSpec());
-      setSavedId(q.id); setSavedName(q.name);
-      setShowSaveName(false); setSaveName("");
-      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
-      refreshSavedList();
-    } catch (e) { alert((e as Error).message || "Failed to save query"); setSavingState("idle"); }
-  };
-
-  const doUpdateSaved = async () => {
-    if (!savedId) return;
-    setSavingState("saving");
-    try {
-      const q = await updateSavedQuery(savedId, { name: savedName, sql, spec: buildSpec() });
-      setSavedName(q.name);
-      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
-      refreshSavedList();
-    } catch (e) { alert((e as Error).message || "Failed to update query"); setSavingState("idle"); }
-  };
-
-  const onSaveClick = () => {
-    if (!sql.trim()) return;
-    if (savedId) doUpdateSaved();
-    else { setSaveName(suggestedName()); setShowSaveName(true); }
-  };
-
   const loadSaved = (q: SavedQuery) => {
     const s = (q.spec || {}) as Record<string, unknown>;
     setPrimaryTable((s.primaryTable as string) ?? null);
@@ -1527,18 +1523,34 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     setYTitle(typeof s.yTitle === "string" ? s.yTitle : "");
     setAutoSql(false);            // preserve the saved SQL exactly
     setSql(q.sql);
-    setSavedId(q.id); setSavedName(q.name);
-    setResult(null); setRunError(null); setShowSaved(false);
+    setResult(null); setRunError(null);
   };
 
-  const removeSaved = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await deleteSavedQuery(id);
-      if (savedId === id) { setSavedId(null); setSavedName(""); }
-      refreshSavedList();
-    } catch { /* best-effort */ }
-  };
+  // ── The saved-query bar's binding ───────────────────────────────────────────
+  //
+  // Published ONCE, and it reads through refs. A binding memoized on `sql` would be a
+  // new object per keystroke, so the workbench would setState per keystroke and
+  // re-render both modes while you type. The refs are re-pointed on every render, so
+  // what the bar reads is always current without anything above having to re-render.
+  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
+  const loadSavedRef = useRef(loadSaved);
+  const suggestNameRef = useRef(suggestedName);
+  captureRef.current = () => (sql.trim() ? { sql, spec: buildSpec() } : null);
+  loadSavedRef.current = loadSaved;
+  suggestNameRef.current = suggestedName;
+
+  const savedBinding = useMemo<SavedQueryBinding>(() => ({
+    capture: () => captureRef.current?.() ?? null,
+    load: q => loadSavedRef.current(q),
+    suggestName: () => suggestNameRef.current(),
+  }), []);
+  useEffect(() => { onSavedBinding?.(savedBinding); }, [onSavedBinding, savedBinding]);
+
+  // A primitive, so React bails out of the setState except on the actual transition —
+  // this effect runs per keystroke and costs a render only when Save's enabled state
+  // genuinely changes.
+  const savable = !!sql.trim();
+  useEffect(() => { onSavableChange?.(savable); }, [savable, onSavableChange]);
 
   const commitFilter = () => {
     if (!nfCol) return;
@@ -1657,18 +1669,12 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
           <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
           <rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>
         </svg>
-        <span className="aug-fs-ui font-semibold text-zinc-200">Query Builder</span>
+        {/* No mode label here: the workbench's toggle says "Visual" 40px above this row,
+            and the same word twice is furniture, not information. */}
 
-        <div className="h-5 w-px bg-zinc-700/60 mx-1" />
-
-        {/* Connection */}
-        <div className="flex items-center gap-2">
-          <span className="aug-fs-sm text-zinc-500">Connection</span>
-          <select value={connId} onChange={e=>setConnId(e.target.value)}
-            className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 text-zinc-200 outline-none hover:border-zinc-500 transition cursor-pointer">
-            {connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
+        {/* The connection picker moved to the workbench header, where ONE control drives
+            both modes and the rail between them. Two pickers for one connection is a
+            question about which of them is authoritative that has no good answer. */}
 
         {/* Active table chips — populated automatically as fields are added */}
         {primaryTable ? (
@@ -1703,27 +1709,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
         {/* Right controls */}
         <div className="ml-auto flex items-center gap-3">
 
-          {/* Saved queries — persistence */}
+          {/* Saved queries moved to the workbench header — one saved surface for both
+              modes, so a query written in SQL can be saved at all. Pin stays: it makes a
+              briefing CARD out of a chart, which only this mode produces. */}
           <div className="relative flex items-center gap-1.5">
-            <Button variant="ghost" size="xs" onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
-              title="Open saved queries"
-              className={`h-auto font-normal gap-1 aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition ${SVG_SIZE_AUTO}`}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-              </svg>
-              {savedName ? <span className="max-w-[110px] truncate">{savedName}</span> : "Saved"}
-              {savedList.length > 0 && <span className="text-zinc-500">{savedList.length}</span>}
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0"><polyline points="1,2 4,6 7,2"/></svg>
-            </Button>
-            <Button variant="ghost" size="xs" onClick={onSaveClick} disabled={!sql.trim()}
-              title={savedId ? "Update this saved query" : "Save the current query"}
-              className={`h-auto font-normal aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition disabled:opacity-40 ${
-                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
-                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 hover:bg-transparent dark:hover:bg-transparent"
-              }`}>
-              {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
-            </Button>
-
             {/* Pin to briefing cockpit — Door 2 (guarded on save) */}
             <Button variant="ghost" size="xs" onClick={onPinClick} disabled={!sql.trim() || pinState === "pinning"}
               title="Pin this query to the briefing cockpit — re-guarded on save"
@@ -1736,56 +1725,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               </svg>
               {pinState === "pinning" ? "Pinning…" : pinState === "pinned" ? "Pinned ✓" : "Pin"}
             </Button>
-
-            {/* Saved-query list */}
-            {showSaved && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setShowSaved(false)} />
-                <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
-                  <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
-                    <span className="aug-fs-xs font-semibold text-zinc-400">Saved queries</span>
-                    <Button variant="ghost" size="xs" onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
-                      disabled={!sql.trim()}
-                      className="h-auto p-0 font-normal aug-fs-xs text-blue-400 hover:text-blue-300 hover:bg-transparent dark:hover:bg-transparent disabled:opacity-40">+ Save current as…</Button>
-                  </div>
-                  <div className="max-h-[320px] overflow-y-auto">
-                    {savedList.length === 0 ? (
-                      <p className="px-3 py-3 aug-fs-xs text-zinc-500">No saved queries for this connection yet.</p>
-                    ) : savedList.map(q => (
-                      <div key={q.id} onClick={() => loadSaved(q)}
-                        className={`group/sq flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800/70 border-b border-zinc-700/30 last:border-0 ${q.id === savedId ? "bg-zinc-800/40" : ""}`}>
-                        <div className="min-w-0 flex-1">
-                          <p className="aug-fs-sm text-zinc-200 truncate">{q.name}</p>
-                          <p className="aug-fs-xs text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
-                        </div>
-                        {q.id === savedId && <span className="aug-fs-xs text-blue-400 shrink-0">active</span>}
-                        <Button variant="ghost" size="xs" onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
-                          className="h-auto p-0 font-normal opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent shrink-0 leading-none">✕</Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Name prompt for create */}
-            {showSaveName && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSaveName(false)} />
-                <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
-                  <p className="aug-fs-xs font-semibold text-zinc-400 mb-2">Save query as</p>
-                  <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") doCreateSaved(saveName); if (e.key === "Escape") setShowSaveName(false); }}
-                    placeholder="Query name"
-                    className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
-                  <div className="flex justify-end gap-2 mt-2.5">
-                    <Button variant="ghost" size="xs" onClick={() => setShowSaveName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
-                    <Button variant="ghost" size="xs" onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
-                      className="h-auto aug-fs-xs bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</Button>
-                  </div>
-                </div>
-              </>
-            )}
 
             {/* Name prompt for a cockpit pin */}
             {showPinName && (
@@ -1851,232 +1790,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
         </div>
       </div>
 
-      {/* ══ BODY ═════════════════════════════════════════════════════════════ */}
-      <ResizableSplit storageKey="builder" initial={320} min={220} max={520} className="flex-1 overflow-hidden"
-        left={
-        /* ── Left: Catalog browser (all tables, auto-join on drag) ── */
-        <aside className="border-r border-zinc-700/40 flex flex-col bg-zinc-900/30 h-full w-full">
-          {/* Header */}
-          <div className="px-4 pt-4 pb-3 border-b border-zinc-700/30">
-            <div className="flex items-center justify-between mb-2.5">
-              <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-400">Catalog</p>
-              <span className="aug-fs-xs text-zinc-500">{tableNames.length} tables</span>
-            </div>
-            <div className="flex items-center gap-2 bg-zinc-800/70 border border-zinc-700 rounded-md px-3 py-2">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input placeholder="Search tables &amp; columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
-                className="bg-transparent aug-fs-sm text-zinc-300 outline-none placeholder-zinc-500 w-full" />
-              {colSearch && <Button variant="ghost" size="xs" onClick={()=>setColSearch("")} className="h-auto p-0 font-normal text-zinc-500 hover:text-zinc-400 hover:bg-transparent dark:hover:bg-transparent leading-none">✕</Button>}
-            </div>
-            {/* type legend */}
-            <div className="flex items-center gap-3 mt-2.5">
-              {[["bg-emerald-500","num"],["bg-blue-400","date"],["bg-zinc-500","text"]].map(([d,l])=>(
-                <span key={l} className="flex items-center gap-1.5 aug-fs-xs text-zinc-500">
-                  <span className={`w-2 h-2 rounded-[var(--r-pill)] ${d}`}/>{l}
-                </span>
-              ))}
-              <span className="ml-auto aug-fs-xs text-zinc-500">drag to auto-join</span>
-            </div>
-          </div>
-
-          {/* Catalog → Schema → Table → columns hierarchy */}
-          <div className="flex-1 overflow-y-auto py-1">
-            {loadingTree ? (
-              <p className="aug-fs-sm text-zinc-500 px-4 py-4 animate-pulse">Loading catalog…</p>
-            ) : tableNames.length === 0 ? (
-              <p className="aug-fs-sm text-zinc-500 px-4 py-4">No tables in this connection.</p>
-            ) : (() => {
-              const q = colSearch.toLowerCase().trim();
-
-              // Connection → schema → table → column hierarchy (all connections,
-              // mirroring the big Catalog tab).  The active connection expands to
-              // the full rich tree; others show a lightweight schema/table preview
-              // and switch the builder to that connection on click.
-              const dbIcon = (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
-                  <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
-                </svg>
-              );
-              const entries = allEntries.length ? allEntries : (catEntry ? [catEntry] : []);
-              return (
-                <div>
-                  {entries.map(entry => {
-                    const isActive = entry.conn_id === connId;
-                    const connMatches = !q || entry.name.toLowerCase().includes(q)
-                      || entry.schemas.some(s => s.name.toLowerCase().includes(q) || s.tables.some(t => t.name.toLowerCase().includes(q)));
-                    if (q && !connMatches && !isActive) return null;
-                    const cOpen = q ? connMatches : (expandedConns[entry.conn_id] ?? isActive);
-                    return (
-                      <div key={entry.conn_id} className="border-b-2 border-zinc-700/40 last:border-b-0">
-                        {/* Connection row */}
-                        <Button
-                          variant="ghost"
-                          onClick={() => {
-                            if (!isActive) { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }
-                            else setExpandedConns(p => ({ ...p, [entry.conn_id]: !(p[entry.conn_id] ?? true) }));
-                          }}
-                          className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${isActive ? "bg-zinc-800/30" : ""} ${SVG_SIZE_AUTO}`}>
-                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
-                            className={`shrink-0 transition-transform duration-150 ${cOpen ? "rotate-90" : ""}`}>
-                            <polyline points="2,1 6,4 2,7"/>
-                          </svg>
-                          {dbIcon}
-                          <span className={`aug-fs-sm font-semibold truncate ${isActive ? "text-zinc-100" : "text-zinc-300"}`}>{entry.name}</span>
-                          {isActive && <span className="ml-auto aug-fs-xs text-blue-400 shrink-0">active</span>}
-                        </Button>
-
-                        {/* Active connection → full rich tree */}
-                        {cOpen && isActive && (
-                          <div className="ml-3 border-l-2 border-zinc-700/40">
-                  {catSchemas.map(schema => {
-                    const schemaMatch = !q || schema.name.toLowerCase().includes(q);
-                    const visTables = schema.tables.filter(tbl =>
-                      !q || schemaMatch || tbl.toLowerCase().includes(q)
-                        || (tableCols[tbl]??[]).some(c => c.name.toLowerCase().includes(q)));
-                    if (q && visTables.length === 0) return null;
-                    const sOpen = q ? true : (expandedSchemas[schema.name] ?? true);
-                    return (
-                      <div key={schema.name} className="border-b border-zinc-700/25 last:border-b-0">
-                        {/* Schema row */}
-                        <Button variant="ghost" onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
-                          className={`w-full h-auto justify-start rounded-none font-normal gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
-                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
-                            className={`shrink-0 transition-transform duration-150 ${sOpen?"rotate-90":""}`}>
-                            <polyline points="2,1 6,4 2,7"/>
-                          </svg>
-                          <IcoSchema color="var(--blue3)" />
-                          {/* As STORED, not uppercased — one schema, one spelling,
-                              across the Catalog screen, Visual mode and SQL mode. */}
-                          <span className="aug-fs-sm font-mono truncate" style={{ color: "var(--t2)" }}>{schema.name}</span>
-                        </Button>
-
-                        {/* Tables under schema */}
-                        {sOpen && visTables.map(tbl => {
-                          const tableMatch = !q || schemaMatch || tbl.toLowerCase().includes(q);
-                          const cols = (tableCols[tbl]??[]).filter(c => !q || tableMatch || c.name.toLowerCase().includes(q));
-                          const isPrimary  = tbl === primaryTable;
-                          const isJoined   = joinedTables.includes(tbl);
-                          const isResolved = isPrimary || isJoined;
-                          const open  = q ? true : (expandedTables[tbl] ?? isResolved);
-                          const js    = joinStatuses.find(s => s.table === tbl);
-                          const deg   = joinDegree(tbl, schemaJoins);
-                          const rc    = fmtRows(rowCounts[tbl]);
-                          const iso   = isolated.includes(tbl);
-                          return (
-                            <div key={tbl} className={isResolved ? "bg-zinc-800/20" : ""}>
-                              <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
-                                <Button variant="ghost" onClick={()=> {
-                                    const willOpen = !(expandedTables[tbl] ?? isResolved);
-                                    setExpandedTables(p=>({...p,[tbl]: willOpen}));
-                                    if (willOpen && !(tableCols[tbl]?.length > 0) && !loadingTableCols.has(tbl)) {
-                                      // Try to infer schema name from catalog tree
-                                      const schemaName = catEntry?.schemas.find(s => s.tables.some(t => t.name === tbl))?.name;
-                                      fetchTableColumns(tbl, schemaName);
-                                    }
-                                  }}
-                                  className={`h-auto justify-start font-normal p-0 gap-2 min-w-0 flex-1 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
-                                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
-                                    className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
-                                    <polyline points="2,1 6,4 2,7"/>
-                                  </svg>
-                                  <IcoTable active={isResolved} />
-                                  <span className={`aug-fs-sm font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
-                                  {rc && <span className="aug-fs-xs text-zinc-500 shrink-0">{rc}</span>}
-                                </Button>
-                                {deg > 0 && (
-                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 aug-fs-xs text-zinc-500 shrink-0">
-                                    ⋈{deg}
-                                  </span>
-                                )}
-                                {isPrimary ? (
-                                  <span className="aug-fs-xs text-blue-400 shrink-0 font-medium">primary</span>
-                                ) : isJoined ? (
-                                  <span title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : "no join — wire in SQL"}
-                                    className={`aug-fs-xs shrink-0 ${js?.join ? "text-emerald-500" : "text-amber-500"}`}>{js?.join ? "✓" : "⚠"}</span>
-                                ) : iso ? (
-                                  <span title="No detected joins to other tables" className="aug-fs-xs text-zinc-500 shrink-0">isolated</span>
-                                ) : (
-                                  <Button variant="ghost" size="xs" onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
-                                    className="h-auto py-0 font-normal opacity-0 group-hover/tbl:opacity-100 aug-fs-xs text-zinc-500 hover:text-blue-400 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
-                                    + add
-                                  </Button>
-                                )}
-                              </div>
-                              {open && (
-                                loadingCols && cols.length === 0
-                                  ? <div className="pl-11 py-1.5"><span className="aug-fs-xs text-zinc-500 animate-pulse">Loading columns…</span></div>
-                                  : cols.length > 0
-                                    ? cols.map(col => (
-                                      <div key={col.name} className="ml-7 pl-2 border-l border-zinc-700/40">
-                                        <ColRow col={col} tableName={tbl}
-                                          onAddDim={()=>addDim(col.name, tbl)}
-                                          onAddMeasure={()=>openMeasure(col, tbl)}
-                                        />
-                                      </div>
-                                    ))
-                                    : <div className="pl-11 py-1.5">
-                                      <span className="aug-fs-xs text-zinc-500">
-                                        {loadingTableCols.has(tbl) ? "Loading columns…" : "No columns available — schema may need refresh"}
-                                      </span>
-                                    </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                          </div>
-                        )}
-
-                        {/* Inactive connection → lightweight schema/table preview */}
-                        {cOpen && !isActive && entry.schemas.map(schema => {
-                          const sMatch = !q || schema.name.toLowerCase().includes(q);
-                          const visT = schema.tables.filter(t => !q || sMatch || t.name.toLowerCase().includes(q));
-                          if (q && visT.length === 0) return null;
-                          const sKey = `${entry.conn_id}:${schema.name}`;
-                          const sOpen = q ? true : (expandedSchemas[sKey] ?? false);
-                          return (
-                            <div key={schema.name}>
-                              <Button variant="ghost" onClick={() => setExpandedSchemas(p => ({ ...p, [sKey]: !(p[sKey] ?? false) }))}
-                                className={`w-full h-auto justify-start rounded-none font-normal gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
-                                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
-                                  className={`shrink-0 transition-transform duration-150 ${sOpen ? "rotate-90" : ""}`}>
-                                  <polyline points="2,1 6,4 2,7"/>
-                                </svg>
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
-                                  <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
-                                </svg>
-                                <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
-                                <span className="ml-auto aug-fs-xs text-zinc-500 shrink-0">{visT.length}</span>
-                              </Button>
-                              {sOpen && visT.map(t => (
-                                <Button variant="ghost" key={t.name} onClick={() => { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }}
-                                  title={`Switch to ${entry.name} to query ${t.name}`}
-                                  className={`group/pt w-full h-auto justify-start rounded-none font-normal gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 dark:hover:bg-zinc-800/40 transition ${SVG_SIZE_AUTO}`}>
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
-                                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
-                                  </svg>
-                                  <span className="aug-fs-sm font-mono text-zinc-300 truncate">{t.name}</span>
-                                  {t.row_count != null && <span className="aug-fs-xs text-zinc-500 shrink-0">{fmtRows(String(t.row_count))}</span>}
-                                  <span className="ml-auto opacity-0 group-hover/pt:opacity-100 aug-fs-xs text-blue-400 shrink-0">open →</span>
-                                </Button>
-                              ))}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-        </aside>
-        }
-        right={
+      {/* ══ BODY ═══════════════════════════════════════════════════════════ */}
+      {/* The catalog rail used to be the left half of a ResizableSplit here. It is
+          the workbench's now — one rail above both modes — so this is the whole body. */}
         <div className="flex-1 flex flex-col overflow-hidden h-full">
 
           {/* ── CONTROL PANEL (bottom): DATA / CUSTOMIZE — resizable + collapsible ── */}
@@ -2588,8 +2304,6 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
             )}
           </main>
         </div>
-        }
-      />
 
       {/* ══ CURSOR-ANCHORED AUTOCOMPLETE ═════════════════════════════════════ */}
       <AcDropdown items={acItems} active={acActive} setActive={setAcActive}

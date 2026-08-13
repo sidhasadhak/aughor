@@ -28,6 +28,7 @@ export function ResizableSplit({
   right,
   direction = "horizontal",
   resizePane = "first",
+  collapsed = false,
   className,
   style,
 }: {
@@ -46,6 +47,14 @@ export function ResizableSplit({
    *  would drift on every resize. Dragging is inverted for it, because pulling the
    *  divider left must GROW a pane that lives to the divider's right. */
   resizePane?: "first" | "second";
+  /** Hide the sized pane and its handle, keeping BOTH panes mounted.
+   *
+   *  The obvious way to make a rail hideable — `show ? <ResizableSplit/> : <pane/>` —
+   *  changes the element tree, so React unmounts and remounts the pane that stayed. For
+   *  a rail beside an EDITOR that costs the undo history and the cursor, and beside the
+   *  query builder it costs the half-built query. Collapsing in place costs nothing and
+   *  restores to the width the user had set. */
+  collapsed?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }) {
@@ -108,18 +117,21 @@ export function ResizableSplit({
       <div
         style={sizeSecond
           ? { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
-          : vertical
-            ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
-            : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+          : collapsed
+            ? { display: "none" }
+            : vertical
+              ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
+              : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
       >
         {left}
       </div>
-      {/* Divider */}
+      {/* Divider — gone with the pane it sizes; a handle that resizes nothing is a
+          control that lies about what it does. */}
       <div
         onMouseDown={onDown}
         onDoubleClick={reset}
         title="Drag to resize · double-click to reset"
-        style={vertical
+        style={collapsed ? { display: "none" } : vertical
           ? {
               height: 6, marginTop: -3, marginBottom: -3, cursor: "row-resize",
               zIndex: 5, flexShrink: 0, position: "relative",
@@ -140,11 +152,13 @@ export function ResizableSplit({
         />
       </div>
       <div
-        style={sizeSecond
-          ? (vertical
+        style={!sizeSecond
+          ? { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
+          : collapsed
+            ? { display: "none" }
+            : vertical
               ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
-              : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" })
-          : { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+              : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
       >
         {right}
       </div>
