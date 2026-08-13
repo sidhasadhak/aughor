@@ -2727,6 +2727,39 @@ export async function runWorkbenchQuery(
   return res.json();
 }
 
+// ── SE-2 — the editor's history rail, a filtered read of the audit log ───────────
+//
+// Not a second store: every workbench run already writes an audit row tagged with the
+// surface that issued it (`source: "query_workbench"` → the log's `hypothesis_id`), so
+// "my recent queries" is a filter over the record that must exist anyway. A dedicated
+// history table would be a second source of truth that could disagree with the audit.
+
+export interface AuditRecord {
+  id: string;
+  ts: string;
+  connection_id: string;
+  /** The issuing surface — `query_workbench`, `query_builder`, … (SE-0's label). */
+  hypothesis_id: string;
+  sql_digest: string;
+  sql_full: string;
+  verdict: string;
+  row_count: number | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+export async function getQueryHistory(
+  connectionId: string, limit = 40, label = "query_workbench",
+): Promise<AuditRecord[]> {
+  const params = new URLSearchParams({
+    limit: String(limit), connection_id: connectionId, label,
+  });
+  const res = await fetch(`${getApiBase()}/security/audit?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as { records?: AuditRecord[] }).records ?? [];
+}
+
 // ── Semantic operators over a result's text columns (filter/extract/top_k/aggregate) ──
 
 export interface SemanticField { name: string; description?: string }

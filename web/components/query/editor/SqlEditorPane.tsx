@@ -56,12 +56,16 @@ export interface SqlEditorPaneProps {
   dialect: SQLDialect;
   /** SE-2 — the two-tier linter. Built by the caller (it needs the connection). */
   diagnostics?: Extension;
+  /** SE-2 — receives an imperative `insert(text)` for the schema sidebar. Text lands
+   *  at the cursor (replacing any selection), which is what makes clicking a table
+   *  name feel like typing it rather than like navigating away. */
+  onReady?: (api: { insert: (text: string) => void; focus: () => void }) => void;
   placeholder?: string;
   readOnly?: boolean;
 }
 
 export function SqlEditorPane({
-  value, onChange, onRun, onFormat, onCursor,
+  value, onChange, onRun, onFormat, onCursor, onReady,
   schema, defaultSchema, dialect, diagnostics,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
@@ -164,6 +168,24 @@ export function SqlEditorPane({
       state: EditorState.create({ doc: value, extensions }),
       parent: host.current,
     });
+
+    // Hand the caller an imperative handle. Insertion belongs here, not in the
+    // sidebar, because only the view knows where the cursor is — and it dispatches
+    // rather than rewriting the doc, so the insert is one undo step.
+    const v = view.current;
+    onReady?.({
+      insert: (text: string) => {
+        const sel = v.state.selection.main;
+        v.dispatch({
+          changes: { from: sel.from, to: sel.to, insert: text },
+          selection: { anchor: sel.from + text.length },
+          scrollIntoView: true,
+        });
+        v.focus();
+      },
+      focus: () => v.focus(),
+    });
+
     return () => { view.current?.destroy(); view.current = null; };
     // Mount-only by design — see the reconcile/compartment effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps

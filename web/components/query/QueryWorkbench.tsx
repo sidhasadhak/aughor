@@ -99,7 +99,13 @@ function useSchemaMap(connId: string) {
       if (parts.length) schemas.add(parts.join("."));
       if (bare !== t.name && bareOwners.get(bare) === 1) map[bare] = cols;
     }
-    return { map, schemas: [...schemas].sort(), tableCount: tables.length };
+    // The sidebar gets the SAME tables with their types — one fetch, two consumers,
+    // so what you can browse and what completes cannot disagree.
+    const sidebarTables = tables.map(t => ({
+      name: t.name,
+      columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type })),
+    }));
+    return { map, sidebarTables, schemas: [...schemas].sort(), tableCount: tables.length };
   }, [data]);
 }
 
@@ -127,7 +133,7 @@ function WorkbenchInner({
     if (importRequest?.sql) setMode("visual");
   }, [importRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { map: schema, schemas, tableCount } = useSchemaMap(connId);
+  const { map: schema, sidebarTables, schemas, tableCount } = useSchemaMap(connId);
 
   // A schema chosen for one warehouse means nothing in the next one.
   useEffect(() => { setDefaultSchema(""); }, [connId]);
@@ -223,6 +229,7 @@ function WorkbenchInner({
           connId={connId}
           engine={engine}
           schema={schema}
+          sidebarTables={sidebarTables}
           defaultSchema={defaultSchema || undefined}
         />
       </div>
