@@ -166,3 +166,102 @@ def test_a_broken_store_fails_open_to_the_deployment_config(monkeypatch):
 
     with using_org("acme"):
         assert prov.active_backend() == "faux"
+
+
+# ── failover scoping (user decision 2026-08-13) ──────────────────────────────────────
+#
+# A BYOK org's failover chain may reach ONLY backends that org configured itself.
+# `_active_key` resolves org → deployment → env, which is right for the primary binding
+# and wrong for failover: it let a tenant's failed call land on the OPERATOR's key.
+
+@pytest.fixture
+def _deployment_keys(monkeypatch):
+    """The operator holding keys for several backends — the spend surface a BYOK org
+    must not be able to reach."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-operator-anthropic")
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-operator-gemini")
+    monkeypatch.setenv("GROQ_API_KEY", "sk-operator-groq")
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+
+
+def _candidates(backend="openrouter", role="coder"):
+    """The failover chain a provider bound to `backend` would try."""
+    p = prov.LLMProvider.__new__(prov.LLMProvider)
+    p.backend, p.role = backend, role
+    return p._fallback_candidates()
+
+
+def test_a_byok_org_never_fails_over_onto_the_operators_key(_deployment_keys):
+    """THE leak. An org that brought only an OpenRouter key must not reach the
+    operator's Anthropic/Gemini/Groq keys when its own call fails — the operator
+    would silently absorb that tenant's spend and nothing would surface it."""
+    oc.save_org_config("acme", {"backend": "openrouter",
+                                "keys": {"openrouter": "sk-or-acme"}})
+
+    with using_org("acme"):
+        chain = _candidates(backend="openrouter")
+
+    leaked = [b for b in chain if b in ("anthropic", "gemini", "groq", "together")]
+    assert leaked == [], (
+        f"BYOK org 'acme' brought only an openrouter key, but its failover chain "
+        f"reaches {leaked} — those keys belong to the operator, who would absorb "
+        f"this tenant's spend invisibly")
+
+
+def test_a_byok_org_still_fails_over_across_its_own_backends(_deployment_keys):
+    """Scoping must not mean 'no failover'. An org that brought two keys keeps the
+    resilience it paid for — across exactly the providers it declared."""
+    oc.save_org_config("acme", {"backend": "openrouter",
+                                "keys": {"openrouter": "sk-or-acme",
+                                         "anthropic": "sk-ant-acme"}})
+
+    with using_org("acme"):
+        chain = _candidates(backend="openrouter")
+
+    assert "anthropic" in chain, "the org's own second key must remain reachable"
+    assert "gemini" not in chain and "groq" not in chain
+
+
+def test_an_org_without_byok_keeps_the_deployment_chain_unchanged(_deployment_keys):
+    """The no-op half. An org with no BYOK row IS the deployment, so the deployment's
+    chain is its own — this path must be byte-identical to before the fix."""
+    with using_org("globex"):
+        scoped = _candidates(backend="openrouter")
+
+    assert "anthropic" in scoped and "gemini" in scoped and "groq" in scoped
+
+
+def test_scoping_does_not_disable_the_fallback_kill_switch(_deployment_keys,
+                                                           monkeypatch):
+    oc.save_org_config("acme", {"backend": "openrouter",
+                                "keys": {"openrouter": "sk-or-acme",
+                                         "anthropic": "sk-ant-acme"}})
+    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+
+    with using_org("acme"):
+        assert _candidates(backend="openrouter") == []
+
+
+def test_scoping_leaves_keyless_local_backends_reachable(_deployment_keys, monkeypatch):
+    """Local backends cost nothing to try, so excluding them would shorten a BYOK
+    org's chain for no benefit."""
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "ollama,anthropic")
+    oc.save_org_config("acme", {"backend": "openrouter",
+                                "keys": {"openrouter": "sk-or-acme"}})
+
+    with using_org("acme"):
+        chain = _candidates(backend="openrouter")
+
+    assert "ollama" in chain, "a keyless local backend is nobody's spend"
+    assert "anthropic" not in chain
+
+
+def test_an_unconfigured_org_stays_on_the_free_tier_binding():
+    """The settled spend posture for tenants that brought no key (user decision
+    2026-08-13): the operator's free-tier binding, no paid operator key promoted to
+    them, and no per-org budget machinery. Pinned so a future 'be helpful' change
+    to the default has to argue with a test."""
+    with using_org("globex"):
+        assert prov.active_backend() == "faux"
+        assert oc.describe_org_config("globex")["configured"] is False

@@ -527,6 +527,19 @@ def _org_overlay() -> dict:
         return {}
 
 
+def _org_own_keyed_backends() -> Optional[set[str]]:
+    """The keyed backends this org brought itself, or ``None`` when it brought none.
+
+    ``None`` and ``set()`` mean different things and the distinction is the whole point.
+    ``None`` = no BYOK row at all: the org IS the deployment, so the deployment's chain
+    is its own and nothing is scoped. An empty set cannot occur through the normal path
+    (a row with no keys still resolves to ``None`` here), which keeps "unconfigured" a
+    single state rather than two that behave alike until one day they don't.
+    """
+    keys = _org_overlay().get("keys") or {}
+    return {b for b in keys} or None
+
+
 def _active_backend() -> str:
     org_backend = (_org_overlay().get("backend") or "").strip()
     if org_backend:
@@ -2099,13 +2112,29 @@ class LLMProvider:
     def _fallback_candidates(self) -> list[str]:
         """Configured backends worth trying for this call, in order — never the primary,
         only those holding a key (an unkeyed backend fails identically every time, so
-        trying it just adds latency to a call that is already failing), and never one
-        currently in quota cooldown."""
+        trying it just adds latency to a call that is already failing), never one
+        currently in quota cooldown, and — for a BYOK org — never one whose key belongs
+        to somebody else.
+
+        That last clause is the CI-5b follow-up (user decision 2026-08-13). ``_active_key``
+        resolves org overlay → deployment config → env, which is right for the PRIMARY
+        binding and wrong here: an org that brought only an OpenRouter key could fail over
+        onto the operator's Anthropic or Gemini key, and the operator would absorb that
+        tenant's spend with nothing surfacing it. A tenant's spend surface must be exactly
+        what that tenant declared.
+
+        Scoping applies only when the org actually brought keys. An org with no BYOK row
+        is byte-identical to before: it IS the deployment, so the deployment chain is its
+        own. Keyless/local backends stay eligible either way — they cost nothing to try,
+        so excluding them would shorten the chain for no benefit.
+        """
         if _flag("AUGHOR_FALLBACK_DISABLED"):
             return []
+        own_keys = _org_own_keyed_backends()
         return [b for b in _fallback_backends()
                 if b != self.backend
                 and (b not in NEEDS_KEY or _active_key(b))
+                and (own_keys is None or b not in NEEDS_KEY or b in own_keys)
                 and not _in_quota_cooldown(b)]
 
 
