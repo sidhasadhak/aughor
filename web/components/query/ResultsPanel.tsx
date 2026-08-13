@@ -16,7 +16,7 @@ import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import type { TypedQueryResult } from "@/lib/api";
 
-const noteStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)" };
+const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
 
 export function ResultsPanel({
   result,
@@ -40,7 +40,7 @@ export function ResultsPanel({
         <pre
           style={{
             margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
-            fontFamily: "var(--font-code, monospace)", fontSize: 12,
+            fontFamily: "var(--font-code, monospace)", fontSize: 13,
             color: "var(--t2)", background: "var(--bg-1)",
             border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 10,
           }}

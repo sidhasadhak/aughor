@@ -488,7 +488,7 @@ const NAV_SECTIONS = [
     label: "Data", // explore and query data directly
     items: [
       { id: "catalog",  icon: "db",      label: "Catalog" },
-      { id: "builder",  icon: "builder", label: "Query Builder" },
+      { id: "builder",  icon: "builder", label: "SQL Editor" },
       { id: "semantic", icon: "layers",  label: "Semantic Layer" },
     ],
   },
@@ -513,7 +513,7 @@ const NAV_SECTIONS = [
 type DataLayer = "catalog" | "query" | "semantic";
 const DATA_LAYERS: WorkspaceLayer<DataLayer>[] = [
   { id: "catalog",  icon: "db",      label: "Catalog",       blurb: "Tables, schemas & profiles" },
-  { id: "query",    icon: "builder", label: "Query",         blurb: "Compose visually or write SQL" },
+  { id: "query",    icon: "builder", label: "SQL Editor",    blurb: "Write SQL, or compose visually" },
   { id: "semantic", icon: "layers",  label: "Semantic Layer", blurb: "Metrics, entities & glossary" },
 ];
 
@@ -870,7 +870,7 @@ function HomeScreen({
               { icon: "canvas",  name: "Data Canvas",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
               { icon: "db",      name: "Catalog",       desc: "Browse connections, tables, columns, and data distributions.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
               { icon: "brief",   name: "Briefing",      desc: "Your unified briefing across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
-              { icon: "builder", name: "Query Builder", desc: "Compose and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
+              { icon: "builder", name: "SQL Editor",    desc: "Write and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
             ].map(a => (
               <button key={a.name} onClick={a.action} style={{
                 textAlign: "left", padding: "14px 14px",
@@ -1544,6 +1544,9 @@ export default function Home() {
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
+  // SE-1: a legacy `?tab=builder` link opens the workbench in Visual; everything else
+  // takes the workbench's own default (SQL).
+  const [queryInitialMode, setQueryInitialMode] = useState<"visual" | "sql" | undefined>(undefined);
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
@@ -1568,6 +1571,10 @@ export default function Home() {
     if (resolved) {
       setTab(resolved.tab);
       if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+      // `?tab=builder` MEANT the visual builder. The workbench now defaults to SQL,
+      // so the intent has to be carried explicitly — the resolver rewrites the query
+      // string, so the workbench cannot read it back for itself.
+      if (t === "builder") setQueryInitialMode("visual");
     }
     if (l) setIntelLayer(l);
     if (table) setInitialGraphTable(table);
@@ -2311,7 +2318,7 @@ export default function Home() {
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (
-                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} />
                   );
                   if (id === "semantic") return (
                     <SemanticLayerPanel

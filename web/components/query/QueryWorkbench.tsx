@@ -99,30 +99,57 @@ function useSchemaMap(connId: string) {
       if (parts.length) schemas.add(parts.join("."));
       if (bare !== t.name && bareOwners.get(bare) === 1) map[bare] = cols;
     }
-    // The sidebar gets the SAME tables with their types — one fetch, two consumers,
-    // so what you can browse and what completes cannot disagree.
+    // The sidebar gets the SAME tables — one fetch, two consumers, so what you can
+    // browse and what completes cannot disagree. It also carries the join topology
+    // the endpoint already returns: the builder's rail has always shown `⋈n` and
+    // `isolated`, and the SQL editor was dropping facts it had in hand.
+    const degree = new Map<string, Set<string>>();
+    for (const j of data?.joins ?? []) {
+      if (!degree.has(j.t1)) degree.set(j.t1, new Set());
+      if (!degree.has(j.t2)) degree.set(j.t2, new Set());
+      degree.get(j.t1)!.add(j.t2);
+      degree.get(j.t2)!.add(j.t1);
+    }
+    const isolatedSet = new Set(data?.isolated ?? []);
     const sidebarTables = tables.map(t => ({
       name: t.name,
-      columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type })),
+      columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type, is_fk: c.is_fk })),
+      rowCount: t.row_count,
+      joinDegree: degree.get(t.name)?.size ?? 0,
+      isolated: isolatedSet.has(t.name),
     }));
     return { map, sidebarTables, schemas: [...schemas].sort(), tableCount: tables.length };
   }, [data]);
 }
 
 function WorkbenchInner({
-  initialConnId, onOpenCanvas, importRequest, connections,
+  initialConnId, onOpenCanvas, importRequest, connections, initialMode,
 }: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
   importRequest?: { connId: string; sql: string; nonce: number };
   connections?: Connection[];
+  /** Set by a legacy `?tab=builder` deep link, which meant the visual builder. */
+  initialMode?: QueryMode;
 }) {
-  const [mode, setMode] = useState<QueryMode>("visual");
+  // SQL is the default mode: the surface is called the SQL Editor, and landing in a
+  // visual composer would contradict its own name. Two things still override it, in
+  // this order — an explicit `?mode=` (the user said which one), then the legacy
+  // `?tab=builder` deep link, which MEANT the visual builder and should keep meaning
+  // it rather than silently redirecting every old bookmark to a different tool.
+  const [mode, setMode] = useState<QueryMode>("sql");
   const [connId, setConnId] = useState(initialConnId ?? "");
   const [defaultSchema, setDefaultSchema] = useState("");
 
   // URL → mode, in an effect (never during render — same hydration rule as drafts).
-  useEffect(() => { const m = modeFromUrl(); if (m) setMode(m); }, []);
+  // `initialMode` carries the legacy-link intent from page.tsx rather than being
+  // sniffed from the URL here: the tab resolver rewrites `?tab=builder` to `?tab=data`
+  // before this component mounts, so by the time we could look, the evidence is gone.
+  useEffect(() => {
+    const m = modeFromUrl();
+    if (m) { setMode(m); return; }
+    if (initialMode) setMode(initialMode);
+  }, [initialMode]);
   useEffect(() => { if (initialConnId) setConnId(initialConnId); }, [initialConnId]);
 
   // An imported query (from Insights / Deep Analysis) lands in VISUAL mode, because
@@ -148,7 +175,8 @@ function WorkbenchInner({
     return c ? { conn_type: c.conn_type, dialect: (c as { dialect?: string }).dialect } : null;
   }, [connections, connId]);
 
-  const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 12 };
+  const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 13 };
+  const controlLabel: React.CSSProperties = { fontSize: 13, color: "var(--t3)", flexShrink: 0 };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -164,6 +192,7 @@ function WorkbenchInner({
             key={m.id}
             variant={mode === m.id ? "secondary" : "ghost"}
             size="xs"
+            className="aug-fs-ui"
             title={m.hint}
             onClick={() => chooseMode(m.id)}
           >
@@ -174,7 +203,7 @@ function WorkbenchInner({
         {mode === "sql" && (
           <>
             <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
-            <label style={{ fontSize: 11, color: "var(--t3)" }}>Connection</label>
+            <label style={controlLabel}>Connection</label>
             <select
               className="aug-input"
               style={controlStyle}
@@ -190,7 +219,7 @@ function WorkbenchInner({
 
             {schemas.length > 0 && (
               <>
-                <label style={{ fontSize: 11, color: "var(--t3)" }}>Schema</label>
+                <label style={controlLabel}>Schema</label>
                 <select
                   className="aug-input"
                   style={controlStyle}
@@ -205,7 +234,7 @@ function WorkbenchInner({
             )}
 
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: "var(--t4)" }}>
+            <span style={{ fontSize: 13, color: "var(--t4)" }}>
               {tableCount ? `${tableCount} tables` : "no schema loaded"}
             </span>
           </>
@@ -227,6 +256,7 @@ function WorkbenchInner({
                     flexDirection: "column" }}>
         <SqlMode
           connId={connId}
+          connectionName={(connections ?? []).find(c => c.id === connId)?.name}
           engine={engine}
           schema={schema}
           sidebarTables={sidebarTables}
@@ -242,6 +272,7 @@ export function QueryWorkbench(props: {
   onOpenCanvas?: (canvas: Canvas) => void;
   importRequest?: { connId: string; sql: string; nonce: number };
   connections?: Connection[];
+  initialMode?: QueryMode;
 }) {
   return (
     <QueryClientProvider client={queryClient}>

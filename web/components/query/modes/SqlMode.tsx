@@ -51,12 +51,14 @@ function readLegacyDraft(connId: string): string {
 
 export function SqlMode({
   connId,
+  connectionName,
   engine,
   schema,
   sidebarTables,
   defaultSchema,
 }: {
   connId: string;
+  connectionName?: string;
   engine: EngineHint | null;
   /** `{ "table": ["col", …] }` for completion — owned by the workbench. */
   schema?: Record<string, string[]>;
@@ -176,16 +178,10 @@ export function SqlMode({
   const runRef = useRef(run);
   runRef.current = run;
 
-  return (
-    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-      {showSidebar && (
-        <SchemaSidebar
-          tables={sidebarTables ?? []}
-          onInsert={text => editorApi.current?.insert(text)}
-        />
-      )}
-
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
+  // The editor column — tabs, toolbar, and the editor-over-results split. Held as a
+  // node so the catalog rail can wrap it in a ResizableSplit without duplicating it.
+  const editorPane = (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         <TabsBar
           tabs={tabs}
           activeId={activeId}
@@ -205,12 +201,15 @@ export function SqlMode({
             padding: "6px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
           }}
         >
-          <Button variant="default" size="xs" onClick={() => void run()} disabled={!connId || running}>
+          <Button variant="default" size="xs" className="aug-fs-ui"
+            title="Runs the selection, or the statement under the cursor (⌘↵)"
+            onClick={() => void run()} disabled={!connId || running}>
             {running ? "Running…" : "Run  ⌘↵"}
           </Button>
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             title="Format the selection, or the whole query (⌘⇧F)"
             onClick={() => setSql(formatSql(sqlText, engine))}
             disabled={!sqlText.trim()}
@@ -220,6 +219,7 @@ export function SqlMode({
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             onClick={() => setShowSidebar(s => !s)}
             title="Show or hide the schema browser"
           >
@@ -228,19 +228,20 @@ export function SqlMode({
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             onClick={() => setShowHistory(s => !s)}
             title="Recent queries run from this workbench"
           >
             {showHistory ? "Hide history" : "History"}
           </Button>
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>
-            Runs the selection, or the statement under the cursor.
-          </span>
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1, minWidth: 0 }} />
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span
-              style={{ fontSize: 11, color: verdict.passed ? "var(--t4)" : "var(--amb4)" }}
+              style={{
+                fontSize: 13, flexShrink: 0, whiteSpace: "nowrap",
+                color: verdict.passed ? "var(--t4)" : "var(--amb4)",
+              }}
               title={verdict.passed
                 ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
                 : "Findings are shown in the editor gutter"}
@@ -277,15 +278,55 @@ export function SqlMode({
           }
           right={<ResultsPanel result={result} error={error} running={running} />}
         />
-      </div>
-
-      {showHistory && (
-        <HistoryRail
-          connId={connId}
-          refreshKey={historyKey}
-          onRestore={sql => openInNewTab(sql, "History")}
-        />
-      )}
     </div>
   );
+
+  // Catalog ▸ editor. The rail sets no width of its own — a pane that hardcodes one
+  // silently overrides the handle, which is exactly why this looked adjustable and
+  // was not.
+  const workspacePane = (
+    <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
+      {showSidebar ? (
+        <ResizableSplit
+          storageKey="sqlmode.catalog"
+          initial={260}
+          min={180}
+          max={560}
+          style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+          left={
+            <SchemaSidebar
+              tables={sidebarTables ?? []}
+              connectionName={connectionName}
+              onInsert={text => editorApi.current?.insert(text)}
+            />
+          }
+          right={editorPane}
+        />
+      ) : editorPane}
+    </div>
+  );
+
+  const historyRail = (
+    <HistoryRail
+      connId={connId}
+      refreshKey={historyKey}
+      onRestore={sql => openInNewTab(sql, "History")}
+    />
+  );
+
+  // `resizePane="second"` because history sits on the RIGHT: sizing the left pane
+  // would make the rail's width whatever was left over, so it would drift every time
+  // the window changed rather than staying where the user put it.
+  return showHistory ? (
+    <ResizableSplit
+      storageKey="sqlmode.history"
+      resizePane="second"
+      initial={280}
+      min={200}
+      max={560}
+      style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+      left={workspacePane}
+      right={historyRail}
+    />
+  ) : workspacePane;
 }

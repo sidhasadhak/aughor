@@ -20,7 +20,9 @@ export const aughorEditorTheme = EditorView.theme({
   "&": {
     fontFamily: "var(--font-code, var(--font-ibm-plex-mono), monospace)",
     // Literal rather than a token: the app defines font sizes as `aug-fs-*` CLASSES,
-    // and CM6's theme takes CSS values, not classes. 13px matches `aug-fs-sm`.
+    // and CM6's theme takes CSS values, not classes. 13px is `aug-fs-ui`, the single
+    // size the whole SQL Editor now uses — the document and its chrome read as one
+    // surface instead of the document being the odd one out.
     fontSize: "13px",
     color: "var(--t1)",
     backgroundColor: "var(--bg-0)",

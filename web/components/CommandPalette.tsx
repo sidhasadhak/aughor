@@ -198,7 +198,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     { id: "nav-agentic-ops", label: "Agents",               sublabel: "Overview, agents, attention, activity, run graphs", type: "action", icon: "process", accent: "var(--vio3)" },
     { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
-    { id: "nav-builder",     label: "Query Builder",        sublabel: "Visual SQL builder with live results",type: "action", icon: "builder", accent: "var(--t2)" },
+    { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
     { id: "nav-connections", label: "Connections",          sublabel: "Manage data source connections",     type: "action", icon: "plug",     accent: "var(--grn3)" },
     { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
     { id: "nav-actions",     label: "Notifications",        sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },

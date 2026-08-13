@@ -27,6 +27,7 @@ export function ResizableSplit({
   left,
   right,
   direction = "horizontal",
+  resizePane = "first",
   className,
   style,
 }: {
@@ -38,10 +39,18 @@ export function ResizableSplit({
   right: React.ReactNode;
   /** Axis of the split. "horizontal" (default) = side by side, drag on X. */
   direction?: "horizontal" | "vertical";
+  /** Which pane carries the controlled size; the other flexes.
+   *
+   *  "second" is what a RIGHT-HAND rail needs — sizing the first pane would make the
+   *  rail's width a leftover of the window rather than a thing the user set, so it
+   *  would drift on every resize. Dragging is inverted for it, because pulling the
+   *  divider left must GROW a pane that lives to the divider's right. */
+  resizePane?: "first" | "second";
   className?: string;
   style?: React.CSSProperties;
 }) {
   const vertical = direction === "vertical";
+  const sizeSecond = resizePane === "second";
   const [width, setWidth] = useState<number>(initial);
   const dragging = useRef(false);
 
@@ -68,7 +77,8 @@ export function ResizableSplit({
     const move = (ev: MouseEvent) => {
       if (!dragging.current) return;
       const now = vertical ? ev.clientY : ev.clientX;
-      const next = Math.min(max, Math.max(min, startW + (now - start)));
+      const delta = sizeSecond ? start - now : now - start;
+      const next = Math.min(max, Math.max(min, startW + delta));
       setWidth(next);
     };
     const up = () => {
@@ -96,9 +106,11 @@ export function ResizableSplit({
       }}
     >
       <div
-        style={vertical
-          ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
-          : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+        style={sizeSecond
+          ? { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
+          : vertical
+            ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
+            : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
       >
         {left}
       </div>
@@ -127,7 +139,13 @@ export function ResizableSplit({
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "var(--b0)"; }}
         />
       </div>
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div
+        style={sizeSecond
+          ? (vertical
+              ? { height: width, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }
+              : { width, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" })
+          : { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
         {right}
       </div>
     </div>
