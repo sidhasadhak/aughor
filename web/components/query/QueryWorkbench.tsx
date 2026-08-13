@@ -123,19 +123,33 @@ function useSchemaMap(connId: string) {
 }
 
 function WorkbenchInner({
-  initialConnId, onOpenCanvas, importRequest, connections,
+  initialConnId, onOpenCanvas, importRequest, connections, initialMode,
 }: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
   importRequest?: { connId: string; sql: string; nonce: number };
   connections?: Connection[];
+  /** Set by a legacy `?tab=builder` deep link, which meant the visual builder. */
+  initialMode?: QueryMode;
 }) {
-  const [mode, setMode] = useState<QueryMode>("visual");
+  // SQL is the default mode: the surface is called the SQL Editor, and landing in a
+  // visual composer would contradict its own name. Two things still override it, in
+  // this order — an explicit `?mode=` (the user said which one), then the legacy
+  // `?tab=builder` deep link, which MEANT the visual builder and should keep meaning
+  // it rather than silently redirecting every old bookmark to a different tool.
+  const [mode, setMode] = useState<QueryMode>("sql");
   const [connId, setConnId] = useState(initialConnId ?? "");
   const [defaultSchema, setDefaultSchema] = useState("");
 
   // URL → mode, in an effect (never during render — same hydration rule as drafts).
-  useEffect(() => { const m = modeFromUrl(); if (m) setMode(m); }, []);
+  // `initialMode` carries the legacy-link intent from page.tsx rather than being
+  // sniffed from the URL here: the tab resolver rewrites `?tab=builder` to `?tab=data`
+  // before this component mounts, so by the time we could look, the evidence is gone.
+  useEffect(() => {
+    const m = modeFromUrl();
+    if (m) { setMode(m); return; }
+    if (initialMode) setMode(initialMode);
+  }, [initialMode]);
   useEffect(() => { if (initialConnId) setConnId(initialConnId); }, [initialConnId]);
 
   // An imported query (from Insights / Deep Analysis) lands in VISUAL mode, because
@@ -255,6 +269,7 @@ export function QueryWorkbench(props: {
   onOpenCanvas?: (canvas: Canvas) => void;
   importRequest?: { connId: string; sql: string; nonce: number };
   connections?: Connection[];
+  initialMode?: QueryMode;
 }) {
   return (
     <QueryClientProvider client={queryClient}>

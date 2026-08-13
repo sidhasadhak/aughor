@@ -16,6 +16,7 @@ import { WhyThisNumber } from "@/components/WhyThisNumber";
 import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
+import { IcoSchema, IcoTable } from "@/components/icons/catalog";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType } from "@/components/charts/chartTypeInference";
@@ -1938,10 +1939,10 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                             className={`shrink-0 transition-transform duration-150 ${sOpen?"rotate-90":""}`}>
                             <polyline points="2,1 6,4 2,7"/>
                           </svg>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
-                            <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
-                          </svg>
-                          <span className="aug-fs-xs font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
+                          <IcoSchema color="var(--blue3)" />
+                          {/* As STORED, not uppercased — one schema, one spelling,
+                              across the Catalog screen, Visual mode and SQL mode. */}
+                          <span className="aug-fs-sm font-mono truncate" style={{ color: "var(--t2)" }}>{schema.name}</span>
                         </Button>
 
                         {/* Tables under schema */}
@@ -1973,9 +1974,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
                                     className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
                                     <polyline points="2,1 6,4 2,7"/>
                                   </svg>
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isResolved?"var(--t1)":"var(--t2)"} strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
-                                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
-                                  </svg>
+                                  <IcoTable active={isResolved} />
                                   <span className={`aug-fs-sm font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
                                   {rc && <span className="aug-fs-xs text-zinc-500 shrink-0">{rc}</span>}
                                 </Button>

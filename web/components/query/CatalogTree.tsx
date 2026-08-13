@@ -24,6 +24,7 @@
 import { useMemo, useState } from "react";
 import Fuse from "fuse.js";
 import { compactNumber } from "@/lib/format";
+import { Chevron, IcoSchema, IcoTable } from "@/components/icons/catalog";
 import { Button } from "@/components/ui/button";
 
 export interface CatalogColumn {
@@ -114,7 +115,7 @@ export function CatalogTree({
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
-        <div className="flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-800/70 px-3 py-2">
+        <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -122,12 +123,12 @@ export function CatalogTree({
             placeholder="Search tables &amp; columns…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="aug-fs-sm w-full bg-transparent text-zinc-300 outline-none placeholder-zinc-500"
+            className="aug-fs-sm w-full bg-transparent outline-none placeholder-zinc-500" style={{ color: "var(--t2)" }}
           />
           {search && (
             <Button
               variant="ghost" size="xs" onClick={() => setSearch("")}
-              className="h-auto p-0 font-normal leading-none text-zinc-500 hover:bg-transparent dark:hover:bg-transparent"
+              className="h-auto p-0 font-normal leading-none hover:bg-transparent dark:hover:bg-transparent" style={{ color: "var(--t4)" }}
             >
               ✕
             </Button>
@@ -136,7 +137,7 @@ export function CatalogTree({
         {/* The same legend the builder shows, so a dot means one thing product-wide. */}
         <div className="mt-2.5 flex items-center gap-3">
           {([["bg-emerald-500", "num"], ["bg-blue-400", "date"], ["bg-zinc-500", "text"]] as const).map(([d, l]) => (
-            <span key={l} className="aug-fs-xs flex items-center gap-1.5 text-zinc-500">
+            <span key={l} className="aug-fs-xs flex items-center gap-1.5" style={{ color: "var(--t4)" }}>
               <span className={`h-2 w-2 rounded-[var(--r-pill)] ${d}`} />{l}
             </span>
           ))}
@@ -145,10 +146,10 @@ export function CatalogTree({
 
       <div className="flex-1 overflow-y-auto py-1">
         {tables.length === 0 && (
-          <p className="aug-fs-sm px-4 py-4 text-zinc-500">{emptyLabel}</p>
+          <p className="aug-fs-sm px-4 py-4" style={{ color: "var(--t4)" }}>{emptyLabel}</p>
         )}
         {tables.length > 0 && visible.length === 0 && (
-          <p className="aug-fs-sm px-4 py-4 text-zinc-500">No match.</p>
+          <p className="aug-fs-sm px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
         )}
 
         {grouped.map(([schema, schemaTables]) => {
@@ -159,20 +160,21 @@ export function CatalogTree({
                 <Button
                   variant="ghost"
                   onClick={() => toggle(openSchemas, schema, setOpenSchemas)}
-                  className="h-auto w-full justify-start gap-2 px-3 py-1.5 font-normal hover:bg-zinc-800/40"
+                  className="h-auto w-full justify-start gap-2 px-3 py-1.5 font-normal hover:bg-[var(--bg-hover)]"
                 >
-                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5"
-                    strokeLinecap="round" className={`shrink-0 transition-transform duration-150 ${sOpen ? "rotate-90" : ""}`}>
-                    <polyline points="2,1 6,4 2,7" />
-                  </svg>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7"
-                    strokeLinecap="round" className="shrink-0">
-                    <path d="M3 7l9-4 9 4-9 4-9-4z" /><path d="M3 12l9 4 9-4M3 17l9 4 9-4" />
-                  </svg>
-                  <span className="aug-fs-xs truncate font-semibold uppercase tracking-wide text-zinc-300">
+                  <Chevron open={sOpen} />
+                  <IcoSchema color="var(--blue3)" />
+                  {/* Rendered as STORED, not uppercased. The Catalog screen shows
+                      `luxexperience`; QueryBuilder shows `LUXEXPERIENCE`; they are the
+                      same schema. Beyond the inconsistency, a schema name is an
+                      identifier — in several dialects its case is significant, so
+                      shouting it is a small lie about what you would have to type. */}
+                  <span className="aug-fs-sm truncate font-mono" style={{ color: "var(--t2)" }}>
                     {schema}
                   </span>
-                  <span className="aug-fs-xs ml-auto shrink-0 text-zinc-500">{schemaTables.length}</span>
+                  <span className="aug-fs-xs ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+                    {schemaTables.length}
+                  </span>
                 </Button>
               )}
 
@@ -182,17 +184,14 @@ export function CatalogTree({
                 const rc = fmtRows(t.rowCount);
                 return (
                   <div key={t.name}>
-                    <div className="group/tbl flex w-full items-center gap-2 py-1.5 pl-7 pr-2 transition hover:bg-zinc-800/40">
+                    <div className="group/tbl flex w-full items-center gap-2 py-1.5 pl-7 pr-2 transition hover:bg-[var(--bg-hover)]">
                       <Button
                         variant="ghost"
                         onClick={() => toggle(openTables, t.name, setOpenTables)}
                         title={tOpen ? "Collapse columns" : "Expand columns"}
                         className="h-auto p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
                       >
-                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5"
-                          strokeLinecap="round" className={`shrink-0 transition-transform duration-150 ${tOpen ? "rotate-90" : ""}`}>
-                          <polyline points="2,1 6,4 2,7" />
-                        </svg>
+                        <Chevron open={tOpen} />
                       </Button>
                       <Button
                         variant="ghost"
@@ -200,24 +199,20 @@ export function CatalogTree({
                         title={onSelectTable ? `Insert ${t.name} at the cursor` : t.name}
                         className="h-auto min-w-0 flex-1 justify-start gap-2 p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
                       >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth="1.7"
-                          strokeLinecap="round" className="shrink-0">
-                          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" />
-                          <line x1="9" y1="9" x2="9" y2="21" />
-                        </svg>
-                        <span className="aug-fs-sm truncate font-mono text-zinc-200">{bare}</span>
-                        {rc && <span className="aug-fs-xs shrink-0 text-zinc-500">{rc}</span>}
+                        <IcoTable />
+                        <span className="aug-fs-sm truncate font-mono" style={{ color: "var(--t1)" }}>{bare}</span>
+                        {rc && <span className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>{rc}</span>}
                       </Button>
                       {(t.joinDegree ?? 0) > 0 && (
                         <span
                           title={`${t.joinDegree} related table${(t.joinDegree ?? 0) > 1 ? "s" : ""}`}
-                          className="aug-fs-xs hidden shrink-0 items-center gap-0.5 text-zinc-500 sm:flex"
+                          className="aug-fs-xs hidden shrink-0 items-center gap-0.5 sm:flex" style={{ color: "var(--t4)" }}
                         >
                           ⋈{t.joinDegree}
                         </span>
                       )}
                       {t.isolated && (
-                        <span title="No detected joins to other tables" className="aug-fs-xs shrink-0 text-zinc-500">
+                        <span title="No detected joins to other tables" className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>
                           isolated
                         </span>
                       )}
@@ -225,23 +220,23 @@ export function CatalogTree({
                     </div>
 
                     {tOpen && t.columns.map(c => (
-                      <div key={c.name} className="ml-7 border-l border-zinc-700/40 pl-2">
+                      <div key={c.name} className="ml-7 border-l pl-2" style={{ borderColor: "var(--b0)" }}>
                         <Button
                           variant="ghost"
                           onClick={() => onSelectColumn?.(c.name, t.name)}
                           title={onSelectColumn
                             ? `Insert ${c.name} at the cursor${c.type ? ` (${c.type})` : ""}`
                             : `${c.name}${c.type ? ` (${c.type})` : ""}`}
-                          className="group h-auto w-full justify-start gap-2 px-3 py-1 font-normal hover:bg-zinc-800/60"
+                          className="group h-auto w-full justify-start gap-2 px-3 py-1 font-normal hover:bg-[var(--bg-hover)]"
                         >
                           <span className={`h-2 w-2 shrink-0 rounded-[var(--r-pill)] ${dot(c.type ?? "")}`} />
-                          <span className="aug-fs-sm flex-1 truncate text-left font-mono text-zinc-200">{c.name}</span>
+                          <span className="aug-fs-sm flex-1 truncate text-left font-mono" style={{ color: "var(--t2)" }}>{c.name}</span>
                           {c.type && (
-                            <span className="aug-fs-xs hidden shrink-0 font-mono uppercase text-zinc-500 group-hover:inline">
+                            <span className="aug-fs-xs hidden shrink-0 font-mono uppercase group-hover:inline" style={{ color: "var(--t4)" }}>
                               {c.type.split(" ")[0].slice(0, 6)}
                             </span>
                           )}
-                          {c.is_fk && <span className="aug-fs-xs shrink-0 text-zinc-500">FK</span>}
+                          {c.is_fk && <span className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>FK</span>}
                         </Button>
                       </div>
                     ))}
