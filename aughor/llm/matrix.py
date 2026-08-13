@@ -82,8 +82,14 @@ VOUCHED: tuple[VouchedModel, ...] = (
                  False, "20B but 3702ms — cheap in size, not in latency"),
     VouchedModel("openrouter", "nvidia/nemotron-3-nano-30b-a3b:free", _VERIFIED_2026_07_24,
                  True, "the throughput pick and the `fast` default — 91 t/s"),
+    # 410ms and useless for our purposes: STRUCTURED output comes back empty, and
+    # every call in this codebase asks for a response_model. Vouching is about the id
+    # existing in the catalogue, so it stays vouched — but it is NOT fast_eligible,
+    # because the cheap tier's whole job is structured interpret calls. Re-measured
+    # 2026-08-13; the "latency pick" note was true of raw completion latency only.
     VouchedModel("openrouter", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-                 _VERIFIED_2026_07_24, True, "the latency pick — 410ms"),
+                 _VERIFIED_2026_07_24, False,
+                 "410ms raw, but returns EMPTY structured output — unusable with a response_model"),
     VouchedModel("openrouter", "nvidia/nemotron-nano-9b-v2:free", _VERIFIED_2026_07_24, True),
     VouchedModel("openrouter", "nvidia/nemotron-nano-12b-v2-vl:free", _VERIFIED_2026_07_24,
                  False, "vision-language"),
