@@ -99,11 +99,24 @@ function useSchemaMap(connId: string) {
       if (parts.length) schemas.add(parts.join("."));
       if (bare !== t.name && bareOwners.get(bare) === 1) map[bare] = cols;
     }
-    // The sidebar gets the SAME tables with their types — one fetch, two consumers,
-    // so what you can browse and what completes cannot disagree.
+    // The sidebar gets the SAME tables — one fetch, two consumers, so what you can
+    // browse and what completes cannot disagree. It also carries the join topology
+    // the endpoint already returns: the builder's rail has always shown `⋈n` and
+    // `isolated`, and the SQL editor was dropping facts it had in hand.
+    const degree = new Map<string, Set<string>>();
+    for (const j of data?.joins ?? []) {
+      if (!degree.has(j.t1)) degree.set(j.t1, new Set());
+      if (!degree.has(j.t2)) degree.set(j.t2, new Set());
+      degree.get(j.t1)!.add(j.t2);
+      degree.get(j.t2)!.add(j.t1);
+    }
+    const isolatedSet = new Set(data?.isolated ?? []);
     const sidebarTables = tables.map(t => ({
       name: t.name,
-      columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type })),
+      columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type, is_fk: c.is_fk })),
+      rowCount: t.row_count,
+      joinDegree: degree.get(t.name)?.size ?? 0,
+      isolated: isolatedSet.has(t.name),
     }));
     return { map, sidebarTables, schemas: [...schemas].sort(), tableCount: tables.length };
   }, [data]);
