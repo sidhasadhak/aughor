@@ -2674,6 +2674,92 @@ export async function runDirectQuery(
   return res.json();
 }
 
+// ── SE-1 — the Query workbench's typed run (format:"typed", SE-0's contract) ──────
+//
+// A separate function from runDirectQuery rather than a flag on it: the two return
+// DIFFERENT shapes (typed columns, truncation honesty, caveats), and collapsing them
+// behind one signature would make every caller re-narrow the result. The legacy shape
+// stays exactly as it was for the visual builder.
+
+export interface TypedColumn {
+  name: string;
+  /** Normalised type name from the backend (`norm_type`) — drives alignment. */
+  type: string;
+}
+
+export interface TypedQueryResult {
+  columns: string[];
+  columns_typed: TypedColumn[];
+  /** Cells are JSON-safe; a real SQL NULL arrives as null, distinct from "". */
+  rows: (string | number | boolean | null)[][];
+  row_count: number;
+  /** True when the server's n+1 probe row proved there is more beyond the limit. */
+  truncated: boolean;
+  duration_ms: number;
+  sql: string;
+  cached: boolean;
+  error: string | null;
+  receipt_id?: string | null;
+  caveats?: string[];
+  format: "typed";
+}
+
+export async function runWorkbenchQuery(
+  connId: string,
+  sql: string,
+  limit = 500,
+): Promise<TypedQueryResult> {
+  const res = await fetch(`${getApiBase()}/query/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId, sql, limit,
+      use_cache: false, use_bulk: false,
+      format: "typed",
+      // Names this surface for the audit trail and for gate_user_sql's policy.
+      source: "query_workbench",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+  }
+  return res.json();
+}
+
+// ── SE-2 — the editor's history rail, a filtered read of the audit log ───────────
+//
+// Not a second store: every workbench run already writes an audit row tagged with the
+// surface that issued it (`source: "query_workbench"` → the log's `hypothesis_id`), so
+// "my recent queries" is a filter over the record that must exist anyway. A dedicated
+// history table would be a second source of truth that could disagree with the audit.
+
+export interface AuditRecord {
+  id: string;
+  ts: string;
+  connection_id: string;
+  /** The issuing surface — `query_workbench`, `query_builder`, … (SE-0's label). */
+  hypothesis_id: string;
+  sql_digest: string;
+  sql_full: string;
+  verdict: string;
+  row_count: number | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+export async function getQueryHistory(
+  connectionId: string, limit = 40, label = "query_workbench",
+): Promise<AuditRecord[]> {
+  const params = new URLSearchParams({
+    limit: String(limit), connection_id: connectionId, label,
+  });
+  const res = await fetch(`${getApiBase()}/security/audit?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as { records?: AuditRecord[] }).records ?? [];
+}
+
 // ── Semantic operators over a result's text columns (filter/extract/top_k/aggregate) ──
 
 export interface SemanticField { name: string; description?: string }
@@ -2780,16 +2866,27 @@ export async function decompileSql(sql: string, dialect = "duckdb"): Promise<Dec
 export interface QueryValidation {
   passed: boolean;
   issue_count: number;
+  /** De-duped prompt-hint STRINGS from the fan-out detector battery (Verifier.scan). */
   fanout_hits: string[];
   join_warnings: { table_a: string; col_a: string; table_b: string; col_b: string; overlap: number }[];
   filter_warnings: { table: string; column: string; literal: string; op: string; suggestion: string }[];
+  // SE-2: the endpoint has always returned these three; the type simply never named
+  // them, so every consumer was blind to the grain, trust and mutation verdicts.
+  // Optional because older cached responses (and the tests' fixtures) omit them.
+  grain_warnings?: { table: string; join_key: string; ratio: number; caveat: string }[];
+  trust_findings?: Record<string, unknown>[];
+  mutation_blockers?: { name: string; reason: string }[];
 }
 
-export async function validateQuery(connId: string, sql: string): Promise<QueryValidation> {
+/** `dialect` defaults server-side to the connection's own, so callers that don't know
+ *  it (the chat surface) can omit it; the SQL editor passes the resolved family. */
+export async function validateQuery(
+  connId: string, sql: string, dialect?: string,
+): Promise<QueryValidation> {
   const res = await fetch(`${getApiBase()}/query/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conn_id: connId, sql }),
+    body: JSON.stringify({ conn_id: connId, sql, ...(dialect ? { dialect } : {}) }),
   });
   if (!res.ok) throw new Error("Validation failed");
   return res.json();

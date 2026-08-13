@@ -55,7 +55,10 @@ const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").the
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
 const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").then(m => ({ default: m.CanvasWorkspace })),  { ssr: false, loading });
 // Monitors / Action Hub / Security & Audit now render inside OperationsWorkspace (REC-U5).
-const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
+// SE-1: the workbench replaces the bare builder at the Data ▸ Query layer. Lazy with
+// ssr:false because CodeMirror touches `document` at construction, and because the
+// SQL parser worker it pulls is ~20 MB — neither belongs in the first-render path.
+const QueryWorkbench    = dynamic(() => import("@/components/query/QueryWorkbench").then(m => ({ default: m.QueryWorkbench })), { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
@@ -114,7 +117,8 @@ type NavTab =
   | "health"
   | "playbook"
   | "catalog"
-  | "builder"
+  | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
+  | "query"
   | "connections"
   | "metrics"
   | "monitors"
@@ -502,10 +506,14 @@ const NAV_SECTIONS = [
 
 // The Data rail items render as layers of one Data workspace (REC-U5), mirroring
 // Intelligence / Operations. The switcher labels/icons match the sidebar.
-type DataLayer = "catalog" | "builder" | "semantic";
+// SE-1: the `builder` layer becomes `query` — ONE Query workbench holding both a
+// visual and a SQL mode, rather than a visual composer with no text surface. The
+// legacy `builder` id keeps working as a deep link (LEGACY_DATA_LAYER below), so
+// every bookmark and stored link lands on the workbench's Visual mode.
+type DataLayer = "catalog" | "query" | "semantic";
 const DATA_LAYERS: WorkspaceLayer<DataLayer>[] = [
   { id: "catalog",  icon: "db",      label: "Catalog",       blurb: "Tables, schemas & profiles" },
-  { id: "builder",  icon: "builder", label: "Query Builder", blurb: "Compose SQL visually" },
+  { id: "query",    icon: "builder", label: "Query",         blurb: "Compose visually or write SQL" },
   { id: "semantic", icon: "layers",  label: "Semantic Layer", blurb: "Metrics, entities & glossary" },
 ];
 
@@ -1470,9 +1478,30 @@ const VALID_TABS = new Set<NavTab>([
   "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
-  "health", "playbook", "catalog", "builder", "connections", "metrics",
+  "health", "playbook", "catalog", "builder", "query", "connections", "metrics",
   "monitors", "actions", "activity", "security", "semantic", "settings",
 ]);
+
+/** The Data rail ids that are really LAYERS of the Data workspace.
+ *
+ *  Module scope on purpose: both `navigate()` and the URL boundary need it. Before
+ *  SE-1 only navigate() resolved these, so `?tab=builder` (or catalog, or semantic)
+ *  on a COLD LOAD set a tab with no render branch and painted a blank workspace —
+ *  the sidebar highlighted correctly, which is what made it look like a render bug
+ *  rather than a routing one. `resolveDeepLinkTab` below closes that. */
+const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
+  catalog:  "catalog",
+  builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
+  query:    "query",
+  semantic: "semantic",
+};
+
+/** Resolve a URL tab id to what should actually render: a workspace tab, plus the
+ *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
+function resolveDeepLinkTab(t: NavTab): { tab: NavTab; dataLayer: DataLayer | null } {
+  const layer = DATA_LAYER_FOR_TAB[t];
+  return layer ? { tab: "data", dataLayer: layer } : { tab: t, dataLayer: null };
+}
 
 function tabFromUrl(): NavTab | null {
   if (typeof window === "undefined") return null;
@@ -1533,10 +1562,18 @@ export default function Home() {
     const l = layerFromUrl();
     const table = params.get("table");
     const canvasId = params.get("canvas");
-    if (t) setTab(t);
+    // A Data rail id in the URL is a LAYER alias, not a tab that renders — resolve it
+    // here or the workspace paints blank on a cold load (SE-1).
+    const resolved = t ? resolveDeepLinkTab(t) : null;
+    if (resolved) {
+      setTab(resolved.tab);
+      if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+    }
     if (l) setIntelLayer(l);
     if (table) setInitialGraphTable(table);
-    if (t || l || canvasId) pendingDeepLink.current = { tab: t, layer: l, canvas: canvasId };
+    if (t || l || canvasId) {
+      pendingDeepLink.current = { tab: resolved?.tab ?? t, layer: l, canvas: canvasId };
+    }
 
     // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
     // `?layer=` are their own values; `?canvas=` is only an id, and the workspace renders
@@ -1611,7 +1648,13 @@ export default function Home() {
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
-      if (t) setTab(t);
+      if (t) {
+        // Same layer-alias resolution as the mount path — Back into a `?tab=builder`
+        // entry must land where the forward navigation did, not on a blank workspace.
+        const r = resolveDeepLinkTab(t);
+        setTab(r.tab);
+        if (r.dataLayer) setDataLayer(r.dataLayer);
+      }
       const l = layerFromUrl();
       if (l) setIntelLayer(l);
     };
@@ -1819,11 +1862,9 @@ export default function Home() {
   };
 
   // The three Data rail items are now layers of one Data workspace (REC-U5).
-  const LEGACY_DATA_LAYER: Partial<Record<NavTab, DataLayer>> = {
-    catalog:  "catalog",
-    builder:  "builder",
-    semantic: "semantic",
-  };
+  // Module-level (see DATA_LAYER_FOR_TAB) because the URL boundary needs it too — it
+  // is a constant, and two copies would be the drift this map exists to prevent.
+  const LEGACY_DATA_LAYER = DATA_LAYER_FOR_TAB;
 
   // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
   // legacy rail ids and deep links land on the matching layer.
@@ -1904,13 +1945,14 @@ export default function Home() {
     setTab("canvas-workspace");
   };
 
-  // Open in Query Builder — a query handed off from Insights / Deep Analysis.
-  // Defaults the connection to the currently selected one (what the insight ran against).
+  // Open in the Query workbench — a query handed off from Insights / Deep Analysis.
+  // Defaults the connection to the currently selected one (what the finding ran against).
+  // The workbench opens in Visual mode, which is where importRequest is handled (SE-1).
   const handleOpenInBuilder = (sql: string, connId?: string) => {
     const c = connId || selectedConn;
     if (c && c !== selectedConn) setSelectedConn(c);
     setBuilderImport({ connId: c, sql, nonce: Date.now() });
-    setDataLayer("builder");
+    setDataLayer("query");
     setTab("data");
   };
 
@@ -2268,8 +2310,8 @@ export default function Home() {
                 ariaLabel="Data views"
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
-                  if (id === "builder") return (
-                    <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
+                  if (id === "query") return (
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
                   );
                   if (id === "semantic") return (
                     <SemanticLayerPanel
