@@ -35,6 +35,12 @@ export async function getConnections(): Promise<Connection[]> {
 export interface Capabilities {
   tier: "free" | "pro" | "enterprise" | string;
   capabilities: string[];
+  roles?: string[];
+  /** Whether tenants are distinguishable (per-request identity is enforced).
+   *  Per-org controls are hidden without it — with one org, an "org override" can
+   *  only restate the deployment config, so offering it is a second place to
+   *  configure the same thing. */
+  multi_tenant?: boolean;
 }
 
 /** The active tier + granted capabilities (defaults to enterprise = everything on). */

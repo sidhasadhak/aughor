@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
+  getCapabilities,
   getEffectiveSettings,
   getOrgSettings,
   getWorkspace,
@@ -50,6 +51,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
   const [s, setS] = useState<OrgSettings>(EMPTY);
   const [appDefaults, setAppDefaults] = useState<OrgSettings>(EMPTY);
   const [loading, setLoading] = useState(true);
+  // BYOK is a per-ORG override. With a single tenant it can only restate the
+  // deployment's own Settings ▸ Models, so it stays hidden rather than presenting a
+  // second, identical set of model fields.
+  const [multiTenant, setMultiTenant] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -73,6 +78,12 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
   }, [scope, workspaceId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    getCapabilities()
+      .then(c => setMultiTenant(!!c.multi_tenant))
+      .catch(() => setMultiTenant(false));   // unknown ⇒ hide, never offer a dead control
+  }, []);
 
   const save = async () => {
     setSaving(true); setError(""); setSaved(false);
@@ -197,8 +208,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
         <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
       </div>
 
-      {/* Models & keys (CI-5b) — org scope only: the BYOK row is per-org, not per-workspace */}
-      {scope === "app" && <OrgByokSection />}
+      {/* Models & keys (CI-5b) — org scope AND multi-tenant only. Single-tenant
+          deployments configure models in Settings ▸ Models; showing this there would
+          be two places to set the same three fields, one of which cannot differ. */}
+      {scope === "app" && multiTenant && <OrgByokSection />}
 
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

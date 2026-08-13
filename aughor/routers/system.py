@@ -72,7 +72,7 @@ def get_capabilities(request: Request, connection_id: str | None = None):
     """
     from aughor.licensing import resolve_tier
     from aughor.rbac import effective_capabilities, resolve_roles
-    from aughor.security.authz import get_principal
+    from aughor.security.authz import get_principal, require_identity_enabled
     principal = get_principal(request)
     tier = resolve_tier(connection_id)
     caps = effective_capabilities(principal, connection_id)
@@ -80,6 +80,12 @@ def get_capabilities(request: Request, connection_id: str | None = None):
         "tier": tier.value,
         "capabilities": sorted(c.value for c in caps),
         "roles": resolve_roles(principal),
+        # Whether tenants are distinguishable at all. Per-org settings — BYOK keys
+        # being the first — are meaningless without it: in localhost/identity-off
+        # mode there is exactly one org, so an "org override" can only ever restate
+        # the deployment config. The frontend uses this to hide such controls rather
+        # than offer a second, identical place to configure the same thing.
+        "multi_tenant": require_identity_enabled(),
     }
 
 
