@@ -1037,6 +1037,15 @@ WP-1 (rest of week). That week alone moves the platform from “impressive with 
   hardening is shared.
 - **No new frontend frameworks / no SWR-React-Query rewrite** — the ui-ux-uplift decision is
   unify-and-finish; WP-2/12 are surgical.
+  > **SUPERSEDED IN PART, 2026-08-13 (SQL-editor program, decision DP-3).** TanStack Query
+  > is now a dependency, mounted once inside the Query workbench. The *rewrite* half of
+  > this rule stands and is the reason the adoption is scoped: **only `web/components/query/`
+  > code may use it, and no existing component is migrated by that program.** The workbench
+  > mounts both of its modes at once, which turned one logical schema read into several
+  > identical requests — a cache with a stated staleness, not a data-layer rewrite. Anything
+  > wider (the app-wide `/schema/rich` duplication, the SWR-style poll dedupe in
+  > `WORLD_CLASS_HARDENING_PLAN.md` WCH-11) remains OUT of that program and needs its own
+  > decision. See `docs/SQL_EDITOR_IMPLEMENTATION_ROADMAP_2026-08-12.md` §DP-3.
 - **No $-/bytes-scanned metering fake** — `kernel/metering.py` excludes it by design; a real
   implementation needs per-dialect scan stats (follow-on, not WP-7).
 - **No multi-tenant Postgres/S3-vending/IdP build-out** — Phase 4/5 stays deferred until a SaaS

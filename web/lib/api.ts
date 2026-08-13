@@ -2833,16 +2833,27 @@ export async function decompileSql(sql: string, dialect = "duckdb"): Promise<Dec
 export interface QueryValidation {
   passed: boolean;
   issue_count: number;
+  /** De-duped prompt-hint STRINGS from the fan-out detector battery (Verifier.scan). */
   fanout_hits: string[];
   join_warnings: { table_a: string; col_a: string; table_b: string; col_b: string; overlap: number }[];
   filter_warnings: { table: string; column: string; literal: string; op: string; suggestion: string }[];
+  // SE-2: the endpoint has always returned these three; the type simply never named
+  // them, so every consumer was blind to the grain, trust and mutation verdicts.
+  // Optional because older cached responses (and the tests' fixtures) omit them.
+  grain_warnings?: { table: string; join_key: string; ratio: number; caveat: string }[];
+  trust_findings?: Record<string, unknown>[];
+  mutation_blockers?: { name: string; reason: string }[];
 }
 
-export async function validateQuery(connId: string, sql: string): Promise<QueryValidation> {
+/** `dialect` defaults server-side to the connection's own, so callers that don't know
+ *  it (the chat surface) can omit it; the SQL editor passes the resolved family. */
+export async function validateQuery(
+  connId: string, sql: string, dialect?: string,
+): Promise<QueryValidation> {
   const res = await fetch(`${getApiBase()}/query/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conn_id: connId, sql }),
+    body: JSON.stringify({ conn_id: connId, sql, ...(dialect ? { dialect } : {}) }),
   });
   if (!res.ok) throw new Error("Validation failed");
   return res.json();

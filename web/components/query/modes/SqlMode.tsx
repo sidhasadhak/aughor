@@ -14,13 +14,15 @@
  * breaks hydration), and every access is wrapped — a disabled-storage browser must
  * degrade to a working editor with no persistence, not to a blank screen.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
+import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt } from "@/lib/query/parserClient";
-import { cmDialect, type EngineHint } from "@/lib/query/dialect";
-import { runWorkbenchQuery, type TypedQueryResult } from "@/lib/api";
+import { cmDialect, engineFamily, type EngineHint } from "@/lib/query/dialect";
+import { formatSql } from "@/lib/query/format";
+import { runWorkbenchQuery, type QueryValidation, type TypedQueryResult } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 /** Versioned so a future shape change can be detected and discarded rather than
@@ -63,8 +65,24 @@ export function SqlMode({
   const [result, setResult] = useState<TypedQueryResult | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
+
+  // Built ONCE and read through getters, so a connection or dialect change reaches the
+  // linter without rebuilding the editor (which would drop undo history and cursor).
+  const connRef = useRef(connId);
+  const engineRef = useRef(engine);
+  connRef.current = connId;
+  engineRef.current = engine;
+  const diagnostics = useMemo(
+    () => sqlDiagnostics({
+      getConn: () => connRef.current,
+      getDialect: () => engineFamily(engineRef.current),
+      onVerdict: setVerdict,
+    }),
+    [],
+  );
 
   // Draft restore — in an EFFECT, never a useState initializer (hydration rule).
   // Keyed on connId so switching connections swaps drafts rather than merging them.
@@ -130,9 +148,40 @@ export function SqlMode({
         <Button variant="default" size="xs" onClick={() => void run()} disabled={!connId || running}>
           {running ? "Running…" : "Run  ⌘↵"}
         </Button>
+        <Button
+          variant="ghost"
+          size="xs"
+          title="Format the selection, or the whole query (⌘⇧F)"
+          onClick={() => setSqlText(prev => formatSql(prev, engine))}
+          disabled={!sqlText.trim()}
+        >
+          Format
+        </Button>
         <span style={{ fontSize: 11, color: "var(--t4)" }}>
           Runs the selection, or the statement under the cursor.
         </span>
+        <div style={{ flex: 1 }} />
+        {/* The guard battery's own verdict, stated plainly. "Checked — clean" is worth
+            as much as a warning count: it says the checks RAN, which silence never does. */}
+        {verdict && (
+          <span
+            style={{
+              fontSize: 11,
+              color: verdict.passed ? "var(--t4)" : "var(--amb4)",
+            }}
+            title={verdict.passed
+              ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
+              : "Findings are shown in the editor gutter"}
+          >
+            {/* "Guards clean" rather than "Checked — clean": this endpoint judges
+                fan-out, value-domain, grain and trust — never syntax. Claiming the
+                query is fine when only the guards passed is the kind of overclaim
+                the receipts exist to prevent. */}
+            {verdict.passed
+              ? "Guards clean"
+              : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
+          </span>
+        )}
       </div>
 
       <ResizableSplit
@@ -147,10 +196,12 @@ export function SqlMode({
             value={sqlText}
             onChange={setSqlText}
             onRun={() => void runRef.current()}
+            onFormat={(text) => formatSql(text, engineRef.current)}
             onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
             schema={schema}
             defaultSchema={defaultSchema}
             dialect={cmDialect(engine)}
+            diagnostics={diagnostics}
           />
         }
         right={<ResultsPanel result={result} error={error} running={running} />}

@@ -313,6 +313,15 @@ Ordered by win/effort from the audit:
   fetched on demand.
 - Dedupe cross-panel polling with a tiny shared fetch cache (SWR-style) so Briefing (3s) /
   DomainIntel (10s) / Badge (10s) share one request.
+  > **NOTE, 2026-08-13 (SQL-editor program, decision DP-3).** The "tiny shared fetch cache"
+  > this item calls for now EXISTS as a real dependency — TanStack Query — but is mounted
+  > only inside the Query workbench and is scoped by decision to `web/components/query/`.
+  > This item is therefore **not** delivered by that program and is not blocked by it: when
+  > WCH-11 is built, TanStack Query is the obvious substrate and no second cache should be
+  > introduced. Measured while building SE-1: `GET /connections/{id}/schema/rich` fires ~12
+  > times on one page load from five independent callers (`CommandPalette`, `CatalogScreen`
+  > ×3 sites, `QueryBuilder`, `CanvasCreator`) — the same defect class as the poll
+  > duplication above, and a good first target.
 **Gate:** network tab during a live investigation shows >70% fewer requests; payload per poll <2KB. 
 
 ### WCH-12 — Schema introspection cache (S)

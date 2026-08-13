@@ -33,7 +33,10 @@ import {
   autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from "@codemirror/language";
+import {
+  bracketMatching, indentOnInput, foldGutter, foldKeymap,
+} from "@codemirror/language";
+import { lintGutter } from "@codemirror/lint";
 import { sql, type SQLDialect } from "@codemirror/lang-sql";
 import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
 
@@ -43,18 +46,23 @@ export interface SqlEditorPaneProps {
   /** Fires on ⌘/Ctrl+Enter. Receives nothing — the workbench reads cursor/selection
    *  itself via `onCursor`, so "what runs" is decided in one place. */
   onRun?: () => void;
+  /** Fires on ⌘⇧F. Returns the replacement text for the range it was given, or null
+   *  to leave the document alone. */
+  onFormat?: (sql: string) => string | null;
   onCursor?: (pos: number, selection: { from: number; to: number } | null) => void;
   /** `{ "schema.table": ["col", …] }` — drives table and column completion. */
   schema?: Record<string, string[]>;
   defaultSchema?: string;
   dialect: SQLDialect;
+  /** SE-2 — the two-tier linter. Built by the caller (it needs the connection). */
+  diagnostics?: Extension;
   placeholder?: string;
   readOnly?: boolean;
 }
 
 export function SqlEditorPane({
-  value, onChange, onRun, onCursor,
-  schema, defaultSchema, dialect,
+  value, onChange, onRun, onFormat, onCursor,
+  schema, defaultSchema, dialect, diagnostics,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
 }: SqlEditorPaneProps) {
@@ -67,9 +75,11 @@ export function SqlEditorPane({
   // CURRENT handler. Rebuilding extensions per render would recreate the view.
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
+  const onFormatRef = useRef(onFormat);
   const onCursorRef = useRef(onCursor);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
+  onFormatRef.current = onFormat;
   onCursorRef.current = onCursor;
 
   // Mount once. `value` is the INITIAL doc here — later changes come through the
@@ -82,6 +92,28 @@ export function SqlEditorPane({
         key: "Mod-Enter",
         preventDefault: true,
         run: () => { onRunRef.current?.(); return true; },
+      },
+      {
+        // ⌘⇧F — formats the selection if there is one, else the whole document. The
+        // caller decides the text; this only owns the edit, so the cursor lands
+        // sensibly and the change is a single undo step.
+        key: "Mod-Shift-f",
+        preventDefault: true,
+        run: (v) => {
+          const fmt = onFormatRef.current;
+          if (!fmt) return false;
+          const sel = v.state.selection.main;
+          const whole = sel.empty;
+          const from = whole ? 0 : sel.from;
+          const to = whole ? v.state.doc.length : sel.to;
+          const next = fmt(v.state.sliceDoc(from, to));
+          if (next == null || next === v.state.sliceDoc(from, to)) return true;
+          v.dispatch({
+            changes: { from, to, insert: next },
+            selection: { anchor: Math.min(from + next.length, from + next.length) },
+          });
+          return true;
+        },
       },
     ]));
 
@@ -108,8 +140,11 @@ export function SqlEditorPane({
       runKeymap,
       keymap.of([
         ...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap,
-        ...completionKeymap, ...searchKeymap, indentWithTab,
+        ...completionKeymap, ...searchKeymap, ...foldKeymap, indentWithTab,
       ]),
+      // The gutter marker is what makes a guard finding discoverable: a squiggle on a
+      // table name three lines down is easy to miss, a marker in the gutter is not.
+      ...(diagnostics ? [diagnostics, lintGutter()] : []),
       aughorEditorTheme,
       aughorSyntaxHighlighting,
       EditorView.lineWrapping,
