@@ -229,14 +229,27 @@ export function SqlMode({
           >
             {showHistory ? "Hide history" : "History"}
           </Button>
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>
+          {/* Secondary, and the first thing to give up space when the pane narrows.
+              At one uniform text size a wrapping hint shoves the whole toolbar into
+              three lines, so it truncates and then vanishes rather than reflowing the
+              controls around it. The same sentence is on the Run button's tooltip, so
+              nothing is actually lost when it goes. */}
+          <span
+            style={{
+              fontSize: 13, color: "var(--t4)",
+              flex: "1 1 auto", minWidth: 0,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}
+          >
             Runs the selection, or the statement under the cursor.
           </span>
-          <div style={{ flex: 1 }} />
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span
-              style={{ fontSize: 11, color: verdict.passed ? "var(--t4)" : "var(--amb4)" }}
+              style={{
+                fontSize: 13, flexShrink: 0, whiteSpace: "nowrap",
+                color: verdict.passed ? "var(--t4)" : "var(--amb4)",
+              }}
               title={verdict.passed
                 ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
                 : "Findings are shown in the editor gutter"}
@@ -276,11 +289,11 @@ export function SqlMode({
     </div>
   );
 
-  return (
+  // Catalog ▸ editor. The rail sets no width of its own — a pane that hardcodes one
+  // silently overrides the handle, which is exactly why this looked adjustable and
+  // was not.
+  const workspacePane = (
     <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
-      {/* The catalog/editor split is draggable and persists per user. The rail sets no
-          width of its own — a pane that hardcodes one silently overrides the handle,
-          which is exactly why this looked adjustable and was not. */}
       {showSidebar ? (
         <ResizableSplit
           storageKey="sqlmode.catalog"
@@ -298,14 +311,30 @@ export function SqlMode({
           right={editorPane}
         />
       ) : editorPane}
-
-      {showHistory && (
-        <HistoryRail
-          connId={connId}
-          refreshKey={historyKey}
-          onRestore={sql => openInNewTab(sql, "History")}
-        />
-      )}
     </div>
   );
+
+  const historyRail = (
+    <HistoryRail
+      connId={connId}
+      refreshKey={historyKey}
+      onRestore={sql => openInNewTab(sql, "History")}
+    />
+  );
+
+  // `resizePane="second"` because history sits on the RIGHT: sizing the left pane
+  // would make the rail's width whatever was left over, so it would drift every time
+  // the window changed rather than staying where the user put it.
+  return showHistory ? (
+    <ResizableSplit
+      storageKey="sqlmode.history"
+      resizePane="second"
+      initial={280}
+      min={200}
+      max={560}
+      style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+      left={workspacePane}
+      right={historyRail}
+    />
+  ) : workspacePane;
 }

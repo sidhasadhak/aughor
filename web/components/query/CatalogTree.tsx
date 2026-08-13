@@ -133,7 +133,7 @@ export function CatalogTree({
             placeholder="Search tables &amp; columns…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="aug-fs-sm w-full bg-transparent outline-none placeholder-zinc-500" style={{ color: "var(--t2)" }}
+            className="aug-fs-ui w-full bg-transparent outline-none placeholder-zinc-500" style={{ color: "var(--t2)" }}
           />
           {search && (
             <Button
@@ -147,7 +147,7 @@ export function CatalogTree({
         {/* The same legend the builder shows, so a dot means one thing product-wide. */}
         <div className="mt-2.5 flex items-center gap-3">
           {([["bg-emerald-500", "num"], ["bg-blue-400", "date"], ["bg-zinc-500", "text"]] as const).map(([d, l]) => (
-            <span key={l} className="aug-fs-xs flex items-center gap-1.5" style={{ color: "var(--t4)" }}>
+            <span key={l} className="aug-fs-ui flex items-center gap-1.5" style={{ color: "var(--t4)" }}>
               <span className={`h-2 w-2 rounded-[var(--r-pill)] ${d}`} />{l}
             </span>
           ))}
@@ -156,10 +156,10 @@ export function CatalogTree({
 
       <div className="flex-1 overflow-y-auto py-1">
         {tables.length === 0 && (
-          <p className="aug-fs-sm px-4 py-4" style={{ color: "var(--t4)" }}>{emptyLabel}</p>
+          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t4)" }}>{emptyLabel}</p>
         )}
         {tables.length > 0 && visible.length === 0 && (
-          <p className="aug-fs-sm px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
+          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
         )}
 
         {catalogName && (
@@ -170,10 +170,10 @@ export function CatalogTree({
           >
             <Chevron open={catalogOpen} />
             <IcoCatalog color="var(--t2)" size={14} />
-            <span className="aug-fs-sm truncate font-medium" style={{ color: "var(--t1)" }}>
+            <span className="aug-fs-ui truncate font-medium" style={{ color: "var(--t1)" }}>
               {catalogName}
             </span>
-            <span className="aug-fs-xs ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>
               {tables.length}
             </span>
           </Button>
@@ -196,10 +196,10 @@ export function CatalogTree({
                       same schema. Beyond the inconsistency, a schema name is an
                       identifier — in several dialects its case is significant, so
                       shouting it is a small lie about what you would have to type. */}
-                  <span className="aug-fs-sm truncate font-mono" style={{ color: "var(--t2)" }}>
+                  <span className="aug-fs-ui truncate font-mono" style={{ color: "var(--t2)" }}>
                     {schema}
                   </span>
-                  <span className="aug-fs-xs ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+                  <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>
                     {schemaTables.length}
                   </span>
                 </Button>
@@ -227,19 +227,19 @@ export function CatalogTree({
                         className="h-auto min-w-0 flex-1 justify-start gap-2 p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
                       >
                         <IcoTable />
-                        <span className="aug-fs-sm truncate font-mono" style={{ color: "var(--t1)" }}>{bare}</span>
-                        {rc && <span className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>{rc}</span>}
+                        <span className="aug-fs-ui truncate font-mono" style={{ color: "var(--t1)" }}>{bare}</span>
+                        {rc && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>{rc}</span>}
                       </Button>
                       {(t.joinDegree ?? 0) > 0 && (
                         <span
                           title={`${t.joinDegree} related table${(t.joinDegree ?? 0) > 1 ? "s" : ""}`}
-                          className="aug-fs-xs hidden shrink-0 items-center gap-0.5 sm:flex" style={{ color: "var(--t4)" }}
+                          className="aug-fs-ui hidden shrink-0 items-center gap-0.5 sm:flex" style={{ color: "var(--t4)" }}
                         >
                           ⋈{t.joinDegree}
                         </span>
                       )}
                       {t.isolated && (
-                        <span title="No detected joins to other tables" className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>
+                        <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>
                           isolated
                         </span>
                       )}
@@ -257,13 +257,13 @@ export function CatalogTree({
                           className="group h-auto w-full justify-start gap-2 px-3 py-1 font-normal hover:bg-[var(--bg-hover)]"
                         >
                           <span className={`h-2 w-2 shrink-0 rounded-[var(--r-pill)] ${dot(c.type ?? "")}`} />
-                          <span className="aug-fs-sm flex-1 truncate text-left font-mono" style={{ color: "var(--t2)" }}>{c.name}</span>
+                          <span className="aug-fs-ui flex-1 truncate text-left font-mono" style={{ color: "var(--t2)" }}>{c.name}</span>
                           {c.type && (
-                            <span className="aug-fs-xs hidden shrink-0 font-mono uppercase group-hover:inline" style={{ color: "var(--t4)" }}>
+                            <span className="aug-fs-ui hidden shrink-0 font-mono uppercase group-hover:inline" style={{ color: "var(--t4)" }}>
                               {c.type.split(" ")[0].slice(0, 6)}
                             </span>
                           )}
-                          {c.is_fk && <span className="aug-fs-xs shrink-0" style={{ color: "var(--t4)" }}>FK</span>}
+                          {c.is_fk && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>FK</span>}
                         </Button>
                       </div>
                     ))}

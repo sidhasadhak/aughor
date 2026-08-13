@@ -175,7 +175,7 @@ function WorkbenchInner({
     return c ? { conn_type: c.conn_type, dialect: (c as { dialect?: string }).dialect } : null;
   }, [connections, connId]);
 
-  const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 12 };
+  const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 13 };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -201,7 +201,7 @@ function WorkbenchInner({
         {mode === "sql" && (
           <>
             <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
-            <label style={{ fontSize: 11, color: "var(--t3)" }}>Connection</label>
+            <label style={{ fontSize: 13, color: "var(--t3)" }}>Connection</label>
             <select
               className="aug-input"
               style={controlStyle}
@@ -217,7 +217,7 @@ function WorkbenchInner({
 
             {schemas.length > 0 && (
               <>
-                <label style={{ fontSize: 11, color: "var(--t3)" }}>Schema</label>
+                <label style={{ fontSize: 13, color: "var(--t3)" }}>Schema</label>
                 <select
                   className="aug-input"
                   style={controlStyle}
@@ -232,7 +232,7 @@ function WorkbenchInner({
             )}
 
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: "var(--t4)" }}>
+            <span style={{ fontSize: 13, color: "var(--t4)" }}>
               {tableCount ? `${tableCount} tables` : "no schema loaded"}
             </span>
           </>

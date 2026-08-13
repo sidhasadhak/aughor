@@ -55,7 +55,7 @@ export function HistoryRail({
   return (
     <div
       style={{
-        width: 260, flexShrink: 0, display: "flex", flexDirection: "column",
+        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
         borderLeft: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden",
       }}
     >
@@ -66,7 +66,7 @@ export function HistoryRail({
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
         {loaded && rows.length === 0 && (
-          <div style={{ fontSize: 11, color: "var(--t4)", padding: "6px 4px", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: "var(--t4)", padding: "6px 4px", lineHeight: 1.5 }}>
             Queries you run here appear in this list.
           </div>
         )}
@@ -80,14 +80,14 @@ export function HistoryRail({
           >
             <span
               style={{
-                display: "block", fontFamily: "var(--font-code, monospace)", fontSize: 10,
+                display: "block", fontFamily: "var(--font-code, monospace)", fontSize: 13,
                 color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
               {preview(r.sql_full || r.sql_digest)}
             </span>
-            <span style={{ display: "block", fontSize: 10, color: "var(--t4)", marginTop: 2 }}>
+            <span style={{ display: "block", fontSize: 13, color: "var(--t4)", marginTop: 2 }}>
               <span style={{ color: VERDICT_COLOR[r.verdict] ?? "var(--t4)" }}>{r.verdict}</span>
               {r.row_count != null && ` · ${r.row_count} rows`}
               {r.duration_ms != null && ` · ${Math.round(r.duration_ms)} ms`}

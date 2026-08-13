@@ -120,7 +120,7 @@ export function TabsBar({
                   if (e.key === "Enter") commit();
                   if (e.key === "Escape") setEditing("");
                 }}
-                style={{ fontSize: 11, width: 110 }}
+                style={{ fontSize: 13, width: 110 }}
               />
             ) : (
               <Button
