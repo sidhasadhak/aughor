@@ -86,6 +86,69 @@ export function isMetadataStatement(sql: string): boolean {
   return /^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b/i.test(sql ?? "");
 }
 
+/**
+ * SE-4 H — the `:name` parameters in a statement, first-appearance order, de-duped.
+ *
+ * A port of `_scan` in `aughor/sql/params.py`, and it must stay a faithful one: the
+ * server decides what to BIND from its scanner, this decides what to ASK FOR from
+ * this one, and a disagreement means either a chip with no parameter behind it or a
+ * parameter with no chip — the second of which blocks the run.
+ *
+ * The hard part is not finding `:name`, it is knowing where a colon is not one:
+ * inside a string (`'hello :world'`), inside a quoted identifier (`"a:b"`), inside a
+ * comment, or as the `::` cast operator — where a naive match invents a parameter
+ * called `int` and turns `x::int` into a baffling engine error.
+ */
+export function findParams(sql: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const s = sql ?? "";
+  const ident = /[A-Za-z_][A-Za-z0-9_]*/y;
+  let i = 0;
+
+  while (i < s.length) {
+    const ch = s[i];
+
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      i += 1;
+      while (i < s.length) {
+        if (s[i] === quote) {
+          if (s[i + 1] === quote) { i += 2; continue; }   // '' escapes itself
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "-" && s[i + 1] === "-") {
+      const j = s.indexOf("\n", i);
+      i = j < 0 ? s.length : j + 1;
+      continue;
+    }
+    if (ch === "/" && s[i + 1] === "*") {
+      const j = s.indexOf("*/", i + 2);
+      i = j < 0 ? s.length : j + 2;
+      continue;
+    }
+    if (ch === ":") {
+      if (s[i + 1] === ":") { i += 2; continue; }          // a cast, not a parameter
+      ident.lastIndex = i + 1;
+      const m = ident.exec(s);
+      if (m) {
+        if (!seen.has(m[0])) { seen.add(m[0]); out.push(m[0]); }
+        i = ident.lastIndex;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  return out;
+}
+
 /** Approximate syntax diagnostics. Falls back to none. */
 export async function validateSql(sql: string): Promise<ParseDiagnostic[]> {
   const res = await ask("validate", sql);

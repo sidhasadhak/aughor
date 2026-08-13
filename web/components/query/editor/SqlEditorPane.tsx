@@ -37,6 +37,7 @@ import {
   bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
+import { refreshLint } from "@/components/query/editor/diagnostics";
 import { sql, type SQLDialect } from "@codemirror/lang-sql";
 import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
 
@@ -59,7 +60,11 @@ export interface SqlEditorPaneProps {
   /** SE-2 — receives an imperative `insert(text)` for the schema sidebar. Text lands
    *  at the cursor (replacing any selection), which is what makes clicking a table
    *  name feel like typing it rather than like navigating away. */
-  onReady?: (api: { insert: (text: string) => void; focus: () => void }) => void;
+  onReady?: (api: {
+    insert: (text: string) => void;
+    focus: () => void;
+    relint: () => void;
+  }) => void;
   placeholder?: string;
   readOnly?: boolean;
 }
@@ -184,6 +189,10 @@ export function SqlEditorPane({
         v.focus();
       },
       focus: () => v.focus(),
+      // SE-4 H — re-run the linter when something OUTSIDE the document changed the
+      // verdict's inputs (parameter values). The editor owns the view, so it owns the
+      // only handle that can ask CodeMirror to lint again.
+      relint: () => v.dispatch({ effects: refreshLint.of(null) }),
     });
 
     return () => { view.current?.destroy(); view.current = null; };

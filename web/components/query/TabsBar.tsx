@@ -22,6 +22,10 @@ export interface EditorTab {
   savedQueryId?: string;
   /** Last run outcome, for the per-tab status chip. */
   status?: "ok" | "error";
+  /** SE-4 H — values for this tab's `:name` parameters, persisted with the draft.
+   *  Per TAB, not per editor: two tabs may both use `:region` and mean different
+   *  things, and a shared value would silently rewrite the other tab's query. */
+  params?: Record<string, string>;
   /** Epoch ms of last activity — the LRU key. */
   touched: number;
 }

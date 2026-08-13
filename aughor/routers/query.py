@@ -137,6 +137,11 @@ class _QueryRunRequest(BaseModel):
     # bypass and skip PII redaction + audit entirely (the original
     # __querybuilder__ bug, pinned in test_query_safety_gate.py).
     source: Literal["query_builder", "query_workbench"] = "query_builder"
+    # SE-4 H — values for the statement's `:name` parameters, executed as real BIND
+    # VALUES. Never interpolated: a bound value cannot change the statement's
+    # structure, which is the entire reason this is a separate field and not a
+    # client-side string substitution before the request is sent.
+    params: Optional[dict] = None
 
 
 def _write_builder_receipt(conn_id: str, sql: str) -> Optional[str]:
@@ -330,6 +335,7 @@ async def query_run(body: _QueryRunRequest, request: Request):
     # Only the workbench may run one, and only it skips the wrap — the connection
     # layer gates the same capability on the same label.
     _is_metadata = _source == "query_workbench" and is_metadata_statement(_sql_to_run)
+    _params     = body.params or None
 
     def _work():
         t0 = _t.monotonic()
@@ -348,7 +354,13 @@ async def query_run(body: _QueryRunRequest, request: Request):
                     # subquery wrap hides whether the raw query had more rows, so
                     # row n+1 arriving is the only honest "there was more" signal.
                     sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit + 1 if _typed else _limit}"
-                if _typed:
+                if _params:
+                    # Parameters and the typed capture do not compose yet: the typed
+                    # side-channel hangs off `execute()`, and binding takes its own
+                    # path. Refusing beats serving strings under a "typed" label —
+                    # the same call SE-0 made for `use_bulk`.
+                    result = db.execute_with_params(_source, sql, _params)
+                elif _typed:
                     result, typed_payload = db.execute_typed(_source, sql)
                 else:
                     result = db.execute(_source, sql)
@@ -817,6 +829,9 @@ class _QueryValidateRequest(BaseModel):
     conn_id: str
     sql: str
     dialect: str = "duckdb"
+    # SE-4 H — values for the statement's `:name` parameters, so the guards can read
+    # them. See `_guard_sql` for why a verdict without them is not "clean".
+    params: Optional[dict] = None
 
 
 @router.post("/query/validate")
@@ -828,6 +843,7 @@ def query_validate(body: _QueryValidateRequest, request: Request):
     user-triggered version of the guards that run inline during answer generation."""
     from aughor.db.connection import open_connection_for
     from aughor.kernel.errors import tolerate
+    from aughor.sql.params import ParamRenderError, find_params, render_for_guards
 
     _check_conn_org(request, body.conn_id)
     if not (body.sql or "").strip():
@@ -837,7 +853,26 @@ def query_validate(body: _QueryValidateRequest, request: Request):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
+    # SE-4 H — the guard battery reads LITERALS out of the SQL text. Measured on the
+    # live warehouse: `WHERE country = 'Portugalx'` yields a value-domain warning
+    # naming the typo and suggesting 'Portugal'; `WHERE country = $country` yields
+    # ZERO warnings — the identical answer a CORRECT literal gives. So a parameterised
+    # query checked as-is does not report "unverified", it reports CLEAN, and the
+    # editor's header says "Guards clean" about a query no guard could see.
+    #
+    # The fix is a second rendering, for analysis only: substitute the values as
+    # literals and guard THAT. Execution still binds (`execute_with_params`), so the
+    # string built here never reaches an engine — there is deliberately no path from
+    # this variable to `execute()`. When a value is missing or unrenderable, the
+    # verdict says so instead of claiming a check it did not run.
+    guard_note = ""
     sql = body.sql
+    if find_params(sql):
+        try:
+            sql = render_for_guards(sql, body.params or {})
+        except ParamRenderError as exc:
+            guard_note = (f"Not checked — this query is parameterised and {exc}. "
+                          "Fill in the parameters to run the guards.")
     dialect = getattr(db, "dialect", None) or body.dialect or "duckdb"
     fanout_hits: list = []
     join_warnings: list = []
@@ -921,9 +956,18 @@ def query_validate(body: _QueryValidateRequest, request: Request):
 
     issues = (len(fanout_hits) + len(join_warnings) + len(filter_warnings)
               + len(grain_warnings) + len(trust_findings) + len(mutation_blockers))
+    if guard_note:
+        # Not an issue COUNT — nothing was found because nothing could be looked at.
+        # `passed` is false so no surface can render this as a clean bill of health.
+        return {
+            "passed": False, "issue_count": 0, "unchecked": True, "note": guard_note,
+            "fanout_hits": [], "join_warnings": [], "filter_warnings": [],
+            "grain_warnings": [], "trust_findings": [], "mutation_blockers": [],
+        }
     return {
         "passed": issues == 0,
         "issue_count": issues,
+        "unchecked": False,
         "fanout_hits": fanout_hits,
         "join_warnings": join_warnings,
         "filter_warnings": filter_warnings,

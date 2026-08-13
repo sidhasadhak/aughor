@@ -23,10 +23,23 @@
  * attaches to the whole statement rather than being dropped. A finding the user cannot
  * see is the same as a finding we never made.
  */
-import { forceLinting, linter, type Diagnostic } from "@codemirror/lint";
+import { linter, type Diagnostic } from "@codemirror/lint";
+import { StateEffect } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { validateSql, isMetadataStatement } from "@/lib/query/parserClient";
 import { validateQuery, type QueryValidation } from "@/lib/api";
+
+/**
+ * SE-4 H — dispatch this to ask for a re-lint when something OUTSIDE the document
+ * changed the verdict's inputs (a parameter value).
+ *
+ * `forceLinting` is NOT the tool for this, which cost a debugging round: it flushes a
+ * lint that is already SCHEDULED, and nothing schedules one when the document has not
+ * changed. So filling in `:country` left the chip reading the previous verdict —
+ * demonstrably, because editing a single character then produced the right one.
+ * `needsRefresh` below is CodeMirror's own seam for external state.
+ */
+export const refreshLint = StateEffect.define<null>();
 
 /** Locate `needle` in `text`, case-insensitively, returning a CM range or null. */
 function locate(text: string, needle: string): { from: number; to: number } | null {
@@ -113,15 +126,24 @@ export function verdictToDiagnostics(sql: string, v: QueryValidation): Diagnosti
 export function sqlDiagnostics(opts: {
   getConn: () => string;
   getDialect: () => string;
+  /** SE-4 H — read at lint time, like `getConn`: the guards cannot inspect a
+   *  parameterised query without values, and would answer `unchecked`. */
+  getParams?: () => Record<string, unknown>;
   /** Notified with the authoritative verdict, for the "Checked — N notes" chip. */
   onVerdict?: (v: QueryValidation | null) => void;
 }) {
   // Cache the last server answer per exact document, so re-linting for an unrelated
   // reason (a selection change, a focus event) does not re-hit the endpoint — the
   // guard battery runs live probes against the warehouse and is not free.
+  // SE-4 H — the key is the document AND the parameter values, because the verdict
+  // is a function of both: filling in `:country` changes what the guards can read
+  // without changing a character of SQL. Keying on the text alone left the chip
+  // reading "Not checked — fill parameters" after the user had filled them in.
+  let lastKey = "";
   let lastSql = "";
   let lastVerdict: QueryValidation | null = null;
   let inFlight: Promise<void> | null = null;
+  const keyOf = (text: string) => `${text}\u0000${JSON.stringify(opts.getParams?.() ?? {})}`;
 
   return linter(
     async (view: EditorView): Promise<Diagnostic[]> => {
@@ -162,12 +184,14 @@ export function sqlDiagnostics(opts: {
       // bound the pass returns tier 1 alone and `forceLinting` remains as the
       // backstop that paints the verdict whenever it lands.
       const conn = opts.getConn();
-      if (conn && sql !== lastSql) {
+      const key = keyOf(sql);
+      if (conn && key !== lastKey) {
         if (!inFlight) {
-          inFlight = validateQuery(conn, sql, opts.getDialect())
+          inFlight = validateQuery(conn, sql, opts.getDialect(), opts.getParams?.())
             .then(v => {
-              lastSql = sql; lastVerdict = v; opts.onVerdict?.(v);
-              forceLinting(view);
+              lastKey = key; lastSql = sql; lastVerdict = v; opts.onVerdict?.(v);
+              // Paint the verdict that arrived after this pass had already returned.
+              view.dispatch({ effects: refreshLint.of(null) });
             })
             .catch(() => { /* validation is advisory; it must not break editing */ })
             .finally(() => { inFlight = null; });
@@ -200,6 +224,10 @@ export function sqlDiagnostics(opts: {
     },
     // 300 ms is tier 1's budget; tier 2 rides the same pass but is debounced further by
     // the doc-changed check above, which is what keeps warehouse probes rare.
-    { delay: 300 },
+    {
+      delay: 300,
+      needsRefresh: update =>
+        update.transactions.some(tr => tr.effects.some(e => e.is(refreshLint))),
+    },
   );
 }

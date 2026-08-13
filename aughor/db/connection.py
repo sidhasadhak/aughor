@@ -678,6 +678,31 @@ class DatabaseConnection(ABC):
             # failure worth propagating to a caller who only wants the query to stop.
             return False
 
+    def execute_with_params(self, hypothesis_id: str, sql: str,
+                            params: dict) -> "QueryResult":
+        """Run ``sql`` with ``:name`` parameters supplied as real BIND VALUES.
+
+        Named ``execute_with_params`` and not ``execute_bound`` on purpose: this class
+        already has ``execute_bounded``, which means a ROW cap and nothing to do with
+        binding. One letter apart, opposite meanings.
+
+        A separate method rather than a keyword on ``execute()``: that signature has
+        596 call sites, and widening it would be a migration, not a feature. This is
+        the same shape as ``interrupt()`` — a capability the base declares and refuses,
+        so a connector that cannot bind says so instead of falling back to something
+        unsafe.
+
+        **The base REFUSES, and that is the point.** The one thing this feature must
+        never do is interpolate values into the statement text; a connector without
+        binding support has no safe fallback, so it returns an error the user can see
+        rather than quietly running a string it built by concatenation.
+        """
+        return QueryResult(
+            hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
+            error=(f"This connection ({getattr(self, 'dialect', 'unknown')}) cannot run "
+                   "parameterised queries. Remove the parameters, or inline the values."),
+        )
+
     def get_ontology(self):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
         return self._ontology
@@ -956,9 +981,18 @@ class DuckDBConnection(DatabaseConnection):
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
-    def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
+
+    def _run(self, hypothesis_id: str, sql: str, max_rows: int,
+             params: dict | None = None) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
+        # `:name` survives validation, the safety pre-check and the row-policy rewrite
+        # — sqlglot parses it as a Placeholder in every dialect we validate against, so
+        # the guards see the SAME statement shape the engine will run. Translation to
+        # the engine's own spelling happens at the driver call and nowhere earlier;
+        # Postgres's `%(name)s`, translated up here, fails sqlglot outright.
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
                                allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
@@ -977,7 +1011,11 @@ class DuckDBConnection(DatabaseConnection):
         sql = self._normalize_to_duckdb(sql)
         _t0 = _time.monotonic()
         try:
-            self._conn.execute(sql)
+            if params:
+                from aughor.sql.params import render_for_engine
+                self._conn.execute(render_for_engine(sql, "duckdb"), params)
+            else:
+                self._conn.execute(sql)
             rows = self._conn.fetchall()
             columns = [d[0] for d in self._conn.description] if self._conn.description else []
             _offer_typed_rows(
@@ -1251,7 +1289,11 @@ class PostgresConnection(DatabaseConnection):
         """Return up to ``max_rows`` rows (the cross-source join engine reads more than MAX_ROWS)."""
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
-    def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
+
+    def _run(self, hypothesis_id: str, sql: str, max_rows: int,
+             params: dict | None = None) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
@@ -1276,7 +1318,14 @@ class PostgresConnection(DatabaseConnection):
         _t0 = _time.monotonic()
         try:
             with self._conn.cursor() as cur:
-                cur.execute(sql)
+                if params:
+                    # `%(name)s` is produced HERE, after translate/_apply_dialect_fixes:
+                    # sqlglot cannot parse pyformat, so introducing it any earlier
+                    # breaks validation and the dialect rewrite.
+                    from aughor.sql.params import render_for_engine
+                    cur.execute(render_for_engine(sql, "postgres"), params)
+                else:
+                    cur.execute(sql)
                 rows = cur.fetchmany(max_rows)
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)

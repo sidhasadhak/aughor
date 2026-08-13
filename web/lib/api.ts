@@ -2720,6 +2720,11 @@ export async function runWorkbenchQuery(
   connId: string,
   sql: string,
   limit = 500,
+  /** SE-4 H: values for the statement's `:name` parameters. Sent as a FIELD, never
+   *  substituted into the SQL here — client-side interpolation would hand the server a
+   *  statement whose shape depends on user input, which is the one thing bind values
+   *  exist to prevent. */
+  params?: Record<string, unknown>,
   /** SE-3 F: abort this to cancel. Aborting the fetch closes the socket, which is
    *  the server's cancel signal — it interrupts the engine mid-statement rather
    *  than letting a runaway query finish into a response nobody will read. */
@@ -2736,6 +2741,7 @@ export async function runWorkbenchQuery(
         format: "typed",
         // Names this surface for the audit trail and for gate_user_sql's policy.
         source: "query_workbench",
+        ...(params && Object.keys(params).length ? { params } : {}),
       }),
       signal,
     });
@@ -2906,17 +2912,30 @@ export interface QueryValidation {
   grain_warnings?: { table: string; join_key: string; ratio: number; caveat: string }[];
   trust_findings?: Record<string, unknown>[];
   mutation_blockers?: { name: string; reason: string }[];
+  /** SE-4 H — the guards could not read this query (a parameter has no value), so
+   *  NOTHING was checked. Distinct from `passed: true`, and the reason `passed` is
+   *  false here: an issue_count of 0 must never be rendered as a clean bill of health
+   *  when zero things were looked at. */
+  unchecked?: boolean;
+  note?: string;
 }
 
 /** `dialect` defaults server-side to the connection's own, so callers that don't know
  *  it (the chat surface) can omit it; the SQL editor passes the resolved family. */
 export async function validateQuery(
   connId: string, sql: string, dialect?: string,
+  /** SE-4 H: without these the guards cannot read a parameterised query's literals,
+   *  and the verdict comes back `unchecked` rather than clean. */
+  params?: Record<string, unknown>,
 ): Promise<QueryValidation> {
   const res = await fetch(`${getApiBase()}/query/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conn_id: connId, sql, ...(dialect ? { dialect } : {}) }),
+    body: JSON.stringify({
+      conn_id: connId, sql,
+      ...(dialect ? { dialect } : {}),
+      ...(params && Object.keys(params).length ? { params } : {}),
+    }),
   });
   if (!res.ok) throw new Error("Validation failed");
   return res.json();
