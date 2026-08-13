@@ -57,10 +57,17 @@ export function Workspace<L extends string>({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
       {/* Workspace header — title + optional controls + perspective switcher */}
-      <div className="aug-content-header" style={{ gap: 14 }}>
+      <div className="aug-content-header" style={{ gap: 14, flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
         {renderIcon(active.icon, 14, "var(--t3)")}
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{active.label}</span>
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>· {active.blurb}</span>
+        <span style={{ fontSize: 13, fontWeight: 500, flexShrink: 0 }}>{active.label}</span>
+        <span
+          style={{
+            fontSize: 13, color: "var(--t3)",
+            minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}
+        >
+          · {active.blurb}
+        </span>
 
         {headerControls}
 
@@ -71,6 +78,9 @@ export function Workspace<L extends string>({
           style={{
             marginLeft: headerControls ? 0 : "auto",
             display: "flex",
+            minWidth: 0,
+            overflowX: "auto",
+            scrollbarWidth: "none",
             gap: 2,
             padding: 2,
             background: "var(--bg-2)",
@@ -90,6 +100,8 @@ export function Workspace<L extends string>({
                 variant="ghost"
                 size="sm"
                 style={{
+                  fontSize: 13,
+                  flexShrink: 0,
                   padding: "4px 11px",
                   borderRadius: "var(--r2)",
                   border: "1px solid transparent",
@@ -102,7 +114,7 @@ export function Workspace<L extends string>({
                 {l.label}
                 {(badges?.[l.id] ?? 0) > 0 && (
                   <span style={{
-                    fontSize: 10, fontWeight: 600, lineHeight: 1,
+                    fontSize: 11, fontWeight: 600, lineHeight: 1,
                     padding: "2px 5px", borderRadius: "var(--r-pill)",
                     background: "var(--amb1)", border: "1px solid var(--amb2)",
                     color: "var(--amb5)", fontVariantNumeric: "tabular-nums",
