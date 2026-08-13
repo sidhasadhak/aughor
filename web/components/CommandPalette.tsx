@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { formatCount } from "@/lib/format";
 import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
 import { getApiBase } from "@/lib/config";
+import { useRichSchema } from "@/lib/schema-context";
 import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -167,16 +168,18 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       .then(d => setInvestigations(Array.isArray(d) ? d.slice(0, 20) : []))
       .catch(() => {});
 
-    // Fetch schema tables for the selected connection. Must be /schema/rich —
-    // plain /schema returns {schema: <string>} with no tables key, which left
-    // the palette's table quick-jump permanently empty.
-    if (selectedConn) {
-      fetch(`${getApiBase()}/connections/${selectedConn}/schema/rich`)
-        .then(r => r.json())
-        .then(d => setTables(d?.tables ?? []))
-        .catch(() => {});
-    }
   }, [open, selectedConn]);
+
+  // Schema tables for the quick-jump, from the shared per-connection cache. It must be
+  // /schema/rich — plain /schema returns {schema: <string>} with no tables key, which
+  // once left this list permanently empty. Only fetched while the palette is open.
+  const { schema: paletteSchema } = useRichSchema(open ? selectedConn : null);
+  useEffect(() => {
+    // `row_count` is `string | null` on the wire; this list has always declared it
+    // non-null and got away with it because the old raw `r.json()` was untyped. The
+    // shared hook is typed, so the coercion becomes explicit rather than accidental.
+    setTables((paletteSchema?.tables ?? []).map(t => ({ ...t, row_count: t.row_count ?? "" })));
+  }, [paletteSchema]);
 
   // Escape handler
   useEffect(() => {

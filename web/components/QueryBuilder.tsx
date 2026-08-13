@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { compactNumber, formatCount } from "@/lib/format";
 import {
-  getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
+  getConnections, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
   listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp, decompileSql,
   pinQueryToDashboard,
@@ -17,6 +17,7 @@ import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
 import { IcoSchema, IcoTable } from "@/components/icons/catalog";
+import { useRichSchema } from "@/lib/schema-context";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType } from "@/components/charts/chartTypeInference";
@@ -1015,6 +1016,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
   const [connectionsState, setConnections] = useState<Connection[]>([]);
   const connections = connectionsProp ?? connectionsState;
   const [connId,        setConnId]        = useState(initialConnId ?? "");
+  const { schema: builderSchema } = useRichSchema(connId);
   const [tableNames,    setTableNames]    = useState<string[]>([]);
   const [tableCols,     setTableCols]     = useState<Record<string,SchemaColumn[]>>({});
   const [rowCounts,     setRowCounts]     = useState<Record<string,string|null>>({});
@@ -1177,7 +1179,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
     // the catalog tree uses ("order_items"), so the catalog rows find their columns/joins.
     // Collision guard: if two schemas expose the same bare name, keep BOTH dotted to stay
     // unambiguous. Schema is recorded in tableSchemas so quoteTable re-qualifies at SQL time.
-    getSchemaRich(connId).then(rich => {
+    if (!builderSchema) return;
+    // Same transform as before, now fed by the shared per-connection cache instead of
+    // this component's own fetch. The canonicalisation below is unchanged.
+    const rich = builderSchema;
+    {
       const bareCount: Record<string, number> = {};
       rich.tables.forEach(t => { const b = bareTable(t.name); bareCount[b] = (bareCount[b] || 0) + 1; });
       const keyOf = (full: string) => (bareCount[bareTable(full)] > 1 ? full : bareTable(full));
@@ -1196,8 +1202,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
       setTableSchemas(prev => ({ ...prev, ...schemaAdds }));
       setSchemaJoins(joins); setIsolated(iso);
-    }).catch(err => { console.error("[QueryBuilder] getSchemaRich failed:", err); }).finally(()=>setLoadingCols(false));
-  }, [connId]);
+    }
+    setLoadingCols(false);
+  }, [connId, builderSchema]);
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;

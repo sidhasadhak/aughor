@@ -9,7 +9,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiBase } from "@/lib/config";
-import { getSchemaRich, type RichSchema } from "@/lib/api";
+import { type RichSchema } from "@/lib/api";
+import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
@@ -784,17 +785,14 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   // Fetch the rich schema for whichever connection is active in this panel.
   const [schema, setSchema] = useState<RichSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
+  const { schema: sharedSchema, loading: sharedLoading } = useRichSchema(activeConn);
   useEffect(() => {
-    if (!activeConn) { setSchema(null); return; }
-    let cancelled = false;
-    setSchemaLoading(true);
-    setSchema(null);
-    getSchemaRich(activeConn)
-      .then(d => { if (!cancelled) setSchema(d); })
-      .catch(() => { if (!cancelled) setSchema(null); })
-      .finally(() => { if (!cancelled) setSchemaLoading(false); });
-    return () => { cancelled = true; };
-  }, [activeConn]);
+    // Mirrors the shared per-connection cache into this panel's existing state, so
+    // every consumer below is untouched. The cancelled-flag dance is gone with the
+    // fetch that needed it — the cache owns request lifecycle now.
+    setSchema(sharedSchema);
+    setSchemaLoading(sharedLoading);
+  }, [activeConn, sharedSchema, sharedLoading]);
 
   // Reset table/schema scope whenever the connection changes
   useEffect(() => { setScopeSchema(""); setScopeTable(""); }, [activeConn]);
