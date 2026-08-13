@@ -518,7 +518,30 @@ _SQL_STRLIT = re.compile(r"'(?:[^']|'')*'")
 MAX_ROWS = 500
 
 
-def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
+#: SE-3 G — statements that answer questions ABOUT the query or the schema rather
+#: than returning data from it. They are reads, but they are not ``SELECT``s, so the
+#: root-type check below rejects them.
+_METADATA_HEAD = re.compile(r"^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b", re.IGNORECASE)
+
+#: Only this surface may run them. A capability the agent path never asked for is not
+#: widened for the agent path: `_run` passes the flag from its statement LABEL, the
+#: same way `_is_internal_query` already routes on it.
+_METADATA_LABELS = frozenset({"query_workbench"})
+
+
+def is_metadata_statement(sql: str) -> bool:
+    """True for EXPLAIN / DESCRIBE / SHOW — read-only, and NOT wrappable in a subquery.
+
+    The caller needs this twice: to let the statement past the SELECT-root check, and
+    to skip the ``SELECT * FROM (…) __q LIMIT n`` wrap. The wrap is what actually broke
+    EXPLAIN — measured 2026-08-13, `DESCRIBE` and `SHOW` already worked *because* of it
+    (wrapped, they parse as a Select and DuckDB accepts them as a subquery source),
+    while EXPLAIN cannot be a subquery source at all and died with a parser error.
+    """
+    return bool(_METADATA_HEAD.match(sql or ""))
+
+
+def _validate(sql: str, dialect: str = "duckdb", *, allow_metadata: bool = False) -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
     # The forbidden-keyword pre-scan targets mutation STATEMENTS; a keyword inside a
     # string literal ('sql.execute', 'please DELETE this') is data, not a statement,
@@ -535,6 +558,13 @@ def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
         parsed = sqlglot.parse_one(sql, read=dialect or "duckdb", error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
+    # A metadata read is allowed past the ROOT-TYPE check only — deliberately after
+    # the forbidden-keyword scan above, which is what keeps `EXPLAIN DELETE FROM t`
+    # rejected (verified: it still answers "Only SELECT statements are permitted").
+    # The mutation guard and the statement-kind rule are separate rules, and only the
+    # second one is being relaxed.
+    if allow_metadata and is_metadata_statement(sql):
+        return True, "ok"
     if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
         return False, f"Only SELECT is allowed, got {type(parsed).__name__}"
     return True, "ok"
@@ -606,6 +636,47 @@ class DatabaseConnection(ABC):
 
     @abstractmethod
     def close(self) -> None: ...
+
+    def interrupt(self) -> bool:
+        """Ask the engine to abort the statement running on this connection, from
+        ANOTHER thread. Returns True when the connector could ask, False when it has
+        no engine support (the caller then has nothing better than waiting).
+
+        Implemented once, here, by delegating to the driver handle every connector in
+        this codebase already keeps as ``self._conn`` — the same attribute the
+        profilers and ``build_intelligence`` read. That covers every DuckDB-backed
+        connector at once, which matters because they are not one class: the demo
+        Workspace is ``LocalUploadConnection``, and a per-class implementation on
+        ``DuckDBConnection`` alone left the most-used connection in the product
+        uncancellable while the tests passed. Postgres overrides this, because libpq
+        spells the same idea ``cancel()``.
+
+        **Cross-thread by design, and that is the whole point.** ``execute()`` blocks
+        the thread it runs on, so nothing on that thread can stop it — the only way to
+        end a runaway query early is a second thread reaching the engine's own abort.
+        DuckDB (``interrupt``) and libpq (``cancel``) both document this as safe.
+
+        **The one rule for callers: interrupt, never close.** ``close()`` on a live
+        cursor is what segfaulted CI twice (#323), and an interrupting thread is by
+        definition racing a live cursor. So the interrupting thread only ever asks the
+        engine to stop; the thread that OWNS the connection observes the resulting
+        exception and closes in its own ``finally``. Aborting leaves the connection
+        reusable — verified for DuckDB (subsequent statements succeed) and true for
+        Postgres, which runs autocommit so a cancel leaves no aborted transaction
+        behind; a connection that somehow does end up unusable is caught by the pool's
+        ``is_healthy`` probe at the next acquire rather than handed to another caller.
+        """
+        handle = getattr(self, "_conn", None)
+        ask = getattr(handle, "interrupt", None)
+        if not callable(ask):
+            return False
+        try:
+            ask()
+            return True
+        except Exception:
+            # Already closed, or never opened — nothing to interrupt is a no-op, not a
+            # failure worth propagating to a caller who only wants the query to stop.
+            return False
 
     def get_ontology(self):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
@@ -888,7 +959,8 @@ class DuckDBConnection(DatabaseConnection):
     def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
+                               allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -965,6 +1037,11 @@ class DuckDBConnection(DatabaseConnection):
             return True, "Connected"
         except Exception as e:
             return False, str(e)
+
+    # `interrupt()` is the base implementation: it delegates to `self._conn.interrupt()`,
+    # which is DuckDB's own cross-thread abort. Not overridden here on purpose — every
+    # DuckDB-backed connector (this one, LocalUpload, aughor_ops) then gets it from one
+    # place instead of three copies that can drift apart.
 
     def close(self) -> None:
         try:
@@ -1177,7 +1254,8 @@ class PostgresConnection(DatabaseConnection):
     def _run(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"),
+                               allow_metadata=hypothesis_id in _METADATA_LABELS)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -1426,6 +1504,17 @@ class PostgresConnection(DatabaseConnection):
             return True, version.split(",")[0]
         except Exception as e:
             return False, str(e)
+
+    def interrupt(self) -> bool:
+        """libpq's out-of-band cancel — sent on a SEPARATE socket, which is why it
+        works while the main one is blocked mid-query. The statement raises
+        ``QueryCanceled`` on its own thread. This connection runs autocommit, so
+        there is no aborted transaction left behind to poison a pooled reuse."""
+        try:
+            self._conn.cancel()
+            return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         try:

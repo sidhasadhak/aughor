@@ -73,6 +73,19 @@ export async function splitStatements(sql: string): Promise<StatementRange[]> {
   return sql.trim() ? [{ from: 0, to: sql.length, text: sql }] : [];
 }
 
+/**
+ * EXPLAIN / DESCRIBE / SHOW — read-only statements the workbench may run (SE-3 G).
+ *
+ * The pair of this lives in `aughor/db/connection.py` as `is_metadata_statement`, and
+ * the duplication is deliberate: this side decides whether to LINT, that side decides
+ * whether to RUN, and there is no codegen across the boundary. Keep them in step —
+ * the failure mode if they drift is cosmetic here (a squiggle under valid SQL) and
+ * substantive there (a refusal), so the server stays the authority either way.
+ */
+export function isMetadataStatement(sql: string): boolean {
+  return /^\s*(EXPLAIN|DESCRIBE|DESC|SHOW)\b/i.test(sql ?? "");
+}
+
 /** Approximate syntax diagnostics. Falls back to none. */
 export async function validateSql(sql: string): Promise<ParseDiagnostic[]> {
   const res = await ask("validate", sql);

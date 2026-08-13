@@ -37,7 +37,9 @@ import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt } from "@/lib/query/parserClient";
 import { cmDialect, engineFamily, type EngineHint } from "@/lib/query/dialect";
 import { formatSql } from "@/lib/query/format";
-import { runWorkbenchQuery, type QueryValidation, type TypedQueryResult } from "@/lib/api";
+import {
+  runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void };
@@ -82,6 +84,9 @@ export function SqlMode({
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
+  // SE-3 F — the in-flight run's abort handle and when it started.
+  const abort = useRef<AbortController | null>(null);
+  const [startedAt, setStartedAt] = useState(0);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
   const editorApi = useRef<EditorApi | null>(null);
@@ -160,10 +165,13 @@ export function SqlMode({
     toRun = toRun.trim().replace(/;\s*$/, "");
     if (!toRun) return;
 
+    const ac = new AbortController();
+    abort.current = ac;
     setRunning(true);
     setError("");
+    setStartedAt(Date.now());
     try {
-      const res = await runWorkbenchQuery(connId, toRun);
+      const res = await runWorkbenchQuery(connId, toRun, 500, ac.signal);
       setResult(res);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
@@ -171,14 +179,43 @@ export function SqlMode({
       patchActive({ status: res.error ? "error" : "ok" });
     } catch (e) {
       setResult(null);
-      setError(e instanceof Error ? e.message : "Query failed");
-      patchActive({ status: "error" });
+      // A cancellation is the user's own decision arriving back at them. Reporting it
+      // as a failure would make the button they just pressed look like a malfunction,
+      // so the panel returns to its resting state and says nothing.
+      if (e instanceof QueryCancelled) {
+        patchActive({ status: undefined });
+      } else {
+        setError(e instanceof Error ? e.message : "Query failed");
+        patchActive({ status: "error" });
+      }
     } finally {
+      abort.current = null;
       setRunning(false);
+      setStartedAt(0);
       // The rail reads the audit log this run just wrote to.
       setHistoryKey(k => k + 1);
     }
   }, [connId, running, sqlText, patchActive]);
+
+  /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
+   *  interrupts the engine — so this stops the QUERY, not just the waiting. */
+  const cancel = useCallback(() => abort.current?.abort(), []);
+
+  // The elapsed ticker. It exists because a long query with no clock is
+  // indistinguishable from a hung one, and that ambiguity is what makes people
+  // reload the page. Only ticks while a run is in flight, and only past a second —
+  // a counter that flashes "0s" on every fast query is noise, not information.
+  const [elapsed, setElapsed] = useState("");
+  useEffect(() => {
+    if (!startedAt) { setElapsed(""); return; }
+    const tick = () => {
+      const s = (Date.now() - startedAt) / 1000;
+      setElapsed(s < 1 ? "" : s < 60 ? `${s.toFixed(0)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(0)}s`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
 
   // The run command must see the CURRENT text and cursor. `run` is rebuilt when those
   // change, and the editor calls through this ref, so ⌘↵ never fires a stale closure.
@@ -236,11 +273,22 @@ export function SqlMode({
             padding: "6px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
           }}
         >
-          <Button variant="default" size="xs" className="aug-fs-ui"
-            title="Runs the selection, or the statement under the cursor (⌘↵)"
-            onClick={() => void run()} disabled={!connId || running}>
-            {running ? "Running…" : "Run  ⌘↵"}
-          </Button>
+          {/* One control, two states. A separate always-visible Cancel would be dead
+              most of the time, and a disabled "Running…" leaves the user watching a
+              query they cannot stop — which is the thing this wave exists to fix. */}
+          {running ? (
+            <Button variant="secondary" size="xs" className="aug-fs-ui"
+              title="Stop this query — the engine is interrupted, not just the wait"
+              onClick={cancel}>
+              Cancel{elapsed && <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>}
+            </Button>
+          ) : (
+            <Button variant="default" size="xs" className="aug-fs-ui"
+              title="Runs the selection, or the statement under the cursor (⌘↵)"
+              onClick={() => void run()} disabled={!connId}>
+              Run  ⌘↵
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="xs"

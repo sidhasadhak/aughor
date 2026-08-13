@@ -71,7 +71,9 @@ export function ResultsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
-      <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+      {/* The GRID scrolls, not this wrapper: a second scroll container above a
+          virtualized list is what makes the virtualizer mount every row. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {empty ? (
           <div style={{ ...noteStyle, padding: "12px 14px" }}>
             No rows returned.
@@ -81,7 +83,6 @@ export function ResultsPanel({
             columns={result.columns}
             columnsTyped={result.columns_typed}
             rows={result.rows}
-            maxHeight={100000}
           />
         )}
       </div>
