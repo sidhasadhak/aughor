@@ -11,7 +11,7 @@ import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
-import { OpenInBuilderProvider } from "@/lib/openInBuilder";
+import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
@@ -1955,10 +1955,13 @@ export default function Home() {
   // Open in the Query workbench — a query handed off from Insights / Deep Analysis.
   // Defaults the connection to the currently selected one (what the finding ran against).
   // The workbench opens in Visual mode, which is where importRequest is handled (SE-1).
-  const handleOpenInBuilder = (sql: string, connId?: string) => {
+  const handleOpenInQuery = ({ sql, connId, mode }: OpenInQueryRequest) => {
     const c = connId || selectedConn;
     if (c && c !== selectedConn) setSelectedConn(c);
     setBuilderImport({ connId: c, sql, nonce: Date.now() });
+    // A caller that names a mode gets it; one that does not leaves the workbench on
+    // its own default rather than being silently forced into the visual composer.
+    if (mode) setQueryInitialMode(mode);
     setDataLayer("query");
     setTab("data");
   };
@@ -2010,7 +2013,7 @@ export default function Home() {
   }, [selectedWorkspace, connections]);
 
   return (
-    <OpenInBuilderProvider value={handleOpenInBuilder}>
+    <OpenInQueryProvider value={handleOpenInQuery}>
     <div className="aug-app">
 
       {/* Topbar */}
@@ -2439,6 +2442,6 @@ export default function Home() {
       )}
 
     </div>
-    </OpenInBuilderProvider>
+    </OpenInQueryProvider>
   );
 }
