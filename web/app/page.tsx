@@ -1482,6 +1482,27 @@ const VALID_TABS = new Set<NavTab>([
   "monitors", "actions", "activity", "security", "semantic", "settings",
 ]);
 
+/** The Data rail ids that are really LAYERS of the Data workspace.
+ *
+ *  Module scope on purpose: both `navigate()` and the URL boundary need it. Before
+ *  SE-1 only navigate() resolved these, so `?tab=builder` (or catalog, or semantic)
+ *  on a COLD LOAD set a tab with no render branch and painted a blank workspace —
+ *  the sidebar highlighted correctly, which is what made it look like a render bug
+ *  rather than a routing one. `resolveDeepLinkTab` below closes that. */
+const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
+  catalog:  "catalog",
+  builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
+  query:    "query",
+  semantic: "semantic",
+};
+
+/** Resolve a URL tab id to what should actually render: a workspace tab, plus the
+ *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
+function resolveDeepLinkTab(t: NavTab): { tab: NavTab; dataLayer: DataLayer | null } {
+  const layer = DATA_LAYER_FOR_TAB[t];
+  return layer ? { tab: "data", dataLayer: layer } : { tab: t, dataLayer: null };
+}
+
 function tabFromUrl(): NavTab | null {
   if (typeof window === "undefined") return null;
   const t = new URLSearchParams(window.location.search).get("tab") as NavTab | null;
@@ -1541,10 +1562,18 @@ export default function Home() {
     const l = layerFromUrl();
     const table = params.get("table");
     const canvasId = params.get("canvas");
-    if (t) setTab(t);
+    // A Data rail id in the URL is a LAYER alias, not a tab that renders — resolve it
+    // here or the workspace paints blank on a cold load (SE-1).
+    const resolved = t ? resolveDeepLinkTab(t) : null;
+    if (resolved) {
+      setTab(resolved.tab);
+      if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+    }
     if (l) setIntelLayer(l);
     if (table) setInitialGraphTable(table);
-    if (t || l || canvasId) pendingDeepLink.current = { tab: t, layer: l, canvas: canvasId };
+    if (t || l || canvasId) {
+      pendingDeepLink.current = { tab: resolved?.tab ?? t, layer: l, canvas: canvasId };
+    }
 
     // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
     // `?layer=` are their own values; `?canvas=` is only an id, and the workspace renders
@@ -1619,7 +1648,13 @@ export default function Home() {
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
-      if (t) setTab(t);
+      if (t) {
+        // Same layer-alias resolution as the mount path — Back into a `?tab=builder`
+        // entry must land where the forward navigation did, not on a blank workspace.
+        const r = resolveDeepLinkTab(t);
+        setTab(r.tab);
+        if (r.dataLayer) setDataLayer(r.dataLayer);
+      }
       const l = layerFromUrl();
       if (l) setIntelLayer(l);
     };
@@ -1827,12 +1862,9 @@ export default function Home() {
   };
 
   // The three Data rail items are now layers of one Data workspace (REC-U5).
-  const LEGACY_DATA_LAYER: Partial<Record<NavTab, DataLayer>> = {
-    catalog:  "catalog",
-    builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
-    query:    "query",
-    semantic: "semantic",
-  };
+  // Module-level (see DATA_LAYER_FOR_TAB) because the URL boundary needs it too — it
+  // is a constant, and two copies would be the drift this map exists to prevent.
+  const LEGACY_DATA_LAYER = DATA_LAYER_FOR_TAB;
 
   // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
   // legacy rail ids and deep links land on the matching layer.

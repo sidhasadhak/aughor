@@ -91,9 +91,29 @@ export function QueryWorkbench({
     getSchemaRich(connId)
       .then(rich => {
         if (cancelled) return;
+        const tables = rich.tables ?? [];
+
+        // Table names arrive schema-qualified ("luxexperience.customers"), and CM6
+        // reads a dotted key as a namespace path — so out of the box the user must
+        // type "luxexperience." before any table appears. People type the table name.
+        //
+        // So each table is registered under BOTH its qualified name and its bare one,
+        // and the bare alias is added only when exactly one schema owns that name.
+        // Registering an ambiguous bare name would silently bind completion to
+        // whichever schema happened to be last, which is worse than making the user
+        // qualify a genuinely ambiguous table.
+        const bareOwners = new Map<string, number>();
+        for (const t of tables) {
+          const bare = t.name.split(".").pop() ?? t.name;
+          bareOwners.set(bare, (bareOwners.get(bare) ?? 0) + 1);
+        }
+
         const map: Record<string, string[]> = {};
-        for (const t of rich.tables ?? []) {
-          map[t.name] = (t.columns ?? []).map(c => c.name);
+        for (const t of tables) {
+          const cols = (t.columns ?? []).map(c => c.name);
+          map[t.name] = cols;
+          const bare = t.name.split(".").pop() ?? t.name;
+          if (bare !== t.name && bareOwners.get(bare) === 1) map[bare] = cols;
         }
         setSchema(map);
       })
