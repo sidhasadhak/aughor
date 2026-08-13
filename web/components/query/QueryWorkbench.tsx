@@ -3,11 +3,20 @@
 /**
  * SE-1 — the Query workbench: ONE surface, two modes.
  *
- * Stage A of the builder merge. The visual composer is not rewritten, wrapped, or
- * modified — it is embedded verbatim as Visual mode, and the SQL editor arrives beside
- * it as a peer. That is deliberate sequencing: this PR proves the shell (mode toggle,
- * connection, schema, URL contract) while the thing users already rely on keeps working
- * exactly as it did. SE-2's PR E does the extraction.
+ * SE-1 stood the shell up with the visual composer embedded verbatim; **PR E is the
+ * extraction**. The workbench now owns the three things that were duplicated across the
+ * two modes:
+ *
+ *   1. **The connection.** One picker, for both modes. QueryBuilder had its own beside
+ *      the workbench's, so the same screen asked the same question twice and only one
+ *      of the answers was authoritative.
+ *   2. **The catalog rail.** ONE `CatalogRail`, mounted OUTSIDE either mode pane, so
+ *      switching Visual↔SQL leaves the catalog exactly where it was rather than
+ *      swapping one tree for a different tree showing the same warehouse. What a row
+ *      DOES is per-mode and arrives from `railProps` below.
+ *   3. **The schema read.** Both modes already shared `useRichSchema`'s cache; now they
+ *      share the derivation too, so what you can browse, what completes, and what the
+ *      builder will join are the same list by construction.
  *
  * Both modes stay MOUNTED once opened. A SQL draft and a half-built visual query are
  * both work in progress, and a toggle that discarded either would make switching feel
@@ -16,16 +25,13 @@
  *
  * The mode lives in the URL (`?tab=query&mode=visual|sql`) via the History API, the
  * same contract every other tab here uses — so a mode is linkable and survives reload.
- *
- * The connection and schema controls render only in SQL mode, because QueryBuilder
- * carries its own and two competing pickers on one screen is worse than one picker per
- * mode. That asymmetry is a Stage-A artifact: PR E lifts the builder's controls out and
- * the workbench owns a single pair for both modes.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { QueryBuilder } from "@/components/QueryBuilder";
+import { QueryBuilder, type BuilderRailBinding } from "@/components/QueryBuilder";
 import { SqlMode } from "@/components/query/modes/SqlMode";
+import { CatalogRail, type RailTable } from "@/components/query/CatalogRail";
+import { ResizableSplit } from "@/components/ResizableSplit";
 import { type Canvas, type Connection } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
@@ -62,7 +68,7 @@ function syncModeToUrl(mode: QueryMode): void {
  *  bind completion to whichever schema landed last in the map, which is worse than
  *  making a genuinely ambiguous table be qualified. */
 function useSchemaMap(connId: string) {
-  const { schema: data } = useRichSchema(connId);
+  const { schema: data, loading } = useRichSchema(connId);
 
   return useMemo(() => {
     const tables = data?.tables ?? [];
@@ -81,10 +87,11 @@ function useSchemaMap(connId: string) {
       if (parts.length) schemas.add(parts.join("."));
       if (bare !== t.name && bareOwners.get(bare) === 1) map[bare] = cols;
     }
-    // The sidebar gets the SAME tables — one fetch, two consumers, so what you can
-    // browse and what completes cannot disagree. It also carries the join topology
-    // the endpoint already returns: the builder's rail has always shown `⋈n` and
-    // `isolated`, and the SQL editor was dropping facts it had in hand.
+    // The RAIL gets the SAME tables — one fetch, three consumers (completion, the rail,
+    // and the builder that reads this cache itself), so what you can browse, what
+    // completes and what the builder will join cannot disagree. It also carries the join
+    // topology the endpoint already returns: the builder's rail has always shown `⋈n`
+    // and `isolated`, and the SQL editor was dropping facts it had in hand.
     const degree = new Map<string, Set<string>>();
     for (const j of data?.joins ?? []) {
       if (!degree.has(j.t1)) degree.set(j.t1, new Set());
@@ -93,15 +100,15 @@ function useSchemaMap(connId: string) {
       degree.get(j.t2)!.add(j.t1);
     }
     const isolatedSet = new Set(data?.isolated ?? []);
-    const sidebarTables = tables.map(t => ({
+    const railTables: RailTable[] = tables.map(t => ({
       name: t.name,
       columns: (t.columns ?? []).map(c => ({ name: c.name, type: c.type, is_fk: c.is_fk })),
       rowCount: t.row_count,
       joinDegree: degree.get(t.name)?.size ?? 0,
       isolated: isolatedSet.has(t.name),
     }));
-    return { map, sidebarTables, schemas: [...schemas].sort(), tableCount: tables.length };
-  }, [data]);
+    return { map, railTables, schemas: [...schemas].sort(), tableCount: tables.length, loading };
+  }, [data, loading]);
 }
 
 function WorkbenchInner({
@@ -122,6 +129,13 @@ function WorkbenchInner({
   const [mode, setMode] = useState<QueryMode>("sql");
   const [connId, setConnId] = useState(initialConnId ?? "");
   const [defaultSchema, setDefaultSchema] = useState("");
+  const [showCatalog, setShowCatalog] = useState(true);
+  // Visual mode's rail behaviours, published by QueryBuilder. Null until it mounts, so
+  // the rail is a plain catalog rather than a broken builder rail in the meantime.
+  const [railBinding, setRailBinding] = useState<BuilderRailBinding | null>(null);
+  // SQL mode's insertion point. A ref, not state: the rail's handlers read it at CLICK
+  // time, so the workbench has nothing to re-render when the editor mounts.
+  const insertAtCursor = useRef<((text: string) => void) | null>(null);
 
   // URL → mode, in an effect (never during render — same hydration rule as drafts).
   // `initialMode` carries the legacy-link intent from page.tsx rather than being
@@ -134,6 +148,17 @@ function WorkbenchInner({
   }, [initialMode]);
   useEffect(() => { if (initialConnId) setConnId(initialConnId); }, [initialConnId]);
 
+  // Land on a real connection rather than an empty picker. QueryBuilder used to do this
+  // for itself; now that the workbench owns the control it owns the defaulting too, or
+  // Visual mode would come up on nothing. It also re-points when the workspace's list
+  // stops containing the current connection — a stale id queries a warehouse this
+  // workspace is not allowed to see.
+  useEffect(() => {
+    const list = connections ?? [];
+    if (!list.length) { setConnId(""); return; }
+    if (!connId || !list.some(c => c.id === connId)) setConnId(list[0].id);
+  }, [connections, connId]);
+
   // An imported query (from Insights / Deep Analysis) lands in VISUAL mode, because
   // `importRequest` is QueryBuilder's existing contract and QueryBuilder is what knows
   // how to load, re-point and run it. Routing imports to the SQL editor instead would
@@ -142,7 +167,7 @@ function WorkbenchInner({
     if (importRequest?.sql) setMode("visual");
   }, [importRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { map: schema, sidebarTables, schemas, tableCount } = useSchemaMap(connId);
+  const { map: schema, railTables, schemas, loading: schemaLoading } = useSchemaMap(connId);
 
   // A schema chosen for one warehouse means nothing in the next one.
   useEffect(() => { setDefaultSchema(""); }, [connId]);
@@ -160,9 +185,25 @@ function WorkbenchInner({
   const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 13 };
   const controlLabel: React.CSSProperties = { fontSize: 13, color: "var(--t3)", flexShrink: 0 };
 
+  // What a rail row DOES, per mode. The rail itself is one instance either way — only
+  // the meaning of a click changes, which is the whole reason the actions are props.
+  //
+  // SQL mode inserts: a TABLE goes in qualified (unambiguous in a FROM clause) and a
+  // COLUMN goes in bare (a schema-qualified column would be wrong in a SELECT list
+  // against an aliased table). Visual mode's behaviours come from the builder.
+  // In Visual mode before the builder has published its binding, the rows are INERT —
+  // never the SQL handlers. Falling through to those would send a click meant for the
+  // visual query into the SQL editor's document, where the user cannot even see it land.
+  const railProps = mode === "visual"
+    ? (railBinding ?? {})
+    : {
+      onSelectTable: (name: string) => insertAtCursor.current?.(name),
+      onSelectColumn: (col: string) => insertAtCursor.current?.(col),
+    };
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {/* mode toggle + (SQL only) connection and schema */}
+      {/* mode toggle, then the controls BOTH modes share */}
       <div
         style={{
           display: "flex", alignItems: "center", gap: 8,
@@ -182,69 +223,99 @@ function WorkbenchInner({
           </Button>
         ))}
 
-        {mode === "sql" && (
+        <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
+        <label style={controlLabel}>Connection</label>
+        <select
+          className="aug-input"
+          style={controlStyle}
+          value={connId}
+          onChange={e => setConnId(e.target.value)}
+          title="The warehouse this workbench queries, in both modes"
+        >
+          {!connId && <option value="">Select a connection…</option>}
+          {(connections ?? []).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        {/* Schema stays SQL-only: it sets what completes without qualifying, and Visual
+            mode qualifies every name it generates, so the control would do nothing. */}
+        {mode === "sql" && schemas.length > 0 && (
           <>
-            <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
-            <label style={controlLabel}>Connection</label>
+            <label style={controlLabel}>Schema</label>
             <select
               className="aug-input"
               style={controlStyle}
-              value={connId}
-              onChange={e => setConnId(e.target.value)}
-              title="The warehouse this SQL runs against"
+              value={defaultSchema}
+              onChange={e => setDefaultSchema(e.target.value)}
+              title="Tables in this schema complete and resolve without qualifying them"
             >
-              {!connId && <option value="">Select a connection…</option>}
-              {(connections ?? []).map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
+              <option value="">(all — qualify names)</option>
+              {schemas.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-
-            {schemas.length > 0 && (
-              <>
-                <label style={controlLabel}>Schema</label>
-                <select
-                  className="aug-input"
-                  style={controlStyle}
-                  value={defaultSchema}
-                  onChange={e => setDefaultSchema(e.target.value)}
-                  title="Tables in this schema complete and resolve without qualifying them"
-                >
-                  <option value="">(all — qualify names)</option>
-                  {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </>
-            )}
-
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 13, color: "var(--t4)" }}>
-              {tableCount ? `${tableCount} tables` : "no schema loaded"}
-            </span>
           </>
         )}
+
+        <div style={{ flex: 1 }} />
+        <Button
+          variant="ghost"
+          size="xs"
+          className="aug-fs-ui"
+          onClick={() => setShowCatalog(s => !s)}
+          title="Show or hide the catalog"
+        >
+          {showCatalog ? "Hide catalog" : "Catalog"}
+        </Button>
       </div>
 
-      {/* Both modes stay mounted; only visibility changes. `display: none` keeps
-          React state, the CM6 document and the builder's fetches alive. */}
-      <div style={{ flex: 1, minHeight: 0, display: mode === "visual" ? "flex" : "none",
-                    flexDirection: "column" }}>
-        <QueryBuilder
-          initialConnId={connId || initialConnId}
-          onOpenCanvas={onOpenCanvas}
-          importRequest={importRequest}
-          connections={connections}
-        />
-      </div>
-      <div style={{ flex: 1, minHeight: 0, display: mode === "sql" ? "flex" : "none",
-                    flexDirection: "column" }}>
-        <SqlMode
-          connId={connId}
-          connectionName={(connections ?? []).find(c => c.id === connId)?.name}
-          engine={engine}
-          schema={schema}
-          sidebarTables={sidebarTables}
-          defaultSchema={defaultSchema || undefined}
-        />
-      </div>
+      {/* Catalog ▸ modes. ONE rail, outside both panes, so a mode switch does not
+          rebuild the tree the user just navigated — and `collapsed` rather than a
+          conditional split, so hiding the rail does not remount the modes beside it. */}
+      <ResizableSplit
+        storageKey="workbench.catalog"
+        initial={280}
+        min={200}
+        max={560}
+        collapsed={!showCatalog}
+        style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+        left={
+          <CatalogRail
+            tables={railTables}
+            connectionName={(connections ?? []).find(c => c.id === connId)?.name}
+            loading={schemaLoading}
+            hint={mode === "visual"
+              ? "Click to add · drag a column onto Dimensions or Metrics"
+              : "Click to insert at the cursor"}
+            {...railProps}
+          />
+        }
+        right={
+          <>
+            {/* Both modes stay mounted; only visibility changes. `display: none` keeps
+                React state, the CM6 document and the builder's fetches alive. */}
+            <div style={{ flex: 1, minHeight: 0, display: mode === "visual" ? "flex" : "none",
+                          flexDirection: "column" }}>
+              <QueryBuilder
+                connId={connId}
+                onConnIdChange={setConnId}
+                onOpenCanvas={onOpenCanvas}
+                importRequest={importRequest}
+                onRailBinding={setRailBinding}
+              />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, display: mode === "sql" ? "flex" : "none",
+                          flexDirection: "column" }}>
+              <SqlMode
+                connId={connId}
+                engine={engine}
+                schema={schema}
+                defaultSchema={defaultSchema || undefined}
+                onInsertReady={fn => { insertAtCursor.current = fn; }}
+              />
+            </div>
+          </>
+        }
+      />
     </div>
   );
 }
