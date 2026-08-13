@@ -31,8 +31,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueryBuilder, type BuilderRailBinding } from "@/components/QueryBuilder";
 import { SqlMode } from "@/components/query/modes/SqlMode";
 import { CatalogRail, type RailTable } from "@/components/query/CatalogRail";
+import {
+  SavedQueryBar, isVisualQuery, type SavedQueryBinding,
+} from "@/components/query/SavedQueryBar";
 import { ResizableSplit } from "@/components/ResizableSplit";
-import { type Canvas, type Connection } from "@/lib/api";
+import { type Canvas, type Connection, type SavedQuery } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
 
@@ -137,6 +140,22 @@ function WorkbenchInner({
   // time, so the workbench has nothing to re-render when the editor mounts.
   const insertAtCursor = useRef<((text: string) => void) | null>(null);
 
+  // BOTH modes' saved bindings, not just the active one: loading a saved query switches
+  // to the mode that query belongs to and then loads it there, so the binding for the
+  // mode you are NOT in has to be reachable. Both modes stay mounted, so both exist.
+  const [savedBindings, setSavedBindings] = useState<Record<QueryMode, SavedQueryBinding | null>>(
+    { visual: null, sql: null },
+  );
+  const [savable, setSavable] = useState<Record<QueryMode, boolean>>({ visual: false, sql: false });
+  const [activeSaved, setActiveSaved] = useState<SavedQuery | null>(null);
+
+  // Stable callbacks — a fresh identity here would re-fire each mode's publish effect
+  // on every workbench render.
+  const bindVisual = useCallback((b: SavedQueryBinding) => setSavedBindings(p => ({ ...p, visual: b })), []);
+  const bindSql = useCallback((b: SavedQueryBinding) => setSavedBindings(p => ({ ...p, sql: b })), []);
+  const savableVisual = useCallback((v: boolean) => setSavable(p => (p.visual === v ? p : { ...p, visual: v })), []);
+  const savableSql = useCallback((v: boolean) => setSavable(p => (p.sql === v ? p : { ...p, sql: v })), []);
+
   // URL → mode, in an effect (never during render — same hydration rule as drafts).
   // `initialMode` carries the legacy-link intent from page.tsx rather than being
   // sniffed from the URL here: the tab resolver rewrites `?tab=builder` to `?tab=data`
@@ -176,6 +195,14 @@ function WorkbenchInner({
     setMode(m);
     syncModeToUrl(m);
   }, []);
+
+  // A saved query opens in the mode it was AUTHORED in, not the one you happen to be
+  // standing in. Both modes are mounted, so the target's binding is already published.
+  const openSaved = useCallback((q: SavedQuery) => {
+    const target: QueryMode = isVisualQuery(q) ? "visual" : "sql";
+    chooseMode(target);
+    savedBindings[target]?.load(q);
+  }, [chooseMode, savedBindings]);
 
   const engine = useMemo(() => {
     const c = (connections ?? []).find(x => x.id === connId);
@@ -257,6 +284,17 @@ function WorkbenchInner({
         )}
 
         <div style={{ flex: 1 }} />
+
+        {/* One saved surface for both modes — the SQL editor could not save at all. */}
+        <SavedQueryBar
+          connId={connId}
+          mode={mode}
+          binding={savedBindings[mode]}
+          savable={savable[mode]}
+          onLoaded={openSaved}
+          onActiveChange={setActiveSaved}
+        />
+
         <Button
           variant="ghost"
           size="xs"
@@ -301,6 +339,9 @@ function WorkbenchInner({
                 onOpenCanvas={onOpenCanvas}
                 importRequest={importRequest}
                 onRailBinding={setRailBinding}
+                onSavedBinding={bindVisual}
+                onSavableChange={savableVisual}
+                savedName={activeSaved?.name}
               />
             </div>
             <div style={{ flex: 1, minHeight: 0, display: mode === "sql" ? "flex" : "none",
@@ -311,6 +352,8 @@ function WorkbenchInner({
                 schema={schema}
                 defaultSchema={defaultSchema || undefined}
                 onInsertReady={fn => { insertAtCursor.current = fn; }}
+                onSavedBinding={bindSql}
+                onSavableChange={savableSql}
               />
             </div>
           </>

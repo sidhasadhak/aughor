@@ -5,7 +5,7 @@ import { formatCount } from "@/lib/format";
 import {
   getMetrics, runDirectQuery,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
-  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp, decompileSql,
+  runSemanticOp, decompileSql,
   pinQueryToDashboard,
   type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
@@ -17,6 +17,8 @@ import { type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import { useRichSchema } from "@/lib/schema-context";
 import { type RailColumn } from "@/components/query/CatalogRail";
+import { toCsv, csvFilename, downloadCsv, type CsvCell } from "@/lib/query/csv";
+import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType } from "@/components/charts/chartTypeInference";
@@ -836,16 +838,12 @@ function ResultsPane({
     semResult ? `semantic: ${semResult.operator}` : null,
   ].filter(Boolean).join(" · ");
 
-  const exportCsv = () => {
-    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const csv = [view.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "query-results.csv";
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  };
+  // Shared with the SQL editor's panel. The escape this replaced tested `/[",\n]/`, so a
+  // cell holding a CARRIAGE RETURN went out unquoted and split its row in two.
+  const exportCsv = () => downloadCsv(
+    csvFilename(),
+    toCsv(view.columns, rows as CsvCell[][]),
+  );
 
   const handleCreateCanvas = async () => {
     if (!connId || !primaryTable) return;
@@ -981,6 +979,7 @@ export interface BuilderRailBinding {
 
 export function QueryBuilder({
   connId, onConnIdChange, onOpenCanvas, importRequest, onRailBinding,
+  onSavedBinding, onSavableChange, savedName,
 }: {
   /** Owned by the workbench, so one picker drives both modes and the rail beside them. */
   connId: string;
@@ -991,6 +990,15 @@ export function QueryBuilder({
   importRequest?: { connId: string; sql: string; nonce: number };
   /** Publishes the rail behaviours above whenever they change. */
   onRailBinding?: (binding: BuilderRailBinding) => void;
+  /** Published ONCE — the binding reads through refs, so it never goes stale and
+   *  never re-renders the workbench on a keystroke. */
+  onSavedBinding?: (binding: SavedQueryBinding) => void;
+  /** Whether there is anything worth saving. A primitive, so the effect that reports
+   *  it settles to a no-op except on the empty↔non-empty transition. */
+  onSavableChange?: (savable: boolean) => void;
+  /** The saved query currently open, owned by the workbench's saved-query bar. Titles
+   *  the results so a saved query's output is headed by its NAME, not its table. */
+  savedName?: string;
 }) {
   const setConnId = onConnIdChange;
   const { schema: builderSchema } = useRichSchema(connId);
@@ -1081,12 +1089,10 @@ export function QueryBuilder({
   const [nfVal,   setNfVal]   = useState("");
   const [nfDistinct, setNfDistinct] = useState<string[]>([]);  // distinct-value suggestions for the picker
 
-  // Saved queries (persistence) — savedId/savedName track the currently loaded saved query so
+  // Saved queries: the WORKBENCH's bar owns the list, the active pointer and the CRUD.
+  // This file keeps only the two things the bar cannot know — what the visual state IS
+  // (`buildSpec`) and how to put it back (`loadSaved`).
   // "Save" updates in place; the dropdown lists this connection's saved queries to load/delete.
-  const [savedList,   setSavedList]   = useState<SavedQuery[]>([]);
-  const [savedId,     setSavedId]     = useState<string|null>(null);
-  const [savedName,   setSavedName]   = useState("");
-  const [showSaved,   setShowSaved]   = useState(false);
   const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
   const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
@@ -1100,9 +1106,6 @@ export function QueryBuilder({
   const [legendPos,      setLegendPos]      = useState("");   // "" = default (right)
   const [xTitle,         setXTitle]         = useState("");
   const [yTitle,         setYTitle]         = useState("");
-  const [showSaveName, setShowSaveName] = useState(false);
-  const [saveName,    setSaveName]    = useState("");
-  const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
   // Pin to the briefing cockpit (Door 2) — the query is re-guarded on save, so a bad one is refused.
   const [showPinName, setShowPinName] = useState(false);
   const [pinName,     setPinName]     = useState("");
@@ -1159,13 +1162,6 @@ export function QueryBuilder({
     setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t, having));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas,
       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain, having]);
-
-  // Load this connection's saved queries; reset the active saved-query pointer on switch.
-  useEffect(() => {
-    setSavedId(null); setSavedName("");
-    if (!connId) { setSavedList([]); return; }
-    listSavedQueries(connId).then(setSavedList).catch(() => setSavedList([]));
-  }, [connId]);
 
   // Fetch measure grains (additivity) for the connection — async/non-blocking; warnings appear
   // on metric chips once resolved (the first probe is slow on a wide warehouse, then cached).
@@ -1501,39 +1497,6 @@ export function QueryBuilder({
     return ms ? `${primaryTable} · ${ms}` : `${primaryTable} query`;
   };
 
-  const refreshSavedList = useCallback(() => {
-    if (connId) listSavedQueries(connId).then(setSavedList).catch(() => {});
-  }, [connId]);
-
-  const doCreateSaved = async (name: string) => {
-    if (!connId || !name.trim()) return;
-    setSavingState("saving");
-    try {
-      const q = await createSavedQuery(connId, name.trim(), sql, buildSpec());
-      setSavedId(q.id); setSavedName(q.name);
-      setShowSaveName(false); setSaveName("");
-      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
-      refreshSavedList();
-    } catch (e) { alert((e as Error).message || "Failed to save query"); setSavingState("idle"); }
-  };
-
-  const doUpdateSaved = async () => {
-    if (!savedId) return;
-    setSavingState("saving");
-    try {
-      const q = await updateSavedQuery(savedId, { name: savedName, sql, spec: buildSpec() });
-      setSavedName(q.name);
-      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
-      refreshSavedList();
-    } catch (e) { alert((e as Error).message || "Failed to update query"); setSavingState("idle"); }
-  };
-
-  const onSaveClick = () => {
-    if (!sql.trim()) return;
-    if (savedId) doUpdateSaved();
-    else { setSaveName(suggestedName()); setShowSaveName(true); }
-  };
-
   const loadSaved = (q: SavedQuery) => {
     const s = (q.spec || {}) as Record<string, unknown>;
     setPrimaryTable((s.primaryTable as string) ?? null);
@@ -1560,18 +1523,34 @@ export function QueryBuilder({
     setYTitle(typeof s.yTitle === "string" ? s.yTitle : "");
     setAutoSql(false);            // preserve the saved SQL exactly
     setSql(q.sql);
-    setSavedId(q.id); setSavedName(q.name);
-    setResult(null); setRunError(null); setShowSaved(false);
+    setResult(null); setRunError(null);
   };
 
-  const removeSaved = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await deleteSavedQuery(id);
-      if (savedId === id) { setSavedId(null); setSavedName(""); }
-      refreshSavedList();
-    } catch { /* best-effort */ }
-  };
+  // ── The saved-query bar's binding ───────────────────────────────────────────
+  //
+  // Published ONCE, and it reads through refs. A binding memoized on `sql` would be a
+  // new object per keystroke, so the workbench would setState per keystroke and
+  // re-render both modes while you type. The refs are re-pointed on every render, so
+  // what the bar reads is always current without anything above having to re-render.
+  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
+  const loadSavedRef = useRef(loadSaved);
+  const suggestNameRef = useRef(suggestedName);
+  captureRef.current = () => (sql.trim() ? { sql, spec: buildSpec() } : null);
+  loadSavedRef.current = loadSaved;
+  suggestNameRef.current = suggestedName;
+
+  const savedBinding = useMemo<SavedQueryBinding>(() => ({
+    capture: () => captureRef.current?.() ?? null,
+    load: q => loadSavedRef.current(q),
+    suggestName: () => suggestNameRef.current(),
+  }), []);
+  useEffect(() => { onSavedBinding?.(savedBinding); }, [onSavedBinding, savedBinding]);
+
+  // A primitive, so React bails out of the setState except on the actual transition —
+  // this effect runs per keystroke and costs a render only when Save's enabled state
+  // genuinely changes.
+  const savable = !!sql.trim();
+  useEffect(() => { onSavableChange?.(savable); }, [savable, onSavableChange]);
 
   const commitFilter = () => {
     if (!nfCol) return;
@@ -1730,27 +1709,10 @@ export function QueryBuilder({
         {/* Right controls */}
         <div className="ml-auto flex items-center gap-3">
 
-          {/* Saved queries — persistence */}
+          {/* Saved queries moved to the workbench header — one saved surface for both
+              modes, so a query written in SQL can be saved at all. Pin stays: it makes a
+              briefing CARD out of a chart, which only this mode produces. */}
           <div className="relative flex items-center gap-1.5">
-            <Button variant="ghost" size="xs" onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
-              title="Open saved queries"
-              className={`h-auto font-normal gap-1 aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent border-zinc-700 rounded-[var(--r3)] px-2.5 py-1 transition ${SVG_SIZE_AUTO}`}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-              </svg>
-              {savedName ? <span className="max-w-[110px] truncate">{savedName}</span> : "Saved"}
-              {savedList.length > 0 && <span className="text-zinc-500">{savedList.length}</span>}
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0"><polyline points="1,2 4,6 7,2"/></svg>
-            </Button>
-            <Button variant="ghost" size="xs" onClick={onSaveClick} disabled={!sql.trim()}
-              title={savedId ? "Update this saved query" : "Save the current query"}
-              className={`h-auto font-normal aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition disabled:opacity-40 ${
-                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
-                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 hover:bg-transparent dark:hover:bg-transparent"
-              }`}>
-              {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
-            </Button>
-
             {/* Pin to briefing cockpit — Door 2 (guarded on save) */}
             <Button variant="ghost" size="xs" onClick={onPinClick} disabled={!sql.trim() || pinState === "pinning"}
               title="Pin this query to the briefing cockpit — re-guarded on save"
@@ -1763,56 +1725,6 @@ export function QueryBuilder({
               </svg>
               {pinState === "pinning" ? "Pinning…" : pinState === "pinned" ? "Pinned ✓" : "Pin"}
             </Button>
-
-            {/* Saved-query list */}
-            {showSaved && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setShowSaved(false)} />
-                <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
-                  <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
-                    <span className="aug-fs-xs font-semibold text-zinc-400">Saved queries</span>
-                    <Button variant="ghost" size="xs" onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
-                      disabled={!sql.trim()}
-                      className="h-auto p-0 font-normal aug-fs-xs text-blue-400 hover:text-blue-300 hover:bg-transparent dark:hover:bg-transparent disabled:opacity-40">+ Save current as…</Button>
-                  </div>
-                  <div className="max-h-[320px] overflow-y-auto">
-                    {savedList.length === 0 ? (
-                      <p className="px-3 py-3 aug-fs-xs text-zinc-500">No saved queries for this connection yet.</p>
-                    ) : savedList.map(q => (
-                      <div key={q.id} onClick={() => loadSaved(q)}
-                        className={`group/sq flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800/70 border-b border-zinc-700/30 last:border-0 ${q.id === savedId ? "bg-zinc-800/40" : ""}`}>
-                        <div className="min-w-0 flex-1">
-                          <p className="aug-fs-sm text-zinc-200 truncate">{q.name}</p>
-                          <p className="aug-fs-xs text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
-                        </div>
-                        {q.id === savedId && <span className="aug-fs-xs text-blue-400 shrink-0">active</span>}
-                        <Button variant="ghost" size="xs" onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
-                          className="h-auto p-0 font-normal opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent shrink-0 leading-none">✕</Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Name prompt for create */}
-            {showSaveName && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSaveName(false)} />
-                <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
-                  <p className="aug-fs-xs font-semibold text-zinc-400 mb-2">Save query as</p>
-                  <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") doCreateSaved(saveName); if (e.key === "Escape") setShowSaveName(false); }}
-                    placeholder="Query name"
-                    className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
-                  <div className="flex justify-end gap-2 mt-2.5">
-                    <Button variant="ghost" size="xs" onClick={() => setShowSaveName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
-                    <Button variant="ghost" size="xs" onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
-                      className="h-auto aug-fs-xs bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</Button>
-                  </div>
-                </div>
-              </>
-            )}
 
             {/* Name prompt for a cockpit pin */}
             {showPinName && (

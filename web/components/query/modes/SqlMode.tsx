@@ -29,6 +29,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import {
   TabsBar, newTab, readTabs, writeTabs, type EditorTab,
 } from "@/components/query/TabsBar";
@@ -59,6 +60,8 @@ export function SqlMode({
   schema,
   defaultSchema,
   onInsertReady,
+  onSavedBinding,
+  onSavableChange,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -67,6 +70,9 @@ export function SqlMode({
   defaultSchema?: string;
   /** Hands the workbench's catalog rail a way to insert at this editor's cursor. */
   onInsertReady?: (insert: (text: string) => void) => void;
+  /** Published ONCE; reads through refs so a keystroke never re-renders the workbench. */
+  onSavedBinding?: (binding: SavedQueryBinding) => void;
+  onSavableChange?: (savable: boolean) => void;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -178,6 +184,35 @@ export function SqlMode({
   // change, and the editor calls through this ref, so ⌘↵ never fires a stale closure.
   const runRef = useRef(run);
   runRef.current = run;
+
+  // ── The saved-query bar's binding ───────────────────────────────────────────
+  //
+  // A SQL-mode save writes `sql` with an EMPTY spec. That is not a lesser save: this
+  // mode's query IS its text, and inventing a builder spec for it would claim the
+  // composer could reproduce a statement it may not be able to decompile. The empty
+  // spec is what routes the query back here when it is loaded.
+  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
+  const loadRef = useRef<(q: { sql: string; name: string }) => void>(() => {});
+  const nameRef = useRef<() => string>(() => "Untitled query");
+  captureRef.current = () => (sqlText.trim() ? { sql: sqlText, spec: {} } : null);
+  loadRef.current = q => openInNewTab(q.sql, q.name);
+  // A tab the user renamed is a name they chose — better than anything derived. Only
+  // an untouched tab falls back to reading the query's own FROM clause.
+  nameRef.current = () => {
+    if (active && active.name && active.name !== "Query") return active.name;
+    const m = /\bfrom\s+([A-Za-z_][\w.$"]*)/i.exec(sqlText);
+    return m ? `${m[1].replace(/"/g, "")} query` : "Untitled query";
+  };
+
+  const savedBinding = useMemo<SavedQueryBinding>(() => ({
+    capture: () => captureRef.current?.() ?? null,
+    load: q => loadRef.current(q),
+    suggestName: () => nameRef.current(),
+  }), []);
+  useEffect(() => { onSavedBinding?.(savedBinding); }, [onSavedBinding, savedBinding]);
+
+  const savable = !!sqlText.trim();
+  useEffect(() => { onSavableChange?.(savable); }, [savable, onSavableChange]);
 
   // The editor column — tabs, toolbar, and the editor-over-results split.
   const editorPane = (
