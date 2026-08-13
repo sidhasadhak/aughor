@@ -55,7 +55,10 @@ const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").the
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
 const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").then(m => ({ default: m.CanvasWorkspace })),  { ssr: false, loading });
 // Monitors / Action Hub / Security & Audit now render inside OperationsWorkspace (REC-U5).
-const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
+// SE-1: the workbench replaces the bare builder at the Data ▸ Query layer. Lazy with
+// ssr:false because CodeMirror touches `document` at construction, and because the
+// SQL parser worker it pulls is ~20 MB — neither belongs in the first-render path.
+const QueryWorkbench    = dynamic(() => import("@/components/query/QueryWorkbench").then(m => ({ default: m.QueryWorkbench })), { ssr: false, loading });
 const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
@@ -114,7 +117,8 @@ type NavTab =
   | "health"
   | "playbook"
   | "catalog"
-  | "builder"
+  | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
+  | "query"
   | "connections"
   | "metrics"
   | "monitors"
@@ -502,10 +506,14 @@ const NAV_SECTIONS = [
 
 // The Data rail items render as layers of one Data workspace (REC-U5), mirroring
 // Intelligence / Operations. The switcher labels/icons match the sidebar.
-type DataLayer = "catalog" | "builder" | "semantic";
+// SE-1: the `builder` layer becomes `query` — ONE Query workbench holding both a
+// visual and a SQL mode, rather than a visual composer with no text surface. The
+// legacy `builder` id keeps working as a deep link (LEGACY_DATA_LAYER below), so
+// every bookmark and stored link lands on the workbench's Visual mode.
+type DataLayer = "catalog" | "query" | "semantic";
 const DATA_LAYERS: WorkspaceLayer<DataLayer>[] = [
   { id: "catalog",  icon: "db",      label: "Catalog",       blurb: "Tables, schemas & profiles" },
-  { id: "builder",  icon: "builder", label: "Query Builder", blurb: "Compose SQL visually" },
+  { id: "query",    icon: "builder", label: "Query",         blurb: "Compose visually or write SQL" },
   { id: "semantic", icon: "layers",  label: "Semantic Layer", blurb: "Metrics, entities & glossary" },
 ];
 
@@ -1470,7 +1478,7 @@ const VALID_TABS = new Set<NavTab>([
   "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
-  "health", "playbook", "catalog", "builder", "connections", "metrics",
+  "health", "playbook", "catalog", "builder", "query", "connections", "metrics",
   "monitors", "actions", "activity", "security", "semantic", "settings",
 ]);
 
@@ -1821,7 +1829,8 @@ export default function Home() {
   // The three Data rail items are now layers of one Data workspace (REC-U5).
   const LEGACY_DATA_LAYER: Partial<Record<NavTab, DataLayer>> = {
     catalog:  "catalog",
-    builder:  "builder",
+    builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
+    query:    "query",
     semantic: "semantic",
   };
 
@@ -1904,13 +1913,14 @@ export default function Home() {
     setTab("canvas-workspace");
   };
 
-  // Open in Query Builder — a query handed off from Insights / Deep Analysis.
-  // Defaults the connection to the currently selected one (what the insight ran against).
+  // Open in the Query workbench — a query handed off from Insights / Deep Analysis.
+  // Defaults the connection to the currently selected one (what the finding ran against).
+  // The workbench opens in Visual mode, which is where importRequest is handled (SE-1).
   const handleOpenInBuilder = (sql: string, connId?: string) => {
     const c = connId || selectedConn;
     if (c && c !== selectedConn) setSelectedConn(c);
     setBuilderImport({ connId: c, sql, nonce: Date.now() });
-    setDataLayer("builder");
+    setDataLayer("query");
     setTab("data");
   };
 
@@ -2268,8 +2278,8 @@ export default function Home() {
                 ariaLabel="Data views"
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
-                  if (id === "builder") return (
-                    <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
+                  if (id === "query") return (
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
                   );
                   if (id === "semantic") return (
                     <SemanticLayerPanel

@@ -2674,6 +2674,59 @@ export async function runDirectQuery(
   return res.json();
 }
 
+// ── SE-1 — the Query workbench's typed run (format:"typed", SE-0's contract) ──────
+//
+// A separate function from runDirectQuery rather than a flag on it: the two return
+// DIFFERENT shapes (typed columns, truncation honesty, caveats), and collapsing them
+// behind one signature would make every caller re-narrow the result. The legacy shape
+// stays exactly as it was for the visual builder.
+
+export interface TypedColumn {
+  name: string;
+  /** Normalised type name from the backend (`norm_type`) — drives alignment. */
+  type: string;
+}
+
+export interface TypedQueryResult {
+  columns: string[];
+  columns_typed: TypedColumn[];
+  /** Cells are JSON-safe; a real SQL NULL arrives as null, distinct from "". */
+  rows: (string | number | boolean | null)[][];
+  row_count: number;
+  /** True when the server's n+1 probe row proved there is more beyond the limit. */
+  truncated: boolean;
+  duration_ms: number;
+  sql: string;
+  cached: boolean;
+  error: string | null;
+  receipt_id?: string | null;
+  caveats?: string[];
+  format: "typed";
+}
+
+export async function runWorkbenchQuery(
+  connId: string,
+  sql: string,
+  limit = 500,
+): Promise<TypedQueryResult> {
+  const res = await fetch(`${getApiBase()}/query/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId, sql, limit,
+      use_cache: false, use_bulk: false,
+      format: "typed",
+      // Names this surface for the audit trail and for gate_user_sql's policy.
+      source: "query_workbench",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+  }
+  return res.json();
+}
+
 // ── Semantic operators over a result's text columns (filter/extract/top_k/aggregate) ──
 
 export interface SemanticField { name: string; description?: string }
