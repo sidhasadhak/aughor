@@ -1,0 +1,40 @@
+/* ── Static SQL token colours (SE-2 PR E) ──────────────────────────────────────
+   For SQL rendered OUTSIDE a CodeMirror editor — chat messages, report bodies,
+   anywhere `SqlView` appears.
+
+   Why this file exists: CodeMirror's `HighlightStyle` generates its own class names
+   and injects their CSS only when an EditorView mounts. Highlighting statically (one
+   parse, no editor) therefore has to use `classHighlighter`'s stable `tok-*` classes
+   and supply the CSS itself.
+
+   The COLOURS are not duplicated — these are the same design tokens
+   `components/query/editor/theme.ts` gives CodeMirror, so a keyword is the same violet
+   in a chat transcript as in the editor. Only the tag→class mapping is stated twice,
+   once per highlighter API. If you change a colour, change the token, not this file. */
+
+.tok-keyword,
+.tok-modifier,
+.tok-operatorKeyword    { color: var(--vio4); font-weight: 500; }
+
+.tok-string,
+.tok-string2            { color: var(--grn4); }
+
+.tok-number,
+.tok-bool,
+.tok-null               { color: var(--amb4); }
+
+.tok-comment,
+.tok-lineComment,
+.tok-blockComment       { color: var(--t4); font-style: italic; }
+
+.tok-function,
+.tok-standard           { color: var(--blue4); }
+
+.tok-typeName,
+.tok-className          { color: var(--cyn4); }
+
+.tok-invalid            { color: var(--red4); }
+
+/* Identifiers and punctuation inherit the surrounding prose colour on purpose: a
+   query where every token is coloured reads as noise, which is the failure mode the
+   old regex highlighter had. */

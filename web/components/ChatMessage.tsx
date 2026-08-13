@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useOpenInBuilder } from "@/lib/openInBuilder";
+import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
 import { ExportButton } from "@/components/ExportButton";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -39,6 +39,7 @@ import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
+import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
 import { FixItForm } from "@/components/FixItForm";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
@@ -473,35 +474,6 @@ function SqlBlock({ sql }: { sql: string }) {
 }
 
 // ── SQL syntax highlighter ───────────────────────────────────────────────────
-function FormattedSql({ sql }: { sql: string }) {
-  // Multi-word keywords must come first in the alternation
-  const TOKEN_RE = /(`[^`]*`|'[^']*'|\b(?:GROUP\s+BY|ORDER\s+BY|IS\s+NOT\s+NULL|IS\s+NOT|IS\s+NULL|NOT\s+IN|NOT\s+LIKE|SELECT|FROM|WHERE|JOIN|LEFT|INNER|RIGHT|OUTER|CROSS|ON|AS|IS|NOT|NULL|AND|OR|IN|LIKE|BETWEEN|DISTINCT|COUNT|SUM|AVG|MIN|MAX|CASE|WHEN|THEN|ELSE|END|WITH|UNION|ALL|HAVING|LIMIT|OFFSET|ROUND|DATE_TRUNC|STRFTIME|COALESCE|NULLIF|CAST|ILIKE|LOWER|UPPER|TRIM|LENGTH|REPLACE|SUBSTR|EXTRACT|IF|IIF|ASC|DESC)\b)/gi;
-
-  const parts: React.ReactNode[] = [];
-  let lastIdx = 0;
-  TOKEN_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TOKEN_RE.exec(sql)) !== null) {
-    if (match.index > lastIdx)
-      parts.push(<span key={`p${lastIdx}`}>{sql.slice(lastIdx, match.index)}</span>);
-    const tok = match[0];
-    if (tok.startsWith("`") || tok.startsWith('"'))
-      parts.push(<span key={`p${match.index}`} style={{ color: "var(--blue5)" }}>{tok}</span>);
-    else if (tok.startsWith("'"))
-      parts.push(<span key={`p${match.index}`} style={{ color: "var(--amb4)" }}>{tok}</span>);
-    else
-      parts.push(<span key={`p${match.index}`} style={{ color: "var(--blue4)", fontWeight: 500 }}>{tok}</span>);
-    lastIdx = match.index + tok.length;
-  }
-  if (lastIdx < sql.length) parts.push(<span key="tail">{sql.slice(lastIdx)}</span>);
-
-  return (
-    <pre className="aug-fs-sm font-code text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
-      {parts}
-    </pre>
-  );
-}
-
 // ── Source panel (Databricks-style: table + expandable SQL) — exported so ────
 // ChatPanel can render it as a top-level right-side drawer.             ────────
 export function SourcePanel({
@@ -510,7 +482,7 @@ export function SourcePanel({
   columns: string[]; rows: unknown[][]; sql: string | null; title: string; onClose: () => void;
 }) {
   const [copied,   setCopied]   = useState(false);
-  const openInBuilder = useOpenInBuilder();
+  const openInQuery = useOpenInQuery();
 
   // Detect each date column's true grain once (from the full column), so weekly
   // buckets render as "Jan 5" not four identical "Jan 2026" rows.
@@ -602,11 +574,11 @@ export function SourcePanel({
             <span className="flex items-center gap-1.5 aug-fs-sm font-medium text-zinc-300">
               <AngleBracketsIcon label="SQL" size="small" /> SQL
             </span>
-            {openInBuilder && (
+            {openInQuery && (
               <Button
                 variant="link"
                 size="xs"
-                onClick={() => openInBuilder(sql)}
+                onClick={() => openInQuery?.({ sql, mode: "sql" })}
                 title="Open this query in the Query Builder"
                 className="h-auto gap-1 px-0 aug-fs-xs text-blue-400 hover:text-blue-300"
               >
@@ -616,7 +588,7 @@ export function SourcePanel({
             )}
           </div>
           <div className="flex-1 overflow-auto min-h-0" style={{ background: "var(--code-bg)" }}>
-            <FormattedSql sql={sql} />
+            <SqlView sql={sql} />
           </div>
         </div>
       )}

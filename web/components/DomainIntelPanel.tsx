@@ -16,7 +16,7 @@ import {
   type ExplorationEpisode,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
-import { useOpenInBuilder } from "@/lib/openInBuilder";
+import { useOpenInQuery } from "@/lib/openInQuery";
 
 // ── Domain metadata ───────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
   const [sqlOpen, setSqlOpen] = useState(false);
   const [promoted, setPromoted] = useState(insight.promoted_to_org ?? false);
   const [promoting, setPromoting] = useState(false);
-  const openInBuilder = useOpenInBuilder();
+  const openInQuery = useOpenInQuery();
   const nv = noveltyMeta(insight.novelty);
   const dm = domainMeta(insight.domain);
 
@@ -194,13 +194,13 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
               </button>
             )
           )}
-          {insight.sql && openInBuilder && (
+          {insight.sql && openInQuery && (
             <button
-              onClick={() => openInBuilder(insight.sql, connectionId)}
+              onClick={() => openInQuery?.({ sql: insight.sql, connId: connectionId, mode: "sql" })}
               title="Open this query in the Query Builder"
               style={{ fontSize: 10, color: "var(--blue4)", background: "var(--blue1)", border: "0.5px solid var(--blue2)", borderRadius: 4, cursor: "pointer", padding: "2px 8px" }}
             >
-              Open in Query Builder →
+              Open in SQL Editor →
             </button>
           )}
           {insight.sql && (

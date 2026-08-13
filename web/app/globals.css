@@ -5,6 +5,7 @@
 @import "../aughor-v2/theme/tokens-v2.css";
 @import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
+@import "../styles/sql-tokens.css";
 
 /* The app stamps [data-theme="dark"|"light"] on <html> (app/page.tsx theme effect);
    before the effect runs there is NO attribute and the app renders its default DARK
