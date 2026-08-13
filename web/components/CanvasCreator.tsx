@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRichSchema } from "@/lib/schema-context";
 import {
   createCanvas,
-  getSchemaRich,
   getCatalogTree,
   suggestCanvasName,
   type Connection,
@@ -58,16 +58,20 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Load tables when a connection is opened
+  // The rich schema comes from the shared per-connection cache; the catalog-tree
+  // fallback below is unchanged, because an EMPTY schema (not just a failed one) is
+  // still the case it exists to cover.
+  const { schema: sharedSchema, error: schemaError } = useRichSchema(connId);
   useEffect(() => {
     if (!connId) return;
     setLoadingTables(true);
     setAllTables([]);
-    // Try rich schema first; fall back to catalog tree which is more reliable
-    getSchemaRich(connId)
-      .then(s => {
-        if (s.tables.length > 0) {
-          setAllTables(s.tables.map(t => t.name));
+    Promise.resolve()
+      .then(() => {
+        if (schemaError) throw new Error("schema unavailable");
+        if (!sharedSchema) return;                      // still loading
+        if (sharedSchema.tables.length > 0) {
+          setAllTables(sharedSchema.tables.map((t: { name: string }) => t.name));
         } else {
           throw new Error("empty schema");
         }
@@ -82,7 +86,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           .catch(() => setAllTables([]));
       })
       .finally(() => setLoadingTables(false));
-  }, [connId]);
+  }, [connId, sharedSchema, schemaError]);
 
   const filteredTables = useMemo(
     () => allTables.filter(t => t.toLowerCase().includes(search.toLowerCase())),

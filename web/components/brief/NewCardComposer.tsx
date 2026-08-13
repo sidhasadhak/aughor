@@ -20,10 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Sparkline } from "@/components/brief/Sparkline";
 import { cleanLabel, formatMetricValue } from "@/lib/format";
 import {
-  getBusinessProfile, getSchemaRich, runDirectQuery, pinQueryToDashboard,
+  getBusinessProfile, runDirectQuery, pinQueryToDashboard,
   type NorthStarMetric, type DirectQueryResult, type SchemaTable,
 } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
+import { useRichSchema } from "@/lib/schema-context";
 
 const inputStyle = {
   fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)",
@@ -97,11 +98,14 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
       .catch(() => setMetrics([]));
   }, [open, connectionId, schema]);
 
-  // Load the real schema (tables + typed columns, one call) when the Build tab is first used.
+  // Tables come from the shared per-connection schema cache, so opening this composer
+  // reuses whatever the Catalog or the editor already fetched instead of asking again.
+  // Gated on the Build tab so a composer that never reaches it issues no request.
+  const wantsSchema = open && mode === "build" ? connectionId : null;
+  const { schema: richSchema } = useRichSchema(wantsSchema);
   useEffect(() => {
-    if (!open || mode !== "build" || !connectionId || tables.length) return;
-    getSchemaRich(connectionId).then(s => setTables(s.tables || [])).catch(() => setTables([]));
-  }, [open, mode, connectionId, tables.length]);
+    if (richSchema) setTables(richSchema.tables || []);
+  }, [richSchema]);
 
   const metric = useMemo(() => metrics.find(m => m.name === sel), [metrics, sel]);
   const tableObj = useMemo(() => tables.find(t => t.name === bTable), [tables, bTable]);

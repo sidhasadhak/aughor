@@ -23,10 +23,11 @@
  * the workbench owns a single pair for both modes.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+
 import { QueryBuilder } from "@/components/QueryBuilder";
 import { SqlMode } from "@/components/query/modes/SqlMode";
-import { getSchemaRich, type Canvas, type Connection } from "@/lib/api";
+import { type Canvas, type Connection } from "@/lib/api";
+import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
 
 export type QueryMode = "visual" | "sql";
@@ -35,21 +36,6 @@ const MODES: Array<{ id: QueryMode; label: string; hint: string }> = [
   { id: "visual", label: "Visual", hint: "Compose a query without writing SQL" },
   { id: "sql",    label: "SQL",    hint: "Write SQL with completion and guards" },
 ];
-
-/** One client for the workbench subtree (DP-3). Schema reads are the same answer for
- *  every consumer and change only when the warehouse does, so they are cached rather
- *  than refetched per mount — the workbench mounts both modes at once, which turned
- *  one logical read into several identical requests. */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60_000,
-      gcTime: 10 * 60_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 /** Read/write `?mode=` without a router round-trip — matches page.tsx's tab sync. */
 function modeFromUrl(): QueryMode | null {
@@ -76,11 +62,7 @@ function syncModeToUrl(mode: QueryMode): void {
  *  bind completion to whichever schema landed last in the map, which is worse than
  *  making a genuinely ambiguous table be qualified. */
 function useSchemaMap(connId: string) {
-  const { data } = useQuery({
-    queryKey: ["schema-rich", connId],
-    queryFn: () => getSchemaRich(connId),
-    enabled: !!connId,
-  });
+  const { schema: data } = useRichSchema(connId);
 
   return useMemo(() => {
     const tables = data?.tables ?? [];
@@ -274,9 +256,8 @@ export function QueryWorkbench(props: {
   connections?: Connection[];
   initialMode?: QueryMode;
 }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <WorkbenchInner {...props} />
-    </QueryClientProvider>
-  );
+  // No provider of its own: the app mounts one QueryClient (app/providers.tsx), and a
+  // second client here would mean a second cache — reintroducing exactly the duplicate
+  // requests this consolidation removed.
+  return <WorkbenchInner {...props} />;
 }

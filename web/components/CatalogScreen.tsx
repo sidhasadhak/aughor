@@ -41,6 +41,8 @@ import { AddDataPanel } from "@/components/AddDataPanel";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
+import { useRichSchema, richSchemaKey } from "@/lib/schema-context";
+import { useQueryClient } from "@tanstack/react-query";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -579,6 +581,9 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
   const [editingCol, setEditingCol]   = useState<string | null>(null);
   const [editType, setEditType]       = useState("");
   const [alterBusy, setAlterBusy]     = useState(false);
+  // One shared read per connection, serving this panel's overview AND its ERD tab.
+  const { schema: catalogSchema } = useRichSchema(sel.connId);
+  const qc = useQueryClient();
 
   // Fetch column detail when table changes. The authoritative column list comes
   // from the reliable per-table reader (same path as Sample Data); the heavy
@@ -590,10 +595,14 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       .then(setBaseCols)
       .catch(err => { console.error("[Catalog] getTableColumns failed:", err); setBaseCols([]); })
       .finally(() => setLoad(false));
-    getSchemaRich(sel.connId)
-      .then(s => setRich(s.tables.find(t => t.name === sel.table.name) ?? null))
-      .catch(err => { console.error("[Catalog] getSchemaRich failed:", err); setRich(null); });
   }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The selected table's rich entry, derived from the shared per-connection schema
+  // rather than fetched again — this panel, the ERD tab below and every other surface
+  // now read one cached answer per connection.
+  useEffect(() => {
+    setRich(catalogSchema?.tables.find(t => t.name === sel.table.name) ?? null);
+  }, [catalogSchema, sel.table.name]);
 
   // Fetch column distributions (exploration profiling) for this table
   useEffect(() => {
@@ -647,8 +656,12 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       // Refresh columns and rich schema so both are in sync
       const [refreshed, rich] = await Promise.all([
         getTableColumns(sel.connId, sel.table.name, sel.schemaName),
+        // Deliberately NOT the cached read: this runs immediately after alterColumn and
+        // needs post-mutation truth. The cache is invalidated below so every other
+        // consumer stops serving the pre-ALTER shape.
         getSchemaRich(sel.connId).then(s => s.tables.find(t => t.name === sel.table.name) ?? null).catch(() => null),
       ]);
+      qc.invalidateQueries({ queryKey: richSchemaKey(sel.connId) });
       setBaseCols(refreshed);
       if (rich) setRich(rich);
       // Be honest when the change is a display-only override (connector can't ALTER).
@@ -833,6 +846,9 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
   const [erdSchema, setErdSchema] = useState<RichSchema | null>(null);
   const [erdLoading, setErdLoading] = useState(false);
   const [erdError, setErdError]   = useState<string | null>(null);
+  // Same shared read the table panel uses — the ERD no longer re-fetches a schema
+  // the catalog already has.
+  const { schema: catalogSchema } = useRichSchema(sel.connId);
   const { entry } = sel;
   const q = filter.toLowerCase();
   const tables = q ? entry.tables.filter(t => t.name.toLowerCase().includes(q)) : entry.tables;
@@ -843,8 +859,9 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
     if (tab !== "erd") return;
     setErdLoading(true);
     setErdError(null);
-    getSchemaRich(sel.connId)
+    Promise.resolve(catalogSchema)
       .then(full => {
+        if (!full) return;
         // The rich schema reports fully-qualified names (bakehouse.media_reviews)
         // while the catalog entry lists bare names (media_reviews). Matching them
         // directly filters a multi-schema connection's ERD down to nothing
