@@ -129,6 +129,7 @@ export function TabsBar({
                 onClick={() => onSelect(t.id)}
                 onDoubleClick={() => { setEditing(t.id); setDraftName(t.name); }}
                 title="Double-click to rename"
+                className="aug-fs-ui"
                 style={{ color: active ? "var(--t1)" : "var(--t3)" }}
               >
                 {t.status === "error" && (
@@ -144,6 +145,7 @@ export function TabsBar({
               <Button
                 variant="ghost"
                 size="xs"
+                className="aug-fs-ui"
                 title="Close tab"
                 onClick={() => onClose(t.id)}
                 style={{ color: "var(--t4)", padding: "0 4px" }}
@@ -154,7 +156,7 @@ export function TabsBar({
           </div>
         );
       })}
-      <Button variant="ghost" size="xs" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
+      <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
         +
       </Button>
     </div>

@@ -176,6 +176,7 @@ function WorkbenchInner({
   }, [connections, connId]);
 
   const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 13 };
+  const controlLabel: React.CSSProperties = { fontSize: 13, color: "var(--t3)", flexShrink: 0 };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -191,6 +192,7 @@ function WorkbenchInner({
             key={m.id}
             variant={mode === m.id ? "secondary" : "ghost"}
             size="xs"
+            className="aug-fs-ui"
             title={m.hint}
             onClick={() => chooseMode(m.id)}
           >
@@ -201,7 +203,7 @@ function WorkbenchInner({
         {mode === "sql" && (
           <>
             <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
-            <label style={{ fontSize: 13, color: "var(--t3)" }}>Connection</label>
+            <label style={controlLabel}>Connection</label>
             <select
               className="aug-input"
               style={controlStyle}
@@ -217,7 +219,7 @@ function WorkbenchInner({
 
             {schemas.length > 0 && (
               <>
-                <label style={{ fontSize: 13, color: "var(--t3)" }}>Schema</label>
+                <label style={controlLabel}>Schema</label>
                 <select
                   className="aug-input"
                   style={controlStyle}

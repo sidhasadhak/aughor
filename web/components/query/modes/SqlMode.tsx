@@ -201,12 +201,15 @@ export function SqlMode({
             padding: "6px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
           }}
         >
-          <Button variant="default" size="xs" onClick={() => void run()} disabled={!connId || running}>
+          <Button variant="default" size="xs" className="aug-fs-ui"
+            title="Runs the selection, or the statement under the cursor (⌘↵)"
+            onClick={() => void run()} disabled={!connId || running}>
             {running ? "Running…" : "Run  ⌘↵"}
           </Button>
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             title="Format the selection, or the whole query (⌘⇧F)"
             onClick={() => setSql(formatSql(sqlText, engine))}
             disabled={!sqlText.trim()}
@@ -216,6 +219,7 @@ export function SqlMode({
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             onClick={() => setShowSidebar(s => !s)}
             title="Show or hide the schema browser"
           >
@@ -224,25 +228,13 @@ export function SqlMode({
           <Button
             variant="ghost"
             size="xs"
+            className="aug-fs-ui"
             onClick={() => setShowHistory(s => !s)}
             title="Recent queries run from this workbench"
           >
             {showHistory ? "Hide history" : "History"}
           </Button>
-          {/* Secondary, and the first thing to give up space when the pane narrows.
-              At one uniform text size a wrapping hint shoves the whole toolbar into
-              three lines, so it truncates and then vanishes rather than reflowing the
-              controls around it. The same sentence is on the Run button's tooltip, so
-              nothing is actually lost when it goes. */}
-          <span
-            style={{
-              fontSize: 13, color: "var(--t4)",
-              flex: "1 1 auto", minWidth: 0,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}
-          >
-            Runs the selection, or the statement under the cursor.
-          </span>
+          <div style={{ flex: 1, minWidth: 0 }} />
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span
