@@ -254,6 +254,7 @@ function WorkbenchInner({
                     flexDirection: "column" }}>
         <SqlMode
           connId={connId}
+          connectionName={(connections ?? []).find(c => c.id === connId)?.name}
           engine={engine}
           schema={schema}
           sidebarTables={sidebarTables}

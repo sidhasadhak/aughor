@@ -24,7 +24,7 @@
 import { useMemo, useState } from "react";
 import Fuse from "fuse.js";
 import { compactNumber } from "@/lib/format";
-import { Chevron, IcoSchema, IcoTable } from "@/components/icons/catalog";
+import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
 import { Button } from "@/components/ui/button";
 
 export interface CatalogColumn {
@@ -65,12 +65,21 @@ function splitName(qualified: string): { schema: string; bare: string } {
 
 export function CatalogTree({
   tables,
+  catalogName,
   onSelectTable,
   onSelectColumn,
   renderTableActions,
   emptyLabel = "No tables in this connection.",
 }: {
   tables: CatalogTable[];
+  /** The CONNECTION this catalog belongs to, rendered as the tree's root.
+   *
+   *  Without it the tree began at schema level, so the SQL editor showed
+   *  `luxexperience` with nothing saying which warehouse that was — while the Catalog
+   *  screen and Visual mode both root at the connection. Two schemas in different
+   *  connections can share a name, so the root is not decoration: it is the only thing
+   *  on screen that says what you are querying. */
+  catalogName?: string;
   onSelectTable?: (qualifiedName: string) => void;
   onSelectColumn?: (columnName: string, qualifiedTable: string) => void;
   /** Builder-specific affordances (add-to-query, primary/joined chips) go here, so
@@ -79,6 +88,7 @@ export function CatalogTree({
   emptyLabel?: string;
 }) {
   const [search, setSearch] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(true);
   const [openSchemas, setOpenSchemas] = useState<Set<string>>(new Set());
   const [openTables, setOpenTables] = useState<Set<string>>(new Set());
 
@@ -152,7 +162,24 @@ export function CatalogTree({
           <p className="aug-fs-sm px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
         )}
 
-        {grouped.map(([schema, schemaTables]) => {
+        {catalogName && (
+          <Button
+            variant="ghost"
+            onClick={() => setCatalogOpen(o => !o)}
+            className="h-auto w-full justify-start gap-2 px-2 py-1.5 font-normal hover:bg-[var(--bg-hover)]"
+          >
+            <Chevron open={catalogOpen} />
+            <IcoCatalog color="var(--t2)" size={14} />
+            <span className="aug-fs-sm truncate font-medium" style={{ color: "var(--t1)" }}>
+              {catalogName}
+            </span>
+            <span className="aug-fs-xs ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+              {tables.length}
+            </span>
+          </Button>
+        )}
+
+        {(!catalogName || catalogOpen) && grouped.map(([schema, schemaTables]) => {
           const sOpen = searching || openSchemas.has(schema) || schema === "";
           return (
             <div key={schema || "(root)"}>
@@ -160,7 +187,7 @@ export function CatalogTree({
                 <Button
                   variant="ghost"
                   onClick={() => toggle(openSchemas, schema, setOpenSchemas)}
-                  className="h-auto w-full justify-start gap-2 px-3 py-1.5 font-normal hover:bg-[var(--bg-hover)]"
+                  className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${catalogName ? "pl-6" : "pl-3"}`}
                 >
                   <Chevron open={sOpen} />
                   <IcoSchema color="var(--blue3)" />
@@ -184,7 +211,7 @@ export function CatalogTree({
                 const rc = fmtRows(t.rowCount);
                 return (
                   <div key={t.name}>
-                    <div className="group/tbl flex w-full items-center gap-2 py-1.5 pl-7 pr-2 transition hover:bg-[var(--bg-hover)]">
+                    <div className={`group/tbl flex w-full items-center gap-2 py-1.5 pr-2 transition hover:bg-[var(--bg-hover)] ${catalogName ? "pl-11" : "pl-7"}`}>
                       <Button
                         variant="ghost"
                         onClick={() => toggle(openTables, t.name, setOpenTables)}
@@ -220,7 +247,7 @@ export function CatalogTree({
                     </div>
 
                     {tOpen && t.columns.map(c => (
-                      <div key={c.name} className="ml-7 border-l pl-2" style={{ borderColor: "var(--b0)" }}>
+                      <div key={c.name} className={`border-l pl-2 ${catalogName ? "ml-12" : "ml-7"}`} style={{ borderColor: "var(--b0)" }}>
                         <Button
                           variant="ghost"
                           onClick={() => onSelectColumn?.(c.name, t.name)}
