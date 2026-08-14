@@ -99,21 +99,27 @@ export function ResultsPanel({
   if (error) {
     return (
       <div style={{ padding: "12px 14px", overflow: "auto" }}>
-        <div
-          className="aug-label"
-          style={{ color: "var(--red4)", marginBottom: 6, display: "flex",
-                   alignItems: "center", gap: 8 }}
-        >
-          Query failed
-          <div style={{ flex: 1 }} />
-          {/* SE-5a — offered only when there is a statement AND a connection to repair
-              it against. The affordance sits with the error because that is the moment
-              it means something; it proposes a diff and never applies on its own. */}
-          {connId && failedSql && onApplyFix && (
+        {/* `aug-label` stays on the TEXT, never on a row that contains the Quick Fix
+            panel: the class carries `text-transform: uppercase`, and nesting the panel
+            inside it rendered the proposed SQL as `SELECT BRAND_NAEM …`. A diff exists to
+            be read literally — and SQL identifiers can be case-sensitive, so an
+            upper-cased diff is not merely ugly, it shows text the document does not
+            contain. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span className="aug-label" style={{ color: "var(--red4)" }}>Query failed</span>
+        </div>
+
+        {/* SE-5a — offered only when there is a statement AND a connection to repair it
+            against. It sits with the error because that is the moment it means something,
+            and as a BLOCK rather than inside the heading row: the ready state is a diff,
+            and a diff squeezed into a flex row beside a label wraps every line. It
+            proposes; it never applies on its own. */}
+        {connId && failedSql && onApplyFix && (
+          <div style={{ marginBottom: 8 }}>
             <QuickFixPanel
               connId={connId} sql={failedSql} error={error} onApply={onApplyFix} />
-          )}
-        </div>
+          </div>
+        )}
         <pre
           style={{
             margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
