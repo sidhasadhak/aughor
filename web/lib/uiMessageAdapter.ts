@@ -86,6 +86,12 @@ class Channel {
   /** Convert one REPLACE-style partial into APPEND chunks. */
   take(full: string): AughorChunk[] {
     const chunks: AughorChunk[] = [];
+    // An empty partial opens nothing. Frames legitimately carry "" — a channel
+    // that has not produced text yet, or a field this turn never fills — and
+    // opening a block for one yields an EMPTY text part, which renders as a
+    // blank paragraph the reader cannot account for. A live run produced three
+    // blocks for two pieces of text this way.
+    if (!this.open && !full) return chunks;
     if (!this.open) {
       chunks.push({ type: "text-start", id: this.partId });
       this.open = true;
@@ -112,12 +118,32 @@ class Channel {
   }
 }
 
-/** Which frame types are partial channels, and which field carries their text. */
-const DELTA_CHANNELS: Record<string, { field: string; channel: string }> = {
+/**
+ * Which frame types carry the answer's TEXT, and which field holds it.
+ *
+ * Both the partial (`*_delta`) and the SETTLED frame route here, to the same
+ * channel. That is not symmetry for its own sake — a live turn exposed the bug:
+ * with only the deltas mapped, a turn that streams settled `headline` frames
+ * (`mode: {query_mode: "final_text"}`) rendered its entire answer — prose, a
+ * markdown table, the actual numbers — as a JSON blob in a `<pre>`, because it
+ * fell through to the data path. The answer was present and unreadable.
+ *
+ * Routing both is safe because `Channel.take()` is REPLACE-semantic: a settled
+ * frame carrying the whole text either extends what was already emitted (the
+ * common case, when deltas preceded it) or rewrites the prefix and opens a fresh
+ * block. Either way the reader sees prose, and no text is emitted twice.
+ */
+const TEXT_CHANNELS: Record<string, { field: string; channel: string }> = {
+  // partials — the whole text so far, re-sent each frame
   narrative_delta: { field: "narrative", channel: "narrative" },
   insight_delta: { field: "narrative", channel: "narrative" }, // legacy spelling
   headline_delta: { field: "headline", channel: "headline" },
   report_delta: { field: "executive_summary", channel: "narrative" },
+  // settled — the final text for that channel
+  narrative: { field: "narrative", channel: "narrative" },
+  insight: { field: "insight", channel: "narrative" },
+  headline: { field: "headline", channel: "headline" },
+  answer: { field: "answer", channel: "narrative" },
 };
 
 export interface AdapterResult {
@@ -212,7 +238,7 @@ export class AughorToUIMessage {
 
     chunks.push(...this.open());
 
-    const ch = DELTA_CHANNELS[event];
+    const ch = TEXT_CHANNELS[event];
     if (ch !== undefined) {
       chunks.push(...this.channel(ch.channel).take(String(data[ch.field] ?? "")));
       return { chunks, investigationId: this.invId, terminal: false };

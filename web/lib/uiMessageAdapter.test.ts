@@ -219,3 +219,75 @@ describe("the two authorities must not drift", () => {
     expect([...UNRENDERED_FRAMES].sort()).toEqual([...theirs].sort());
   });
 });
+
+describe("settled text frames render as PROSE, not as data blobs", () => {
+  /**
+   * Found by driving a browser, not by any gate. A turn with
+   * `mode: {query_mode: "final_text"}` streams its answer as SETTLED `headline`
+   * frames rather than `headline_delta` partials. With only the deltas mapped to
+   * a text channel, the whole answer — prose, a markdown table, the numbers —
+   * fell through to the data path and rendered as JSON in a `<pre>`. Present and
+   * unreadable, which is worse than absent because it looks like it works.
+   */
+  it("routes a settled headline to text when no delta preceded it", () => {
+    const { chunks } = adaptFrames([
+      { event: "headline", data: { headline: "**AOV by Region**\n\n| Central | 426.59 |" } },
+    ]);
+    expect(textFor(chunks)).toContain("AOV by Region");
+    expect(chunks.some((c) => c.type === "data-headline")).toBe(false);
+  });
+
+  it("does not double the text when a settled frame follows its own deltas", () => {
+    // The common case: partials stream, then the settled frame repeats the whole
+    // thing. Replace-semantics must extend, not re-emit.
+    const { chunks } = adaptFrames([
+      { event: "headline_delta", data: { headline: "Total" } },
+      { event: "headline_delta", data: { headline: "Total orders" } },
+      { event: "headline", data: { headline: "Total orders: 9,994" } },
+    ]);
+    expect(textFor(chunks)).toBe("Total orders: 9,994");
+  });
+
+  it("routes settled narrative and answer to the narrative channel", () => {
+    for (const [event, field] of [["narrative", "narrative"], ["answer", "answer"]] as const) {
+      const { chunks } = adaptFrames([{ event, data: { [field]: "the answer" } }]);
+      expect(textFor(chunks)).toBe("the answer");
+    }
+  });
+
+  it("still sends non-text frames to data parts", () => {
+    // The fix must not turn every frame into text.
+    const { chunks } = adaptFrames([{ event: "sql", data: { sql: "SELECT 1" } }]);
+    expect(chunks.some((c) => c.type === "data-sql")).toBe(true);
+    expect(textFor(chunks)).toBe("");
+  });
+});
+
+describe("empty channels do not become empty text parts", () => {
+  it("opens no block for a frame whose text field is empty", () => {
+    const { chunks } = adaptFrames([{ event: "headline", data: { headline: "" } }]);
+    expect(chunks.filter((c) => c.type === "text-start")).toHaveLength(0);
+  });
+
+  it("opens no block for a frame missing its text field entirely", () => {
+    const { chunks } = adaptFrames([{ event: "narrative", data: {} }]);
+    expect(chunks.filter((c) => c.type === "text-start")).toHaveLength(0);
+  });
+
+  it("still opens once real text arrives after an empty frame", () => {
+    const { chunks } = adaptFrames([
+      { event: "headline_delta", data: { headline: "" } },
+      { event: "headline_delta", data: { headline: "Now there is text" } },
+    ]);
+    expect(chunks.filter((c) => c.type === "text-start")).toHaveLength(1);
+    expect(textFor(chunks)).toBe("Now there is text");
+  });
+
+  it("leaves a message with no text at all well-formed", () => {
+    const k = kinds(adaptFrames([
+      { event: "headline", data: { headline: "" } },
+      { event: "done", data: {} },
+    ]).chunks);
+    expect(k).toEqual(["start", "finish"]);
+  });
+});
