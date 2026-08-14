@@ -283,11 +283,16 @@ def _row_to_alert(row: sqlite3.Row) -> MonitorAlert:
 
 
 def append_alert(alert: MonitorAlert) -> MonitorAlert:
-    """Persist a new alert. Idempotent — silent no-op on duplicate id."""
+    """Persist a new alert, then fan it out. Idempotent — silent no-op on duplicate id.
+
+    Every path that fires a monitor funnels through here (the scheduler's test trigger
+    and the automation engine's tick), which is why the fan-out lives here rather than
+    at each caller: a third path added later inherits it instead of forgetting it.
+    """
     with _LOCK:
         conn = _connect()
         try:
-            conn.execute("""
+            cur = conn.execute("""
                 INSERT OR IGNORE INTO monitor_alerts (
                     id, monitor_id, monitor_name, conn_id, metric_name,
                     triggered_at, alert_on, severity, current_value, previous_value,
@@ -298,9 +303,16 @@ def append_alert(alert: MonitorAlert) -> MonitorAlert:
                     :threshold, :message, :caveat, :acknowledged, :acknowledged_at
                 )
             """, alert.model_dump())
+            # OR IGNORE makes a duplicate id a no-op ROW-wise, but the fan-out below
+            # would still run — re-emitting the event and, since OA·N8-0, re-sending
+            # the webhook. Delivery leaves the building, so "idempotent" has to mean
+            # the side effects too, not just the insert.
+            inserted = cur.rowcount > 0
             conn.commit()
         finally:
             conn.close()
+    if not inserted:
+        return alert
     # T3 kernel-leverage: surface a fired alert on the event spine so any panel
     # (and a second tab) sees it live, the same way explorer insights do. The
     # alert row is the source of truth — a failed emit never blocks the alert.
@@ -315,6 +327,10 @@ def append_alert(alert: MonitorAlert) -> MonitorAlert:
         )
     except Exception:
         logger.debug("monitor.alert emit failed", exc_info=True)
+    # OA·N8-0 — deliver outward when the monitor names an Action Hub trigger. No-op
+    # for in_app monitors (the default), and fail-open: the alert is already committed.
+    from aughor.monitors.notify import dispatch_alert
+    dispatch_alert(alert)
     return alert
 
 

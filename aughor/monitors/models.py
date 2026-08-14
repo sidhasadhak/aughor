@@ -107,7 +107,11 @@ class Monitor(BaseModel):
     # Notification
     notification_channel: str = Field(
         default="in_app",
-        description="Delivery channel: 'in_app' | 'slack' | 'email' (only in_app wired currently).",
+        description=(
+            "Where a fired alert goes: 'in_app' (default — the alert row and the "
+            "monitor.alert event, nothing leaves the building), or an Action Hub "
+            "trigger id, which delivers through that trigger (webhook / Slack / Jira)."
+        ),
     )
     enabled: bool = True
     created_at: str = Field(default="")
