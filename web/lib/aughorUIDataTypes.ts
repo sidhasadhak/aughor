@@ -46,6 +46,11 @@ export type AughorReportData = {
 /** Advisory frames — evidence and provenance that accompany an answer. */
 export type AughorEvidenceData = {
   "route": unknown;
+  // `headline` (the settled text) is distinct from `headline_delta` (its
+  // partial stream, which the adapter routes to a text channel). A live run
+  // surfaced this one as unrecognised — the extraction picked up the delta and
+  // not its terminal twin.
+  "headline": unknown;
   "sql": unknown;
   "columns": unknown;
   "rows": unknown;
@@ -124,7 +129,7 @@ export const REPORT_FRAMES = new Set<keyof AughorReportData>([
 const DECLARED = [
   "answer_report", "ada_report", "report", "dossier_report", "overview_report",
   "explore_report",
-  "route", "sql", "columns", "rows", "chart_type", "chart_config", "tables_used",
+  "route", "headline", "sql", "columns", "rows", "chart_type", "chart_config", "tables_used",
   "queries_executed", "figure", "receipt_id", "context_assembled", "guard_receipt",
   "playbook_refs", "hypotheses", "score", "analysis",
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",

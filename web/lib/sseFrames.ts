@@ -18,21 +18,40 @@
 
 export type AughorFrame = { event: string; data: Record<string, unknown> };
 
-/** Parse one SSE record (the text between blank lines) into a frame. */
+/**
+ * Parse one SSE record (the text between blank lines) into a frame.
+ *
+ * THE FRAME NAME LIVES IN THE PAYLOAD, NOT IN AN `event:` LINE. Aughor's
+ * backend emits bare `data: {"type":"route",…}` records — it does not use the
+ * SSE event field at all, and `investigationStream.ts:587` has always read
+ * `p.type` from the parsed JSON for exactly this reason.
+ *
+ * Written the other way round — trusting an `event:` line with a `"message"`
+ * default — every frame parses "successfully" as `message` and falls through to
+ * the unknown path. Nothing throws, nothing is empty, and the stream carries a
+ * full complement of frames that mean nothing. That is precisely what a live
+ * run produced: 14 frames, all unrecognised, no text, no terminal.
+ *
+ * The `event:` line is still honoured as a FALLBACK, so a future endpoint that
+ * does use it is not broken by this — but the payload's own `type` wins, being
+ * the field the backend actually sets.
+ */
 export function parseRecord(record: string): AughorFrame | null {
-  let event = "message";
+  let sseEvent = "";
   const data: string[] = [];
   for (const line of record.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("event:")) sseEvent = line.slice(6).trim();
     else if (line.startsWith("data:")) data.push(line.slice(5).trim());
   }
   if (!data.length) return null;
   try {
-    return { event, data: JSON.parse(data.join("\n")) as Record<string, unknown> };
+    const payload = JSON.parse(data.join("\n")) as Record<string, unknown>;
+    const inPayload = typeof payload.type === "string" ? payload.type : "";
+    return { event: inPayload || sseEvent || "message", data: payload };
   } catch {
     // A frame whose JSON does not parse is a backend bug, not a reason to kill
     // the turn — surface it rather than dropping it.
-    return { event: "error", data: { message: `unparseable ${event} frame` } };
+    return { event: "error", data: { message: `unparseable ${sseEvent || "data"} frame` } };
   }
 }
 

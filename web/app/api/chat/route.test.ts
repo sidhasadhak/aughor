@@ -80,10 +80,11 @@ describe("invariant 1 — anything that is not a live SSE body becomes an error 
 describe("the happy path", () => {
   it("translates frames into a well-formed chunk stream", async () => {
     vi.stubGlobal("fetch", async () => sse(
-      'event: start\ndata: {"investigation_id":"i1"}\n\n'
-      + 'event: narrative_delta\ndata: {"narrative":"Rev"}\n\n'
-      + 'event: narrative_delta\ndata: {"narrative":"Revenue rose"}\n\n'
-      + 'event: done\ndata: {}\n\n'));
+      // Real wire format: bare `data:` records, frame name inside the payload.
+      'data: {"type":"start","investigation_id":"i1"}\n\n'
+      + 'data: {"type":"narrative_delta","narrative":"Rev"}\n\n'
+      + 'data: {"type":"narrative_delta","narrative":"Revenue rose"}\n\n'
+      + 'data: {"type":"done"}\n\n'));
     const chunks = await chunksOf(await POST(ask()));
     const kinds = chunks.map((c) => c.type);
     expect(kinds[0]).toBe("start");
@@ -97,8 +98,8 @@ describe("the happy path", () => {
 
   it("emits nothing after a terminal frame", async () => {
     vi.stubGlobal("fetch", async () => sse(
-      'event: done\ndata: {}\n\n'
-      + 'event: narrative_delta\ndata: {"narrative":"late"}\n\n'));
+      'data: {"type":"done"}\n\n'
+      + 'data: {"type":"narrative_delta","narrative":"late"}\n\n'));
     const chunks = await chunksOf(await POST(ask()));
     expect(chunks.filter((c) => c.type === "text-delta")).toHaveLength(0);
   });
@@ -108,7 +109,7 @@ describe("a dropped upstream is not silence", () => {
   it("closes an unterminated message with an abort", async () => {
     // No `done` — the connection died mid-answer.
     vi.stubGlobal("fetch", async () => sse(
-      'event: narrative_delta\ndata: {"narrative":"half a sent"}\n\n'));
+      'data: {"type":"narrative_delta","narrative":"half a sent"}\n\n'));
     const chunks = await chunksOf(await POST(ask()));
     const kinds = chunks.map((c) => c.type);
     // Leaving the text block open makes the SDK throw UIMessageStreamError.
