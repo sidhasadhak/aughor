@@ -111,7 +111,9 @@ export default function ChatPartsPage() {
         </p>
       )}
 
-      {messages.map((m) => <PartsMessage key={m.id} message={m} />)}
+      {messages.map((m) => (
+        <PartsMessage key={m.id} message={m} connectionId={connId} streaming={busy} />
+      ))}
     </div>
   );
 }
