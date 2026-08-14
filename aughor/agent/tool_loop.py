@@ -67,7 +67,11 @@ class LoopStep:
 class LoopResult:
     answer: Optional[str]
     steps: list[LoopStep] = field(default_factory=list)
-    #: Why the loop ended: "answered" | "budget" | "no_answer".
+    #: Why the loop ended: "answered" (the model produced text) | "budget" (it spent
+    #: every step) | "silent" (it returned neither a tool call nor text, twice — a
+    #: stall, and deliberately NOT the same thing as running out of budget, because
+    #: telling a user to narrow their question is wrong advice when the turn stopped
+    #: after one step of eight).
     stop_reason: str = "answered"
 
     @property
@@ -128,6 +132,9 @@ def run_tool_loop(
     budget = max_steps if max_steps is not None else _budget(provider)
     history: list[dict] = []
     steps: list[LoopStep] = []
+    # One nudge per turn. A model that goes silent twice is not stalling on a
+    # formatting slip, and re-asking would spend the whole budget on silence.
+    nudged = False
 
     def _record(step: LoopStep) -> None:
         """Append and announce, together. Three branches record a step and all three
@@ -150,7 +157,29 @@ def run_tool_loop(
             continue
 
         if not turn.chose_tool:
-            return LoopResult(answer=turn.text, steps=steps, stop_reason="answered")
+            if (turn.text or "").strip():
+                return LoopResult(answer=turn.text, steps=steps, stop_reason="answered")
+            # The model chose no tool AND wrote nothing. Returning that as an answer
+            # hands the caller an empty string it can only report as a failure — and
+            # observed live, it does: a question whose tables were sitting in the
+            # `list_tables` result it had just been given came back "I ran out of
+            # steps" after ONE step of a budget of eight.
+            #
+            # Silence is not a decision, so it does not end the turn. Say so and let
+            # the model spend another step — it still cannot exceed the budget, and
+            # the nudge names the two ways out so a second silence is a real choice
+            # rather than a stall. Recorded as a step so the turn's cost stays honest.
+            if nudged:
+                return LoopResult(answer=None, steps=steps, stop_reason="silent")
+            nudged = True
+            _record(LoopStep(tool="(none)", arguments={}, ok=False,
+                             detail="model returned neither a tool call nor text"))
+            history.extend(_exchange(
+                None,
+                "You returned neither a tool call nor an answer. Either call one of the "
+                "available tools, or answer the question directly in plain text using "
+                "what the previous tool results already gave you."))
+            continue
 
         call = turn.tool_call
         assert call is not None       # chose_tool is exactly this check
