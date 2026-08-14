@@ -52,7 +52,12 @@ _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     # ── Internal jargon ───────────────────────────────────────────────────────────────
     "ada": (
-        r"\bADA\b|\bada[._]", CODE_ROOTS, (),
+        r"\bADA\b|\bada[._]", CODE_ROOTS,
+        # `ada_report` is a frame the backend emits. The data-part map exists to make
+        # the part NAMES a closed, checkable set, so it must spell them exactly as the
+        # wire does — renaming one here would silently stop matching the frame it is
+        # meant to declare, which is the failure the map was added to prevent.
+        ("web/lib/aughorUIDataTypes.ts",),
         "an acronym that expands, in its own docstring, to words it does not spell; "
         "say 'deep analysis'",
     ),
@@ -128,12 +133,18 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "not a user-facing word; the roster lists 'agents'",
     ),
     "investigation_in_web": (
-        r"(?i)investigat", ("web",), ("web/lib/api.ts", "web/lib/uiMessageAdapter.ts"),
+        r"(?i)investigat", ("web",),
+        ("web/lib/api.ts", "web/lib/uiMessageAdapter", "web/lib/sseFrames",
+         "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
-        "must mirror the backend contract field-for-field, and the C1 SSE→UIMessage "
-        "adapter is exempt for the same reason (it names the wire frames verbatim, "
-        "including the start frame's investigation_id drop-recovery handle)",
+        "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "
+        "exempt for the same reason — every file in it names the wire frames verbatim, "
+        "including the start frame's investigation_id drop-recovery handle. CI-1d widened "
+        "that seam from one file to five (the adapter and its tests, the SSE splitter and "
+        "its tests, the data-part vocabulary, and the /api/chat route and its tests); the "
+        "prefixes cover each file WITH its test, because a fixture that renames a wire "
+        "frame stops testing the wire",
     ),
     # ── External product names ────────────────────────────────────────────────────────
     "palantir": (r"(?i)palantir", CODE_ROOTS, (), "name our features for what they do"),

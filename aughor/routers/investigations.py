@@ -3227,11 +3227,31 @@ async def _stream_converse(
 
         answer = (result.answer or "").strip()
         if not answer:
-            answer = (
-                f"I ran out of steps before reaching an answer ({len(result.steps)} tool "
-                "calls). What each step found is above — ask a narrower question and I "
-                "can finish it."
-            )
+            # Say what actually happened. `stop_reason` distinguishes three different
+            # failures that used to share one sentence, and the sentence named the one
+            # that was usually WRONG: a turn that stopped after a single step of a
+            # budget of eight still reported "I ran out of steps", which sends the
+            # reader off to narrow a question that was never the problem.
+            steps_n = len(result.steps)
+            if result.stop_reason == "budget":
+                answer = (
+                    f"I ran out of steps before reaching an answer ({steps_n} tool "
+                    "calls). What each step found is above — ask a narrower question "
+                    "and I can finish it."
+                )
+            elif result.stop_reason == "silent":
+                answer = (
+                    f"I stopped without an answer after {steps_n} "
+                    f"{'step' if steps_n == 1 else 'steps'} — the model returned no "
+                    "tool call and no text, twice. What each step found is above. "
+                    "Asking again usually clears it."
+                )
+            else:
+                answer = (
+                    f"I finished without producing an answer ({steps_n} tool "
+                    f"{'call' if steps_n == 1 else 'calls'}). What each step found is "
+                    "above — asking again, or more specifically, usually gets there."
+                )
         if not turn["sql"]:
             # No SQL this turn ⇒ the same shape the core's own no-SQL paths use, so a
             # text-only converse answer renders exactly like a definitional one does.

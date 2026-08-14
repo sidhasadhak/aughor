@@ -186,3 +186,65 @@ def test_the_model_sees_what_it_already_learned(provider):
 
     roles = [m["role"] for m in faux.calls()[-1].kwargs["messages"]]
     assert roles == ["system", "user", "assistant", "tool"]
+
+
+# ── silence is not an answer ──────────────────────────────────────────────────
+# Found live: a question whose tables were sitting in the `list_tables` result the
+# model had just been handed came back "I ran out of steps" after ONE step of a
+# budget of eight. The model had chosen no tool and written nothing, and the loop
+# returned that empty string as a successful answer.
+
+
+def test_a_silent_turn_is_nudged_rather_than_accepted_as_an_answer(provider):
+    """Neither a tool call nor text is a stall, not a conclusion."""
+    set_responses([
+        FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"),
+        "",                                   # silence — used to end the turn
+        "there were 412 orders",               # what the nudge recovers
+    ])
+
+    result = run_tool_loop(provider, "sys", "how many orders?", [_tool()])
+
+    assert result.answer == "there were 412 orders"
+    assert result.stop_reason == "answered"
+
+
+def test_whitespace_only_counts_as_silence(provider):
+    set_responses(["   \n\t  ", "a real answer"])
+
+    result = run_tool_loop(provider, "sys", "q", [_tool()])
+
+    assert result.answer == "a real answer"
+
+
+def test_the_nudge_is_recorded_so_the_turn_cost_stays_honest(provider):
+    """A step the turn paid for that no step list showed is a cost that vanished."""
+    set_responses(["", "answered at last"])
+
+    result = run_tool_loop(provider, "sys", "q", [_tool()])
+
+    assert len(result.steps) == 1
+    assert result.steps[0].ok is False
+    assert "neither a tool call nor text" in result.steps[0].detail
+
+
+def test_a_second_silence_ends_the_turn_as_silent_not_as_budget(provider):
+    """Two silences is a real stall — but calling it "budget" tells the user to
+    narrow a question that was never the problem."""
+    set_responses(["", "", "never reached"])
+
+    result = run_tool_loop(provider, "sys", "q", [_tool()])
+
+    assert result.answer is None
+    assert result.stop_reason == "silent"          # NOT "budget"
+    assert len(result.steps) == 1                  # one nudge, then it stops
+
+
+def test_the_nudge_does_not_let_the_turn_exceed_its_budget(provider):
+    """The recovery must not become an extra step the ceiling does not cover."""
+    set_responses(["", *[FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql")] * 20])
+
+    result = run_tool_loop(provider, "sys", "q", [_tool()], max_steps=3)
+
+    assert result.stop_reason == "budget"
+    assert len(result.steps) <= 3
