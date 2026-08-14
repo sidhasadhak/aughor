@@ -206,7 +206,10 @@ describe("the two authorities must not drift", () => {
    */
   it("mirrors the reducer's UNRENDERED_FRAMES exactly", () => {
     const src = readFileSync(new URL("./investigationStream.ts", import.meta.url), "utf8");
-    const block = /UNRENDERED_FRAMES\s*=\s*new Set\(\[(.*?)\]\)/s.exec(src);
+    // `[\s\S]` rather than the `s` (dotAll) flag: this project's tsc target is
+    // below es2018, where that flag is a compile error — and the test suite is
+    // not type-checked by `npm test`, so it would have slipped past.
+    const block = /UNRENDERED_FRAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(src);
     // If this fails the list was renamed or restructured — fix the guard, do
     // not delete it.
     expect(block, "could not find UNRENDERED_FRAMES in investigationStream.ts").toBeTruthy();
