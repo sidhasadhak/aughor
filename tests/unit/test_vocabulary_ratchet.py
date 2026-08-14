@@ -135,7 +135,15 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     "investigation_in_web": (
         r"(?i)investigat", ("web",),
         ("web/lib/api.ts", "web/lib/uiMessageAdapter", "web/lib/sseFrames",
-         "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/"),
+         "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/",
+         # The parts renderer's single occurrence is an IMPORT PATH: the payload
+         # shape types (GuardReceipt, ConverseStep, ContextManifest) live in
+         # `investigationStream.ts`, so naming them means naming that module.
+         # Those five types are precisely what OUTLIVES the reducer — moving them
+         # to a neutrally-named module is a real migration step and would retire
+         # this exemption, but it touches five components and belongs with the
+         # reducer's retirement rather than ahead of it.
+         "web/components/chat/PartsMessage.tsx"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "
