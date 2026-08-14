@@ -300,17 +300,48 @@ async def query_run(body: _QueryRunRequest, request: Request):
     # principal's rows leak to another. `tenancy` is None (legacy key) until `rbac.row_policy` is live for an
     # identified user; it is computed here in the request context that also drives enforcement (the default
     # executor copies contextvars into `_work`), and reused for the paired put below.
-    # Typed responses never touch the result cache: cached rows are stringified,
-    # and a typed run wraps at LIMIT n+1 (the truncation probe), so caching its
-    # result would let the legacy path serve one extra row later. Skip both sides.
+    # SE-4 I — the result cache is keyed on the REQUEST SHAPE, not just the SQL text.
+    #
+    # Typed runs used to skip the cache entirely, for two stated reasons: cached rows are
+    # stringified, and a typed run wraps at LIMIT n+1 (the truncation probe) so its rows would
+    # over-serve the legacy path later. Both are consequences of ONE defect — the key ignored
+    # everything about the request that decided what got stored — and that defect was never
+    # confined to typed. It was live on the legacy path: run a query at limit 2, run the same
+    # text at limit 10, and the second call returned 2 rows with `cached: true`. The wrong
+    # answer, confidently labelled.
+    #
+    # `_variant` names the row cap and the format, so entries can no longer read each other's
+    # rows and typed responses become cacheable — which matters now because the builder shares
+    # this grid contract, and its Cache checkbox would otherwise be a switch wired to nothing.
     _typed = body.format == "typed"
+    _variant = f"{body.format}:{body.limit}:{'bulk' if body.use_bulk else 'std'}"
     tenancy = None
-    if body.use_cache and not _typed:
+    if body.use_cache:
         from aughor.db.connection import result_cache_tenancy
-        from aughor.db.matcache import get_cached
+        from aughor.db.matcache import get_cached_entry
         tenancy = result_cache_tenancy()
-        cached = get_cached(body.conn_id, body.sql, tenancy=tenancy)
-        if cached is not None:
+        entry = get_cached_entry(body.conn_id, body.sql, tenancy=tenancy, variant=_variant)
+        if entry is not None:
+            cached, extras = entry
+            receipt_id = _write_builder_receipt(body.conn_id, body.sql)
+            caveats = list(getattr(cached, "caveats", []) or [])
+            if _typed:
+                # Rows were stored post-slice and JSON-native (the n+1 probe row never entered
+                # the cache), so this is the same body the live path returns — minus the run.
+                return {
+                    "columns": cached.columns,
+                    "columns_typed": extras.get("columns_typed") or [],
+                    "rows": cached.rows,
+                    "row_count": cached.row_count,
+                    "truncated": bool(extras.get("truncated")),
+                    "duration_ms": 0.0,
+                    "sql": cached.sql,
+                    "cached": True,
+                    "error": None,
+                    "receipt_id": receipt_id,
+                    "caveats": caveats,
+                    "format": "typed",
+                }
             return {
                 "columns": cached.columns,
                 "rows": cached.rows,
@@ -319,8 +350,8 @@ async def query_run(body: _QueryRunRequest, request: Request):
                 "sql": cached.sql,
                 "cached": True,
                 "error": None,
-                "receipt_id": _write_builder_receipt(body.conn_id, body.sql),
-                "caveats": list(getattr(cached, "caveats", []) or []),
+                "receipt_id": receipt_id,
+                "caveats": caveats,
             }
 
     try:
@@ -399,17 +430,32 @@ async def query_run(body: _QueryRunRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    if body.use_cache and not _typed and not result.error:
-        from aughor.db.matcache import put_cache
-        put_cache(body.conn_id, body.sql, result, tenancy=tenancy)
-
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
     receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:
-        return _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+        typed = _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+        if body.use_cache and not result.error:
+            from aughor.db.matcache import put_cache
+            # Cache what the RESPONSE says, not what the cursor returned: `_typed_response`
+            # has already dropped the n+1 probe row and JSON-normalised the cells. Storing the
+            # raw payload instead is precisely how the probe row would leak into a later read.
+            put_cache(
+                body.conn_id, body.sql,
+                result.model_copy(update={"columns": typed["columns"],
+                                          "rows": typed["rows"],
+                                          "row_count": typed["row_count"]}),
+                tenancy=tenancy, variant=_variant,
+                extra={"columns_typed": typed["columns_typed"],
+                       "truncated": typed["truncated"]},
+            )
+        return typed
+
+    if body.use_cache and not result.error:
+        from aughor.db.matcache import put_cache
+        put_cache(body.conn_id, body.sql, result, tenancy=tenancy, variant=_variant)
 
     legacy = {
         "columns": result.columns,

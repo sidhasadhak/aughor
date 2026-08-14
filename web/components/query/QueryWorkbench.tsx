@@ -34,8 +34,11 @@ import { CatalogRail, type RailTable } from "@/components/query/CatalogRail";
 import {
   SavedQueryBar, isVisualQuery, type SavedQueryBinding,
 } from "@/components/query/SavedQueryBar";
+import { requestTab } from "@/lib/navigate";
+import { putMonitorDraft } from "@/lib/query/monitorDraft";
 import { ResizableSplit } from "@/components/ResizableSplit";
-import { type Canvas, type Connection, type SavedQuery } from "@/lib/api";
+import { listSavedQueries, type Canvas, type Connection, type SavedQuery } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
 
@@ -204,6 +207,62 @@ function WorkbenchInner({
     savedBindings[target]?.load(q);
   }, [chooseMode, savedBindings]);
 
+  // SE-4 I — the RECEIVING half of Share. `?mode=` was already read here; `?query=` was
+  // not, so a shared link would have opened the workbench on whatever the user last had
+  // open. Runs once per (connId, id): re-opening on every binding change would fight a
+  // user who navigated away from the shared query inside the same session.
+  const openedFromUrl = useRef("");
+  useEffect(() => {
+    if (typeof window === "undefined" || !connId) return;
+    const id = new URLSearchParams(window.location.search).get("query");
+    if (!id || openedFromUrl.current === `${connId}:${id}`) return;
+    // Both bindings must be mounted or `openSaved` lands on a null one and silently
+    // does nothing — the failure mode that makes a deep link look like a dead link.
+    if (!savedBindings.sql || !savedBindings.visual) return;
+    openedFromUrl.current = `${connId}:${id}`;
+    // Listed rather than fetched by id: the saved surface has no by-id route, and adding
+    // one for this would mean a new endpoint plus a `gen:api` regeneration to read a
+    // record the workbench already lists.
+    void listSavedQueries(connId)
+      .then(list => {
+        const q = list.find(x => x.id === id);
+        if (q) openSaved(q);
+        else toast.error("That shared query could not be opened — it may have been deleted.");
+      })
+      .catch(() => toast.error("That shared query could not be opened."));
+  }, [connId, savedBindings, openSaved]);
+
+  /** A link that reopens the saved query. Only a SAVED query has a stable address: a
+   *  statement can be any length, and a URL is not where a 4 KB query should live. */
+  const shareQuery = useCallback(() => {
+    if (!activeSaved) {
+      toast.error("Save this query first — a share link points at a saved query.");
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("tab", "query");
+    if (connId) url.searchParams.set("conn", connId);
+    url.searchParams.set("query", activeSaved.id);
+    const link = url.toString();
+    const write = navigator.clipboard?.writeText(link);
+    if (write) {
+      write.then(() => toast.success("Share link copied"))
+           .catch(() => toast.error(`Copy failed — the link is ${link}`));
+    } else {
+      toast.error(`Copy unavailable — the link is ${link}`);
+    }
+  }, [activeSaved, connId]);
+
+  /** Hand this statement to a custom-SQL monitor. The monitor is NOT created here: a
+   *  monitor without a threshold is not a monitor, and inventing one on the user's
+   *  behalf is how an alert fires at 3am for a number nobody chose. */
+  const scheduleQuery = useCallback((sql: string) => {
+    if (!connId) return;
+    putMonitorDraft({ connId, sql });
+    requestTab("monitors", { conn: connId });
+  }, [connId]);
+
   const engine = useMemo(() => {
     const c = (connections ?? []).find(x => x.id === connId);
     return c ? { conn_type: c.conn_type, dialect: (c as { dialect?: string }).dialect } : null;
@@ -354,6 +413,8 @@ function WorkbenchInner({
                 onInsertReady={fn => { insertAtCursor.current = fn; }}
                 onSavedBinding={bindSql}
                 onSavableChange={savableSql}
+                onSchedule={scheduleQuery}
+                onShare={shareQuery}
               />
             </div>
           </>

@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
+import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,19 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   const [runResult, setRunResult] = useState<Record<string, string>>({});
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState<string | null>(null);
+
+  // SE-4 I — a statement handed over by the query workbench's "Schedule". Opens the
+  // form on the custom-SQL source with the SQL already in it, and stops there: the
+  // thresholds are the user's call, and a monitor invented with a default one is an
+  // alert that fires at 3am for a number nobody chose.
+  useEffect(() => {
+    const draft = takeMonitorDraft(connId ?? "");
+    if (!draft) return;
+    setEditTarget(null);
+    setForm({ ...blankForm(draft.connId), custom_sql: draft.sql, name: "" });
+    setMetricSource("sql");
+    setView("form");
+  }, [connId]);
 
   const load = useCallback(async () => {
     setLoading(true);

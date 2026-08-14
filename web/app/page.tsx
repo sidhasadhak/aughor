@@ -24,6 +24,7 @@ import type { EvalsLayer } from "@/components/EvalsWorkspace";
 import type { AgenticOpsLayer } from "@/components/AgenticOpsWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
 
 function LoadingPanel() {
   return (
@@ -1610,6 +1611,27 @@ export default function Home() {
       })
       .catch(settle);
     return () => { dropped = true; };
+  }, []);
+
+  // SE-4 I — let a nested surface ask to change screens (the query workbench's
+  // "Schedule", which hands a statement to a monitor). The shell owns `tab`, and
+  // nothing below could previously reach it: the URL is written FROM this state and
+  // never read back after mount, so a pushState from a leaf moved the address bar and
+  // left the screen where it was.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<NavigateRequest>).detail;
+      // Validated against the same set the deep-link reader uses — an event is
+      // untrusted input like any other, and an unknown id must be ignored, not routed to.
+      if (!detail?.tab || !VALID_TABS.has(detail.tab as NavTab)) return;
+      const { tab: next, dataLayer } = resolveDeepLinkTab(detail.tab as NavTab);
+      if (detail.params?.conn) setSelectedConn(detail.params.conn);
+      if (dataLayer) setDataLayer(dataLayer);
+      setTab(next);
+    };
+    window.addEventListener(NAVIGATE_EVENT, onNavigate);
+    return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
   }, []);
 
   // S1 — keep the URL in step with the screen: a tab change PUSHES (back works

@@ -68,6 +68,8 @@ export function SqlMode({
   onInsertReady,
   onSavedBinding,
   onSavableChange,
+  onSchedule,
+  onShare,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -79,6 +81,10 @@ export function SqlMode({
   /** Published ONCE; reads through refs so a keystroke never re-renders the workbench. */
   onSavedBinding?: (binding: SavedQueryBinding) => void;
   onSavableChange?: (savable: boolean) => void;
+  /** SE-4 I — hand this result's SQL to a custom-SQL monitor. */
+  onSchedule?: (sql: string) => void;
+  /** SE-4 I — copy a link that reopens this query. */
+  onShare?: () => void;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -470,7 +476,16 @@ export function SqlMode({
               diagnostics={diagnostics}
             />
           }
-          right={<ResultsPanel result={result} error={error} running={running} />}
+          right={
+            <ResultsPanel
+              result={result}
+              error={error}
+              running={running}
+              connId={connId}
+              onSchedule={onSchedule}
+              onShare={onShare}
+            />
+          }
         />
     </div>
   );

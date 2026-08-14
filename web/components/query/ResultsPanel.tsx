@@ -2,6 +2,8 @@
 
 /**
  * SE-1 — the results panel: the grid plus the facts about the run.
+ * SE-4 I — plus filters over the returned rows, a chart view, and the ways out
+ * (pin, schedule, share).
  *
  * Errors render INLINE here, never as a toast. A failed query is the primary content
  * of this pane at that moment — a toast would put the one thing the user needs to read
@@ -11,27 +13,76 @@
  * The footer states what the run cost and whether it is complete. `truncated` is the
  * load-bearing one: the server's n+1 probe row is what makes it honest, so "first 500"
  * means there provably are more, not that we stopped counting.
+ *
+ * **The chart is `ResultChartCard`, not a new builder.** The roadmap called for "an
+ * ECharts builder seeded with the result columns"; that component already exists, is
+ * the chart surface for chat, deep-analysis reports, the briefing cockpit and pinned
+ * cards, and already carries chart-type inference, the chart/table/pivot switch, the
+ * viz editor panel, and the `/query/postproc` transforms. The workbench was the ONE
+ * result surface without it. Building a second one would have split the vocabulary in
+ * exactly the way PR E just finished un-splitting for highlighters and exporters.
  */
-import { useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
 import { Button } from "@/components/ui/button";
 import { toCsv, toTsv, csvFilename, downloadCsv } from "@/lib/query/csv";
+import { applyFilters } from "@/lib/query/resultFilter";
 import type { TypedQueryResult } from "@/lib/api";
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
+
+// Module-level constants, not inline `[]`: a fresh array each render would be a new
+// dependency for the filter memo, so it would recompute on every parent render.
+const EMPTY_COLS: string[] = [];
+const EMPTY_ROWS: TypedQueryResult["rows"] = [];
+
+/** A card title from the SQL — the first table named, else a generic label. Cheap and
+ *  deterministic; the user can rename the card on the dashboard. */
+function pinTitle(sql: string): string {
+  const m = /\bfrom\s+([a-zA-Z_][\w.]*)/i.exec(sql);
+  return m ? `Query — ${m[1]}` : "Query result";
+}
 
 export function ResultsPanel({
   result,
   error,
   running,
+  connId,
+  onSchedule,
+  onShare,
 }: {
   result: TypedQueryResult | null;
   error: string;
   running: boolean;
+  connId?: string;
+  /** Opens a custom-SQL monitor prefilled from this result's SQL. */
+  onSchedule?: (sql: string) => void;
+  /** Copies a deep link back to this query. */
+  onShare?: () => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
+  const [view, setView] = useState<"grid" | "chart">("grid");
+  const [filters, setFilters] = useState<ActiveFilter[]>([]);
+  const [pinState, setPinState] = useState<"" | "busy" | "ok" | "fail">("");
+
+  const columns = result?.columns ?? EMPTY_COLS;
+  const rawRows = result?.rows ?? EMPTY_ROWS;
+  // Filtering runs over every returned row on each keystroke. Deferred so typing stays
+  // responsive on a full 500-row result — the grid catching up a frame late is a far
+  // better trade than the input stuttering.
+  const deferredFilters = useDeferredValue(filters);
+  const rows = useMemo(() => {
+    if (!deferredFilters.length) return rawRows;
+    return applyFilters(
+      rawRows,
+      deferredFilters.map((f) => f.clause).filter((c): c is NonNullable<typeof c> => !!c),
+      deferredFilters.map((f) => f.rank).filter((r): r is NonNullable<typeof r> => !!r),
+    );
+  }, [rawRows, deferredFilters]);
 
   if (running && !result) {
     return <div style={{ ...noteStyle, padding: "12px 14px" }}>Running…</div>;
@@ -68,9 +119,22 @@ export function ResultsPanel({
   // A statement that returned no grid (DDL, or a genuinely empty result) still has a
   // footer worth reading — how long it took, and that it really did return nothing.
   const empty = result.row_count === 0;
+  // Filtered everything away is NOT the same as "the query returned nothing", and saying
+  // "No rows returned" for it would blame the warehouse for the user's own chip.
+  const filteredOut = !empty && rows.length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
+      {!empty && (
+        <ResultFilterBar
+          columns={columns}
+          filters={filters}
+          onChange={setFilters}
+          shown={rows.length}
+          total={rawRows.length}
+        />
+      )}
+
       {/* The GRID scrolls, not this wrapper: a second scroll container above a
           virtualized list is what makes the virtualizer mount every row. */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -78,11 +142,22 @@ export function ResultsPanel({
           <div style={{ ...noteStyle, padding: "12px 14px" }}>
             No rows returned.
           </div>
+        ) : filteredOut ? (
+          <div style={{ ...noteStyle, padding: "12px 14px" }}>
+            No rows match these filters — {formatCount(rawRows.length)} returned by the query.
+          </div>
+        ) : view === "chart" ? (
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 12px" }}>
+            {/* No `fillHeight`: it is a PIXEL height, not a boolean, and this pane is
+                resizable — pinning a number here would fight the splitter. The wrapper
+                scrolls instead, so the chart keeps its natural size at any pane height. */}
+            <ResultChartCard columns={columns} rows={rows} />
+          </div>
         ) : (
           <ResultsGrid
-            columns={result.columns}
+            columns={columns}
             columnsTyped={result.columns_typed}
-            rows={result.rows}
+            rows={rows}
           />
         )}
       </div>
@@ -119,10 +194,60 @@ export function ResultsPanel({
         )}
         {result.cached && (<><span>·</span><span>cached</span></>)}
         <div style={{ flex: 1 }} />
+
+        {!empty && (
+          <Button
+            variant="ghost" size="xs" className="aug-fs-ui"
+            title={view === "grid" ? "Chart these rows" : "Back to the grid"}
+            onClick={() => setView(view === "grid" ? "chart" : "grid")}
+          >
+            {view === "grid" ? "Chart" : "Grid"}
+          </Button>
+        )}
+        {!empty && connId && (
+          <Button
+            variant="ghost" size="xs" className="aug-fs-ui"
+            disabled={pinState === "busy"}
+            title="Pin this query to the dashboard as a card"
+            onClick={async () => {
+              setPinState("busy");
+              try {
+                const { pinQueryToDashboard } = await import("@/lib/api");
+                await pinQueryToDashboard(connId, result.sql, pinTitle(result.sql));
+                setPinState("ok");
+              } catch {
+                setPinState("fail");
+              }
+              setTimeout(() => setPinState(""), 1600);
+            }}
+          >
+            {pinState === "ok" ? "Pinned" : pinState === "fail" ? "Pin failed" : "Pin"}
+          </Button>
+        )}
+        {onSchedule && (
+          <Button
+            variant="ghost" size="xs" className="aug-fs-ui"
+            title="Watch this query on a schedule — opens a monitor prefilled with this SQL"
+            onClick={() => onSchedule(result.sql)}
+          >
+            Schedule
+          </Button>
+        )}
+        {onShare && (
+          <Button
+            variant="ghost" size="xs" className="aug-fs-ui"
+            title="Copy a link that reopens this query"
+            onClick={onShare}
+          >
+            Share
+          </Button>
+        )}
         <Button
           variant="ghost" size="xs" className="aug-fs-ui"
-          title="Download these rows as CSV"
-          onClick={() => downloadCsv(csvFilename(), toCsv(result.columns, result.rows))}
+          title={filters.length
+            ? "Download the FILTERED rows as CSV"
+            : "Download these rows as CSV"}
+          onClick={() => downloadCsv(csvFilename(), toCsv(columns, rows))}
         >
           CSV
         </Button>
@@ -130,7 +255,7 @@ export function ResultsPanel({
           variant="ghost" size="xs" className="aug-fs-ui"
           title="Copy these rows to the clipboard, tab-separated (pastes into a spreadsheet)"
           onClick={() => {
-            const tsv = toTsv(result.columns, result.rows);
+            const tsv = toTsv(columns, rows);
             const settle = (s: "ok" | "fail") => {
               setCopyState(s);
               setTimeout(() => setCopyState(""), 1600);

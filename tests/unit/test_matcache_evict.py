@@ -21,8 +21,12 @@ def mem_cache(monkeypatch):
 
 
 def _insert(conn, key, conn_id, stored_at):
+    # Columns NAMED, not positional: this fixture only cares about the key, the conn_id
+    # and the timestamp, so an additive column (SE-4 I's `extra_json`) should not be able
+    # to break a test about eviction.
     conn.execute(
-        "INSERT INTO mat_cache VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO mat_cache (cache_key, conn_id, columns_json, rows_json, row_count, stored_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         [key, conn_id, "[]", "[]", 0, stored_at],
     )
 
