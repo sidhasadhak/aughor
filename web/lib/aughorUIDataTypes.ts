@@ -142,6 +142,27 @@ const DECLARED = [
 export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
 
 /**
+ * Frames that legitimately change no rendered state — mirrored from
+ * `investigationStream.ts`'s `UNRENDERED_FRAMES`, which is the authority.
+ *
+ * These must NOT ride the escape hatch. An unrecognised frame and a deliberately
+ * silent one look identical once both render as "unrecognised: <name>", and
+ * that equivalence is the exact confusion the reducer's own list was created to
+ * end — its comment records that nine frame types were reaching no consumer
+ * with nobody aware of it. Surfacing `compiled` as unknown would re-create the
+ * ambiguity in a new place: a live run did surface it, which is how this list
+ * got here.
+ *
+ * Skipping them is a DECISION, not a swallow. The difference is that this list
+ * is written down, and a frame absent from BOTH it and the declared map still
+ * reaches the shell named.
+ */
+export const UNRENDERED_FRAMES: ReadonlySet<string> = new Set([
+  "explore_plan", "subq_answer", "start", "learning", "activations",
+  "compiled", "fanout", "trusted", "paused",
+]);
+
+/**
  * Compile-time proof the runtime list covers every declared key.
  *
  * The other direction is already covered: `satisfies readonly (keyof

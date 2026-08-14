@@ -12,8 +12,11 @@
  * adapter calls the methods we think it calls.
  */
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
+import { UNRENDERED_FRAMES } from "./aughorUIDataTypes";
 import { AughorToUIMessage, adaptFrames, isDeclaredDataPart } from "./uiMessageAdapter";
 
 /** Concatenate every text-delta for a given part id, in order. */
@@ -171,5 +174,45 @@ describe("the unknown-frame path (why an open model beats a closed switch)", () 
   it("knows which names are declared", () => {
     expect(isDeclaredDataPart("guard_receipt")).toBe(true);
     expect(isDeclaredDataPart("nope")).toBe(false);
+  });
+
+  it("skips a DELIBERATELY silent frame instead of calling it unrecognised", () => {
+    // `compiled` is in the reducer's UNRENDERED_FRAMES. A live run surfaced it
+    // through the escape hatch, which would render deliberate silence as a gap
+    // — the exact ambiguity that list was created to end.
+    const { chunks } = adaptFrames([{ event: "compiled", data: { n: 1 } }]);
+    expect(chunks.filter((c) => c.type.startsWith("data-"))).toHaveLength(0);
+  });
+
+  it("still surfaces a frame that is in NEITHER list", () => {
+    // The skip above must not become a general silencer.
+    const { chunks } = adaptFrames([{ event: "brand_new_frame", data: {} }]);
+    expect(chunks.some((c) => c.type === "data-unknown_frame")).toBe(true);
+  });
+});
+
+describe("the two authorities must not drift", () => {
+  /**
+   * `UNRENDERED_FRAMES` exists in two places: `investigationStream.ts`, which
+   * owns it, and `aughorUIDataTypes.ts`, which mirrors it so the adapter can
+   * tell deliberate silence from a genuine gap.
+   *
+   * Two copies of one list drift, and this one drifts SILENTLY: a frame added
+   * to the reducer's list but not the mirror starts rendering as
+   * "unrecognised", and a frame removed from the reducer's list but left in the
+   * mirror vanishes — the precise failure the mirror was added to prevent. A
+   * guard goes blind when its matching key stops matching, so this reads the
+   * source rather than trusting a second hand-written list.
+   */
+  it("mirrors the reducer's UNRENDERED_FRAMES exactly", () => {
+    const src = readFileSync(new URL("./investigationStream.ts", import.meta.url), "utf8");
+    const block = /UNRENDERED_FRAMES\s*=\s*new Set\(\[(.*?)\]\)/s.exec(src);
+    // If this fails the list was renamed or restructured — fix the guard, do
+    // not delete it.
+    expect(block, "could not find UNRENDERED_FRAMES in investigationStream.ts").toBeTruthy();
+
+    const theirs = new Set([...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+    expect(theirs.size).toBeGreaterThan(0);
+    expect([...UNRENDERED_FRAMES].sort()).toEqual([...theirs].sort());
   });
 });

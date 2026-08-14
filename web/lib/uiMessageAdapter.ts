@@ -59,6 +59,7 @@ import type { UIMessageChunk } from "ai";
 import {
   DECLARED_DATA_PARTS,
   REPORT_FRAMES,
+  UNRENDERED_FRAMES,
   type AughorUIDataTypes,
 } from "./aughorUIDataTypes";
 
@@ -239,12 +240,21 @@ export class AughorToUIMessage {
       return { chunks, investigationId: this.invId, terminal: true };
     }
 
-    // A declared advisory frame rides as its typed data part; an UNDECLARED one
-    // rides as a data part too rather than being dropped. A silently swallowed
-    // frame class is how features stop existing — and this is the property the
-    // reducer's closed switch could not offer, since a `default:` there can only
-    // warn, never render. Here an unknown frame reaches the shell, which may
-    // ignore it, but cannot be unaware of it.
+    // A frame the reducer deliberately renders nothing for is skipped rather
+    // than surfaced. Not a swallow — a written-down decision: once a
+    // deliberately-silent frame renders as "unrecognised: <name>", it is
+    // indistinguishable from a genuine gap, which is the ambiguity the
+    // reducer's own list exists to end.
+    if (UNRENDERED_FRAMES.has(event)) {
+      return { chunks, investigationId: this.invId, terminal: false };
+    }
+
+    // A declared advisory frame rides as its typed data part; a frame in
+    // NEITHER list rides the escape hatch rather than being dropped. A silently
+    // swallowed frame class is how features stop existing — and this is the
+    // property the reducer's closed switch could not offer, since a `default:`
+    // there can only warn, never render. Here an unknown frame reaches the
+    // shell, which may ignore it, but cannot be unaware of it.
     chunks.push(this.data(event, data));
     return { chunks, investigationId: this.invId, terminal: false };
   }
