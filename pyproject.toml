@@ -109,7 +109,13 @@ dev = [
     "pytest-anyio>=0.0.0",
 ]
 observability = [
-    "langfuse>=2.0.0",
+    # Upper-bounded on purpose (OA·LF-1). The old `>=2.0.0` resolved to 4.x, whose
+    # client dropped every v2 method telemetry.py called — init still succeeded, so
+    # the backend reported enabled and shipped nothing for as long as that pin stood.
+    # Spans now travel over OTLP, so the SDK is only used for its documented
+    # trace-id seeding; `tests/unit/test_telemetry_sdk_surface.py` fails loudly if a
+    # future major moves either that or the OTel attribute keys.
+    "langfuse>=4,<5",
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp>=1.24.0",
     # obs.mlflow feature flag — MLflow trace trees per investigation (≥3.13 for

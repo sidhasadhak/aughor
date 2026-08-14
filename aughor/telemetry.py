@@ -4,6 +4,17 @@ MLflow trace trees per run.
 Activation:
   Langfuse: set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
   OTel:     set OTEL_EXPORTER_OTLP_ENDPOINT
+
+**Langfuse rides the OTel exporter (OA·LF-1).** It used to speak the Langfuse
+Python SDK v2 directly — ``lf.trace()``, ``tr.span()``, ``tr.generation()``.
+None of those methods exist on the v4 client this project resolves to, so init
+succeeded, every call raised, and every raise was swallowed at debug level: the
+backend was configured, reported enabled, and shipped nothing. Langfuse v3+ is
+itself OpenTelemetry-native, so the repair is to delete the SDK span path and
+point the exporter this module already builds at Langfuse's OTLP endpoint
+(``{host}/api/public/otel/v1/traces``, HTTP + Basic auth). One span pipeline,
+one place to break, and a version bump can no longer rot it silently — see
+``tests/unit/test_telemetry_sdk_surface.py``.
   MLflow:   point AUGHOR_MLFLOW_TRACKING_URI (or MLFLOW_TRACKING_URI) at a server —
             self-gating on the URI, like the other two backends, since the
             2026-07-31 flag strategy deleted the `obs.mlflow` flag. Unlike the
@@ -29,91 +40,152 @@ from typing import Any, Generator
 
 logger = logging.getLogger(__name__)
 
-# ── Langfuse ──────────────────────────────────────────────────────────────────
+# ── Langfuse (over OTLP) ──────────────────────────────────────────────────────
+#
+# Langfuse's OTel attribute keys. Hardcoded rather than imported from the SDK so a
+# span still carries the right keys when `langfuse` is not installed at all (the
+# exporter is plain OTLP — the package is only needed for the trace-id seed).
+# `tests/unit/test_telemetry_sdk_surface.py` pins these against the installed SDK,
+# so a rename upstream fails a test instead of silently un-labelling every span.
+_LF_TRACE_NAME  = "langfuse.trace.name"
+_LF_TRACE_INPUT = "langfuse.trace.input"
+_LF_TRACE_OUTPUT = "langfuse.trace.output"
+_LF_SESSION_ID  = "session.id"
+_LF_OBS_TYPE    = "langfuse.observation.type"
+_LF_OBS_INPUT   = "langfuse.observation.input"
+_LF_OBS_OUTPUT  = "langfuse.observation.output"
+_LF_OBS_MODEL   = "langfuse.observation.model.name"
+_LF_AS_ROOT     = "langfuse.internal.as_root"
 
-_lf: Any = None          # Langfuse client (None = disabled)
-_lf_init_done = False
-# investigation_id → Langfuse Trace object. A MEMO of client-side handles, not the
-# identity of the trace — that is the id itself, which Langfuse upserts on. Kept
-# because handle construction isn't free, but a miss must never mean "no trace":
-# in a sliced run the invocation adding a span is routinely not the one that called
-# new_trace, and treating its miss as absence silently orphaned every such span
-# (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md §2). `_trace_handle` rebuilds by id.
-_traces: dict[str, Any] = {}
-
-
-def _trace_handle(trace_id: str) -> Any | None:
-    """The Langfuse trace handle for ``trace_id`` — memoized, else rebuilt by id.
-
-    Returns None only when Langfuse is disabled or the rebuild itself fails (down
-    host, bad key): with an id-addressed upstream, "not in this process's memo" is
-    not evidence the trace doesn't exist."""
-    tr = _traces.get(trace_id)
-    if tr is not None:
-        return tr
-    lf = _langfuse()
-    if lf is None or not trace_id:
-        return None
-    try:
-        tr = lf.trace(id=trace_id)
-        _traces[trace_id] = tr
-        return tr
-    except Exception as exc:
-        logger.debug("Langfuse trace rebuild failed for %s: %s", trace_id, exc)
-        return None
+# investigation_id → the trace-level attributes new_trace() collected, pending the
+# first span that can carry them. NOT a handle memo (the thing v2 needed and this
+# does not): the trace's identity is now a pure function of the investigation id,
+# `_lf_trace_id`, so any invocation in a sliced run derives the same trace without
+# having seen new_trace. That is what makes an orphaned span structurally
+# impossible here rather than merely recovered-from
+# (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md §2).
+_traces: dict[str, dict] = {}
 
 
-def _langfuse() -> Any | None:
-    global _lf, _lf_init_done
-    if _lf_init_done:
-        return _lf
-    _lf_init_done = True
+def _langfuse_otlp() -> tuple[str, dict[str, str]] | None:
+    """Langfuse's OTLP endpoint + auth headers, or None when unconfigured.
+
+    Mirrors what the Langfuse SDK's own span processor builds
+    (`langfuse/_client/span_processor.py`) — same path, same Basic-auth header —
+    so we speak its ingestion contract without depending on its client."""
     pk = os.getenv("LANGFUSE_PUBLIC_KEY", "")
     sk = os.getenv("LANGFUSE_SECRET_KEY", "")
     if not pk or not sk:
         return None
-    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    import base64
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
+    auth = base64.b64encode(f"{pk}:{sk}".encode("utf-8")).decode("ascii")
+    return f"{host}/api/public/otel/v1/traces", {
+        "Authorization": f"Basic {auth}",
+        "x-langfuse-sdk-name": "python",
+        "x-langfuse-public-key": pk,
+    }
+
+
+def _lf_trace_id(seed: str) -> str | None:
+    """The 32-hex OTel trace id for an investigation id — deterministic, so every
+    invocation of a sliced run lands on ONE Langfuse trace and the id we hand the
+    frontend stays the key that resolves it. Uses the SDK's own seeding function
+    so our derivation cannot drift from the one Langfuse documents."""
+    if not seed:
+        return None
     try:
         from langfuse import Langfuse  # type: ignore[import]
-        _lf = Langfuse(public_key=pk, secret_key=sk, host=host)
-        logger.info("Langfuse telemetry enabled (host=%s)", host)
-    except ImportError:
-        logger.debug("langfuse package not installed — Langfuse telemetry disabled")
+        return Langfuse.create_trace_id(seed=seed)
     except Exception as exc:
-        logger.warning("Langfuse init failed (telemetry disabled): %s", exc)
-    return _lf
+        logger.debug("Langfuse trace-id seeding unavailable for %s: %s", seed, exc)
+        return None
 
 
 # ── OpenTelemetry ─────────────────────────────────────────────────────────────
 
 _otel_tracer: Any = None
+_otel_provider: Any = None
 _otel_init_done = False
 
 
 def _otel() -> Any | None:
-    global _otel_tracer, _otel_init_done
+    """The tracer, once. An explicit OTEL_EXPORTER_OTLP_ENDPOINT wins and keeps its
+    historical gRPC transport byte-for-byte; Langfuse is the fallback destination and
+    speaks OTLP/HTTP (its endpoint does not accept gRPC), which is why the exporter is
+    chosen per destination rather than shared."""
+    global _otel_tracer, _otel_provider, _otel_init_done
     if _otel_init_done:
         return _otel_tracer
     _otel_init_done = True
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-    if not endpoint:
+    lf = None if endpoint else _langfuse_otlp()
+    if not endpoint and lf is None:
         return None
     try:
         from opentelemetry import trace  # type: ignore[import]
         from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import]
         from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import]
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # type: ignore[import]
+
+        if lf is not None:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import]
+                OTLPSpanExporter)
+            endpoint, headers = lf
+            exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
+            _what = "Langfuse"
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import]
+                OTLPSpanExporter)
+            exporter = OTLPSpanExporter(endpoint=endpoint)
+            _what = "OpenTelemetry"
 
         provider = TracerProvider()
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+        provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
+        _otel_provider = provider
         _otel_tracer = trace.get_tracer("aughor")
-        logger.info("OpenTelemetry tracing enabled (endpoint=%s)", endpoint)
+        logger.info("%s tracing enabled (endpoint=%s)", _what, endpoint)
     except ImportError:
         logger.debug("opentelemetry packages not installed — OTel tracing disabled")
     except Exception as exc:
         logger.warning("OTel init failed (tracing disabled): %s", exc)
     return _otel_tracer
+
+
+def _otel_context(trace_id: str):
+    """A context whose span parent carries ``trace_id``'s derived OTel trace id, so
+    spans from different invocations of one sliced run join a single trace.
+
+    Returns None when there is nothing to pin to, in which case the SDK mints its own
+    trace id — a correct trace, just not one addressable by the investigation id."""
+    tid = _lf_trace_id(trace_id)
+    if tid is None:
+        return None
+    try:
+        from opentelemetry import trace as _t  # type: ignore[import]
+        ctx = _t.SpanContext(
+            trace_id=int(tid, 16),
+            span_id=int(tid[:16], 16),   # a stable synthetic parent for this trace
+            is_remote=True,
+            trace_flags=_t.TraceFlags(_t.TraceFlags.SAMPLED),
+        )
+        return _t.set_span_in_context(_t.NonRecordingSpan(ctx))
+    except Exception as exc:
+        logger.debug("OTel context build failed for %s: %s", trace_id, exc)
+        return None
+
+
+def flush_traces(timeout_ms: int = 5_000) -> None:
+    """Force-export buffered spans. The BatchSpanProcessor exports on a timer, and a
+    serverless invocation is frozen the moment it responds — so on Vercel the timer
+    routinely never fires and the batch dies with the process. Call at the end of a
+    request that produced spans. No-op when tracing is off; never raises."""
+    if _otel_provider is None:
+        return
+    try:
+        _otel_provider.force_flush(timeout_ms)
+    except Exception as exc:
+        logger.debug("OTel force_flush failed: %s", exc)
 
 
 # ── MLflow (self-gating on AUGHOR_MLFLOW_TRACKING_URI) ────────────────────────
@@ -585,20 +657,30 @@ def new_trace(investigation_id: str, question: str, connection_id: str) -> str:
     Returns the trace_id to embed in AgentState and the SSE start event.
     Always returns ``investigation_id`` (even when Langfuse is disabled) so the
     frontend can use it as a stable correlation ID.
+
+    OTel has no "create a trace" call — a trace begins with its first span. So this
+    records the trace-level attributes and the next ``span()`` carries them up. The
+    id is unaffected: it is derived, not allocated, so a run whose first span happens
+    in a later invocation still lands on the same trace.
     """
-    lf = _langfuse()
-    if lf is not None:
-        try:
-            trace = lf.trace(
-                id=investigation_id,
-                name="investigation",
-                input={"question": question, "connection_id": connection_id},
-                tags=["aughor"],
-            )
-            _traces[investigation_id] = trace
-        except Exception as exc:
-            logger.debug("Langfuse trace creation failed: %s", exc)
+    if _otel() is not None:
+        _traces[investigation_id] = {
+            _LF_TRACE_NAME: "investigation",
+            _LF_TRACE_INPUT: _json_attr({"question": question, "connection_id": connection_id}),
+            _LF_SESSION_ID: investigation_id,
+        }
     return investigation_id
+
+
+def _json_attr(value: Any) -> str:
+    """A dict/list as a span-attribute string. OTel attributes are scalars, and
+    Langfuse parses these fields as JSON — so a str() repr would render as an
+    unparseable blob in the UI."""
+    import json
+    try:
+        return json.dumps(value, default=str)[:_MLF_ATTR_MAX_CHARS]
+    except Exception:
+        return str(value)[:_MLF_ATTR_MAX_CHARS]
 
 
 @contextmanager
@@ -607,21 +689,13 @@ def span(
     name: str,
     metadata: dict | None = None,
 ) -> Generator[Any, None, None]:
-    """Context manager that wraps work with a Langfuse span + OTel span.
+    """Context manager that wraps work with an OTel span (which is also the Langfuse
+    span — one pipeline since OA·LF-1) plus the MLflow and local-sink spans.
 
-    Both are no-ops when the respective backend is unconfigured or ``trace_id``
-    is empty.  The yielded value is the Langfuse span object (or ``None``).
+    Every backend is a no-op when unconfigured. The yielded value is the OTel span
+    object, or ``None`` when tracing is off.
     """
     _t0 = _time.monotonic()
-    # ── Langfuse span ──────────────────────────────────────────────────────────
-    lf_span = None
-    if _langfuse() is not None and trace_id:
-        tr = _trace_handle(trace_id)
-        if tr is not None:
-            try:
-                lf_span = tr.span(name=name, metadata=metadata or {})
-            except Exception as exc:
-                logger.debug("Langfuse span start failed: %s", exc)
 
     # ── MLflow + OTel nested spans ─────────────────────────────────────────────
     # One ExitStack for both: MLflow (autolog owns the trace
@@ -638,23 +712,26 @@ def span(
     _stack.enter_context(_obs_span(name, trace_id, metadata, span_kind="node"))
     _mlflow_enter_span(_stack, name, metadata, trace_id=trace_id)
     otel = _otel()
+    otel_span = None
     if otel is not None:
         try:
-            _stack.enter_context(
-                otel.start_as_current_span(name, attributes=_flat_attrs(metadata or {})))
+            attrs = _flat_attrs(metadata or {})
+            # The first span of a run carries the trace-level attributes new_trace
+            # collected — in OTel a trace has no separate object to hang them on.
+            # Popped, so exactly one span claims the root and a re-entrant node
+            # cannot restate the trace's input on a child.
+            pending = _traces.pop(trace_id, None) if trace_id else None
+            if pending:
+                attrs = {**attrs, **pending, _LF_AS_ROOT: True}
+            otel_span = _stack.enter_context(
+                otel.start_as_current_span(
+                    name, context=_otel_context(trace_id), attributes=attrs))
         except Exception as exc:
             logger.debug("OTel span start failed: %s", exc)
     try:
-        yield lf_span
+        yield otel_span
     finally:
         _close_span_stack(_stack, "telemetry")
-
-    # ── End Langfuse span ─────────────────────────────────────────────────────
-    if lf_span is not None:
-        try:
-            lf_span.end()
-        except Exception as exc:
-            logger.debug("Langfuse span end failed: %s", exc)
 
     # ── Kernel event journal — local-first observability, on regardless of
     # Langfuse/OTel config (those are usually unconfigured in dev, which made
@@ -680,43 +757,60 @@ def log_generation(
     output: str,
     metadata: dict | None = None,
 ) -> None:
-    """Log a single LLM call as a Langfuse generation. No-op when disabled."""
-    if _langfuse() is None or not trace_id:
-        return
-    tr = _trace_handle(trace_id)
-    if tr is None:
+    """Log a single LLM call as a Langfuse generation span. No-op when disabled.
+
+    Emitted as an OTel span typed ``generation`` — the observation type is what makes
+    Langfuse render it as a model call (with model, input, output) rather than a plain
+    span. OA·LF-2 gives this its call sites; it has had none since it was written
+    (``llm/provider.py``), which is why the per-call record has only ever lived in the
+    session log."""
+    otel = _otel()
+    if otel is None or not trace_id:
         return
     try:
-        gen = tr.generation(
-            name=name,
-            model=model,
-            input=input_messages,
-            output=output,
-            metadata=metadata or {},
-        )
-        gen.end()
+        with otel.start_as_current_span(
+            name,
+            context=_otel_context(trace_id),
+            attributes={
+                _LF_OBS_TYPE: "generation",
+                _LF_OBS_MODEL: model,
+                _LF_OBS_INPUT: _json_attr(input_messages),
+                _LF_OBS_OUTPUT: _json_attr(output),
+                **_flat_attrs(metadata or {}),
+            },
+        ):
+            pass
     except Exception as exc:
         logger.debug("Langfuse generation log failed: %s", exc)
 
 
 def end_trace(trace_id: str, output: dict | None = None) -> None:
-    """Finalise the trace (mark output) and flush the Langfuse client.
+    """Finalise the trace (mark output) and force-export the buffered spans.
 
-    In a sliced run the finalising invocation is routinely not the one that created
-    the trace, so the handle is rebuilt on a memo miss rather than treated as "nothing
-    to finalise". Safe to call twice — the update is an upsert on the trace id."""
-    lf = _langfuse()
-    if lf is None:
-        _traces.pop(trace_id, None)   # memo hygiene holds even with Langfuse disabled
-        return
-    tr = _trace_handle(trace_id)
-    _traces.pop(trace_id, None)
-    if tr is None:
+    In a sliced run the finalising invocation is routinely not the one that created the
+    trace. That is no longer something to recover from: the trace id is derived from the
+    investigation id, so this invocation addresses the same trace without ever having
+    held a handle. Safe to call twice — a second call finds nothing pending and just
+    flushes.
+
+    The flush is the load-bearing part on serverless: the batch processor exports on a
+    timer, and the invocation is frozen the moment it responds."""
+    otel = _otel()
+    pending = _traces.pop(trace_id, None)
+    if otel is None:
         return
     try:
         if output:
-            tr.update(output=output)
-        lf.flush()
+            # A zero-duration span carrying the trace's output. Langfuse reads
+            # langfuse.trace.* off any span in the trace, so this is the finalisation
+            # even though the root span closed in some other invocation.
+            attrs = {_LF_TRACE_OUTPUT: _json_attr(output)}
+            if pending:
+                attrs.update(pending)
+            with otel.start_as_current_span(
+                    "investigation.end", context=_otel_context(trace_id), attributes=attrs):
+                pass
+        flush_traces()
     except Exception as exc:
         logger.debug("Langfuse end_trace failed: %s", exc)
 
