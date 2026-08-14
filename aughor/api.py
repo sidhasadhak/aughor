@@ -226,11 +226,39 @@ class _OrgContextMiddleware:
                 tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
 
 
+class _TraceFlushMiddleware:
+    """Force-export buffered spans before a serverless invocation freezes (OA·LF-1).
+
+    The OTel BatchSpanProcessor exports on a timer. That is right for a long-lived
+    process and wrong for this one: Vercel freezes the invocation the moment the
+    response is sent, so the timer routinely never fires and the batch dies with the
+    process — spans produced outside an investigation (which flushes in ``end_trace``)
+    would simply never arrive.
+
+    Serverless only, and a no-op when tracing is unconfigured: on a long-lived server
+    the timer is the correct mechanism and flushing per request would put an export
+    round-trip in every response's critical path."""
+
+    def __init__(self, app):
+        self.app = app
+        self.enabled = bool(os.environ.get("VERCEL"))
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not self.enabled:
+            return await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            from aughor import telemetry
+            telemetry.flush_traces()
+
+
 from aughor.rbac.deps import enforce_rbac  # noqa: E402
 
 app = FastAPI(title="Aughor API", lifespan=_lifespan,
               dependencies=[Depends(_require_auth), Depends(enforce_rbac)])
 app.add_middleware(_OrgContextMiddleware)
+app.add_middleware(_TraceFlushMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # Defaults cover the dev web UI (:3000/:3001) and the prod-preview server (:3210);
