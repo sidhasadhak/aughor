@@ -117,3 +117,83 @@ describe("a dropped upstream is not silence", () => {
     expect(kinds).toContain("abort");
   });
 });
+
+describe("the question comes from `messages`, not `question`", () => {
+  /**
+   * The defect these exist for: the SDK posts `messages` and NEVER a `question`
+   * field, so reading `body.question` sent the backend an empty string on every
+   * browser-driven turn. The backend does not treat that as an error — it
+   * answered from whatever context it had, and the UI showed a fluent,
+   * confident answer to a question nobody asked.
+   *
+   * Every test in this file previously posted `question`, which is the one shape
+   * the real client never uses. A suite that only exercises the caller you wrote
+   * cannot catch the caller you shipped.
+   */
+  function sdkPost(messages: unknown) {
+    return new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages, connection_id: "c1", session_id: "s1" }),
+    });
+  }
+
+  /** Capture what the route forwarded upstream. */
+  function captureUpstream() {
+    const seen: { body?: Record<string, unknown> } = {};
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      seen.body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return sse('data: {"type":"done"}\n\n');
+    });
+    return seen;
+  }
+
+  it("takes the newest user message's text", async () => {
+    const seen = captureUpstream();
+    await POST(sdkPost([
+      { id: "1", role: "user", parts: [{ type: "text", text: "first question" }] },
+      { id: "2", role: "assistant", parts: [{ type: "text", text: "an answer" }] },
+      { id: "3", role: "user", parts: [{ type: "text", text: "the real question" }] },
+    ]));
+    expect(seen.body?.question).toBe("the real question");
+  });
+
+  it("never forwards an empty question when a message exists", async () => {
+    const seen = captureUpstream();
+    await POST(sdkPost([{ id: "1", role: "user", parts: [{ type: "text", text: "hi" }] }]));
+    expect(seen.body?.question).not.toBe("");
+  });
+
+  it("joins multiple text parts of one message", async () => {
+    const seen = captureUpstream();
+    await POST(sdkPost([
+      { id: "1", role: "user", parts: [{ type: "text", text: "part one " },
+                                       { type: "text", text: "part two" }] },
+    ]));
+    expect(seen.body?.question).toBe("part one part two");
+  });
+
+  it("ignores non-text parts", async () => {
+    const seen = captureUpstream();
+    await POST(sdkPost([
+      { id: "1", role: "user", parts: [{ type: "data-thing", text: "nope" },
+                                       { type: "text", text: "yes" }] },
+    ]));
+    expect(seen.body?.question).toBe("yes");
+  });
+
+  it("still honours an explicit `question` — direct callers keep working", async () => {
+    const seen = captureUpstream();
+    await POST(new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ question: "direct", connection_id: "c1" }),
+    }));
+    expect(seen.body?.question).toBe("direct");
+  });
+
+  it("forwards connection and session so the backend can rebuild the thread", async () => {
+    const seen = captureUpstream();
+    await POST(sdkPost([{ id: "1", role: "user", parts: [{ type: "text", text: "q" }] }]));
+    expect(seen.body?.connection_id).toBe("c1");
+    expect(seen.body?.session_id).toBe("s1");
+  });
+});

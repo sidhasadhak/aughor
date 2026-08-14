@@ -51,9 +51,37 @@ function backendBase(): string {
   ).replace(/\/+$/, "");
 }
 
+/**
+ * The question this turn is asking.
+ *
+ * The SDK posts `messages` — a UIMessage list whose text lives in `parts` — and
+ * NEVER a `question` field. Reading `body.question` alone therefore sent the
+ * backend an empty string on every browser-driven turn, and an empty question is
+ * not an error there: the backend answered from whatever context it had, so the
+ * UI showed a fluent, confident answer to a question nobody asked. Curl tests
+ * passed throughout because curl sends `question` directly — the one shape the
+ * real client never uses.
+ *
+ * `question` is still honoured, so a direct caller (and every test written
+ * against it) keeps working.
+ */
+function questionFrom(body: {
+  question?: string;
+  messages?: Array<{ role?: string; parts?: Array<{ type?: string; text?: string }> }>;
+}): string {
+  if (body.question?.trim()) return body.question;
+  const lastUser = [...(body.messages ?? [])].reverse().find((m) => m.role === "user");
+  return (lastUser?.parts ?? [])
+    .filter((p) => p.type === "text")
+    .map((p) => p.text ?? "")
+    .join("")
+    .trim();
+}
+
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json()) as {
     question?: string;
+    messages?: Array<{ role?: string; parts?: Array<{ type?: string; text?: string }> }>;
     connection_id?: string;
     session_id?: string;
     history?: unknown[];
@@ -69,7 +97,7 @@ export async function POST(req: Request): Promise<Response> {
         : {}),
     },
     body: JSON.stringify({
-      question: body.question ?? "",
+      question: questionFrom(body),
       connection_id: body.connection_id ?? "",
       session_id: body.session_id ?? "",
       history: body.history ?? [],
