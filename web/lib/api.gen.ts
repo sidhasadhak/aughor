@@ -7127,6 +7127,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/saved-queries/{query_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Saved Query Restore
+         * @description Restore an earlier version onto the live saved query. Explicit and never automatic.
+         */
+        post: operations["saved_query_restore_saved_queries__query_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/saved-queries/{query_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Query Versions
+         * @description Version history, newest first. Bodies are included: they are small (name + sql +
+         *     spec) and the rail needs them to diff without a request per row.
+         */
+        get: operations["saved_query_versions_saved_queries__query_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/saved-queries/{query_id}/versions/{version}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Query Version Diff
+         * @description Field-level changes between two versions — `against` defaults to the one before.
+         *
+         *     Uses the lifecycle changelog rather than a text diff so a spec change reports as a
+         *     path (`spec.filters[0].op`), not as a re-indented JSON blob.
+         */
+        get: operations["saved_query_version_diff_saved_queries__query_id__versions__version__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/security/audit": {
         parameters: {
             query?: never;
@@ -10328,6 +10392,11 @@ export interface components {
             } | null;
             /** Sql */
             sql: string;
+        };
+        /** _RestoreVersionRequest */
+        _RestoreVersionRequest: {
+            /** Version */
+            version: number;
         };
         /**
          * _RoutingProposal
@@ -23388,6 +23457,108 @@ export interface operations {
             header?: never;
             path: {
                 query_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_query_restore_saved_queries__query_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                query_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RestoreVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_query_versions_saved_queries__query_id__versions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                query_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_query_version_diff_saved_queries__query_id__versions__version__diff_get: {
+        parameters: {
+            query?: {
+                against?: number | null;
+            };
+            header?: never;
+            path: {
+                query_id: string;
+                version: number;
             };
             cookie?: never;
         };

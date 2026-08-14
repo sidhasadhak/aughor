@@ -181,7 +181,15 @@ export function ResultsPanel({
           padding: "6px 14px", borderTop: "1px solid var(--b1)", flexShrink: 0,
         }}
       >
-        <span>{formatCount(result.row_count)} {result.row_count === 1 ? "row" : "rows"}</span>
+        {/* When a filter is active the footer must not still report the RUN's row count:
+            it sits directly under the grid, so "4 rows" above two visible rows reads as a
+            description of what you are looking at. The run's own count stays reachable as
+            the "of N" — nothing is hidden, it just stops contradicting the grid. */}
+        <span>
+          {rows.length === rawRows.length
+            ? `${formatCount(result.row_count)} ${result.row_count === 1 ? "row" : "rows"}`
+            : `${formatCount(rows.length)} of ${formatCount(rawRows.length)} rows`}
+        </span>
         <span>·</span>
         <span>{Math.round(result.duration_ms)} ms</span>
         {result.truncated && (

@@ -1235,6 +1235,85 @@ def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
     return q.model_dump()
 
 
+# ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
+# `update_saved_query` overwrites the only row, and has recorded a lifecycle revision
+# beside it since Wave V3 — but nothing could READ that history, so a saved query had a
+# version trail and no way to see or use it. These three routes are that read side; no
+# store migration was needed, because the versions were already accumulating.
+#
+# Restore goes through `lifecycle.revert`, which writes the old body as a NEW version
+# rather than rewinding the counter — the evidence that a version shipped must survive
+# being reverted — and then applies it to the live row, which is what the user means by
+# "restore". Both halves, or the rail would show a restore that the editor never saw.
+
+def _sq_key(query_id: str) -> str:
+    return f"savedquery:{query_id}"
+
+
+@router.get("/saved-queries/{query_id}/versions")
+def saved_query_versions(query_id: str, limit: int = 50):
+    """Version history, newest first. Bodies are included: they are small (name + sql +
+    spec) and the rail needs them to diff without a request per row."""
+    from aughor.savedquery.store import get_saved_query
+    from aughor.kernel import lifecycle
+    if get_saved_query(query_id) is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {
+        "query_id": query_id,
+        "versions": [
+            {"version": r.version, "state": r.state, "created_at": r.created_at,
+             "name": (r.body or {}).get("name", ""), "sql": (r.body or {}).get("sql", ""),
+             "spec": (r.body or {}).get("spec") or {}}
+            for r in lifecycle.history("savedquery", _sq_key(query_id), limit=limit)
+        ],
+    }
+
+
+@router.get("/saved-queries/{query_id}/versions/{version}/diff")
+def saved_query_version_diff(query_id: str, version: int, against: Optional[int] = None):
+    """Field-level changes between two versions — `against` defaults to the one before.
+
+    Uses the lifecycle changelog rather than a text diff so a spec change reports as a
+    path (`spec.filters[0].op`), not as a re-indented JSON blob."""
+    from aughor.kernel import lifecycle
+    key = _sq_key(query_id)
+    other = against if against is not None else version - 1
+    diff = lifecycle.diff_versions("savedquery", key, other, version)
+    if diff is None:
+        raise HTTPException(status_code=404, detail="One or both versions do not exist")
+    return {
+        "query_id": query_id, "from_version": other, "to_version": version,
+        "changes": [{"kind": c.kind, "path": c.path,
+                     "before": c.before, "after": c.after} for c in diff.changes],
+    }
+
+
+class _RestoreVersionRequest(BaseModel):
+    version: int
+
+
+@router.post("/saved-queries/{query_id}/restore")
+def saved_query_restore(query_id: str, body: _RestoreVersionRequest):
+    """Restore an earlier version onto the live saved query. Explicit and never automatic."""
+    from aughor.savedquery.store import get_saved_query, update_saved_query
+    from aughor.kernel import lifecycle
+    if get_saved_query(query_id) is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    key = _sq_key(query_id)
+    src = lifecycle.revision("savedquery", key, version=body.version)
+    if src is None:
+        raise HTTPException(status_code=404, detail=f"Version {body.version} does not exist")
+    restored = update_saved_query(
+        query_id,
+        name=(src.body or {}).get("name"),
+        sql=(src.body or {}).get("sql"),
+        spec=(src.body or {}).get("spec") or {},
+    )
+    if restored is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {"restored_from": body.version, "query": restored.model_dump()}
+
+
 @router.delete("/saved-queries/{query_id}", status_code=200)
 def saved_queries_delete(query_id: str):
     from aughor.savedquery.store import delete_saved_query

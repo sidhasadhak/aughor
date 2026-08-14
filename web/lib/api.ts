@@ -2440,6 +2440,57 @@ export async function listSavedQueries(connectionId?: string): Promise<SavedQuer
   return res.json();
 }
 
+// ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
+
+export interface SavedQueryVersion {
+  version: number;
+  state: string;
+  created_at: string;
+  name: string;
+  sql: string;
+  spec: Record<string, unknown>;
+}
+
+/** One field-level change between two versions. `path` is a dotted/indexed location
+ *  (`spec.filters[0].op`), which is why this is not a text diff. */
+export interface SavedQueryChange {
+  kind: "add" | "delete" | "change" | "move";
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+export async function listSavedQueryVersions(queryId: string): Promise<SavedQueryVersion[]> {
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/versions`);
+  if (!res.ok) throw new Error("Failed to fetch version history");
+  return (await res.json()).versions ?? [];
+}
+
+export async function diffSavedQueryVersion(
+  queryId: string, version: number, against?: number,
+): Promise<{ from_version: number; to_version: number; changes: SavedQueryChange[] }> {
+  const qs = against !== undefined ? `?against=${against}` : "";
+  const res = await fetch(
+    `${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/versions/${version}/diff${qs}`);
+  if (!res.ok) throw new Error("Failed to diff versions");
+  return res.json();
+}
+
+export async function restoreSavedQuery(queryId: string, version: number): Promise<SavedQuery> {
+  const res = await fetch(
+    `${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/restore`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Restore failed"));
+  }
+  return (await res.json()).query;
+}
+
 export async function createSavedQuery(
   connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
 ): Promise<SavedQuery> {

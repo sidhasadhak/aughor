@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueryBuilder, type BuilderRailBinding } from "@/components/QueryBuilder";
 import { SqlMode } from "@/components/query/modes/SqlMode";
 import { CatalogRail, type RailTable } from "@/components/query/CatalogRail";
+import { VersionRail } from "@/components/query/VersionRail";
 import {
   SavedQueryBar, isVisualQuery, type SavedQueryBinding,
 } from "@/components/query/SavedQueryBar";
@@ -151,6 +152,7 @@ function WorkbenchInner({
   );
   const [savable, setSavable] = useState<Record<QueryMode, boolean>>({ visual: false, sql: false });
   const [activeSaved, setActiveSaved] = useState<SavedQuery | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
 
   // Stable callbacks — a fresh identity here would re-fire each mode's publish effect
   // on every workbench render.
@@ -220,9 +222,10 @@ function WorkbenchInner({
     // does nothing — the failure mode that makes a deep link look like a dead link.
     if (!savedBindings.sql || !savedBindings.visual) return;
     openedFromUrl.current = `${connId}:${id}`;
-    // Listed rather than fetched by id: the saved surface has no by-id route, and adding
-    // one for this would mean a new endpoint plus a `gen:api` regeneration to read a
-    // record the workbench already lists.
+    // Listed rather than fetched by id. `GET /saved-queries/{id}` does exist, but it is
+    // unscoped by connection, and this list is already in hand and already filtered to
+    // this connection — so a shared link for connection A cannot silently open a query
+    // belonging to connection B against A's schema.
     void listSavedQueries(connId)
       .then(list => {
         const q = list.find(x => x.id === id);
@@ -354,6 +357,38 @@ function WorkbenchInner({
           onActiveChange={setActiveSaved}
         />
 
+        {/* SE-4 J — the sync state, stated rather than implied. `sql-ahead` is a query
+            whose SQL is the source of truth (no builder spec); `linked` is one the
+            builder can still explain. Shown only for a SAVED query, because for an
+            unsaved draft there is nothing yet to be ahead OF. */}
+        {activeSaved && (
+          <span
+            className="aug-fs-ui"
+            title={isVisualQuery(activeSaved)
+              ? "Linked — the visual spec and this SQL describe the same query"
+              : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}
+            style={{
+              padding: "1px 6px", borderRadius: "var(--r2)",
+              border: "1px solid var(--b1)", color: "var(--t3)",
+            }}
+          >
+            {isVisualQuery(activeSaved) ? "linked" : "sql-ahead"}
+          </span>
+        )}
+
+        <Button
+          variant="ghost"
+          size="xs"
+          className="aug-fs-ui"
+          disabled={!activeSaved}
+          onClick={() => setShowVersions(v => !v)}
+          title={activeSaved
+            ? "Show this saved query's version history"
+            : "Save this query to start a version history"}
+        >
+          {showVersions ? "Hide versions" : "Versions"}
+        </Button>
+
         <Button
           variant="ghost"
           size="xs"
@@ -368,6 +403,21 @@ function WorkbenchInner({
       {/* Catalog ▸ modes. ONE rail, outside both panes, so a mode switch does not
           rebuild the tree the user just navigated — and `collapsed` rather than a
           conditional split, so hiding the rail does not remount the modes beside it. */}
+      {/* Versions sit OUTSIDE the catalog split and to the RIGHT of both modes, so the
+          history is a property of the saved query rather than of whichever mode is up —
+          and `resizePane="second"`, because sizing the left pane would make the rail's
+          width whatever was left over and drift on every window change. `collapsed`
+          rather than a conditional split: the conditional form changes the element tree,
+          which remounts the editor beside it and takes its undo history with it. */}
+      <ResizableSplit
+        storageKey="workbench.versions"
+        resizePane="second"
+        initial={320}
+        min={240}
+        max={620}
+        collapsed={!showVersions || !activeSaved}
+        style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+        left={
       <ResizableSplit
         storageKey="workbench.catalog"
         initial={280}
@@ -418,6 +468,26 @@ function WorkbenchInner({
               />
             </div>
           </>
+        }
+      />
+        }
+        right={
+          <VersionRail
+            queryId={activeSaved?.id ?? ""}
+            onRestored={() => {
+              // The live record changed underneath the editor. Re-open it through the
+              // same path a load takes, so the restored body reaches whichever mode owns
+              // it — showing a "Restored" toast over the OLD text would be the lie.
+              if (activeSaved) {
+                void listSavedQueries(connId)
+                  .then(list => {
+                    const q = list.find(x => x.id === activeSaved.id);
+                    if (q) { openSaved(q); setActiveSaved(q); }
+                  })
+                  .catch(() => toast.error("Restored, but reloading the editor failed — reopen the query."));
+              }
+            }}
+          />
         }
       />
     </div>
