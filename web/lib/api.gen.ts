@@ -10290,6 +10290,10 @@ export interface components {
              * @default 500
              */
             limit: number;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Source
              * @default query_builder
@@ -10318,6 +10322,10 @@ export interface components {
              * @default duckdb
              */
             dialect: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
             /** Sql */
             sql: string;
         };
