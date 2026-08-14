@@ -39,7 +39,46 @@ def _post(url: str, headers: dict, payload: dict, timeout: int = _TIMEOUT_S) -> 
     return 0, last_err
 
 
+#: Slack attachment colour per alert severity — a wall of identical blue bars is not
+#: a signal. Anything unrecognised keeps the house blue rather than inventing a colour.
+_SEVERITY_COLOR = {"critical": "#CD4246", "warning": "#D1980B", "info": "#2D72D2"}
+
+
 def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
+    ctx = payload.context or {}
+    if ctx.get("kind") == "monitor_alert":
+        # OA·N8-0 — a monitor alert is not a recommendation, and rendering it as one
+        # ("Aughor recommendation: Revenue [critical]: …") buries the two things the
+        # reader needs first: which monitor, and how bad.
+        sev = str(ctx.get("severity") or "info")
+        fields = [
+            {"title": "Severity",   "value": sev.upper(),                       "short": True},
+            {"title": "Metric",     "value": ctx.get("metric_name") or "—",     "short": True},
+        ]
+        if ctx.get("current_value") is not None:
+            observed = f"{ctx['current_value']:g}"
+            if ctx.get("threshold") is not None:
+                observed += f"  (threshold {ctx['threshold']:g})"
+            fields.append({"title": "Observed", "value": observed, "short": True})
+        if ctx.get("conn_id"):
+            fields.append({"title": "Connection", "value": ctx["conn_id"], "short": True})
+        fields.append({"title": "What fired", "value": ctx.get("message") or "—", "short": False})
+        if ctx.get("caveat"):
+            # The monitor's own guard finding. It travels with the alert or the reader
+            # acts on a number the platform already doubts.
+            fields.append({"title": "Caveat", "value": ctx["caveat"], "short": False})
+        if ctx.get("deep_link"):
+            fields.append({"title": "Open", "value": ctx["deep_link"], "short": False})
+        return {
+            "channel": trigger.channel or "#general",
+            "text": f"*Monitor alert*: {ctx.get('monitor_name') or 'Monitor'}",
+            "attachments": [{
+                "color": _SEVERITY_COLOR.get(sev, "#2D72D2"),
+                "fields": fields,
+                "footer": "Aughor Intelligence Platform",
+                "ts": int(time.time()),
+            }],
+        }
     return {
         "channel": trigger.channel or "#general",
         "text": f"*Aughor recommendation*: {payload.recommendation}",

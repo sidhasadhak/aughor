@@ -81,9 +81,15 @@ class ActionPayload:
     #: fresh per attempt, so a receiver could not tell our retry from a new alert — and
     #: `_post` retries twice on a 15s timeout, which a slow-but-successful receiver hits.
     delivery_key:     str = ""
+    #: Sender-specific facts that do not fit the recommendation shape above (OA·N8-0).
+    #: A monitor alert carries severity, the value against its threshold, the connection
+    #: and a deep link — a receiver routing on severity cannot get that from
+    #: `recommendation`, which is prose. Omitted from the wire body when empty, so every
+    #: pre-existing caller's payload stays byte-identical.
+    context:          dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        body = {
             "investigation_id": self.investigation_id,
             "rec_index":        self.rec_index,
             "recommendation":   self.recommendation,
@@ -94,6 +100,9 @@ class ActionPayload:
             "delivery_key":     self.delivery_key,
             "source":           "aughor",
         }
+        if self.context:
+            body["context"] = self.context
+        return body
 
 
 @dataclass
