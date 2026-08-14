@@ -6850,6 +6850,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/quickfix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Quickfix
+         * @description SE-5a — propose a repair for a failed statement. NEVER executes it.
+         *
+         *     This is the same repair machinery the agent's execute path uses
+         *     (``FIX_SQL_PROMPT`` + the ``coder`` role), with the one thing that makes it safe here
+         *     removed: the agent's loop runs its candidate and keeps it only if the run improved,
+         *     so a bad fix is caught by the retry. There is no retry on this path, and no run — the
+         *     proposal goes to a diff the user accepts or rejects.
+         *
+         *     Which is why the SQL is NOT executed to check it, however tempting: the statement that
+         *     just failed is the user's, running an LLM's rewrite of it without consent is a write
+         *     the user did not ask for, and "it returned rows" was never evidence the rewrite means
+         *     the same thing. The diff is the review step.
+         */
+        post: operations["query_quickfix_query_quickfix_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/run": {
         parameters: {
             query?: never;
@@ -10390,6 +10421,18 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             } | null;
+            /** Sql */
+            sql: string;
+        };
+        /** _QuickFixRequest */
+        _QuickFixRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
             /** Sql */
             sql: string;
         };
@@ -22938,6 +22981,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_PostprocRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_quickfix_query_quickfix_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_QuickFixRequest"];
             };
         };
         responses: {

@@ -2440,6 +2440,31 @@ export async function listSavedQueries(connectionId?: string): Promise<SavedQuer
   return res.json();
 }
 
+// ── Quick Fix (SE-5a) ─────────────────────────────────────────────────────────
+
+export interface QuickFix {
+  /** "" when the model proposed nothing — see `changed`. */
+  proposed_sql: string;
+  rationale: string;
+  changed: boolean;
+  /** The deterministic classifier's read on the failure, independent of the model. */
+  diagnosis: string;
+}
+
+/** Ask for a proposed repair. The server never executes it and never applies it. */
+export async function quickFixSql(connId: string, sql: string, error: string): Promise<QuickFix> {
+  const res = await fetch(`${getApiBase()}/query/quickfix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql, error }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Quick fix failed"));
+  }
+  return res.json();
+}
+
 // ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
 
 export interface SavedQueryVersion {

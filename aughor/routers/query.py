@@ -1235,6 +1235,103 @@ def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
     return q.model_dump()
 
 
+class _QuickFixRequest(BaseModel):
+    conn_id: str
+    sql: str
+    error: str = ""
+
+
+@router.post("/query/quickfix")
+def query_quickfix(body: _QuickFixRequest, request: Request):
+    """SE-5a — propose a repair for a failed statement. NEVER executes it.
+
+    This is the same repair machinery the agent's execute path uses
+    (``FIX_SQL_PROMPT`` + the ``coder`` role), with the one thing that makes it safe here
+    removed: the agent's loop runs its candidate and keeps it only if the run improved,
+    so a bad fix is caught by the retry. There is no retry on this path, and no run — the
+    proposal goes to a diff the user accepts or rejects.
+
+    Which is why the SQL is NOT executed to check it, however tempting: the statement that
+    just failed is the user's, running an LLM's rewrite of it without consent is a write
+    the user did not ask for, and "it returned rows" was never evidence the rewrite means
+    the same thing. The diff is the review step.
+    """
+    from aughor.db.connection import open_connection_for, gate_user_sql
+
+    _check_conn_org(request, body.conn_id)
+    if not body.sql.strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+
+    # The proposal is derived from the user's SQL and comes back to a surface that can
+    # apply it, so it passes the same gate a run would — a fix suggested for a statement
+    # we would refuse to run is not a fix worth showing.
+    blocked = gate_user_sql(body.conn_id, "query_workbench", body.sql)
+    if blocked is not None:
+        raise HTTPException(status_code=400, detail=blocked.error)
+
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    try:
+        dialect = getattr(db, "dialect", "duckdb")
+        schema = db.get_schema()
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "quickfix: db close", counter="query.quickfix.close")
+
+    from pydantic import BaseModel as _BM
+
+    class _Fix(_BM):
+        fixed_sql: str
+        explanation: str
+
+    from aughor.agent.prompts import FIX_SQL_PROMPT
+    from aughor.tools.error_classifier import classify_sql_error
+    from aughor.llm.provider import get_provider
+
+    err = body.error.strip() or "The statement failed. Repair it."
+    # The deterministic classifier runs BEFORE the model, exactly as on the agent path:
+    # it names the error class (round-precision, not-in-group-by, …) so the model repairs
+    # the actual fault instead of re-deriving it from the raw driver message.
+    try:
+        diagnosis = classify_sql_error(err, body.sql, dialect)
+    except Exception:
+        diagnosis = ""
+
+    try:
+        fix = get_provider("coder").complete(
+            system="Fix this SQL query. Return fixed_sql and a one-line explanation.",
+            user=FIX_SQL_PROMPT.format(
+                dialect=dialect,
+                sql=body.sql,
+                error=err,
+                schema=schema,
+                kb_patterns_section="",
+                metrics_section="",
+                error_diagnosis=diagnosis,
+            ),
+            response_model=_Fix,
+        )
+    except Exception as exc:
+        # 502: the repair provider is upstream of us and its being down is not a defect in
+        # the user's SQL. A 500 would read as "your query broke the server".
+        raise HTTPException(status_code=502, detail=f"Quick fix is unavailable: {exc}")
+
+    proposed = (fix.fixed_sql or "").strip()
+    if not proposed or proposed == body.sql.strip():
+        # Saying "no change" is a real answer. Returning the input as a "fix" would put an
+        # empty diff in front of the user and let them Apply their own statement back.
+        return {"proposed_sql": "", "rationale": "", "changed": False,
+                "diagnosis": diagnosis}
+    return {"proposed_sql": proposed, "rationale": (fix.explanation or "").strip(),
+            "changed": True, "diagnosis": diagnosis}
+
+
 # ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
 # `update_saved_query` overwrites the only row, and has recorded a lifecycle revision
 # beside it since Wave V3 — but nothing could READ that history, so a saved query had a

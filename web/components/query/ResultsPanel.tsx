@@ -27,6 +27,7 @@ import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
+import { QuickFixPanel } from "@/components/query/QuickFixPanel";
 import { Button } from "@/components/ui/button";
 import { toCsv, toTsv, csvFilename, downloadCsv } from "@/lib/query/csv";
 import { applyFilters } from "@/lib/query/resultFilter";
@@ -53,6 +54,8 @@ export function ResultsPanel({
   connId,
   onSchedule,
   onShare,
+  failedSql,
+  onApplyFix,
 }: {
   result: TypedQueryResult | null;
   error: string;
@@ -62,6 +65,11 @@ export function ResultsPanel({
   onSchedule?: (sql: string) => void;
   /** Copies a deep link back to this query. */
   onShare?: () => void;
+  /** SE-5a — the statement that produced `error`. Passed separately because a failed run
+   *  leaves `result` null, so the SQL is not otherwise reachable from here. */
+  failedSql?: string;
+  /** SE-5a — put an accepted proposal into the editor. Never called without a click. */
+  onApplyFix?: (sql: string) => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
@@ -91,8 +99,20 @@ export function ResultsPanel({
   if (error) {
     return (
       <div style={{ padding: "12px 14px", overflow: "auto" }}>
-        <div className="aug-label" style={{ color: "var(--red4)", marginBottom: 6 }}>
+        <div
+          className="aug-label"
+          style={{ color: "var(--red4)", marginBottom: 6, display: "flex",
+                   alignItems: "center", gap: 8 }}
+        >
           Query failed
+          <div style={{ flex: 1 }} />
+          {/* SE-5a — offered only when there is a statement AND a connection to repair
+              it against. The affordance sits with the error because that is the moment
+              it means something; it proposes a diff and never applies on its own. */}
+          {connId && failedSql && onApplyFix && (
+            <QuickFixPanel
+              connId={connId} sql={failedSql} error={error} onApply={onApplyFix} />
+          )}
         </div>
         <pre
           style={{
