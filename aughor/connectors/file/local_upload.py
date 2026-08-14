@@ -1310,7 +1310,19 @@ class LocalUploadConnection(Connector):
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
-    def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+    def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        """SE-4 H — bind values on the Workspace connection.
+
+        This class is DuckDB-backed but is NOT a `DuckDBConnection`, so it inherits
+        none of that class's overrides. That asymmetry already cost one defect this
+        wave — `interrupt()` landed on `DuckDBConnection` alone and Cancel was silently
+        a no-op on the connection the demo opens by default. Adding the capability here
+        rather than assuming inheritance covers it.
+        """
+        return self.execute(hypothesis_id, sql, params=params)
+
+    def execute(self, hypothesis_id: str, sql: str,
+                params: dict | None = None) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 
         sql = sql.strip().rstrip(";")
@@ -1322,7 +1334,11 @@ class LocalUploadConnection(Connector):
 
         _t0 = time.monotonic()
         try:
-            self._duckdb.execute(sql)
+            if params:
+                from aughor.sql.params import render_for_engine
+                self._duckdb.execute(render_for_engine(sql, "duckdb"), params)
+            else:
+                self._duckdb.execute(sql)
             rows_raw = self._duckdb.fetchall()
             columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
             from aughor.db.connection import offer_typed_rows

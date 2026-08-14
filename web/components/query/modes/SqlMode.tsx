@@ -29,12 +29,13 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import {
   TabsBar, newTab, readTabs, writeTabs, type EditorTab,
 } from "@/components/query/TabsBar";
 import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
-import { splitStatements, statementAt } from "@/lib/query/parserClient";
+import { splitStatements, statementAt, findParams } from "@/lib/query/parserClient";
 import { cmDialect, engineFamily, type EngineHint } from "@/lib/query/dialect";
 import { formatSql } from "@/lib/query/format";
 import {
@@ -42,7 +43,10 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-type EditorApi = { insert: (text: string) => void; focus: () => void };
+type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
+
+/** Stable identity — a fresh `{}` each render would re-fire every memo below it. */
+const EMPTY_PARAMS: Record<string, string> = {};
 
 /** SE-1's single-draft key, read once when a connection has no tabs yet. Left in place
  *  rather than deleted after reading: a user who downgrades mid-session should still
@@ -87,23 +91,54 @@ export function SqlMode({
   // SE-3 F — the in-flight run's abort handle and when it started.
   const abort = useRef<AbortController | null>(null);
   const [startedAt, setStartedAt] = useState(0);
+  const [runAllSummary, setRunAllSummary] = useState("");
+  const [statementCount, setStatementCount] = useState(1);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
   const editorApi = useRef<EditorApi | null>(null);
+  const relint = useRef<(() => void) | null>(null);
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
+
+  // SE-4 H — the `:name` parameters of the CURRENT document, and this tab's values.
+  const paramNames = useMemo(() => findParams(sqlText), [sqlText]);
+
+  // The parser runs in a worker, so the count arrives asynchronously; it only drives
+  // whether a button is offered, never what runs.
+  useEffect(() => {
+    let alive = true;
+    void splitStatements(sqlText).then(r => {
+      if (alive) setStatementCount(r.filter(x => x.text.trim()).length || 1);
+    }).catch(() => { if (alive) setStatementCount(1); });
+    return () => { alive = false; };
+  }, [sqlText]);
+  const paramValues = active?.params ?? EMPTY_PARAMS;
+  // Only the names still present in the SQL, so a value left behind by a deleted
+  // parameter is not silently sent (the server would reject an unknown bind name).
+  const boundParams = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const n of paramNames) if ((paramValues[n] ?? "").trim()) out[n] = paramValues[n];
+    return out;
+  }, [paramNames, paramValues]);
 
   // Built ONCE and read through getters, so a connection or dialect change reaches the
   // linter without rebuilding the editor (which would drop undo history and cursor).
   const connRef = useRef(connId);
   const engineRef = useRef(engine);
+  const paramsRef = useRef<Record<string, string>>(EMPTY_PARAMS);
   connRef.current = connId;
   engineRef.current = engine;
+  paramsRef.current = boundParams;
+  // Params changed but the document did not, so nothing would re-trigger the linter
+  // on its own. `relint` is published by the editor pane for exactly this.
+  useEffect(() => { relint.current?.(); }, [boundParams]);
+
   const diagnostics = useMemo(
     () => sqlDiagnostics({
       getConn: () => connRef.current,
       getDialect: () => engineFamily(engineRef.current),
+      getParams: () => paramsRef.current,
       onVerdict: setVerdict,
     }),
     [],
@@ -169,9 +204,10 @@ export function SqlMode({
     abort.current = ac;
     setRunning(true);
     setError("");
+    setRunAllSummary("");
     setStartedAt(Date.now());
     try {
-      const res = await runWorkbenchQuery(connId, toRun, 500, ac.signal);
+      const res = await runWorkbenchQuery(connId, toRun, 500, boundParams, ac.signal);
       setResult(res);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
@@ -195,7 +231,63 @@ export function SqlMode({
       // The rail reads the audit log this run just wrote to.
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, patchActive]);
+  }, [connId, running, sqlText, patchActive, boundParams]);
+
+  /** SE-4 H — run every statement in the buffer, in order, keeping the LAST result.
+   *
+   *  Sequential and stop-on-error, not parallel: statements in one buffer are written
+   *  to be read top-down and often depend on each other, and firing them together
+   *  would make the order of a temp table and its use a race. Stopping on the first
+   *  failure is the same reasoning — continuing past a broken statement produces
+   *  results whose meaning depends on a failure the user has not seen yet.
+   *
+   *  The roadmap asks for one results TAB per statement (LRU 5). That is a results-
+   *  surface change; this ships the execution half and shows the last result plus a
+   *  per-statement summary, so "Run all" is usable without pre-empting the tabbed
+   *  results design that PR I revisits. */
+  const runAll = useCallback(async () => {
+    if (!connId || running) return;
+    const ranges = await splitStatements(sqlText);
+    const statements = ranges
+      .map(r => r.text.trim().replace(/;\s*$/, ""))
+      .filter(Boolean);
+    if (statements.length < 2) { void run(); return; }
+
+    const ac = new AbortController();
+    abort.current = ac;
+    setRunning(true);
+    setError("");
+    setStartedAt(Date.now());
+    const done: string[] = [];
+    try {
+      for (const [i, stmt] of statements.entries()) {
+        const res = await runWorkbenchQuery(connId, stmt, 500, boundParams, ac.signal);
+        setResult(res);
+        if (res.error) {
+          setError(`Statement ${i + 1} of ${statements.length} failed: ${res.error}`);
+          patchActive({ status: "error" });
+          return;
+        }
+        done.push(`${i + 1}: ${res.row_count} ${res.row_count === 1 ? "row" : "rows"}`);
+        setError("");
+      }
+      setRunAllSummary(`Ran ${statements.length} statements — ${done.join(" · ")}`);
+      patchActive({ status: "ok" });
+    } catch (e) {
+      if (e instanceof QueryCancelled) {
+        setError(`Cancelled after ${done.length} of ${statements.length} statements.`);
+        patchActive({ status: undefined });
+      } else {
+        setError(e instanceof Error ? e.message : "Query failed");
+        patchActive({ status: "error" });
+      }
+    } finally {
+      abort.current = null;
+      setRunning(false);
+      setStartedAt(0);
+      setHistoryKey(k => k + 1);
+    }
+  }, [connId, running, sqlText, boundParams, patchActive, run]);
 
   /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
    *  interrupts the engine — so this stops the QUERY, not just the waiting. */
@@ -267,6 +359,12 @@ export function SqlMode({
           onRename={(id, name) => setTabs(prev => prev.map(t => t.id === id ? { ...t, name } : t))}
         />
 
+        <ParamBar
+          names={paramNames}
+          values={paramValues}
+          onChange={next => patchActive({ params: next })}
+        />
+
         <div
           style={{
             display: "flex", alignItems: "center", gap: 8,
@@ -289,6 +387,15 @@ export function SqlMode({
               Run  ⌘↵
             </Button>
           )}
+          {/* Only offered when there IS more than one statement — a "Run all" beside a
+              single statement is a second button for the thing the first one does. */}
+          {!running && statementCount > 1 && (
+            <Button variant="ghost" size="xs" className="aug-fs-ui"
+              title={`Run all ${statementCount} statements in order, stopping at the first error`}
+              onClick={() => void runAll()} disabled={!connId}>
+              Run all ({statementCount})
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="xs"
@@ -308,6 +415,11 @@ export function SqlMode({
           >
             {showHistory ? "Hide history" : "History"}
           </Button>
+          {runAllSummary && !error && (
+            <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
+              {runAllSummary}
+            </span>
+          )}
           <div style={{ flex: 1, minWidth: 0 }} />
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
@@ -316,15 +428,19 @@ export function SqlMode({
                 fontSize: 13, flexShrink: 0, whiteSpace: "nowrap",
                 color: verdict.passed ? "var(--t4)" : "var(--amb4)",
               }}
-              title={verdict.passed
-                ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
-                : "Findings are shown in the editor gutter"}
+              title={verdict.unchecked
+                ? (verdict.note || "The guards cannot read a parameterised query without values.")
+                : verdict.passed
+                  ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
+                  : "Findings are shown in the editor gutter"}
             >
               {/* "Guards clean" rather than "Checked — clean": this endpoint judges
                   fan-out, value-domain, grain and trust — never syntax. */}
-              {verdict.passed
-                ? "Guards clean"
-                : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
+              {verdict.unchecked
+                ? "Not checked — fill parameters"
+                : verdict.passed
+                  ? "Guards clean"
+                  : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
             </span>
           )}
         </div>
@@ -343,7 +459,11 @@ export function SqlMode({
               onRun={() => void runRef.current()}
               onFormat={(text) => formatSql(text, engineRef.current)}
               onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
-              onReady={api => { editorApi.current = api; onInsertReady?.(api.insert); }}
+              onReady={api => {
+                editorApi.current = api;
+                relint.current = api.relint;
+                onInsertReady?.(api.insert);
+              }}
               schema={schema}
               defaultSchema={defaultSchema}
               dialect={cmDialect(engine)}
