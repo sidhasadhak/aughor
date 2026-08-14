@@ -300,17 +300,48 @@ async def query_run(body: _QueryRunRequest, request: Request):
     # principal's rows leak to another. `tenancy` is None (legacy key) until `rbac.row_policy` is live for an
     # identified user; it is computed here in the request context that also drives enforcement (the default
     # executor copies contextvars into `_work`), and reused for the paired put below.
-    # Typed responses never touch the result cache: cached rows are stringified,
-    # and a typed run wraps at LIMIT n+1 (the truncation probe), so caching its
-    # result would let the legacy path serve one extra row later. Skip both sides.
+    # SE-4 I — the result cache is keyed on the REQUEST SHAPE, not just the SQL text.
+    #
+    # Typed runs used to skip the cache entirely, for two stated reasons: cached rows are
+    # stringified, and a typed run wraps at LIMIT n+1 (the truncation probe) so its rows would
+    # over-serve the legacy path later. Both are consequences of ONE defect — the key ignored
+    # everything about the request that decided what got stored — and that defect was never
+    # confined to typed. It was live on the legacy path: run a query at limit 2, run the same
+    # text at limit 10, and the second call returned 2 rows with `cached: true`. The wrong
+    # answer, confidently labelled.
+    #
+    # `_variant` names the row cap and the format, so entries can no longer read each other's
+    # rows and typed responses become cacheable — which matters now because the builder shares
+    # this grid contract, and its Cache checkbox would otherwise be a switch wired to nothing.
     _typed = body.format == "typed"
+    _variant = f"{body.format}:{body.limit}:{'bulk' if body.use_bulk else 'std'}"
     tenancy = None
-    if body.use_cache and not _typed:
+    if body.use_cache:
         from aughor.db.connection import result_cache_tenancy
-        from aughor.db.matcache import get_cached
+        from aughor.db.matcache import get_cached_entry
         tenancy = result_cache_tenancy()
-        cached = get_cached(body.conn_id, body.sql, tenancy=tenancy)
-        if cached is not None:
+        entry = get_cached_entry(body.conn_id, body.sql, tenancy=tenancy, variant=_variant)
+        if entry is not None:
+            cached, extras = entry
+            receipt_id = _write_builder_receipt(body.conn_id, body.sql)
+            caveats = list(getattr(cached, "caveats", []) or [])
+            if _typed:
+                # Rows were stored post-slice and JSON-native (the n+1 probe row never entered
+                # the cache), so this is the same body the live path returns — minus the run.
+                return {
+                    "columns": cached.columns,
+                    "columns_typed": extras.get("columns_typed") or [],
+                    "rows": cached.rows,
+                    "row_count": cached.row_count,
+                    "truncated": bool(extras.get("truncated")),
+                    "duration_ms": 0.0,
+                    "sql": cached.sql,
+                    "cached": True,
+                    "error": None,
+                    "receipt_id": receipt_id,
+                    "caveats": caveats,
+                    "format": "typed",
+                }
             return {
                 "columns": cached.columns,
                 "rows": cached.rows,
@@ -319,8 +350,8 @@ async def query_run(body: _QueryRunRequest, request: Request):
                 "sql": cached.sql,
                 "cached": True,
                 "error": None,
-                "receipt_id": _write_builder_receipt(body.conn_id, body.sql),
-                "caveats": list(getattr(cached, "caveats", []) or []),
+                "receipt_id": receipt_id,
+                "caveats": caveats,
             }
 
     try:
@@ -399,17 +430,32 @@ async def query_run(body: _QueryRunRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    if body.use_cache and not _typed and not result.error:
-        from aughor.db.matcache import put_cache
-        put_cache(body.conn_id, body.sql, result, tenancy=tenancy)
-
     # WP-10: a successful run gets a signed receipt so the UI can open "Why this number".
     # Record the user's ORIGINAL SQL (not the internal LIMIT-wrapped form the executor ran).
     receipt_id = _write_builder_receipt(body.conn_id, body.sql) if not result.error else None
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:
-        return _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+        typed = _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+        if body.use_cache and not result.error:
+            from aughor.db.matcache import put_cache
+            # Cache what the RESPONSE says, not what the cursor returned: `_typed_response`
+            # has already dropped the n+1 probe row and JSON-normalised the cells. Storing the
+            # raw payload instead is precisely how the probe row would leak into a later read.
+            put_cache(
+                body.conn_id, body.sql,
+                result.model_copy(update={"columns": typed["columns"],
+                                          "rows": typed["rows"],
+                                          "row_count": typed["row_count"]}),
+                tenancy=tenancy, variant=_variant,
+                extra={"columns_typed": typed["columns_typed"],
+                       "truncated": typed["truncated"]},
+            )
+        return typed
+
+    if body.use_cache and not result.error:
+        from aughor.db.matcache import put_cache
+        put_cache(body.conn_id, body.sql, result, tenancy=tenancy, variant=_variant)
 
     legacy = {
         "columns": result.columns,
@@ -1187,6 +1233,182 @@ def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
     if not q:
         raise HTTPException(status_code=404, detail="Saved query not found")
     return q.model_dump()
+
+
+class _QuickFixRequest(BaseModel):
+    conn_id: str
+    sql: str
+    error: str = ""
+
+
+@router.post("/query/quickfix")
+def query_quickfix(body: _QuickFixRequest, request: Request):
+    """SE-5a — propose a repair for a failed statement. NEVER executes it.
+
+    This is the same repair machinery the agent's execute path uses
+    (``FIX_SQL_PROMPT`` + the ``coder`` role), with the one thing that makes it safe here
+    removed: the agent's loop runs its candidate and keeps it only if the run improved,
+    so a bad fix is caught by the retry. There is no retry on this path, and no run — the
+    proposal goes to a diff the user accepts or rejects.
+
+    Which is why the SQL is NOT executed to check it, however tempting: the statement that
+    just failed is the user's, running an LLM's rewrite of it without consent is a write
+    the user did not ask for, and "it returned rows" was never evidence the rewrite means
+    the same thing. The diff is the review step.
+    """
+    from aughor.db.connection import open_connection_for, gate_user_sql
+
+    _check_conn_org(request, body.conn_id)
+    if not body.sql.strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+
+    # The proposal is derived from the user's SQL and comes back to a surface that can
+    # apply it, so it passes the same gate a run would — a fix suggested for a statement
+    # we would refuse to run is not a fix worth showing.
+    blocked = gate_user_sql(body.conn_id, "query_workbench", body.sql)
+    if blocked is not None:
+        raise HTTPException(status_code=400, detail=blocked.error)
+
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    try:
+        dialect = getattr(db, "dialect", "duckdb")
+        schema = db.get_schema()
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "quickfix: db close", counter="query.quickfix.close")
+
+    from pydantic import BaseModel as _BM
+
+    class _Fix(_BM):
+        fixed_sql: str
+        explanation: str
+
+    from aughor.agent.prompts import FIX_SQL_PROMPT
+    from aughor.tools.error_classifier import classify_sql_error
+    from aughor.llm.provider import get_provider
+
+    err = body.error.strip() or "The statement failed. Repair it."
+    # The deterministic classifier runs BEFORE the model, exactly as on the agent path:
+    # it names the error class (round-precision, not-in-group-by, …) so the model repairs
+    # the actual fault instead of re-deriving it from the raw driver message.
+    try:
+        diagnosis = classify_sql_error(err, body.sql, dialect)
+    except Exception:
+        diagnosis = ""
+
+    try:
+        fix = get_provider("coder").complete(
+            system="Fix this SQL query. Return fixed_sql and a one-line explanation.",
+            user=FIX_SQL_PROMPT.format(
+                dialect=dialect,
+                sql=body.sql,
+                error=err,
+                schema=schema,
+                kb_patterns_section="",
+                metrics_section="",
+                error_diagnosis=diagnosis,
+            ),
+            response_model=_Fix,
+        )
+    except Exception as exc:
+        # 502: the repair provider is upstream of us and its being down is not a defect in
+        # the user's SQL. A 500 would read as "your query broke the server".
+        raise HTTPException(status_code=502, detail=f"Quick fix is unavailable: {exc}")
+
+    proposed = (fix.fixed_sql or "").strip()
+    if not proposed or proposed == body.sql.strip():
+        # Saying "no change" is a real answer. Returning the input as a "fix" would put an
+        # empty diff in front of the user and let them Apply their own statement back.
+        return {"proposed_sql": "", "rationale": "", "changed": False,
+                "diagnosis": diagnosis}
+    return {"proposed_sql": proposed, "rationale": (fix.explanation or "").strip(),
+            "changed": True, "diagnosis": diagnosis}
+
+
+# ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
+# `update_saved_query` overwrites the only row, and has recorded a lifecycle revision
+# beside it since Wave V3 — but nothing could READ that history, so a saved query had a
+# version trail and no way to see or use it. These three routes are that read side; no
+# store migration was needed, because the versions were already accumulating.
+#
+# Restore goes through `lifecycle.revert`, which writes the old body as a NEW version
+# rather than rewinding the counter — the evidence that a version shipped must survive
+# being reverted — and then applies it to the live row, which is what the user means by
+# "restore". Both halves, or the rail would show a restore that the editor never saw.
+
+def _sq_key(query_id: str) -> str:
+    return f"savedquery:{query_id}"
+
+
+@router.get("/saved-queries/{query_id}/versions")
+def saved_query_versions(query_id: str, limit: int = 50):
+    """Version history, newest first. Bodies are included: they are small (name + sql +
+    spec) and the rail needs them to diff without a request per row."""
+    from aughor.savedquery.store import get_saved_query
+    from aughor.kernel import lifecycle
+    if get_saved_query(query_id) is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {
+        "query_id": query_id,
+        "versions": [
+            {"version": r.version, "state": r.state, "created_at": r.created_at,
+             "name": (r.body or {}).get("name", ""), "sql": (r.body or {}).get("sql", ""),
+             "spec": (r.body or {}).get("spec") or {}}
+            for r in lifecycle.history("savedquery", _sq_key(query_id), limit=limit)
+        ],
+    }
+
+
+@router.get("/saved-queries/{query_id}/versions/{version}/diff")
+def saved_query_version_diff(query_id: str, version: int, against: Optional[int] = None):
+    """Field-level changes between two versions — `against` defaults to the one before.
+
+    Uses the lifecycle changelog rather than a text diff so a spec change reports as a
+    path (`spec.filters[0].op`), not as a re-indented JSON blob."""
+    from aughor.kernel import lifecycle
+    key = _sq_key(query_id)
+    other = against if against is not None else version - 1
+    diff = lifecycle.diff_versions("savedquery", key, other, version)
+    if diff is None:
+        raise HTTPException(status_code=404, detail="One or both versions do not exist")
+    return {
+        "query_id": query_id, "from_version": other, "to_version": version,
+        "changes": [{"kind": c.kind, "path": c.path,
+                     "before": c.before, "after": c.after} for c in diff.changes],
+    }
+
+
+class _RestoreVersionRequest(BaseModel):
+    version: int
+
+
+@router.post("/saved-queries/{query_id}/restore")
+def saved_query_restore(query_id: str, body: _RestoreVersionRequest):
+    """Restore an earlier version onto the live saved query. Explicit and never automatic."""
+    from aughor.savedquery.store import get_saved_query, update_saved_query
+    from aughor.kernel import lifecycle
+    if get_saved_query(query_id) is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    key = _sq_key(query_id)
+    src = lifecycle.revision("savedquery", key, version=body.version)
+    if src is None:
+        raise HTTPException(status_code=404, detail=f"Version {body.version} does not exist")
+    restored = update_saved_query(
+        query_id,
+        name=(src.body or {}).get("name"),
+        sql=(src.body or {}).get("sql"),
+        spec=(src.body or {}).get("spec") or {},
+    )
+    if restored is None:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {"restored_from": body.version, "query": restored.model_dump()}
 
 
 @router.delete("/saved-queries/{query_id}", status_code=200)

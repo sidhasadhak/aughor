@@ -23,6 +23,21 @@ therefore pass ``tenancy=result_cache_tenancy()`` (``aughor/db/connection.py``) 
 when the policy gate is live, and is ``None`` (→ the legacy key, byte-identical) when it is inert.
 Do NOT pass a tenancy for permission-independent results (schema/metadata) — a raw shared key is
 correct there (the schema is identical for every principal on a connection).
+
+**Variant (SE-4 I).** The key used to be ``(conn_id, [tenancy], sql)`` and nothing more,
+while the rows stored under it were whatever the CALLER's row cap produced. Two consequences,
+both live:
+
+* ``/query/run`` wraps the user's SQL at ``LIMIT n`` but caches under the UNWRAPPED text. Run a
+  query at limit 2, run the same text at limit 10, and the second call returned 2 rows with
+  ``cached: true`` — silently the wrong answer, not merely a stale one.
+* the metric-moves path (``routers/exploration.py``) caches the same SQL with NO cap at all,
+  so the two share a key space in which one's entry is the other's wrong-sized answer.
+
+``variant`` closes both: it names everything about the REQUEST that changes the shape of the
+stored rows — the row cap and the response format. Entries written before it existed are simply
+unreachable under the new key and expire on TTL; a cache miss costs a re-run, which is the one
+failure mode this store is allowed to have.
 """
 from __future__ import annotations
 
@@ -52,9 +67,14 @@ CREATE TABLE IF NOT EXISTS mat_cache (
     columns_json TEXT NOT NULL,
     rows_json    TEXT NOT NULL,
     row_count    INTEGER NOT NULL,
-    stored_at    DOUBLE NOT NULL
+    stored_at    DOUBLE NOT NULL,
+    extra_json   TEXT
 )
 """
+# Additive, idempotent, and applied to files created before `extra_json` existed. This store
+# predates the migration framework and is DuckDB rather than SQLite (so `run_migrations`, which
+# drives off PRAGMA user_version, does not apply here).
+_MIGRATE = "ALTER TABLE mat_cache ADD COLUMN IF NOT EXISTS extra_json TEXT"
 
 
 def _db() -> duckdb.DuckDBPyConnection:
@@ -63,18 +83,79 @@ def _db() -> duckdb.DuckDBPyConnection:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _conn = duckdb.connect(str(_CACHE_PATH))
         _conn.execute(_DDL)
+        _conn.execute(_MIGRATE)
     return _conn
 
 
-def _cache_key(conn_id: str, sql: str, tenancy: str | None = None) -> str:
+def _cache_key(conn_id: str, sql: str, tenancy: str | None = None,
+               variant: str | None = None) -> str:
     # tenancy=None reproduces the historical key EXACTLY (byte-identical), so entries written before
     # this parameter existed — and every current default-off deployment — keep resolving. A non-None
     # tenancy partitions the key per principal/policy (see the module docstring).
     raw = f"{conn_id}::{sql.strip()}" if tenancy is None else f"{conn_id}::{tenancy}::{sql.strip()}"
+    # `variant` describes the REQUEST, not the principal: the row cap and response format that
+    # decided what got stored. Appended (not woven in) so an unvarianted caller's key is unchanged.
+    if variant:
+        raw = f"{raw}::v={variant}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
+def get_cached_entry(
+    conn_id: str,
+    sql: str,
+    ttl: float = DEFAULT_TTL,
+    *,
+    tenancy: str | None = None,
+    variant: str | None = None,
+) -> Optional[tuple[QueryResult, dict]]:
+    """A fresh cache entry as ``(result, extras)``, else None.
+
+    ``extras`` is the format-specific payload stored alongside the rows — typed columns and the
+    truncation flag — and is ``{}`` for entries that carry none. It is returned BESIDE the
+    QueryResult rather than on it: QueryResult is the execution contract, shared far beyond this
+    cache, and widening it for one response format would push a display concern into every
+    consumer of a query result.
+
+    ``tenancy`` partitions the entry per principal/policy under the RBAC row policy — pass
+    ``result_cache_tenancy()`` on a per-principal result path; leave it ``None`` (the default,
+    byte-identical legacy key) for permission-independent results.
+
+    ``variant`` partitions it per REQUEST SHAPE (row cap + response format) — pass the same value
+    to both sides. A caller whose stored rows depend on a cap it chose MUST pass one, or it reads
+    back a different caller's differently-sized answer. See the module docstring."""
+    try:
+        c = _db()
+        key = _cache_key(conn_id, sql, tenancy, variant)
+        row = c.execute(
+            "SELECT columns_json, rows_json, row_count, stored_at, extra_json "
+            "FROM mat_cache WHERE cache_key = ?",
+            [key],
+        ).fetchone()
+        if row is None:
+            return None
+        columns_json, rows_json, row_count, stored_at, extra_json = row
+        if time.time() - stored_at > ttl:
+            c.execute("DELETE FROM mat_cache WHERE cache_key = ?", [key])
+            return None
+        res = QueryResult(
+            hypothesis_id="__cache__",
+            sql=sql,
+            columns=json.loads(columns_json),
+            rows=json.loads(rows_json),
+            row_count=row_count,
+        )
+        extras: dict = {}
+        if extra_json:
+            try:
+                extras = json.loads(extra_json) or {}
+            except Exception:
+                extras = {}
+        return res, extras
+    except Exception:
+        return None
+
 
 def get_cached(
     conn_id: str,
@@ -82,50 +163,31 @@ def get_cached(
     ttl: float = DEFAULT_TTL,
     *,
     tenancy: str | None = None,
+    variant: str | None = None,
 ) -> Optional[QueryResult]:
     """Return a cached QueryResult if one exists and is still fresh, else None.
 
-    ``tenancy`` partitions the entry per principal/policy under the RBAC row policy — pass
-    ``result_cache_tenancy()`` on a per-principal result path; leave it ``None`` (the default,
-    byte-identical legacy key) for permission-independent results. See the module docstring."""
-    try:
-        c = _db()
-        key = _cache_key(conn_id, sql, tenancy)
-        row = c.execute(
-            "SELECT columns_json, rows_json, row_count, stored_at "
-            "FROM mat_cache WHERE cache_key = ?",
-            [key],
-        ).fetchone()
-        if row is None:
-            return None
-        columns_json, rows_json, row_count, stored_at = row
-        if time.time() - stored_at > ttl:
-            c.execute("DELETE FROM mat_cache WHERE cache_key = ?", [key])
-            return None
-        return QueryResult(
-            hypothesis_id="__cache__",
-            sql=sql,
-            columns=json.loads(columns_json),
-            rows=json.loads(rows_json),
-            row_count=row_count,
-        )
-    except Exception:
-        return None
+    The rows-only view of :func:`get_cached_entry`, which is what every caller that does not
+    serve a typed response wants."""
+    entry = get_cached_entry(conn_id, sql, ttl, tenancy=tenancy, variant=variant)
+    return entry[0] if entry else None
 
 
-def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | None = None) -> None:
+def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | None = None,
+              variant: str | None = None, extra: dict | None = None) -> None:
     """Store a QueryResult in the cache (upsert by cache_key).
 
-    ``tenancy`` MUST match the value used for the paired ``get_cached`` so a principal reads back
-    exactly what it wrote. See the module docstring."""
+    ``tenancy`` and ``variant`` MUST match the values used for the paired ``get_cached`` so a
+    caller reads back exactly what it wrote. ``extra`` carries format-specific payload (typed
+    columns, truncation) alongside the rows. See the module docstring."""
     try:
         c = _db()
-        key = _cache_key(conn_id, sql, tenancy)
+        key = _cache_key(conn_id, sql, tenancy, variant)
         c.execute(
             """
             INSERT OR REPLACE INTO mat_cache
-                (cache_key, conn_id, columns_json, rows_json, row_count, stored_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (cache_key, conn_id, columns_json, rows_json, row_count, stored_at, extra_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 key,
@@ -134,6 +196,7 @@ def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | Non
                 json.dumps(result.rows),
                 result.row_count,
                 time.time(),
+                json.dumps(extra) if extra else None,
             ],
         )
     except Exception as exc:

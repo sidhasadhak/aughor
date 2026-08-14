@@ -74,6 +74,16 @@ EXEMPT = {
         "guarded by a DIFFERENT door: CapabilityPipeline runs `validate` (= trust.verify) before "
         "`execute`, so a BLOCK short-circuits ahead of this call. Reclassify if that ordering "
         "ever changes.",
+    "routers/query.py":
+        "the module generates and executes, but never the same SQL — this is the module-granular "
+        "limitation above, inverted. `/query/quickfix` (SE-5a) builds FIX_SQL_PROMPT and RETURNS "
+        "the proposal; it never executes it, by design, because running an LLM's rewrite of the "
+        "user's statement is a write they did not consent to. `/query/run` executes only SQL the "
+        "user supplied, through `gate_user_sql`. The two never meet: no model-written SQL reaches "
+        "an execute on this path. THE CLAIM IS TESTED — "
+        "`test_query_quickfix.py::test_proposes_a_fix_without_executing_anything` boobytraps every "
+        "execute method on the connector for the duration of the call, so a future edit that runs "
+        "a proposal fails there before it reaches this list. Reclassify if quickfix ever executes.",
 }
 
 # Not yet routed through the shared executor. THIS LIST MAY ONLY SHRINK.

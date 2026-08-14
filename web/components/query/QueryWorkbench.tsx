@@ -31,11 +31,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueryBuilder, type BuilderRailBinding } from "@/components/QueryBuilder";
 import { SqlMode } from "@/components/query/modes/SqlMode";
 import { CatalogRail, type RailTable } from "@/components/query/CatalogRail";
+import { VersionRail } from "@/components/query/VersionRail";
 import {
   SavedQueryBar, isVisualQuery, type SavedQueryBinding,
 } from "@/components/query/SavedQueryBar";
+import { requestTab } from "@/lib/navigate";
+import { putMonitorDraft } from "@/lib/query/monitorDraft";
 import { ResizableSplit } from "@/components/ResizableSplit";
-import { type Canvas, type Connection, type SavedQuery } from "@/lib/api";
+import { listSavedQueries, type Canvas, type Connection, type SavedQuery } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
 
@@ -148,6 +152,7 @@ function WorkbenchInner({
   );
   const [savable, setSavable] = useState<Record<QueryMode, boolean>>({ visual: false, sql: false });
   const [activeSaved, setActiveSaved] = useState<SavedQuery | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
 
   // Stable callbacks — a fresh identity here would re-fire each mode's publish effect
   // on every workbench render.
@@ -203,6 +208,63 @@ function WorkbenchInner({
     chooseMode(target);
     savedBindings[target]?.load(q);
   }, [chooseMode, savedBindings]);
+
+  // SE-4 I — the RECEIVING half of Share. `?mode=` was already read here; `?query=` was
+  // not, so a shared link would have opened the workbench on whatever the user last had
+  // open. Runs once per (connId, id): re-opening on every binding change would fight a
+  // user who navigated away from the shared query inside the same session.
+  const openedFromUrl = useRef("");
+  useEffect(() => {
+    if (typeof window === "undefined" || !connId) return;
+    const id = new URLSearchParams(window.location.search).get("query");
+    if (!id || openedFromUrl.current === `${connId}:${id}`) return;
+    // Both bindings must be mounted or `openSaved` lands on a null one and silently
+    // does nothing — the failure mode that makes a deep link look like a dead link.
+    if (!savedBindings.sql || !savedBindings.visual) return;
+    openedFromUrl.current = `${connId}:${id}`;
+    // Listed rather than fetched by id. `GET /saved-queries/{id}` does exist, but it is
+    // unscoped by connection, and this list is already in hand and already filtered to
+    // this connection — so a shared link for connection A cannot silently open a query
+    // belonging to connection B against A's schema.
+    void listSavedQueries(connId)
+      .then(list => {
+        const q = list.find(x => x.id === id);
+        if (q) openSaved(q);
+        else toast.error("That shared query could not be opened — it may have been deleted.");
+      })
+      .catch(() => toast.error("That shared query could not be opened."));
+  }, [connId, savedBindings, openSaved]);
+
+  /** A link that reopens the saved query. Only a SAVED query has a stable address: a
+   *  statement can be any length, and a URL is not where a 4 KB query should live. */
+  const shareQuery = useCallback(() => {
+    if (!activeSaved) {
+      toast.error("Save this query first — a share link points at a saved query.");
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("tab", "query");
+    if (connId) url.searchParams.set("conn", connId);
+    url.searchParams.set("query", activeSaved.id);
+    const link = url.toString();
+    const write = navigator.clipboard?.writeText(link);
+    if (write) {
+      write.then(() => toast.success("Share link copied"))
+           .catch(() => toast.error(`Copy failed — the link is ${link}`));
+    } else {
+      toast.error(`Copy unavailable — the link is ${link}`);
+    }
+  }, [activeSaved, connId]);
+
+  /** Hand this statement to a custom-SQL monitor. The monitor is NOT created here: a
+   *  monitor without a threshold is not a monitor, and inventing one on the user's
+   *  behalf is how an alert fires at 3am for a number nobody chose. */
+  const scheduleQuery = useCallback((sql: string) => {
+    if (!connId) return;
+    putMonitorDraft({ connId, sql });
+    requestTab("monitors", { conn: connId });
+  }, [connId]);
 
   const engine = useMemo(() => {
     const c = (connections ?? []).find(x => x.id === connId);
@@ -295,6 +357,38 @@ function WorkbenchInner({
           onActiveChange={setActiveSaved}
         />
 
+        {/* SE-4 J — the sync state, stated rather than implied. `sql-ahead` is a query
+            whose SQL is the source of truth (no builder spec); `linked` is one the
+            builder can still explain. Shown only for a SAVED query, because for an
+            unsaved draft there is nothing yet to be ahead OF. */}
+        {activeSaved && (
+          <span
+            className="aug-fs-ui"
+            title={isVisualQuery(activeSaved)
+              ? "Linked — the visual spec and this SQL describe the same query"
+              : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}
+            style={{
+              padding: "1px 6px", borderRadius: "var(--r2)",
+              border: "1px solid var(--b1)", color: "var(--t3)",
+            }}
+          >
+            {isVisualQuery(activeSaved) ? "linked" : "sql-ahead"}
+          </span>
+        )}
+
+        <Button
+          variant="ghost"
+          size="xs"
+          className="aug-fs-ui"
+          disabled={!activeSaved}
+          onClick={() => setShowVersions(v => !v)}
+          title={activeSaved
+            ? "Show this saved query's version history"
+            : "Save this query to start a version history"}
+        >
+          {showVersions ? "Hide versions" : "Versions"}
+        </Button>
+
         <Button
           variant="ghost"
           size="xs"
@@ -309,6 +403,21 @@ function WorkbenchInner({
       {/* Catalog ▸ modes. ONE rail, outside both panes, so a mode switch does not
           rebuild the tree the user just navigated — and `collapsed` rather than a
           conditional split, so hiding the rail does not remount the modes beside it. */}
+      {/* Versions sit OUTSIDE the catalog split and to the RIGHT of both modes, so the
+          history is a property of the saved query rather than of whichever mode is up —
+          and `resizePane="second"`, because sizing the left pane would make the rail's
+          width whatever was left over and drift on every window change. `collapsed`
+          rather than a conditional split: the conditional form changes the element tree,
+          which remounts the editor beside it and takes its undo history with it. */}
+      <ResizableSplit
+        storageKey="workbench.versions"
+        resizePane="second"
+        initial={320}
+        min={240}
+        max={620}
+        collapsed={!showVersions || !activeSaved}
+        style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+        left={
       <ResizableSplit
         storageKey="workbench.catalog"
         initial={280}
@@ -354,9 +463,31 @@ function WorkbenchInner({
                 onInsertReady={fn => { insertAtCursor.current = fn; }}
                 onSavedBinding={bindSql}
                 onSavableChange={savableSql}
+                onSchedule={scheduleQuery}
+                onShare={shareQuery}
               />
             </div>
           </>
+        }
+      />
+        }
+        right={
+          <VersionRail
+            queryId={activeSaved?.id ?? ""}
+            onRestored={() => {
+              // The live record changed underneath the editor. Re-open it through the
+              // same path a load takes, so the restored body reaches whichever mode owns
+              // it — showing a "Restored" toast over the OLD text would be the lie.
+              if (activeSaved) {
+                void listSavedQueries(connId)
+                  .then(list => {
+                    const q = list.find(x => x.id === activeSaved.id);
+                    if (q) { openSaved(q); setActiveSaved(q); }
+                  })
+                  .catch(() => toast.error("Restored, but reloading the editor failed — reopen the query."));
+              }
+            }}
+          />
         }
       />
     </div>

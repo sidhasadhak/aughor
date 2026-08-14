@@ -68,6 +68,8 @@ export function SqlMode({
   onInsertReady,
   onSavedBinding,
   onSavableChange,
+  onSchedule,
+  onShare,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -79,6 +81,10 @@ export function SqlMode({
   /** Published ONCE; reads through refs so a keystroke never re-renders the workbench. */
   onSavedBinding?: (binding: SavedQueryBinding) => void;
   onSavableChange?: (savable: boolean) => void;
+  /** SE-4 I — hand this result's SQL to a custom-SQL monitor. */
+  onSchedule?: (sql: string) => void;
+  /** SE-4 I — copy a link that reopens this query. */
+  onShare?: () => void;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -92,6 +98,10 @@ export function SqlMode({
   const abort = useRef<AbortController | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [runAllSummary, setRunAllSummary] = useState("");
+  // SE-5a — the statement that produced the current error. NOT `sqlText`: a run can be
+  // a selection, or one statement of several, and repairing the whole document would
+  // hand the model a different query from the one that failed.
+  const [failedSql, setFailedSql] = useState("");
   const [statementCount, setStatementCount] = useState(1);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
@@ -205,10 +215,12 @@ export function SqlMode({
     setRunning(true);
     setError("");
     setRunAllSummary("");
+    setFailedSql("");
     setStartedAt(Date.now());
     try {
       const res = await runWorkbenchQuery(connId, toRun, 500, boundParams, ac.signal);
       setResult(res);
+      if (res.error) setFailedSql(toRun);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
       setError(res.error ?? "");
@@ -222,6 +234,7 @@ export function SqlMode({
         patchActive({ status: undefined });
       } else {
         setError(e instanceof Error ? e.message : "Query failed");
+        setFailedSql(toRun);
         patchActive({ status: "error" });
       }
     } finally {
@@ -257,14 +270,20 @@ export function SqlMode({
     abort.current = ac;
     setRunning(true);
     setError("");
+    setFailedSql("");
     setStartedAt(Date.now());
     const done: string[] = [];
+    // Which statement is in flight — so a failure hands Quick Fix THAT statement rather
+    // than the whole multi-statement document, which is a different query.
+    let inFlight = "";
     try {
       for (const [i, stmt] of statements.entries()) {
+        inFlight = stmt;
         const res = await runWorkbenchQuery(connId, stmt, 500, boundParams, ac.signal);
         setResult(res);
         if (res.error) {
           setError(`Statement ${i + 1} of ${statements.length} failed: ${res.error}`);
+          setFailedSql(stmt);
           patchActive({ status: "error" });
           return;
         }
@@ -279,6 +298,7 @@ export function SqlMode({
         patchActive({ status: undefined });
       } else {
         setError(e instanceof Error ? e.message : "Query failed");
+        setFailedSql(inFlight);
         patchActive({ status: "error" });
       }
     } finally {
@@ -470,7 +490,27 @@ export function SqlMode({
               diagnostics={diagnostics}
             />
           }
-          right={<ResultsPanel result={result} error={error} running={running} />}
+          right={
+            <ResultsPanel
+              result={result}
+              error={error}
+              running={running}
+              connId={connId}
+              onSchedule={onSchedule}
+              onShare={onShare}
+              failedSql={failedSql}
+              onApplyFix={(fixed) => {
+                // Into the document, never into a run. Applying is the user accepting a
+                // proposal to EDIT; whether it executes is still their next decision.
+                // `setSql` is enough on its own — SqlEditorPane reconciles an externally
+                // changed `value` back into the CM6 document, the same path a tab switch
+                // and a restored draft take.
+                setSql(fixed);
+                setError("");
+                setFailedSql("");
+              }}
+            />
+          }
         />
     </div>
   );

@@ -1649,8 +1649,8 @@ export function QueryBuilder({
   const pinRefCmd = useRef(onPinClick);
   useEffect(() => { runRefCmd.current = triggerRun; pinRefCmd.current = onPinClick; });
   const qbCommands = useMemo<Command[]>(() => [
-    { id: "qb-run", label: "Run query", sublabel: "Execute the current Query Builder query", icon: "builder", accent: "var(--blue3)", keywords: "execute run sql query", run: () => runRefCmd.current() },
-    { id: "qb-pin", label: "Pin query to cockpit", sublabel: "Guard-check and pin this query as a briefing card", icon: "spark", accent: "var(--vio3)", keywords: "pin dashboard cockpit save card", run: () => pinRefCmd.current() },
+    { id: "query-run", label: "Run query", sublabel: "Execute the current query", icon: "builder", accent: "var(--blue3)", keywords: "execute run sql query", run: () => runRefCmd.current() },
+    { id: "query-pin", label: "Pin query to cockpit", sublabel: "Guard-check and pin this query as a briefing card", icon: "spark", accent: "var(--vio3)", keywords: "pin dashboard cockpit save card", run: () => pinRefCmd.current() },
   ], []);
   useRegisterCommands("query-builder", qbCommands);
   // Customize-tab option lists

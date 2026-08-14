@@ -84,6 +84,14 @@ evals/_log*.txt
 data/system.db
 data/system.db-shm
 data/system.db-wal
+# Recovery artifacts from a corrupt ledger (2026-08-14): `sqlite3 .recover` leaves a
+# `.corrupt.bak` of the original and a `.lost_and_found.sql` of rows it could not
+# attribute to a table. Both contain ledger CONTENT — investigation questions, SQL text,
+# artifact payloads — and this repository is PUBLIC, so a stray `git add -A` would
+# publish them. The three tracked artifact directories under data/ (context_graph,
+# ontology_docs, ontology_column_config, ontology_overrides) are unaffected: this
+# pattern only matches the system.db family.
+data/system.db.*
 
 # Runtime/session artifacts — auto-created backups from platform resets, purges and
 # quarantines; runtime finding-dismissal state; and eval output dumps. All disposable
