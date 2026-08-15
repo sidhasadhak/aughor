@@ -11,6 +11,35 @@ import operator
 # many `from aughor.agent.state import QueryResult` call sites stay unchanged.
 from aughor.control_plane.contracts.execution import QueryResult, StatResult  # noqa: F401
 
+# A step whose SQL could not be planned FAILS — it never gets a fabricated query.
+# Until 2026-08-15 both planners fell back to `SELECT COUNT(*) FROM "<first table>"`,
+# and downstream a row count is indistinguishable from a real result, so the chain
+# kept walking and the report narrated the wreckage as findings. This prefix marks
+# the failure on `QueryResult.error` so every reader (reasoning, honesty preamble,
+# synthesis, the receipt) can tell a planning failure from a SQL error.
+PLANNER_FAILURE = "PLANNER FAILURE"
+
+
+def planner_failure_result(step_id: str, reason: str) -> QueryResult:
+    """The evidence a step produces when no SQL could be planned for it: an explicit,
+    zero-row failure. Loud on purpose — the receipt shows the step ran and failed,
+    rather than showing a plausible number nobody can trace back to a real query."""
+    return QueryResult(
+        hypothesis_id=step_id,
+        sql="",
+        columns=[],
+        rows=[],
+        row_count=0,
+        error=(f"{PLANNER_FAILURE}: {reason}. No SQL was generated for this step, so it "
+               f"has no evidence — nothing here may be reported as a finding."),
+    )
+
+
+def is_planner_failure(result: Any) -> bool:
+    """True for the failure produced by :func:`planner_failure_result` (duck-typed:
+    a QueryResult, a SubQuestionAnswer, or anything else carrying ``.error``)."""
+    return str(getattr(result, "error", "") or "").startswith(PLANNER_FAILURE)
+
 
 # ── Pydantic output schemas (structured LLM responses) ──────────────────────
 
@@ -178,7 +207,7 @@ class SubQuestionAnswer(BaseModel):
     row_count: int
     error: Optional[str] = None
     answer: str    # natural-language answer produced by reason_over_result
-    insight: str   # the most actionable single insight
+    insight: str   # the most actionable single finding
     refinement: Optional[str] = None  # hint injected into downstream sub-questions
 
 

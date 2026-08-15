@@ -1824,14 +1824,24 @@ def _answer_core(
         try:
             from aughor.tools.data_catalog import build_data_catalog
             from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+            from aughor.tools.schema_linker import rank_tables_for_context
+            from aughor.llm.profile import profile_for as _pf_cat
             linked_tables = list(parse_schema_tables(schema).keys())
             if linked_tables:
-                # Add the date/time dimension first (before FK expansion + the
-                # 10-table cap) so a temporal question keeps it.
-                for _dt in temporal_dimension_tables(_full_schema, linked_tables, question):
-                    if _dt not in linked_tables:
-                        linked_tables.append(_dt)
-                linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
+                _cat_cap = _pf_cat("coder").context_table_cap
+                # The date/time dimension is PINNED, not merely appended: a temporal
+                # question never names it, so it scores zero and any relevance cut drops
+                # it first — the exact table the expansion exists to keep.
+                _pinned = [t for t in temporal_dimension_tables(_full_schema, linked_tables, question)
+                           if t not in linked_tables]
+                # Rank + cap BEFORE building the catalog. The linker returns the schema
+                # untouched when nothing matched (recall safety), so an open-ended
+                # question used to hand every table in the canvas to a builder that pays
+                # 5 sample rows each.
+                linked_tables = rank_tables_for_context(
+                    question, _full_schema, linked_tables + _pinned,
+                    cap=_cat_cap, connection_id=connection_id, pinned=_pinned)
+                linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=_cat_cap)
                 # M24c: verified semantic layer (segments + computed properties)
                 # for the linked entities — only items validated against the live DB.
                 try:
@@ -1842,7 +1852,8 @@ def _answer_core(
                     )
                 except Exception:
                     semantic_layer_section = ""
-                data_catalog = build_data_catalog(db, linked_tables)
+                data_catalog = build_data_catalog(db, linked_tables,
+                                                  schema=canvas_scope_eff_schema or None)
                 if data_catalog:
                     schema = data_catalog
         except Exception:
@@ -3603,12 +3614,17 @@ async def _stream_investigation(
                 # needs — e.g. the timestamp on `orders` when revenue is on `invoices`. Without
                 # this the ADA coder can't see the date column and hallucinates one on the metric
                 # table. Expand against the FULL schema, capped at 10 tables.
-                for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
-                    if _dt not in linked_tables:
-                        linked_tables.append(_dt)
                 from aughor.llm.profile import profile_for as _pf
-                linked_tables = fk_neighbor_expand(full_schema, linked_tables,
-                                                   cap=_pf("coder").context_table_cap)
+                from aughor.tools.schema_linker import rank_tables_for_context
+                _cat_cap = _pf("coder").context_table_cap
+                # Pinned, then ranked+capped, then FK-completed — see the /chat path for
+                # why the temporal dimension cannot ride along as a plain append.
+                _pinned = [t for t in temporal_dimension_tables(full_schema, linked_tables, question)
+                           if t not in linked_tables]
+                linked_tables = rank_tables_for_context(
+                    question, full_schema, linked_tables + _pinned,
+                    cap=_cat_cap, connection_id=connection_id, pinned=_pinned)
+                linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=_cat_cap)
                 # Scope the expansion to the canvas schema: temporal/FK expansion walks the
                 # FULL schema and can pull a sibling schema's same-named table (netflix.products
                 # into a missimi investigation), which then becomes a cross-schema reference the
@@ -3618,7 +3634,7 @@ async def _stream_investigation(
                     linked_tables = [t for t in linked_tables
                                      if "." not in t or t.split(".")[0].strip().lower() == _allow]
                 data_catalog = await asyncio.to_thread(
-                    lambda: build_data_catalog(db, linked_tables)
+                    lambda: build_data_catalog(db, linked_tables, schema=scope_schema or None)
                 )
         except Exception:
             logger.warning("Data Catalog build failed (agentic path); using linked schema", exc_info=True)

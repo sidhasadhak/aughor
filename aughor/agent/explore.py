@@ -45,6 +45,8 @@ from aughor.agent.state import (
     SubQuestionAnswer,
     VerificationCheck,
     VerificationManifest,
+    is_planner_failure,
+    planner_failure_result,
 )
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
@@ -582,10 +584,11 @@ def _execute_one_subq(
 
     llm = get_provider("coder")
     # Resilience: a single sub-question's planner hiccup (provider timeout, parse
-    # error, oversized context) must NOT abort the whole chain. If the LLM raises,
-    # fall back to a deterministic landscape query so this step still produces
-    # evidence and the chain advances to the next sub-question.
+    # error, oversized context) must NOT abort the whole chain — the chain advances
+    # to the next sub-question. But this step produces NO evidence; see the failure
+    # branch below for why it must never be given a substitute query.
     plan: Optional[QueryPlan] = None
+    plan_error = ""
     try:
         plan = llm.complete(
             system="You are a senior data analyst writing SQL for an investigative sub-question.",
@@ -605,16 +608,27 @@ def _execute_one_subq(
             ),
             response_model=QueryPlan,
         )
-    except Exception:
+    except Exception as _plan_exc:
         plan = None
+        plan_error = f"{type(_plan_exc).__name__}: {_plan_exc}"[:300]
+        logger.warning("[explore] planner call failed for %s", subq.id, exc_info=True)
 
-    # Guard: ensure at least one query (covers planner failure AND empty plans)
+    # No SQL → this sub-question FAILS. It used to be handed
+    # `SELECT COUNT(*) AS row_count FROM "<first table in the schema text>"`, which is
+    # the worst possible outcome: a well-formed query whose row count is, downstream,
+    # indistinguishable from a real result. Every guard trusted the shape, the chain
+    # kept walking, and synthesis wrote a formal report around a number that answered
+    # nothing — then filed the platform's own failure under "data quality notes"
+    # against the user's table. A fallback that produces a well-formed wrong answer is
+    # worse than an exception. Fail loudly instead: the step yields an explicit
+    # failure result, the chain still advances, and the report knows it is a failure.
     queries = [q for q in (plan.queries if plan else []) if q and q.strip()]
     if not queries:
-        import re as _re
-        _tm = _re.search(r"^(?:TABLE:|##)\s+([\w.]+)", state["schema_context"], _re.MULTILINE)
-        fallback_table = _tm.group(1) if _tm else "unknown"
-        queries = [f'SELECT COUNT(*) AS row_count FROM "{fallback_table}"']
+        reason = (f"the planner call failed ({plan_error})" if plan_error
+                  else "the planner returned an empty query plan")
+        logger.warning("[explore] %s could not be planned — %s; failing the step "
+                       "(no substitute query)", subq.id, reason)
+        return ([planner_failure_result(subq.id, reason)], [], ["planner_failed"])
 
     results: list[QueryResult] = []
     new_pitfalls: list[Pitfall] = []
@@ -980,7 +994,19 @@ def _reason_one_subq(
     parallel wave branch can call it. The caller owns the chain mutation (mark done / promote /
     inject refinement) since that depends on the wider chain, not this sub-question alone."""
     _vetoed = _all_vetoed(subq_results)
-    if not subq_results or all(r.error for r in subq_results):
+    if subq_results and all(is_planner_failure(r) for r in subq_results):
+        # Planner failure — NOT a SQL error, and emphatically not a fact about the
+        # data. Say which it is: the old wording ("due to SQL errors") is what let the
+        # narrator file the platform's own failure as a data-quality note against the
+        # user's table.
+        answer_obj = ReasoningOutput(
+            answer=(f"{subq.id} FAILED: no SQL could be planned for it, so it never ran and "
+                    f"produced no evidence. This is a platform failure, not a finding about "
+                    f"the data, and must not appear in the answer as a result."),
+            insight="None — this step failed before execution.",
+            refinement=None,
+        )
+    elif not subq_results or all(r.error for r in subq_results):
         # Technical failure — record as inconclusive, don't block chain
         answer_obj = ReasoningOutput(
             answer=f"Could not retrieve data for {subq.id} due to SQL errors.",
@@ -1665,7 +1691,11 @@ def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> 
     """Build the directive prefix prepended to the synthesis evidence so the report stays
     honest about (a) completeness and (b) signal. Pure/testable — no LLM, no state.
 
-    Two independent guards, in order:
+    Three independent guards, in order:
+      • Failure — a step that failed before any SQL ran is NOT evidence. It is the
+        platform's failure, never a property of the user's data, and the report must
+        not launder it into "data quality notes" or into a to-do list of the queries
+        the system itself could not run (both happened on 2026-08-15).
       • Completeness — if planned steps did NOT run, say so. Distinguish a DELIBERATE
         convergence stop (#3/#13: metric uniform ⇒ remaining drills skipped as redundant)
         from a genuine partial/salvaged run, since the right framing differs.
@@ -1673,9 +1703,27 @@ def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> 
         and flag a likely data-generation artifact / exogenous process; keep confidence low.
     """
     parts: list[str] = []
-    answered_ids = {a.subq_id for a in answers}
+    failed = [a for a in answers if is_planner_failure(a)]
+    with_evidence = [a for a in answers if not is_planner_failure(a)]
+    # A failed step is marked `done` by the chain, so it can never surface in
+    # `unanswered` — it needs its own list, or the report reads as complete.
+    answered_ids = {a.subq_id for a in with_evidence} | {a.subq_id for a in failed}
     unanswered = [sq for sq in planned if sq.id not in answered_ids and not getattr(sq, "done", False)]
     converged_early = bool(unanswered) and len(uniform_dims) >= _UNIFORM_CONVERGENCE
+
+    if failed:
+        broken = "; ".join(f"{a.subq_id}: {a.question}" for a in failed[:6])
+        parts.append(
+            f"🛑 {len(failed)} STEP(S) FAILED INSIDE THE PLATFORM — no SQL could be planned "
+            f"for them, so they never ran and produced NO evidence: {broken}. These are "
+            f"failures of this system, NOT properties of the user's data. You MUST: "
+            f"(1) state plainly, near the top, that these steps failed and what therefore "
+            f"remains unknown; (2) NEVER present anything from them as a finding; "
+            f"(3) NEVER record them as a data-quality note, a data gap, or any other "
+            f"criticism of the data — the data was never queried; (4) NEVER recommend "
+            f"that the reader run the queries this system failed to run — a recommended "
+            f"action is a business decision, not this system's unfinished work.\n\n"
+        )
 
     if converged_early:
         gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "further segment drills"
@@ -1689,10 +1737,13 @@ def _honesty_preamble(answers: list, planned: list, uniform_dims: list[str]) -> 
             f"pivot recommendations to baseline / policy-level levers. Do NOT imply the "
             f"skipped cuts were each individually tested.\n\n"
         )
-    elif planned and (len(answers) < len(planned) or unanswered):
+    # `+ len(failed)`: when failures account for the whole shortfall the block above has
+    # already named them precisely — firing here too would repeat it as the vague
+    # "later planned steps". This fires only for a gap the failure block did not cover.
+    elif planned and (len(with_evidence) + len(failed) < len(planned) or unanswered):
         gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "later planned steps"
         parts.append(
-            f"⚠️ INCOMPLETE CHAIN — only {len(answers)} of {len(planned)} planned sub-questions "
+            f"⚠️ INCOMPLETE CHAIN — only {len(with_evidence)} of {len(planned)} planned sub-questions "
             f"actually ran. The following were NOT investigated and have NO data: {gap}. "
             f"Do NOT claim a comprehensive analysis or use phrases like 'given all of the above'. "
             f"Answer only from the completed steps below and explicitly note what remains unknown.\n\n"
@@ -1730,11 +1781,44 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
             )
         }
 
+    # Every step failed before any SQL ran: there is nothing to synthesise. Narrating
+    # this would produce exactly the 2026-08-15 report — a formal document whose
+    # "findings" are the wreckage and whose "recommended actions" are the queries the
+    # system failed to run. Report the failure deterministically instead; the narrator
+    # is not asked to write around an empty chain.
+    _failed = [a for a in answers if is_planner_failure(a)]
+    if len(_failed) == len(answers):
+        ids = ", ".join(a.subq_id for a in _failed)
+        logger.warning("[explore] every step failed to plan (%s) — reporting failure, not findings", ids)
+        return {
+            "explore_report": ExplorationReport(
+                headline="This investigation could not be run — no query was ever planned.",
+                conclusion=(
+                    f"All {len(_failed)} planned steps ({ids}) failed inside the platform before "
+                    f"any SQL executed, so this investigation has no findings and nothing here "
+                    f"describes your data."
+                ),
+                narrative=(
+                    "The question was decomposed into steps, but the query planner did not return "
+                    "SQL for any of them, so no query ran and no data was read. This is a failure "
+                    "of this system, not a property of the data or a data-quality problem."
+                ),
+                recommended_actions=[
+                    "Re-run the investigation — planner failures are usually transient.",
+                    "If it recurs, narrow the canvas to the tables the question is about and ask again.",
+                ],
+                verification=_build_verification_manifest(state, extra_checks=["planner_failed"]),
+            )
+        }
+
     planned = state.get("sub_questions", []) or []
     uniform_dims = _uniform_dimensions(state.get("query_history", []))
     chain_summary = _honesty_preamble(answers, planned, uniform_dims) + _format_chain_summary(answers)
 
-    # Collect data quality notes from pitfalls
+    # Collect data quality notes from pitfalls. Scoped honestly: this is what one query
+    # repair happened to reveal, not a property measured across the table — the report
+    # used to promote it to "may have affected data quality in the investigative chain",
+    # which reads as a finding about the user's data rather than a note about one query.
     dq_notes: list[DataQualityNote] = []
     for p in pitfalls:
         if p.data_quality_issue:
@@ -1742,7 +1826,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
                 table="SQL Execution",
                 column=None,
                 issue=p.data_quality_issue,
-                impact="May have affected data quality in the investigative chain.",
+                impact="Observed while repairing one query in this run; not measured across the table.",
                 recommended_fix=p.fix_explanation,
             ))
 

@@ -623,6 +623,93 @@ def link_schema(
     return filtered
 
 
+def _fk_degree(schema_str: str) -> dict[str, int]:
+    """Table → number of distinct FK-joinable neighbours, from the same inferred join map
+    the catalog and `fk_neighbor_expand` use. Empty on any failure (callers then fall
+    back to input order, never to an exception)."""
+    try:
+        from aughor.tools.schema import compute_join_map, parse_schema_tables
+        jmap = compute_join_map(parse_schema_tables(schema_str))
+        adj: dict[str, set[str]] = {}
+        for j in jmap.get("joins", []):
+            adj.setdefault(j["t1"], set()).add(j["t2"])
+            adj.setdefault(j["t2"], set()).add(j["t1"])
+        return {t: len(nb) for t, nb in adj.items()}
+    except Exception:
+        logger.debug("FK-degree ranking unavailable", exc_info=True)
+        return {}
+
+
+def rank_tables_for_context(
+    question: str,
+    schema_str: str,
+    tables: list[str],
+    *,
+    cap: int,
+    connection_id: str | None = None,
+    pinned: list[str] | None = None,
+) -> list[str]:
+    """Rank ``tables`` by relevance to ``question`` and keep the top ``cap``.
+
+    The companion to :func:`link_schema`'s recall-safety branch. That branch is right in
+    principle — filtering on noise is how a schema ends up empty — but it means the MOST
+    open-ended questions get the LEAST filtering: ask "profile the most unusual entities
+    in this data" and no table matches a keyword, so all 23 come back byte-identical.
+    That was fine when the schema was one domain; on a canvas holding four unrelated
+    datasets (airline ops · media reviews · bakery sales · suppliers) "send everything"
+    is exactly the wrong answer, and the catalog built from it was 28.5k chars of which
+    29% was cookie reviews in an airline-outlier prompt.
+
+    So the recall floor stays where it belongs (the SCHEMA text keeps every table), and
+    the bound moves to the expensive artifact: the catalog, which pays 5 sample rows per
+    table. Ranking is the linker's own ``_score_table`` — same scores, same hints, same
+    connection-derived weights, so a table the linker would have kept ranks first here.
+    When NOTHING scores — the case that produced the 2026-08-15 report — keyword order
+    would be schema order, i.e. alphabetical luck. The fallback is the schema's own
+    structure instead: FK degree, so the connected core of the canvas outranks tables
+    that join to nothing. On a canvas of four unrelated datasets that keeps the entity
+    tables and drops the free-floating ones, which is what "profile the entities in this
+    data" actually means. Order-stable within equal degree, and the log says which basis
+    was used, because a silent cap reads as "we covered everything".
+
+    ``pinned`` tables always survive the cut. A date/time dimension is added to the
+    context precisely BECAUSE the question never names it, so it scores zero and a
+    relevance cut would drop it first — the one table the temporal expansion existed to
+    keep."""
+    if cap <= 0 or len(tables) <= cap:
+        return tables
+    _pin = {t.lower() for t in (pinned or [])}
+    try:
+        blocks = {b["table"].lower(): b for b in _extract_schema_blocks(schema_str)}
+        tokens = _expand_tokens(set(_tokenise(question)) - _STOP_WORDS) - _STOP_WORDS
+        conn_table_hints, _cols, synonyms = build_connection_hints(connection_id)
+        hints = conn_table_hints or _DEFAULT_TABLE_HINTS
+        weight = 2.0 if conn_table_hints else 0.25
+        for t in list(tokens):
+            tokens |= synonyms.get(t, set())
+        scored = [
+            (_score_table(blocks[t.lower()], tokens, hints, weight) if t.lower() in blocks else 0.0,
+             i, t)
+            for i, t in enumerate(tables)
+        ]
+        ranked = [s for s, _i, t in scored if t.lower() not in _pin]
+        basis = "relevance"
+        if not ranked or max(ranked) <= 0:
+            basis = "FK degree (no keyword matched)"
+            degree = _fk_degree(schema_str)
+            scored = [(float(degree.get(t, 0)), i, t) for _s, i, t in scored]
+        # Pins sort above everything; the ranking below them is unchanged.
+        scored.sort(key=lambda x: (0 if x[2].lower() in _pin else 1, -x[0], x[1]))
+        kept = [t for _s, _i, t in scored[:cap]]
+        dropped = [t for _s, _i, t in scored[cap:]]
+        logger.info("[linker] catalog capped to top %d of %d by %s; dropped: %s",
+                    cap, len(tables), basis, dropped)
+        return kept
+    except Exception:
+        logger.warning("table ranking failed; capping by input order", exc_info=True)
+        return tables[:cap]
+
+
 def link_schema_for_prompt(
     question: str,
     schema_str: str,

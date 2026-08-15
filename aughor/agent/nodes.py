@@ -33,6 +33,7 @@ from aughor.agent.state import (
     ReplanDecision,
     RouteDecision,
     SQLFix,
+    planner_failure_result,
 )
 from pydantic import BaseModel as _BaseModel
 
@@ -485,7 +486,7 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
         if scan_context else ""
     )
 
-    # Inject exploration findings (null semantics, lifecycles, cross-table insights)
+    # Inject exploration findings (null semantics, lifecycles, cross-table relationships)
     exploration_section = ""
     try:
         from aughor.explorer.store import render_exploration_annotations
@@ -781,15 +782,20 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     if _action_notes:
         _stats.inc("action_expansions", len(_action_notes))
 
-    # Fallback: if no queries were generated, run a diagnostic count
+    # No queries → this hypothesis FAILS. It used to run a "diagnostic" COUNT(*) over
+    # whichever table appeared first in the schema text; the `_note` column made the
+    # substitution legible to a human reading the SQL, but every programmatic reader
+    # downstream still saw a query that executed and returned a number. Same class of
+    # defect as the explore path's fallback (explore.py) — report the failure instead.
     if not queries:
-        import re as _re
-        _tm = _re.search(r"^TABLE:\s+([\w.]+)", state["schema_context"], _re.MULTILINE)
-        fallback_table = _tm.group(1) if _tm else "unknown"
-        queries = [
-            f'SELECT COUNT(*) AS row_count, \'{h.id} — planner returned no query intents; '
-            f'this is a diagnostic fallback\' AS _note FROM "{fallback_table}"'
-        ]
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "[chat] %s could not be planned — the planner returned no query intents; "
+            "failing the hypothesis (no substitute query)", h.id)
+        return {
+            "query_history": [planner_failure_result(h.id, "the planner returned no query intents")],
+            "pitfalls": new_pitfalls,
+        }
 
     results: list[QueryResult] = []
     # (new_pitfalls initialised above, before the consistency block)
