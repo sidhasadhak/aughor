@@ -208,15 +208,26 @@ def test_an_unnamed_pair_is_not_invented():
 # ── the finding ───────────────────────────────────────────────────────────────
 
 class _FakeResult:
-    def __init__(self, cols, rows, sql="SELECT 1"):
+    """Shaped like what `_execute_safe` ACTUALLY returns — crucially, with `stats`
+    EMPTY. The first version of this fixture pre-computed `analyze_query_result` into
+    `self.stats`, fabricating the one precondition production does not satisfy: the
+    investigate path never attaches stats (only the explore path calls `_attach_stats`).
+    So the finding was silently dropped on the first live run while this test passed."""
+
+    def __init__(self, cols, rows, sql="SELECT 1", stats=None):
         self.sql, self.columns, self.rows = sql, cols, rows
         self.row_count, self.error = len(rows), None
-        self.stats = analyze_query_result(cols, rows, sql)
+        self.stats = stats or []
 
 
-def test_the_finding_carries_the_verdict_and_a_grid_chart():
+def test_the_finding_is_built_from_a_result_with_no_stats_attached():
+    """The live failure, pinned: `_execute_safe` returns a result whose `stats` is empty,
+    so the finding must compute the verdict itself instead of assuming an upstream step
+    ran the analyser."""
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
-    f = _association_finding(_FakeResult(cols, rows), "ship_mode", "sub_category")
+    result = _FakeResult(cols, rows)
+    assert result.stats == [], "the fixture must mirror _execute_safe, which attaches nothing"
+    f = _association_finding(result, "ship_mode", "sub_category")
     assert f is not None
     assert f["title"] == "ship_mode × sub_category: are they related?"
     # A grid answer deserves a grid chart; two bar charts are what marginals look like.
@@ -231,3 +242,22 @@ def test_no_finding_without_a_verdict():
     finding — rather than an empty card claiming to have tested something."""
     f = _association_finding(_FakeResult(["a", "b"], [["x", 1.0], ["y", 2.0]]), "a", "b")
     assert f is None
+
+
+# ── the parallel path must not silently skip it ───────────────────────────────
+
+def test_the_multilens_path_runs_the_scan_too(monkeypatch):
+    """Every lens is invoked with `dims_override` set — which is the very guard the scan
+    uses to avoid running once per lens. So on a transport that allows concurrent lenses
+    the scan would never run at all, and a relationship question would quietly go back to
+    being answered by marginal rankings. Caught by reading the code, not by a test run:
+    the local binding is serial, so no suite here would have exercised it."""
+    import inspect
+
+    from aughor.agent import investigate as inv
+
+    src = inspect.getsource(inv.ada_cross_section_multilens)
+    assert "_run_association_scan(" in src, \
+        "the parallel path must run the association scan itself"
+    assert "_assoc_finding" in src and "merged = [_first]" in src, \
+        "and must merge the verdict into the leading phase"

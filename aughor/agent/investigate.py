@@ -365,6 +365,14 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
     stats_list = list(getattr(result, "stats", None) or [])
     assoc = next((s for s in stats_list if getattr(s, "type", "") == "association"), None)
     if assoc is None:
+        # `_execute_safe` does not attach stats — unlike the explore path, which calls
+        # `_attach_stats` explicitly. Assuming it did is what made this whole feature
+        # inert on its first live run: the scan executed, the verdict was computable,
+        # and the finding was dropped because nobody had run the analyser. Compute it
+        # here rather than depend on an upstream step that does not exist.
+        assoc = next((s for s in analyze_query_result(result.columns, result.rows, result.sql)
+                      if s.type == "association"), None)
+    if assoc is None:
         return None
     return InvestigationFinding(
         finding_id="association",
@@ -6955,6 +6963,26 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         return ada_cross_section(state, conn, extra_dims=_aug_dims,
                                  extra_schema=_aug_schema, extra_directive=_aug_dir, grain=grain)
 
+    # The association scan belongs to the WHOLE question, not to any one lens, and every
+    # lens below is invoked with `dims_override` set — which is exactly the guard the scan
+    # uses to avoid running once per lens. Without this call it would therefore never run
+    # on the parallel path at all: a relationship question would go back to being answered
+    # by marginal rankings on any deployment whose transport allows concurrent lenses,
+    # and nothing would say so. Run it once, here, single-threaded, before the fan-out.
+    _assoc_finding = None
+    if _question_asks_association(state.get("question", "")):
+        _named = _dimensions_named_in_question(state.get("question", ""),
+                                               intake_data.get("dimensions", []))
+        _res = _run_association_scan(conn, state.get("question", ""),
+                                     intake_data.get("dimensions", []),
+                                     intake_data.get("metric_table", ""),
+                                     intake_data.get("metric_sql", ""),
+                                     intake_data.get("metric_label", "the metric"),
+                                     "cross_section")
+        if _res is not None and len(_named) >= 2:
+            _assoc_finding = _association_finding(
+                _res, _named[0].split(".")[-1], _named[1].split(".")[-1])
+
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
     # Population (rate) lens groups only — used for the period-scoped forward-chain drill.
@@ -7118,6 +7146,20 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
                       (" + " + "+".join(_extras) if _extras else ""), len(merged) - base_n)
+    # The association verdict leads: it answers the question the lenses below only
+    # decorate, and a reader who meets a concentration ranking first stops there.
+    if _assoc_finding is not None and merged:
+        _first = dict(merged[0])
+        _first["findings"] = [_assoc_finding] + list(_first.get("findings") or [])
+        if "INDEPENDENT" in (_assoc_finding.get("interpretation") or ""):
+            _first["summary"] = ASSOCIATION_NULL_DIRECTIVE + (_first.get("summary") or "")
+            if primary_summary is not None:
+                primary_summary = ASSOCIATION_NULL_DIRECTIVE + primary_summary
+        else:
+            _first["summary"] = (f"{_assoc_finding['interpretation']}\n\n"
+                                 f"{_first.get('summary') or ''}")
+        merged = [_first] + list(merged[1:])
+
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary
