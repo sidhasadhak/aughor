@@ -22,7 +22,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  applyRecommendedAgentModels, createAgentGolden, createUserAgent,
+  createAgentGolden, createUserAgent,
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
   evaluateUserAgent, getAgentObservability, getAgents, getConnections,
   getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentRevisions,
@@ -598,7 +598,6 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
   const [models, setModels] = useState<string[]>([]);
   const [catalogBackend, setCatalogBackend] = useState("");
   const [busy, setBusy] = useState(false);
-  const [applyNote, setApplyNote] = useState("");
 
   useEffect(() => {
     getLlmModels()
@@ -687,27 +686,11 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
                 <option value={gov.model}>{gov.model}</option>
               )}
             </select>
-            {charter.recommended_model && gov.model !== charter.recommended_model && (
-              <Button variant="ghost" size="xs" disabled={busy}
-                onClick={() => pinModel(charter.recommended_model!)}
-                title={`Recommended for ${charter.name}: ${charter.recommended_model}`}>
-                use recommended
-              </Button>
-            )}
-            {charter.recommended_model && gov.model === charter.recommended_model && (
-              <span style={{ fontSize: 10, color: "var(--grn4)" }}>recommended</span>
-            )}
           </label>
-          <div style={{ fontSize: 11, color: "var(--t3)" }}>
-            <Button variant="ghost" size="xs" disabled={busy} onClick={async () => {
-              setBusy(true);
-              const r = await applyRecommendedAgentModels({ workspace_id: workspaceId });
-              setApplyNote(r ? `Pinned ${r.applied.length} for ${r.backend}` : "Could not apply.");
-              onChanged();
-              setBusy(false);
-            }}>Apply recommended models to all</Button>
-            {applyNote && <span style={{ color: "var(--grn4)", marginLeft: 8 }}>{applyNote}</span>}
-          </div>
+          {/* No "use recommended" / "apply to all": the charters carried a hardcoded
+              model id per agent, and those were removed with every other model list
+              (2026-08-15). An agent runs on the operator's pin, or inherits the role
+              binding — there is nothing left for this product to recommend. */}
           <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
             These are the charter&rsquo;s REAL knobs. There is no per-agent temperature,
             topP or tool toggle here: the transport pins temperature platform-wide

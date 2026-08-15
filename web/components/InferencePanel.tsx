@@ -477,8 +477,9 @@ export function InferencePanel() {
         />
 
         <div style={{ fontSize: 10, color: "var(--t4)" }}>
-          Leave a model blank to use the provider&apos;s default (shown as the placeholder).
-          Any model id works — the list is a suggestion, not a restriction.
+          Every role needs a model — nothing is assumed, and a blank role fails its calls
+          with a message saying so. Any model id works: the list is what this provider
+          reports serving, not a restriction.
         </div>
         {paidBindings.length > 0 && (
           <div style={{

@@ -82,7 +82,6 @@ import {
   patchAgent,
   getLlmConfig,
   getLlmModels,
-  applyRecommendedAgentModels,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,

@@ -445,3 +445,68 @@ def test_an_unconfigured_binding_is_a_400_not_an_internal_error(client, monkeypa
     assert body["error"] == "no_model_configured"
     assert body["role"] == "coder"
     assert "Settings" in body["detail"]
+
+
+# ── capabilities are asked for, not matched on the name ───────────────────────
+
+def test_ollama_facts_come_from_api_show(monkeypatch):
+    """`/api/show` publishes both facts this codebase used to guess from the model NAME.
+    The guess was wrong on the deployment's own binding: a model declaring
+    `capabilities: [completion, tools, thinking]` matched no keyword in the tools list,
+    so every structured call ran in JSON mode and came back empty."""
+    import httpx
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"capabilities": ["completion", "tools", "thinking"],
+                    "model_info": {"deepseek4.context_length": 1_048_576,
+                                   "deepseek4.embedding_length": 4096}}
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _R())
+    facts = M.ollama_model_facts("http://localhost:11434/v1", "vendor-x:cloud")
+    assert facts == {"tools": True, "context": 1_048_576}
+
+
+def test_ollama_facts_degrade_to_nothing_when_the_model_is_gone(monkeypatch):
+    """A retired id answers nothing; the caller must keep its conservative default
+    rather than inherit another model's numbers."""
+    import httpx
+
+    def _boom(*a, **k):
+        raise RuntimeError("404 model not found")
+
+    monkeypatch.setattr(httpx, "post", _boom)
+    assert M.ollama_model_facts("http://localhost:11434/v1", "retired:cloud") == {}
+
+
+def test_a_declared_tools_capability_selects_TOOLS_mode(monkeypatch):
+    """The live defect, pinned: JSON mode on a thinking model returns empty content."""
+    import instructor
+
+    monkeypatch.setattr(P, "model_supports_tools", lambda m: m == "declares/tools")
+    assert P._build_ollama_client("declares/tools", "http://x/v1").mode is instructor.Mode.TOOLS
+    # unknown ⇒ JSON, the conservative mode (and the pre-2026-08-15 default)
+    assert P._build_ollama_client("unknown/model", "http://x/v1").mode is instructor.Mode.JSON
+
+
+def test_tool_support_round_trips_through_the_config(monkeypatch):
+    monkeypatch.delenv("AUGHOR_MODEL_TOOLS", raising=False)
+    assert P.model_supports_tools("vendor/x") is None      # nobody has asked yet
+    M._record_model_facts([{"id": "vendor/x", "tools": True, "context": 200_000}])
+    assert P.model_supports_tools("vendor/x") is True
+    from aughor.llm.profile import declared_context
+    assert declared_context("vendor/x") == 200_000
+
+
+def test_max_context_is_the_declared_window_not_a_name_match(monkeypatch):
+    """The substring table this replaced was wrong in the dangerous direction on a real
+    binding: it claimed qwen2.5-coder held 131,072 where Ollama reports 32,768, and its
+    own comment says an over-estimate silences the overflow guard."""
+    from aughor.control_plane.inference import _DEFAULT_CONTEXT, _max_context
+
+    monkeypatch.setattr("aughor.llm.profile.declared_context",
+                        lambda m: 32_768 if m == "qwen2.5-coder:14b" else None)
+    assert _max_context("qwen2.5-coder:14b") == 32_768
+    assert _max_context("never/asked") == _DEFAULT_CONTEXT

@@ -57,52 +57,16 @@ T = TypeVar("T", bound="BaseModel")
 
 _LOCALHOST = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
-# Tools-capable model keywords — mirrors `provider._build_ollama_client`'s `_TOOLS_MODELS`,
-# the same signal that selects instructor TOOLS mode (schema-native structured output).
-_TOOLS_KEYWORDS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder", "qwen2.5-coder")
-
-# Best-effort context windows (substring match on the model id). Conservative on purpose:
-# `max_context` tightens Layer-A payload caps, so under-estimating is safe and
-# over-estimating risks overflow. Override per-model as real limits are confirmed.
-_CONTEXT_WINDOWS: dict[str, int] = {
-    "claude": 200_000,
-    "gemini": 1_048_576,          # Gemini 1.5/2.x — 1M-token window (Pro may exceed; under-estimate is safe)
-    "qwen3-coder": 131_072,
-    "qwen2.5-coder": 131_072,
-    # Ahead of the generic "kimi" for the same first-match reason as deepseek-v4:
-    # K3 is a 1M-context model (live catalogue 2026-08-01), and inheriting the 131k
-    # below would fire the overflow warning at ~108k on a model with ~888k of budget.
-    # The generic key stays understated — the K2 family really reports 262,144 — since
-    # an under-estimate only costs headroom while an over-estimate silences the guard.
-    "kimi-k3": 1_048_576,
-    "kimi": 131_072,
-    "llama-3.3": 131_072,
-    # BEFORE the generic "deepseek" key — first substring match wins, so the specific
-    # family must lead. V4 is a 1M-context model (verified against OpenRouter's live
-    # catalogue 2026-08-01: deepseek-v4-flash / -flash-0731 / -pro all report
-    # 1,048,576). Without this it inherits the generic 131k and `overflow_tokens`
-    # warns "bind a larger-context model" at ~108k tokens on a model with ~888k of
-    # usable budget — a false alarm on the one binding that has the most room.
-    "deepseek-v4": 1_048_576,
-    # Deliberately left under-stated: the V3 family actually reports 163,840, but this
-    # key also catches deepseek-r1-distill-llama-70b, whose real window is 8,192. An
-    # under-estimate only costs payload headroom; an over-estimate silences the guard
-    # on the model that most needs it.
-    "deepseek": 131_072,
-    # The Nemotron-3 families — verified against OpenRouter's live catalogue
-    # 2026-08-06, taking the MINIMUM across variants of each family key (paid/:free/
-    # :batch report different windows; under-estimate is safe): super reports
-    # 1,000,000 paid / 262,144 :free → 262,144; ultra 512,288 paid / 1,000,000 :free
-    # → 512,288; nano 262,144 / 256,000 (+ the omni-reasoning at 256,000) → 256,000.
-    # Without these the shipped coder binding (nemotron-3-super:free) inherited
-    # _DEFAULT_CONTEXT = 32,768 — an 8× under-statement that would clamp any
-    # profile-sized (A1) payload budget back down through schema_scan_char_limits.
-    "nemotron-3-super": 262_144,
-    "nemotron-3-ultra": 512_288,
-    "nemotron-3-nano": 256_000,
-    # gemma-4-31b-it and :free both report 262,144 (same catalogue read).
-    "gemma-4-31b": 262_144,
-}
+#: The context window assumed when the provider has not declared one. Conservative on
+#: purpose: `max_context` tightens Layer-A payload caps, so under-estimating costs
+#: headroom while over-estimating silences the overflow guard.
+#:
+#: This replaced a substring table of 14 model families (`claude` → 200k, `deepseek-v4`
+#: → 1M, `nemotron-3-ultra` → 512,288 …). Every entry was a fact about somebody else's
+#: product, ordered so that specific keys had to precede generic ones — a first-match
+#: table where adding `deepseek` above `deepseek-v4` silently cost a 1M model 888k of
+#: budget. The provider declares its own window; we ask instead
+#: (`aughor.llm.profile.declared_context`).
 _DEFAULT_CONTEXT = 32_768
 
 
@@ -141,11 +105,18 @@ def _cache_mode(backend: str, model: str, base_url: str) -> CacheMode:
     return "none"
 
 
+def _declares_tools(model: str) -> bool:
+    """Does the model declare native tool calling? Asked of the provider and recorded
+    at catalogue time; unknown ⇒ False, the conservative answer."""
+    from aughor.llm.provider import model_supports_tools
+    return model_supports_tools(model) is True
+
+
 def _tooling(backend: str, model: str) -> Tooling:
     if backend in ("anthropic", "groq", "together", "gemini"):
         return "native_tools"
-    if backend == "ollama":
-        return "native_tools" if any(k in model.lower() for k in _TOOLS_KEYWORDS) else "none"
+    if backend in ("ollama", "openrouter"):
+        return "native_tools" if _declares_tools(model) else "none"
     return "none"                                # lmstudio / unknown: conservative
 
 
@@ -154,8 +125,8 @@ def _structured_output(backend: str, model: str) -> StructuredOutput:
     # "instructor_emulated" = plain JSON mode with reprompt-on-mismatch.
     if backend in ("anthropic", "lmstudio", "gemini"):
         return "native"                          # gemini: schema-native via TOOLS/json_schema mode
-    if backend == "ollama":
-        return "native" if any(k in model.lower() for k in _TOOLS_KEYWORDS) else "instructor_emulated"
+    if backend in ("ollama", "openrouter"):
+        return "native" if _declares_tools(model) else "instructor_emulated"
     return "instructor_emulated"                 # groq / together JSON mode
 
 
@@ -192,11 +163,11 @@ def _cost(backend: str, model: str, base_url: str) -> Cost:
 
 
 def _max_context(model: str) -> int:
-    m = model.lower()
-    for key, n in _CONTEXT_WINDOWS.items():
-        if key in m:
-            return n
-    return _DEFAULT_CONTEXT
+    """The model's context window, as the provider declared it — or the conservative
+    default when nobody has asked yet (no catalogue load, or a provider that publishes
+    none). See :data:`_DEFAULT_CONTEXT` for what this replaced."""
+    from aughor.llm.profile import declared_context
+    return declared_context(model) or _DEFAULT_CONTEXT
 
 
 @dataclass(frozen=True)

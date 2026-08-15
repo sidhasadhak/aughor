@@ -117,6 +117,11 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
         # picking a model without knowing its context window is guesswork.
         if m.get("context_length"):
             entry["context"] = m["context_length"]
+        # Native tool calling, as the provider declares it. This is what decides
+        # instructor's TOOLS-vs-JSON mode, and it used to be a keyword list.
+        params = m.get("supported_parameters")
+        if isinstance(params, list):
+            entry["tools"] = "tools" in params
         name = m.get("name")
         if name and name != mid:
             entry["label"] = str(name)
@@ -131,18 +136,73 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
     return out
 
 
-def _ollama_models(base_url: str, *, timeout: float) -> list[dict]:
-    """Ollama's native tag list. Its OpenAI-compat base ends in /v1, which the
-    tags endpoint does not live under."""
-    import httpx
-
+def _ollama_root(base_url: str) -> str:
+    """Ollama's native API root. Its OpenAI-compat base ends in /v1, which the
+    native endpoints (/api/tags, /api/show) do not live under."""
     root = base_url.rstrip("/")
     if root.endswith("/v1"):
         root = root[:-3]
-    r = httpx.get(root.rstrip("/") + "/api/tags", timeout=timeout)
+    return root.rstrip("/")
+
+
+#: How many models one catalogue load will interrogate with /api/show. Each is its own
+#: HTTP call, so an operator with a large local library must not turn opening Settings
+#: into a hundred round-trips. The cap is generous against a real Ollama library and the
+#: results are persisted, so a bound model gets its facts on the first load and keeps them.
+_OLLAMA_DETAIL_CAP = 30
+
+
+def ollama_model_facts(base_url: str, model: str, *, timeout: float = 6.0) -> dict:
+    """``{"context": int, "tools": bool}`` for one Ollama model, from ``/api/show``.
+
+    Ollama publishes both facts this codebase used to guess at from the model NAME:
+    ``capabilities`` (does it do native tool calling) and
+    ``model_info["<arch>.context_length"]``. Asking is strictly better than matching a
+    substring — it is right about a model nobody here has heard of, and it was wrong
+    about one we had: `deepseek-v4-flash:cloud` declares tools + a 1M window, matched no
+    keyword, and was therefore driven in JSON mode, which returns empty content for a
+    thinking model. Empty dict on any failure — the caller keeps its conservative default.
+    """
+    import httpx
+
+    try:
+        r = httpx.post(_ollama_root(base_url) + "/api/show", json={"model": model},
+                       timeout=timeout)
+        r.raise_for_status()
+        doc = r.json() or {}
+    except Exception:
+        return {}
+    out: dict = {}
+    caps = doc.get("capabilities")
+    if isinstance(caps, list):
+        out["tools"] = "tools" in caps
+    # The context key is architecture-prefixed (`deepseek4.context_length`,
+    # `gemma4.context_length`), so match on the suffix rather than naming architectures —
+    # naming them would be the same mistake one layer down.
+    for key, value in (doc.get("model_info") or {}).items():
+        if str(key).endswith(".context_length") and isinstance(value, int) and value > 0:
+            out["context"] = value
+            break
+    return out
+
+
+def _ollama_models(base_url: str, *, timeout: float) -> list[dict]:
+    """Ollama's tag list, enriched with each model's declared facts.
+
+    ``/api/tags`` alone gives only names. The per-model ``/api/show`` calls are what
+    supply the context window and tool support, which is why they are worth the
+    round-trips (bounded by ``_OLLAMA_DETAIL_CAP``, and cached like any catalogue).
+    """
+    import httpx
+
+    root = _ollama_root(base_url)
+    r = httpx.get(root + "/api/tags", timeout=timeout)
     r.raise_for_status()
-    return [{"id": m["name"], "source": "live"}
-            for m in (r.json().get("models") or []) if m.get("name")]
+    out = [{"id": m["name"], "source": "live"}
+           for m in (r.json().get("models") or []) if m.get("name")]
+    for entry in out[:_OLLAMA_DETAIL_CAP]:
+        entry.update(ollama_model_facts(base_url, entry["id"], timeout=timeout))
+    return out
 
 
 def _anthropic_models(key: str, *, timeout: float) -> list[dict]:
@@ -183,37 +243,46 @@ def fetch_live_models(backend: str, *, timeout: float = 6.0) -> tuple[list[dict]
         return [], f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
-def _record_context_windows(live: list[dict]) -> None:
-    """Persist ``{model_id: context_length}`` from a live catalogue into the runtime
-    config, for :func:`aughor.llm.profile.declared_context`.
+def _record_model_facts(entries: list[dict]) -> None:
+    """Persist what the provider declared about each model — the context window (read
+    back by :func:`aughor.llm.profile.declared_context`) and native tool support (read
+    back by :func:`aughor.llm.provider.model_supports_tools`).
 
-    This is what replaced the hand-maintained capability table: the tier a binding runs
-    under is derived from the context window the PROVIDER declares, so it can be right
-    about a model nobody here has heard of, and cannot go stale in the direction that
-    silently shrinks a capable model's budgets.
+    This is what replaced three hand-maintained tables: the capability tiers, the
+    context-window map and the tools-mode keyword list. Every one of them matched on the
+    model NAME, which is a guess about someone else's product, and each was wrong in a
+    way nobody could see — the tools list did not recognise a thinking model that
+    declares `tools`, so it was driven in JSON mode and returned empty content on every
+    structured call.
 
-    Only ever adds or updates, and only from a successful fetch — a provider that omits
-    ``context_length`` leaves the previous value alone rather than erasing it. Best
-    effort: this file is shared with the encrypted keys, so a write failure must degrade
-    the tier (to BASELINE) and never the config.
+    Only ever adds or updates, and only from a successful fetch — a provider that omits a
+    field leaves the previous value alone rather than erasing it. Best effort: this file
+    is shared with the encrypted keys, so a write failure must degrade a default (to the
+    conservative one) and never the config.
     """
-    sizes = {str(m["id"]): int(m["context"]) for m in live
+    sizes = {str(m["id"]): int(m["context"]) for m in entries
              if m.get("id") and isinstance(m.get("context"), int) and m["context"] > 0}
-    if not sizes:
+    tools = {str(m["id"]): bool(m["tools"]) for m in entries
+             if m.get("id") and isinstance(m.get("tools"), bool)}
+    if not sizes and not tools:
         return
     try:
         from aughor.llm.provider import read_config, write_config
         cfg = dict(read_config())
-        known = dict(cfg.get("model_context") or {})
-        if all(known.get(k) == v for k, v in sizes.items()):
+        ctx_known = dict(cfg.get("model_context") or {})
+        tools_known = dict(cfg.get("model_tools") or {})
+        if (all(ctx_known.get(k) == v for k, v in sizes.items())
+                and all(tools_known.get(k) == v for k, v in tools.items())):
             return                      # nothing new — do not touch the keys file
-        known.update(sizes)
-        cfg["model_context"] = known
+        ctx_known.update(sizes)
+        tools_known.update(tools)
+        cfg["model_context"] = ctx_known
+        cfg["model_tools"] = tools_known
         write_config(cfg)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "context-window capture is best-effort; the tier falls back to baseline",
-                 counter="llm.model_context")
+        tolerate(exc, "model-fact capture is best-effort; defaults stay conservative",
+                 counter="llm.model_facts")
 
 
 def list_models(backend: str, *, refresh: bool = False,
@@ -241,7 +310,6 @@ def list_models(backend: str, *, refresh: bool = False,
             if live:
                 with _cache_lock:
                     _cache[backend] = (time.monotonic(), live)
-                _record_context_windows(live)
 
     seen = {m["id"] for m in live}
     merged = list(live)
@@ -254,6 +322,18 @@ def list_models(backend: str, *, refresh: bool = False,
             for m in merged:
                 if m["id"] == mid:
                     m["source"] = "custom"              # removable even if also live
+    # A custom entry needs its facts too, and Ollama is the case that proves it: a
+    # `:cloud` model absent from /api/tags is still served, and it is exactly the kind
+    # of id an operator types in by hand. Without this the model the deployment actually
+    # runs on would be the one model whose capabilities nobody looked up.
+    if backend == "ollama" and customs and os.environ.get("AUGHOR_LLM_MODEL_FETCH", "1") != "0":
+        from aughor.llm.provider import active_base_url
+        base = active_base_url(backend)
+        for m in merged:
+            if m.get("source") == "custom" and "tools" not in m:
+                m.update(ollama_model_facts(base, m["id"], timeout=timeout))
+    if merged:
+        _record_model_facts(merged)
     return {
         "backend": backend,
         "models": merged,

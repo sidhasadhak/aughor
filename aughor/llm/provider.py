@@ -574,6 +574,25 @@ def _env_model_for_role(backend: str, role: Role) -> str:
     return narrator_model
 
 
+def model_supports_tools(model: str) -> Optional[bool]:
+    """Does this model declare native tool calling? ``None`` when nobody has asked yet.
+
+    Recorded from the provider's own catalogue (``aughor/llm/models.py``): Ollama's
+    ``/api/show`` ``capabilities``, or ``supported_parameters`` on the OpenAI-compatible
+    ``/models``. ``AUGHOR_MODEL_TOOLS=1|0`` overrides, for a provider that declares
+    nothing. Callers treat ``None`` as "no" — the conservative mode."""
+    env = os.getenv("AUGHOR_MODEL_TOOLS", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True
+    if env in ("0", "false", "no"):
+        return False
+    key = (model or "").strip()
+    if not key:
+        return None
+    val = (_cfg().get("model_tools") or {}).get(key)
+    return bool(val) if val is not None else None
+
+
 def measured_cache_mode(backend: str, model: str) -> Optional[str]:
     """The empirically-measured cache_mode for a binding, or None if never probed.
     Persisted in the runtime config under ``measured_cache: {"backend:model": mode}`` by
@@ -659,12 +678,18 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
     raw = OpenAI(base_url=base_url, api_key="ollama", timeout=_timeout,
                  max_retries=_SDK_RETRIES)
-    # Reasoning models (qwen3, kimi, deepseek-r1, qwq) support native tool calling.
-    # Use TOOLS mode so <think>…</think> tokens are isolated from structured output.
-    # JSON mode causes reasoning tokens to pollute the output and trigger retries.
-    _TOOLS_MODELS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder")
-    use_tools = any(kw in model.lower() for kw in _TOOLS_MODELS)
-    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
+    # TOOLS mode when the model declares native tool calling, so <think>…</think>
+    # tokens stay isolated from structured output; JSON mode lets reasoning tokens
+    # pollute it and the call comes back empty.
+    #
+    # This was a keyword list ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder") and
+    # it is the clearest case in this codebase for why naming models does not work:
+    # `deepseek-v4-flash:cloud` declares `capabilities: [completion, tools, thinking]`
+    # to anyone who asks, matched none of those keywords, and so ran every structured
+    # call in JSON mode — "structured output empty: the model returned no content", on
+    # a model that supports exactly what was needed. Now we ask, and fall back to JSON
+    # (the conservative mode) when the answer is not known yet.
+    mode = instructor.Mode.TOOLS if model_supports_tools(model) else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
 
 
