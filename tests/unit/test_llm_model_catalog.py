@@ -102,6 +102,26 @@ def test_asking_for_an_unconfigured_binding_raises():
     assert "Settings" in str(exc.value)
 
 
+def test_an_unconfigured_provider_constructs_and_refuses_at_dispatch(monkeypatch):
+    """CONSTRUCTING is not USING, and conflating them broke a fail-soft path.
+
+    The raise started life in `LLMProvider.__init__`. `SqlWriter.__init__` builds a
+    provider eagerly and its callers treat a failed fix as "drop this angle, continue"
+    — so an unconfigured role crashed an exploration that was designed to degrade
+    (tests/integration/test_fault_injection.py caught it). The client needs no model to
+    exist; the id rides on each request. So it builds, and `complete()` refuses.
+    """
+    monkeypatch.setattr(P, "_active_key", lambda b: "test-key")
+    P.write_config({"backend": "openrouter"})        # a backend, but no models
+
+    prov = P.LLMProvider("openrouter", "coder")      # must NOT raise
+    assert prov._model == ""
+
+    with pytest.raises(P.NoModelConfigured) as exc:
+        prov.complete(system="s", user="u", response_model=dict)
+    assert "coder" in str(exc.value)
+
+
 # ── custom entries persist ────────────────────────────────────────────────────
 
 def test_add_custom_model_persists_and_is_idempotent():

@@ -1494,12 +1494,13 @@ class LLMProvider:
                  base_url: Optional[str] = None):
         self.backend = backend
         self.role = role
-        # The one place every call path converges on a model id. Raising HERE means a
-        # missing model surfaces as "no model configured for the coder role" at the
-        # moment of use, instead of dispatching an empty model id to a vendor and
-        # coming back with an opaque 400 — or worse, an empty completion that every
-        # caller's fail-open path absorbs in silence.
-        self._model = (model or "").strip() or require_model(backend, role)
+        # May be "" — see `complete()`, which is where a missing model is refused.
+        # Constructing is NOT using: `SqlWriter.__init__` builds a provider eagerly and
+        # its callers treat a failed fix as "drop this angle, continue", so raising here
+        # turned one unconfigured role into a crash on a path designed to degrade. The
+        # client itself needs no model (it is a base URL + key; the id rides on each
+        # request), so building one is harmless and refusing at dispatch is honest.
+        self._model = (model or "").strip() or _active_model(backend, role)
         key = api_key if api_key is not None else _active_key(backend)
         url = base_url or _active_base_url(backend)
         self._base_url = url
@@ -1575,11 +1576,17 @@ class LLMProvider:
         real provider — verify before converse serves traffic. The anthropic branch is
         unsupported here (it speaks ``client.messages``, a different surface).
         """
+        # Backend support is checked BEFORE the binding: anthropic cannot serve this
+        # surface at all, which is true whether or not a model is configured, and
+        # reporting "no model configured" for it would send the reader to fix the
+        # wrong thing.
         if self.backend == "anthropic":
             raise NotImplementedError(
                 "complete_with_tools speaks the OpenAI-compatible chat surface; the "
                 "anthropic binding uses client.messages and needs its own translation."
             )
+        if not self._model:                       # same contract as `complete()`
+            raise NoModelConfigured(self.backend, self.role)
         # Same posture as `complete()`: a primary already known to be out of allowance is
         # skipped rather than re-probed. An agent loop makes SEVERAL calls per user turn,
         # so a wasted round trip per call is paid once per step, not once per question.
@@ -1708,6 +1715,11 @@ class LLMProvider:
         response_model: Type[T],
         temperature: float = 0.1,
     ) -> T:
+        # The moment a model is actually needed. Nothing ships a default, so an
+        # unconfigured role is refused here — named, actionable, and catchable by the
+        # fail-soft paths that wrap `.complete()` exactly like any other LLM failure.
+        if not self._model:
+            raise NoModelConfigured(self.backend, self.role)
         self._warn_if_over_window(system, user)
         # A primary known to be out of allowance is skipped rather than re-probed: the
         # answer cannot have changed, and the wasted round trip is paid by EVERY call.
