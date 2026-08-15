@@ -44,6 +44,10 @@ class StatResult:
     is_significant: bool
     sigma: Optional[float] = None    # z-score magnitude when relevant
     p_value: Optional[float] = None  # for Mann-Whitney comparisons
+    #: The same finding said for a READER, when the two differ. `interpretation` feeds the
+    #: LLM's evidence and keeps its precision; this is what a report may print verbatim.
+    #: Empty when the technical phrasing is already plain enough to show.
+    plain: str = ""
 
 
 @dataclass
@@ -67,7 +71,14 @@ class AssociationResult:
     max_abs_residual: float          # largest standardised deviation from independence
     top_cells: list = field(default_factory=list)   # [(row_label, col_label, residual)]
     is_dependent: bool = False
+    #: For the READER — plain business language, no Greek letters, no test names. The
+    #: first version put "[8x21 contingency] RELATED … Cramér's V=0.13, p=0 … +126.7σ"
+    #: straight into the report body, which is a sentence written for a statistician and
+    #: shown to whoever asked the question.
     interpretation: str = ""
+    #: For the RECORD — the same verdict in test terms, so the claim stays auditable and
+    #: the narrator's evidence keeps its precision. Two audiences, two strings.
+    technical: str = ""
 
 
 # ── Core: anomaly detection ───────────────────────────────────────────────────
@@ -463,10 +474,14 @@ def assess_association(
             f"from the overall mix: {max_pp:.1f} percentage points. {detail}. "
             f"For a significance verdict, re-run this cross-tab with COUNT(*)."
         )
+        plain = ("Their MIX differs — " + "; ".join(
+            f"{r} leans {'toward' if pp > 0 else 'away from'} {c} by {abs(pp):.0f} points"
+            for r, c, pp in top) + ". This describes the split, not a tested relationship: "
+            "a significance verdict needs counts, not totals.") if top else interp
         return AssociationResult(
             rows=int(arr.shape[0]), cols=int(arr.shape[1]), n=n, cramers_v=float("nan"),
             chi2=None, dof=None, p_value=None, max_abs_residual=max_pp,
-            top_cells=top, is_dependent=False, interpretation=interp,
+            top_cells=top, is_dependent=False, interpretation=plain, technical=interp,
         )
 
     chi2_stat = float(((arr - expected) ** 2 / expected).sum())
@@ -491,31 +506,42 @@ def assess_association(
     negligible = cramers_v < _ASSOCIATION_NEGLIGIBLE_V
     is_dependent = (p_value is not None and p_value < 0.05) and not negligible
 
+    # "×N what you'd expect" instead of "+126.7σ". A sigma is a statement about how
+    # surprised a statistician is; a multiple of the expected share is a statement about
+    # the business, and it is the same fact.
+    lift = np.divide(arr, expected, out=np.ones_like(arr), where=expected > 0)
+
+    def _lift_for(r_label: str, c_label: str) -> float:
+        return float(lift[row_labels.index(r_label)][col_labels.index(c_label)])
+
     if is_dependent:
-        cells = "; ".join(f"{r}×{c} {'over' if z > 0 else 'under'}-represented ({z:+.1f}σ)"
-                          for r, c, z in top_cells)
-        detail = f" Most divergent: {cells}." if cells else ""
-        interp = (f"RELATED: the two dimensions are NOT independent (Cramér's V="
-                  f"{cramers_v:.2f}, p={p_value:.3g}). Knowing one shifts the distribution "
-                  f"of the other.{detail}")
+        plain_cells = "; ".join(
+            f"“{r}” has {_lift_for(r, c):.1f}× the expected share of “{c}”"
+            if z > 0 else
+            f"“{r}” has only {_lift_for(r, c):.1f}× the expected share of “{c}”"
+            for r, c, z in top_cells)
+        lead = "They ARE related — the mix of one changes depending on the other."
+        interp = f"{lead}" + (f" Most striking: {plain_cells}." if plain_cells else "")
+        technical = (f"[{shape} contingency] RELATED: not independent (Cramér's V="
+                     f"{cramers_v:.2f}, p={p_value:.3g}). Largest standardised residuals: "
+                     + "; ".join(f"{r}×{c} {z:+.1f}σ" for r, c, z in top_cells) + ".")
     else:
-        why = (f"p={p_value:.2f} — the observed spread is within sampling noise"
+        interp = (
+            "They are NOT related — each behaves the same way regardless of the other, so "
+            "the differences between groups are chance, not signal. What varies is how BIG "
+            "each group is, not how it behaves."
+        )
+        why = (f"p={p_value:.2f}, within sampling noise"
                if p_value is not None and p_value >= 0.05
                else f"Cramér's V={cramers_v:.2f}, a negligible effect")
-        interp = (
-            f"INDEPENDENT: no material relationship between the two dimensions "
-            f"({why}; largest cell deviation {max_abs:.1f}σ across {cells_total} "
-            f"cells). The mix of one is effectively constant across the other, so apparent "
-            f"differences between groups are noise — do NOT report a driver, a segment "
-            f"effect, or an interaction. What varies is the SIZE of each group, not its "
-            f"composition."
-        )
+        technical = (f"[{shape} contingency] INDEPENDENT: {why}; largest cell deviation "
+                     f"{max_abs:.1f}σ across {cells_total} cells.")
 
     return AssociationResult(
         rows=int(arr.shape[0]), cols=int(arr.shape[1]), n=n, cramers_v=cramers_v,
         chi2=chi2_stat, dof=dof, p_value=p_value, max_abs_residual=max_abs,
         top_cells=top_cells, is_dependent=is_dependent,
-        interpretation=f"[{shape} contingency] {interp}",
+        interpretation=interp, technical=technical,
     )
 
 
@@ -604,9 +630,12 @@ def _analyze_association(columns: list[str], rows: list[list]) -> Optional[StatR
                              is_frequency=_looks_like_frequency(columns[measure_idx], values))
     if res is None:
         return None
+    # The narrator's evidence gets the technical line — precision is what keeps a claim
+    # auditable — while the finding shown to the reader takes `res.interpretation`.
     return StatResult(
         type="association",
-        interpretation=f"[{columns[a_idx]} × {columns[b_idx]}] {res.interpretation}",
+        interpretation=f"[{columns[a_idx]} × {columns[b_idx]}] {res.technical or res.interpretation}",
+        plain=res.interpretation,
         # An INDEPENDENT verdict is every bit as load-bearing as a dependent one — it is
         # the finding that stops a report inventing a driver — so it is marked significant
         # too. `is_significant` gates what reaches the narrator, not what is interesting.

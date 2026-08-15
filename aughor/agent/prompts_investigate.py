@@ -176,7 +176,7 @@ Interpret these results clearly and honestly.
 For EACH query result, write:
   - title: short descriptive label
   - interpretation: 2–3 tight sentences that lead with the finding. Cite actual numbers from
-    the data and wrap the single most important number in **double asterisks** for bold.
+    the data.
     State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
@@ -191,7 +191,7 @@ For EACH query result, write:
     a signal — set is_significant=false and say the difference is negligible / not material. Never call a
     sub-1% relative change a "trend", "driver", or "significant" because its z-score is large.
 
-phase_summary: one sentence that leads with the key number (bold it with **double asterisks**) — the most important finding from this phase.
+phase_summary: one sentence that leads with the key number — the most important finding from this phase.
 Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
 """
 
@@ -254,7 +254,7 @@ For each query, interpret what sub-metric drove the overall change.
   - Was it new customers, returning customers, or both?
   - Which component explains the largest share of the total change?
 
-Write clear, number-anchored interpretations; bold the decisive number in each with **double asterisks**. Cite values from the data.
+Write clear, number-anchored interpretations. Cite values from the data. Use NO markdown emphasis — no bold, no italics.
 State the key_numbers that demonstrate the decomposition.
 phase_summary: "The decline was driven by X (**Y%**), not Z" — bold the share; be definitive if the data supports it.
 """
@@ -328,7 +328,7 @@ For each dimension analysed (ONLY when a real baseline is present), interpret th
   - Is the decline concentrated (1–2 values driving 60%+ of change) or diffuse (uniform across all)?
   - Any dimension where one value has > 50% relative decline, even if small absolute? (severity alert)
 
-Write dimension-by-dimension findings with specific numbers; bold the decisive number in each with **double asterisks**.
+Write dimension-by-dimension findings with specific numbers. Use NO markdown emphasis.
 Highlight the SINGLE most actionable finding across all dimensions.
 phase_summary: when a baseline exists and concentration exists, "**X%** of the total decline came from
 [dimension: value]" (bold the share); when the baseline is missing, state that no prior-period data is
@@ -436,7 +436,7 @@ For EACH dimension, write a finding:
     AVERAGE: distinguish low TOTAL from low AVERAGE — a value can bill little in total yet be
     efficient per record, or look large yet be inefficient (low avg). Call out where the two
     lenses diverge (e.g. "11 franchises bill under $1,000; the worst, X, also averages just
-    **$4.20/order** vs the ~$9 typical"). Bold the decisive number with **double asterisks**.
+    $4.20/order vs the ~$9 typical"). Use NO markdown emphasis.
     Cite real values only.
     SEVERITY GROUNDING: "lowest in the ranking" is NOT the same as "weak". Only call a value
     'weak', 'critically low', 'underperforming', or 'a problem' if it is below a stated
@@ -479,7 +479,7 @@ For EACH dimension, write a finding:
     AS THAT RATIO in its OWN units (%, rate, per-unit) — NEVER describe it as a dollar total or a
     per-order average. Name the values with the lowest and highest ratio. The numerator_total /
     denominator_total explain WHY a ratio is high or low (a low cost-ratio can come from a low
-    numerator OR a large denominator). Bold the decisive number with **double asterisks**. Cite real
+    numerator OR a large denominator). Use NO markdown emphasis. Cite real
     values only.
     DIRECTION + SEVERITY GROUNDING: "lowest in the ranking" is NOT "weak". For many ratios LOW is
     GOOD (a low cost-%, a low defect-rate, a low freight-%); for others HIGH is good. Judge direction
@@ -574,7 +574,7 @@ For operational findings:
   - If so, does the magnitude explain any portion of the overall revenue change?
 
 For untestable checks (missing data), note them as data gaps.
-phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding; bold the decisive number in each part with **double asterisks**.
+phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding, each part anchored on its own number.
 """
 
 # ── Phase 6: Synthesis — attribution waterfall ────────────────────────────────

@@ -469,7 +469,9 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
         rows=result.rows[:_ASSOCIATION_GRID_MAX],
         row_count=result.row_count,
         error=result.error,
-        interpretation=assoc.interpretation,
+        # Reader-facing prose; the test statistics ride on `stat_note`, where a reader
+        # who wants them can find them and one who does not is not made to read "σ".
+        interpretation=_plain_association_text(assoc, dim_a, dim_b),
         key_numbers=[],
         chart_type="heatmap",
         stat_note=assoc.interpretation,
@@ -489,6 +491,27 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
 _ASSOCIATION_GRID_MAX = 600
 
 
+def _plain_association_text(assoc, dim_a: str, dim_b: str) -> str:
+    """The verdict as a business sentence, naming the two dimensions in the reader's words.
+
+    `assoc.interpretation` from `analyze_query_result` is already the plain form; what it
+    lacks is WHICH two things were compared, because the stats layer only ever sees two
+    anonymous axes. Adding the names here keeps the statistics module free of report
+    vocabulary and still gives the reader a sentence that stands on its own.
+    """
+    text = (getattr(assoc, "plain", "") or getattr(assoc, "interpretation", "") or "").strip()
+    a, b = _humanise_column(dim_a), _humanise_column(dim_b)
+    if text.startswith("They "):
+        text = text.replace("They ", f"{a} and {b} ", 1)
+    return text
+
+
+def _humanise_column(name: str) -> str:
+    """`booking_class` → "Booking class". Column names are for SQL; sentences are not."""
+    words = re.sub(r"[_\s]+", " ", str(name or "").strip()).strip()
+    return (words[:1].upper() + words[1:]) if words else "this dimension"
+
+
 def _association_directive(finding: dict) -> str:
     """The instruction the phase summary carries for the narrator — an INSTRUCTION, never
     a copy of the verdict.
@@ -499,8 +522,12 @@ def _association_directive(finding: dict) -> str:
     directive tells the narrator what to do with the evidence; the evidence itself is the
     finding's job.
     """
-    interp = finding.get("interpretation") or ""
-    if "INDEPENDENT" in interp:
+    # Read the verdict from the TECHNICAL note, not the reader-facing prose. The prose is
+    # deliberately free of test vocabulary, so keying on the word "INDEPENDENT" there
+    # silently sent every null result down the RELATED branch the moment the two strings
+    # were split.
+    verdict = f"{finding.get('stat_note') or ''} {finding.get('interpretation') or ''}"
+    if "INDEPENDENT" in verdict or "NOT related" in verdict:
         return ASSOCIATION_NULL_DIRECTIVE
     return (
         "⚖️ TESTED AND RELATED — the two dimensions the question asked about were crossed "
@@ -889,14 +916,14 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     # `format_result_for_llm` had nothing to render. A cross-tab could sit in the
     # evidence with its verdict computable and the narrator would never be told.
     from aughor.tools.executor import attach_stats
-    return attach_stats(execute_guarded(
+    return drop_degenerate_per_record(attach_stats(execute_guarded(
         conn,
         sql,
         query_id=phase_id,
         schema=schema,
         fix_prompt_template=FIX_SQL_PROMPT,
         provider_factory=_provider,
-    ))
+    )))
 
 
 def _parallel_execute_safe(
@@ -1006,6 +1033,59 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                          counter="deep_analysis.semantic_step_failed")
         out.append((q, r))
     return out
+
+
+#: Aliases the cross-section template emits for "the metric divided by the row count".
+_PER_RECORD_COLS = ("avg_per_record", "metric_per_record", "avg_per_row")
+
+
+def drop_degenerate_per_record(result):
+    """Remove a per-record column that is identically 1.0 — it is arithmetic, not evidence.
+
+    The scan template always emits `ROUND(<metric> / NULLIF(COUNT(*),0), 2) AS
+    avg_per_record`. When the metric IS a count of rows — `COUNT(tickets.ticket_id)` —
+    that ratio is 1.0 for every segment, by construction, forever. The narrator, handed a
+    column that is perfectly uniform, dutifully reported it as a finding:
+
+        "'First' and 'Premium Economy' ... maintain an average of 1.0 tickets per record,
+         consistent with all other fare brands shown"
+
+    which says only that one ticket is one ticket. Worse, it was offered as evidence of
+    "no inherent performance weakness" — a conclusion drawn from a tautology.
+
+    Dropped before the interpreter sees it, so the sentence cannot be written. Only the
+    exactly-1.0 case: a genuine per-record average that happens to be flat is a real (and
+    interesting) observation, and stays.
+    """
+    try:
+        cols = list(getattr(result, "columns", None) or [])
+        rows = list(getattr(result, "rows", None) or [])
+        if not cols or len(rows) < 2:
+            return result
+        drop = [i for i, c in enumerate(cols)
+                if str(c).strip().lower() in _PER_RECORD_COLS
+                and all(abs(_as_float_or(r[i], None) or 0.0) == 1.0
+                        and _as_float_or(r[i], None) is not None
+                        for r in rows if i < len(r))]
+        if not drop:
+            return result
+        keep = [i for i in range(len(cols)) if i not in drop]
+        from aughor.control_plane.contracts.execution import QueryResult
+        return QueryResult(**{**result.model_dump(),
+                              "columns": [cols[i] for i in keep],
+                              "rows": [[r[i] for i in keep if i < len(r)] for r in rows]})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "degenerate-column pruning is best-effort; the column stands",
+                 counter="deep_analysis.per_record_prune")
+        return result
+
+
+def _as_float_or(value, default):
+    try:
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return default
 
 
 def _results_to_text(results, max_rows: Optional[int] = None) -> str:
@@ -1358,14 +1438,28 @@ def _metric_is_composite_ratio(metric_sql: str) -> bool:
 
 _PCT_LABEL_RE = re.compile(r"(rate|percent|pct|share|proportion|ratio)", re.I)
 
+#: A metric label that names a PER-UNIT quantity ("Average Cost per Record", "Revenue per
+#: order", "Mean delay"). Such a label belongs on the average column, never on the SUM.
+_PER_UNIT_LABEL_RE = re.compile(
+    r"\b(average|avg|mean|median)\b|\bper\s+\w+", re.I)
+
+
 
 def _metric_is_percent(metric_sql: str, metric_label: str = "", values=None) -> bool:
     """Is the metric a PERCENTAGE (a 0–100% concept), as opposed to a plain average (avg rating,
     AOV) or an additive total? A percentage must be displayed as "41.0%" everywhere — the signal the
     `column_units` hint carries to the UI. True when: it's a composite ratio (SUM/SUM or *100), its
     label/SQL names a rate/percent/share/ratio, OR (a bare AVG that) reads as a proportion in [0,1].
-    A plain AVG(rating) (values > 1, no rate-ish label) is correctly NOT a percent."""
-    if _metric_is_composite_ratio(metric_sql):
+    A plain AVG(rating) (values > 1, no rate-ish label) is correctly NOT a percent.
+
+    ⚠️ A COMPOSITE RATIO IS NOT A PERCENTAGE. This used to return True for any
+    `SUM(a)/SUM(b)`, which made "average cost per record" — `SUM(Costs)/COUNT(*)` — a
+    percent, and the chart rendered CHF 311.72 as "31172.1%". A ratio of money over a
+    count is a per-unit average; the only things that make a ratio a PERCENT are an
+    explicit `*100` scaling, a label that says so, or values that live in [0, 1]. All
+    three are still detected below; the blanket rule is gone.
+    """
+    if "*100" in (metric_sql or "").replace(" ", ""):
         return True
     if _PCT_LABEL_RE.search(f"{metric_sql or ''} {metric_label or ''}"):
         return True
@@ -1491,6 +1585,34 @@ def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -
 
 
 _VERDICT_PREFIX_RE = re.compile(r"^\s*VERDICT\s*:\s*", re.I)
+
+
+#: Markdown emphasis in reader-facing prose. The narrator is still ASKED to wrap the
+#: decisive figure in `**…**` — deliberately, because that marker is what
+#: `report_checks.check_grounding` scans to catch a number the model invented (it is how
+#: an unsupported "86.5%" was caught). So the markup earns its keep as an internal
+#: signal, and is removed here, at the last touch before the report ships, so no reader
+#: ever sees it. Emphasis on half the figures in a paragraph is not emphasis anyway.
+_EMPHASIS_RE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__", re.S)
+
+
+def strip_emphasis(text: str) -> str:
+    """Remove markdown bold from prose, keeping the words. Idempotent; None-safe."""
+    if not text or ("**" not in text and "__" not in text):
+        return text
+    return _EMPHASIS_RE.sub(lambda m: m.group(1) or m.group(2) or "", text)
+
+
+def _strip_emphasis_deep(value):
+    """Apply :func:`strip_emphasis` through the nested report shapes (dicts, lists of
+    dicts, plain strings) so no reader-facing field is missed by hand-listing keys."""
+    if isinstance(value, str):
+        return strip_emphasis(value)
+    if isinstance(value, list):
+        return [_strip_emphasis_deep(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _strip_emphasis_deep(v) for k, v in value.items()}
+    return value
 
 
 def _strip_verdict_prefix(text: str) -> str:
@@ -7828,11 +7950,15 @@ def ada_synthesize(state: AgentState) -> dict:
     for _p in phases:
         _ps = _p.get("summary")
         if _ps:
-            _p["summary"] = _strip_verdict_prefix(_ps)
+            _p["summary"] = strip_emphasis(_strip_verdict_prefix(_ps))
         for _f in (_p.get("findings") or []):
             _fi = _f.get("interpretation")
             if _fi:
-                _f["interpretation"] = _strip_verdict_prefix(_fi)
+                _f["interpretation"] = strip_emphasis(_strip_verdict_prefix(_fi))
+            for _k in ("title", "stat_note"):
+                if _f.get(_k):
+                    _f[_k] = strip_emphasis(_f[_k])
+            _f["key_numbers"] = _strip_emphasis_deep(_f.get("key_numbers") or [])
 
     # Humanize the scan template's internal SQL aliases at the LAST touch before the
     # report ships — charts/tooltips were labelling series "Metric Total" and "Avg Per
@@ -7840,13 +7966,30 @@ def ada_synthesize(state: AgentState) -> dict:
     # pattern-match on the raw alias names. column_units keys are renamed in sync.
     _mlabel = (intake_data.get("metric_label") or "").strip()
     if _mlabel:
-        _alias_map = {
-            "metric_total": _mlabel,
-            "metric_value": _mlabel,
-            "avg_per_record": f"{_mlabel} per record",
-            "n": "records",
-            "pct_of_total": "% of total",
-        }
+        # A PER-UNIT label must not be stamped on the TOTAL column. `metric_total` is a
+        # SUM; when the intake names the metric "Average Cost per Record" the rename made
+        # the chart plot SUM(Costs)=31,172 under the word "Average", while the prose
+        # quoted the real average of 546.88 from `avg_per_record`. Two different numbers,
+        # one name, and the picture was the wrong one. Give each column the name of what
+        # it actually holds.
+        _per_unit = _PER_UNIT_LABEL_RE.search(_mlabel)
+        if _per_unit:
+            _base = _PER_UNIT_LABEL_RE.sub("", _mlabel).strip(" -–—") or "value"
+            _alias_map = {
+                "metric_total": f"Total {_base}",
+                "metric_value": f"Total {_base}",
+                "avg_per_record": _mlabel,          # the label describes THIS column
+                "n": "records",
+                "pct_of_total": "% of total",
+            }
+        else:
+            _alias_map = {
+                "metric_total": _mlabel,
+                "metric_value": _mlabel,
+                "avg_per_record": f"{_mlabel} per record",
+                "n": "records",
+                "pct_of_total": "% of total",
+            }
         # A forward-chained LENS measures something else entirely, so the run's primary
         # label is a lie on its grid: the soak shipped a load-factor chart whose axis read
         # "refund leakage rate" (inv 0db3a6db) because this pass stamps the intake's metric
@@ -7923,6 +8066,13 @@ def ada_synthesize(state: AgentState) -> dict:
             orchestration_plan=orchestration_plan,
             plan_reconciliation=plan_reconciliation,
         )
+
+    # No markdown emphasis reaches the reader. Applied HERE, after `run_report_checks`
+    # has scanned the `**…**` markers for figures the model invented — strip earlier and
+    # that grounding check goes blind, which is the guard that caught an unsupported
+    # "86.5%" in a shipped report. Deep, so no reader-facing field is missed by
+    # hand-listing keys, and `phases` were already stripped above.
+    answer_report = _strip_emphasis_deep(answer_report)
 
     # K4b — the agent may propose declared actions from the finished answer (flag-gated, staged).
     _attach_kinetic_proposals(answer_report, state.get("connection_id", ""))

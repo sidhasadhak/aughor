@@ -92,14 +92,20 @@ def test_the_14_dollar_specimen_shape_is_caught():
     assert rc.check_question_addressed("Where are we losing money?", "anything") == []
 
 
-def test_grounding_catches_fabricated_bold_numbers():
+def test_grounding_catches_fabricated_numbers():
+    """Scans SENTENCES, not `**bold**` spans. The narrator no longer emphasises figures —
+    bold reached the reader on nearly every number, which is emphasis on none — so a check
+    keyed on bold would match nothing and still look alive. Scope is unchanged (headline,
+    executive summary, closing summary); if anything this catches more, because a number
+    the model chose not to bold was never checked before."""
     evidence = "region | metric\nWest | 725457.82\nEast | 678781.24"
-    v = rc.check_grounding("West leads at **725457.82** but East is **999123** behind.",
-                           evidence)
-    assert v and "**999123" in v[0]
-    assert rc.check_grounding("West leads at **725,457.82**.", evidence) == []
-    assert rc.check_grounding("roughly **$2.1M** across **3** regions", evidence) == [], \
+    v = rc.check_grounding("West leads at 725457.82. East is 999123 behind.", evidence)
+    assert v and "999123" in v[0]
+    assert rc.check_grounding("West leads at 725,457.82.", evidence) == []
+    assert rc.check_grounding("roughly $2.1M across 3 regions", evidence) == [], \
         "compact forms and tiny integers are out of scope — never cry wolf"
+    # the case bold would have missed: an unemphasised fabrication
+    assert rc.check_grounding("Economy was 86.5 of volume.", evidence)
 
 
 # ── PE-3: playbook entries match the question's shape ────────────────────────────

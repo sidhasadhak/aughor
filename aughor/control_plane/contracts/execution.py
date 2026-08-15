@@ -32,6 +32,10 @@ class StatResult(BaseModel):
     is_significant: bool
     sigma: Optional[float] = None
     p_value: Optional[float] = None
+    #: A reader-facing phrasing of the same finding, when one exists. `interpretation` is
+    #: written for the model's evidence (precise, technical); a report that prints stats
+    #: verbatim to a business reader is how "+126.7σ" reached a slide.
+    plain: str = ""
 
 
 class QueryResult(BaseModel):
