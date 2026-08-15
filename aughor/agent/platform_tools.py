@@ -23,10 +23,15 @@ Three rules, inherited rather than invented:
   steps). Truncation always says so: a capped list with no marker reads as "that is
   everything", and the model will report it that way, confidently.
 
-Writes are deliberately absent. The tier decision is on record (personal, reversible
+Writes are deliberately absent HERE. The tier decision is on record (personal, reversible
 artifacts write directly; shared/org semantic state is proposal-only), but the personal
 substrate (saved queries, pins) does not exist yet — a write tool with nowhere durable to
 write would be theater. The roster grows when the store does.
+
+The one thing on the far side of that line lives next door in :mod:`aughor.agent.action_tools`
+(N8-3): declared actions, proposal-only. It is a separate module rather than an entry here
+precisely because this one's contract is "every tool is a read", and a roster where that
+sentence is nearly true is worse than one where it is exactly true.
 """
 from __future__ import annotations
 
@@ -433,7 +438,44 @@ _HELP_PARAMS = {
 }
 
 
-def platform_tools(connection_id: str) -> list[ToolSpec]:
+_NOTE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "target": {"type": "string", "enum": ["column", "table"],
+                   "description": "column — a note on one column; table — a grain/definition claim about a whole table."},
+        "table": {"type": "string", "description": "The table (bare name as the schema shows it)."},
+        "column": {"type": "string", "description": "The column, for a column note."},
+        "note": {"type": "string",
+                 "description": "The fact, in one line, as it should read to the next analyst — e.g. 'amounts are EUR cents, not euros' or 'status: open=still processing, closed=fulfilled or cancelled'."},
+        "evidence": {"type": "string",
+                     "description": "REQUIRED. What you observed that makes this true — the query result you just saw, or the user's own words. A note without evidence is refused."},
+        "confidence": {"type": "string", "enum": ["high", "med", "low"],
+                       "description": "high only when the evidence is direct (you ran the query, or the user stated it)."},
+    },
+    "required": ["target", "table", "note", "evidence", "confidence"],
+}
+
+
+def propose_context_note(connection_id: str, args: dict, *, session_id: str = "") -> dict:
+    """The conversation writes back what it learned — governed by blast radius
+    (ontology/agent_notes.py): a high-confidence COLUMN note with evidence applies
+    directly and rides the column line into every later prompt; a TABLE claim, or
+    anything less than high confidence, is staged for a person to accept. Never
+    overwrites a human note. Returns what happened and why, as a value."""
+    from aughor.ontology.agent_notes import propose_note
+    from aughor.routers.ontology import resolve_effective_schema
+    schema = resolve_effective_schema(connection_id, None)
+    out = propose_note(
+        connection_id, schema,
+        target=str(args.get("target") or ""), table=str(args.get("table") or ""),
+        column=str(args.get("column") or ""), note=str(args.get("note") or ""),
+        evidence=str(args.get("evidence") or ""), confidence=str(args.get("confidence") or ""),
+        session_id=session_id,
+    )
+    return out.to_dict()
+
+
+def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
     """The read roster for one connection — bound by closure, like every converse tool.
 
     Descriptions are the routing policy (P3), compressed from the MCP server's
@@ -534,5 +576,20 @@ def platform_tools(connection_id: str) -> list[ToolSpec]:
             ),
             parameters=_HELP_PARAMS,
             run=lambda a: platform_help(connection_id, a),
+        ),
+        ToolSpec(
+            name="propose_context_note",
+            description=(
+                "Write back something you just LEARNED about this data so the next "
+                "analyst and the next session inherit it — a unit ('EUR cents'), a "
+                "value meaning ('status open = still processing'), a caveat, or a "
+                "table's real grain. Evidence is required: what you observed or what "
+                "the user told you. A high-confidence column note applies directly; a "
+                "table-level claim, or lower confidence, is staged for a person to "
+                "accept. Never overwrites a human's note. Do NOT use it to record a "
+                "guess, a query result as such, or anything the user did not confirm."
+            ),
+            parameters=_NOTE_PARAMS,
+            run=lambda a: propose_context_note(connection_id, a, session_id=session_id),
         ),
     ]

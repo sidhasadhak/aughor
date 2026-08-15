@@ -438,7 +438,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             parameters=_QUESTION_PARAMS,
             run=lambda a: deep_analysis(connection_id, a),
         ),
-    ] + platform_tools(connection_id)
+    ] + platform_tools(connection_id, session_id=session_id)
 
 
 def converse_available() -> bool:

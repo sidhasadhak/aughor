@@ -1508,6 +1508,48 @@ export async function getLearnedSkills(connectionId: string, schemaName?: string
   return (await res.json()).skills ?? [];
 }
 
+// ── Ontology proposals — the review inbox for what the engine and the conversation
+// propose (metric gaps from the self-improving loop; column/table notes an agent staged
+// with evidence — ontology/agent_notes.py). A person accepts or dismisses; nothing here
+// changes context until they do. Until 2026-08-15 this endpoint had NO web consumer, so
+// "the human is the reviewer" had no surface to review on.
+export interface OntologyProposal {
+  id: string;
+  kind: string;                       // "metric" | "column_note" | "table_note"
+  target_id: string;
+  entity: string;
+  proposed_fields: Record<string, unknown>;
+  reason: string;
+  support: number;
+  evidence: Array<Record<string, unknown>>;
+  status: string;                     // pending | accepted | dismissed
+  first_seen: string;
+  last_seen: string;
+}
+
+export async function getOntologyProposals(connectionId: string, schemaName?: string): Promise<OntologyProposal[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations?${q}`);
+  if (!res.ok) throw new Error("Failed to load ontology proposals");
+  return (await res.json()).recommendations ?? [];
+}
+
+export async function acceptOntologyProposal(recId: string, connectionId: string, schemaName?: string): Promise<Record<string, unknown>> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations/${encodeURIComponent(recId)}/accept?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to accept proposal");
+  return res.json();
+}
+
+export async function dismissOntologyProposal(recId: string, connectionId: string, schemaName?: string): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations/${encodeURIComponent(recId)}/dismiss?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to dismiss proposal");
+}
+
 // Crystallize a CANDIDATE skill from a finished investigation (not persisted — the UI
 // confirms, then calls saveLearnedSkill). 422 when the run isn't skill-worthy.
 export async function proposeLearnedSkill(

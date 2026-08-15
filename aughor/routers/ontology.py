@@ -113,6 +113,12 @@ def _resolve_schema(connection_id: str, schema_name: Optional[str]) -> str:
         return "default"
 
 
+#: Public name for the effective-schema rule, for callers outside this router (the
+#: converse tool roster's `propose_context_note` resolves the same schema the ontology
+#: routes write to — one rule, so an agent note lands where the UI reads it).
+resolve_effective_schema = _resolve_schema
+
+
 def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
     """Open connection, build/load schema, and return its OntologyGraph.
 
@@ -1032,9 +1038,18 @@ def accept_ontology_recommendation(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Promote a recommendation into an EXPLAIN-bound human override (override-wins path)."""
+    """Promote a recommendation into an EXPLAIN-bound human override (override-wins path).
+
+    A staged agent NOTE (kind ``column_note`` / ``table_note`` — ontology/agent_notes.py)
+    is accepted through its own writer: a column note becomes a human-sourced column
+    note, a table note becomes the glossary grain. Same review inbox, two sinks."""
+    from aughor.ontology.agent_notes import accept_note
     from aughor.ontology.recommendations import accept
     effective = _resolve_schema(connection_id, schema_name)
+    noted = accept_note(connection_id, effective, rec_id)
+    if noted is not None:
+        _invalidate_schema_cache(connection_id)
+        return noted
     graph = _get_ontology_graph(connection_id, effective)
     explain, close = _explain_for(connection_id)
     try:

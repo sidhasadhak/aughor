@@ -249,7 +249,11 @@ def ensure_column_configs(
             changed = False
             for col, dflt in cols.items():
                 cur = merged.get(col)
-                if cur is not None and cur.source == "human":
+                # Any AUTHORED entry is sticky — human edits and agent-proposed notes
+                # (source="agent", ontology/agent_notes.py) alike. Only "default"
+                # entries are the policy's to refresh; before 2026-08-15 an agent note
+                # would have been wiped on the next intelligence build.
+                if cur is not None and cur.source != "default":
                     continue
                 if cur is None or cur.policy() != dflt.policy():
                     merged[col] = dflt
@@ -276,15 +280,18 @@ def set_column_flags(
     sample: Optional[bool] = None,
     index: Optional[bool] = None,
     note: str = "",
+    source: str = "human",
 ) -> ColumnFlags:
-    """Apply a human edit to one column (only the passed flags change) and persist.
+    """Apply an authored edit to one column (only the passed flags change) and persist.
 
-    The entry becomes ``source: human`` — a defaults refresh will never touch it
-    again. Unknown columns get a fresh entry (all-default flags + the edit)."""
+    The entry becomes ``source: human`` (or ``"agent"`` for a note the conversation
+    proposed with evidence — ontology/agent_notes.py); either way a defaults refresh
+    will never touch it again. Unknown columns get a fresh entry (all-default flags
+    + the edit)."""
     cols = load_table_config(conn, schema, table)
     cur = cols.get(column) or ColumnFlags()
     updates: dict[str, Any] = {
-        "source": "human",
+        "source": source,
         "edited_at": datetime.now(timezone.utc).isoformat(),
     }
     if visible is not None:

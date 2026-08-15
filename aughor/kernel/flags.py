@@ -379,10 +379,16 @@ EXPERIMENT: dict = {
                           "off 21/24 → on 23/24, ZERO lost — both gains legible in the traced "
                           "SQL (off hallucinated a table by hand on return-rate; off produced "
                           "no SQL at all on sales-per-year). The one shared miss is a data-vs-"
-                          "metadata defect (returns grain note), not the flag. Exit: ONE more "
-                          "replicate confirming direction (`scripts/flag_ab_grid.py`, sole "
-                          "writer!) ⇒ graduate to unconditional and delete the flag; a "
-                          "reversal ⇒ delete the bypass — no third state",
+                          "metadata defect (returns grain note), not the flag. GRID 2 (same day, "
+                          "after the grain-claim + comparator fixes lifted the suite to "
+                          "ceiling; runs a66e0fcda7fc off / 25db5cbee8fd on): off 24/24 → on "
+                          "23/24, the one miss a PROVIDER EMPTY-TURN (744ms, no SQL generated) "
+                          "— not a schema effect. Across both replicates the whole schema never "
+                          "produced a WORSE query and twice produced a correct one where pruning "
+                          "produced none — but this suite can no longer separate the arms. "
+                          "Exit: a grid on a suite NOT at ceiling (e.g. LuxExperience 914df862, "
+                          "27k chars/14 tables) that repeats a net gain ⇒ graduate; a genuine "
+                          "loss (a worse QUERY, not a dead turn) ⇒ delete the bypass",
     # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
     # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see

@@ -65,7 +65,15 @@ class OntologyRecommendation(BaseModel):
 
     @property
     def ripe(self) -> bool:
-        return self.status == "pending" and self.support >= SURFACE_SUPPORT
+        """Surfaced to the reviewer. A METRIC gap must recur (SURFACE_SUPPORT) so a one-off
+        model slip never becomes a proposal; an agent NOTE (ontology/agent_notes.py) is
+        ripe at first sighting — it was staged deliberately, with evidence, and a
+        table-grain claim should not have to recur before a person can act on it."""
+        if self.status != "pending":
+            return False
+        if self.kind.endswith("_note"):
+            return True
+        return self.support >= SURFACE_SUPPORT
 
 
 # ── filesystem store (mirrors overrides.py) ─────────────────────────────────
