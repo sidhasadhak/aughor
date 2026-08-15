@@ -196,15 +196,21 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     try:
         from aughor.tools.data_catalog import build_data_catalog
         from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+        from aughor.tools.schema_linker import rank_tables_for_context
         linked_tables = list(_parse_schema_tables(schema).keys())
         if linked_tables:
-            # Add the date/time dimension first (before FK expansion + the 10-table
-            # cap) so a temporal question keeps it; then pull in FK neighbours.
-            for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
-                if _dt not in linked_tables:
-                    linked_tables.append(_dt)
+            # Mirrors the /chat and deep paths exactly (routers/investigations.py): pin the
+            # date/time dimension, rank + cap, then FK-complete. The harness has to build
+            # the SAME context those paths build or it measures a system nobody runs — and
+            # `schema=` is what lets the catalog find this connection's column config, so
+            # without it the evals would score the pre-2026-08-15 unfiltered samples.
+            _pinned = [t for t in temporal_dimension_tables(full_schema, linked_tables, question)
+                       if t not in linked_tables]
+            linked_tables = rank_tables_for_context(
+                question, full_schema, linked_tables + _pinned,
+                cap=10, connection_id=connection_id, pinned=_pinned)
             linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
-            catalog = build_data_catalog(db, linked_tables)
+            catalog = build_data_catalog(db, linked_tables, schema=schema_qualifier)
             if catalog:
                 schema = catalog
     except Exception:

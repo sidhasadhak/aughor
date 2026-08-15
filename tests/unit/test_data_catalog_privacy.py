@@ -251,5 +251,40 @@ def test_ranking_is_a_noop_when_everything_fits():
     assert rank_tables_for_context("anything", _MIXED_SCHEMA, _MIXED, cap=10) == _MIXED
 
 
+# ── the cap must not go blind on a capable model ─────────────────────────────
+
+_WIDE = [f"t{i}" for i in range(23)]
+_WIDE_SCHEMA = "\n\n".join(f"TABLE: t{i}\n  t{i}_id  BIGINT\n  label  VARCHAR" for i in range(23))
+
+
+def test_no_signal_is_capped_below_a_capable_models_budget():
+    # `context_table_cap` is 10 on the baseline tier but 24 on a capable model, and the
+    # canvas that produced the 2026-08-15 report had 23 tables — so on the model class
+    # most likely to be pointed at a big canvas, a cap of 24 would cap NOTHING. With no
+    # relevance signal the conservative baseline applies regardless of what the caller
+    # can afford.
+    kept = rank_tables_for_context("profile the most unusual entities in this data",
+                                   _WIDE_SCHEMA, _WIDE, cap=24)
+    assert len(kept) == 10
+
+
+def test_a_grounded_ranking_still_gets_the_full_caller_budget():
+    # The tightening is about ABSENT evidence, not about distrusting the profile: when
+    # tables actually score, the caller's larger budget is honoured.
+    schema = _WIDE_SCHEMA + "\n\nTABLE: flights\n  flight_id  BIGINT\n  delay_minutes  INTEGER"
+    kept = rank_tables_for_context("which flights had the worst delays?",
+                                   schema, _WIDE + ["flights"], cap=15)
+    assert len(kept) == 15
+    assert kept[0] == "flights"
+
+
+def test_a_pin_survives_the_no_signal_tightening_too():
+    pinned = ["t22"]
+    kept = rank_tables_for_context("profile the entities", _WIDE_SCHEMA, _WIDE,
+                                   cap=24, pinned=pinned)
+    assert len(kept) == 10
+    assert "t22" in kept                          # last by schema order, kept by the pin
+
+
 def test_truncation_constant_is_a_shape_not_a_paragraph():
     assert 50 <= _MAX_CELL_CHARS <= 500

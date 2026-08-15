@@ -1841,7 +1841,11 @@ def _answer_core(
                 linked_tables = rank_tables_for_context(
                     question, _full_schema, linked_tables + _pinned,
                     cap=_cat_cap, connection_id=connection_id, pinned=_pinned)
-                linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=_cat_cap)
+                # FK completion keeps its own historical bound of 10 and deliberately does
+                # NOT follow `_cat_cap`: on a capable model that is 24, which would let this
+                # path fill a narrow linker result out to 24 tables — a widening that has
+                # nothing to do with the fix above. This ranking change may only narrow.
+                linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
                 # M24c: verified semantic layer (segments + computed properties)
                 # for the linked entities — only items validated against the live DB.
                 try:

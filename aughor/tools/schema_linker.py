@@ -623,6 +623,13 @@ def link_schema(
     return filtered
 
 
+#: The table budget when NOTHING in the question scores. Deliberately the BASELINE tier's
+#: `context_table_cap` (llm/profile.py) — "the behaviour everything was measured against" —
+#: rather than a new number: a capable model's larger budget is a budget for tables we have
+#: reason to send, and with no relevance signal we have none.
+_NO_SIGNAL_TABLE_CAP = 10
+
+
 def _fk_degree(schema_str: str) -> dict[str, int]:
     """Table → number of distinct FK-joinable neighbours, from the same inferred join map
     the catalog and `fk_neighbor_expand` use. Empty on any failure (callers then fall
@@ -675,8 +682,19 @@ def rank_tables_for_context(
     ``pinned`` tables always survive the cut. A date/time dimension is added to the
     context precisely BECAUSE the question never names it, so it scores zero and a
     relevance cut would drop it first — the one table the temporal expansion existed to
-    keep."""
-    if cap <= 0 or len(tables) <= cap:
+    keep.
+
+    🔑 ``cap`` is TIGHTENED to ``_NO_SIGNAL_TABLE_CAP`` when nothing scores. Callers pass
+    the profile's ``context_table_cap``, which is 10 on the baseline tier but **24 on a
+    capable model** — and a 23-table canvas slips under 24, so on the very model class
+    most likely to be pointed at a big canvas this function would have capped nothing.
+    The profile number is a budget for RELEVANT tables; with no relevance signal there is
+    no evidence any of them belongs, so the conservative baseline applies instead. When
+    the ranking IS grounded, the caller's cap is honoured in full."""
+    if cap <= 0:
+        return tables
+    # Under even the tightest bound this could choose — nothing to decide, no scoring.
+    if len(tables) <= min(cap, _NO_SIGNAL_TABLE_CAP):
         return tables
     _pin = {t.lower() for t in (pinned or [])}
     try:
@@ -698,6 +716,9 @@ def rank_tables_for_context(
             basis = "FK degree (no keyword matched)"
             degree = _fk_degree(schema_str)
             scored = [(float(degree.get(t, 0)), i, t) for _s, i, t in scored]
+            cap = min(cap, _NO_SIGNAL_TABLE_CAP)
+            if len(tables) <= cap:
+                return tables
         # Pins sort above everything; the ranking below them is unchanged.
         scored.sort(key=lambda x: (0 if x[2].lower() in _pin else 1, -x[0], x[1]))
         kept = [t for _s, _i, t in scored[:cap]]
