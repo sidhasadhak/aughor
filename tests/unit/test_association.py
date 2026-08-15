@@ -48,10 +48,8 @@ def test_identical_mixes_are_independent():
     assert res.is_dependent is False
     assert res.cramers_v < 0.05
     assert res.p_value > 0.05
-    assert "INDEPENDENT" in res.interpretation
-    # The directive matters as much as the verdict — this is the sentence that stops a
-    # narrator reporting the biggest group as though it were the relationship.
-    assert "do NOT report a driver" in res.interpretation
+    assert "NOT related" in res.interpretation          # reader-facing
+    assert "INDEPENDENT" in res.technical                # auditable
 
 
 def test_a_nested_hierarchy_is_perfectly_dependent():
@@ -62,7 +60,8 @@ def test_a_nested_hierarchy_is_perfectly_dependent():
     assert res.is_dependent is True
     assert res.cramers_v == pytest.approx(1.0, abs=1e-6)
     assert res.p_value < 0.01
-    assert "RELATED" in res.interpretation
+    assert "ARE related" in res.interpretation
+    assert "RELATED" in res.technical
 
 
 def test_a_sparse_grid_is_not_rejected_for_being_sparse():
@@ -102,10 +101,12 @@ def test_money_gets_no_p_value():
     assert res.p_value is None
     assert res.chi2 is None
     assert res.is_dependent is False, "no dependence may be CLAIMED without a valid test"
-    assert "COMPOSITION ONLY" in res.interpretation
-    assert "percentage points" in res.interpretation
-    assert "COUNT(*)" in res.interpretation, "must say how to get a real verdict"
+    assert "COMPOSITION ONLY" in res.technical
+    assert "percentage points" in res.technical
+    assert "COUNT(*)" in res.technical, "must say how to get a real verdict"
+    assert "counts, not totals" in res.interpretation, "and say so plainly to the reader"
     assert "σ" not in res.interpretation, "no sigma may be quoted for non-frequency data"
+    assert "MIX differs" in res.interpretation, "the reader gets plain language too"
 
 
 @pytest.mark.parametrize("table", [
@@ -229,12 +230,13 @@ def test_the_finding_is_built_from_a_result_with_no_stats_attached():
     assert result.stats == [], "the fixture must mirror _execute_safe, which attaches nothing"
     f = _association_finding(result, "ship_mode", "sub_category")
     assert f is not None
+    assert "NOT related" in f["interpretation"]
     assert f["title"] == "ship_mode × sub_category: are they related?"
     # A grid answer deserves a grid chart; two bar charts are what marginals look like.
     assert f["chart_type"] == "heatmap"
-    assert "INDEPENDENT" in f["interpretation"]
+    assert "NOT related" in f["interpretation"]
     assert f["is_significant"] is True
-    assert f["stat_note"] == f["interpretation"]
+    assert "INDEPENDENT" in f["stat_note"], "the statistics stay available, just not in the prose"
 
 
 def test_no_finding_without_a_verdict():
@@ -425,9 +427,92 @@ def test_the_phase_summary_instructs_and_does_not_duplicate_the_verdict():
 
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
     null_f = _association_finding(_FakeResult(cols, rows), "a", "b")
-    assert "INDEPENDENT" in null_f["interpretation"]
-    for finding in (null_f, {"interpretation": "[2x2] RELATED: not independent (V=0.4, p=0)."}):
+    assert "INDEPENDENT" in null_f["stat_note"]
+    for finding in (null_f, {"interpretation": "x", "stat_note": "[2x2] RELATED: V=0.4, p=0."}):
         d = _association_directive(finding)
         assert d and d.strip().endswith(("\n", ".")) or d
         assert finding["interpretation"] not in d, "the directive must not copy the verdict"
         assert "MUST" in d, "it has to actually instruct the narrator"
+
+
+# ── the report is written for a reader, the evidence for the model ───────────
+
+def test_the_reader_gets_business_language_not_sigmas():
+    """The verdict shipped to a business reader read
+    "[8x21 contingency] RELATED … Cramér's V=0.13, p=0 … A350-900×E over-represented
+    (+126.7σ)" — a sentence written for a statistician. A sigma says how surprised a
+    statistician is; a multiple of the expected share says the same thing about the
+    business."""
+    table = [[500, 10, 5], [20, 400, 8], [6, 9, 700]]
+    res = assess_association(table, ["A350-900", "A320", "B777"], ["E", "M", "Y"])
+    assert res is not None and res.is_dependent
+
+    for token in ("σ", "Cramér", "contingency", "p=", "residual"):
+        assert token not in res.interpretation, f"{token!r} leaked into the reader's text"
+    assert "expected share" in res.interpretation
+    assert "×" in res.interpretation                      # the intuitive magnitude
+
+    # …and the statistics are NOT lost, just moved.
+    assert "Cramér" in res.technical and "σ" in res.technical
+
+
+def test_the_null_verdict_reads_plainly_too():
+    res = assess_association(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    assert res is not None and not res.is_dependent
+    for token in ("σ", "Cramér", "contingency", "INDEPENDENT:"):
+        assert token not in res.interpretation
+    assert "NOT related" in res.interpretation
+    assert "how BIG each group is" in res.interpretation
+    assert "Cramér" in res.technical or "p=" in res.technical
+
+
+def test_the_evidence_keeps_its_precision():
+    """The narrator's evidence must stay technical — an auditable claim needs the numbers
+    — while `plain` carries what a report may print verbatim."""
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    stat = next(s for s in analyze_query_result(cols, rows) if s.type == "association")
+    assert "contingency" in stat.interpretation          # evidence: precise
+    assert stat.plain and "contingency" not in stat.plain  # reader: plain
+
+
+def test_the_finding_shows_plain_prose_and_notes_the_statistics():
+    from aughor.agent.investigate import _association_finding as AF
+
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    f = AF(_FakeResult(cols, rows), "aircraft_type", "booking_class")
+    assert f is not None
+    assert "Aircraft type and Booking class" in f["interpretation"], "names the dimensions"
+    assert "σ" not in f["interpretation"]
+    assert "σ" in f["stat_note"] or "Cramér" in f["stat_note"]
+
+
+# ── the report's own voice ───────────────────────────────────────────────────
+
+def test_no_markdown_emphasis_survives_to_the_reader():
+    """Bold reached the reader on almost every figure, which is emphasis on nothing. The
+    markup is KEPT upstream on purpose — `report_checks.check_grounding` scans `**…**` to
+    catch a number the model invented, and that is how an unsupported "86.5%" was caught —
+    so it is removed at the last touch instead of at the source."""
+    from aughor.agent.investigate import _strip_emphasis_deep, strip_emphasis
+
+    assert strip_emphasis("cost is **529.25** vs **505.87**") == "cost is 529.25 vs 505.87"
+    assert strip_emphasis("__also bold__") == "also bold"
+    assert strip_emphasis("plain text") == "plain text"
+    assert strip_emphasis("") == ""
+    assert strip_emphasis(None) is None
+    # idempotent — a second pass over stripped prose changes nothing
+    once = strip_emphasis("**a** and **b**")
+    assert strip_emphasis(once) == once == "a and b"
+    # and it reaches nested report shapes without hand-listing keys
+    got = _strip_emphasis_deep({"headline": "**A** wins",
+                                "recommendations": [{"action": "cut **12%**"}]})
+    assert got == {"headline": "A wins", "recommendations": [{"action": "cut 12%"}]}
+
+
+def test_the_grounding_check_still_has_its_markers():
+    """The strip must not run before the check — that would blind the one guard that
+    catches a fabricated figure."""
+    from aughor.agent.report_checks import check_grounding
+
+    violations = check_grounding("economy was **86.5%** of volume", "economy 87.0 of volume")
+    assert violations and "86.5" in violations[0]

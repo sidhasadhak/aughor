@@ -21,7 +21,16 @@ def test_fmt_pct_scale_aware():
 
 def test_metric_is_percent_distinguishes_rate_from_average():
     assert I._metric_is_percent("AVG(is_returned)", "return rate") is True
-    assert I._metric_is_percent("SUM(a)/SUM(b)", "conversion") is True         # composite ratio
+    # A COMPOSITE RATIO IS NOT AUTOMATICALLY A PERCENT. This asserted True and made
+    # "average cost per record" — SUM(Costs)/COUNT(*) — a percentage, so a chart rendered
+    # CHF 311.72 as "31172.1%". Without a percent-ish label or [0,1] values there is
+    # nothing to distinguish a conversion rate from money-per-unit, and guessing "percent"
+    # fails loudly on screen while guessing "not percent" merely shows 0.41 for 41%.
+    assert I._metric_is_percent("SUM(a)/SUM(b)", "conversion") is False
+    assert I._metric_is_percent("SUM(a)/SUM(b)", "conversion rate") is True     # label says so
+    assert I._metric_is_percent("SUM(a)/SUM(b)", "conversion", values=[0.41, 0.38]) is True
+    assert I._metric_is_percent("ROUND(SUM(Costs)/NULLIF(COUNT(*),0),2)",
+                                "Average Cost per Record") is False
     assert I._metric_is_percent("AVG(discount)*100", "discount %") is True
     assert I._metric_is_percent("AVG(rating)", "average rating") is False      # a plain mean, not a %
     assert I._metric_is_percent("SUM(revenue)", "revenue") is False
