@@ -271,3 +271,27 @@ def test_has_usable_data():
     assert _has_usable_data([(q, R(None, 0))]) is False
     assert _has_usable_data([(q, R("e", 0)), (q, R(None, 3))]) is True   # one good is enough
     assert _has_usable_data([]) is False
+
+
+# ── A3. Scalar restatement is held to the cell's rounding, not a 2% band ──────
+# Superstore 2026-08-14: the query returned 3.96 and the narrator wrote "3.99 days" —
+# 0.76% off, so the 2% band that forgives "$1.2M" for 1,187,432 forgave a wrong digit.
+def test_headline_scalar_wrong_digit_is_grounded():
+    out = _ground_headline("Average days between order date and ship date is 3.99",
+                           ["avg_days"], [["3.9584750850510306"]])
+    assert "3.99" not in out and "3.96" in out
+
+
+def test_headline_scalar_legitimate_rounding_still_passes():
+    rows = [["3.9584750850510306"]]
+    for hl in ("Average days between order and ship is 3.96",
+               "Average days between order and ship is 4.0",
+               "Orders ship in about 4 days on average"):
+        assert _ground_headline(hl, ["avg_days"], rows) == hl, hl
+
+
+def test_headline_scalar_percent_rounding_still_passes():
+    # a fraction stated as a percent, at the precision the headline shows
+    assert _ground_headline("Return rate is 8.6%", ["return_rate"], [["0.0857"]]) == "Return rate is 8.6%"
+    out = _ground_headline("Return rate is 9.1%", ["return_rate"], [["0.0857"]])
+    assert "9.1" not in out

@@ -238,11 +238,23 @@ _ANNOT = re.compile(r"--\s*\[([^\]]*)\]")
 _TABLE_LINE = re.compile(r"^TABLE:\s+([\w.]+)")
 
 
+#: The renderer's value-enumeration line: ``  -- <col>  [v1, v2, …]`` on its OWN line
+#: under the table (db/schema_render.py). The parser below used to look for the list
+#: only on the column line itself (``  col  TYPE  -- [a, b]``), so on this renderer
+#: `domains` was ALWAYS empty: annotation-based entity binding — the ground-first
+#: mechanism this module exists for — was dead, and every entity fell through to the
+#: DB probe, whose "absent" then produced false abstains ("'First Class' is not present
+#: in this data" with the value sitting right there in the schema). Found 2026-08-15.
+_VALUES_LINE = re.compile(r"^\s{2}--\s+(\w+)\s+\[([^\]]*)\]")
+
+
 def _parse_schema(schema: str):
     """Return ({table: [cols]}, [(table, col, [values])]) from an annotated schema
-    string. Value lists come from the ``-- [a, b, …]`` annotations only."""
+    string. Value lists come from ``-- [a, b, …]`` annotations — inline on the column
+    line OR on the renderer's own ``  -- col  [a, b]`` line beneath it."""
     tables: dict[str, list[str]] = {}
     domains: list[tuple[str, str, list[str]]] = []
+    seen: set[tuple[str, str]] = set()
     cur = None
     for line in (schema or "").splitlines():
         tm = _TABLE_LINE.match(line)
@@ -252,6 +264,14 @@ def _parse_schema(schema: str):
             continue
         if not cur:
             continue
+        vm = _VALUES_LINE.match(line)
+        if vm:
+            col = vm.group(1)
+            vals = [v.strip() for v in vm.group(2).split(",") if v.strip()]
+            if vals and (cur, col) not in seen:
+                domains.append((cur, col, vals))
+                seen.add((cur, col))
+            continue
         cm = _COL_LINE.match(line)
         if cm:
             col = cm.group(1)
@@ -259,9 +279,36 @@ def _parse_schema(schema: str):
             am = _ANNOT.search(line)
             if am:
                 vals = [v.strip() for v in am.group(1).split(",") if v.strip()]
-                if vals:
+                if vals and (cur, col) not in seen:
                     domains.append((cur, col, vals))
+                    seen.add((cur, col))
     return tables, domains
+
+
+#: Words that describe HOW to compute — never a VALUE to filter on. A candidate whose
+#: head or second word is one of these is computation vocabulary the preposition rule
+#: swept up ("number of DAYS BETWEEN", "share of DISTINCT orders", "for orders that were
+#: NOT returned"), and probing the warehouse for it yields a false "absent" ⇒ a false
+#: abstain — the one outcome the ground-first contract forbids. (Superstore 2026-08-14:
+#: "'days between' is not present in this data" on a perfectly answerable question.)
+#: Shape rule, not a growing stop-list: any word here is grammar, so the check holds
+#: for compounds the hand-list never saw.
+_COMPUTE_WORDS = frozenset({
+    # temporal units / relations
+    "days", "weeks", "months", "years", "quarters", "hours", "minutes", "seconds",
+    "between", "before", "after", "since", "until", "during", "ago", "last", "next",
+    "first", "latest", "earliest", "recent", "previous", "current",
+    # aggregation / arithmetic / set vocabulary
+    "average", "avg", "mean", "median", "sum", "min", "max", "minimum", "maximum",
+    "distinct", "unique", "different", "ratio", "rate", "share", "percent", "percentage",
+    "difference", "delta", "change", "growth", "cumulative", "running", "rolling",
+    "each", "every", "all", "any", "most", "least", "highest", "lowest", "best", "worst",
+    # logic / negation / comparison
+    "not", "no", "non", "without", "except", "excluding", "including", "only", "same",
+    "more", "less", "than", "greater", "fewer", "above", "below", "equal", "at",
+    # generic nouns for rows / results
+    "orders", "order", "rows", "records", "items", "results", "entries", "values",
+})
 
 
 def _entity_candidates(question: str) -> list[str]:
@@ -273,14 +320,42 @@ def _entity_candidates(question: str) -> list[str]:
     # after a preposition ("… for mytheresa", "of Nike")
     for m in re.finditer(r"\b(?:for|of|in|at|from)\s+([A-Za-z][\w'&.-]*(?:\s+[A-Za-z][\w'&.-]*)?)", q):
         cands.append(m.group(1).strip())
-    # standalone capitalised tokens (proper nouns) not at sentence start
-    for m in re.finditer(r"(?<!^)(?<![.?!]\s)\b([A-Z][a-zA-Z]{2,})\b", q):
+    # Capitalised proper-noun PHRASES, not tokens: "First Class", "Same Day", "New York"
+    # are one value each. The old per-token rule yielded "Class" from "First Class" and
+    # the DB probe found no such value ⇒ "'Class' is not present in this data" on a
+    # question about a real ship_mode (Superstore 2026-08-15). Not at sentence start.
+    for m in re.finditer(r"(?<!^)(?<![.?!]\s)\b([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*)\b", q):
         cands.append(m.group(1))
     out, seen = [], set()
     for c in cands:
-        head = c.split()[0].lower().strip(".'&-")
+        raw_words = [w.lower().strip(".'&-") for w in c.split()]
+        head = raw_words[0] if raw_words else ""
         if head in _STOP or len(head) < 3 or head in seen:
             continue
+        # A capitalised multi-word phrase is a NAME the user typed ("First Class",
+        # "Same Day", "New York") — it is exempt from the grammar rules below, which
+        # exist for the lowercase two-word window after a preposition.
+        typed_name = len(raw_words) > 1 and all(w[:1].isupper() for w in c.split())
+        if not typed_name:
+            # Computation vocabulary is never a filter value (see _COMPUTE_WORDS): a
+            # window whose head OR second word is compute vocabulary ("days between",
+            # "distinct orders", "returned orders") is grammar, not an entity. Judged
+            # on the RAW window, before trimming — "returned orders" must not become
+            # "returned" and slip through.
+            if head in _COMPUTE_WORDS or (len(raw_words) > 1 and raw_words[1] in _COMPUTE_WORDS):
+                continue
+            # A bare uppercase word that is a SQL/English operator ("NOT", "AND",
+            # "OR", "IN") is shouted grammar, not a proper noun.
+            if c.isupper() and head in {"not", "and", "or", "in", "all", "any"}:
+                continue
+        # A trailing glue word swept in by the two-word window ("Texas by", "Nike in")
+        # is not part of the value — trim it so the probe looks up what the user wrote.
+        # Never on a typed name: "Same Day" IS the value, even though "day" is glue
+        # elsewhere.
+        words = list(raw_words)
+        while not typed_name and len(words) > 1 and words[-1] in _STOP:
+            words.pop()
+        c = " ".join(c.split()[:len(words)])
         seen.add(head)
         out.append(c.strip())
     return out

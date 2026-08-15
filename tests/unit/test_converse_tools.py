@@ -96,6 +96,141 @@ def test_empty_sql_is_an_answer_not_a_crash(fake_conn):
     assert "error" in ct.run_sql("c1", {"sql": "   "})
 
 
+# ── a primitive run_sql answer streams like a core answer, receipt included ───
+# Found by the Superstore accuracy suite (2026-08-14): the model chose run_sql, answered
+# "3.96 days" CORRECTLY, and the turn shipped no sql/rows frame and has_receipt=false —
+# the observation was empty, the case scored wrong, and the user had no receipt.
+
+def test_run_sql_with_emit_streams_the_core_frame_shapes(monkeypatch, fake_conn):
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+                        lambda *a, **k: _Result(columns=["avg_days"], rows=[[3.96]], row_count=1))
+    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt",
+                        lambda **kw: {"receipt_id": "rcpt-1", "learning": None, "activations": None})
+    frames: list[tuple[str, dict]] = []
+    ct.run_sql("c1", {"sql": "SELECT AVG(ship_date - order_date) FROM orders"},
+               emit=lambda t, p: frames.append((t, p)), user_question="avg days?")
+    kinds = [t for t, _ in frames]
+    assert kinds[:3] == ["sql", "columns", "rows"], kinds
+    assert ("receipt_id", {"receipt_id": "rcpt-1"}) in frames
+    done = dict(frames)["done"]
+    assert done["has_receipt"] is True and done["inv_id"]
+    assert dict(frames)["rows"]["rows"] == [[3.96]]
+
+
+def test_run_sql_receipt_carries_the_users_question_and_the_sql(monkeypatch, fake_conn):
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    seen: dict = {}
+
+    def _write(**kw):
+        seen.update(kw)
+        return {"receipt_id": "r", "learning": None, "activations": None}
+
+    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt", _write)
+    ct.run_sql("c1", {"sql": "SELECT 1"}, emit=lambda t, p: None, user_question="how many?")
+    assert seen["kind"] == "chat_answer"
+    assert seen["question"] == "how many?"
+    assert seen["sqls"] == ["SELECT 1"]
+    assert seen["payload_extra"]["body"] == "converse.run_sql"
+
+
+def test_run_sql_without_emit_streams_nothing(monkeypatch, fake_conn):
+    # A bare sync caller (tests, scripts) is not a streamed turn — no frames, no receipt.
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    called = []
+    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt",
+                        lambda **kw: called.append(1) or {})
+    ct.run_sql("c1", {"sql": "SELECT 1"})
+    assert not called
+
+
+def test_run_sql_failure_streams_no_result_frames(monkeypatch, fake_conn):
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+                        lambda *a, **k: _Result(rows=[], row_count=0, error="Binder Error: x"))
+    frames: list = []
+    out = ct.run_sql("c1", {"sql": "SELECT x"}, emit=lambda t, p: frames.append(t))
+    assert frames == [], "a failed query must not render as an answer"
+    assert out["repair"]["retryable"] is True
+
+
+def test_run_sql_receipt_failure_does_not_fail_the_query(monkeypatch, fake_conn):
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+
+    def _boom(**kw):
+        raise RuntimeError("ledger down")
+
+    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt", _boom)
+    frames: list = []
+    out = ct.run_sql("c1", {"sql": "SELECT 1"}, emit=lambda t, p: frames.append(t))
+    assert out["row_count"] == 1
+    assert frames[:3] == ["sql", "columns", "rows"], "the frames streamed before the receipt failed"
+    assert "done" not in frames, "no has_receipt=True claim when the receipt was not written"
+
+
+# ── error routing: the failure names the next tool, and says whether to retry ─
+# The compiled answer path already routed by error class; the converse loop got the
+# raw driver string. Same classifier, one more consumer (2026-08-14).
+
+def test_a_failed_query_carries_a_repair_instruction(monkeypatch, fake_conn):
+    monkeypatch.setattr(
+        "aughor.sql.executor.execute_guarded",
+        lambda *a, **k: _Result(rows=[], row_count=0,
+                                error='Binder Error: Referenced column "totl" not found'))
+    out = ct.run_sql("c1", {"sql": "SELECT SUM(totl) FROM orders"})
+    repair = out["repair"]
+    assert repair["retryable"] is True
+    assert repair["kind"] == "binder"
+    assert repair["next_tool"] == "describe_table", "a name error routes to the schema, not a blind retry"
+    assert "describe_table" in repair["instruction"]
+
+
+def test_a_successful_query_carries_no_repair(monkeypatch, fake_conn):
+    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    assert "repair" not in ct.run_sql("c1", {"sql": "SELECT 1"})
+
+
+def test_a_guard_block_is_not_retryable(monkeypatch, fake_conn):
+    # The statement is DISALLOWED, not mistyped — rewriting cannot help, and a model
+    # that keeps retrying a blocked statement burns budget on a wall.
+    monkeypatch.setattr(
+        "aughor.sql.executor.execute_guarded",
+        lambda *a, **k: _Result(rows=[], row_count=0,
+                                error="[BLOCKED] disallowed function(s): READ_CSV"))
+    repair = ct.run_sql("c1", {"sql": "SELECT * FROM read_csv('/etc/passwd')"})["repair"]
+    assert repair["retryable"] is False
+    assert repair["kind"] == "blocked"
+
+
+def test_a_warehouse_fault_is_not_retryable(fake_conn):
+    for err in ("could not connect to server", "permission denied for table orders",
+                "canceling statement due to statement timeout"):
+        repair = ct.route_error(err, "SELECT 1", "postgres")
+        assert repair["retryable"] is False, err
+        assert repair["kind"] == "warehouse", err
+
+
+def test_every_class_names_a_next_tool_and_the_tool_exists(fake_conn):
+    tool_names = {t.name for t in ct.converse_tools("c1")}
+    for err in ("Parser Error: syntax error at or near 'FORM'",
+                'Binder Error: Referenced column "x" not found',
+                "Conversion Error: Could not convert string 'abc' to INT32",
+                "Out of Range Error: division by zero"):
+        repair = ct.route_error(err, "SELECT 1", "duckdb")
+        assert repair["retryable"] is True, err
+        assert repair["next_tool"] in tool_names, (
+            f"{err!r} routes to {repair['next_tool']!r}, which is not a tool the model has")
+
+
+def test_repair_instructions_do_not_hedge():
+    # WrenAI's lesson, made a gate: soft phrasing ("if helpful", "when useful",
+    # "consider") was read by models as permission to skip. An instruction the
+    # model may ignore is not an instruction.
+    for kind, (_tool, step) in ct._NEXT_TOOL.items():
+        low = step.lower()
+        for hedge in ("if helpful", "when useful", "consider ", "you may", "optionally",
+                      "if needed", "might want"):
+            assert hedge not in low, f"{kind}: {step!r} hedges with {hedge!r}"
+
+
 def test_answer_question_runs_the_real_core_with_a_noop_emit(monkeypatch):
     """The tool is a second CALLER of the answer path, never a second answer path: it
     hands `answer_core` a no-op emit and reads the terminal state — guard receipts
@@ -143,6 +278,12 @@ def test_answer_question_reports_a_failed_turn_as_a_value(monkeypatch):
 
     assert out["outcome"] == "query_failed"
     assert "Binder Error" in out["error"]
+    # The pipeline already spent its automatic repair; re-asking is the one route
+    # that cannot help, so the instruction sends the model to the primitives.
+    repair = out["repair"]
+    assert repair["retryable"] is True
+    assert "do not call it again" in repair["instruction"]
+    assert "run_sql" in repair["instruction"]
 
 
 def test_answer_question_without_a_question_is_an_answer_not_a_crash():

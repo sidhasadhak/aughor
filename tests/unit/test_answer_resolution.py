@@ -321,3 +321,98 @@ def test_inherited_entity_absent_in_scope_never_dead_ends():
     r = R.resolve("break that down by platform", schema=_CONTRA, db=db,
                   prior_context="losses in womenswear")
     assert r.not_found == []
+
+
+# ── computation vocabulary is never a filter entity (2026-08-14) ──────────────
+# "What is the average number of days between order date and ship date?" abstained
+# with "'days between' is not present in this data" — the preposition rule swept up
+# grammar, the DB probe confirmed no such VALUE, and the resolver refused a perfectly
+# answerable question: the exact false abstain the module's contract forbids.
+
+def test_compute_vocabulary_is_never_an_entity_candidate():
+    from aughor.semantic.answer_resolution import _entity_candidates
+    for q in [
+        "What is the average number of days between order date and ship date?",
+        "Show total sales for orders that were NOT returned, by segment.",
+        "What is the return rate by region, as a share of distinct orders?",
+        "What is the total sales value of returned orders?",
+        "How many orders were placed in the last 30 days?",
+    ]:
+        assert _entity_candidates(q) == [], q
+
+
+def test_real_entities_still_bind_after_the_compute_filter():
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("What is the total quantity sold in the Technology category?") == ["Technology"]
+    assert _entity_candidates("monthly sales for Mytheresa") == ["Mytheresa"]
+    assert _entity_candidates("sales in France last month") == ["France"]
+    assert _entity_candidates("returns for the Consumer segment") == ["Consumer"]
+
+
+def test_derived_quantity_question_is_answerable_even_with_a_db_that_finds_nothing():
+    # A db whose probe says "absent" for everything must not turn a derived-quantity
+    # question into an abstain: there is no entity to be absent.
+    from aughor.semantic.answer_resolution import resolve
+
+    class _AbsentDB:
+        dialect = "duckdb"
+        def execute(self, *a, **k):
+            class _C:
+                def fetchall(self_inner): return []
+                def fetchone(self_inner): return None
+            return _C()
+
+    schema = ("TABLE: orders\n  order_id  VARCHAR\n  order_date  DATE\n  ship_date  DATE\n"
+              "  segment  VARCHAR\n  -- segment  [Consumer, Corporate]\n")
+    r = resolve("What is the average number of days between order date and ship date?",
+                schema=schema, db=_AbsentDB())
+    assert not r.not_found, r.not_found
+
+
+def test_typed_multiword_names_bind_whole():
+    # "First Class" / "Same Day" / "New York" are one value each. The old per-token rule
+    # yielded "Class" from "First Class" and the probe found no such value ⇒ a false
+    # "'Class' is not present in this data" on a question about a real ship_mode.
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("What is the total sales for orders shipped via First Class?") == ["First Class"]
+    assert _entity_candidates("What share of orders ship Same Day?") == ["Same Day"]
+    assert _entity_candidates("revenue for New York last month") == ["New York"]
+
+
+def test_trailing_glue_is_trimmed_from_a_lowercase_window():
+    # "Texas by" / "Nike in" — the two-word window swept a preposition into the value.
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("Show the top 3 cities in Texas by sales") == ["Texas"]
+    assert _entity_candidates("gmv of Nike in 2024") == ["Nike"]
+
+
+def test_parse_schema_reads_the_renderers_own_values_line():
+    # The live renderer (db/schema_render.py) puts value lists on their OWN line under
+    # the table — `  -- col  [a, b]` — not on the column line. The parser only read the
+    # inline form, so `domains` was always empty on real schemas and annotation-based
+    # binding (this module's purpose) was dead; every entity fell through to the DB
+    # probe and its "absent" produced false abstains (2026-08-15).
+    from aughor.semantic.answer_resolution import _parse_schema, resolve
+    schema = (
+        "TABLE: orders  (9,994 rows)\n"
+        "  order_id  VARCHAR  ~ e.g. 'CA-2017-152156'\n"
+        "  ship_mode  VARCHAR  ~ e.g. 'Second Class', 'Standard Class'\n"
+        "  state  VARCHAR  ~ e.g. 'Kentucky', 'California'\n"
+        "  sales  DOUBLE  ~ e.g. '261.96'\n"
+        "  -- ship_mode  [Standard Class, Second Class, First Class, Same Day]\n"
+        "  -- state  [California, Texas, Kentucky]\n"
+    )
+    tables, domains = _parse_schema(schema)
+    assert tables["orders"] == ["order_id", "ship_mode", "state", "sales"]
+    assert ("orders", "ship_mode", ["Standard Class", "Second Class", "First Class", "Same Day"]) in domains
+    assert ("orders", "state", ["California", "Texas", "Kentucky"]) in domains
+    # and the binding rides on it with no db at all
+    r = resolve("What is the total sales for orders shipped via First Class?", schema=schema)
+    assert not r.not_found
+    assert [(b.noun, b.column, b.value) for b in r.entity_bindings] == [("First Class", "ship_mode", "First Class")]
+
+
+def test_parse_schema_still_reads_the_inline_form():
+    from aughor.semantic.answer_resolution import _parse_schema
+    _t, domains = _parse_schema("TABLE: t\n  brand  VARCHAR  -- [Nike, Adidas]\n")
+    assert domains == [("t", "brand", ["Nike", "Adidas"])]

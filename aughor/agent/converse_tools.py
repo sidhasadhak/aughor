@@ -48,13 +48,23 @@ def _connection(connection_id: str):
     return open_connection_for(connection_id)
 
 
-def run_sql(connection_id: str, args: dict) -> dict:
+def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
+            user_question: str = "", canvas_id: Optional[str] = None) -> dict:
     """Execute one query through the guard battery and report what the guards did.
 
     Returns the rows AND the receipts together, because a number without the guard
     record is exactly the thing this product exists not to hand people. A caveat the
     executor detected but could not repair rides `caveats` — a query that ran without
     error can still be silently wrong, and the model must see that to say so.
+
+    When the tool runs inside a streamed turn (``emit`` bound), a successful query is
+    ALSO surfaced the way the core surfaces its own — ``sql`` / ``columns`` / ``rows``
+    frames and a Trust Receipt. Until 2026-08-14 only ``answer_question`` did that;
+    a turn the model chose to serve with the primitive rendered as prose alone,
+    with no SQL frame, no rows and ``has_receipt: false`` — the smarter route was
+    the one with no visible receipt, exactly the asymmetry `_stream_converse` says
+    it will not build. (Found by the Superstore accuracy suite: a CORRECT "3.96
+    days" answer scored wrong because the observation was empty.)
     """
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
     from aughor.sql.executor import execute_guarded
@@ -68,7 +78,7 @@ def run_sql(connection_id: str, args: dict) -> dict:
         result = execute_guarded(conn, sql, query_id="converse")
 
     rows = list(result.rows or [])
-    return {
+    out = {
         "columns": list(result.columns or []),
         # Truncated on purpose: the model reasons about a shape, and a 10k-row answer
         # spends the context window that the rest of the conversation needs.
@@ -78,6 +88,100 @@ def run_sql(connection_id: str, args: dict) -> dict:
         "error": result.error,
         "caveats": list(result.caveats or []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
+    }
+    if result.error:
+        out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
+    elif emit is not None:
+        _surface_primitive_answer(emit, connection_id, sql, result, out["guard_receipts"],
+                                  user_question=user_question, canvas_id=canvas_id)
+    return out
+
+
+def _surface_primitive_answer(emit: Emit, connection_id: str, sql: str, result: Any,
+                              guard_receipts: list, *, user_question: str = "",
+                              canvas_id: Optional[str] = None) -> None:
+    """The core's own frame shapes (`emit("sql"|"columns"|"rows"|"receipt_id"|"done")`),
+    re-issued for a primitive `run_sql` answer, plus its Trust Receipt. Best-effort:
+    a receipt failure never fails the query the model already has."""
+    emit("sql", {"sql": sql})
+    emit("columns", {"columns": list(result.columns or [])})
+    emit("rows", {"rows": list(result.rows or [])[:10000]})
+    try:
+        import uuid
+
+        from aughor.routers.investigations import write_answer_receipt
+        inv_id = uuid.uuid4().hex[:12]
+        guards = [("flagged" if r.get("action") not in ("passed", "ok", None) else "passed",
+                   f"guard:{r.get('guard', '?')}", str(r.get("detail") or ""))
+                  for r in guard_receipts if isinstance(r, dict) and r.get("guard")]
+        written = write_answer_receipt(
+            kind="chat_answer", natural_key=f"chat:{connection_id}:{inv_id}",
+            question=user_question or "", sqls=[sql], headline=user_question or sql,
+            schema="", connection_id=connection_id, canvas_id=canvas_id or "",
+            guard_edges=guards,
+            payload_extra={"row_count": int(result.row_count or 0), "body": "converse.run_sql"},
+        )
+        if written.get("receipt_id"):
+            emit("receipt_id", {"receipt_id": written["receipt_id"]})
+        # The wrapper harvests inv_id/has_receipt from an inner `done` (see
+        # `_stream_converse._forward`) — the same pair the answer_question route
+        # yields, so "Why this number" hangs off a real row either way.
+        emit("done", {"inv_id": inv_id, "has_receipt": True})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "converse run_sql: Trust Receipt is best-effort; the frames already streamed",
+                 counter="converse.run_sql.receipt")
+
+
+# The compiled answer path routes a failed query by error CLASS and names the fix
+# (tools/error_classifier.py); until 2026-08-14 the converse tool loop got the raw
+# driver string. Same classifier, one more consumer — plus what WrenAI's SDK
+# taught: the error names the NEXT TOOL, and says whether retrying is worth it.
+_NEXT_TOOL: dict = {
+    "parser":   ("run_sql", "Fix the syntax and call run_sql again."),
+    "binder":   ("describe_table",
+                 "Call describe_table on the table you meant (or list_tables if unsure) "
+                 "to get the exact column names, then call run_sql again — never invent a name."),
+    "semantic": ("run_sql", "Cast explicitly and call run_sql again."),
+    "runtime":  ("run_sql", "Guard the expression (NULLIF, bounds) and call run_sql again."),
+}
+
+
+def route_error(error: str, sql: str = "", dialect: str = "") -> dict:
+    """A repair instruction the model can act on, not a driver string to decode.
+
+    ``retryable`` is False when the model cannot fix it by rewriting SQL — a
+    guard BLOCK (the statement is disallowed, not wrong) or a warehouse fault
+    (connection / permission / timeout). Retrying those burns budget; the model
+    should tell the user instead. Everything else names the class, the specific
+    diagnosis when a pattern matches, and the next tool to call.
+    """
+    from aughor.tools.error_classifier import (
+        classify_error_type, classify_sql_error, error_class_guidance,
+    )
+    e = (error or "").lower()
+    if error.lstrip().startswith("[BLOCKED]"):
+        return {"retryable": False, "kind": "blocked",
+                "instruction": ("This statement is disallowed by the read-only guard, not "
+                                "mistyped — rewriting it will not help. Tell the user what "
+                                "was refused and why.")}
+    if any(k in e for k in ("connection", "could not connect", "permission denied",
+                            "authentication", "timeout", "timed out", "unavailable")):
+        return {"retryable": False, "kind": "warehouse",
+                "instruction": ("The warehouse could not run this (connection, permission "
+                                "or timeout), so a rewrite will not help. Report the "
+                                "failure to the user rather than retrying.")}
+    cls = classify_error_type(error, sql, dialect)
+    kind = str(cls.value)
+    next_tool, step = _NEXT_TOOL.get(kind, ("run_sql", "Re-examine the query and call run_sql again."))
+    diagnosis = ""
+    try:
+        diagnosis = classify_sql_error(error, sql, dialect) or ""
+    except Exception:
+        diagnosis = ""
+    return {
+        "retryable": True, "kind": kind, "next_tool": next_tool,
+        "instruction": " ".join(x for x in (error_class_guidance(cls), diagnosis, step) if x),
     }
 
 
@@ -141,6 +245,19 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
     }
     if result.error:
         out["error"] = result.error
+        # The pipeline already spent its own automatic repair on this question, so
+        # "ask answer_question again" is the one route that cannot help. Point the
+        # model at the primitives instead — the same class/next-tool routing run_sql
+        # uses, with the retry target rewritten.
+        repair = route_error(result.error, result.sql or "", "")
+        if repair.get("retryable"):
+            repair["instruction"] = (
+                "answer_question already tried an automatic repair and still failed, so do "
+                "not call it again with the same question. " + repair["instruction"]
+                + " Frame the query yourself against the real columns and call run_sql, "
+                "or ask the user a clarifying question if the request itself is ambiguous."
+            )
+        out["repair"] = repair
     return out
 
 
@@ -287,7 +404,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                 "it is."
             ),
             parameters=_SQL_PARAMS,
-            run=lambda a: run_sql(connection_id, a),
+            run=lambda a: run_sql(connection_id, a, emit=emit,
+                                  user_question=user_question, canvas_id=canvas_id),
         ),
         ToolSpec(
             name="list_tables",

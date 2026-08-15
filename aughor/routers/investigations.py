@@ -390,6 +390,12 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
     return {"learning": None, "activations": None, "receipt_id": None}
 
 
+#: Public name for the Trust-Receipt writer. The converse tool loop's `run_sql`
+#: (agent/converse_tools.py) writes a receipt for a primitive answer the same way the
+#: core writes one for its own — one writer, two callers, one receipt shape.
+write_answer_receipt = _write_answer_receipt
+
+
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
 # Matches CTE definitions: anything of the form `name AS (`  (only valid for CTEs in SQL)
 _CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
@@ -1024,10 +1030,21 @@ def _hl_to_float(v):
 
 
 def _headline_numbers(text):
+    return [n for n, _ in _headline_numbers_with_precision(text)]
+
+
+def _headline_numbers_with_precision(text):
+    """(value, decimals) per number in the prose — ``decimals`` is how many the headline
+    itself shows (None when a magnitude suffix like 1.2M scales it, where the shown
+    decimals no longer describe the value's precision)."""
     out = []
     for m in _HL_NUM_RE.finditer(text or ""):
         try:
-            out.append(float(m.group(1).replace(",", "")) * {"b": 1e9, "m": 1e6, "k": 1e3}.get((m.group(2) or "").lower(), 1.0))
+            raw = m.group(1).replace(",", "")
+            suffix = (m.group(2) or "").lower()
+            val = float(raw) * {"b": 1e9, "m": 1e6, "k": 1e3}.get(suffix, 1.0)
+            decimals = None if suffix else (len(raw.split(".")[1]) if "." in raw else 0)
+            out.append((val, decimals))
         except Exception:
             pass
     return out
@@ -1099,14 +1116,24 @@ def _ground_headline(headline, columns, rows):
     scalar_like = len(rows) == 1
     floor = 0.0 if scalar_like else 100.0
 
-    def _grounded(n):
+    def _grounded(n, decimals=None):
+        # A single-row result is one number the narrator RESTATES; the 2% band that
+        # forgives "$1.2M" for 1,187,432 also forgave "3.99 days" for 3.96 (Superstore
+        # 2026-08-14 — a wrong digit, not a rounding). For a scalar, hold the claim to
+        # what the cell rounds to at the precision the headline itself shows: 3.96 →
+        # "3.96" / "4.0" / "4" all ground; "3.99" does not. Scale variants (a fraction
+        # stated as a percent) keep the same rule.
+        if scalar_like and decimals is not None:
+            cands = pool + [p * 100 for p in pool] + [p / 100 for p in pool if p]
+            return any(round(p, decimals) == round(n, decimals) for p in cands)
         if _approx_in(n, pool):
             return True
         return scalar_like and (_approx_in(n, [p * 100 for p in pool])
                                 or _approx_in(n, [p / 100 for p in pool if p]))
 
-    unmatched = [n for n in _headline_numbers(headline)
-                 if abs(n) >= floor and not (2000 <= n <= 2099 and n == int(n)) and not _grounded(n)]
+    unmatched = [n for n, d in _headline_numbers_with_precision(headline)
+                 if abs(n) >= floor and not (2000 <= n <= 2099 and n == int(n))
+                 and not _grounded(n, d)]
     cat_idx = next((i for i in range(len(columns)) if not _col_is_numeric(rows, i)), None)
     leader_bad = False
     if cat_idx is not None and _LEADER_RE.search(headline) and cat_idx < len(rows[0]):
@@ -2292,6 +2319,26 @@ def _answer_core(
         from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
         from aughor.sql.writer import SqlWriter
         _lint_issues = _lint_sql(final_sql, dialect=db.dialect)
+        # Entity-count grain (2026-08-14): "how many orders" answered by COUNT(*) on a
+        # line-item table counts the wrong thing (Superstore: 806 vs 406). Deterministic,
+        # precision-first (aughor/sql/grain_intent.py); rides the SAME repair round as
+        # lint so it costs no extra call and its before/after lands on the receipt.
+        try:
+            from aughor.sql.grain_intent import count_star_over_finer_grain as _csfg
+            from aughor.sql.lint import LintIssue as _LintIssue
+            from aughor.tools.schema import parse_schema_tables as _pst_grain
+            _cols_in_scope = [c for cols in _pst_grain(_full_schema).values() for c in cols]
+            _grain_dx = _csfg(question, final_sql, _cols_in_scope)
+            if _grain_dx:
+                _lint_issues = list(_lint_issues) + [_LintIssue(
+                    severity="error", rule="count_star_entity_grain",
+                    message=_grain_dx, hint=_grain_dx)]
+                _receipt({"guard": "count_star_entity_grain", "action": "hinted",
+                          "detail": _grain_dx[:400]})
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "entity-count grain check is best-effort; the SQL runs as written",
+                     counter="chat.entity_grain")
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)

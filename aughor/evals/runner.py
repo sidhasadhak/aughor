@@ -506,6 +506,18 @@ def _run_case(run_id: str, case_row: dict, target: Target, *, iterations: int,
             error = obs.error or ""
             if checker is not None:
                 correct = checker(case, obs)
+            # Persist WHAT the target produced, not only whether it passed (2026-08-14).
+            # A temperature-0 grid is read per case — "this case flipped" is only evidence
+            # when you can see the SQL each cell wrote — and the store has no column for it.
+            # Riding the `scores` JSON as a passing, never-firing entry keeps every existing
+            # reader working (they filter on passed/skipped) and needs no migration on a
+            # store that has been corrupted twice by one.
+            scores.append(EvalScore(
+                evaluator="trace.observation", passed=True, value=1.0,
+                detail={"sql": (obs.sql or "")[:4000],
+                        "columns": list(obs.columns or [])[:64],
+                        "row_count": int(obs.row_count or 0),
+                        "narrative": (obs.narrative or "")[:600]}))
         except Exception as exc:
             # A target that blows up is a failed case, not a failed run — one bad
             # case must not cost you the other 52 results.

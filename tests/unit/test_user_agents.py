@@ -400,6 +400,50 @@ def test_results_match_semantics():
     assert not results_match([], [[1]])
 
 
+def test_results_match_tolerates_presentation_rounding_but_not_a_wrong_number():
+    # 2026-08-14 Superstore audit: the model wrote ROUND(SUM(profit), 2) and the
+    # 6-place comparator called the correct answer wrong. Cents-level rounding is
+    # presentation; a wrong aggregate is off by far more.
+    from aughor.custom_agents.quality import results_match
+    ref = [["Anna Andreadi", 108418.44890000018], ["Chuck Magee", 91522.78000000026]]
+    assert results_match(ref, [["Anna Andreadi", 108418.45], ["Chuck Magee", 91522.78]])
+    assert results_match(ref, [["Anna Andreadi", "108418.45"], ["Chuck Magee", "91522.78"]])
+    assert not results_match(ref, [["Anna Andreadi", 108418.46], ["Chuck Magee", 91522.78]])
+    assert not results_match(ref, [["Anna Andreadi", 108500.0], ["Chuck Magee", 91522.78]])
+
+
+def test_results_match_tolerates_a_dropped_measure_when_the_label_survives():
+    # "Which sub-category loses the most money?" → the model answered ['Tables'];
+    # the reference carried the amount too. Naming the right entity is not wrong.
+    from aughor.custom_agents.quality import results_match
+    ref = [["Tables", -17725.4811]]
+    assert results_match(ref, [["Tables"]])
+    # …but a bare number without its entity, a wrong entity, or an unrelated
+    # column must all still fail — this tolerance is narrow on purpose.
+    assert not results_match(ref, [[-17725.48]])
+    assert not results_match(ref, [["Chairs"]])
+    assert not results_match(ref, [["Tables", "Furniture"]])
+    # and never on a single-column reference (nothing to drop) or across row counts
+    assert not results_match([["Tables"]], [["Chairs"]])
+    assert not results_match([["Tables", 1], ["Chairs", 2]], [["Tables"]])
+
+
+def test_results_match_treats_period_spellings_as_equal():
+    # DATE_TRUNC('year') → 2015-01-01 00:00 vs EXTRACT(YEAR) → 2015: same period.
+    from datetime import date, datetime
+
+    from aughor.custom_agents.quality import results_match
+    ref = [[2015, 484247.4981], [2016, 470532.509]]
+    assert results_match(ref, [[datetime(2015, 1, 1), 484247.5], [datetime(2016, 1, 1), 470532.51]])
+    assert results_match(ref, [[date(2015, 1, 1), 484247.5], [date(2016, 1, 1), 470532.51]])
+    # month grain: 2017-06-01 ↔ '2017-06'; day grain: date ↔ ISO string
+    assert results_match([["2017-06", 10]], [[datetime(2017, 6, 1), 10]])
+    assert results_match([["2017-06-12", 1]], [[date(2017, 6, 12), 1]])
+    # but a real timestamp inside the day is not a day, and a wrong year is wrong
+    assert not results_match([[2015, 1]], [[datetime(2015, 1, 1, 9, 30), 1]])
+    assert not results_match([[2015, 1]], [[datetime(2016, 1, 1), 1]])
+
+
 def test_evaluate_agent_stamps_result(monkeypatch):
     import duckdb as _duckdb
     import types as _types
@@ -523,3 +567,32 @@ def test_golden_unparseable_reference_sql_fails_closed(client, monkeypatch):
     ok = client.post(f"/agents/custom/{agent_id}/goldens",
                      json={"question": "q?", "reference_sql": "SELECT 1"})
     assert ok.status_code == 201
+
+
+def test_results_match_reads_iso_strings_as_the_dates_they_are():
+    # Observation rows cross the SSE/JSON boundary as strings; the reference is
+    # fetched live as objects. A correct DATE_TRUNC('year') answer scored wrong on
+    # exactly this (grid 2026-08-15).
+    from aughor.custom_agents.quality import results_match
+    ref = [[2015, 484247.5], [2016, 470532.51]]
+    assert results_match(ref, [["2015-01-01T00:00:00", 484247.5], ["2016-01-01T00:00:00", 470532.51]])
+    assert results_match([["2017-06", 10]], [["2017-06-01", 10]])
+    # an id that merely starts with digits and dashes is not a date
+    assert not results_match([[2017, 1]], [["CA-2017-152156", 1]])
+
+
+def test_results_match_accepts_a_fraction_written_as_a_percent():
+    from aughor.custom_agents.quality import results_match
+    ref = [["West", 0.11731843575418995], ["Central", 0.033191489361702124]]
+    assert results_match(ref, [["West", 1611, 189, 11.73], ["Central", 1175, 39, 3.32]])
+    # …but not a hundredfold neighbour of an ordinary amount, and not the wrong rate
+    assert not results_match([["West", 5.0]], [["West", 500.0]])
+    assert not results_match(ref, [["West", 12.5], ["Central", 3.32]])
+
+
+def test_results_match_forgives_cents_rounding_of_a_fraction_too():
+    # ROUND(AVG(discount), 2) → 0.16 for 0.1646: presentation, same as for money.
+    from aughor.custom_agents.quality import results_match
+    ref = [["First Class", 0.16460988], ["Second Class", 0.13889460]]
+    assert results_match(ref, [["First Class", 0.16], ["Second Class", 0.14]])
+    assert not results_match(ref, [["First Class", 0.17], ["Second Class", 0.14]])

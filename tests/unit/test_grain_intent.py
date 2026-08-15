@@ -97,3 +97,66 @@ def test_per_entity_probe_comparison():
 def test_no_probe_no_per_entity_fire():
     q = "For each match, combine runs"
     assert check_result_grain(q, 134_703) is None
+
+
+# ── COUNT(*) over a finer grain than the entity the question counts ──────────
+# The Superstore miss (2026-08-14): "how many orders in Q4 2016?" → 806 line items,
+# not 406 orders. The schema declared the grain and carried order_id; nothing on the
+# live path read either. Precision is the contract: every legitimate COUNT(*) below
+# must stay silent.
+
+from aughor.sql.grain_intent import count_star_over_finer_grain  # noqa: E402
+
+_LINE_ITEM_COLS = ["row_id", "order_id", "order_date", "customer_id", "product_id", "sales"]
+
+
+def test_how_many_orders_with_count_star_on_line_items_fires():
+    d = count_star_over_finer_grain(
+        "How many orders were placed in Q4 2016?",
+        "SELECT COUNT(*) AS count FROM orders WHERE order_date >= '2016-10-01' AND order_date <= '2016-12-31'",
+        _LINE_ITEM_COLS)
+    assert d and "COUNT(DISTINCT order_id)" in d
+
+
+def test_number_of_customers_fires_too():
+    d = count_star_over_finer_grain(
+        "What is the number of customers in the West region?",
+        "SELECT COUNT(*) FROM orders WHERE region = 'West'", _LINE_ITEM_COLS)
+    assert d and "COUNT(DISTINCT customer_id)" in d
+
+
+def test_count_distinct_already_is_silent():
+    assert count_star_over_finer_grain(
+        "How many orders were placed in Q4 2016?",
+        "SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= '2016-10-01'",
+        _LINE_ITEM_COLS) is None
+
+
+def test_row_words_are_silent():
+    # "how many rows / records / line items" — COUNT(*) is exactly right.
+    for q in ("How many rows are in orders?", "How many records were loaded?",
+              "How many line items were sold?", "How many transactions happened in May?"):
+        assert count_star_over_finer_grain(q, "SELECT COUNT(*) FROM orders", _LINE_ITEM_COLS) is None, q
+
+
+def test_no_entity_key_in_scope_is_silent():
+    # A table with no <entity>_id column gives no evidence of a finer grain.
+    assert count_star_over_finer_grain(
+        "How many orders were placed?", "SELECT COUNT(*) FROM orders",
+        ["id", "placed_at", "total"]) is None
+
+
+def test_joins_and_group_by_belong_to_fanout_detectors():
+    assert count_star_over_finer_grain(
+        "How many orders per region?",
+        "SELECT region, COUNT(*) FROM orders GROUP BY region", _LINE_ITEM_COLS) is None
+    assert count_star_over_finer_grain(
+        "How many orders were returned?",
+        "SELECT COUNT(*) FROM orders o JOIN returns r ON o.order_id = r.order_id",
+        _LINE_ITEM_COLS) is None
+
+
+def test_questions_that_do_not_count_are_silent():
+    for q in ("What were total sales per year?", "Which region generates the most sales?",
+              "Show sales by customer segment."):
+        assert count_star_over_finer_grain(q, "SELECT COUNT(*) FROM orders", _LINE_ITEM_COLS) is None, q

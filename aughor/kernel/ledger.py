@@ -274,6 +274,30 @@ class Ledger:
         # everything riding it, KeyedJsonStore included — onto shared Postgres.
         from aughor.db.backend import connect_store
         self._conn = connect_store(self.path, check_same_thread=False)
+        # Startup integrity probe — the guard the 2026-08-14 corruption post-mortem
+        # named and nobody built: every writer on this store is tolerate()-wrapped,
+        # so a damaged file failed SILENTLY for a day (swallowed receipts, obs
+        # spans, saved-query revisions) and was found by a bare script tripping over
+        # `database disk image is malformed`. It happened AGAIN on 2026-08-15 (a third
+        # SIGBUS "FS pagein error: 22" the evening before; the API and an eval grid
+        # then wrote onto an inconsistent WAL for hours). Loud, once, before anything
+        # writes; never fatal — a damaged ledger must still let the app boot so the
+        # operator can see the message. SQLite-only: Postgres has no quick_check.
+        self.integrity_error: Optional[str] = None
+        try:
+            if isinstance(self._conn, sqlite3.Connection):
+                verdict = self._conn.execute("PRAGMA quick_check").fetchone()
+                if verdict and str(verdict[0]).lower() != "ok":
+                    self.integrity_error = str(verdict[0])
+        except sqlite3.DatabaseError as exc:
+            self.integrity_error = f"{type(exc).__name__}: {exc}"
+        if self.integrity_error:
+            logger.critical(
+                "LEDGER INTEGRITY FAILURE on %s: %s — stop every process holding this "
+                "file (uvicorn, grids, scripts), then recover with `sqlite3 .recover` "
+                "into a NEW file and swap atomically (see the 2026-08-14 recipe). "
+                "Writes on this store are best-effort and WILL be silently lost until then.",
+                self.path, self.integrity_error)
         with self._lock:
             with self._conn:
                 self._conn.executescript(_SCHEMA)
