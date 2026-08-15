@@ -266,3 +266,116 @@ def test_the_multilens_path_runs_the_scan_too(monkeypatch):
         "the parallel path must run the association scan itself"
     assert "_assoc_finding" in src and "merged = [_first]" in src, \
         "and must merge the verdict into the leading phase"
+
+
+# ── choosing the pair when the question and the schema disagree on words ──────
+
+_AIR = ["tickets.booking_class", "flights.aircraft_type", "tickets.cabin",
+        "flights.haul", "routes.market"]
+
+
+def test_a_synonym_is_bridged_by_intakes_own_ranking():
+    """The live failure. "fare class" and `booking_class` are the same concept in
+    different words, and no string matching bridges that — the scan matched only
+    `aircraft_type` and never ran. Intake had already understood, listing
+    `booking_class` FIRST, so its ranking supplies the partner."""
+    from aughor.agent.investigate import _association_dimension_pair
+
+    pair = _association_dimension_pair("How do fare class and aircraft type relate?", _AIR)
+    assert set(pair) == {"flights.aircraft_type", "tickets.booking_class"}
+
+
+def test_an_exact_double_match_still_wins_over_the_ranking():
+    from aughor.agent.investigate import _association_dimension_pair
+
+    pair = _association_dimension_pair("How do Ship Mode and Sub-categories relate?", _DIMS)
+    assert pair == ["orders.ship_mode", "orders.sub_category"]
+
+
+@pytest.mark.parametrize("q", ["How do things relate?",
+                               "Is there a relationship between price and demand?"])
+def test_naming_nothing_invents_no_pair(q):
+    """The fallback is ANCHORED. With no dimension named there is nothing to anchor to,
+    and crossing two dimensions nobody mentioned would answer a question nobody asked —
+    the failure mode this whole feature exists to remove."""
+    from aughor.agent.investigate import _association_dimension_pair
+
+    assert _association_dimension_pair(q, _AIR) == []
+
+
+# ── the join, read from the database rather than guessed ─────────────────────
+
+class _ColsConn:
+    dialect = "duckdb"
+
+    def __init__(self, tables):
+        self._t = tables            # {table: [column, ...]}
+
+    def raw_execute(self, sql):
+        import re
+        m = re.search(r'DESCRIBE "?([\w.]+)"?', sql)
+        name = (m.group(1) if m else "").strip('"')
+        return (["column_name", "column_type", "null"],
+                [[c, "VARCHAR", "YES"] for c in self._t.get(name, [])], None)
+
+
+def test_same_table_dimensions_need_no_join():
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"orders": ["ship_mode", "sub_category", "sales"]})
+    got = _association_from_clause(conn, ["orders.ship_mode", "orders.sub_category"], "orders")
+    assert got == "orders"
+
+
+def test_a_cross_table_pair_joins_on_the_shared_key():
+    """A relationship question does not respect table boundaries; a single-table FROM
+    simply fails to bind (`Binder Error: Referenced column "aircraft_type" not found`)."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "booking_class"],
+                      "flights": ["flight_id", "aircraft_type", "haul"]})
+    got = _association_from_clause(conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets")
+    assert got == 'tickets JOIN flights ON tickets."flight_id" = flights."flight_id"'
+
+
+def test_an_ambiguous_join_is_refused_not_guessed():
+    """Two id-shaped shared columns: a wrong join yields a confident, wrong contingency
+    table. A silent no-answer is much the better failure — the weakness scan still runs."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "customer_id", "booking_class"],
+                      "flights": ["flight_id", "customer_id", "aircraft_type"]})
+    assert _association_from_clause(
+        conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets") is None
+
+
+def test_a_shared_plain_name_is_not_treated_as_a_key():
+    """`status` on both sides is a coincidence, not a foreign key."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "status", "booking_class"],
+                      "flights": ["status", "aircraft_type"]})
+    assert _association_from_clause(
+        conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets") is None
+
+
+# ── stats reach the deep path at all ─────────────────────────────────────────
+
+def test_attach_stats_annotates_a_result_and_never_raises():
+    """`_execute_safe` returned results with `stats` empty, so on the deep path the
+    analysers ran nowhere and `format_result_for_llm` had nothing to render — a cross-tab
+    could sit in the evidence with p=0.41 computable and the narrator never told."""
+    from aughor.control_plane.contracts.execution import QueryResult
+    from aughor.tools.executor import attach_stats
+
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    r = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=cols, rows=rows,
+                    row_count=len(rows))
+    assert r.stats == []
+    out = attach_stats(r)
+    assert any(s.type == "association" for s in out.stats)
+
+    # enrichment, never a failure mode
+    err = QueryResult(hypothesis_id="t", sql="x", columns=[], rows=[], row_count=0,
+                      error="boom")
+    assert attach_stats(err).stats == []

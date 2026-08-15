@@ -305,6 +305,85 @@ def _dimensions_named_in_question(question: str, dimensions: list) -> list:
     return [d for _p, d, _w in sorted(specific)]
 
 
+def _association_dimension_pair(question: str, dimensions: list) -> list:
+    """The two dimensions to cross — the ones the question named, completed from intake's
+    own ranking when the question named only one.
+
+    Word overlap alone is too literal to be the whole answer. Asked *"How do fare class
+    and aircraft type relate?"* against columns `tickets.booking_class` and
+    `flights.aircraft_type`, it matched only the second: the user's "fare class" and the
+    schema's "booking_class" are the same concept under different words, and no amount of
+    string matching bridges that. Intake had already understood — it listed
+    `booking_class` FIRST, ahead of `aircraft_type` — so the ranking it produced is a
+    better second opinion than another regex.
+
+    The fallback is ANCHORED, never a free guess: it fires only when the question named
+    exactly one dimension, and it borrows only the partner. If the question named none,
+    this returns nothing and no scan runs — crossing two dimensions nobody mentioned
+    would answer a question nobody asked, which is the failure mode this whole feature
+    exists to remove.
+    """
+    named = _dimensions_named_in_question(question, dimensions)
+    if len(named) >= 2:
+        return named[:2]
+    if len(named) == 1:
+        partner = next((d for d in (dimensions or []) if d not in named), None)
+        if partner:
+            return [named[0], partner]
+    return []
+
+
+def _association_from_clause(conn, named: list, metric_table: str) -> Optional[str]:
+    """The FROM clause for the joint query — the metric table, joined to whichever other
+    table a dimension lives in.
+
+    A relationship question does not respect table boundaries: *"How do fare class and
+    aircraft type relate?"* crosses `tickets.booking_class` with `flights.aircraft_type`,
+    and a single-table `FROM tickets` simply fails to bind. The first cut assumed both
+    dimensions shared the metric table, which is true for a wide fact table like
+    Superstore and false for any normalised schema.
+
+    The join key is the column the two tables SHARE, read from the live database rather
+    than guessed from names alone. Ambiguity is refused, not resolved: more than one
+    shared key, or none, returns None and no scan runs. A wrong join produces a
+    confident, wrong contingency table, and a silent no-answer is much the better
+    failure — the weakness scan still runs either way.
+    """
+    tables, order = {}, []
+    for dim in named:
+        parts = str(dim).split(".")
+        t = ".".join(parts[:-1]) or metric_table
+        if t not in tables:
+            tables[t] = []
+            order.append(t)
+        tables[t].append(parts[-1])
+    foreign = [t for t in order if t != metric_table]
+    if not foreign:
+        return metric_table
+    if len(foreign) > 1:
+        return None                      # three-table crosses are not attempted
+    other = foreign[0]
+
+    from aughor.tools.data_catalog import table_columns
+    base_cols = {c[0].lower(): c[0] for c in table_columns(conn, metric_table)}
+    other_cols = {c[0].lower(): c[0] for c in table_columns(conn, other)}
+    if not base_cols or not other_cols:
+        return None
+    shared = sorted(set(base_cols) & set(other_cols))
+    # An id-shaped shared column is the join; a shared plain name (`status`, `name`) is a
+    # coincidence, not a key, so it is not accepted as one.
+    keys = [k for k in shared if k.endswith("_id") or k == "id"]
+    if len(keys) != 1:
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "[deep] association scan: %s x %s share %d id-like key(s) %s — refusing to guess a join",
+            metric_table, other, len(keys), keys)
+        return None
+    key = keys[0]
+    return (f'{metric_table} JOIN {other} '
+            f'ON {metric_table}."{base_cols[key]}" = {other}."{other_cols[key]}"')
+
+
 def _run_association_scan(conn, question: str, dimensions: list, metric_table: str,
                           metric_sql: str, metric_label: str, phase_id: str):
     """Cross the two dimensions the question named, and return the executed QueryResult.
@@ -320,15 +399,18 @@ def _run_association_scan(conn, question: str, dimensions: list, metric_table: s
     metric rides along second so the reader sees the money too, but the VERDICT is
     computed on counts, which is the only thing it is valid on.
     """
-    named = _dimensions_named_in_question(question, dimensions)
+    named = _association_dimension_pair(question, dimensions)
     if len(named) < 2 or not metric_table:
         return None
     a, b = named[0].split(".")[-1], named[1].split(".")[-1]
     if a == b:
         return None
     measure = metric_sql if metric_sql and "(" in metric_sql else "COUNT(*)"
+    from_clause = _association_from_clause(conn, named, metric_table)
+    if from_clause is None:
+        return None
     sql = (f'SELECT "{a}", "{b}", COUNT(*) AS n_records, {measure} AS {_safe_alias(metric_label)}\n'
-           f'FROM {metric_table}\nGROUP BY 1, 2\nORDER BY 1, 2')
+           f'FROM {from_clause}\nGROUP BY 1, 2\nORDER BY 1, 2')
     try:
         result = _execute_safe(conn, phase_id, sql)
     except Exception as exc:
@@ -764,14 +846,20 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     from aughor.agent.prompts import FIX_SQL_PROMPT
     from aughor.sql.executor import execute_guarded
 
-    return execute_guarded(
+    # Statistics are attached HERE, so every deep-path result carries them — the explore
+    # path has always done this (its own `_attach_stats`) and this path never did, which
+    # meant the analysers ran nowhere on a deep investigation and
+    # `format_result_for_llm` had nothing to render. A cross-tab could sit in the
+    # evidence with its verdict computable and the narrator would never be told.
+    from aughor.tools.executor import attach_stats
+    return attach_stats(execute_guarded(
         conn,
         sql,
         query_id=phase_id,
         schema=schema,
         fix_prompt_template=FIX_SQL_PROMPT,
         provider_factory=_provider,
-    )
+    ))
 
 
 def _parallel_execute_safe(
@@ -5277,7 +5365,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # independent" — reach the report at all.
     _assoc_finding = None
     if dims_override is None and _question_asks_association(question):
-        _named = _dimensions_named_in_question(question, dimensions)
+        _named = _association_dimension_pair(question, dimensions)
         _assoc_result = _run_association_scan(conn, question, dimensions, metric_table,
                                               metric_sql, metric_label, _phase_id)
         if _assoc_result is not None and len(_named) >= 2:
@@ -6971,8 +7059,8 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # and nothing would say so. Run it once, here, single-threaded, before the fan-out.
     _assoc_finding = None
     if _question_asks_association(state.get("question", "")):
-        _named = _dimensions_named_in_question(state.get("question", ""),
-                                               intake_data.get("dimensions", []))
+        _named = _association_dimension_pair(state.get("question", ""),
+                                            intake_data.get("dimensions", []))
         _res = _run_association_scan(conn, state.get("question", ""),
                                      intake_data.get("dimensions", []),
                                      intake_data.get("metric_table", ""),
