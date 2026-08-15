@@ -334,16 +334,16 @@ def _run_association_scan(conn, question: str, dimensions: list, metric_table: s
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "association scan is best-effort; the weakness scan still runs",
-                 counter="ada.association_scan")
+                 counter="deep_analysis.association_scan")
         return None
     import logging as _logging
     if result is None or getattr(result, "error", None):
         _logging.getLogger(__name__).info(
-            "[ada] association scan %s x %s did not execute: %s", a, b,
+            "[deep] association scan %s x %s did not execute: %s", a, b,
             getattr(result, "error", "no result"))
         return None
     _logging.getLogger(__name__).info(
-        "[ada] association scan %s x %s -> %d cells", a, b, result.row_count)
+        "[deep] association scan %s x %s -> %d cells", a, b, result.row_count)
     return result
 
 
