@@ -195,3 +195,59 @@ def test_the_four_parallelism_flags_are_gone_and_stay_gone():
         assert name not in fl.RENAMED, name          # dead aliases go with their targets
     assert fl.COST_LATENCY_PROFILE == frozenset()    # declared and EMPTY, like AUTO_ELIGIBLE
     assert "AUGHOR_ADA_PARALLEL_LENSES" not in fl.RETIRED_ENV
+
+
+# ── a window recorded under another vendor's namespace ───────────────────────
+
+class TestBareNameLookup:
+    """The same model is served under two ids. OpenRouter calls it
+    `google/gemini-3.1-flash-lite`; Google's own API calls it `gemini-3.1-flash-lite`.
+
+    Only OpenRouter and Ollama declare a context window, so a Gemini/Groq/Together/
+    Anthropic binding had none — and fell to the 32,768 default while the true window
+    (1,048,576) sat in the very same map under the longer key. This lookup widens WHICH
+    id can find a recorded number; every number still comes from a provider's catalogue.
+    """
+
+    def test_the_vendor_prefix_is_not_part_of_the_identity(self, monkeypatch):
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config",
+                            lambda: {"model_context": {"google/gemini-3.1-flash-lite": 1_048_576}})
+        assert pr.declared_context("gemini-3.1-flash-lite") == 1_048_576
+        assert pr.tier_for("gemini-3.1-flash-lite")["schema_char_limit"] == 60_000
+
+    def test_an_alias_marker_is_stripped_too(self, monkeypatch):
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config",
+                            lambda: {"model_context": {"~anthropic/claude-sonnet-latest": 1_000_000}})
+        assert pr.declared_context("claude-sonnet-latest") == 1_000_000
+
+    def test_an_exact_match_still_wins(self, monkeypatch):
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+            "gemini-x": 64_000, "google/gemini-x": 1_048_576}})
+        assert pr.declared_context("gemini-x") == 64_000
+
+    def test_ambiguity_resolves_to_the_SMALLEST_window(self, monkeypatch):
+        """An over-estimate silences the overflow guard; an under-estimate only costs
+        headroom. So when two namespaces disagree, the conservative number wins."""
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+            "vendor-a/model-q": 1_000_000, "vendor-b/model-q": 128_000}})
+        assert pr.declared_context("model-q") == 128_000
+
+    def test_transport_suffixes_stay_part_of_the_name(self, monkeypatch):
+        """`:free` / `:batch` twins genuinely differ — OpenRouter reports 1,000,000 for
+        one Nemotron variant and 262,144 for its `:free` sibling — so they must not
+        collapse into each other."""
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+            "nvidia/nemotron-3-super": 1_000_000, "nvidia/nemotron-3-super:free": 262_144}})
+        assert pr.declared_context("nemotron-3-super") == 1_000_000
+        assert pr.declared_context("nemotron-3-super:free") == 262_144
+
+    def test_an_unknown_model_still_gets_nothing(self, monkeypatch):
+        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("aughor.llm.provider.read_config",
+                            lambda: {"model_context": {"google/gemini-x": 1_048_576}})
+        assert pr.declared_context("something-else-entirely") is None

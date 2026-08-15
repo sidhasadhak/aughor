@@ -250,6 +250,18 @@ def _raw_rows(conn: "DatabaseConnection", sql: str) -> tuple[list[str], list]:
     return list(getattr(result, "columns", []) or []), list(result.rows)
 
 
+def table_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, str, bool]]:
+    """``[(name, type, nullable), ...]`` for one table, exact DB case preserved.
+
+    The public face of :func:`_fetch_columns`. Declared because a second plane needs it:
+    the deep path resolves a join key by asking what two tables actually share
+    (`agent/investigate._association_from_clause`), and reaching for the private name
+    tripped the private-cross-import ratchet — which is the ratchet doing its job. An
+    internal that two planes need is an interface nobody had declared yet.
+    """
+    return _fetch_columns(conn, table)
+
+
 def _fetch_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, str, bool]]:
     """Return [(col_name, col_type, nullable), ...] preserving exact DB case."""
     ref = _quote_ref(table)

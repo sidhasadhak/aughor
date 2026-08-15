@@ -50,6 +50,43 @@ def validate_sql(sql: str) -> tuple[bool, str]:
 from aughor.util.format import round_cell  # noqa: E402  (after the module's own constants)
 
 
+def attach_stats(result: QueryResult) -> QueryResult:
+    """Run the statistical analysers over a successful result and attach their findings.
+
+    Lives HERE, next to :func:`format_result_for_llm`, because that function is the one
+    that renders ``result.stats`` into the LLM's evidence — attaching and rendering are
+    two halves of one contract, and keeping them apart is what let the halves disagree.
+
+    They did. `agent/explore.py` and `agent/nodes.py` each grew their own private copy of
+    this, and `agent/investigate.py` — the deep path — never got one at all. So a
+    statistical verdict computed on a deep-path result was simply never computed: the
+    analysers ran nowhere, `stats` stayed empty, and `format_result_for_llm` had nothing
+    to render. A cross-tab could be sitting in the evidence with `p=0.41` available and
+    the narrator would never see it. (Found live: a joint fare-class × aircraft-type
+    query whose five sibling findings all carried `stat_note: (none)`.)
+
+    Never raises: statistics are enrichment, so a failure here must cost the annotation
+    and not the result.
+    """
+    if result.error or not result.rows or not result.columns:
+        return result
+    try:
+        from dataclasses import asdict
+
+        from aughor.tools.stats import analyze_query_result
+        stats = analyze_query_result(result.columns, result.rows, result.sql)
+        if not stats:
+            return result
+        # analyze_query_result returns tools.stats.StatResult (a dataclass); the field is
+        # the pydantic contract StatResult — bridge via asdict so pydantic validates.
+        return QueryResult(**{**result.model_dump(), "stats": [asdict(s) for s in stats]})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "statistical annotation is enrichment; the result stands without it",
+                 counter="stats.attach")
+        return result
+
+
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
     """Render a QueryResult as a compact text table for LLM context."""
     if result.error:

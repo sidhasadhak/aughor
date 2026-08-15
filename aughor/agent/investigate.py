@@ -305,6 +305,85 @@ def _dimensions_named_in_question(question: str, dimensions: list) -> list:
     return [d for _p, d, _w in sorted(specific)]
 
 
+def _association_dimension_pair(question: str, dimensions: list) -> list:
+    """The two dimensions to cross — the ones the question named, completed from intake's
+    own ranking when the question named only one.
+
+    Word overlap alone is too literal to be the whole answer. Asked *"How do fare class
+    and aircraft type relate?"* against columns `tickets.booking_class` and
+    `flights.aircraft_type`, it matched only the second: the user's "fare class" and the
+    schema's "booking_class" are the same concept under different words, and no amount of
+    string matching bridges that. Intake had already understood — it listed
+    `booking_class` FIRST, ahead of `aircraft_type` — so the ranking it produced is a
+    better second opinion than another regex.
+
+    The fallback is ANCHORED, never a free guess: it fires only when the question named
+    exactly one dimension, and it borrows only the partner. If the question named none,
+    this returns nothing and no scan runs — crossing two dimensions nobody mentioned
+    would answer a question nobody asked, which is the failure mode this whole feature
+    exists to remove.
+    """
+    named = _dimensions_named_in_question(question, dimensions)
+    if len(named) >= 2:
+        return named[:2]
+    if len(named) == 1:
+        partner = next((d for d in (dimensions or []) if d not in named), None)
+        if partner:
+            return [named[0], partner]
+    return []
+
+
+def _association_from_clause(conn, named: list, metric_table: str) -> Optional[str]:
+    """The FROM clause for the joint query — the metric table, joined to whichever other
+    table a dimension lives in.
+
+    A relationship question does not respect table boundaries: *"How do fare class and
+    aircraft type relate?"* crosses `tickets.booking_class` with `flights.aircraft_type`,
+    and a single-table `FROM tickets` simply fails to bind. The first cut assumed both
+    dimensions shared the metric table, which is true for a wide fact table like
+    Superstore and false for any normalised schema.
+
+    The join key is the column the two tables SHARE, read from the live database rather
+    than guessed from names alone. Ambiguity is refused, not resolved: more than one
+    shared key, or none, returns None and no scan runs. A wrong join produces a
+    confident, wrong contingency table, and a silent no-answer is much the better
+    failure — the weakness scan still runs either way.
+    """
+    tables, order = {}, []
+    for dim in named:
+        parts = str(dim).split(".")
+        t = ".".join(parts[:-1]) or metric_table
+        if t not in tables:
+            tables[t] = []
+            order.append(t)
+        tables[t].append(parts[-1])
+    foreign = [t for t in order if t != metric_table]
+    if not foreign:
+        return metric_table
+    if len(foreign) > 1:
+        return None                      # three-table crosses are not attempted
+    other = foreign[0]
+
+    from aughor.tools.data_catalog import table_columns
+    base_cols = {c[0].lower(): c[0] for c in table_columns(conn, metric_table)}
+    other_cols = {c[0].lower(): c[0] for c in table_columns(conn, other)}
+    if not base_cols or not other_cols:
+        return None
+    shared = sorted(set(base_cols) & set(other_cols))
+    # An id-shaped shared column is the join; a shared plain name (`status`, `name`) is a
+    # coincidence, not a key, so it is not accepted as one.
+    keys = [k for k in shared if k.endswith("_id") or k == "id"]
+    if len(keys) != 1:
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "[deep] association scan: %s x %s share %d id-like key(s) %s — refusing to guess a join",
+            metric_table, other, len(keys), keys)
+        return None
+    key = keys[0]
+    return (f'{metric_table} JOIN {other} '
+            f'ON {metric_table}."{base_cols[key]}" = {other}."{other_cols[key]}"')
+
+
 def _run_association_scan(conn, question: str, dimensions: list, metric_table: str,
                           metric_sql: str, metric_label: str, phase_id: str):
     """Cross the two dimensions the question named, and return the executed QueryResult.
@@ -320,30 +399,33 @@ def _run_association_scan(conn, question: str, dimensions: list, metric_table: s
     metric rides along second so the reader sees the money too, but the VERDICT is
     computed on counts, which is the only thing it is valid on.
     """
-    named = _dimensions_named_in_question(question, dimensions)
+    named = _association_dimension_pair(question, dimensions)
     if len(named) < 2 or not metric_table:
         return None
     a, b = named[0].split(".")[-1], named[1].split(".")[-1]
     if a == b:
         return None
     measure = metric_sql if metric_sql and "(" in metric_sql else "COUNT(*)"
+    from_clause = _association_from_clause(conn, named, metric_table)
+    if from_clause is None:
+        return None
     sql = (f'SELECT "{a}", "{b}", COUNT(*) AS n_records, {measure} AS {_safe_alias(metric_label)}\n'
-           f'FROM {metric_table}\nGROUP BY 1, 2\nORDER BY 1, 2')
+           f'FROM {from_clause}\nGROUP BY 1, 2\nORDER BY 1, 2')
     try:
         result = _execute_safe(conn, phase_id, sql)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "association scan is best-effort; the weakness scan still runs",
-                 counter="ada.association_scan")
+                 counter="deep_analysis.association_scan")
         return None
     import logging as _logging
     if result is None or getattr(result, "error", None):
         _logging.getLogger(__name__).info(
-            "[ada] association scan %s x %s did not execute: %s", a, b,
+            "[deep] association scan %s x %s did not execute: %s", a, b,
             getattr(result, "error", "no result"))
         return None
     _logging.getLogger(__name__).info(
-        "[ada] association scan %s x %s -> %d cells", a, b, result.row_count)
+        "[deep] association scan %s x %s -> %d cells", a, b, result.row_count)
     return result
 
 
@@ -365,13 +447,26 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
     stats_list = list(getattr(result, "stats", None) or [])
     assoc = next((s for s in stats_list if getattr(s, "type", "") == "association"), None)
     if assoc is None:
+        # `_execute_safe` does not attach stats — unlike the explore path, which calls
+        # `_attach_stats` explicitly. Assuming it did is what made this whole feature
+        # inert on its first live run: the scan executed, the verdict was computable,
+        # and the finding was dropped because nobody had run the analyser. Compute it
+        # here rather than depend on an upstream step that does not exist.
+        assoc = next((s for s in analyze_query_result(result.columns, result.rows, result.sql)
+                      if s.type == "association"), None)
+    if assoc is None:
         return None
     return InvestigationFinding(
         finding_id="association",
         title=f"{dim_a} × {dim_b}: are they related?",
         sql=result.sql,
+        # A contingency grid is not a top-N list, and the usual 50-row display cut
+        # decapitates it: the 8x21 fare-class table kept 50 rows, which is FOUR of the
+        # eight aircraft types, so the heatmap drew half the answer and looked complete.
+        # The grid IS the finding here, so it is carried whole (bounded well above any
+        # cross-tab a reader can take in, and the renderer caps the drawn axes anyway).
         columns=list(result.columns),
-        rows=result.rows[:50],
+        rows=result.rows[:_ASSOCIATION_GRID_MAX],
         row_count=result.row_count,
         error=result.error,
         interpretation=assoc.interpretation,
@@ -387,6 +482,38 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
 #: call it a finding; on a null result that is exactly wrong, and it is what produced
 #: "Gross sales are heavily concentrated in Standard Class" as the answer to "how do
 #: Ship Mode and Sub-categories relate?".
+#: Cells of a contingency grid carried into the finding. Generous on purpose — the grid is
+#: the answer to a relationship question, not a preview of one — and the heatmap renderer
+#: caps the drawn axes independently (20 rows x 24 columns), so this bounds payload size
+#: rather than legibility.
+_ASSOCIATION_GRID_MAX = 600
+
+
+def _association_directive(finding: dict) -> str:
+    """The instruction the phase summary carries for the narrator — an INSTRUCTION, never
+    a copy of the verdict.
+
+    The first version prepended the verdict text verbatim on the RELATED branch, and the
+    finding already carried it, so the report printed the same paragraph twice under
+    "Cross-Sectional Scan" — once as the scan's summary and once as the finding's. A
+    directive tells the narrator what to do with the evidence; the evidence itself is the
+    finding's job.
+    """
+    interp = finding.get("interpretation") or ""
+    if "INDEPENDENT" in interp:
+        return ASSOCIATION_NULL_DIRECTIVE
+    return (
+        "⚖️ TESTED AND RELATED — the two dimensions the question asked about were crossed "
+        "and formally tested: they ARE dependent, and the leading finding carries the "
+        "effect size and the specific over-represented cells. You MUST: (1) lead with "
+        "that — the relationship IS the answer; (2) quote the effect size and the named "
+        "cells from that finding rather than restating its sentence; (3) NOT substitute a "
+        "ranking or a share-of-total for the relationship — a marginal total is true "
+        "whatever the relationship is; (4) NOT claim a direction of causation from a "
+        "contingency test.\n\n"
+    )
+
+
 ASSOCIATION_NULL_DIRECTIVE = (
     "⚖️ TESTED AND INDEPENDENT — the two dimensions the question asked about were crossed "
     "and formally tested: they are NOT related. This is the ANSWER, not a missing result. "
@@ -756,14 +883,20 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     from aughor.agent.prompts import FIX_SQL_PROMPT
     from aughor.sql.executor import execute_guarded
 
-    return execute_guarded(
+    # Statistics are attached HERE, so every deep-path result carries them — the explore
+    # path has always done this (its own `_attach_stats`) and this path never did, which
+    # meant the analysers ran nowhere on a deep investigation and
+    # `format_result_for_llm` had nothing to render. A cross-tab could sit in the
+    # evidence with its verdict computable and the narrator would never be told.
+    from aughor.tools.executor import attach_stats
+    return attach_stats(execute_guarded(
         conn,
         sql,
         query_id=phase_id,
         schema=schema,
         fix_prompt_template=FIX_SQL_PROMPT,
         provider_factory=_provider,
-    )
+    ))
 
 
 def _parallel_execute_safe(
@@ -5269,7 +5402,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # independent" — reach the report at all.
     _assoc_finding = None
     if dims_override is None and _question_asks_association(question):
-        _named = _dimensions_named_in_question(question, dimensions)
+        _named = _association_dimension_pair(question, dimensions)
         _assoc_result = _run_association_scan(conn, question, dimensions, metric_table,
                                               metric_sql, metric_label, _phase_id)
         if _assoc_result is not None and len(_named) >= 2:
@@ -5699,10 +5832,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # narrator) meets the concentration story first and stops there.
     if _assoc_finding is not None:
         findings = [_assoc_finding] + list(findings)
-        if "INDEPENDENT" in (_assoc_finding.get("interpretation") or ""):
-            summary = ASSOCIATION_NULL_DIRECTIVE + (summary or "")
-        else:
-            summary = f"{_assoc_finding['interpretation']}\n\n{summary or ''}"
+        summary = _association_directive(_assoc_finding) + (summary or "")
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -6955,6 +7085,26 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
         return ada_cross_section(state, conn, extra_dims=_aug_dims,
                                  extra_schema=_aug_schema, extra_directive=_aug_dir, grain=grain)
 
+    # The association scan belongs to the WHOLE question, not to any one lens, and every
+    # lens below is invoked with `dims_override` set — which is exactly the guard the scan
+    # uses to avoid running once per lens. Without this call it would therefore never run
+    # on the parallel path at all: a relationship question would go back to being answered
+    # by marginal rankings on any deployment whose transport allows concurrent lenses,
+    # and nothing would say so. Run it once, here, single-threaded, before the fan-out.
+    _assoc_finding = None
+    if _question_asks_association(state.get("question", "")):
+        _named = _association_dimension_pair(state.get("question", ""),
+                                            intake_data.get("dimensions", []))
+        _res = _run_association_scan(conn, state.get("question", ""),
+                                     intake_data.get("dimensions", []),
+                                     intake_data.get("metric_table", ""),
+                                     intake_data.get("metric_sql", ""),
+                                     intake_data.get("metric_label", "the metric"),
+                                     "cross_section")
+        if _res is not None and len(_named) >= 2:
+            _assoc_finding = _association_finding(
+                _res, _named[0].split(".")[-1], _named[1].split(".")[-1])
+
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
     # Population (rate) lens groups only — used for the period-scoped forward-chain drill.
@@ -7118,6 +7268,17 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     _lens_logger.info("[ada] multilens ran %d lens(es)%s%s → %d phase(s)",
                       len(specs), (" + period drill" if anomalous else ""),
                       (" + " + "+".join(_extras) if _extras else ""), len(merged) - base_n)
+    # The association verdict leads: it answers the question the lenses below only
+    # decorate, and a reader who meets a concentration ranking first stops there.
+    if _assoc_finding is not None and merged:
+        _first = dict(merged[0])
+        _first["findings"] = [_assoc_finding] + list(_first.get("findings") or [])
+        _directive = _association_directive(_assoc_finding)
+        _first["summary"] = _directive + (_first.get("summary") or "")
+        if primary_summary is not None:
+            primary_summary = _directive + primary_summary
+        merged = [_first] + list(merged[1:])
+
     out = {"investigation_phases": merged}
     if primary_summary is not None:
         out["_cross_section_summary"] = primary_summary

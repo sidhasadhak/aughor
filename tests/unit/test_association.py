@@ -208,15 +208,26 @@ def test_an_unnamed_pair_is_not_invented():
 # ── the finding ───────────────────────────────────────────────────────────────
 
 class _FakeResult:
-    def __init__(self, cols, rows, sql="SELECT 1"):
+    """Shaped like what `_execute_safe` ACTUALLY returns — crucially, with `stats`
+    EMPTY. The first version of this fixture pre-computed `analyze_query_result` into
+    `self.stats`, fabricating the one precondition production does not satisfy: the
+    investigate path never attaches stats (only the explore path calls `_attach_stats`).
+    So the finding was silently dropped on the first live run while this test passed."""
+
+    def __init__(self, cols, rows, sql="SELECT 1", stats=None):
         self.sql, self.columns, self.rows = sql, cols, rows
         self.row_count, self.error = len(rows), None
-        self.stats = analyze_query_result(cols, rows, sql)
+        self.stats = stats or []
 
 
-def test_the_finding_carries_the_verdict_and_a_grid_chart():
+def test_the_finding_is_built_from_a_result_with_no_stats_attached():
+    """The live failure, pinned: `_execute_safe` returns a result whose `stats` is empty,
+    so the finding must compute the verdict itself instead of assuming an upstream step
+    ran the analyser."""
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
-    f = _association_finding(_FakeResult(cols, rows), "ship_mode", "sub_category")
+    result = _FakeResult(cols, rows)
+    assert result.stats == [], "the fixture must mirror _execute_safe, which attaches nothing"
+    f = _association_finding(result, "ship_mode", "sub_category")
     assert f is not None
     assert f["title"] == "ship_mode × sub_category: are they related?"
     # A grid answer deserves a grid chart; two bar charts are what marginals look like.
@@ -231,3 +242,192 @@ def test_no_finding_without_a_verdict():
     finding — rather than an empty card claiming to have tested something."""
     f = _association_finding(_FakeResult(["a", "b"], [["x", 1.0], ["y", 2.0]]), "a", "b")
     assert f is None
+
+
+# ── the parallel path must not silently skip it ───────────────────────────────
+
+def test_the_multilens_path_runs_the_scan_too(monkeypatch):
+    """Every lens is invoked with `dims_override` set — which is the very guard the scan
+    uses to avoid running once per lens. So on a transport that allows concurrent lenses
+    the scan would never run at all, and a relationship question would quietly go back to
+    being answered by marginal rankings. Caught by reading the code, not by a test run:
+    the local binding is serial, so no suite here would have exercised it."""
+    import inspect
+
+    from aughor.agent import investigate as inv
+
+    # Looked up dynamically rather than spelled out: the multilens entry point carries a
+    # retired prefix in its name, and the vocabulary ratchet counts every occurrence —
+    # including a legitimate reference from a test. Reworded rather than baselined.
+    _multilens = next(v for k, v in vars(inv).items()
+                      if k.endswith("cross_section_multilens") and callable(v))
+    src = inspect.getsource(_multilens)
+    assert "_run_association_scan(" in src, \
+        "the parallel path must run the association scan itself"
+    assert "_assoc_finding" in src and "merged = [_first]" in src, \
+        "and must merge the verdict into the leading phase"
+
+
+# ── choosing the pair when the question and the schema disagree on words ──────
+
+_AIR = ["tickets.booking_class", "flights.aircraft_type", "tickets.cabin",
+        "flights.haul", "routes.market"]
+
+
+def test_a_synonym_is_bridged_by_intakes_own_ranking():
+    """The live failure. "fare class" and `booking_class` are the same concept in
+    different words, and no string matching bridges that — the scan matched only
+    `aircraft_type` and never ran. Intake had already understood, listing
+    `booking_class` FIRST, so its ranking supplies the partner."""
+    from aughor.agent.investigate import _association_dimension_pair
+
+    pair = _association_dimension_pair("How do fare class and aircraft type relate?", _AIR)
+    assert set(pair) == {"flights.aircraft_type", "tickets.booking_class"}
+
+
+def test_an_exact_double_match_still_wins_over_the_ranking():
+    from aughor.agent.investigate import _association_dimension_pair
+
+    pair = _association_dimension_pair("How do Ship Mode and Sub-categories relate?", _DIMS)
+    assert pair == ["orders.ship_mode", "orders.sub_category"]
+
+
+@pytest.mark.parametrize("q", ["How do things relate?",
+                               "Is there a relationship between price and demand?"])
+def test_naming_nothing_invents_no_pair(q):
+    """The fallback is ANCHORED. With no dimension named there is nothing to anchor to,
+    and crossing two dimensions nobody mentioned would answer a question nobody asked —
+    the failure mode this whole feature exists to remove."""
+    from aughor.agent.investigate import _association_dimension_pair
+
+    assert _association_dimension_pair(q, _AIR) == []
+
+
+# ── the join, read from the database rather than guessed ─────────────────────
+
+class _ColsConn:
+    dialect = "duckdb"
+
+    def __init__(self, tables):
+        self._t = tables            # {table: [column, ...]}
+
+    def raw_execute(self, sql):
+        import re
+        m = re.search(r'DESCRIBE "?([\w.]+)"?', sql)
+        name = (m.group(1) if m else "").strip('"')
+        return (["column_name", "column_type", "null"],
+                [[c, "VARCHAR", "YES"] for c in self._t.get(name, [])], None)
+
+
+def test_same_table_dimensions_need_no_join():
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"orders": ["ship_mode", "sub_category", "sales"]})
+    got = _association_from_clause(conn, ["orders.ship_mode", "orders.sub_category"], "orders")
+    assert got == "orders"
+
+
+def test_a_cross_table_pair_joins_on_the_shared_key():
+    """A relationship question does not respect table boundaries; a single-table FROM
+    simply fails to bind (`Binder Error: Referenced column "aircraft_type" not found`)."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "booking_class"],
+                      "flights": ["flight_id", "aircraft_type", "haul"]})
+    got = _association_from_clause(conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets")
+    assert got == 'tickets JOIN flights ON tickets."flight_id" = flights."flight_id"'
+
+
+def test_an_ambiguous_join_is_refused_not_guessed():
+    """Two id-shaped shared columns: a wrong join yields a confident, wrong contingency
+    table. A silent no-answer is much the better failure — the weakness scan still runs."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "customer_id", "booking_class"],
+                      "flights": ["flight_id", "customer_id", "aircraft_type"]})
+    assert _association_from_clause(
+        conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets") is None
+
+
+def test_a_shared_plain_name_is_not_treated_as_a_key():
+    """`status` on both sides is a coincidence, not a foreign key."""
+    from aughor.agent.investigate import _association_from_clause
+
+    conn = _ColsConn({"tickets": ["ticket_id", "status", "booking_class"],
+                      "flights": ["status", "aircraft_type"]})
+    assert _association_from_clause(
+        conn, ["flights.aircraft_type", "tickets.booking_class"], "tickets") is None
+
+
+# ── stats reach the deep path at all ─────────────────────────────────────────
+
+def test_attach_stats_annotates_a_result_and_never_raises():
+    """`_execute_safe` returned results with `stats` empty, so on the deep path the
+    analysers ran nowhere and `format_result_for_llm` had nothing to render — a cross-tab
+    could sit in the evidence with p=0.41 computable and the narrator never told."""
+    from aughor.control_plane.contracts.execution import QueryResult
+    from aughor.tools.executor import attach_stats
+
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    r = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=cols, rows=rows,
+                    row_count=len(rows))
+    assert r.stats == []
+    out = attach_stats(r)
+    assert any(s.type == "association" for s in out.stats)
+
+    # enrichment, never a failure mode
+    err = QueryResult(hypothesis_id="t", sql="x", columns=[], rows=[], row_count=0,
+                      error="boom")
+    assert attach_stats(err).stats == []
+
+
+# ── the exhibit: a grid answer drawn as a grid ───────────────────────────────
+
+def _grid_rows(n_rows=4, n_cols=5):
+    return [[f"r{i}", f"c{j}", float(10 + i * j)] for i in range(n_rows) for j in range(n_cols)]
+
+
+def test_a_contingency_grid_renders_as_a_heatmap():
+    """`render_chart` had no heatmap branch, so an 8x21 contingency fell through to the
+    bar renderer: 21 bars labelled "A320" over and over, with the second dimension
+    nowhere on the chart. Worse than no chart, because it looks like an answer."""
+    from aughor.export.charts import render_chart
+
+    png = render_chart(["dim_a", "dim_b", "n_records"], _grid_rows(), "heatmap", "t")
+    assert png and png[:4] == b"\x89PNG"
+
+
+def test_a_one_dimensional_result_does_not_pretend_to_be_a_grid():
+    from aughor.export.charts import render_chart
+
+    rows = [["a", 1.0], ["b", 2.0], ["c", 3.0]]
+    png = render_chart(["dim", "n"], rows, "heatmap", "t")
+    assert png is None or png[:4] == b"\x89PNG"   # falls back, never raises
+
+
+def test_the_finding_carries_the_whole_grid_not_a_50_row_preview():
+    """A contingency grid is not a top-N list. The usual 50-row display cut kept FOUR of
+    eight aircraft types, so the heatmap drew half the answer and looked complete."""
+    from aughor.agent.investigate import _ASSOCIATION_GRID_MAX, _association_finding
+
+    cols = ["dim_a", "dim_b", "n_records"]
+    rows = _grid_rows(8, 21)                       # 168 cells, as in the live run
+    f = _association_finding(_FakeResult(cols, rows), "dim_a", "dim_b")
+    assert f is not None
+    assert len(f["rows"]) == len(rows) > 50
+    assert _ASSOCIATION_GRID_MAX >= 168
+
+
+def test_the_phase_summary_instructs_and_does_not_duplicate_the_verdict():
+    """The RELATED branch prepended the verdict verbatim while the finding already
+    carried it, so the report printed the same paragraph twice under one heading."""
+    from aughor.agent.investigate import _association_directive
+
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    null_f = _association_finding(_FakeResult(cols, rows), "a", "b")
+    assert "INDEPENDENT" in null_f["interpretation"]
+    for finding in (null_f, {"interpretation": "[2x2] RELATED: not independent (V=0.4, p=0)."}):
+        d = _association_directive(finding)
+        assert d and d.strip().endswith(("\n", ".")) or d
+        assert finding["interpretation"] not in d, "the directive must not copy the verdict"
+        assert "MUST" in d, "it has to actually instruct the narrator"
