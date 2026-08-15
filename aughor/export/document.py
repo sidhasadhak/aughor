@@ -182,10 +182,15 @@ def _build_explore(inv: dict, money_symbol: str = "") -> ExportDoc:
     rep = inv.get("report") or {}
     headline = rep.get("headline") or inv.get("question") or "Exploration"
     answers = rep.get("subq_answers") or []
+    # Count what was actually explored, and agree with the body: the section loop below
+    # skips errored steps, so counting them here reported "5 questions explored" for a
+    # run that showed one. (And "1 questions explored" was the grammar of a report the
+    # reader was already losing trust in.)
+    _explored = [a for a in answers if not a.get("error")]
     meta = [m for m in (
         inv.get("connection_id") or "",
         _date(inv.get("completed_at") or inv.get("started_at")),
-        f"{len(answers)} questions explored" if answers else "",
+        f"{len(_explored)} question{'' if len(_explored) == 1 else 's'} explored" if _explored else "",
     ) if m]
     _exhibits = _exhibit_argument
     _money_sym = money_symbol

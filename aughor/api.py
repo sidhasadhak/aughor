@@ -74,6 +74,7 @@ from fastapi.security import APIKeyHeader
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import list_connections, get_connection_settings
+from aughor.llm.provider import NoModelConfigured
 
 # Shared mutable state — imported here so startup events can populate the dicts
 
@@ -275,6 +276,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── "no model configured" is the operator's error, not an internal one ─────────
+# Since 2026-08-15 nothing ships a default model, so an unconfigured deployment raises
+# NoModelConfigured at the moment a call needs one. The catch-all below deliberately
+# hides exception text, which is right for internal faults and exactly wrong here: it
+# would turn the one error the operator can actually fix into "internal_error", and an
+# app that does nothing and will not say why is the failure mode removing the defaults
+# was meant to end. 400, with the message, which names the role and where to set it.
+# It carries no secrets — a role, a backend name, and a settings path.
+@app.exception_handler(NoModelConfigured)
+async def _no_model_configured_handler(request: "Request", exc: NoModelConfigured):
+    from fastapi.responses import JSONResponse
+    logger.warning("No model configured for role %r on %r (%s %s)",
+                   exc.role, exc.backend, request.method, request.url.path)
+    return JSONResponse(status_code=400, content={
+        "error": "no_model_configured", "role": exc.role,
+        "backend": exc.backend, "detail": str(exc),
+    })
 
 
 # ── Global exception handler (SEC-06) ───────────────────────────────────────────

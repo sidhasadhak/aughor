@@ -33,13 +33,14 @@ def clean_cfg(tmp_path, monkeypatch):
 def test_defaults_when_empty(clean_cfg):
     c = P.current_config()
     assert c["backend"] == "ollama"
-    # All three roles share one ollama default since 2026-08-04. The previous pair —
+    # NO model, for any role. This assertion used to name the shipped ollama default,
+    # and it is exactly how a dead id survived: the pair before it —
     # `qwen3-coder-next:cloud` (RETIRED 2026-07-15) and `kimi-k2.6:cloud` (subscription
-    # required) — were BOTH dead, and this assertion is what pinned the first as correct
-    # for three weeks. A default is only worth asserting if someone checked it serves.
-    assert c["models"]["coder"] == "gemma4:31b-cloud"
-    assert c["models"]["fast"] == "gemma4:31b-cloud"
-    assert c["models"]["narrator"] == "gemma4:31b-cloud"
+    # required) — were BOTH dead, and this test pinned the first as correct for three
+    # weeks. Nothing ships a default now, so there is nothing here to go stale.
+    assert c["models"]["coder"] == ""
+    assert c["models"]["fast"] == ""
+    assert c["models"]["narrator"] == ""
     assert set(c["backends"]) >= {"ollama", "groq", "anthropic"}
     assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False,
                              "gemini": False, "openrouter": False}
@@ -51,8 +52,11 @@ def test_config_surfaces_per_role_capability_profile(clean_cfg):
     c = P.current_config()
     caps = c["capabilities"]
     assert set(caps) == {"coder", "narrator", "fast"}
-    coder = caps["coder"]
-    # the shipped default (gemma4:31b-cloud) egresses to Ollama Cloud — flagged honestly
+    # Bind something `:cloud` so the classifier has a model to read; nothing ships one
+    # any more, and an unbound role has no capabilities to describe.
+    P.set_config({"models": {"coder": "some-model:cloud"}})
+    coder = P.current_config()["capabilities"]["coder"]
+    # a `:cloud` binding egresses to a hosted API — flagged honestly
     assert coder["privacy_class"] == "public_api"
     assert coder["cache_mode"] == "auto_prefix_unverified"
     assert coder["cost"] == "unknown"
@@ -67,11 +71,13 @@ def test_local_ollama_model_is_marked_on_device(clean_cfg):
     assert c["capabilities"]["coder"]["cost"] == "flat"
 
 
-def test_backend_switch_uses_that_backends_default_model(clean_cfg):
+def test_backend_switch_does_not_inherit_the_previous_backends_model(clean_cfg):
     c = P.set_config({"backend": "groq"})
     assert c["backend"] == "groq"
-    # NOT an ollama/env model — groq's own default
-    assert c["models"]["coder"] == "llama-3.3-70b-versatile"
+    # The CI-5a precedence trap: an ollama/env model name must NOT leak into a
+    # deliberately-chosen backend. It used to resolve to groq's own built-in default;
+    # with none shipped it resolves to nothing, and the operator picks one.
+    assert c["models"]["coder"] == ""
 
 
 def test_model_override_roundtrip(clean_cfg):
@@ -79,9 +85,9 @@ def test_model_override_roundtrip(clean_cfg):
     c = P.set_config({"models": {"coder": "my-special-model"}})
     assert c["models"]["coder"] == "my-special-model"
     assert c["models_set"]["coder"] == "my-special-model"
-    # clearing reverts to the backend default
+    # clearing leaves the role unbound — there is no backend default to revert to
     c = P.set_config({"models": {"coder": ""}})
-    assert c["models"]["coder"] == "llama-3.3-70b-versatile"
+    assert c["models"]["coder"] == ""
     assert "coder" not in c["models_set"]
 
 
@@ -107,9 +113,14 @@ def test_invalid_backend_raises(clean_cfg):
 
 
 def test_get_provider_rebuilds_on_config_change(clean_cfg):
+    # Both bindings need an explicit model: constructing a provider for an unbound role
+    # raises NoModelConfigured, which is the point of this change and not what this
+    # test is about.
+    P.set_config({"models": {"coder": "local/one"}})
     p1 = P.get_provider("coder")
     assert p1.backend == "ollama"
-    P.set_config({"backend": "groq", "keys": {"groq": "k"}})
+    P.set_config({"backend": "groq", "keys": {"groq": "k"},
+                  "models": {"coder": "hosted/two"}})
     p2 = P.get_provider("coder")
     assert p2.backend == "groq"
     assert p2 is not p1                                       # cache was invalidated

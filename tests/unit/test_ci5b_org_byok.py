@@ -71,14 +71,18 @@ def test_the_org_overlay_wins_and_the_neighbour_is_untouched():
 def test_an_org_backend_disables_the_env_model_overrides(monkeypatch):
     """The CI-5a precedence trap, one layer up: AUGHOR_*_MODEL names were tuned for
     the ENV backend — applying them to an org's openrouter binding would 404 every
-    call. The org backend's own defaults serve instead."""
+    call. The env layer stays skipped; with no built-in defaults left underneath it,
+    the org simply has no model until it sets one (and gets NoModelConfigured), which
+    is a better outcome than a call dispatched to the wrong vendor's id."""
     monkeypatch.setenv("AUGHOR_CODER_MODEL", "llama3:8b")
     oc.save_org_config("acme", {"backend": "openrouter"})
 
     with using_org("acme"):
-        model = prov._active_model("openrouter", "coder")
-    assert model == prov._DEFAULT_MODELS["openrouter"]["coder"]
-    assert model != "llama3:8b"
+        assert prov._active_model("openrouter", "coder") == ""
+
+    oc.save_org_config("acme", {"backend": "openrouter", "models": {"coder": "org/choice:free"}})
+    with using_org("acme"):
+        assert prov._active_model("openrouter", "coder") == "org/choice:free"
 
 
 def test_an_org_save_never_bumps_the_global_config_version():
@@ -87,7 +91,7 @@ def test_an_org_save_never_bumps_the_global_config_version():
     cancels a running exploration. The org path must never reach it."""
     before = prov._config_version
 
-    oc.save_org_config("acme", {"backend": "openrouter",
+    oc.save_org_config("acme", {"backend": "openrouter", "models": {"coder": "acme/model:free"},
                                 "keys": {"openrouter": "sk-1"}})
     oc.clear_org_config("acme")
 
@@ -97,9 +101,10 @@ def test_an_org_save_never_bumps_the_global_config_version():
 def test_one_orgs_save_leaves_the_other_orgs_cached_provider_alone():
     """Cache-level tenant isolation: after org A saves, the default org's provider
     is the SAME OBJECT — nothing about A's change evicted it."""
+    prov.set_config({"models": {"coder": "default/model"}})
     default_provider = prov.get_provider("coder")
 
-    oc.save_org_config("acme", {"backend": "openrouter",
+    oc.save_org_config("acme", {"backend": "openrouter", "models": {"coder": "acme/model:free"},
                                 "keys": {"openrouter": "sk-or-acme"}})
     with using_org("acme"):
         acme_provider = prov.get_provider("coder")
@@ -112,7 +117,7 @@ def test_one_orgs_save_leaves_the_other_orgs_cached_provider_alone():
 def test_an_org_save_moves_only_its_own_fingerprint():
     """The surgical invalidation: the fingerprint is the cache-key component, so a
     save rebuilds exactly one tenant's providers on their next call."""
-    oc.save_org_config("acme", {"backend": "openrouter",
+    oc.save_org_config("acme", {"backend": "openrouter", "models": {"coder": "acme/model:free"},
                                 "keys": {"openrouter": "sk-1"}})
     with using_org("acme"):
         first = prov.get_provider("coder")

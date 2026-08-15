@@ -47,7 +47,7 @@ faithful as the real classes to every consumer in this codebase, and immune to
 instructor moving its exception module again.
 
 Registration: the ``faux`` backend is wired in ``LLMProvider.__init__`` and
-``_DEFAULT_MODELS`` but deliberately NOT in ``BACKENDS`` — that tuple is the
+``_FAUX_MODELS`` but deliberately NOT in ``BACKENDS`` — that tuple is the
 operator-facing registry (Settings → Inference dropdown, the CLI ``--backend``
 choices via its literal mirror, fallback-chain eligibility), and a scripted backend
 must not be selectable there. Select it with ``AUGHOR_BACKEND=faux`` (the fixture
@@ -67,7 +67,7 @@ from typing import Any, Iterable, Optional
 
 from pydantic import BaseModel, ValidationError
 
-#: A model id whose tier is declared CAPABLE (see profile._FAMILY_TIERS) — pin it in
+#: A model id whose tier is declared CAPABLE (see profile._FAUX_CAPABLE_ID) — pin it in
 #: a test (``get_provider(role, model=CAPABLE_MODEL)`` or the runtime config) to
 #: exercise the capable-tier budgets deterministically.
 CAPABLE_MODEL = "faux-capable"

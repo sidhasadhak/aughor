@@ -1,22 +1,29 @@
 """The model catalogue — what goes in the model picker.
 
-Three sources, merged, in this order of authority:
+Two sources, merged, in this order of authority:
 
 1. **live** — the backend's own model list, fetched when reachable. OpenRouter
    publishes a public ``/models`` endpoint; the OpenAI-compatible backends serve
    the same path with a key; Ollama and LM Studio serve theirs locally. This is
    the list that is actually correct, because it comes from the thing that will
    serve the request.
-2. **known** — a small curated fallback per backend, so the picker is never
-   empty offline or before a key is set.
-3. **custom** — models the user typed and chose to keep. Persisted in
+2. **custom** — models the user typed and chose to keep. Persisted in
    ``data/llm_config.json`` beside the rest of the inference config, so they
    survive restarts and travel with the deployment.
 
-A model NOT in any of these still works: the field stays a free-text input with
-suggestions, never a closed dropdown. A catalogue that can go stale must not be
-able to block a valid model — new ids appear constantly, and the failure mode of
-guessing wrong is "you cannot use the model you are paying for".
+**No model id is hardcoded here** (operator decision, 2026-08-15). There used to be
+a third source — ``KNOWN_MODELS``, a curated per-backend floor so the picker was
+never empty offline — and it is gone: 28 ids across 7 backends that this repo had
+to keep true about somebody else's catalogue. It could not be kept true. Its own
+comments are the receipt: ``qwen3-coder-next:cloud`` retired mid-life,
+``kimi-k2.6:cloud`` silently became subscription-only, two OpenRouter ids never
+existed at all. A list that ships stale is worse than no list, because the picker
+presents it with the same authority as the live one.
+
+So the catalogue is now exactly what the provider says it serves, plus what the
+operator typed. When the live fetch fails the picker is EMPTY and says why — an
+honest empty beats a confident wrong. The field remains free text, so a model the
+fetch missed is still reachable by typing it.
 """
 from __future__ import annotations
 
@@ -27,57 +34,6 @@ import time
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-#: Curated fallbacks. Deliberately short — this is the offline floor, not an
-#: attempt to mirror a catalogue that changes weekly.
-KNOWN_MODELS: dict[str, tuple[str, ...]] = {
-    # Ordered by what a fresh install can actually USE. `qwen3-coder-next:cloud` was
-    # dropped 2026-08-04: Ollama retired it on 2026-07-15 and it now errors on every
-    # call. `kimi-k2.6:cloud` and `qwen3.5:397b-cloud` are kept but demoted — both
-    # answer "this model requires a subscription", so they are real ids that most
-    # installs cannot run.
-    "ollama": ("gemma4:31b-cloud", "gpt-oss:120b-cloud", "glm-5.2:cloud",
-               "kimi-k2.6:cloud", "qwen3.5:397b-cloud"),
-    "lmstudio": ("local-model",),
-    "groq": ("llama-3.3-70b-versatile", "llama-3.1-8b-instant",
-             "mixtral-8x7b-32768"),
-    "together": ("Qwen/Qwen2.5-Coder-32B-Instruct",
-                 "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-                 "deepseek-ai/DeepSeek-V3"),
-    "anthropic": ("claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6",
-                  "claude-haiku-4-5-20251001"),
-    "gemini": ("gemini-flash-latest", "gemini-pro-latest",
-               "gemini-3.1-flash-lite"),
-    # OpenRouter — the free text models, ids verified against the live /models
-    # endpoint (guessing them cost two broken defaults on the first pass).
-    # Ordered strongest-first on OpenRouter's own Coding score; the trailing
-    # entries are unscored there, so their placement is not a ranking.
-    #
-    # Deliberately EXCLUDED: google/lyria-3-*-preview. They appear in
-    # OpenRouter's Text tab and the API reports them free, but Lyria is a
-    # music-generation model — offering it where a SQL writer is chosen is a trap.
-    #
-    # This floor stays all-`:free` on purpose (test_openrouter_floor_is_all_free_tier):
-    # a paid id here would start costing money the moment someone picked it. A checked
-    # paid id — `deepseek/deepseek-v4-flash` — lives in the vouched matrix instead, and
-    # reaches the picker only via `add_custom_model`, which is the operator's own act.
-    "openrouter": (
-        "nvidia/nemotron-3-ultra-550b-a55b:free",             # 1M ctx · coding 49.3 · the ceiling
-        "google/gemma-4-31b-it:free",                         # coding 43.4 @ 1089ms · best balance
-        "google/gemma-4-26b-a4b-it:free",                     # coding 39.3 but 5110ms
-        "nvidia/nemotron-3-super-120b-a12b:free",             # coding 37.7 · 66 t/s
-        "cohere/north-mini-code:free",                        # coding 36.5 · code-tuned
-        "openai/gpt-oss-20b:free",                            # coding 20.7 · slow (3702ms)
-        "nvidia/nemotron-3-nano-30b-a3b:free",                # 91 t/s · the throughput pick
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # 410ms · the latency pick
-        "poolside/laguna-m.1:free",
-        "poolside/laguna-s-2.1:free",
-        "poolside/laguna-xs-2.1:free",
-        "nvidia/nemotron-nano-9b-v2:free",
-        "nvidia/nemotron-nano-12b-v2-vl:free",                # vision-language
-        "nvidia/nemotron-3.5-content-safety:free",            # a safety classifier, not a general LLM
-    ),
-}
 
 _CACHE_TTL_S = 300.0
 _cache: dict[str, tuple[float, list[dict]]] = {}
@@ -126,9 +82,9 @@ def add_custom_model(backend: str, model: str) -> list[str]:
 
 
 def remove_custom_model(backend: str, model: str) -> list[str]:
-    """Drop a custom entry. Built-in and live entries are not removable — they
-    are not ours to delete, and hiding a model the backend actually serves would
-    make the picker disagree with reality."""
+    """Drop a custom entry. Live entries are not removable — they are not ours to
+    delete, and hiding a model the backend actually serves would make the picker
+    disagree with reality."""
     from aughor.llm.provider import BACKENDS
 
     if backend not in BACKENDS:
@@ -161,6 +117,11 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
         # picking a model without knowing its context window is guesswork.
         if m.get("context_length"):
             entry["context"] = m["context_length"]
+        # Native tool calling, as the provider declares it. This is what decides
+        # instructor's TOOLS-vs-JSON mode, and it used to be a keyword list.
+        params = m.get("supported_parameters")
+        if isinstance(params, list):
+            entry["tools"] = "tools" in params
         name = m.get("name")
         if name and name != mid:
             entry["label"] = str(name)
@@ -175,18 +136,73 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
     return out
 
 
-def _ollama_models(base_url: str, *, timeout: float) -> list[dict]:
-    """Ollama's native tag list. Its OpenAI-compat base ends in /v1, which the
-    tags endpoint does not live under."""
-    import httpx
-
+def _ollama_root(base_url: str) -> str:
+    """Ollama's native API root. Its OpenAI-compat base ends in /v1, which the
+    native endpoints (/api/tags, /api/show) do not live under."""
     root = base_url.rstrip("/")
     if root.endswith("/v1"):
         root = root[:-3]
-    r = httpx.get(root.rstrip("/") + "/api/tags", timeout=timeout)
+    return root.rstrip("/")
+
+
+#: How many models one catalogue load will interrogate with /api/show. Each is its own
+#: HTTP call, so an operator with a large local library must not turn opening Settings
+#: into a hundred round-trips. The cap is generous against a real Ollama library and the
+#: results are persisted, so a bound model gets its facts on the first load and keeps them.
+_OLLAMA_DETAIL_CAP = 30
+
+
+def ollama_model_facts(base_url: str, model: str, *, timeout: float = 6.0) -> dict:
+    """``{"context": int, "tools": bool}`` for one Ollama model, from ``/api/show``.
+
+    Ollama publishes both facts this codebase used to guess at from the model NAME:
+    ``capabilities`` (does it do native tool calling) and
+    ``model_info["<arch>.context_length"]``. Asking is strictly better than matching a
+    substring — it is right about a model nobody here has heard of, and it was wrong
+    about one we had: `deepseek-v4-flash:cloud` declares tools + a 1M window, matched no
+    keyword, and was therefore driven in JSON mode, which returns empty content for a
+    thinking model. Empty dict on any failure — the caller keeps its conservative default.
+    """
+    import httpx
+
+    try:
+        r = httpx.post(_ollama_root(base_url) + "/api/show", json={"model": model},
+                       timeout=timeout)
+        r.raise_for_status()
+        doc = r.json() or {}
+    except Exception:
+        return {}
+    out: dict = {}
+    caps = doc.get("capabilities")
+    if isinstance(caps, list):
+        out["tools"] = "tools" in caps
+    # The context key is architecture-prefixed (`deepseek4.context_length`,
+    # `gemma4.context_length`), so match on the suffix rather than naming architectures —
+    # naming them would be the same mistake one layer down.
+    for key, value in (doc.get("model_info") or {}).items():
+        if str(key).endswith(".context_length") and isinstance(value, int) and value > 0:
+            out["context"] = value
+            break
+    return out
+
+
+def _ollama_models(base_url: str, *, timeout: float) -> list[dict]:
+    """Ollama's tag list, enriched with each model's declared facts.
+
+    ``/api/tags`` alone gives only names. The per-model ``/api/show`` calls are what
+    supply the context window and tool support, which is why they are worth the
+    round-trips (bounded by ``_OLLAMA_DETAIL_CAP``, and cached like any catalogue).
+    """
+    import httpx
+
+    root = _ollama_root(base_url)
+    r = httpx.get(root + "/api/tags", timeout=timeout)
     r.raise_for_status()
-    return [{"id": m["name"], "source": "live"}
-            for m in (r.json().get("models") or []) if m.get("name")]
+    out = [{"id": m["name"], "source": "live"}
+           for m in (r.json().get("models") or []) if m.get("name")]
+    for entry in out[:_OLLAMA_DETAIL_CAP]:
+        entry.update(ollama_model_facts(base_url, entry["id"], timeout=timeout))
+    return out
 
 
 def _anthropic_models(key: str, *, timeout: float) -> list[dict]:
@@ -227,6 +243,48 @@ def fetch_live_models(backend: str, *, timeout: float = 6.0) -> tuple[list[dict]
         return [], f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
+def _record_model_facts(entries: list[dict]) -> None:
+    """Persist what the provider declared about each model — the context window (read
+    back by :func:`aughor.llm.profile.declared_context`) and native tool support (read
+    back by :func:`aughor.llm.provider.model_supports_tools`).
+
+    This is what replaced three hand-maintained tables: the capability tiers, the
+    context-window map and the tools-mode keyword list. Every one of them matched on the
+    model NAME, which is a guess about someone else's product, and each was wrong in a
+    way nobody could see — the tools list did not recognise a thinking model that
+    declares `tools`, so it was driven in JSON mode and returned empty content on every
+    structured call.
+
+    Only ever adds or updates, and only from a successful fetch — a provider that omits a
+    field leaves the previous value alone rather than erasing it. Best effort: this file
+    is shared with the encrypted keys, so a write failure must degrade a default (to the
+    conservative one) and never the config.
+    """
+    sizes = {str(m["id"]): int(m["context"]) for m in entries
+             if m.get("id") and isinstance(m.get("context"), int) and m["context"] > 0}
+    tools = {str(m["id"]): bool(m["tools"]) for m in entries
+             if m.get("id") and isinstance(m.get("tools"), bool)}
+    if not sizes and not tools:
+        return
+    try:
+        from aughor.llm.provider import read_config, write_config
+        cfg = dict(read_config())
+        ctx_known = dict(cfg.get("model_context") or {})
+        tools_known = dict(cfg.get("model_tools") or {})
+        if (all(ctx_known.get(k) == v for k, v in sizes.items())
+                and all(tools_known.get(k) == v for k, v in tools.items())):
+            return                      # nothing new — do not touch the keys file
+        ctx_known.update(sizes)
+        tools_known.update(tools)
+        cfg["model_context"] = ctx_known
+        cfg["model_tools"] = tools_known
+        write_config(cfg)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "model-fact capture is best-effort; defaults stay conservative",
+                 counter="llm.model_facts")
+
+
 def list_models(backend: str, *, refresh: bool = False,
                 timeout: float = 6.0) -> dict[str, Any]:
     """The picker's payload for one backend.
@@ -235,7 +293,7 @@ def list_models(backend: str, *, refresh: bool = False,
     not seconds, and re-fetching on every keystroke would make the settings
     screen depend on a remote host being fast.
     """
-    from aughor.llm.provider import BACKENDS, default_models
+    from aughor.llm.provider import BACKENDS
 
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
@@ -255,10 +313,6 @@ def list_models(backend: str, *, refresh: bool = False,
 
     seen = {m["id"] for m in live}
     merged = list(live)
-    for mid in KNOWN_MODELS.get(backend, ()):          # curated floor
-        if mid not in seen:
-            merged.append({"id": mid, "source": "known"})
-            seen.add(mid)
     customs = custom_models(backend)
     for mid in customs:                                 # user-kept, always present
         if mid not in seen:
@@ -268,6 +322,18 @@ def list_models(backend: str, *, refresh: bool = False,
             for m in merged:
                 if m["id"] == mid:
                     m["source"] = "custom"              # removable even if also live
+    # A custom entry needs its facts too, and Ollama is the case that proves it: a
+    # `:cloud` model absent from /api/tags is still served, and it is exactly the kind
+    # of id an operator types in by hand. Without this the model the deployment actually
+    # runs on would be the one model whose capabilities nobody looked up.
+    if backend == "ollama" and customs and os.environ.get("AUGHOR_LLM_MODEL_FETCH", "1") != "0":
+        from aughor.llm.provider import active_base_url
+        base = active_base_url(backend)
+        for m in merged:
+            if m.get("source") == "custom" and "tools" not in m:
+                m.update(ollama_model_facts(base, m["id"], timeout=timeout))
+    if merged:
+        _record_model_facts(merged)
     return {
         "backend": backend,
         "models": merged,
@@ -275,7 +341,9 @@ def list_models(backend: str, *, refresh: bool = False,
         "live_count": len(live),
         "live": bool(live),
         "error": error,
-        "defaults": default_models(backend),
+        # Kept as a key so the payload shape is stable for the UI, but always empty:
+        # nothing ships a default model any more, so there is nothing to suggest.
+        "defaults": {},
     }
 
 

@@ -70,8 +70,10 @@ def test_config_backend_disables_env_models(clean_cfg, monkeypatch):
     _write_cfg(clean_cfg, {"backend": "openrouter"})
     resolved = P._active_model("openrouter", "narrator")
     assert resolved != "env-narrator-model"
-    d = P._DEFAULT_MODELS.get("openrouter", P._DEFAULT_MODELS["ollama"])
-    assert resolved == (d.get("narrator") or d["narrator"])
+    # It used to resolve to the chosen backend's built-in default; with none shipped it
+    # resolves to nothing, and the caller raises NoModelConfigured. The trap this test
+    # exists for is unchanged — the env layer is still skipped.
+    assert resolved == ""
 
 
 def test_config_models_outrank_everything(clean_cfg, monkeypatch):

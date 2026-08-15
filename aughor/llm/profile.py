@@ -124,11 +124,12 @@ _BASELINE = dict(
     tool_loop_steps=4,
 )
 
-# Large-context families this deployment actually runs (llm_config.json history +
-# provider._DEFAULT_MODELS). ~128k-token contexts; 60k chars of schema is ~15k
-# tokens — still conservative. Output ceiling doubled because 4096 is a measured
-# briefing-killer; effort "medium" because the constraint on the free tier is
-# request RATE, not tokens, and reasoning depth is the direct quality lever.
+# The budgets for a large-context binding — reached by any model whose provider declares
+# at least `_CAPABLE_CONTEXT_TOKENS` (see `tier_for`), never by being named in a list.
+# 60k chars of schema is ~15k tokens, still conservative against a 128k window. Output
+# ceiling doubled because 4096 is a measured briefing-killer; effort "medium" because the
+# constraint on the free tier is request RATE, not tokens, and reasoning depth is the
+# direct quality lever.
 _CAPABLE = dict(
     schema_char_limit=60_000,
     evidence_budget=18_000,
@@ -153,29 +154,16 @@ _CAPABLE = dict(
     tool_loop_steps=8,
 )
 
-#: Model-id prefix → tier. Longest-prefix match; the `:free`/`:cloud` suffix is not
-#: part of the family. Add a family only with evidence it holds a 60k-char schema
-#: block without degrading (the amazon.csv head-to-head rematch is the receipt shape).
-_FAMILY_TIERS: dict[str, dict] = {
-    "nvidia/nemotron-3-super": _CAPABLE,
-    "nvidia/nemotron-3-ultra": _CAPABLE,
-    "deepseek/deepseek-v4": _CAPABLE,
-    "moonshotai/kimi": _CAPABLE,
-    "z-ai/glm": _CAPABLE,
-    "glm-5": _CAPABLE,           # ollama-cloud naming of the same family
-    "qwen3-coder": _CAPABLE,     # ollama-cloud naming
-    "kimi": _CAPABLE,            # ollama-cloud naming
-    # gemma-4-31b / nemotron-nano stay BASELINE: narrator/fast-tier models, never
-    # measured against the bigger budgets.
-    #
-    # The faux test backend's DECLARED capable id (aughor/llm/faux.py). Its default
-    # models (faux-coder/-narrator/-fast) hit the unknown-model BASELINE floor above,
-    # so tests reach both tiers deterministically: pin `faux-capable` for the big
-    # budgets, use the defaults for the floor. No evidence bar applies — it serves
-    # scripted text, and the entry exists precisely so tier-dependent defaults are
-    # testable offline.
-    "faux-capable": _CAPABLE,
-}
+#: Context window (in tokens) at which a binding earns the CAPABLE budgets. 60k chars of
+#: schema is ~15k tokens, so 128k leaves the model roughly 8× that for everything else —
+#: the same bar the old hand-maintained family table was curated against.
+_CAPABLE_CONTEXT_TOKENS = 128_000
+
+#: Test-only escape hatch (aughor/llm/faux.py). The faux backend serves scripted text and
+#: publishes no catalogue, so there is nothing to derive a tier from; this id declares
+#: itself capable so tier-dependent behaviour stays testable offline. Not a provider model
+#: and not selectable — `faux` is absent from BACKENDS.
+_FAUX_CAPABLE_ID = "faux-capable"
 
 #: The OpenRouter free tier's documented request budget. A model id ending in
 #: `:free` is bound to this whether or not the operator paces for it.
@@ -194,17 +182,67 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def declared_context(model: str) -> Optional[int]:
+    """The model's context window in tokens, as the PROVIDER declared it, or None.
+
+    Sources, in order: ``AUGHOR_MODEL_CONTEXT_TOKENS`` (an operator who knows, and the
+    only way to declare it for a backend that publishes no context length), then the
+    ``model_context`` map in the runtime config — recorded by the catalogue fetch from
+    each provider's own ``/models`` payload (``aughor.llm.models``).
+
+    Deliberately does NOT fetch: this is called on every profile resolution, and a tier
+    that depends on a network round-trip would be both slow and non-deterministic. It
+    reads what a previous catalogue load persisted, so the answer is the same on every
+    call until the catalogue is refreshed.
+    """
+    env = os.getenv("AUGHOR_MODEL_CONTEXT_TOKENS", "").strip()
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            from aughor.kernel.errors import tolerate
+            tolerate(ValueError(env), "AUGHOR_MODEL_CONTEXT_TOKENS is not an integer; "
+                                      "falling back to the recorded catalogue value",
+                     counter="llm.model_context")
+    key = (model or "").strip()
+    if not key:
+        return None
+    try:
+        from aughor.llm.provider import read_config
+        raw = (read_config().get("model_context") or {}).get(key)
+        return int(raw) if raw is not None else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "context window unreadable; the binding falls back to the "
+                      "BASELINE tier rather than assuming a large window",
+                 counter="llm.model_context")
+        return None
+
+
 def tier_for(model: str) -> dict:
     """The capability-tier defaults for a model id — public because the provider
     consults it for its own env-fallback defaults (max output tokens, reasoning
-    effort) without re-resolving the binding it already holds."""
-    base = model.split(":", 1)[0].strip().lower()
-    best: Optional[dict] = None
-    best_len = -1
-    for prefix, tier in _FAMILY_TIERS.items():
-        if base.startswith(prefix) and len(prefix) > best_len:
-            best, best_len = tier, len(prefix)
-    return dict(best) if best is not None else dict(_BASELINE)
+    effort) without re-resolving the binding it already holds.
+
+    DERIVED, not listed. This used to be a hand-maintained table of model-id prefixes
+    (``nvidia/nemotron-3-super`` → capable, and seven more), which had the failure mode
+    every hardcoded model list here has had: it went out of date silently and in the
+    direction that costs you. The live example — `deepseek-v4-flash:cloud` was listed
+    under its OpenRouter spelling `deepseek/deepseek-v4` but not its Ollama-cloud one,
+    so a capable model ran on baseline budgets (20k of schema instead of 60k) and
+    nothing said so.
+
+    Now the provider's own declared context window decides, because that is the fact the
+    tier was always a proxy for. Unknown context ⇒ BASELINE: the conservative floor, and
+    the same answer the old table gave for anything it had not heard of.
+    """
+    base = (model or "").split(":", 1)[0].strip().lower()
+    if base == _FAUX_CAPABLE_ID:
+        return dict(_CAPABLE)
+    ctx = declared_context(model)
+    if ctx is not None and ctx >= _CAPABLE_CONTEXT_TOKENS:
+        return dict(_CAPABLE)
+    return dict(_BASELINE)
 
 
 def role_output_cap(role: str, model: str) -> int:

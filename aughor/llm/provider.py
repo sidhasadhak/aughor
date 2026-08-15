@@ -69,7 +69,7 @@ _KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic":
 
 # The scripted test backend — first-class through the whole provider stack
 # (constructor, model resolution, tiers) but never operator-selectable; see the
-# registration note on _DEFAULT_MODELS and aughor/llm/faux.py's module docstring.
+# registration note on _FAUX_MODELS and aughor/llm/faux.py's module docstring.
 FAUX_BACKEND = "faux"
 DEFAULT_FAUX_MODELS = {"coder": "faux-coder", "narrator": "faux-narrator", "fast": "faux-fast"}
 _BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
@@ -86,45 +86,37 @@ _DEFAULT_BASE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
 }
 
-_DEFAULT_MODELS: dict[str, dict[Role, str]] = {
-    # Both previous ollama defaults were DEAD, and neither failed in a way anything
-    # noticed (2026-08-04): `qwen3-coder-next:cloud` was RETIRED by Ollama on 2026-07-15,
-    # and `kimi-k2.6:cloud` answers "this model requires a subscription". A fresh install
-    # therefore called a model that could not serve, got empty content on every structured
-    # call, and every caller fell through its own fail-open path — an app that runs and
-    # produces nothing. `gemma4:31b-cloud` is verified 2026-08-04 on all three axes that
-    # matter: it completes, it honours a json_schema `response_format`, and it needs no
-    # paid subscription. See the matrix vouch for why `ollama list` did not catch this.
-    "ollama":    {"coder": "gemma4:31b-cloud", "narrator": "gemma4:31b-cloud", "fast": "gemma4:31b-cloud"},
-    "lmstudio":  {"coder": "local-model",                      "narrator": "local-model"},
-    "groq":      {"coder": "llama-3.3-70b-versatile",          "narrator": "llama-3.3-70b-versatile"},
-    "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",  "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
-    "anthropic": {"coder": "claude-sonnet-4-6",                "narrator": "claude-sonnet-4-6"},
-    # PINNED to flash-lite, deliberately against the "…-latest aliases never deprecate" rule used
-    # elsewhere here — the free-tier REQUEST budgets differ by 25×, and that dominates. Measured on
-    # the live account 2026-07-22 (Google AI Studio rate-limit dashboard):
-    #     gemini-flash-latest → Gemini 3.6 Flash :   5 RPM,  20 requests/DAY   ← unusable
-    #     gemini-3.1-flash-lite                  :  15 RPM, 500 requests/DAY
-    # 20 requests a day cannot serve a single briefing, and this binding is what the failover chain
-    # lands on. The alias would silently re-point at whatever "latest flash" becomes, whose quota is
-    # unknown; the whole reason for this binding is a quota we have actually measured. A pinned id
-    # that is retired fails loudly (404) and the fallback chain covers it.
-    # On a PAID key, bump coder → "gemini-pro-latest" for stronger SQL generation.
-    "gemini":    {"coder": "gemini-3.1-flash-lite", "narrator": "gemini-3.1-flash-lite",
-                  "fast": "gemini-3.1-flash-lite"},
-    # OpenRouter ids are "vendor/model". These defaults are free-tier so a fresh key
-    # works immediately; the picker's live catalogue is the way to reach paid models.
-    # Free-tier ids VERIFIED against OpenRouter's live /models (the first pass
-    # guessed two that do not exist). Coder gets the strongest coder available
-    # because wrong SQL is the expensive failure; fast gets the throughput pick.
-    "openrouter": {"coder": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                   "narrator": "google/gemma-4-31b-it:free",
-                   "fast": "nvidia/nemotron-3-nano-30b-a3b:free"},
-    # The scripted test backend (aughor/llm/faux.py). Registered here so model
-    # resolution works like any backend's, but deliberately absent from BACKENDS —
-    # that tuple is the operator-facing registry (Settings dropdown, the CLI's
-    # literal mirror, fallback eligibility), and a scripted backend must not be
-    # selectable there. Reached only via AUGHOR_BACKEND=faux (the test fixture).
+class NoModelConfigured(RuntimeError):
+    """No model is set for a role, and nothing ships one to fall back on.
+
+    Until 2026-08-15 every backend carried built-in per-role defaults, so a fresh
+    install always resolved *some* model id. That id was this repo's guess about
+    another vendor's catalogue, and the guesses went stale silently: two OpenRouter
+    defaults never existed, an Ollama default was retired mid-life, another became
+    subscription-only. Each time the app kept running and produced nothing —
+    structured calls returned empty content and every caller fell through its own
+    fail-open path. An app that runs and produces nothing is the worst outcome
+    available, and it was reached BY having a default.
+
+    So there is no default. A model is configured or it is not, and if it is not,
+    this is raised at the moment one is needed — naming the role and where to set it.
+    """
+
+    def __init__(self, backend: str, role: str):
+        self.backend, self.role = backend, role
+        super().__init__(
+            f"No model configured for the '{role}' role on backend '{backend}'. "
+            f"Set one in Settings ▸ Models (it lists what '{backend}' actually serves), "
+            f"or set AUGHOR_{'CODER' if role == 'coder' else 'NARRATOR'}_MODEL. "
+            f"Nothing is assumed — this deployment ships no default model."
+        )
+
+
+#: The scripted TEST backend's fixtures (aughor/llm/faux.py). Not a provider and not
+#: operator-selectable — `faux` is deliberately absent from BACKENDS — so these are
+#: harness scaffolding, not a model list: `faux-coder` is not a model anybody serves.
+#: The removal above is about ids this repo asserted on a vendor's behalf.
+_FAUX_MODELS: dict[str, dict[Role, str]] = {
     FAUX_BACKEND: dict(DEFAULT_FAUX_MODELS),
 }
 
@@ -307,13 +299,15 @@ def _in_quota_cooldown(backend: str) -> bool:
 def _fallback_model_for(backend: str, role: Role) -> str:
     """The model a fallback backend should use for this role.
 
-    Anthropic keeps AUGHOR_FALLBACK_MODEL (the pre-existing contract); every other backend
-    uses its own role default, so a narrator falling back to Gemini gets Gemini's narrator
-    model rather than something pinned for a different vendor."""
+    Anthropic keeps AUGHOR_FALLBACK_MODEL (the pre-existing contract). Every other backend
+    used to fall back to its own built-in role default; with no defaults shipped, a
+    fallback backend is usable only if the operator configured a model for it. Returning
+    "" makes the chain SKIP that backend (see the caller) rather than dispatch to a
+    vendor with a model id tuned for a different one — which is how a dead binding used
+    to look healthy: the chain answered from somewhere else and nobody saw the failure."""
     if backend == "anthropic":
         return _fallback_model()
-    defaults = _DEFAULT_MODELS.get(backend, {})
-    return defaults.get(role) or defaults.get("narrator", "")
+    return (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
 
 
 # ── Runtime config (data/llm_config.json) ────────────────────────────────────
@@ -414,25 +408,19 @@ def _pinned_model(role: Role, model: Optional[str]) -> str:
     ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
     genuinely wants every call, cheap ones included, on the pinned model.
 
-    Wave R2 makes the ``fast`` exemption precise instead of blanket. "May this model
-    serve the cheap tier" stops being a rule written in this ``if`` and becomes a
-    declared property of the model (:func:`aughor.llm.matrix.fast_eligible`), so a pin
-    onto a genuinely cheap model — a 9B nano, a haiku — is allowed through while the
-    550B that caused the original cost bug still is not. An unlisted model resolves to
-    not-eligible, which is byte-identical to the pre-R2 blanket rule.
+    The rule is BLANKET again: a run pin never reaches ``fast``. Wave R2 had widened it
+    per-model — "may this model serve the cheap tier" was a declared property in the
+    vouched matrix, so a pin onto a genuinely cheap model (a 9B nano, a haiku) passed
+    through. That matrix was a hardcoded list of model ids and has been removed
+    (2026-08-15), and there is no way to know a model is cheap without naming it. The
+    blanket rule is the conservative half of what R2 did — it can cost an operator a
+    cheap pin they wanted, never a 550B running every throwaway interpret call.
     """
     explicit = (model or "").strip()
     if explicit:
         return explicit
     run = (current_run_model() or "").strip()
     if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
-        try:
-            from aughor.llm.matrix import fast_eligible
-            if fast_eligible(_active_backend(), run):
-                return run
-        except Exception:
-            logger.debug("llm: fast-eligibility lookup failed; keeping the blanket rule",
-                         exc_info=True)
         return ""
     return run
 
@@ -486,10 +474,10 @@ def write_config(cfg: dict) -> None:
 
 def active_backend() -> str:
     """The backend this deployment is bound to. Public because callers outside the
-    inference plane legitimately need it — the vouched-matrix check in
-    ``kernel/agents.py`` was reaching for ``_active_backend`` and tripping the
-    private-cross-import ratchet, which is the ratchet doing its job: an internal that
-    two planes need is an interface that has not been declared yet."""
+    inference plane legitimately need it — ``kernel/agents.py`` was reaching for
+    ``_active_backend`` and tripping the private-cross-import ratchet, which is the
+    ratchet doing its job: an internal that two planes need is an interface that has
+    not been declared yet."""
     return _active_backend()
 
 
@@ -502,7 +490,10 @@ def active_key(backend: str) -> str:
 
 
 def default_models(backend: str) -> dict:
-    return dict(_DEFAULT_MODELS.get(backend, {}))
+    """``{}`` for every operator-selectable backend — nothing ships a default model.
+    Kept as a function because callers (the config payload, the picker) still ask; it
+    now answers honestly instead of handing back this repo's guess at a vendor's ids."""
+    return dict(_FAUX_MODELS.get(backend, {}))
 
 
 # ── Active accessors (org store → runtime config → env → default) ─────────────
@@ -569,16 +560,37 @@ def _active_key(backend: str) -> str:
 
 
 def _env_model_for_role(backend: str, role: Role) -> str:
-    """Layer-2/3 model resolution (env → built-in default), unchanged from before."""
-    defaults = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
+    """Layer-2/3 model resolution — env only. The built-in default that used to sit
+    under it is gone, so an unset env yields "" and the caller raises
+    :class:`NoModelConfigured`."""
+    defaults = _FAUX_MODELS.get(backend, {})
     base_role = "narrator" if role in ("narrator", "fast") else role
-    fallback = os.getenv("AUGHOR_MODEL", defaults.get(role, defaults[base_role]))
+    fallback = os.getenv("AUGHOR_MODEL", defaults.get(role) or defaults.get(base_role, ""))
     if role == "coder":
         return os.getenv("AUGHOR_CODER_MODEL", fallback)
     narrator_model = os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
     if role == "fast":
         return os.getenv("AUGHOR_FAST_NARRATOR_MODEL", narrator_model)
     return narrator_model
+
+
+def model_supports_tools(model: str) -> Optional[bool]:
+    """Does this model declare native tool calling? ``None`` when nobody has asked yet.
+
+    Recorded from the provider's own catalogue (``aughor/llm/models.py``): Ollama's
+    ``/api/show`` ``capabilities``, or ``supported_parameters`` on the OpenAI-compatible
+    ``/models``. ``AUGHOR_MODEL_TOOLS=1|0`` overrides, for a provider that declares
+    nothing. Callers treat ``None`` as "no" — the conservative mode."""
+    env = os.getenv("AUGHOR_MODEL_TOOLS", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True
+    if env in ("0", "false", "no"):
+        return False
+    key = (model or "").strip()
+    if not key:
+        return None
+    val = (_cfg().get("model_tools") or {}).get(key)
+    return bool(val) if val is not None else None
 
 
 def measured_cache_mode(backend: str, model: str) -> Optional[str]:
@@ -621,27 +633,39 @@ def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tup
 
 
 def _active_model(backend: str, role: Role) -> str:
+    """The configured model for this role, or "" — never a shipped default.
+
+    The precedence is unchanged (org overlay → runtime config → env); what changed is
+    the floor. Where a chosen backend used to fall through to its built-in default,
+    there is now nothing underneath, and "" propagates to the caller that raises
+    :class:`NoModelConfigured`. The CI-5a precedence trap this guarded against — env
+    model names tuned for a DIFFERENT backend leaking into a chosen one — is still
+    guarded: those layers are still skipped, they just resolve to nothing instead of
+    to a guess.
+    """
     org = _org_overlay()
     org_model = (org.get("models") or {}).get(role)
     if org_model:
         return str(org_model).strip()
     if org.get("backend"):
-        # The org chose a backend: every lower layer's model names (file config, the
-        # AUGHOR_*_MODEL env) were tuned for a DIFFERENT binding — the CI-5a
-        # precedence trap, one layer up. The org backend's built-in defaults apply.
-        d = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
-        return d.get(role) or d["narrator"]
+        return _FAUX_MODELS.get(backend, {}).get(role, "")
     cfg = _cfg()
     cfg_model = (cfg.get("models") or {}).get(role)
     if cfg_model:
         return cfg_model.strip()
-    # If a backend was explicitly chosen in the runtime config, the env model
-    # overrides (AUGHOR_*_MODEL — tuned for the env backend) no longer apply; use
-    # this backend's built-in default. Pure-env runs keep the original precedence.
     if cfg.get("backend"):
-        d = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
-        return d.get(role) or d["narrator"]   # explicit per-role default; narrator is the fallback
+        return _FAUX_MODELS.get(backend, {}).get(role, "")
     return _env_model_for_role(backend, role)
+
+
+def require_model(backend: str, role: Role) -> str:
+    """:func:`_active_model`, but raises :class:`NoModelConfigured` instead of returning
+    "". The single seam where "nothing is configured" becomes a loud, actionable error
+    rather than a request dispatched with an empty model id."""
+    model = (_active_model(backend, role) or "").strip()
+    if not model:
+        raise NoModelConfigured(backend, role)
+    return model
 
 
 # ── Client builders ───────────────────────────────────────────────────────────
@@ -654,12 +678,18 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
     raw = OpenAI(base_url=base_url, api_key="ollama", timeout=_timeout,
                  max_retries=_SDK_RETRIES)
-    # Reasoning models (qwen3, kimi, deepseek-r1, qwq) support native tool calling.
-    # Use TOOLS mode so <think>…</think> tokens are isolated from structured output.
-    # JSON mode causes reasoning tokens to pollute the output and trigger retries.
-    _TOOLS_MODELS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder")
-    use_tools = any(kw in model.lower() for kw in _TOOLS_MODELS)
-    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
+    # TOOLS mode when the model declares native tool calling, so <think>…</think>
+    # tokens stay isolated from structured output; JSON mode lets reasoning tokens
+    # pollute it and the call comes back empty.
+    #
+    # This was a keyword list ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder") and
+    # it is the clearest case in this codebase for why naming models does not work:
+    # `deepseek-v4-flash:cloud` declares `capabilities: [completion, tools, thinking]`
+    # to anyone who asks, matched none of those keywords, and so ran every structured
+    # call in JSON mode — "structured output empty: the model returned no content", on
+    # a model that supports exactly what was needed. Now we ask, and fall back to JSON
+    # (the conservative mode) when the answer is not known yet.
+    mode = instructor.Mode.TOOLS if model_supports_tools(model) else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
 
 
@@ -1464,7 +1494,12 @@ class LLMProvider:
                  base_url: Optional[str] = None):
         self.backend = backend
         self.role = role
-        self._model = model or _active_model(backend, role)
+        # The one place every call path converges on a model id. Raising HERE means a
+        # missing model surfaces as "no model configured for the coder role" at the
+        # moment of use, instead of dispatching an empty model id to a vendor and
+        # coming back with an opaque 400 — or worse, an empty completion that every
+        # caller's fail-open path absorbs in silence.
+        self._model = (model or "").strip() or require_model(backend, role)
         key = api_key if api_key is not None else _active_key(backend)
         url = base_url or _active_base_url(backend)
         self._base_url = url
@@ -2230,7 +2265,9 @@ def current_config() -> dict:
         "backends": list(BACKENDS),
         "needs_key": list(NEEDS_KEY),
         "local_backends": list(LOCAL_BACKENDS),
-        "default_models": _DEFAULT_MODELS,
+        # Always {} per backend now — no model id ships. The key stays so the UI's
+        # payload shape is unchanged; what it no longer does is suggest a model.
+        "default_models": {b: {} for b in BACKENDS},
     }
 
 
@@ -2390,15 +2427,16 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
         return {"ok": False, "backend": b, "error": f"unknown backend {b!r}", "results": []}
 
     is_active = b == _active_backend()
-    # model -> what uses it. A non-active backend is probed with ITS OWN defaults;
-    # the active model is tuned for the active backend and would 404 elsewhere.
+    # model -> what uses it. Only the ACTIVE backend has models to probe now: a
+    # non-active one used to be tested against its built-in defaults, and with none
+    # shipped there is nothing to test until the operator configures it. The caller
+    # gets an empty result set and the reason, rather than a pass built on a guess.
     targets: dict[str, list[str]] = {}
     if model:
         targets[model] = ["explicit"]
-    else:
+    elif is_active:
         for role in ROLES:
-            m = (_active_model(b, role) if is_active
-                 else _DEFAULT_MODELS.get(b, _DEFAULT_MODELS["ollama"]).get(role))
+            m = _active_model(b, role)
             if m:
                 targets.setdefault(m, []).append(role)
         if include_agents and is_active:
@@ -2422,6 +2460,12 @@ def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
     # Independent calls — run them together so the wait is the slowest model, not
     # the sum. The per-endpoint semaphore still bounds real concurrency.
     results = []
+    if not targets:
+        # Nothing configured to probe. Reachable since built-in defaults were removed:
+        # a non-active backend, or an active one with no model set. Say so — the pool
+        # below raises on zero workers, and "we tested nothing" must never read as a pass.
+        return {"ok": False, "backend": b, "tested": 0, "failed": 0, "results": [],
+                "error": f"no model configured for {b} — set one in Settings ▸ Models"}
     if len(targets) == 1:
         (m, used_by), = targets.items()
         results.append({**_ping_cached(b, m, _role_for(used_by), force=force), "used_by": used_by})

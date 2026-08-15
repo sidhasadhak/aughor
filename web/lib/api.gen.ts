@@ -179,38 +179,14 @@ export interface paths {
          * List Agents
          * @description The fleet roster: each agent's charter + effective governance + recent spend.
          *
-         *     ``recommended_model`` is the charter's suggestion RESOLVED for the backend in
-         *     use — the ids are provider-specific, so a recommendation shown while a
-         *     different provider is bound would be unusable advice.
+         *     No ``recommended_model`` any more, and no ``POST /agents/apply-recommended-models``
+         *     to apply one: both existed only to serve per-charter model ids this repo hardcoded,
+         *     and those were removed 2026-08-15. An agent's model is whatever the operator pinned,
+         *     or the role binding it inherits.
          */
         get: operations["list_agents_agents_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/agents/apply-recommended-models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Apply Recommended Models
-         * @description Pin each agent to its recommended model for the ACTIVE backend.
-         *
-         *     Skips agents that already carry an explicit pin unless ``overwrite`` — a
-         *     suggestion should never silently replace a choice someone made. Agents with
-         *     no recommendation for this backend are skipped and reported, so "nothing
-         *     happened" is never ambiguous.
-         */
-        post: operations["apply_recommended_models_agents_apply_recommended_models_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7937,18 +7913,6 @@ export interface components {
             /** Table */
             table: string;
         };
-        /** ApplyRecommendedIn */
-        ApplyRecommendedIn: {
-            /** Agent Ids */
-            agent_ids?: string[] | null;
-            /**
-             * Overwrite
-             * @default false
-             */
-            overwrite: boolean;
-            /** Workspace Id */
-            workspace_id?: string | null;
-        };
         /**
          * AskRequest
          * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
@@ -11029,39 +10993,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    apply_recommended_models_agents_apply_recommended_models_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ApplyRecommendedIn"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {
