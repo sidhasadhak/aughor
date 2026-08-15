@@ -4,6 +4,7 @@ Auto-analyzes query results and attaches statistical grounding to evidence.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -38,11 +39,35 @@ class TrendResult:
 @dataclass
 class StatResult:
     """Attached to a QueryResult after auto-analysis."""
-    type: str                        # "anomaly" | "trend" | "comparison" | "distribution"
+    type: str                        # "anomaly" | "trend" | "comparison" | "distribution" | "association"
     interpretation: str              # human-readable, injected into LLM evidence
     is_significant: bool
     sigma: Optional[float] = None    # z-score magnitude when relevant
     p_value: Optional[float] = None  # for Mann-Whitney comparisons
+
+
+@dataclass
+class AssociationResult:
+    """Whether two categorical dimensions are related — and by how much.
+
+    The missing primitive. Everything else in this module tests ONE measure (over time,
+    across segments, against its own history); nothing tested two DIMENSIONS against each
+    other. So a question of the form "how do A and B relate?" had no test to reach, and
+    the honest answer — *they don't* — was not an answer the platform could produce. It
+    answered with two separate rankings instead, which are true whatever the relationship
+    is, and therefore say nothing about it.
+    """
+    rows: int                        # distinct values of dimension A
+    cols: int                        # distinct values of dimension B
+    n: float                         # total observations in the table
+    cramers_v: float                 # effect size, 0 (independent) → 1 (perfectly determined)
+    chi2: Optional[float]            # None when the measure is not frequency data
+    dof: Optional[int]
+    p_value: Optional[float]
+    max_abs_residual: float          # largest standardised deviation from independence
+    top_cells: list = field(default_factory=list)   # [(row_label, col_label, residual)]
+    is_dependent: bool = False
+    interpretation: str = ""
 
 
 # ── Core: anomaly detection ───────────────────────────────────────────────────
@@ -363,6 +388,234 @@ def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[Sta
     )
 
 
+# ── Association between two categorical dimensions ───────────────────────────
+
+#: Below this Cramér's V the two dimensions are reported as effectively independent even
+#: when a p-value clears 0.05 — on a large table a trivial dependence is detectable but
+#: not decision-relevant, and "significant" is not the same claim as "matters".
+_ASSOCIATION_NEGLIGIBLE_V = 0.10
+#: A standardised residual worth naming. With a 17×4 table there are 68 cells, so ~3 will
+#: exceed |2| by chance alone — the threshold names candidates, the p-value judges them.
+_RESIDUAL_NOTABLE = 2.0
+
+
+def assess_association(
+    table: "np.ndarray | list[list[float]]",
+    row_labels: list[str],
+    col_labels: list[str],
+    *,
+    is_frequency: bool = True,
+) -> Optional[AssociationResult]:
+    """Test whether two categorical dimensions are related, given their contingency table.
+
+    ``is_frequency`` gates the significance test, and the gate is the point. A chi-square
+    test of independence is defined on COUNTS — independent trials falling into cells.
+    Run it on summed revenue and the "p-value" is arithmetic without a meaning: dollars
+    are not trials, one large order is not a thousand small ones, and the number would
+    grow with the units you chose. So for a non-frequency measure this reports the
+    structure (how far each cell sits from proportional) and withholds the p-value,
+    rather than laundering a guess into a statistic — the same posture
+    ``is_additive_measure`` takes before claiming a share-of-total.
+
+    Returns None when the table is too small or too sparse to say anything.
+    """
+    arr = np.asarray(table, dtype=float)
+    if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 2:
+        return None
+    if not np.isfinite(arr).all() or (arr < 0).any():
+        return None
+    n = float(arr.sum())
+    if n <= 0:
+        return None
+
+    # Expected counts under independence: the outer product of the margins. This is
+    # also exactly "what the table would look like if the two dimensions were unrelated",
+    # which is the comparison the question is asking for.
+    row_tot = arr.sum(axis=1, keepdims=True)
+    col_tot = arr.sum(axis=0, keepdims=True)
+    if (row_tot <= 0).any() or (col_tot <= 0).any():
+        return None                      # an all-zero row/column: no basis to compare
+    expected = row_tot @ col_tot / n
+
+    shape = f"{arr.shape[0]}x{arr.shape[1]}"
+    cells_total = arr.shape[0] * arr.shape[1]
+
+    if not is_frequency:
+        # A DIFFERENT measure, not the same one with the p-value hidden. Chi-square
+        # machinery is meaningless on dollars: `(observed-expected)/sqrt(expected)` is
+        # only a σ because counts are Poisson-ish, and on a revenue table it produced a
+        # confident "+207σ" — a number with no scale behind it that would change if the
+        # column were cents. So compare COMPOSITIONS instead: how each row's mix differs
+        # from the overall mix, in percentage points, which is scale-free and means
+        # exactly what it says.
+        row_mix = arr / row_tot
+        overall = (col_tot / n).ravel()
+        dev = row_mix - overall
+        max_pp = float(np.abs(dev).max() * 100)
+        flat_pp = sorted(
+            ((abs(float(dev[i][j])), row_labels[i], col_labels[j], float(dev[i][j]) * 100)
+             for i in range(arr.shape[0]) for j in range(arr.shape[1])), reverse=True)
+        top = [(r, c, pp) for _a, r, c, pp in flat_pp[:3]]
+        detail = "; ".join(f"{r}: {c} is {pp:+.1f}pp vs the overall mix" for r, c, pp in top)
+        interp = (
+            f"[{shape} contingency] COMPOSITION ONLY — the measure is not frequency data, "
+            f"so no test of independence applies and none is claimed. Largest deviation "
+            f"from the overall mix: {max_pp:.1f} percentage points. {detail}. "
+            f"For a significance verdict, re-run this cross-tab with COUNT(*)."
+        )
+        return AssociationResult(
+            rows=int(arr.shape[0]), cols=int(arr.shape[1]), n=n, cramers_v=float("nan"),
+            chi2=None, dof=None, p_value=None, max_abs_residual=max_pp,
+            top_cells=top, is_dependent=False, interpretation=interp,
+        )
+
+    chi2_stat = float(((arr - expected) ** 2 / expected).sum())
+    dof = (arr.shape[0] - 1) * (arr.shape[1] - 1)
+    # Cramér's V — the effect size. Scale-free and comparable across table shapes, which
+    # is what makes "0.04" a usable answer where a chi-square of 49.7 is not.
+    cramers_v = float(np.sqrt(chi2_stat / (n * (min(arr.shape) - 1)))) if n > 0 else 0.0
+    residuals = (arr - expected) / np.sqrt(expected)
+    max_abs = float(np.abs(residuals).max())
+    p_value = float(scipy_stats.chi2.sf(chi2_stat, dof)) if dof > 0 else None
+
+    flat = sorted(
+        ((abs(float(residuals[i][j])), row_labels[i], col_labels[j], float(residuals[i][j]))
+         for i in range(arr.shape[0]) for j in range(arr.shape[1])),
+        reverse=True,
+    )
+    top_cells = [(r, c, z) for _a, r, c, z in flat[:3] if abs(z) >= _RESIDUAL_NOTABLE]
+
+    # Dependent only when the test AND the effect size agree. Either alone misleads: a
+    # big table makes a trivial dependence "significant", and a small one makes a real
+    # one insignificant.
+    negligible = cramers_v < _ASSOCIATION_NEGLIGIBLE_V
+    is_dependent = (p_value is not None and p_value < 0.05) and not negligible
+
+    if is_dependent:
+        cells = "; ".join(f"{r}×{c} {'over' if z > 0 else 'under'}-represented ({z:+.1f}σ)"
+                          for r, c, z in top_cells)
+        detail = f" Most divergent: {cells}." if cells else ""
+        interp = (f"RELATED: the two dimensions are NOT independent (Cramér's V="
+                  f"{cramers_v:.2f}, p={p_value:.3g}). Knowing one shifts the distribution "
+                  f"of the other.{detail}")
+    else:
+        why = (f"p={p_value:.2f} — the observed spread is within sampling noise"
+               if p_value is not None and p_value >= 0.05
+               else f"Cramér's V={cramers_v:.2f}, a negligible effect")
+        interp = (
+            f"INDEPENDENT: no material relationship between the two dimensions "
+            f"({why}; largest cell deviation {max_abs:.1f}σ across {cells_total} "
+            f"cells). The mix of one is effectively constant across the other, so apparent "
+            f"differences between groups are noise — do NOT report a driver, a segment "
+            f"effect, or an interaction. What varies is the SIZE of each group, not its "
+            f"composition."
+        )
+
+    return AssociationResult(
+        rows=int(arr.shape[0]), cols=int(arr.shape[1]), n=n, cramers_v=cramers_v,
+        chi2=chi2_stat, dof=dof, p_value=p_value, max_abs_residual=max_abs,
+        top_cells=top_cells, is_dependent=is_dependent,
+        interpretation=f"[{shape} contingency] {interp}",
+    )
+
+
+def _as_float(value) -> Optional[float]:
+    """``float(value)`` or None — a predicate, not an exception handler, so a NULL or a
+    text cell is treated as the absent datum it is."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value) if np.isfinite(float(value)) else None
+    text = str(value).strip()
+    if not text or text.upper() == "NULL":
+        return None
+    if not re.fullmatch(r"[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?", text):
+        return None
+    return float(text)
+
+
+def _looks_like_frequency(col_name: str, values: list[float]) -> bool:
+    """Is this measure a COUNT — i.e. frequency data a chi-square test is defined on?
+
+    Name first (``count``/``orders``/``n``/``freq``), then the values: all non-negative
+    whole numbers is the shape of a tally. Conservative — an unrecognised measure is
+    treated as non-frequency, which withholds the p-value rather than inventing one.
+    """
+    name = (col_name or "").lower()
+    if any(kw in name for kw in ("count", "num_", "n_", "freq", "tally", "orders", "records", "rows")):
+        return True
+    if name.strip() in ("n", "cnt", "qty", "quantity"):
+        return True
+    return bool(values) and all(v >= 0 and float(v).is_integer() for v in values)
+
+
+def _analyze_association(columns: list[str], rows: list[list]) -> Optional[StatResult]:
+    """Detect a long-form cross-tab — two categorical columns + one measure — and test
+    the two dimensions for association.
+
+    Wired into :func:`analyze_query_result`, so it fires wherever a ``GROUP BY a, b``
+    happens to be run, by any path, without a caller opting in. That is the leverage: the
+    verdict attaches itself to the evidence the narrator reads, so "these are independent"
+    reaches the report even when nobody asked the question that way.
+    """
+    if not rows or len(rows) < 4 or len(columns) < 3:
+        return None
+    numeric = _numeric_column_indices(columns, rows)
+    if not numeric:
+        return None
+    measure_idx = numeric[0]
+    cat_idx = [i for i in range(len(columns)) if i not in numeric]
+    if len(cat_idx) != 2:
+        return None                      # exactly two dimensions, else it is not a cross-tab
+    a_idx, b_idx = cat_idx[0], cat_idx[1]
+
+    a_labels = sorted({str(r[a_idx]) for r in rows if r[a_idx] is not None})
+    b_labels = sorted({str(r[b_idx]) for r in rows if r[b_idx] is not None})
+    if not (2 <= len(a_labels) <= 60 and 2 <= len(b_labels) <= 60):
+        return None
+    # What separates a cross-tab from row-level data is that a GROUP BY a, b emits each
+    # pair EXACTLY ONCE. Duplicates mean these are raw rows, and summing them into a grid
+    # would test something nobody computed.
+    #
+    # Density is deliberately NOT the gate. The first version required half the grid to
+    # be filled, which rejected `region × state` — a pair where each state belongs to
+    # exactly one region, so 147 of 196 cells are empty. That sparsity IS the dependence:
+    # the most strongly related pairs are the emptiest grids, and gating on density
+    # blinds the test precisely where it has the most to say.
+    pairs = [(str(r[a_idx]), str(r[b_idx])) for r in rows]
+    if len(set(pairs)) != len(pairs):
+        return None
+
+    # A non-numeric cell is DATA, not a failure — a NULL measure for a pair that has no
+    # observations is exactly what a cross-tab looks like — so it is filtered by a
+    # predicate rather than caught. (An `except: continue` here would also be a silent
+    # swallow, which `test_no_new_silent_swallows` rightly refuses.)
+    grid = np.zeros((len(a_labels), len(b_labels)), dtype=float)
+    for r in rows:
+        if r[a_idx] is None or r[b_idx] is None:
+            continue
+        v = _as_float(r[measure_idx])
+        if v is None:
+            continue
+        grid[a_labels.index(str(r[a_idx]))][b_labels.index(str(r[b_idx]))] = v
+
+    values = _extract_floats(rows, measure_idx)
+    res = assess_association(grid, a_labels, b_labels,
+                             is_frequency=_looks_like_frequency(columns[measure_idx], values))
+    if res is None:
+        return None
+    return StatResult(
+        type="association",
+        interpretation=f"[{columns[a_idx]} × {columns[b_idx]}] {res.interpretation}",
+        # An INDEPENDENT verdict is every bit as load-bearing as a dependent one — it is
+        # the finding that stops a report inventing a driver — so it is marked significant
+        # too. `is_significant` gates what reaches the narrator, not what is interesting.
+        is_significant=True,
+        sigma=res.max_abs_residual,
+        p_value=res.p_value,
+    )
+
+
 # ── Auto-analysis: called on every successful QueryResult ────────────────────
 
 def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str] = None) -> list[StatResult]:
@@ -389,6 +642,18 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "rate-segment uniformity analysis best-effort; other stats proceed",
                  counter="stats.rate_segments")
+
+    # Two-dimension association: when the result IS a cross-tab, say whether the two
+    # dimensions are related at all. Runs before the numeric scan below because it reads
+    # the whole grid rather than one column of it.
+    try:
+        assoc = _analyze_association(columns, rows)
+        if assoc:
+            results.append(assoc)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "association analysis best-effort; other stats proceed",
+                 counter="stats.association")
 
     # Find numeric column indices
     numeric_idxs = _numeric_column_indices(columns, rows)

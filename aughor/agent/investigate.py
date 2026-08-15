@@ -231,6 +231,175 @@ def _question_needs_behavioral(question: str) -> bool:
     return any(kw in q for kw in behavioral_keywords)
 
 
+# A question about how two dimensions RELATE — not how big each one is. The distinction
+# is the whole point: "How do Ship Mode and Sub-categories relate?" was answered with two
+# separate rankings, which are true no matter how the dimensions relate and therefore say
+# nothing about it. A relationship lives in the JOINT distribution, and nothing in the
+# run ever computed one.
+_ASSOCIATION_NOUNS = r"(relationship|association|correlation|interaction|interplay|link|connection|dependence)"
+_ASSOCIATION_VERBS = r"(relate|related|relates|correlate|correlated|associated|interact|depend)"
+_ASSOCIATION_PATTERNS = (
+    # "how do X and Y relate", "are X and Y related", "how does X relate to Y"
+    rf"\b{_ASSOCIATION_VERBS}\b",
+    # "the relationship between X and Y", "any correlation between …"
+    rf"\b{_ASSOCIATION_NOUNS}\b.{{0,30}}\b(between|among|of|with)\b",
+    rf"\bbetween\b.{{0,60}}\b{_ASSOCIATION_NOUNS}\b",
+    # "does X affect / influence / drive Y", "does X vary by Y"
+    r"\bdoes?\b.{0,60}\b(affect|influence|impact|drive|determine|predict|vary\s+by|differ\s+by)\b",
+    # "X vs Y", "X versus Y" — an explicit two-way comparison
+    r"\b(vs\.?|versus)\b",
+    # "breakdown of X by Y", "cross-tab", "split X by Y"
+    r"\b(cross[- ]?tab\w*|contingency|joint distribution)\b",
+)
+
+
+def _question_asks_association(question: str) -> bool:
+    """True when the question is about how two things RELATE, rather than how big each is.
+
+    Deliberately narrow. `cross_sectional` already catches "where are we weakest", and
+    that scan (rank the metric across each dimension separately) is right for it. This
+    predicate marks the *different* shape that needs the two dimensions crossed, so a
+    false positive costs one extra GROUP BY and a false negative costs the answer.
+    """
+    q = (question or "").lower()
+    return any(re.search(p, q) for p in _ASSOCIATION_PATTERNS)
+
+
+def _dimensions_named_in_question(question: str, dimensions: list) -> list:
+    """The dimensions the question actually NAMES, in the order it names them.
+
+    Matching is on the column's words against a normalised question, so `sub_category`
+    matches "Sub-categories" and `ship_mode` matches "Ship Mode". Crossing two dimensions
+    the user never mentioned would answer a question nobody asked, so an association scan
+    only runs on dimensions found here.
+    """
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower())
+
+    qn = f" {_norm(question)} "
+    # Singularise crudely so "categories"/"modes" still match "category"/"mode".
+    qn_words = set(qn.split())
+    for w in list(qn_words):
+        if w.endswith("ies"):
+            qn_words.add(w[:-3] + "y")
+        elif w.endswith("es"):
+            qn_words.add(w[:-2])
+        if w.endswith("s"):
+            qn_words.add(w[:-1])
+
+    found: list = []
+    for dim in dimensions or []:
+        col = str(dim).split(".")[-1]
+        words = [w for w in _norm(col).split() if len(w) > 2]
+        if words and all(w in qn_words for w in words):
+            # Order by where the question mentions it, not by the schema's order.
+            pos = min((qn.find(f" {w} ") for w in words if f" {w} " in qn), default=10 ** 6)
+            found.append((pos, dim, frozenset(words)))
+
+    # Prefer the MORE SPECIFIC dimension: "Sub-categories" matches both `sub_category`
+    # and `category`, and crossing the wrong one of those answers a different question.
+    # A dimension whose words are a strict subset of another matched dimension's is the
+    # looser reading, so it loses.
+    specific = [f for f in found
+                if not any(f[2] < other[2] for other in found)]
+    return [d for _p, d, _w in sorted(specific)]
+
+
+def _run_association_scan(conn, question: str, dimensions: list, metric_table: str,
+                          metric_sql: str, metric_label: str, phase_id: str):
+    """Cross the two dimensions the question named, and return the executed QueryResult.
+
+    ONE query, written here rather than by the planner. The planner's job is to choose
+    what to ask; the shape of "how do A and B relate" is not a choice — it is a joint
+    distribution — and asking a model to rediscover that per run is how the answer became
+    two bar charts. Returns None (and the phase proceeds unchanged) whenever the question
+    does not name two dimensions, or the query fails.
+
+    COUNT(*) leads the projection deliberately: a chi-square test of independence is
+    defined on frequencies, and `analyze_query_result` reads the first numeric column. The
+    metric rides along second so the reader sees the money too, but the VERDICT is
+    computed on counts, which is the only thing it is valid on.
+    """
+    named = _dimensions_named_in_question(question, dimensions)
+    if len(named) < 2 or not metric_table:
+        return None
+    a, b = named[0].split(".")[-1], named[1].split(".")[-1]
+    if a == b:
+        return None
+    measure = metric_sql if metric_sql and "(" in metric_sql else "COUNT(*)"
+    sql = (f'SELECT "{a}", "{b}", COUNT(*) AS n_records, {measure} AS {_safe_alias(metric_label)}\n'
+           f'FROM {metric_table}\nGROUP BY 1, 2\nORDER BY 1, 2')
+    try:
+        result = _execute_safe(conn, phase_id, sql)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "association scan is best-effort; the weakness scan still runs",
+                 counter="ada.association_scan")
+        return None
+    import logging as _logging
+    if result is None or getattr(result, "error", None):
+        _logging.getLogger(__name__).info(
+            "[ada] association scan %s x %s did not execute: %s", a, b,
+            getattr(result, "error", "no result"))
+        return None
+    _logging.getLogger(__name__).info(
+        "[ada] association scan %s x %s -> %d cells", a, b, result.row_count)
+    return result
+
+
+def _safe_alias(label: str) -> str:
+    """A SQL-safe alias from a human metric label ("Gross Sales" -> gross_sales)."""
+    alias = re.sub(r"[^a-zA-Z0-9_]+", "_", (label or "metric").strip().lower()).strip("_")
+    return alias or "metric"
+
+
+def _association_finding(result, dim_a: str, dim_b: str) -> Optional[InvestigationFinding]:
+    """Turn an executed association scan into a finding, interpreted DETERMINISTICALLY.
+
+    No LLM writes this one. The verdict is already computed and exact
+    (``tools/stats.assess_association``), and handing "p=0.41, Cramér's V=0.04" to a
+    narrator to phrase is how a null result becomes "Standard Class dominates at 59.1%"
+    — a true sentence that answers a different question. A heatmap because the shape of
+    the answer is a grid; two bar charts are what marginals look like.
+    """
+    stats_list = list(getattr(result, "stats", None) or [])
+    assoc = next((s for s in stats_list if getattr(s, "type", "") == "association"), None)
+    if assoc is None:
+        return None
+    return InvestigationFinding(
+        finding_id="association",
+        title=f"{dim_a} × {dim_b}: are they related?",
+        sql=result.sql,
+        columns=list(result.columns),
+        rows=result.rows[:50],
+        row_count=result.row_count,
+        error=result.error,
+        interpretation=assoc.interpretation,
+        key_numbers=[],
+        chart_type="heatmap",
+        stat_note=assoc.interpretation,
+        is_significant=True,
+    )
+
+
+#: Prepended to the synthesis evidence when the two dimensions test INDEPENDENT. The
+#: narrator's default move on a cross-sectional scan is to name the biggest group and
+#: call it a finding; on a null result that is exactly wrong, and it is what produced
+#: "Gross sales are heavily concentrated in Standard Class" as the answer to "how do
+#: Ship Mode and Sub-categories relate?".
+ASSOCIATION_NULL_DIRECTIVE = (
+    "⚖️ TESTED AND INDEPENDENT — the two dimensions the question asked about were crossed "
+    "and formally tested: they are NOT related. This is the ANSWER, not a missing result. "
+    "You MUST: (1) lead with it — say plainly that the two are independent and that the "
+    "mix of one is effectively constant across the other; (2) NOT present either "
+    "dimension's ranking or share-of-total as though it described the relationship — a "
+    "marginal total is true regardless of how the dimensions relate and therefore says "
+    "nothing about it; (3) NOT name a 'driver', a segment effect, or an interaction; "
+    "(4) NOT frame the null result as a data gap or a limitation. A null result is a "
+    "real finding with a real decision attached: do not segment on this pairing.\n\n"
+)
+
+
 def route_after_dimensional(state: AgentState) -> str:
     """
     Tier 2 gate: skip behavioral unless the question explicitly asks about
@@ -5090,6 +5259,23 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             return {"investigation_phases": phases + [phase],
                     "_cross_section_summary": _degenerate}
 
+    # ── Association scan: cross the two dimensions the question named ─────────
+    # The weakness scan below ranks the metric across each dimension SEPARATELY, which is
+    # right for "where are we weakest" and wrong for "how do A and B relate": two marginal
+    # rankings are true whatever the relationship is, so they cannot describe it. A
+    # relationship lives in the joint distribution, so compute one — deterministically,
+    # one GROUP BY, no planner call. `analyze_query_result` then attaches the verdict
+    # (tools/stats.assess_association), which is what lets the honest answer — "these are
+    # independent" — reach the report at all.
+    _assoc_finding = None
+    if dims_override is None and _question_asks_association(question):
+        _named = _dimensions_named_in_question(question, dimensions)
+        _assoc_result = _run_association_scan(conn, question, dimensions, metric_table,
+                                              metric_sql, metric_label, _phase_id)
+        if _assoc_result is not None and len(_named) >= 2:
+            _assoc_finding = _association_finding(
+                _assoc_result, _named[0].split(".")[-1], _named[1].split(".")[-1])
+
     _causal_drill = dims_override is None
     _why_event_dims: list = []
     if _causal_drill:
@@ -5507,6 +5693,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             _suppressed_ratio = {"metric_label": metric_label, "caveat": _plausibility["caveat"],
                                  "true_global_str": _gstr or _plausibility["true_global_str"],
                                  "repaired": bool(_rep)}
+
+    # The association verdict leads the phase — it IS the answer to a relationship
+    # question, so it must not sit under the marginal rankings where a reader (or a
+    # narrator) meets the concentration story first and stops there.
+    if _assoc_finding is not None:
+        findings = [_assoc_finding] + list(findings)
+        if "INDEPENDENT" in (_assoc_finding.get("interpretation") or ""):
+            summary = ASSOCIATION_NULL_DIRECTIVE + (summary or "")
+        else:
+            summary = f"{_assoc_finding['interpretation']}\n\n{summary or ''}"
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
