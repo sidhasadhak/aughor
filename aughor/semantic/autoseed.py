@@ -154,8 +154,25 @@ def verify_grain_claim(grain: str, table_fqn: str, columns: set[str], conn) -> s
     m = _GRAIN_KEY.search(grain or "")
     if not m or conn is None:
         return grain
-    key = m.group(1).split()[-1].lower()
-    if key not in {c.lower() for c in columns}:
+    phrase = m.group(1)
+    # A COMPOSITE grain ("one row per ticket per flight", "per platform-segment-year")
+    # is keyed by several columns at once; judging it on ONE swept word refuses a true
+    # claim (audit 2026-08-15: 3 of 9 "contradictions" were composites). Only a
+    # single-key claim is verifiable here.
+    tail = (grain or "")[m.end():]
+    if re.search(r"\bper\b|[-‑]", phrase) or re.match(r"\s*(?:per|and|[-‑])\b", tail):
+        return grain
+    # "one row per chunk of a review, identified by review_id" — the KEY is the
+    # 'identified by' column, not the noun phrase's last word.
+    idm = re.search(r"identified\s+by\s+([a-z][a-z0-9_]*)", grain or "", re.I)
+    lower_cols = {c.lower() for c in columns}
+    key = idm.group(1).lower() if idm else phrase.split()[-1].lower()
+    if idm and key not in lower_cols and not any(c in (f"{key}_id", f"{key}id") for c in lower_cols):
+        # The LLM named an "identified by" column that does not exist ("o_orderkey" on
+        # a Superstore table — a TPC-H name). Judge the noun instead ("order" → order_id);
+        # a phantom key must not launder a false grain (audit 2026-08-15: main.orders).
+        key = phrase.split()[-1].lower()
+    if key not in lower_cols:
         # The claim's noun ("order") may not be a column ("order_id" is). Try the id form.
         cand = next((c for c in columns if c.lower() in (f"{key}_id", f"{key}id")), None)
         if cand is None:

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CloseIcon       from "@atlaskit/icon/core/close";
+import { Button }      from "@/components/ui/button";
 import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
 import NodeIcon        from "@atlaskit/icon/core/node";
 import SettingsIcon    from "@atlaskit/icon/core/settings";
@@ -27,6 +28,8 @@ import {
   type ConnectionSettings,
   type DuplicateCluster,
   type AutonomyLevel,
+  getOntologyProposals, acceptOntologyProposal, dismissOntologyProposal,
+  type OntologyProposal,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
@@ -942,6 +945,121 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
 // or delete it. The connection's EARNED autonomy level is shown at the top.
 const _AUTONOMY_TONE = ["text-zinc-400", "text-sky-300", "text-violet-300", "text-emerald-300"];
 
+const _PROPOSAL_KIND: Record<string, { label: string; tone: string }> = {
+  metric:      { label: "metric gap",  tone: "text-amber-300 border-amber-500/30 bg-amber-500/10" },
+  column_note: { label: "column note", tone: "text-sky-300 border-sky-500/30 bg-sky-500/10" },
+  table_note:  { label: "table note",  tone: "text-violet-300 border-violet-500/30 bg-violet-500/10" },
+};
+
+/** The review inbox for what the engine and the conversation PROPOSE about this connection's
+ *  context — a metric gap the self-improving loop noticed, or a column/table note an agent
+ *  staged with evidence (blast-radius rule: a table-level claim always waits here; a column
+ *  note waits when confidence was not high or a human note already exists). Nothing changes
+ *  the ontology until a person accepts it here. */
+function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
+  const [items,   setItems]   = useState<OntologyProposal[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    getOntologyProposals(connId)
+      .then(setItems)
+      .catch(() => setError("Couldn't load proposals."))
+      .finally(() => setLoading(false));
+  }, [connId]);
+  useEffect(() => { load(); }, [load]);
+
+  const doAccept = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await acceptOntologyProposal(id, connId); }
+    catch (e) { setError((e as Error).message || "Accept failed"); }
+    finally { setBusy(null); load(); }
+  };
+  const doDismiss = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await dismissOntologyProposal(id, connId); }
+    catch (e) { setError((e as Error).message || "Dismiss failed"); }
+    finally { setBusy(null); load(); }
+  };
+
+  const pending = (items ?? []).filter(p => p.status === "pending");
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden" data-testid="ontology-proposals-drawer">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Proposals</p>
+        {pending.length > 0 && (
+          <span className="aug-fs-xs text-zinc-500">{pending.length} awaiting review</span>
+        )}
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300" aria-label="Close">
+          <CloseIcon label="Close" size="small" />
+        </Button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <p className="aug-fs-xs text-zinc-500">Loading proposals…</p>}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
+        {!loading && !error && pending.length === 0 && (
+          <p className="aug-fs-xs text-zinc-500">
+            Nothing awaiting review. Proposals appear here when the engine notices a
+            recurring metric gap, or when the conversation stages a note about a column
+            or table that needs a person to accept it.
+          </p>
+        )}
+        {pending.map(pr => {
+          const kind = _PROPOSAL_KIND[pr.kind] ?? { label: pr.kind, tone: "text-zinc-300 border-zinc-600 bg-zinc-800/50" };
+          const note = typeof pr.proposed_fields?.note === "string" ? (pr.proposed_fields.note as string) : "";
+          const column = typeof pr.proposed_fields?.column === "string" ? (pr.proposed_fields.column as string) : "";
+          const confidence = typeof pr.proposed_fields?.confidence === "string" ? (pr.proposed_fields.confidence as string) : "";
+          const lastEvidence = pr.evidence?.length ? pr.evidence[pr.evidence.length - 1] : null;
+          const evidenceText = lastEvidence && typeof lastEvidence.evidence === "string" ? (lastEvidence.evidence as string) : "";
+          return (
+            <div key={pr.id} className="rounded border border-zinc-700/70 bg-zinc-900/60 p-2.5 space-y-1.5" data-testid="ontology-proposal">
+              <div className="flex items-center gap-2">
+                <span className={cn("aug-fs-xs border rounded-[var(--r-pill)] px-1.5 py-0.5", kind.tone)}>{kind.label}</span>
+                <span className="aug-fs-xs font-mono text-zinc-300 truncate" title={pr.target_id}>
+                  {pr.entity}{column ? `.${column}` : ""}
+                </span>
+                {pr.support > 1 && <span className="aug-fs-xs text-zinc-500 ml-auto">seen ×{pr.support}</span>}
+              </div>
+              {note && <p className="aug-fs-xs text-zinc-200">{note}</p>}
+              {!note && pr.reason && <p className="aug-fs-xs text-zinc-300">{pr.reason}</p>}
+              {evidenceText && (
+                <p className="aug-fs-xs text-zinc-500">
+                  <span className="text-zinc-600">evidence · </span>{evidenceText}
+                  {confidence && <span className="text-zinc-600"> · confidence {confidence}</span>}
+                </p>
+              )}
+              <div className="flex items-center gap-2 pt-0.5">
+                <Button
+                  variant="outline" size="xs"
+                  onClick={() => doAccept(pr.id)}
+                  disabled={busy === pr.id}
+                  className="aug-fs-xs border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                  data-testid="ontology-proposal-accept"
+                >
+                  Accept
+                </Button>
+                <Button
+                  variant="ghost" size="xs"
+                  onClick={() => doDismiss(pr.id)}
+                  disabled={busy === pr.id}
+                  className="aug-fs-xs text-zinc-400 hover:text-zinc-200"
+                  data-testid="ontology-proposal-dismiss"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
   const [skills,   setSkills]   = useState<QueryTemplate[] | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
@@ -1040,6 +1158,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [showSettings,      setShowSettings]     = useState(false);
   const [showDuplicates,    setShowDuplicates]   = useState(false);
   const [showSkills,        setShowSkills]        = useState(false);
+  const [showProposals,     setShowProposals]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
@@ -1113,7 +1232,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             · {Object.keys(graph.relationships).length} relationships
           </span>
           <button
-            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); }}
+            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
               "aug-fs-xs px-2 py-0.5 rounded border transition",
               showDuplicates
@@ -1124,8 +1243,22 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           >
             Find duplicates
           </button>
+          <Button
+            variant="outline" size="xs"
+            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); }}
+            className={cn(
+              "aug-fs-xs",
+              showProposals
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+            )}
+            title="Proposed context awaiting your review — metric gaps and notes the conversation staged"
+            data-testid="ontology-proposals-toggle"
+          >
+            Proposals
+          </Button>
           <button
-            onClick={() => { setShowSkills(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); }}
+            onClick={() => { setShowSkills(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowProposals(false); }}
             className={cn(
               "aug-fs-xs px-2 py-0.5 rounded border transition",
               showSkills
@@ -1137,7 +1270,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             Learned skills
           </button>
           <button
-            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); setShowSkills(false); }}
+            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
               "text-zinc-500 hover:text-zinc-300 transition ml-1",
               showSettings && "text-violet-400",
@@ -1262,6 +1395,9 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         {/* Learned skills (agent procedural memory) */}
         {showSkills && (
           <SkillsDrawer connId={selectedConnId} onClose={() => setShowSkills(false)} />
+        )}
+        {showProposals && (
+          <ProposalsDrawer connId={selectedConnId} onClose={() => setShowProposals(false)} />
         )}
       </div>
     </div>

@@ -83,3 +83,36 @@ def test_unverifiable_claims_pass_through():
     assert verify_grain_claim("a snapshot of the warehouse", "returns", {"order_id"}, con) == "a snapshot of the warehouse"
     assert verify_grain_claim("one row per shipment", "returns", {"order_id", "item"}, con) == "one row per shipment"
     assert verify_grain_claim("one row per order_id", "no_such_table", {"order_id"}, con) == "one row per order_id"
+
+
+def test_composite_and_identified_by_grains_are_judged_correctly():
+    # Audit 2026-08-15: 3 of 9 "contradictions" were COMPOSITE grains the verifier judged
+    # on one swept word ("per ticket per flight" → refused on flight_id). A composite
+    # claim is left alone; an "identified by X" claim is judged on X, not the noun.
+    import duckdb
+    from aughor.semantic.autoseed import verify_grain_claim
+    con = duckdb.connect()
+    con.execute("CREATE TABLE baggage AS SELECT * FROM (VALUES "
+                "('t1','f1'),('t2','f1'),('t3','f2')) t(ticket_id, flight_id)")
+    con.execute("CREATE TABLE chunks AS SELECT * FROM (VALUES "
+                "('r1', 1),('r1', 2),('r2', 1)) t(review_id, chunk_no)")
+    cols = {"ticket_id", "flight_id"}
+    # composite: true claim, must NOT be rewritten even though flight_id repeats
+    assert verify_grain_claim("One row per ticket per flight", "baggage", cols, con) == "One row per ticket per flight"
+    assert verify_grain_claim("one row per platform-segment-year", "baggage", cols, con) == "one row per platform-segment-year"
+    # identified-by: judged on review_id (which repeats) → corrected
+    out = verify_grain_claim("One row per chunk of a review, identified by review_id", "chunks", {"review_id", "chunk_no"}, con)
+    assert "NOT one row per review_id" in out
+
+
+def test_phantom_identified_by_column_falls_back_to_the_noun():
+    # main.orders (Superstore) was seeded "one row per order (identified by o_orderkey)" —
+    # a TPC-H column name that does not exist on the table. The phantom key must not
+    # launder the false claim: judge "order" → order_id (9,994 rows over 5,009).
+    import duckdb
+    from aughor.semantic.autoseed import verify_grain_claim
+    con = duckdb.connect()
+    con.execute("CREATE TABLE orders AS SELECT * FROM (VALUES "
+                "(1,'o1'),(2,'o1'),(3,'o2')) t(row_id, order_id)")
+    out = verify_grain_claim("one row per order (identified by o_orderkey)", "orders", {"row_id", "order_id"}, con)
+    assert "NOT one row per order_id" in out

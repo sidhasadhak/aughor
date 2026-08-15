@@ -6075,6 +6075,10 @@ export interface paths {
         /**
          * Accept Ontology Recommendation
          * @description Promote a recommendation into an EXPLAIN-bound human override (override-wins path).
+         *
+         *     A staged agent NOTE (kind ``column_note`` / ``table_note`` — ontology/agent_notes.py)
+         *     is accepted through its own writer: a column note becomes a human-sourced column
+         *     note, a table note becomes the glossary grain. Same review inbox, two sinks.
          */
         post: operations["accept_ontology_recommendation_ontology_recommendations__rec_id__accept_post"];
         delete?: never;
