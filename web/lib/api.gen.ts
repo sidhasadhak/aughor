@@ -5547,7 +5547,9 @@ export interface paths {
         /**
          * Put Column Config
          * @description Apply a human edit to one column's config — override-wins, rebuild-proof.
-         *     Invalidates the schema cache so pruning changes reach the next prompt.
+         *     Invalidates the schema cache so pruning changes AND notes reach the next
+         *     prompt (a note rides the column line since 2026-08-14 — before that, the
+         *     endpoint accepted one and nothing read it, and a note-only edit was 422'd).
          */
         put: operations["put_column_config_ontology_column_config_put"];
         post?: never;
