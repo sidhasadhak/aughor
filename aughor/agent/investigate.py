@@ -460,8 +460,13 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
         finding_id="association",
         title=f"{dim_a} × {dim_b}: are they related?",
         sql=result.sql,
+        # A contingency grid is not a top-N list, and the usual 50-row display cut
+        # decapitates it: the 8x21 fare-class table kept 50 rows, which is FOUR of the
+        # eight aircraft types, so the heatmap drew half the answer and looked complete.
+        # The grid IS the finding here, so it is carried whole (bounded well above any
+        # cross-tab a reader can take in, and the renderer caps the drawn axes anyway).
         columns=list(result.columns),
-        rows=result.rows[:50],
+        rows=result.rows[:_ASSOCIATION_GRID_MAX],
         row_count=result.row_count,
         error=result.error,
         interpretation=assoc.interpretation,
@@ -477,6 +482,38 @@ def _association_finding(result, dim_a: str, dim_b: str) -> Optional[Investigati
 #: call it a finding; on a null result that is exactly wrong, and it is what produced
 #: "Gross sales are heavily concentrated in Standard Class" as the answer to "how do
 #: Ship Mode and Sub-categories relate?".
+#: Cells of a contingency grid carried into the finding. Generous on purpose — the grid is
+#: the answer to a relationship question, not a preview of one — and the heatmap renderer
+#: caps the drawn axes independently (20 rows x 24 columns), so this bounds payload size
+#: rather than legibility.
+_ASSOCIATION_GRID_MAX = 600
+
+
+def _association_directive(finding: dict) -> str:
+    """The instruction the phase summary carries for the narrator — an INSTRUCTION, never
+    a copy of the verdict.
+
+    The first version prepended the verdict text verbatim on the RELATED branch, and the
+    finding already carried it, so the report printed the same paragraph twice under
+    "Cross-Sectional Scan" — once as the scan's summary and once as the finding's. A
+    directive tells the narrator what to do with the evidence; the evidence itself is the
+    finding's job.
+    """
+    interp = finding.get("interpretation") or ""
+    if "INDEPENDENT" in interp:
+        return ASSOCIATION_NULL_DIRECTIVE
+    return (
+        "⚖️ TESTED AND RELATED — the two dimensions the question asked about were crossed "
+        "and formally tested: they ARE dependent, and the leading finding carries the "
+        "effect size and the specific over-represented cells. You MUST: (1) lead with "
+        "that — the relationship IS the answer; (2) quote the effect size and the named "
+        "cells from that finding rather than restating its sentence; (3) NOT substitute a "
+        "ranking or a share-of-total for the relationship — a marginal total is true "
+        "whatever the relationship is; (4) NOT claim a direction of causation from a "
+        "contingency test.\n\n"
+    )
+
+
 ASSOCIATION_NULL_DIRECTIVE = (
     "⚖️ TESTED AND INDEPENDENT — the two dimensions the question asked about were crossed "
     "and formally tested: they are NOT related. This is the ANSWER, not a missing result. "
@@ -5795,10 +5832,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # narrator) meets the concentration story first and stops there.
     if _assoc_finding is not None:
         findings = [_assoc_finding] + list(findings)
-        if "INDEPENDENT" in (_assoc_finding.get("interpretation") or ""):
-            summary = ASSOCIATION_NULL_DIRECTIVE + (summary or "")
-        else:
-            summary = f"{_assoc_finding['interpretation']}\n\n{summary or ''}"
+        summary = _association_directive(_assoc_finding) + (summary or "")
 
     phase = _phase_result(
         _phase_id, _phase_title, _phase_emoji,
@@ -7239,13 +7273,10 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     if _assoc_finding is not None and merged:
         _first = dict(merged[0])
         _first["findings"] = [_assoc_finding] + list(_first.get("findings") or [])
-        if "INDEPENDENT" in (_assoc_finding.get("interpretation") or ""):
-            _first["summary"] = ASSOCIATION_NULL_DIRECTIVE + (_first.get("summary") or "")
-            if primary_summary is not None:
-                primary_summary = ASSOCIATION_NULL_DIRECTIVE + primary_summary
-        else:
-            _first["summary"] = (f"{_assoc_finding['interpretation']}\n\n"
-                                 f"{_first.get('summary') or ''}")
+        _directive = _association_directive(_assoc_finding)
+        _first["summary"] = _directive + (_first.get("summary") or "")
+        if primary_summary is not None:
+            primary_summary = _directive + primary_summary
         merged = [_first] + list(merged[1:])
 
     out = {"investigation_phases": merged}

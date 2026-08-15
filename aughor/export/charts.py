@@ -26,6 +26,7 @@ import re
 from typing import Callable, Optional
 
 import matplotlib
+import numpy as np
 matplotlib.use("Agg")  # headless — no display, safe on a server
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
@@ -330,6 +331,14 @@ def render_chart(
         if date_idx and ct in ("line", "multi_line", "area", "auto", "combo"):
             return _render_timeseries(columns, rows, date_idx[0], num_idx, cat_idx, ct, title,
                                       width, height, units, exhibit, money_symbol)
+        # ── heatmap: TWO categories + a measure — a grid, drawn as a grid ────
+        # Without this the association scan's 8x21 contingency fell through to the bar
+        # branch, which takes cat_idx[0] as the label and plots 21 bars per aircraft
+        # type: a chart with "A320" repeated down the axis and no second dimension
+        # anywhere on it. Worse than no chart, because it looks like an answer.
+        if ct in ("heatmap", "matrix") and len(cat_idx) >= 2:
+            return _render_heatmap(columns, rows, cat_idx[0], cat_idx[1], num_idx[0],
+                                   title, width, height, units, money_symbol)
         # ── scatter: two numerics, no category ───────────────────────────────
         if ct == "scatter" and len(num_idx) >= 2:
             return _render_scatter(columns, rows, num_idx, cat_idx, title, width, height, units, exhibit, money_symbol)
@@ -474,6 +483,78 @@ def _render_bar(columns, rows, cx, num_idx, ct, title, w, h, units=None, exhibit
     _draw_ref_lines(ax, exhibit, "x", _fmt)
     if title:
         ax.set_title(title, fontsize=9.5, color=_FG, loc="left", pad=8)
+    return _finish(fig)
+
+
+def _render_heatmap(columns, rows, rx, cx, vy, title="", w=7.0, h=3.4,
+                    units=None, money_symbol=""):
+    """A contingency grid, drawn as a grid.
+
+    The shape of "how do A and B relate" is a matrix, and a matrix rendered as a bar
+    chart is not a simplification — it is a different, wrong picture: the association
+    scan's 8x21 table came out as 21 bars labelled "A320" over and over, with the second
+    dimension nowhere on the chart.
+
+    Cells are shaded by SHARE WITHIN EACH ROW rather than by raw value, because that is
+    what the verdict is about: whether one dimension's mix changes across the other. On
+    raw counts a heatmap of any real dataset just re-draws the row totals — the biggest
+    row glows and nothing about the relationship is visible. Row-normalised, an
+    independent pair reads as flat bands and a dependent one as visible structure, which
+    is the claim the reader is being asked to check.
+    """
+    r_labels, c_labels = [], []
+    for r in rows:
+        rv = str(r[rx]) if rx < len(r) else ""
+        cv = str(r[cx]) if cx < len(r) else ""
+        if rv and rv not in r_labels:
+            r_labels.append(rv)
+        if cv and cv not in c_labels:
+            c_labels.append(cv)
+    if len(r_labels) < 2 or len(c_labels) < 2:
+        return None
+    # Cap the grid: a 40x40 heat map is a texture, not a chart. Keep the biggest.
+    grid = np.zeros((len(r_labels), len(c_labels)), dtype=float)
+    for r in rows:
+        v = _to_num(r[vy] if vy < len(r) else None)
+        if v is None:
+            continue
+        rv, cv = str(r[rx]), str(r[cx])
+        if rv in r_labels and cv in c_labels:
+            grid[r_labels.index(rv)][c_labels.index(cv)] = v
+    if grid.sum() <= 0:
+        return None
+    if len(r_labels) > 20:
+        keep = np.argsort(grid.sum(axis=1))[::-1][:20]
+        grid, r_labels = grid[keep], [r_labels[i] for i in keep]
+    if len(c_labels) > 24:
+        keep = np.argsort(grid.sum(axis=0))[::-1][:24]
+        grid, c_labels = grid[:, keep], [c_labels[i] for i in keep]
+
+    totals = grid.sum(axis=1, keepdims=True)
+    shares = np.divide(grid, totals, out=np.zeros_like(grid), where=totals > 0) * 100
+
+    fig, ax = plt.subplots(figsize=(max(w, 0.42 * len(c_labels) + 2.2),
+                                    max(h, 0.34 * len(r_labels) + 1.4)))
+    im = ax.imshow(shares, aspect="auto", cmap="Blues", vmin=0)
+    ax.set_xticks(range(len(c_labels)))
+    ax.set_xticklabels(c_labels, fontsize=7, rotation=45, ha="right")
+    ax.set_yticks(range(len(r_labels)))
+    ax.set_yticklabels(r_labels, fontsize=7)
+    ax.set_xlabel(columns[cx] if cx < len(columns) else "", fontsize=8)
+    ax.set_ylabel(columns[rx] if rx < len(columns) else "", fontsize=8)
+    if title:
+        ax.set_title(title, fontsize=9, pad=8)
+    # Annotate only a small grid; past that the numbers become noise.
+    if len(r_labels) * len(c_labels) <= 120:
+        hi = shares.max()
+        for i in range(len(r_labels)):
+            for j in range(len(c_labels)):
+                ax.text(j, i, f"{shares[i][j]:.0f}", ha="center", va="center", fontsize=6,
+                        color="white" if shares[i][j] > hi * 0.6 else "#333333")
+    cb = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cb.set_label("% of row", fontsize=7)
+    cb.ax.tick_params(labelsize=6)
+    ax.set_axisbelow(True)
     return _finish(fig)
 
 

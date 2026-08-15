@@ -379,3 +379,55 @@ def test_attach_stats_annotates_a_result_and_never_raises():
     err = QueryResult(hypothesis_id="t", sql="x", columns=[], rows=[], row_count=0,
                       error="boom")
     assert attach_stats(err).stats == []
+
+
+# ── the exhibit: a grid answer drawn as a grid ───────────────────────────────
+
+def _grid_rows(n_rows=4, n_cols=5):
+    return [[f"r{i}", f"c{j}", float(10 + i * j)] for i in range(n_rows) for j in range(n_cols)]
+
+
+def test_a_contingency_grid_renders_as_a_heatmap():
+    """`render_chart` had no heatmap branch, so an 8x21 contingency fell through to the
+    bar renderer: 21 bars labelled "A320" over and over, with the second dimension
+    nowhere on the chart. Worse than no chart, because it looks like an answer."""
+    from aughor.export.charts import render_chart
+
+    png = render_chart(["dim_a", "dim_b", "n_records"], _grid_rows(), "heatmap", "t")
+    assert png and png[:4] == b"\x89PNG"
+
+
+def test_a_one_dimensional_result_does_not_pretend_to_be_a_grid():
+    from aughor.export.charts import render_chart
+
+    rows = [["a", 1.0], ["b", 2.0], ["c", 3.0]]
+    png = render_chart(["dim", "n"], rows, "heatmap", "t")
+    assert png is None or png[:4] == b"\x89PNG"   # falls back, never raises
+
+
+def test_the_finding_carries_the_whole_grid_not_a_50_row_preview():
+    """A contingency grid is not a top-N list. The usual 50-row display cut kept FOUR of
+    eight aircraft types, so the heatmap drew half the answer and looked complete."""
+    from aughor.agent.investigate import _ASSOCIATION_GRID_MAX, _association_finding
+
+    cols = ["dim_a", "dim_b", "n_records"]
+    rows = _grid_rows(8, 21)                       # 168 cells, as in the live run
+    f = _association_finding(_FakeResult(cols, rows), "dim_a", "dim_b")
+    assert f is not None
+    assert len(f["rows"]) == len(rows) > 50
+    assert _ASSOCIATION_GRID_MAX >= 168
+
+
+def test_the_phase_summary_instructs_and_does_not_duplicate_the_verdict():
+    """The RELATED branch prepended the verdict verbatim while the finding already
+    carried it, so the report printed the same paragraph twice under one heading."""
+    from aughor.agent.investigate import _association_directive
+
+    cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
+    null_f = _association_finding(_FakeResult(cols, rows), "a", "b")
+    assert "INDEPENDENT" in null_f["interpretation"]
+    for finding in (null_f, {"interpretation": "[2x2] RELATED: not independent (V=0.4, p=0)."}):
+        d = _association_directive(finding)
+        assert d and d.strip().endswith(("\n", ".")) or d
+        assert finding["interpretation"] not in d, "the directive must not copy the verdict"
+        assert "MUST" in d, "it has to actually instruct the narrator"
