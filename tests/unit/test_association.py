@@ -489,10 +489,9 @@ def test_the_finding_shows_plain_prose_and_notes_the_statistics():
 # ── the report's own voice ───────────────────────────────────────────────────
 
 def test_no_markdown_emphasis_survives_to_the_reader():
-    """Bold reached the reader on almost every figure, which is emphasis on nothing. The
-    markup is KEPT upstream on purpose — `report_checks.check_grounding` scans `**…**` to
-    catch a number the model invented, and that is how an unsupported "86.5%" was caught —
-    so it is removed at the last touch instead of at the source."""
+    """Emphasis is no longer requested anywhere in the prompts. This stripper stays as the
+    belt to that braces: prompt instructions are advice, and a model that bolds out of
+    habit must still not reach the reader with markup."""
     from aughor.agent.investigate import _strip_emphasis_deep, strip_emphasis
 
     assert strip_emphasis("cost is **529.25** vs **505.87**") == "cost is 529.25 vs 505.87"
@@ -509,10 +508,12 @@ def test_no_markdown_emphasis_survives_to_the_reader():
     assert got == {"headline": "A wins", "recommendations": [{"action": "cut 12%"}]}
 
 
-def test_the_grounding_check_still_has_its_markers():
-    """The strip must not run before the check — that would blind the one guard that
-    catches a fabricated figure."""
+def test_the_grounding_check_no_longer_depends_on_bold():
+    """Emphasis is gone from the prompts entirely (operator decision), so the guard was
+    rekeyed from `**bold**` spans to sentences rather than left matching nothing — a
+    check whose key stops matching is worse than no check, because it still looks alive."""
     from aughor.agent.report_checks import check_grounding
 
-    violations = check_grounding("economy was **86.5%** of volume", "economy 87.0 of volume")
+    violations = check_grounding("Economy was 86.5% of volume.", "economy 87.0 of volume")
     assert violations and "86.5" in violations[0]
+    assert check_grounding("Economy was 87.0% of volume.", "economy 87.0 of volume") == []

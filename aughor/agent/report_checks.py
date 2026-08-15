@@ -18,7 +18,9 @@ from typing import Any, Optional
 
 # Numbers as models write them: 1,234.56 · -18 · 406.08 · 67.6
 _NUM_RE = re.compile(r"[-+]?\d[\d,]*\.?\d*")
-_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+#: Sentence boundaries — the unit a violation is reported in, so the message shows the
+#: claim rather than a bare number with no context.
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 #: Compact forms ("$2.1M", "480K") are legitimate roundings of evidence values this
 #: module cannot cheaply verify — grounding skips them rather than crying wolf.
 _COMPACT_SUFFIX = re.compile(r"[\d.]\s*[KMBkmb]\b")
@@ -129,19 +131,27 @@ def _evidence_number_set(evidence: str) -> set[str]:
     return out
 
 
-def check_grounding(bold_texts: str, evidence: str) -> list[str]:
-    """Every **bold** number in the report's prose must exist in the evidence.
+def check_grounding(prose: str, evidence: str) -> list[str]:
+    """Every substantial number in the report's headline prose must exist in the evidence.
 
-    Bold is the report's own claim of decisiveness ('bold marks numbers already
-    traceable to the evidence'), which makes it the honest scope for a cheap check:
-    compact forms ($2.1M) and tiny integers (list ranks, '3 sub-categories') are
-    skipped — unverifiable or trivially coincidental, and a false violation costs a
-    real retry."""
-    if not bold_texts or not evidence:
+    This used to scan only `**bold**` spans, because the narrator was told to bold the
+    decisive figure and bold was therefore the report's own claim of decisiveness. The
+    emphasis is gone from the prompts (it reached the reader on nearly every number, which
+    is emphasis on none), so keying on it would leave a guard that matches nothing and
+    still looks alive — the failure this codebase has hit before, where a check goes blind
+    because its key stopped matching.
+
+    Sentences replace bold spans. The SCOPE is unchanged: the caller passes headline +
+    executive summary + closing summary, the three fields where a fabricated figure does
+    the most damage. If anything this catches more, since a number the model chose NOT to
+    bold was never checked before. Compact forms ($2.1M) and tiny integers (list ranks,
+    "3 sub-categories") are still skipped — unverifiable or trivially coincidental, and a
+    false violation costs a real retry."""
+    if not prose or not evidence:
         return []
     have = _evidence_number_set(evidence)
     missing: list[str] = []
-    for segment in _BOLD_RE.findall(bold_texts):
+    for segment in _SENTENCE_RE.split(prose):
         if _COMPACT_SUFFIX.search(segment):
             continue
         for n in _NUM_RE.findall(segment):
@@ -150,12 +160,12 @@ def check_grounding(bold_texts: str, evidence: str) -> list[str]:
             if f is None or abs(f) < 10:
                 continue
             if clean not in have:
-                missing.append(f"**{segment.strip()}**")
+                missing.append(segment.strip())
                 break
     if not missing:
         return []
     return [
-        "these bolded figures do not appear anywhere in FULL EVIDENCE: "
+        "these figures do not appear anywhere in FULL EVIDENCE: "
         + ", ".join(dict.fromkeys(missing[:4]))
         + " — replace each with the evidence's own value or describe it qualitatively."]
 
