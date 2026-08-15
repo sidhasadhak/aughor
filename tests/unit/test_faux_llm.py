@@ -199,6 +199,6 @@ def test_faux_backend_is_not_operator_selectable():
     appear in the operator-facing surfaces (Settings dropdown / CLI mirror /
     fallback eligibility all derive from BACKENDS)."""
     assert P.FAUX_BACKEND not in P.BACKENDS
-    assert P.FAUX_BACKEND in P._DEFAULT_MODELS
+    assert P.FAUX_BACKEND in P._FAUX_MODELS
     prov = P.LLMProvider(P.FAUX_BACKEND, "coder")
     assert isinstance(prov._client, faux.FauxClient)

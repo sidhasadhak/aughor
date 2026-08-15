@@ -35,10 +35,11 @@ def test_unknown_model_gets_the_exact_legacy_constants(monkeypatch):
     assert p.parallel_waves is False
 
 
-def test_capable_family_gets_the_larger_budgets(monkeypatch):
+def test_a_wide_context_window_earns_the_larger_budgets(monkeypatch):
     monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("AUGHOR_REASONING_EFFORT", raising=False)
-    p = pr.profile_for("coder", model="nvidia/nemotron-3-super-120b-a12b:free")
+    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "1000000")
+    p = pr.profile_for("coder", model="any/model")
     assert p.schema_char_limit == 60_000
     assert p.evidence_budget == 18_000
     assert p.interpret_max_rows == 36
@@ -48,12 +49,30 @@ def test_capable_family_gets_the_larger_budgets(monkeypatch):
     assert p.structured_attempts == 1
 
 
-def test_family_match_ignores_the_suffix_and_prefers_the_longest_prefix():
-    # :free / :cloud are transport tags, not family identity
-    assert pr.tier_for("qwen3-coder-next:cloud")["schema_char_limit"] == 60_000
-    assert pr.tier_for("kimi-k3:cloud")["schema_char_limit"] == 60_000
-    # a *substring* elsewhere in the id must not match — prefix only
-    assert pr.tier_for("acme/not-kimi-at-all")["schema_char_limit"] == 20_000
+def test_the_tier_is_derived_from_the_declared_context_not_the_name(monkeypatch):
+    """The tier used to come from a hand-maintained table of model-id prefixes, which
+    went stale in the direction that costs you: this deployment's own coder model was
+    listed under its OpenRouter spelling but not its Ollama-cloud one, so a capable model
+    silently ran on 20k of schema instead of 60k. The provider's declared context window
+    is the fact the family table was a proxy for, so it decides directly now — and it is
+    right about a model nobody here has ever heard of."""
+    monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+    monkeypatch.setattr(pr, "declared_context",
+                        lambda m: {"wide/one": 200_000, "narrow/one": 8_000}.get(m))
+    assert pr.tier_for("wide/one")["schema_char_limit"] == 60_000
+    assert pr.tier_for("narrow/one")["schema_char_limit"] == 20_000
+    # Unknown ⇒ BASELINE. The conservative floor, and the same answer the old table
+    # gave for anything it had not heard of.
+    assert pr.tier_for("never/seen")["schema_char_limit"] == 20_000
+
+
+def test_an_operator_can_declare_the_context_window(monkeypatch):
+    """The escape hatch for a backend that publishes no context length — and the only
+    thing that stands in for the deleted list."""
+    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "128000")
+    assert pr.tier_for("anything/at-all")["schema_char_limit"] == 60_000
+    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "32000")
+    assert pr.tier_for("anything/at-all")["schema_char_limit"] == 20_000
 
 
 # ── 2. Parallelism needs a DECLARED budget ───────────────────────────────────
@@ -72,7 +91,7 @@ def test_undeclared_budget_is_not_an_unlimited_one(monkeypatch):
 
 def test_free_suffix_is_a_20_rpm_declaration(monkeypatch):
     monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
-    p = pr.profile_for("coder", model="nvidia/nemotron-3-super-120b-a12b:free")
+    p = pr.profile_for("coder", model="vendor/model:free")
     assert p.rpm_budget == 20
     assert p.parallel_waves is False           # 20 < the wave floor
 
@@ -105,10 +124,11 @@ def test_parallel_waves_enabled_is_fail_safe(monkeypatch):
 # ── 3. Env overrides are call-time and outrank the tier ──────────────────────
 
 def test_env_overrides_are_read_at_call_time_not_import(monkeypatch):
-    p1 = pr.profile_for("coder", model="nvidia/nemotron-3-super-120b-a12b:free")
+    monkeypatch.setattr(pr, "declared_context", lambda m: 200_000)   # a capable binding
+    p1 = pr.profile_for("coder", model="wide/model:free")
     monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "2048")
     monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "high")
-    p2 = pr.profile_for("coder", model="nvidia/nemotron-3-super-120b-a12b:free")
+    p2 = pr.profile_for("coder", model="wide/model:free")
     assert (p1.max_output_tokens, p2.max_output_tokens) == (8_192, 2_048)
     assert p2.reasoning_effort == "high"
 

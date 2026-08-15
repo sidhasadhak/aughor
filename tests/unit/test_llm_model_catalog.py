@@ -1,18 +1,37 @@
 """The model catalogue — OpenRouter as a provider, and the picker's list of values.
 
-Live fetches are disabled here (``AUGHOR_LLM_MODEL_FETCH=0``) so the suite never
-depends on a remote host being up; the merge logic, persistence and API surface
-are what these cover. The live path is exercised separately by its own test with
-a stubbed transport.
+Rewritten 2026-08-15, when every hardcoded model id was removed from the product
+(operator decision). What this file used to assert — that a curated floor exists, that
+the shipped defaults are free-tier, that each agent carries a recommendation — is now
+the opposite of the contract, so those tests are gone and their inverse is pinned here
+instead, plus a rot guard (:func:`test_no_model_id_ships_in_the_product`) so the lists
+cannot creep back one convenient id at a time.
+
+The contract now:
+  * the picker shows what the PROVIDER serves, plus what the operator kept — nothing else;
+  * a failed live fetch yields an EMPTY picker and says why, rather than a stale floor
+    presented with the same authority as the real thing;
+  * no role, backend, agent or tier carries a built-in model id;
+  * asking for a binding that was never configured raises, loudly.
+
+Live fetches are disabled here (``AUGHOR_LLM_MODEL_FETCH=0``) so the suite never depends
+on a remote host being up.
 """
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 
 import pytest
 
 from aughor.llm import models as M
 from aughor.llm import provider as P
+
+#: A binding for the tests that need one. Arbitrary and meaningless on purpose — the
+#: point of the change is that the product no longer knows any real ids, so a test must
+#: supply its own rather than lean on one that ships.
+_TEST_MODELS = {"coder": "test/coder", "narrator": "test/narrator", "fast": "test/fast"}
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +39,7 @@ def _isolated_config(tmp_path, monkeypatch):
     """Point the inference config at a tmp file — it holds encrypted API keys, so
     a test must never touch the real one."""
     cfg = tmp_path / "llm_config.json"
-    cfg.write_text(json.dumps({"backend": "openrouter"}))
+    cfg.write_text(json.dumps({"backend": "openrouter", "models": dict(_TEST_MODELS)}))
     original = P._CONFIG_PATH
     P._CONFIG_PATH = cfg          # restored below, NOT via monkeypatch: the reload
     monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "0")   # in teardown must happen AFTER
@@ -39,37 +58,48 @@ def test_openrouter_is_registered():
     assert "openrouter" in P.NEEDS_KEY               # it takes a key
     assert P._DEFAULT_BASE_URLS["openrouter"] == "https://openrouter.ai/api/v1"
     assert P._KEY_ENV["openrouter"] == "OPENROUTER_API_KEY"
-    for role in ("coder", "narrator", "fast"):
-        assert P._DEFAULT_MODELS["openrouter"][role]
-
-
-def test_openrouter_defaults_are_free_tier():
-    """A fresh key should work without first picking a paid model."""
-    assert all(m.endswith(":free") for m in P._DEFAULT_MODELS["openrouter"].values())
 
 
 def test_openrouter_is_not_treated_as_a_local_backend():
     assert "openrouter" not in P.LOCAL_BACKENDS      # its base URL is fixed
 
 
-# ── the catalogue ─────────────────────────────────────────────────────────────
+# ── nothing ships a model ─────────────────────────────────────────────────────
 
-def test_known_models_are_the_offline_floor():
+def test_no_backend_ships_a_default_model():
+    for backend in P.BACKENDS:
+        assert P.default_models(backend) == {}, f"{backend} still ships a default model"
+
+
+def test_the_picker_is_empty_without_a_live_catalogue():
+    """The inverse of the old `test_known_models_are_the_offline_floor`. An empty
+    picker that says why beats a curated one that has gone stale: this repo shipped
+    two OpenRouter ids that never existed and two Ollama ids that stopped working,
+    and in every case the list still looked authoritative."""
     out = M.list_models("openrouter")
     assert out["live"] is False
-    assert out["models"], "the picker must never be empty"
-    assert all(m["source"] == "known" for m in out["models"])
-    assert out["defaults"]["coder"] == P._DEFAULT_MODELS["openrouter"]["coder"]
+    assert out["models"] == []
+    assert out["defaults"] == {}
 
 
-def test_every_backend_has_a_floor():
+def test_no_backend_has_a_built_in_floor():
     for backend in P.BACKENDS:
-        assert M.list_models(backend)["models"], f"{backend} has no suggestions"
+        assert M.list_models(backend)["models"] == [], f"{backend} still has a floor"
 
 
 def test_unknown_backend_is_rejected():
     with pytest.raises(ValueError):
         M.list_models("not-a-backend")
+
+
+def test_asking_for_an_unconfigured_binding_raises():
+    P.write_config({"backend": "openrouter"})        # a backend, but no models
+    with pytest.raises(P.NoModelConfigured) as exc:
+        P.require_model("openrouter", "coder")
+    # The message has to be actionable — this is the whole benefit of removing the
+    # default, and a bare KeyError would have been a worse outcome than the guess.
+    assert "coder" in str(exc.value)
+    assert "Settings" in str(exc.value)
 
 
 # ── custom entries persist ────────────────────────────────────────────────────
@@ -107,12 +137,16 @@ def test_remove_custom_model():
     assert M.custom_models("openrouter") == ["acme/b"]
 
 
-def test_built_in_entries_are_not_removable():
+def test_a_live_entry_is_not_removable(monkeypatch):
     """Hiding a model the backend actually serves would make the picker disagree
     with reality — removal is for entries the user added."""
-    builtin = M.KNOWN_MODELS["openrouter"][0]
+    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.setattr(M, "fetch_live_models",
+                        lambda backend, timeout=6.0: ([{"id": "vendor/served", "source": "live"}], ""))
+    M.clear_cache()
+    assert "vendor/served" in {m["id"] for m in M.list_models("openrouter")["models"]}
     with pytest.raises(ValueError, match="not a custom entry"):
-        M.remove_custom_model("openrouter", builtin)
+        M.remove_custom_model("openrouter", "vendor/served")
 
 
 def test_add_rejects_blank_and_unknown_backend():
@@ -135,9 +169,10 @@ def test_custom_entry_wins_when_it_also_appears_live(monkeypatch):
     assert entry["source"] == "custom"
 
 
-def test_live_failure_surfaces_the_reason(monkeypatch):
-    """A failed fetch must be stated, not hidden behind a fallback that then
-    poses as the real catalogue."""
+def test_live_failure_surfaces_the_reason_and_shows_nothing(monkeypatch):
+    """A failed fetch must be stated, not hidden behind a fallback that then poses as
+    the real catalogue. It used to still show the floor; now there is nothing to show,
+    which is the honest answer to "what does this provider serve?" when we could not ask."""
     monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
     monkeypatch.setattr(M, "fetch_live_models",
                         lambda backend, timeout=6.0: ([], "ConnectError: refused"))
@@ -146,7 +181,7 @@ def test_live_failure_surfaces_the_reason(monkeypatch):
     out = M.list_models("openrouter")
     assert out["live"] is False
     assert "refused" in out["error"]
-    assert out["models"], "still shows the floor"
+    assert out["models"] == []
 
 
 def test_live_results_are_cached(monkeypatch):
@@ -167,6 +202,21 @@ def test_live_results_are_cached(monkeypatch):
     assert calls["n"] == 2, "an explicit refresh must bypass the cache"
 
 
+def test_a_live_context_window_is_recorded_for_the_tier(monkeypatch):
+    """What replaced the hardcoded capability table: the provider's own declared
+    context window, captured when the catalogue is fetched and read back by
+    `profile.tier_for`. Without this the derived tier has nothing to derive from."""
+    from aughor.llm.profile import declared_context
+
+    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+    monkeypatch.setattr(M, "fetch_live_models", lambda backend, timeout=6.0: (
+        [{"id": "vendor/wide", "source": "live", "context": 200_000}], ""))
+    M.clear_cache()
+    M.list_models("openrouter")
+    assert declared_context("vendor/wide") == 200_000
+
+
 # ── the API surface ───────────────────────────────────────────────────────────
 
 def test_model_routes(client):
@@ -183,9 +233,8 @@ def test_model_routes(client):
     assert removed.json()["custom"] == []
 
 
-def test_removing_a_non_custom_model_is_a_400(client):
-    r = client.delete("/llm/models",
-                      params={"backend": "openrouter", "model": M.KNOWN_MODELS["openrouter"][0]})
+def test_removing_a_model_that_is_not_custom_is_a_400(client):
+    r = client.delete("/llm/models", params={"backend": "openrouter", "model": "acme/never-added"})
     assert r.status_code == 400
 
 
@@ -193,41 +242,79 @@ def test_config_exposes_openrouter_to_the_ui(client):
     body = client.get("/llm/config").json()
     assert "openrouter" in body["backends"]
     assert "openrouter" in body["needs_key"]
-    assert "openrouter" in body["default_models"]
+    # The key survives for payload stability; what it must never do again is carry a
+    # model id the UI then presents as a suggestion.
+    assert body["default_models"]["openrouter"] == {}
 
 
-# ── the curated OpenRouter list ───────────────────────────────────────────────
+# ── the rot guard ─────────────────────────────────────────────────────────────
 
-def test_openrouter_floor_is_all_free_tier():
-    """We only run free models on this provider, so a paid id in the floor would
-    quietly start costing money the moment someone picked it."""
-    assert all(m.endswith(":free") for m in M.KNOWN_MODELS["openrouter"])
-
-
-def test_openrouter_defaults_are_in_the_floor():
-    """The first pass shipped two default ids that do not exist on OpenRouter
-    (guessed rather than looked up). This keeps defaults and the list in step."""
-    floor = set(M.KNOWN_MODELS["openrouter"])
-    for role, model in P._DEFAULT_MODELS["openrouter"].items():
-        assert model in floor, f"{role} default {model!r} is not in the curated list"
+#: A model id, in the two shapes this repo ever shipped: ``vendor/model`` and a
+#: ``:free`` / ``:cloud`` suffix. Kept narrow deliberately — this must fire on a
+#: returning list, not on every string containing a slash.
+_MODEL_ID = re.compile(
+    r'"[A-Za-z0-9._-]+:(?:free|cloud)"'
+    r'|"(?:nvidia|google|openai|anthropic|meta-llama|deepseek|moonshotai|z-ai|qwen'
+    r'|cohere|poolside|mistralai|together)/[A-Za-z0-9._:-]+"'
+)
 
 
-def test_music_models_are_not_offered_as_text_models():
-    """Lyria is a music-generation model. OpenRouter lists it under Text and
-    reports it free, but offering it where a SQL writer is chosen is a trap."""
-    assert not [m for m in M.KNOWN_MODELS["openrouter"] if "lyria" in m]
+def test_no_model_id_ships_in_the_product():
+    """The lists came back before as one convenient id at a time; this is the ratchet.
+
+    Every hardcoded model id was removed on 2026-08-15 — the picker's curated floor,
+    the per-backend/role defaults, the vouched matrix, the capability families and the
+    per-agent pins. A model id in shipped code is a claim about another vendor's
+    catalogue that this repo has no way to keep true, and every one of them went stale
+    silently: retired mid-life, quietly made subscription-only, or never real at all.
+
+    Tests may name ids (they need something concrete to assert on); `aughor/` may not.
+    """
+    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    offenders: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+            if _MODEL_ID.search(line):
+                rel = path.relative_to(root.parent).as_posix()
+                offenders.append(f"{rel}:{i}: {line.strip()[:100]}")
+    assert not offenders, (
+        "a hardcoded model id is back in the product:\n  " + "\n  ".join(offenders)
+        + "\n\nThe catalogue comes from the provider's own /models; a binding comes from "
+          "the operator. If you need one for a test, put it in the test."
+    )
+
+
+def test_no_charter_recommends_a_model():
+    """`recommended_models` and POST /agents/apply-recommended-models are gone: the
+    feature's entire content was six hardcoded ids."""
+    from aughor.kernel.agents import AGENTS
+
+    for charter in AGENTS:
+        assert not hasattr(charter, "recommended_models"), \
+            f"{charter.id} carries a model recommendation again"
+
+
+def test_the_apply_recommended_route_is_gone(client):
+    assert client.post("/agents/apply-recommended-models", json={}).status_code in (404, 405)
+
+
+def test_the_vouched_matrix_module_is_gone():
+    with pytest.raises(ImportError):
+        import aughor.llm.matrix  # noqa: F401
 
 
 # ── every registered backend must actually be constructible ───────────────────
 
 def test_every_backend_builds_a_client(monkeypatch):
     """The bug this exists for: openrouter was added to BACKENDS, NEEDS_KEY,
-    _KEY_ENV, base URLs and defaults — but not to the client-builder dispatch.
-    Selecting it raised "Unknown backend: 'openrouter'. Use one of ..., openrouter"
-    — an error that lists the backend it just refused, because the message
-    interpolates BACKENDS while the branch had no arm for it.
+    _KEY_ENV and base URLs — but not to the client-builder dispatch. Selecting it
+    raised "Unknown backend: 'openrouter'. Use one of ..., openrouter" — an error
+    that lists the backend it just refused, because the message interpolates
+    BACKENDS while the branch had no arm for it.
 
-    Registering metadata is not wiring. This asserts the whole set.
+    Registering metadata is not wiring. This asserts the whole set. The model is
+    passed explicitly now: with no defaults, resolution would raise before the
+    dispatch this test is about is ever reached.
     """
     from aughor.llm.provider import LLMProvider
 
@@ -235,7 +322,7 @@ def test_every_backend_builds_a_client(monkeypatch):
         # every keyed backend gets a dummy so the builders do not bail on a missing key
         monkeypatch.setattr(P, "_active_key", lambda b: "test-key")
         try:
-            LLMProvider(backend, "coder")
+            LLMProvider(backend, "coder", model="test/model")
         except ValueError as exc:                     # the dispatch has no arm
             pytest.fail(f"{backend} is registered but has no client builder: {exc}")
         except Exception:
@@ -249,67 +336,10 @@ def test_openrouter_uses_the_openai_compatible_client(monkeypatch):
                         lambda url, key: built.append((url, key)) or object())
 
     from aughor.llm.provider import LLMProvider
-    LLMProvider("openrouter", "coder")
+    LLMProvider("openrouter", "coder", model="test/model")
 
     assert built, "openrouter did not route to the OpenAI-compatible builder"
     assert built[0][0] == P._DEFAULT_BASE_URLS["openrouter"]
-
-
-# ── per-agent recommended bindings ────────────────────────────────────────────
-
-def test_every_agent_has_an_openrouter_recommendation():
-    from aughor.kernel.agents import AGENTS
-
-    for charter in AGENTS:
-        rec = (charter.recommended_models or {}).get("openrouter")
-        assert rec, f"{charter.id} has no OpenRouter recommendation"
-        assert rec in M.KNOWN_MODELS["openrouter"], \
-            f"{charter.id} recommends {rec!r}, which is not in the curated list"
-
-
-def test_recommendations_are_backend_scoped():
-    """The ids are provider-specific — a recommendation shown while a different
-    provider is bound would be unusable advice."""
-    from aughor.kernel.agents import get_charter
-
-    assert get_charter("analyst").recommended_models.get("ollama") is None
-
-
-def test_apply_recommended_pins_the_fleet(client, monkeypatch):
-    monkeypatch.setattr("aughor.routers.agents._active_backend_id", lambda: "openrouter")
-
-    r = client.post("/agents/apply-recommended-models", json={})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["backend"] == "openrouter"
-    applied = {a["agent_id"]: a["model"] for a in body["applied"]}
-    assert applied["analyst"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
-    assert applied["insight"] == "google/gemma-4-31b-it:free"
-
-    roster = {a["id"]: a for a in client.get("/agents").json()}
-    assert roster["analyst"]["governance"]["model"] == applied["analyst"]
-
-
-def test_apply_recommended_keeps_an_operator_pin(client, monkeypatch):
-    """A suggestion must never silently replace a choice someone made."""
-    monkeypatch.setattr("aughor.routers.agents._active_backend_id", lambda: "openrouter")
-    client.patch("/agents/analyst", json={"model": "my/deliberate-choice"})
-
-    body = client.post("/agents/apply-recommended-models", json={}).json()
-    assert "analyst" not in {a["agent_id"] for a in body["applied"]}
-    assert any(s["agent_id"] == "analyst" and "already pinned" in s["reason"]
-               for s in body["skipped"])
-
-    # …unless explicitly asked to overwrite
-    body = client.post("/agents/apply-recommended-models", json={"overwrite": True}).json()
-    assert "analyst" in {a["agent_id"] for a in body["applied"]}
-
-
-def test_roster_resolves_the_recommendation_for_the_active_backend(client, monkeypatch):
-    monkeypatch.setattr("aughor.routers.agents._active_backend_id", lambda: "ollama")
-    roster = {a["id"]: a for a in client.get("/agents").json()}
-    assert roster["analyst"]["recommended_model"] == "", \
-        "an OpenRouter id must not be advertised while Ollama is bound"
 
 
 # ── connection test coverage ──────────────────────────────────────────────────
@@ -328,10 +358,21 @@ def test_connection_test_covers_every_role_not_just_coder(monkeypatch):
     out = P.test_provider(backend="openrouter")
 
     tested = {m for m, _ in pinged}
-    assert tested == set(P._DEFAULT_MODELS["openrouter"].values()), \
-        f"only tested {tested}"
+    assert tested == set(_TEST_MODELS.values()), f"only tested {tested}"
     assert out["tested"] == len(tested)
     assert out["ok"] is True
+
+
+def test_a_non_active_backend_has_nothing_to_test(monkeypatch):
+    """It used to be probed against its built-in defaults. With none shipped there is
+    nothing to probe until the operator configures it — and reporting a pass built on
+    a guess is exactly what this change exists to stop."""
+    monkeypatch.setattr(P, "_ping",
+                        lambda b, m, role="coder": {"model": m, "ok": True, "ms": 1.0})
+    out = P.test_provider(backend="anthropic")       # active backend is openrouter
+    assert out["results"] == []
+    assert out["ok"] is False, "an untested backend must never report as a pass"
+    assert "no model configured" in out["error"]
 
 
 def test_identical_role_models_are_pinged_once(monkeypatch):
@@ -352,7 +393,7 @@ def test_identical_role_models_are_pinged_once(monkeypatch):
 def test_one_broken_binding_fails_the_whole_test(monkeypatch):
     """A narrator model that 404s must not be hidden behind a working coder."""
     def _ping(b, m, role="coder"):
-        ok = "gemma" not in m
+        ok = "narrator" not in m
         return {"model": m, "ok": ok, "ms": 1.0, **({} if ok else {"error": "404 no such model"})}
 
     monkeypatch.setattr(P, "_ping", _ping)
@@ -360,7 +401,7 @@ def test_one_broken_binding_fails_the_whole_test(monkeypatch):
 
     assert out["ok"] is False
     assert out["failed"] == 1
-    assert "gemma" in out["error"]
+    assert "narrator" in out["error"]
     assert [r for r in out["results"] if r["ok"]], "the working ones still report ok"
 
 
@@ -386,3 +427,21 @@ def test_explicit_model_still_tests_just_that_one(monkeypatch):
                         {"model": m, "ok": True, "ms": 1.0})
     P.test_provider(backend="openrouter", model="just/this-one")
     assert pinged == ["just/this-one"]
+
+
+def test_an_unconfigured_binding_is_a_400_not_an_internal_error(client, monkeypatch):
+    """A loud failure the UI renders as "internal_error" is not loud. The catch-all
+    handler hides exception text — correct for internal faults, exactly wrong for the
+    one error the operator can actually fix."""
+    from aughor.llm.provider import NoModelConfigured
+
+    def _boom(*a, **k):
+        raise NoModelConfigured("openrouter", "coder")
+
+    monkeypatch.setattr("aughor.llm.provider.test_provider", _boom)
+    r = client.post("/llm/config/test", json={"backend": "openrouter"})
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert body["error"] == "no_model_configured"
+    assert body["role"] == "coder"
+    assert "Settings" in body["detail"]

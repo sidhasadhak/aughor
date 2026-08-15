@@ -1,22 +1,29 @@
 """The model catalogue — what goes in the model picker.
 
-Three sources, merged, in this order of authority:
+Two sources, merged, in this order of authority:
 
 1. **live** — the backend's own model list, fetched when reachable. OpenRouter
    publishes a public ``/models`` endpoint; the OpenAI-compatible backends serve
    the same path with a key; Ollama and LM Studio serve theirs locally. This is
    the list that is actually correct, because it comes from the thing that will
    serve the request.
-2. **known** — a small curated fallback per backend, so the picker is never
-   empty offline or before a key is set.
-3. **custom** — models the user typed and chose to keep. Persisted in
+2. **custom** — models the user typed and chose to keep. Persisted in
    ``data/llm_config.json`` beside the rest of the inference config, so they
    survive restarts and travel with the deployment.
 
-A model NOT in any of these still works: the field stays a free-text input with
-suggestions, never a closed dropdown. A catalogue that can go stale must not be
-able to block a valid model — new ids appear constantly, and the failure mode of
-guessing wrong is "you cannot use the model you are paying for".
+**No model id is hardcoded here** (operator decision, 2026-08-15). There used to be
+a third source — ``KNOWN_MODELS``, a curated per-backend floor so the picker was
+never empty offline — and it is gone: 28 ids across 7 backends that this repo had
+to keep true about somebody else's catalogue. It could not be kept true. Its own
+comments are the receipt: ``qwen3-coder-next:cloud`` retired mid-life,
+``kimi-k2.6:cloud`` silently became subscription-only, two OpenRouter ids never
+existed at all. A list that ships stale is worse than no list, because the picker
+presents it with the same authority as the live one.
+
+So the catalogue is now exactly what the provider says it serves, plus what the
+operator typed. When the live fetch fails the picker is EMPTY and says why — an
+honest empty beats a confident wrong. The field remains free text, so a model the
+fetch missed is still reachable by typing it.
 """
 from __future__ import annotations
 
@@ -27,57 +34,6 @@ import time
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-#: Curated fallbacks. Deliberately short — this is the offline floor, not an
-#: attempt to mirror a catalogue that changes weekly.
-KNOWN_MODELS: dict[str, tuple[str, ...]] = {
-    # Ordered by what a fresh install can actually USE. `qwen3-coder-next:cloud` was
-    # dropped 2026-08-04: Ollama retired it on 2026-07-15 and it now errors on every
-    # call. `kimi-k2.6:cloud` and `qwen3.5:397b-cloud` are kept but demoted — both
-    # answer "this model requires a subscription", so they are real ids that most
-    # installs cannot run.
-    "ollama": ("gemma4:31b-cloud", "gpt-oss:120b-cloud", "glm-5.2:cloud",
-               "kimi-k2.6:cloud", "qwen3.5:397b-cloud"),
-    "lmstudio": ("local-model",),
-    "groq": ("llama-3.3-70b-versatile", "llama-3.1-8b-instant",
-             "mixtral-8x7b-32768"),
-    "together": ("Qwen/Qwen2.5-Coder-32B-Instruct",
-                 "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-                 "deepseek-ai/DeepSeek-V3"),
-    "anthropic": ("claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6",
-                  "claude-haiku-4-5-20251001"),
-    "gemini": ("gemini-flash-latest", "gemini-pro-latest",
-               "gemini-3.1-flash-lite"),
-    # OpenRouter — the free text models, ids verified against the live /models
-    # endpoint (guessing them cost two broken defaults on the first pass).
-    # Ordered strongest-first on OpenRouter's own Coding score; the trailing
-    # entries are unscored there, so their placement is not a ranking.
-    #
-    # Deliberately EXCLUDED: google/lyria-3-*-preview. They appear in
-    # OpenRouter's Text tab and the API reports them free, but Lyria is a
-    # music-generation model — offering it where a SQL writer is chosen is a trap.
-    #
-    # This floor stays all-`:free` on purpose (test_openrouter_floor_is_all_free_tier):
-    # a paid id here would start costing money the moment someone picked it. A checked
-    # paid id — `deepseek/deepseek-v4-flash` — lives in the vouched matrix instead, and
-    # reaches the picker only via `add_custom_model`, which is the operator's own act.
-    "openrouter": (
-        "nvidia/nemotron-3-ultra-550b-a55b:free",             # 1M ctx · coding 49.3 · the ceiling
-        "google/gemma-4-31b-it:free",                         # coding 43.4 @ 1089ms · best balance
-        "google/gemma-4-26b-a4b-it:free",                     # coding 39.3 but 5110ms
-        "nvidia/nemotron-3-super-120b-a12b:free",             # coding 37.7 · 66 t/s
-        "cohere/north-mini-code:free",                        # coding 36.5 · code-tuned
-        "openai/gpt-oss-20b:free",                            # coding 20.7 · slow (3702ms)
-        "nvidia/nemotron-3-nano-30b-a3b:free",                # 91 t/s · the throughput pick
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # 410ms · the latency pick
-        "poolside/laguna-m.1:free",
-        "poolside/laguna-s-2.1:free",
-        "poolside/laguna-xs-2.1:free",
-        "nvidia/nemotron-nano-9b-v2:free",
-        "nvidia/nemotron-nano-12b-v2-vl:free",                # vision-language
-        "nvidia/nemotron-3.5-content-safety:free",            # a safety classifier, not a general LLM
-    ),
-}
 
 _CACHE_TTL_S = 300.0
 _cache: dict[str, tuple[float, list[dict]]] = {}
@@ -126,9 +82,9 @@ def add_custom_model(backend: str, model: str) -> list[str]:
 
 
 def remove_custom_model(backend: str, model: str) -> list[str]:
-    """Drop a custom entry. Built-in and live entries are not removable — they
-    are not ours to delete, and hiding a model the backend actually serves would
-    make the picker disagree with reality."""
+    """Drop a custom entry. Live entries are not removable — they are not ours to
+    delete, and hiding a model the backend actually serves would make the picker
+    disagree with reality."""
     from aughor.llm.provider import BACKENDS
 
     if backend not in BACKENDS:
@@ -227,6 +183,39 @@ def fetch_live_models(backend: str, *, timeout: float = 6.0) -> tuple[list[dict]
         return [], f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
+def _record_context_windows(live: list[dict]) -> None:
+    """Persist ``{model_id: context_length}`` from a live catalogue into the runtime
+    config, for :func:`aughor.llm.profile.declared_context`.
+
+    This is what replaced the hand-maintained capability table: the tier a binding runs
+    under is derived from the context window the PROVIDER declares, so it can be right
+    about a model nobody here has heard of, and cannot go stale in the direction that
+    silently shrinks a capable model's budgets.
+
+    Only ever adds or updates, and only from a successful fetch — a provider that omits
+    ``context_length`` leaves the previous value alone rather than erasing it. Best
+    effort: this file is shared with the encrypted keys, so a write failure must degrade
+    the tier (to BASELINE) and never the config.
+    """
+    sizes = {str(m["id"]): int(m["context"]) for m in live
+             if m.get("id") and isinstance(m.get("context"), int) and m["context"] > 0}
+    if not sizes:
+        return
+    try:
+        from aughor.llm.provider import read_config, write_config
+        cfg = dict(read_config())
+        known = dict(cfg.get("model_context") or {})
+        if all(known.get(k) == v for k, v in sizes.items()):
+            return                      # nothing new — do not touch the keys file
+        known.update(sizes)
+        cfg["model_context"] = known
+        write_config(cfg)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "context-window capture is best-effort; the tier falls back to baseline",
+                 counter="llm.model_context")
+
+
 def list_models(backend: str, *, refresh: bool = False,
                 timeout: float = 6.0) -> dict[str, Any]:
     """The picker's payload for one backend.
@@ -235,7 +224,7 @@ def list_models(backend: str, *, refresh: bool = False,
     not seconds, and re-fetching on every keystroke would make the settings
     screen depend on a remote host being fast.
     """
-    from aughor.llm.provider import BACKENDS, default_models
+    from aughor.llm.provider import BACKENDS
 
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
@@ -252,13 +241,10 @@ def list_models(backend: str, *, refresh: bool = False,
             if live:
                 with _cache_lock:
                     _cache[backend] = (time.monotonic(), live)
+                _record_context_windows(live)
 
     seen = {m["id"] for m in live}
     merged = list(live)
-    for mid in KNOWN_MODELS.get(backend, ()):          # curated floor
-        if mid not in seen:
-            merged.append({"id": mid, "source": "known"})
-            seen.add(mid)
     customs = custom_models(backend)
     for mid in customs:                                 # user-kept, always present
         if mid not in seen:
@@ -275,7 +261,9 @@ def list_models(backend: str, *, refresh: bool = False,
         "live_count": len(live),
         "live": bool(live),
         "error": error,
-        "defaults": default_models(backend),
+        # Kept as a key so the payload shape is stable for the UI, but always empty:
+        # nothing ships a default model any more, so there is nothing to suggest.
+        "defaults": {},
     }
 
 

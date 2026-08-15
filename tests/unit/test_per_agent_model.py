@@ -19,39 +19,52 @@ def test_get_provider_pins_explicit_model():
     assert provider.get_provider("narrator", model="some-custom-model:latest") is not p
 
 
-def test_run_model_contextvar_is_honored_by_get_provider():
+def test_run_model_contextvar_is_honored_by_get_provider(monkeypatch):
+    # A configured role binding, because nothing ships one: after the pin is reset the
+    # role must fall back to ITS OWN model, and with no binding at all it would raise
+    # NoModelConfigured instead — a different assertion than the one this test makes.
+    monkeypatch.setenv("AUGHOR_CODER_MODEL", "configured/coder")
+    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "configured/narrator")
     token = provider.set_run_model("run-scoped-model")
     try:
         assert provider.get_provider("coder")._model == "run-scoped-model"
         assert provider.get_provider("narrator")._model == "run-scoped-model"
     finally:
         provider.reset_run_model(token)
-    # after reset, the role default is back (not the pinned model)
-    assert provider.get_provider("coder")._model != "run-scoped-model"
+    # after reset, the role's own binding is back (not the pinned model)
+    assert provider.get_provider("coder")._model == "configured/coder"
 
 
-def test_run_model_pin_skips_the_fast_tier():
+def test_run_model_pin_skips_the_fast_tier(monkeypatch):
     """A per-agent pin means 'run this agent's reasoning on a stronger model' — it must NOT
     promote the deliberately-cheap `fast` calls (phase interpret, question classify, digest
     reduce) to the pinned heavy model. That waste was the single biggest per-run cost driver
     on a job-borne investigation (interpret fires once per phase). The heavy roles still take
-    the pin; only `fast` keeps its tier default."""
-    token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
+    the pin; only `fast` keeps its own binding.
+
+    The rule is BLANKET: any run pin skips `fast`. Wave R2 had widened it per-model via
+    the vouched matrix, which was a hardcoded list of ids and is gone (2026-08-15) — so a
+    pin onto a genuinely cheap model no longer passes through either. That costs an
+    operator a cheap pin they wanted; the alternative costs them a 550B on every
+    throwaway interpret call."""
+    HEAVY = "vendor/heavy-reasoner"
+    monkeypatch.setenv("AUGHOR_FAST_NARRATOR_MODEL", "configured/fast")
+    token = provider.set_run_model(HEAVY)
     try:
-        assert provider.get_provider("coder")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"
-        assert provider.get_provider("narrator")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+        assert provider.get_provider("coder")._model == HEAVY
+        assert provider.get_provider("narrator")._model == HEAVY
         fast = provider.get_provider("fast")._model
-        assert fast != "nvidia/nemotron-3-ultra-550b-a55b:free"
-        # and it is exactly the fast role's own tier default
-        assert fast == provider.get_provider("fast", model=None)._model
+        assert fast != HEAVY
+        # and it is exactly the fast role's own binding
+        assert fast == "configured/fast"
     finally:
         provider.reset_run_model(token)
     # resolve_binding (the control-plane describer) must agree with get_provider, so a
     # vended capability matches the model a real `fast` call uses.
-    token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
+    token = provider.set_run_model(HEAVY)
     try:
         _, fast_bound, _ = provider.resolve_binding("fast")
-        assert fast_bound != "nvidia/nemotron-3-ultra-550b-a55b:free"
+        assert fast_bound != HEAVY
     finally:
         provider.reset_run_model(token)
 

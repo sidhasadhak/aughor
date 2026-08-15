@@ -47,10 +47,11 @@ class AgentCharter:
     default_enabled: bool = True
     default_budget: Budget = field(default_factory=Budget)
     reserved: bool = False          # defined but not yet wired to runs (Phase 0 → 3)
-    #: Suggested model per BACKEND — the ids are provider-specific, so a single
-    #: recommendation would be meaningless the moment the backend changes. A
-    #: suggestion only: nothing here is applied without the operator asking.
-    recommended_models: dict = field(default_factory=dict)
+    # There is no `recommended_models` field any more (removed 2026-08-15, with the rest
+    # of this repo's hardcoded model ids). A charter describes what an agent DOES and
+    # what it may spend; which model serves it is the operator's binding, and a
+    # suggestion baked in here was this repo asserting a fact about another vendor's
+    # catalogue that it had no way to keep true.
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -71,8 +72,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         goal="Continuously explore connected data and surface findings — no prompts, no dashboards.",
         lane="background", job_kinds=("exploration",),
         tools=("schema profiling", "grounded SQL", "finding synthesis"),
-        icon="telescope", recommended_models={"openrouter": "nvidia/nemotron-3-super-120b-a12b:free"},
-        # runs continuously at volume — 66 t/s at coding 37.7 is the throughput/quality point
+        icon="telescope",
+        # runs continuously at volume, so the budget is the lever that matters
         default_budget=Budget(token_budget=200_000, time_budget_s=600),
     ),
     AgentCharter(
@@ -80,8 +81,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         goal="Root-cause a question with evidence — plan → query → score → synthesize.",
         lane="interactive", job_kinds=("investigation", "investigation_salvage"),
         tools=("NL→SQL", "fan-out / additivity guards", "evidence scoring", "Trust Receipt"),
-        icon="microscope", recommended_models={"openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free"},
-        # highest stakes + 1M ctx for wide schemas; 2.2s latency is noise on a 900s job
+        icon="microscope",
+        # highest stakes and the widest schemas; latency is noise on a 900s job
         default_budget=Budget(token_budget=500_000, time_budget_s=900),
     ),
     AgentCharter(
@@ -89,8 +90,8 @@ AGENTS: tuple[AgentCharter, ...] = (
         goal="Answer a question fast in chat — grounded NL→SQL with a Trust Receipt.",
         lane="interactive", job_kinds=(),
         tools=("NL→SQL", "auto-repair", "Trust Receipt"),
-        icon="search", recommended_models={"openrouter": "google/gemma-4-31b-it:free"},
-        # the user is WAITING — best coding score (43.4) under ~1s latency
+        icon="search",
+        # the user is WAITING — this is the one lane where latency is the budget
         default_budget=Budget(token_budget=150_000, time_budget_s=300),
     ),
     AgentCharter(
@@ -100,14 +101,12 @@ AGENTS: tuple[AgentCharter, ...] = (
         icon="radar",
         # WP-7: a tick is a scalar/threshold SQL check (rarely any LLM) — a small token
         # ceiling + generous time for a slow warehouse query. Governable per-agent.
-        # NOT the `-reasoning` variant, though it is the faster one on paper: it
-        # returns EMPTY content for structured calls, which is what every agent call
-        # here is. Measured 2026-08-13 three ways — twice via Settings ▸ Models
-        # ("structured output empty: the model returned no content") and once through
-        # LLMProvider.complete() directly, where it only appeared to succeed because
-        # the fallback chain silently answered from gemini instead.
-        recommended_models={"openrouter": "nvidia/nemotron-3-nano-30b-a3b:free"},
-        # threshold checks are near-trivial; 410ms and a 50k budget say pick the cheapest fast one
+        # ⚠️ Whatever model an operator binds here must return content for STRUCTURED
+        # calls — every agent call is one. A reasoning-tuned variant that returns empty
+        # content for them looks healthy (measured 2026-08-13: the fallback chain
+        # silently answered from another backend), so verify a binding in
+        # Settings ▸ Models rather than inferring it from a run that succeeded.
+        # Threshold checks are near-trivial, hence the small ceiling.
         default_budget=Budget(token_budget=50_000, time_budget_s=120)),
     AgentCharter(
         id="briefer", name="Briefer", role="Verdict synthesizer",
@@ -115,8 +114,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
         icon="newspaper",
         # WP-7: a briefing runs real tree-reduce synthesis (LLM) over the workspace findings.
-        recommended_models={"openrouter": "nvidia/nemotron-3-ultra-550b-a55b:free"},
-        # scheduled so latency-tolerant, and briefing prose quality is user-visible
+        # scheduled, so latency-tolerant; briefing prose quality is user-visible
         default_budget=Budget(token_budget=400_000, time_budget_s=300)),
     AgentCharter(
         id="curator", name="Curator", role="Semantic-layer keeper",
@@ -126,8 +124,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         # R12: the birth job's intelligence step includes ONE ontology-enrichment LLM
         # pass (+ deterministic profiling/validation SQL) — a modest token ceiling with
         # generous time for slow warehouses. Exploration runs under Scout's own budget.
-        recommended_models={"openrouter": "nvidia/nemotron-3-super-120b-a12b:free"},
-        # background glossary/ontology enrichment — quality matters, urgency does not
+        # background enrichment — quality matters, urgency does not
         default_budget=Budget(token_budget=200_000, time_budget_s=900)),
 )
 
@@ -263,39 +260,12 @@ def set_governance(agent_id: str, *, scope: Optional[str] = None,
     if time_budget_s is not None:
         cur["time_budget_s"] = int(time_budget_s)
     if model is not None:
+        # No validation against a known-model list: there is none any more, and there
+        # was never a way to keep one true. A wrong id fails as a config error on the
+        # next call rather than silently — see NoModelConfigured in llm/provider.py.
         cur["model"] = str(model).strip()   # "" clears it (treated as 'inherit' on read)
-        _warn_if_unvouched(agent_id, cur["model"])
     _ledger().kv_put(_GOV_STORE, f"{sc}:{agent_id}", cur)
     return effective_governance(agent_id, None if sc == _APP_SCOPE else sc)
-
-
-def _warn_if_unvouched(agent_id: str, model: str) -> None:
-    """Log when a per-agent pin names a model the vouched matrix has never seen (Wave R2).
-
-    Warn, never block. A closed list would be the wrong trade here — new ids appear
-    weekly and the failure mode of an over-strict check is "you cannot use the model you
-    are paying for". But the *silent* acceptance is how a guessed id becomes a dead
-    binding nobody notices, so the pin at least announces itself. Our own shipped
-    defaults are held to the higher bar in tests/unit/test_model_matrix.py, where a
-    guess fails CI instead of a user's run.
-    """
-    if not model:
-        return
-    try:
-        from aughor.llm.matrix import is_known, is_vouched
-        from aughor.llm.provider import active_backend
-
-        backend = active_backend()
-        if is_vouched(backend, model):
-            return
-        logger.warning(
-            "agents: %s is pinned to %r, which is %s for backend %r — if the id is wrong "
-            "the binding will fail as a config error rather than falling back silently.",
-            agent_id, model,
-            "recorded but never verified against a live catalogue"
-            if is_known(backend, model) else "not in the vouched model matrix", backend)
-    except Exception:
-        logger.debug("agents: could not check the model matrix", exc_info=True)
 
 
 def is_enabled(agent_id: str, workspace_id: Optional[str] = None) -> bool:

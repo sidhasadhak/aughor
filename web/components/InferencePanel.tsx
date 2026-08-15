@@ -191,7 +191,9 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
         <span>
           {catalog.live
             ? `${catalog.live_count} models from ${BACKEND_LABEL[catalog.backend] ?? catalog.backend}`
-            : `${catalog.models.length} built-in suggestions`}
+            : custom.length > 0
+              ? "no live list"
+              : "no models — this list comes from the provider"}
           {custom.length > 0 && ` · ${custom.length} custom`}
         </span>
         {catalog.backend === "openrouter" && (
@@ -209,11 +211,14 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
         </Button>
       </div>
 
-      {/* A failed live fetch is stated, not hidden — otherwise the built-in
-          floor silently poses as the real catalogue. */}
+      {/* A failed live fetch is stated, not hidden. There is no built-in list behind
+          it any more (2026-08-15) — the suggestions ARE the provider's own catalogue,
+          so a failure means an empty picker, and saying so beats a silent blank. The
+          field is free text either way: a known id can still be typed straight in. */}
       {!catalog.live && (error || catalog.error) && (
         <div style={{ fontSize: 10, color: "var(--amb4)" }}>
-          Live list unavailable ({error || catalog.error}) — showing built-in suggestions.
+          Couldn’t reach {BACKEND_LABEL[catalog.backend] ?? catalog.backend} for its model
+          list ({error || catalog.error}). Type a model id directly, or Refresh to retry.
         </div>
       )}
 
@@ -325,12 +330,14 @@ export function InferencePanel() {
 
   const isLocal = cfg.local_backends.includes(backend);
   const needsKey = cfg.needs_key.includes(backend);
+  // Always {} since 2026-08-15 — no backend ships a default model. Kept because the
+  // payload still carries the key; it must never again put a model id in this form.
   const defaults = cfg.default_models[backend] || {};
   const keySet = cfg.keys_set[backend];
 
   const onBackend = (b: string) => {
-    // Models are backend-specific — reset overrides so the new backend uses its
-    // own defaults (the user can re-enter a specific model below).
+    // Models are backend-specific — reset overrides so a name tuned for the previous
+    // provider cannot ride along. Nothing fills in behind them: pick a model below.
     setBackend(b);
     setModels({});
     setResult(null);
@@ -444,7 +451,7 @@ export function InferencePanel() {
             <ModelField
               value={models[role] ?? ""}
               onChange={(v) => setModels({ ...models, [role]: v })}
-              placeholder={defaults[role] || cfg.models[role] || "default"}
+              placeholder={cfg.models[role] || "pick a model"}
               catalog={catalog}
               listId={`llm-models-${backend}`}
               onKeep={keepModel}

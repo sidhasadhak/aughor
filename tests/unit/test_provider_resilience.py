@@ -199,15 +199,23 @@ def test_fallback_order_is_overridable_and_drops_typos(monkeypatch):
     assert prov._fallback_candidates() == ["gemini", "groq"]   # order honoured, typo dropped
 
 
-def test_anthropic_keeps_its_pinned_model_others_use_their_role_default(monkeypatch):
+def test_anthropic_keeps_its_pinned_model_others_need_their_own(monkeypatch):
     """The pre-existing AUGHOR_FALLBACK_MODEL contract is Anthropic's alone — a narrator
-    falling back to Gemini must not inherit a model id from another vendor."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL", "claude-opus-4-8")
-    assert P._fallback_model_for("anthropic", "narrator") == "claude-opus-4-8"
-    assert P._fallback_model_for("gemini", "narrator") == \
-        P._DEFAULT_MODELS["gemini"]["narrator"]
-    assert P._fallback_model_for("openrouter", "fast") == \
-        P._DEFAULT_MODELS["openrouter"]["fast"]
+    falling back to Gemini must not inherit a model id from another vendor.
+
+    Every other backend used to fall back to its own built-in default; with none shipped,
+    a fallback backend is usable only when the operator names a model for it. "" makes
+    the chain SKIP it, which is the honest outcome: the alternative is dispatching to a
+    vendor with an id tuned for a different one, and the chain answering from somewhere
+    else is precisely how a dead binding used to look healthy."""
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL", "vendor/pinned")
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    assert P._fallback_model_for("anthropic", "narrator") == "vendor/pinned"
+    assert P._fallback_model_for("gemini", "narrator") == ""
+    assert P._fallback_model_for("openrouter", "fast") == ""
+
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "operator/choice")
+    assert P._fallback_model_for("gemini", "narrator") == "operator/choice"
 
 
 def test_quota_exhausted_primary_fails_over_to_the_next_backend(monkeypatch):
@@ -595,12 +603,6 @@ def test_a_forced_health_check_really_re_probes(monkeypatch):
     P._ping_cached("openrouter", "m")
     P._ping_cached("openrouter", "m", force=True)
     assert calls["n"] == 2
-
-
-def test_gemini_is_bound_to_the_model_with_a_usable_daily_budget():
-    """gemini-flash-latest → Gemini 3.6 Flash = 20 requests/DAY, measured on the live
-    account. flash-lite gives 500. A briefing cannot run inside 20."""
-    assert set(P._DEFAULT_MODELS["gemini"].values()) == {"gemini-3.1-flash-lite"}
 
 
 def test_max_retries_zero_is_honoured_even_for_a_rate_limit(monkeypatch):

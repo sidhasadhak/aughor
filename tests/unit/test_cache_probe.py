@@ -46,6 +46,14 @@ def clean_cfg(tmp_path, monkeypatch):
     P._pinned_providers.clear()
     P._cache_version = -1
     P.load_config()
+    # An explicit binding, because nothing ships a default one any more (2026-08-15).
+    # These tests are about a MEASUREMENT overriding a declared cache mode, so they need
+    # a model whose declared mode is known — a `:cloud` id declares
+    # `auto_prefix_unverified`. Previously this rode on the built-in ollama default
+    # happening to be `:cloud`, which made the fixture depend on a shipped model id.
+    P.write_config({"backend": "ollama",
+                    "models": {"coder": "some-model:cloud", "narrator": "some-model:cloud",
+                               "fast": "some-model:cloud"}})
     yield
 
 

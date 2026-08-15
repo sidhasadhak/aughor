@@ -98,7 +98,10 @@ class TestOrgScope:
 # ── parity: the capability describes the binding a real call uses ─────────────
 
 class TestParityWithProvider:
-    def test_vend_matches_role_default_binding(self):
+    def test_vend_matches_role_default_binding(self, monkeypatch):
+        # An explicit binding: nothing ships one, and get_provider on an unbound role
+        # raises. Parity between the describer and the real client is what this asserts.
+        monkeypatch.setenv("AUGHOR_CODER_MODEL", "configured/coder")
         cap = vend_llm("coder")
         p = provider.get_provider("coder")
         assert (cap.backend, cap.model) == (p.backend, p._model)
@@ -117,7 +120,8 @@ class TestParityWithProvider:
             provider.reset_run_model(token)
         assert vend_llm("coder").model != "run-scoped-model"          # default restored
 
-    def test_provider_capability_property_matches_vend(self):
+    def test_provider_capability_property_matches_vend(self, monkeypatch):
+        monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "configured/narrator")
         p = provider.get_provider("narrator")
         cap = p.capability
         assert isinstance(cap, InferenceCapability)
