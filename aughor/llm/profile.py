@@ -182,6 +182,37 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _bare_model_name(model_id: str) -> str:
+    """The model's own name, without the vendor namespace or an alias marker:
+    ``google/gemini-3.1-flash-lite`` and ``~google/gemini-flash-latest`` → the part after
+    the slash. Transport suffixes (``:free``, ``:batch``, ``:cloud``) are kept, because
+    they can carry genuinely different windows — OpenRouter reports 1,000,000 for one
+    Nemotron variant and 262,144 for its ``:free`` twin."""
+    return (model_id or "").lstrip("~").rsplit("/", 1)[-1].strip().lower()
+
+
+def _context_by_bare_name(known: dict, model: str) -> Optional[int]:
+    """A recorded window for the same model under a DIFFERENT vendor namespace.
+
+    The same model is served under two ids: OpenRouter calls it
+    ``google/gemini-3.1-flash-lite``, Google's own API calls it
+    ``gemini-3.1-flash-lite``. The catalogue had already captured 1,048,576 for the
+    first, and the exact-match lookup missed it for the second — so a binding fell to the
+    32,768 default while the true window sat in the same map under a longer key.
+
+    This is still derivation, not a list: every number comes from a provider's own
+    catalogue. It only widens WHICH id can find one. Ambiguity is resolved
+    conservatively (the smallest recorded window wins) so a mismatch can never overstate
+    the budget, which is the direction that silences the overflow guard.
+    """
+    bare = _bare_model_name(model)
+    if not bare:
+        return None
+    hits = [int(v) for k, v in known.items()
+            if _bare_model_name(k) == bare and isinstance(v, (int, float)) and v > 0]
+    return min(hits) if hits else None
+
+
 def declared_context(model: str) -> Optional[int]:
     """The model's context window in tokens, as the PROVIDER declared it, or None.
 
@@ -209,7 +240,10 @@ def declared_context(model: str) -> Optional[int]:
         return None
     try:
         from aughor.llm.provider import read_config
-        raw = (read_config().get("model_context") or {}).get(key)
+        known = read_config().get("model_context") or {}
+        raw = known.get(key)
+        if raw is None:
+            raw = _context_by_bare_name(known, key)
         return int(raw) if raw is not None else None
     except Exception as exc:
         from aughor.kernel.errors import tolerate
