@@ -1151,9 +1151,13 @@ def put_column_config(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Apply a human edit to one column's config — override-wins, rebuild-proof.
-    Invalidates the schema cache so pruning changes reach the next prompt."""
-    if body.visible is None and body.sample is None and body.index is None:
-        raise HTTPException(status_code=422, detail="pass at least one of visible/sample/index")
+    Invalidates the schema cache so pruning changes AND notes reach the next
+    prompt (a note rides the column line since 2026-08-14 — before that, the
+    endpoint accepted one and nothing read it, and a note-only edit was 422'd)."""
+    if (body.visible is None and body.sample is None and body.index is None
+            and not (body.note or "").strip()):
+        raise HTTPException(status_code=422,
+                            detail="pass at least one of visible/sample/index/note")
     from aughor.ontology.column_config import set_column_flags
     effective = _resolve_schema(connection_id, schema_name)
     flags = set_column_flags(

@@ -44,8 +44,17 @@ def health():
     # mirror_down are no-ops and every upload silently lasts until the instance is
     # recycled. Nothing reported that — not here, not /capabilities — so the failure
     # presented as files that uploaded fine and were gone later.
+    # The ledger's startup quick_check (kernel/ledger.py). Three SIGBUS-corruptions in
+    # three days were each found by accident, hours later, because every writer is
+    # best-effort; this is where an operator (or the frontend's health poll) sees it.
+    try:
+        from aughor.kernel.ledger import Ledger
+        ledger_error = Ledger.default().integrity_error
+    except Exception as exc:
+        ledger_error = f"{type(exc).__name__}: {exc}"
     return {
-        "status": "ok",
+        "status": "degraded" if ledger_error else "ok",
+        "ledger": {"ok": not ledger_error, "error": ledger_error},
         "fixture_db": fixture_db_path().exists(),
         "llm": _llm_readiness(),
         "object_store": {

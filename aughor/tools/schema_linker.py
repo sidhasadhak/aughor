@@ -521,6 +521,16 @@ def link_schema(
     # operates on the compact, de-duplicated schema rather than thousands of date partitions.
     schema_str = compress_schema(schema_str)
 
+    # Full-schema-first (grounding.full_schema_first, EXPERIMENT): when the whole
+    # compressed schema already fits the budget the packer would have spent anyway,
+    # pruning buys no tokens and costs structure — a column dropped by top_k_cols
+    # is invisible to the model even though it fits. Off by default until the E4
+    # grid settles it; `always_include`/routing twins need no handling here because
+    # the full schema contains them by definition.
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("grounding.full_schema_first") and len(schema_str) <= char_budget:
+        return schema_str
+
     question_lower = question.lower()
     raw_tokens = set(_tokenise(question)) - _STOP_WORDS
     tokens = _expand_tokens(raw_tokens) - _STOP_WORDS

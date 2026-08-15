@@ -83,6 +83,7 @@ FLAG_ENV = {
     # Receipts on the FLAG_DEFAULT tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
@@ -368,6 +369,20 @@ EXPERIMENT: dict = {
                           "zero LLM cost, so a grid there measures a no-op on every case "
                           "(the exact L3 mistake Guard 1 exists to refuse). Author a "
                           "landscape-question suite first, then grid the fired subset",
+    "grounding.full_schema_first": "when the whole (shard-compressed) schema already fits the "
+                          "linker's char budget, does sending it unpruned answer better than "
+                          "top-k table/column pruning? WrenAI measured yes below ~30k chars "
+                          "(complete join paths beat isolated fragments — 2026-08-14 study). "
+                          "GRID 1 (2026-08-15, Superstore accuracy suite 32b30c0880f9 on "
+                          "8d36d4c2, 24 reference-SQL cases, temp 0, nemotron:free, runs "
+                          "a17652d36f72 off / 6427f47e5cb4 on, 24/24 sensitive): "
+                          "off 21/24 → on 23/24, ZERO lost — both gains legible in the traced "
+                          "SQL (off hallucinated a table by hand on return-rate; off produced "
+                          "no SQL at all on sales-per-year). The one shared miss is a data-vs-"
+                          "metadata defect (returns grain note), not the flag. Exit: ONE more "
+                          "replicate confirming direction (`scripts/flag_ab_grid.py`, sole "
+                          "writer!) ⇒ graduate to unconditional and delete the flag; a "
+                          "reversal ⇒ delete the bypass — no third state",
     # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
     # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see

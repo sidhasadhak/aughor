@@ -112,6 +112,77 @@ def test_disallowed_functions():
     assert disallowed_functions("SELECT * FROM orders") == set()
 
 
+# ── DuckDB external-reader denylist (file / network / secret exfiltration) ────
+# Reads, not writes — the mutation gate passes them by design, so the denylist
+# is the only thing between LLM SQL and the local filesystem.
+
+def test_duckdb_file_readers_are_disallowed_in_any_position():
+    for sql, expected in [
+        ("SELECT * FROM read_csv('/etc/passwd')", "READ_CSV"),          # dedicated sqlglot node
+        ("SELECT * FROM read_csv_auto('x.csv')", "READ_CSV_AUTO"),      # exp.Anonymous
+        ("SELECT * FROM read_parquet(['a.parquet'])", "READ_PARQUET"),
+        ("SELECT * FROM read_text('/etc/passwd')", "READ_TEXT"),
+        ("SELECT * FROM glob('/**')", "GLOB"),
+        ("SELECT * FROM sniff_csv('/etc/passwd')", "SNIFF_CSV"),
+        ("SELECT * FROM postgres_scan('host=h', 'public', 't')", "POSTGRES_SCAN"),
+        ("SELECT * FROM duckdb_secrets()", "DUCKDB_SECRETS"),
+        ("SELECT getenv('AUGHOR_SECRET_KEY')", "GETENV"),
+        # CTE position — the reader must be found anywhere in the tree
+        ("WITH t AS (SELECT * FROM read_blob('/etc/shadow')) SELECT * FROM t", "READ_BLOB"),
+    ]:
+        for dialect in (None, "duckdb"):
+            found = disallowed_functions(sql, dialect)
+            assert expected in found, f"{sql!r} (dialect={dialect}) → {found}"
+
+
+def test_file_path_table_sources_are_disallowed():
+    # DuckDB's replacement scan: a bare string/identifier table source reads the file.
+    for sql in [
+        "SELECT * FROM '/data/x.csv'",
+        "SELECT * FROM 's3://bucket/x.parquet'",
+        'SELECT * FROM "reads.csv"',
+    ]:
+        found = disallowed_functions(sql, "duckdb")
+        assert "FILE_TABLE_SOURCE" in found, f"{sql!r} → {found}"
+
+
+def test_reader_names_as_columns_or_tables_are_not_flagged():
+    # High-precision guarantee: identifiers that merely LOOK like reader names
+    # are columns/tables, not calls — they must pass.
+    for sql in [
+        "SELECT read_csv FROM t",
+        "SELECT * FROM orders",
+        "SELECT glob, getenv FROM feature_flags",
+        "SELECT * FROM s1.t1 JOIN s2.t2 ON t1.id = t2.id",
+    ]:
+        assert disallowed_functions(sql, "duckdb") == set(), sql
+
+
+def test_attach_and_install_are_mutating():
+    # These parse as dedicated sqlglot nodes (exp.Attach / exp.Install), NOT
+    # exp.Command — the command-head list never saw them.
+    for sql in [
+        "ATTACH '/tmp/evil.db' AS m",
+        "INSTALL httpfs",
+        "FORCE INSTALL httpfs",
+    ]:
+        assert is_mutating(sql, dialect="duckdb") is True, sql
+
+
+def test_safetychecker_blocks_duckdb_reader_surface():
+    for sql in [
+        "SELECT * FROM read_csv('/etc/passwd')",
+        "SELECT * FROM '/data/x.csv'",
+        "ATTACH '/tmp/evil.db' AS m",
+        # EXPORT/IMPORT DATABASE fail to parse — the first-token belt must hold.
+        "EXPORT DATABASE '/tmp/x'",
+        "IMPORT DATABASE '/tmp/x'",
+        "INSTALL httpfs",
+        "LOAD httpfs",
+    ]:
+        assert SafetyChecker.check(sql).verdict == SafetyVerdict.BLOCKED, sql
+
+
 # ── CTE-safe table extraction ─────────────────────────────────────────────────
 
 def test_extract_tables_excludes_cte_names():

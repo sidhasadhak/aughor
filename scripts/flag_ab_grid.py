@@ -81,10 +81,39 @@ from aughor.kernel.flags import flag_overrides  # noqa: E402
 from aughor.stats import stats  # noqa: E402
 
 
+_schema_ctx: str | None = None
+
+
+def _schema_context() -> str:
+    """The connection's rendered schema, fetched once. Empty string when the
+    connection can't be opened here (offline precheck) — the retrieval blocks
+    still diff, so the guard degrades to its pre-2026-08-14 coverage."""
+    global _schema_ctx
+    if _schema_ctx is None:
+        try:
+            from aughor.db.connection import open_connection_for
+            from aughor.tools.schema import build_schema_context
+            _schema_ctx = build_schema_context(
+                open_connection_for(CONN)._conn, connection_id=CONN)
+        except Exception as exc:
+            print(f"precheck: schema context unavailable ({type(exc).__name__}) — "
+                  f"schema-shaped flags will read as inert", flush=True)
+            _schema_ctx = ""
+    return _schema_ctx
+
+
 def _grounding_for(question: str) -> str:
-    """The plan-time grounding this question would receive, as one string."""
-    from aughor.agent.grounding import correction_priors, trusted_templates
-    return trusted_templates(question, CONN) + correction_priors(question, CONN)
+    """The plan-time grounding this question would receive, as one string.
+
+    Includes the linked schema slice (2026-08-14): rendering only the retrieval
+    blocks made any schema-shaped flag (grounding.*) measure as inert even when
+    it changed the prompt's largest block — the exact blind spot the module
+    docstring warns about, sitting inside the guard itself.
+    """
+    from aughor.agent.grounding import correction_priors, schema_slice, trusted_templates
+    return (trusted_templates(question, CONN)
+            + correction_priors(question, CONN)
+            + schema_slice(question, CONN, schema=_schema_context()))
 
 
 def inertness_report(questions: list[str]) -> dict:
@@ -109,7 +138,38 @@ def _counters() -> dict:
         return {}
 
 
+def _refuse_second_writer() -> None:
+    """Refuse to run while another process holds the system ledger open.
+
+    2026-08-15: this grid ran for 30 minutes as a SECOND writer on `data/system.db`
+    alongside the long-lived uvicorn — the exact trigger the 2026-08-14 corruption
+    post-mortem named ("only one process should own data/ at a time") — and the file
+    was found malformed mid-run. Two writers on one WAL-mode SQLite file is not a
+    supported configuration here; a grid that wants a live store must run alone.
+    Override with `ALLOW_SHARED_STORE=1` when the other holder is known-read-only.
+    """
+    import subprocess
+
+    from aughor.kernel.ledger import _DEFAULT_DB
+    path = os.environ.get("AUGHOR_SYSTEM_DB") or str(_DEFAULT_DB)
+    if os.environ.get("ALLOW_SHARED_STORE", "") not in ("", "0", "false", "no"):
+        return
+    try:
+        out = subprocess.run(["lsof", "-t", path], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return                       # no lsof (CI) — the ledger's own quick_check still runs
+    others = [p for p in out.split() if p.strip() and int(p) != os.getpid()]
+    if others:
+        print(f"\n⛔ REFUSING to run: {path} is held open by pid(s) {', '.join(others)}.\n"
+              f"   A second writer on the WAL-mode ledger is how it got corrupted (2026-08-14,\n"
+              f"   2026-08-15). Stop the other holder (uvicorn?) or point AUGHOR_SYSTEM_DB at a\n"
+              f"   copy; set ALLOW_SHARED_STORE=1 only if the other holder is read-only.",
+              flush=True)
+        raise SystemExit(4)
+
+
 def main() -> int:
+    _refuse_second_writer()
     cases = store.list_cases(SUITE, limit=500)
     questions = [c.get("question", "") for c in cases]
     print(f"flag={FLAG} suite={SUITE} depth={DEPTH} conn={CONN} "
@@ -145,11 +205,27 @@ def main() -> int:
     cells = [Cell(label=f"{FLAG}_off", flags={FLAG: False}, temperature=TEMPERATURE),
              Cell(label=f"{FLAG}_on", flags={FLAG: True}, temperature=TEMPERATURE)]
 
+    # Accuracy, when the suite can give it (2026-08-14). `pass_rate` alone is "did no
+    # guard fire" — a CONSISTENCY signal. A suite whose cases carry
+    # `expected.reference_sql` can be scored execution-grounded (results_match), and
+    # without the checker attached every such case records `correct: null` and the
+    # grid silently degenerates to guard-fire rate while looking like an accuracy A/B.
+    checker = None
+    if any((c.get("expected") or {}).get("reference_sql") for c in cases):
+        from aughor.db.connection import open_connection_for
+        from aughor.evals.targets import reference_checker
+        checker = reference_checker(open_connection_for(CONN))
+        print("accuracy: cases declare reference_sql — attaching the execution-grounded checker",
+              flush=True)
+    else:
+        print("accuracy: NO case declares reference_sql — pass_rate below is guard-fire rate, "
+              "not correctness", flush=True)
+
     before = _counters()
     t0 = time.monotonic()
     results = run_experiment(
         SUITE, lambda: ask_target(CONN, depth=DEPTH), cells,
-        replicates=1, connection_id=CONN, freeze=True,
+        replicates=1, connection_id=CONN, freeze=True, checker=checker,
     )
     elapsed = time.monotonic() - t0
     after = _counters()
@@ -167,11 +243,16 @@ def main() -> int:
         out["cells"].append({"label": r.label, "error": r.error,
                              "discrepancies": r.discrepancies, "warnings": r.warnings,
                              "runs": [{"run_id": x.get("run_id"), "pass_rate": x.get("pass_rate"),
+                                       "correct": x.get("correct"),
+                                       "correctness_known": x.get("correctness_known"),
                                        "total": x.get("total"), "errors": x.get("errors"),
                                        "flaky": x.get("flaky")} for x in runs]})
         print(f"cell {r.label:24} error={r.error or '-'}", flush=True)
         for x in runs:
-            print(f"    run {x.get('run_id')}  pass_rate={x.get('pass_rate')}  "
+            known = x.get("correctness_known") or 0
+            acc = (f"accuracy={x.get('correct')}/{known}" if known
+                   else "accuracy=n/a (no checker)")
+            print(f"    run {x.get('run_id')}  {acc}  guard_pass_rate={x.get('pass_rate')}  "
                   f"errors={x.get('errors')}  flaky={x.get('flaky')}", flush=True)
         if r.discrepancies:
             print(f"    ⚠️ CELL DID NOT TAKE: {r.discrepancies}", flush=True)

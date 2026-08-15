@@ -336,19 +336,31 @@ _STOP_LINE = re.compile(
 )
 
 
+def column_notes(config: dict[tuple[str, str], ColumnFlags]) -> dict[tuple[str, str], str]:
+    """Human-authored notes on VISIBLE columns — the ones the model should read."""
+    return {k: f.note.strip() for k, f in config.items()
+            if f.visible and (f.note or "").strip()}
+
+
 def apply_column_config_to_schema(
     schema_str: str, config: dict[tuple[str, str], ColumnFlags]
 ) -> str:
-    """Prune a rendered schema string per the config — a pure string transform.
+    """Prune AND annotate a rendered schema string per the config — a pure string
+    transform.
 
     Drops the column line (name+type+inline annotation) of every non-visible
     column, and the ``-- col [values]`` enumeration line of every sample-disabled
-    or hidden column. Tables are matched by bare name so schema-qualified
-    ``TABLE:`` headers still match config keys. Everything else passes through
+    or hidden column. Appends a human ``note`` to its column line as
+    ``[note: …]`` — until 2026-08-14 the note was stored, edited in the UI and
+    never shown to the model, so "amount is in EUR cents" bought nothing (the
+    currency-VARCHAR blindness class; WrenAI's ``[unit]`` tag is the same
+    idea). Tables are matched by bare name so schema-qualified ``TABLE:``
+    headers still match config keys. Everything else passes through
     byte-identical; an empty/irrelevant config is a no-op."""
     hidden = {(t.lower(), c.lower()) for (t, c) in hidden_columns(config)}
     no_sample = {(t.lower(), c.lower()) for (t, c) in sample_disabled(config)}
-    if not hidden and not no_sample:
+    notes = {(t.lower(), c.lower()): n for (t, c), n in column_notes(config).items()}
+    if not hidden and not no_sample and not notes:
         return schema_str
 
     out: list[str] = []
@@ -369,7 +381,14 @@ def apply_column_config_to_schema(
                 continue
             if not line.lstrip().startswith("--"):
                 cm = _COL_LINE.match(line)
-                if cm and (table, cm.group(1).strip().lower()) in hidden:
-                    continue
+                if cm:
+                    key = (table, cm.group(1).strip().lower())
+                    if key in hidden:
+                        continue
+                    note = notes.get(key)
+                    if note:
+                        # One line, no newlines: the renderer's line grammar is
+                        # what every downstream parser (linker, pruner) reads.
+                        line = f"{line}  [note: {' '.join(note.split())}]"
         out.append(line)
     return "\n".join(out)

@@ -11,7 +11,14 @@ regex + first-token only. That passes exactly what an AST catches:
   * `exp.Command` DDL the first-token check's keyword list doesn't enumerate.
 
 Adapted from Apache Superset (Apache-2.0) — superset/sql/parse.py (is_mutating /
-is_destructive / the mutating node + function + command name lists).
+is_destructive / the mutating node + function + command name lists). The
+external-reader denylist and file-path table-source check are adapted from
+WrenAI (Apache-2.0) — core/wren/src/wren/policy.py: LLM SQL on a DuckDB-backed
+connection can otherwise read the local filesystem (`read_csv`, `read_text`,
+`glob`, bare `FROM '/path/x.csv'` replacement scans) or reach out over the
+network (`postgres_scan`, httpfs paths) — reads, so the mutation gate passes
+them. Blocked in EVERY AST position, and error strings report only the
+function name, never its argument (the argument IS the sensitive path/DSN).
 
 Design — POSITIVE DETECTION ONLY: every function returns True only when the AST
 *confirms* a mutation. On a parse failure it returns False, so the caller's
@@ -34,6 +41,11 @@ def _nodes(*names: str) -> tuple[type, ...]:
 _MUTATING_NODES = _nodes(
     "Insert", "Update", "Delete", "Merge", "Create", "Drop",
     "TruncateTable", "Alter", "Copy", "Grant", "Revoke", "Comment",
+    # sqlglot parses these as dedicated nodes, NOT exp.Command, so the
+    # command-head list below never sees them: ATTACH mounts an arbitrary
+    # database file; INSTALL pulls an extension (FORCE INSTALL parses to the
+    # same node).
+    "Attach", "Detach", "Install",
 )
 _DESTRUCTIVE_NODES = _nodes("Drop", "TruncateTable", "Alter")
 
@@ -53,6 +65,29 @@ _MUTATING_COMMAND_NAMES: frozenset[str] = frozenset({
     "LOAD", "ATTACH", "DETACH", "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT",
 })
 
+# DuckDB (and friends) file / remote / secret readers — pure reads, invisible
+# to the mutation gate, but they turn an LLM SQL surface into filesystem and
+# network access. Matched against BOTH exp.Anonymous names (read_text, glob…)
+# and exp.Func.sql_name() (READ_CSV, READ_PARQUET get dedicated sqlglot nodes).
+_EXTERNAL_READER_FUNCTIONS: frozenset[str] = frozenset({
+    # file readers / sniffers
+    "READ_CSV", "READ_CSV_AUTO", "SNIFF_CSV",
+    "READ_PARQUET", "PARQUET_SCAN", "PARQUET_METADATA", "PARQUET_SCHEMA",
+    "PARQUET_KV_METADATA", "PARQUET_FILE_METADATA",
+    "READ_JSON", "READ_JSON_AUTO", "READ_JSON_OBJECTS", "READ_JSON_OBJECTS_AUTO",
+    "READ_NDJSON", "READ_NDJSON_AUTO", "READ_NDJSON_OBJECTS",
+    "READ_TEXT", "READ_BLOB", "READ_XLSX", "GLOB",
+    # spatial / lakehouse / cross-database scanners
+    "ST_READ", "ST_READ_META",
+    "ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN",
+    "SQLITE_SCAN", "SQLITE_ATTACH", "POSTGRES_SCAN", "POSTGRES_ATTACH",
+    "POSTGRES_QUERY", "MYSQL_QUERY",
+    # environment / secret disclosure
+    "GETENV", "DUCKDB_SECRETS", "WHICH_SECRET", "LOAD_AWS_CREDENTIALS",
+    # MySQL server-side file read
+    "LOAD_FILE",
+})
+
 # Info-disclosure / file / network / process functions to deny even though they
 # don't mutate. These are function calls (exp.Anonymous/exp.Func), never columns.
 _DISALLOWED_FUNCTIONS: frozenset[str] = frozenset({
@@ -60,7 +95,25 @@ _DISALLOWED_FUNCTIONS: frozenset[str] = frozenset({
     "LO_IMPORT", "LO_EXPORT", "DBLINK", "DBLINK_EXEC",
     "PG_SLEEP", "PG_TERMINATE_BACKEND", "PG_CANCEL_BACKEND",
     "VERSION", "CURRENT_SETTING",
-})
+}) | _EXTERNAL_READER_FUNCTIONS
+
+# DuckDB's replacement scan turns a bare string/identifier table source into a
+# file read: `FROM '/data/x.csv'`, `FROM 's3://bucket/x.parquet'`, and even
+# quoted `FROM "x.csv"` when no such table exists. sqlglot parses all of these
+# as exp.Table over a plain Identifier, so no function check can see them.
+# Reported as the pseudo-name FILE_TABLE_SOURCE — never the path itself.
+_FILE_SOURCE_SUFFIXES: tuple[str, ...] = (
+    ".csv", ".tsv", ".parquet", ".parq", ".json", ".ndjson", ".jsonl",
+    ".xlsx", ".xls", ".duckdb", ".db", ".gz", ".zst",
+)
+FILE_TABLE_SOURCE = "FILE_TABLE_SOURCE"
+
+
+def _is_file_table_source(name: str) -> bool:
+    lowered = name.lower()
+    if "/" in lowered or "\\" in lowered or "://" in lowered:
+        return True
+    return lowered.endswith(_FILE_SOURCE_SUFFIXES)
 
 _SessionParameter = getattr(exp, "SessionParameter", None)
 
@@ -133,6 +186,12 @@ def disallowed_functions(
     Empty set on a parse failure.
     """
     parsed = _parse(sql, dialect)
+    if parsed is None and dialect != "duckdb":
+        # DuckDB-only constructs (`glob(...)` as a table function) fail the
+        # generic parse — sqlglot maps GLOB to a binary operator there. Retry
+        # as DuckDB: positive detection only, so a second parse can only ADD
+        # coverage, never newly pass something.
+        parsed = _parse(sql, "duckdb")
     if parsed is None:
         return set()
     deny = {d.upper() for d in denylist}
@@ -153,4 +212,8 @@ def disallowed_functions(
             name = (sp.name or "").upper()
             if name in deny or "VERSION" in name:
                 found.add(name or "SESSION_PARAMETER")
+    for table in parsed.find_all(exp.Table):
+        source = table.this
+        if isinstance(source, exp.Identifier) and _is_file_table_source(source.name or ""):
+            found.add(FILE_TABLE_SOURCE)
     return found

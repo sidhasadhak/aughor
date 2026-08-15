@@ -203,6 +203,40 @@ def test_prune_all_visible_is_byte_identical():
     assert apply_column_config_to_schema(_SCHEMA, cfg) == _SCHEMA
 
 
+# ── human notes ride the column line into the prompt (2026-08-14) ────────────
+# The note was stored, editable in the UI, and never shown to the model — a user
+# who wrote "in EUR cents" bought nothing. Same idea as WrenAI's [unit] tag.
+
+def test_human_note_is_appended_to_the_column_line():
+    cfg = {("sales", "brand"): ColumnFlags(note="brand as printed on the label, not the parent group")}
+    out = apply_column_config_to_schema(_SCHEMA, cfg)
+    assert "  brand  VARCHAR  [note: brand as printed on the label, not the parent group]" in out
+    assert "  id  INTEGER\n" in out, "unannotated columns are byte-identical"
+
+
+def test_note_on_a_hidden_column_is_not_shown():
+    # A note is for the reader; a hidden column has no reader.
+    cfg = {("sales", "notes"): ColumnFlags(visible=False, note="internal scratch")}
+    out = apply_column_config_to_schema(_SCHEMA, cfg)
+    assert "internal scratch" not in out
+
+
+def test_note_is_flattened_to_one_line():
+    # The renderer's line grammar is what the linker and pruner parse: a note with
+    # newlines would become a fake column line.
+    cfg = {("sales", "status"): ColumnFlags(note="open = still\nbeing processed")}
+    out = apply_column_config_to_schema(_SCHEMA, cfg)
+    assert "[note: open = still being processed]" in out
+    assert out.count("\n") == _SCHEMA.count("\n")
+
+
+def test_note_survives_the_pruning_pass_alongside_sample_off():
+    cfg = {("sales", "status"): ColumnFlags(sample=False, note="lifecycle state")}
+    out = apply_column_config_to_schema(_SCHEMA, cfg)
+    assert "  status  VARCHAR  [note: lifecycle state]" in out
+    assert "-- status" not in out
+
+
 def test_helper_sets():
     cfg = {
         ("t", "a"): ColumnFlags(visible=False),
@@ -348,3 +382,18 @@ def test_column_config_put_requires_a_flag(client, store):
         json={"table": "sales", "column": "notes"},
     )
     assert r.status_code == 422
+
+
+def test_column_config_put_accepts_a_note_only_edit(client, store):
+    # A note is now a prompt-bearing edit in its own right (it rides the column
+    # line), so annotating a column must not require also flipping a flag.
+    r = client.put(
+        "/ontology/column-config",
+        params={"connection_id": "fixture"},
+        json={"table": "sales", "column": "amount", "note": "EUR cents, not euros"},
+    )
+    assert r.status_code == 200
+    flags = r.json()["flags"]
+    assert flags["note"] == "EUR cents, not euros"
+    assert flags["visible"] is True, "a note-only edit leaves the flags at their defaults"
+    assert flags["source"] == "human"

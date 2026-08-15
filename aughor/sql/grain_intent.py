@@ -48,6 +48,58 @@ _SINGULAR = re.compile(
 _PER_ENTITY = re.compile(r"\b(?:for\s+(?:each|every)|per)\s+([a-z_][a-z_ ]{2,30}?)(?:[,.:;]|\s+(?:and|in|of|the|please|calculate|show|list|provide|identify|from|with)\b)", re.I)
 
 
+# "how many orders …", "number of customers …", "count of products …" — the question
+# names a COUNTABLE ENTITY. If the SQL then does COUNT(*) over a table whose grain is
+# finer than that entity (line items, not orders), it counts rows of the wrong thing.
+_HOW_MANY_ENTITY = re.compile(
+    r"\b(?:how\s+many|number\s+of|count\s+of|total\s+number\s+of)\s+"
+    r"(?:distinct\s+|unique\s+|different\s+)?([a-z][a-z_]{2,30}?)s?\b(?:\s+(?:were|are|was|is|did|do|have|has|had|in|by|per|for|from|with|that|which|placed|shipped|sold|returned|made)\b|[?,.]|$)",
+    re.I,
+)
+#: "how many rows / records / entries / items / results" — words that name the row
+#: itself, where COUNT(*) is exactly right.
+_NOT_ENTITIES = frozenset({"row", "record", "entry", "result", "line", "item", "line_item",
+                           "transaction", "event", "time", "day", "month", "year", "week"})
+
+
+_COUNT_STAR = re.compile(r"\bcount\s*\(\s*\*\s*\)", re.I)
+_COUNT_DISTINCT = re.compile(r"\bcount\s*\(\s*distinct\b", re.I)
+
+
+def count_star_over_finer_grain(question: str, sql: str,
+                                columns_in_scope: Sequence[str]) -> Optional[str]:
+    """``COUNT(*)`` answering "how many <entity>" on a table whose rows are NOT that
+    entity — the Superstore miss (2026-08-14): "how many orders in Q4 2016?" answered
+    806 line items instead of 406 orders, on a table whose declared grain is one row
+    per line item and which carries ``order_id``.
+
+    Deterministic and precision-first, so it can caveat a live headline: fires only
+    when (a) the question names a countable entity, (b) the SQL is a bare COUNT(*)
+    with no COUNT(DISTINCT …) anywhere, no JOIN and no GROUP BY (single-table scalar
+    or filtered count — the shape where the fix is exactly one edit), and (c) a
+    column ``<entity>_id`` is in scope — the entity's OWN key, which is what a table
+    keyed at that entity's grain would not need to carry alongside a separate row id.
+    Returns the repair diagnosis, else None. The caller decides caveat vs rewrite.
+    """
+    m = _HOW_MANY_ENTITY.search(question or "")
+    if not m or not sql:
+        return None
+    entity = m.group(1).lower().rstrip("s")
+    if not entity or entity in _NOT_ENTITIES:
+        return None
+    s = sql.lower()
+    if not _COUNT_STAR.search(s) or _COUNT_DISTINCT.search(s):
+        return None
+    if " join " in s or " group by " in s:
+        return None          # the join/grouped shapes belong to fanout.py's detectors
+    key = _entity_column(entity, columns_in_scope)
+    if not key or not key.lower().endswith("_id"):
+        return None
+    return (f"GRAIN MISMATCH: the question asks how many {entity}s, but COUNT(*) counts "
+            f"table rows, which are finer than one row per {entity} (the table carries "
+            f"{key}). Use COUNT(DISTINCT {key}) so each {entity} is counted once.")
+
+
 @dataclass
 class GrainExpectation:
     kind: str            # "exact" | "per_entity"

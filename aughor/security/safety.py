@@ -37,6 +37,11 @@ _FIRST_BLOCKED: frozenset[str] = frozenset({
     "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE",
     "CREATE", "ALTER", "REPLACE", "UPSERT", "MERGE",
     "GRANT", "REVOKE", "EXECUTE", "EXEC", "CALL", "COPY",
+    # DuckDB session-surface statements. EXPORT/IMPORT DATABASE fail to parse
+    # in sqlglot, so the AST gate never sees them — the first token is the
+    # only line of defense. ATTACH/INSTALL/LOAD are also AST-blocked, but a
+    # parse failure there must not become a pass.
+    "ATTACH", "DETACH", "INSTALL", "LOAD", "EXPORT", "IMPORT",
 })
 
 # These anywhere in the statement raise the score

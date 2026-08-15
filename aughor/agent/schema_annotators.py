@@ -112,7 +112,8 @@ def _intelligence(conn, base: str) -> str:
     try:
         from aughor.semantic.autoseed import seed_missing_tables
         seed_missing_tables(base, schema=getattr(conn, "_schema_name", None) or None,
-                            connection_id=cid or None)
+                            connection_id=cid or None,
+                            conn=getattr(conn, "_conn", None) or conn)
     except Exception as _seed_exc:
         from aughor.kernel.errors import tolerate
         tolerate(_seed_exc, "glossary seeding is best-effort; the schema renders "

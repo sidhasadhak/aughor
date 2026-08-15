@@ -176,8 +176,13 @@ def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tm
     assert paused["since_basis"] == "paused_event", (
         "waiting time must come from the investigation.paused ledger event")
 
-    inbox_row = next(r for r in body["rows"] if r["source"] == "kinetic_inbox")
-    assert inbox_row["id"] == proposal.id
+    # Look OUR proposal up by id — the inbox is a suite-wide store, and "the first
+    # kinetic_inbox row" is whichever neighbor test staged one last (order-dependent
+    # failure, 2026-08-15). The property under test is that it appears, not that it
+    # is alone.
+    inbox_rows = [r for r in body["rows"] if r["source"] == "kinetic_inbox"]
+    assert any(r["id"] == proposal.id for r in inbox_rows), (
+        f"proposal {proposal.id} not among the inbox rows {[r['id'] for r in inbox_rows]}")
 
     # Resolving through the native surface removes the row here — one store,
     # no copies (the J10 gate).

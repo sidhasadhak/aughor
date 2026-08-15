@@ -131,8 +131,53 @@ def _columns_drifted(stored: set[str], live: set[str]) -> bool:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+# "one row per order_id" / "One row per customer" / "one row per returned order_id" — a
+# grain claim that names a KEY the data can verify. The LLM's grain is a guess; when
+# it names a column, `COUNT(*) = COUNT(DISTINCT key)` is a fact.
+# Captures the whole noun phrase; the KEY is its LAST word ("returned order_id" →
+# order_id, "customer" → customer). A lazy per-word capture took "returned".
+_GRAIN_KEY = re.compile(r"\bone\s+row\s+per\s+((?:[a-z][a-z0-9_]*\s+){0,3}[a-z][a-z0-9_]*)", re.I)
+
+
+def verify_grain_claim(grain: str, table_fqn: str, columns: set[str], conn) -> str:
+    """Return the grain to STORE: the claim as written when the data agrees or cannot be
+    checked, or a data-verified correction when the claim names a key the table does not
+    hold uniquely.
+
+    The Superstore `returns` table was seeded "one row per returned order_id" — 800 rows
+    over 296 distinct order_ids. Every "how many orders were returned?" then wrote
+    COUNT(*) → 800 (reference: 296) because the schema TOLD the model each row was an
+    order (grid 2026-08-15, both cells). A false grain claim is worse than none: it turns
+    the fan-out guard's own signal off. This is WrenAI's rule applied to our seeds — a
+    grain is written only after a ground-truth probe (`enrich-context` Step 4.5).
+    Deterministic, one bounded query, never raises."""
+    m = _GRAIN_KEY.search(grain or "")
+    if not m or conn is None:
+        return grain
+    key = m.group(1).split()[-1].lower()
+    if key not in {c.lower() for c in columns}:
+        # The claim's noun ("order") may not be a column ("order_id" is). Try the id form.
+        cand = next((c for c in columns if c.lower() in (f"{key}_id", f"{key}id")), None)
+        if cand is None:
+            return grain
+        key = cand
+    try:
+        n_rows, n_keys = conn.execute(
+            f'SELECT COUNT(*), COUNT(DISTINCT "{key}") FROM {table_fqn}').fetchone()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "grain-claim probe is best-effort; the seeded claim is stored unverified",
+                 counter="autoseed.grain_probe")
+        return grain
+    if not n_rows or n_keys is None or n_rows == n_keys:
+        return grain
+    return (f"{n_rows:,} rows over {n_keys:,} distinct {key} — NOT one row per {key} "
+            f"(a {key} can appear on several rows; count {key}s with COUNT(DISTINCT {key}), "
+            f"never COUNT(*)). Seeded claim was: {grain}")
+
+
 def seed_missing_tables(raw_schema: str, schema: str | None = None,
-                        connection_id: str | None = None) -> bool:
+                        connection_id: str | None = None, conn=None) -> bool:
     """
     Seed glossary entries for tables not yet in glossary.yaml.
     Called by get_schema() before apply_glossary().
@@ -152,13 +197,13 @@ def seed_missing_tables(raw_schema: str, schema: str | None = None,
         return False
 
     try:
-        return _seed(raw_schema, schema, connection_id)
+        return _seed(raw_schema, schema, connection_id, conn)
     except Exception:
         return False
 
 
 def _seed(raw_schema: str, schema: str | None = None,
-          connection_id: str | None = None) -> bool:
+          connection_id: str | None = None, conn=None) -> bool:
     from aughor.llm.provider import get_provider
     from aughor.semantic.glossary import canonical_key, load_merged_glossary, lookup_table
     from aughor.db.schema_cache import compute_fingerprint, is_complete, mark_complete, scope_key
@@ -224,9 +269,14 @@ def _seed(raw_schema: str, schema: str | None = None,
                     entry["caveats"] = col.caveats
                 col_dict[col.name] = entry
 
+            # A grain that names a key is verified against the data before it is
+            # stored — see verify_grain_claim. `table_name` is the TABLE: header, which
+            # is how the renderer names it and therefore how the connection resolves it.
+            grain = verify_grain_claim(annotation.grain, table_name,
+                                       _block_columns(schema_block), conn)
             tables_meta[canonical_key(table_name, schema)] = {
                 "description": annotation.description,
-                "grain": annotation.grain,
+                "grain": grain,
                 "auto_generated": True,
                 "columns": col_dict,
             }
