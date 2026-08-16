@@ -37,6 +37,15 @@ TASK: Parse this question into a precise investigation specification.
    or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
    or losing money, default to the primary revenue / value measure in the schema. A money question
    must never resolve to a sentiment or review metric.
+   MAGNITUDE GUARD (critical): when the question names a QUANTITY — a delay, a duration, a lead
+   time, an age, a distance, an amount — and the schema records BOTH the measured quantity and a
+   0/1 indicator that merely flags it, the metric is the MEASURED QUANTITY. "Shipping delay" over a
+   schema holding `Days for shipping (real)`, `Days for shipment (scheduled)` and `Late_delivery_risk`
+   is `AVG("Days for shipping (real)" - "Days for shipment (scheduled)")`, NOT `AVG(Late_delivery_risk)`:
+   the flag answers "how often", the question asked "how much", and a rate cannot be read back as a
+   magnitude. Indicator columns are recognisable by name (`*_risk`, `is_*`, `has_*`, `*_flag`,
+   `*_indicator`) or by holding only 0 and 1. Use the flag only when the question itself asks about
+   frequency ("how often are we late", "what share of orders are late").
    METRIC KIND: set metric_is_ratio=true when the metric is a RATIO / percentage / rate / per-unit
    average (it divides one aggregate by another, scales by *100, or is an AVG / mean — e.g. "freight
    as % of order value", "cancellation rate", "average order value", "margin %"). Set it false for a
@@ -61,6 +70,29 @@ TASK: Parse this question into a precise investigation specification.
    "new customers") plus comparison_segment_label (e.g. "late vs on-time delivery"). The metric Y is
    then compared ACROSS that segment. Do NOT analyse Y as a weekly/monthly trend: the condition X may
    hold in EVERY period, so a time series is structurally blind to the relationship.
+   TWO SIDES RULE (critical): X and Y must be DIFFERENT columns. If the condition you would write for
+   X uses a column metric_sql already reads, you have written the metric twice — leave
+   comparison_segment_sql EMPTY. Grouping a metric by its own definition returns 100% and 0% no
+   matter what the data holds, which answers nothing.
+   NAME BOTH SIDES: whenever the question asks how two things relate — including "is there a
+   correlation between A and B" — also populate relationship_left_sql and relationship_right_sql with
+   the COLUMN each side refers to (a bare column name, or the arithmetic that measures it, e.g.
+   `"Days for shipping (real)" - "Days for shipment (scheduled)"`), plus a short human label for each.
+   These are the two sides of the relationship, not a metric and a filter: fill them even when the
+   two sides are of different kinds (a measured quantity against a category is a valid pair, and so is
+   a category against a category). Resolve the user's words to the schema's columns — "shipping delay"
+   means the measured delay.
+   ONE CONCEPT, SEVERAL COLUMNS: a schema usually spreads a concept like "customer location" across
+   city, state, country and region, and testing only one of them answers a narrower question than the
+   user asked — country has two values and can hide everything city would show. Put that side on the
+   RIGHT: name the most specific column in relationship_right_sql and list the others (most specific
+   first, up to 3) in relationship_right_alternatives. Each is tested and the strongest is reported.
+   INTERVENTION (rare, and only when real): set intervention_column ONLY when the data records an
+   assignment somebody APPLIED — a treatment arm, an A/B variant, a deliberately assigned campaign
+   flag, a policy switched on from a date. A column that merely moves with the outcome is not an
+   intervention, and naming one that isn't grants the report causal language it has not earned.
+   When in doubt leave it empty: the analysis still runs, and it reports a relationship instead of
+   a cause.
 
 3. COMPARISON BASIS — What is the baseline for comparison?
    Default: both PoP (prior period of same length) AND YoY (same period prior year).
@@ -408,7 +440,10 @@ CROSS_SECTION_AVG_BLOCK = """\
   2. Compute the metric ({metric_sql}) per value AS metric_total. This is a per-record AVERAGE and
      is already correct within each group — do NOT expand it into separate numerator/denominator
      columns, do NOT replace it with SUM(...), and do NOT divide it by COUNT(*). The AVG stands alone.
-  3. Also SELECT COUNT(*) AS n — the number of records behind each group's average (context only).
+  3. Also SELECT COUNT(*) AS n — the number of records behind each group's average — AND the
+     within-group spread as STDDEV_SAMP(<the same expression the AVG averages>) AS sd. Two group
+     averages cannot be compared without both: a group of 3 records sits at the top of a ranking on
+     noise alone, and the spread inside each group is what says whether the gap between them is real.
   4. Do NOT compute avg_per_record (the metric is already an average) and do NOT compute a
      share-of-total (you cannot meaningfully SUM an average across groups).
   5. ORDER BY metric_total ASC (weakest first) so the lowest averages surface.
@@ -420,14 +455,10 @@ METRIC: {metric_label}
 PHASE: Cross-Sectional Weakness Scan
 
 QUERY RESULTS — each dimension value with its metric_total, avg_per_record, n, and
-pct_of_total share, weakest total first:
+pct_of_total share:
 {results_text}
 
-POPULATION NOTE: these rows are the LOWEST-ranked values (weakest first) and may be a CAPPED
-subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top".
-Do NOT generalise "no value underperforms / the spread is tight" to the whole population from this
-truncated tail; speak only about the values actually shown (e.g. "among the lowest-margin brands
-shown") and, if the row count equals the cap, note more values likely exist beyond it.
+{population_note}
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By franchise", "By region", "By product"). Use the SAME
@@ -463,14 +494,10 @@ METRIC: {metric_label}  (this is a RATIO / percentage / rate — NOT a dollar to
 PHASE: Cross-Sectional Weakness Scan
 
 QUERY RESULTS — each dimension value with its metric_total (the RATIO/percentage itself), n, and
-the numerator_total / denominator_total it was built from, lowest ratio first:
+the numerator_total / denominator_total it was built from:
 {results_text}
 
-POPULATION NOTE: these rows are the LOWEST-ranked values (lowest ratio first) and may be a CAPPED
-subset (the query LIMITs the scan) — they are the BOTTOM of the distribution, never "the top". Do
-NOT generalise "no value underperforms / the spread is tight" to the whole population from this
-truncated tail; speak only about the values actually shown, and if the row count equals the cap,
-note more values likely exist beyond it.
+{population_note}
 
 For EACH dimension, write a finding:
   - title: the dimension (e.g. "By country", "By category"). Use the SAME dimension wording as the
@@ -680,6 +707,13 @@ class IntakeOutput(BaseModel):
     metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals.")
     comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
     comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
+    relationship_left_sql: str = Field(default="", description="For a RELATIONSHIP question (how do A and B relate / is there a correlation between A and B), the column — or the arithmetic measuring it — for the FIRST side, e.g. '\"Days for shipping (real)\" - \"Days for shipment (scheduled)\"' for 'shipping delay'. NOT an aggregate: no SUM/AVG/COUNT. Empty for non-relationship questions.")
+    relationship_left_label: str = Field(default="", description="Short human label for relationship_left_sql, e.g. 'shipping delay (days)'.")
+    relationship_right_sql: str = Field(default="", description="The SECOND side of the relationship, same rules as relationship_left_sql — e.g. 'Customer State' for 'customer location'. Must be a DIFFERENT column from relationship_left_sql.")
+    relationship_right_label: str = Field(default="", description="Short human label for relationship_right_sql, e.g. 'customer state'.")
+    relationship_right_alternatives: list[str] = Field(default_factory=list, description="Other columns carrying the SAME concept as relationship_right_sql, when the schema spreads it across several — e.g. for 'customer location': ['Customer City', 'Customer Country', 'Order Region']. Most specific first, up to 3. Each is tested and the strongest relationship is reported. Empty when one column carries the concept.")
+    intervention_column: str = Field(default="", description="A column recording an INTERVENTION or ASSIGNMENT that was applied to units — a treatment arm, an A/B variant, a campaign flag deliberately assigned, a policy applied from a date. This is what makes a causal contrast identifiable. Empty unless the data genuinely records an assignment; a column that merely correlates with an outcome is NOT an intervention.")
+    claim_type_suggestion: str = Field(default="", description="Optional: the weakest claim this question needs — one of 'descriptive', 'associational', 'predictive'. Never 'causal'; a causal licence comes from the design, not from this field. Leave empty unless the question is clearly weaker than the design allows.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
 
 

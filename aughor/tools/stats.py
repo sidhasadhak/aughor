@@ -645,6 +645,202 @@ def _analyze_association(columns: list[str], rows: list[list]) -> Optional[StatR
     )
 
 
+# ── Relationship between a NUMERIC pair, and between a numeric and a category ─
+#
+# `assess_association` answers "are these two CATEGORIES related?" and is the only
+# relationship test this module had. A question like "is there a correlation between
+# shipping delay and customer location" has no categorical pair to cross — one side is a
+# measured quantity — and with no test for that shape the investigation fell back to
+# ranking the metric across each dimension separately, which cannot describe a
+# relationship at all. These two assessors close the remaining type pairs.
+
+#: |r| bands. A correlation can clear p<0.05 on 180k rows and still mean nothing, so the
+#: verdict is led by the EFFECT (|r|) and the p-value only qualifies it — the same order
+#: of authority `_ASSOCIATION_NEGLIGIBLE_V` already applies to Cramér's V.
+_CORR_NEGLIGIBLE = 0.10
+_CORR_MODERATE = 0.30
+_CORR_STRONG = 0.50
+
+
+@dataclass
+class CorrelationResult:
+    """Pearson correlation between two measured quantities."""
+    r: float
+    n: int
+    p_value: float
+    strength: str            # "none" | "weak" | "moderate" | "strong"
+    interpretation: str      # reader-facing
+    technical: str           # r, n, p — for the evidence log
+
+
+def assess_correlation(r: Optional[float], n: int, label_a: str, label_b: str) -> Optional[CorrelationResult]:
+    """Turn a computed Pearson r into a verdict, or None when there is nothing to judge.
+
+    The coefficient itself comes from SQL (``CORR(a, b)``) — the database has already
+    scanned every row, and re-computing it in Python would mean shipping the rows here to
+    get the same number. What SQL cannot give is the reading: whether |r| is large enough
+    to act on, and whether it is distinguishable from zero at this n.
+
+    Returns None on a NULL/undefined r (a constant column, or an all-NULL cast), because
+    "no correlation" and "the correlation is undefined" are different answers and only the
+    first one belongs in a report.
+    """
+    import math
+    if r is None or n is None or n < 3:
+        return None
+    try:
+        r = float(r)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(r) or abs(r) > 1.0000001:
+        return None
+    r = max(-1.0, min(1.0, r))
+
+    # Two-sided t-test on r with n-2 degrees of freedom.
+    if abs(r) >= 1.0:
+        p = 0.0
+    else:
+        t = r * math.sqrt((n - 2) / (1.0 - r * r))
+        p = float(2 * scipy_stats.t.sf(abs(t), n - 2))
+
+    a = abs(r)
+    strength = ("none" if a < _CORR_NEGLIGIBLE else
+                "weak" if a < _CORR_MODERATE else
+                "moderate" if a < _CORR_STRONG else "strong")
+    direction = "positive" if r > 0 else "negative"
+    shared = r * r
+
+    if strength == "none":
+        interp = (
+            f"{label_a} and {label_b} are effectively uncorrelated (r = {r:.3f} across "
+            f"{n:,} records; it explains {shared:.1%} of the variation). Knowing one tells "
+            f"you essentially nothing about the other, so this pair does not explain the "
+            f"outcome and no action should be taken on it."
+        )
+    else:
+        interp = (
+            f"{label_a} and {label_b} move together {direction}ly, {strength}ly: r = {r:.3f} "
+            f"across {n:,} records, which accounts for {shared:.1%} of the variation in "
+            f"either one. Correlation at this strength is a lead to investigate, not a "
+            f"demonstrated cause."
+        )
+    if p >= 0.05 and strength != "none":
+        interp += f" At n = {n:,} this is not distinguishable from zero (p = {p:.3f})."
+    return CorrelationResult(r=r, n=int(n), p_value=p, strength=strength,
+                             interpretation=interp,
+                             technical=f"Pearson r = {r:.4f}, n = {n}, p = {p:.4g}, r² = {shared:.4f}")
+
+
+@dataclass
+class GroupMeansResult:
+    """Whether a measured quantity differs across the values of a category."""
+    n_groups: int
+    grand_mean: float
+    spread: float            # max group mean - min group mean
+    eta_squared: float       # share of the quantity's variance explained by the grouping
+    p_value: float
+    differs: bool            # a real difference: significant AND non-negligible effect
+    interpretation: str
+    technical: str
+
+
+#: Below this η² the grouping explains so little of the quantity's variance that a
+#: significant F is a statement about sample size, not about the business. Cohen's
+#: small-effect convention for η²; the same "significant ≠ matters" split the
+#: association verdict already makes.
+_ETA_SQUARED_NEGLIGIBLE = 0.01
+#: …and the share below which a REAL difference is still not a driver. Cohen's medium-effect
+#: convention. Between the two floors a grouping is distinguishable and inconsequential, which
+#: is the band a report reads as a finding unless the size is said out loud: 1.1% of the
+#: variation in shipping delay became "correlated with geography, driven by localized
+#: state-level bottlenecks" in a live run.
+_ETA_SQUARED_MATERIAL = 0.06
+
+
+def assess_group_means(
+    groups: list[tuple[str, float, float, int]],
+    label_measure: str,
+    label_dimension: str,
+) -> Optional[GroupMeansResult]:
+    """One-way ANOVA from per-group (label, mean, stddev, n) — the summary SQL returns.
+
+    Computed from summaries rather than raw rows on purpose: ``AVG``/``STDDEV_SAMP``/
+    ``COUNT`` per group is one grouped query the database answers over the full table,
+    where pulling every row into Python to run the same test would be a transfer of the
+    whole dataset to learn four numbers per group.
+
+    Returns None when fewer than two groups carry data — there is no comparison to make.
+    """
+    import math
+    clean = [(str(lbl), float(m), float(sd or 0.0), int(n))
+             for lbl, m, sd, n in groups
+             if n and int(n) > 0 and m is not None and math.isfinite(float(m))]
+    if len(clean) < 2:
+        return None
+
+    total_n = sum(n for _, _, _, n in clean)
+    k = len(clean)
+    if total_n <= k:
+        return None
+    grand = sum(m * n for _, m, _, n in clean) / total_n
+
+    # Between/within sums of squares from the group summaries (SD is the SAMPLE sd, so
+    # each group contributes sd²·(n-1) to the within-group sum).
+    ss_between = sum(n * (m - grand) ** 2 for _, m, _, n in clean)
+    ss_within = sum((sd ** 2) * (n - 1) for _, _, sd, n in clean)
+    ss_total = ss_between + ss_within
+    if ss_total <= 0:
+        return None
+
+    eta_sq = ss_between / ss_total
+    df_b, df_w = k - 1, total_n - k
+    ms_within = ss_within / df_w if df_w > 0 else 0.0
+    if ms_within > 0 and df_b > 0:
+        f_stat = (ss_between / df_b) / ms_within
+        p = float(scipy_stats.f.sf(f_stat, df_b, df_w))
+    else:
+        f_stat = float("inf") if ss_between > 0 else 0.0
+        p = 0.0 if ss_between > 0 else 1.0
+
+    means = [m for _, m, _, _ in clean]
+    spread = max(means) - min(means)
+    hi = max(clean, key=lambda g: g[1])
+    lo = min(clean, key=lambda g: g[1])
+    differs = bool(p < 0.05 and eta_sq >= _ETA_SQUARED_NEGLIGIBLE)
+
+    if differs and eta_sq < _ETA_SQUARED_MATERIAL:
+        # Over the small-effect floor and under the one that would make it a driver. The
+        # difference is real and it is tiny, and saying only "does differ" is what a report
+        # turns into "correlated with geography" — the live escalation from eta-squared =
+        # 0.0109. The number leads the sentence so the size cannot be dropped on the way up.
+        interp = (
+            f"{label_dimension} accounts for {eta_sq:.1%} of the variation in {label_measure} "
+            f"— a real difference across {total_n:,} records in {k} groups ({hi[0]} averages "
+            f"{hi[1]:,.3g} against {lo[0]}'s {lo[1]:,.3g}), and far too little to treat as a "
+            f"driver of {label_measure}. Nearly all of the variation is within groups, not "
+            f"between them, so acting on {label_dimension} would move almost none of it."
+        )
+    elif differs:
+        interp = (
+            f"{label_measure} does differ by {label_dimension}: {hi[0]} averages "
+            f"{hi[1]:,.3g} against {lo[0]}'s {lo[1]:,.3g}, and {label_dimension} accounts "
+            f"for {eta_sq:.1%} of the variation in {label_measure} across {total_n:,} "
+            f"records in {k} groups."
+        )
+    else:
+        interp = (
+            f"{label_measure} does not meaningfully differ by {label_dimension}. Across {k} "
+            f"groups and {total_n:,} records the group averages span only {spread:,.3g} "
+            f"(from {lo[1]:,.3g} to {hi[1]:,.3g}) around an overall {grand:,.3g}, and "
+            f"{label_dimension} accounts for {eta_sq:.1%} of the variation — the differences "
+            f"are within what the spread inside each group already produces."
+        )
+    return GroupMeansResult(n_groups=k, grand_mean=grand, spread=spread, eta_squared=eta_sq,
+                            p_value=p, differs=differs, interpretation=interp,
+                            technical=(f"one-way ANOVA F({df_b},{df_w}) = {f_stat:.4g}, "
+                                       f"p = {p:.4g}, eta-squared = {eta_sq:.4f}"))
+
+
 # ── Auto-analysis: called on every successful QueryResult ────────────────────
 
 def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str] = None) -> list[StatResult]:

@@ -264,8 +264,12 @@ def test_the_multilens_path_runs_the_scan_too(monkeypatch):
     _multilens = next(v for k, v in vars(inv).items()
                       if k.endswith("cross_section_multilens") and callable(v))
     src = inspect.getsource(_multilens)
-    assert "_run_association_scan(" in src, \
-        "the parallel path must run the association scan itself"
+    # `_run_relationship_scan` is the entry point both paths now share: it picks the query
+    # from the TYPES of the two sides and keeps the joint distribution as its categorical
+    # branch. The claim being guarded is unchanged — the parallel path must run the scan
+    # itself — so the assertion follows the seam rather than the old function name.
+    assert "_run_relationship_scan(" in src, \
+        "the parallel path must run the relationship scan itself"
     assert "_assoc_finding" in src and "merged = [_first]" in src, \
         "and must merge the verdict into the leading phase"
 
