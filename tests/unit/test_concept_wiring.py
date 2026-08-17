@@ -76,18 +76,42 @@ def test_the_evidence_names_both_layers_so_a_human_can_check():
     assert any("decimal places" in e for e in ev)      # the number, not just the verdict
 
 
-def test_a_latitude_with_no_partner_reaches_only_a_hint():
-    """One layer, however sure. AT-0 measured a 60% false-positive rate for the bounded
-    range test alone, so a name agreeing with nothing must not act."""
-    ddl = "CREATE TABLE t (latitude DOUBLE, rating DOUBLE)"
-    rows = "INSERT INTO t VALUES " + ",".join(
-        f"({18.25 + i * 0.0137:.8f}, {i / 20:.2f})" for i in range(120))
-    profs = build_column_profiles(_conn(ddl, rows), "t",
-                                  [("latitude", "DOUBLE"), ("rating", "DOUBLE")], set(), 120)
+_NO_PARTNER_DDL = "CREATE TABLE t (latitude DOUBLE, score DOUBLE)"
+
+
+def _no_partner_rows(n: int = 120) -> str:
+    # `score` is deliberately coordinate-SHAPED: inside ±90, eight decimals, high
+    # cardinality. Only its name differs.
+    vals = ",".join(f"({18.25 + i * 0.0137:.8f}, {40.5 + i * 0.0231:.8f})" for i in range(n))
+    return f"INSERT INTO t VALUES {vals}"
+
+
+_NO_PARTNER_COLS = [("latitude", "DOUBLE"), ("score", "DOUBLE")]
+
+
+def test_a_latitude_no_longer_needs_a_partner_once_its_VALUES_vouch_for_it():
+    """This is what AT-5 bought. Before the value layer, `latitude` alone was a name with
+    nothing to agree with it, so it stayed a hint unless a longitude sat beside it. Now its
+    own values are the second witness — and a table is allowed to store only a latitude."""
+    profs = build_column_profiles(_conn(_NO_PARTNER_DDL, _no_partner_rows()), "t",
+                                  _NO_PARTNER_COLS, set(), 120)
     lat = {p.column: p for p in profs}["latitude"]
-    assert lat.concept == "geo.latitude"                  # kept — it is real information
-    assert concept_of(lat.concept, lat.concept_confidence) == ""
-    assert lat.semantic_type == "key"                     # unchanged: a hint moves nothing
+    assert concept_of(lat.concept, lat.concept_confidence) == "geo.latitude"
+    assert lat.semantic_type == "measure"
+    layers = {e.split(":", 1)[0] for e in lat.concept_evidence}
+    assert {"name", "value"} <= layers, lat.concept_evidence
+
+
+def test_a_coordinate_SHAPE_that_nothing_else_agrees_with_stays_a_hint():
+    """AT-0 measured a 60% false-positive rate for the bounded-range test alone, and this
+    is that finding still holding: `score` has exactly the values of a latitude and nothing
+    seconds it, so it types nothing and moves nothing."""
+    profs = build_column_profiles(_conn(_NO_PARTNER_DDL, _no_partner_rows()), "t",
+                                  _NO_PARTNER_COLS, set(), 120)
+    score = {p.column: p for p in profs}["score"]
+    assert score.concept == "geo.latitude"              # kept — it is real information
+    assert concept_of(score.concept, score.concept_confidence) == ""
+    assert score.semantic_type == "measure"             # what it was before AT-5 touched it
 
 
 # ── the flag that is a stored comparison ─────────────────────────────────────
@@ -112,7 +136,11 @@ def test_the_magnitude_behind_a_flag_becomes_a_fact_on_the_table():
     assert notes, "a table whose flag is a comparison implies a magnitude"
     assert any('"real_days" - "sched_days"' in n for n in notes)
     flag = cps["ship.late_risk"]
-    assert concept_of(flag.concept, flag.concept_confidence) == "flag.derived_comparison"
+    assert concept_of(flag.concept, flag.concept_confidence) == "flag.binary"
+    # The concept answers WHAT the column is; the comparison is WHY, and it survives in
+    # the evidence rather than becoming a second concept the layers then split their vote
+    # between.
+    assert any("sched_days" in e for e in flag.concept_evidence), flag.concept_evidence
 
 
 def test_the_derived_quantity_reaches_the_rendered_profile():
@@ -132,12 +160,11 @@ def test_a_confident_concept_renders_with_its_prohibition_not_just_its_name():
 
 def test_a_hint_is_invisible_in_the_prompt():
     """Showing 'possibly a latitude (0.49)' in a prompt is how a guess becomes a fact one
-    paraphrase later."""
-    ddl = "CREATE TABLE t (latitude DOUBLE, rating DOUBLE)"
-    rows = "INSERT INTO t VALUES " + ",".join(
-        f"({18.25 + i * 0.0137:.8f}, {i / 20:.2f})" for i in range(120))
-    text = render_profile_annotations(*profile_connection(_conn(ddl, rows), ["t"], {}))
-    assert "IS geo.latitude" not in text
+    paraphrase later. `score` holds coordinate-shaped values on one layer only."""
+    text = render_profile_annotations(
+        *profile_connection(_conn(_NO_PARTNER_DDL, _no_partner_rows()), ["t"], {}))
+    assert "score" in text
+    assert "score" not in text.split("IS geo.latitude")[0].splitlines()[-1]
 
 
 # ── the name layer on its own ────────────────────────────────────────────────

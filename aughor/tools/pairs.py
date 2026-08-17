@@ -48,12 +48,19 @@ that never varies is not evidence of an identity; it is a unit conversion at bes
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable, Optional
 
 from aughor.tools.concept import LAYER_PAIR, Witness
+from aughor.tools.shape import (
+    COORD_MAX_DECIMALS,
+    COORD_MIN_DECIMALS,
+    COORD_MIN_DISTINCT,
+    as_float,
+    decimals,
+    is_nullish,
+)
 
 # ── Bounds. Every one of these caps is REPORTED when it truncates (see `truncated`),
 # because a silent cap reads as "we looked at everything" when we did not. The first
@@ -85,19 +92,18 @@ ABS_TOL = 0.01
 #: `unitPrice = 3` guard, stated as a number.
 MIN_FACTOR_DISTINCT = 3
 
-#: Coordinate candidates: a coordinate is recorded to a precision a rating or a cost is
-#: not, and it varies across many places.
-COORD_MIN_DECIMALS = 4
-#: …and to a precision a human CHOSE. This ceiling is the fix for the one false positive
-#: AT-0 named in advance: `scm.supply_chain_data` stores `Shipping costs`
-#: 2.956572139430807 beside `Price` 69.80800554211577, which passes every range test —
-#: 69.8 does leave ±90 further down the column, and both sit in bounds. But sixteen
-#: significant digits is a float printed in full, which means the number was COMPUTED;
-#: data_co's coordinates read 18.2514534 and -66.03705597, a precision somebody recorded.
-#: Sub-micrometre geography does not exist, so past ten decimals the digits are an artifact
-#: of the type, not evidence about the concept.
-COORD_MAX_DECIMALS = 10
-COORD_MIN_DISTINCT = 50
+#: The coordinate precision band (`COORD_MIN_DECIMALS`, `COORD_MAX_DECIMALS`,
+#: `COORD_MIN_DISTINCT`) is imported from `aughor.tools.shape`, which owns it: it is a fact
+#: about VALUES, and the pair rule below and the value witness beside it must agree on what
+#: counts as a recorded precision or they will disagree about the same column.
+#:
+#: What the ceiling buys, since it is the least obvious of the three: it is the fix for the
+#: one false positive AT-0 named in advance. `scm.supply_chain_data` stores `Shipping costs`
+#: 2.956572139430807 beside `Price` 69.80800554211577, and every range test passes — 69.8
+#: does leave ±90 further down the column, and both sit in bounds. But sixteen significant
+#: digits is a float printed in full, which means the number was COMPUTED; data_co's
+#: coordinates read 18.2514534 and -66.03705597, a precision somebody recorded.
+#: Sub-micrometre geography does not exist.
 
 
 @dataclass(frozen=True)
@@ -143,39 +149,11 @@ class PairScan:
 
 # ── Parsing the sample ────────────────────────────────────────────────────────
 
-_NUMERIC_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
-_NULLISH = {"", "null", "none", "nan", "na", "n/a"}
-
-
-def _as_float(value) -> Optional[float]:
-    """A cell as a float, or None. A VARCHAR holding '18.2514534' is a number here — that
-    is the entire reason `Latitude` was invisible to every numeric path before AT-6."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return 1.0 if value else 0.0
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).strip()
-    if not text or text.lower() in _NULLISH:
-        return None
-    if not _NUMERIC_RE.match(text):
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
-def _decimals(value) -> int:
-    """Digits after the decimal point AS WRITTEN. Read from the string, not the float:
-    18.2514534 and 18.25 are different evidence, and float() erases the difference."""
-    text = str(value or "").strip()
-    if "." not in text or not _NUMERIC_RE.match(text):
-        return 0
-    frac = text.split(".", 1)[1].split("e")[0].split("E")[0].rstrip("0")
-    return len(frac)
-
+# Value parsing belongs to the VALUE layer and is imported from it rather than repeated
+# here. Two parsers over one sample is two chances to disagree about what a cell holds —
+# and this module and `shape` read the SAME sampled rows.
+_as_float = as_float
+_decimals = decimals
 
 _TS_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y %H:%M", "%m/%d/%Y", "%d/%m/%Y %H:%M")
 
@@ -195,9 +173,9 @@ def _as_time(value) -> Optional[datetime]:
         return None
     if isinstance(value, datetime):
         return value
-    text = str(value).strip()
-    if not text or text.lower() in _NULLISH:
+    if is_nullish(value):
         return None
+    text = str(value).strip()
     got = _try_parse(text, datetime.fromisoformat)
     for fmt in _TS_FORMATS:
         if got is not None:
@@ -240,7 +218,7 @@ class _Col:
 
     @property
     def _n_present(self) -> int:
-        return sum(1 for v in self.raw if v is not None and str(v).strip().lower() not in _NULLISH)
+        return sum(1 for v in self.raw if not is_nullish(v))
 
 
 def _parse(samples: Iterable[ColumnSample]) -> list[_Col]:
@@ -470,7 +448,15 @@ def _derived_flag_findings(cols: list[_Col], truncated: list[str]) -> list[PairF
                                   f"on {share:.1%} of {tested} sampled rows — it is a comparison "
                                   f'someone stored, not a measured quantity. The magnitude behind '
                                   f'it is "{a.name}" - "{b.name}"'),
-                            roles=("flag.derived_comparison", "measure.actual", "measure.planned"),
+                            # `flag.binary`, not a concept of its own for "stores a
+                            # comparison": the concept answers WHAT the column is — a 0/1
+                            # indicator — and the comparison is WHY, which belongs in the
+                            # evidence sentence above and in the table's derived
+                            # quantities. Splitting them into two concepts made the name
+                            # and value layers vote for one while the pair layer voted for
+                            # the other, so the best-evidenced flag in the corpus resolved
+                            # to a hint.
+                            roles=("flag.binary", "measure.actual", "measure.planned"),
                         )
         if best is not None:
             out.append(best)

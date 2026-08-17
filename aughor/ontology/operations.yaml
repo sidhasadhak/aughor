@@ -61,16 +61,16 @@ concepts:
       An id is a name that happens to be spelled with digits. Order 90210 is not larger
       than order 90209, so every arithmetic answer about it is well-formed and meaningless.
 
-  flag.derived_comparison:
-    label: a 0/1 indicator storing a comparison
+  flag.binary:
+    label: a 0/1 indicator
     aggregate: [AVG, SUM]
     never: [CORR]
     numeric: false
     note: >
       AVG over a 0/1 column is a RATE and answers "how often". It cannot answer "how much" —
-      that is the magnitude the flag was computed from, which the profile names beside it.
-      This is the MAGNITUDE GUARD, stated as a property of the column rather than as a
-      paragraph the model has to remember.
+      that is the magnitude the flag was computed from, which the profile names beside it
+      when a pair rule found one. This is the MAGNITUDE GUARD, stated as a property of the
+      column rather than as a paragraph the model has to remember.
 
   count.quantity:
     label: a count of things

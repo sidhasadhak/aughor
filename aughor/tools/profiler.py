@@ -560,9 +560,9 @@ _NAME_WITNESS_RULES: tuple = (
     (lambda c, d: bool(_KEY_PATTERN.search(c.lower()) or _KEY_PATTERN_CAMEL.search(c)),
      "key.identifier", 0.6, "named like an identifier"),
     (lambda c, d: bool(_FLAG_PATTERN.match(c.lower()) or _INDICATOR_NAME.search(c)),
-     "flag.derived_comparison", 0.5, "named like an indicator"),
+     "flag.binary", 0.5, "named like an indicator"),
     (lambda c, d: bool(_BOOL_TYPES.search(d or "")),
-     "flag.derived_comparison", 0.5, "declared as a boolean"),
+     "flag.binary", 0.5, "declared as a boolean"),
     (lambda c, d: bool(_COUNT_PATTERN.search(c.lower())), "count.quantity", 0.5, "named like a count"),
     (lambda c, d: bool(_CURRENCY_PATTERN.search(c.lower())), "money.amount", 0.5, "named like money"),
     (lambda c, d: bool(_DURATION_WORD.search(c.lower())), "duration.days", 0.5, "named like a duration"),
@@ -1240,6 +1240,7 @@ def build_column_profiles(
     declared_concepts: Optional[dict[str, str]] = None,  # AT-4 human-declared concepts
     column_roles: Optional[dict] = None,                 # AT-8 mined usage roles
     pair_scan=None,                                      # AT-6 PairScan, sampled once by the caller
+    samples=None,                                        # the ColumnSamples that scan came from
 ) -> list[ColumnProfile]:
     """
     Compute column profiles.
@@ -1448,15 +1449,22 @@ def build_column_profiles(
     try:
         from aughor.tools.concept import Witness, resolve_concept
         from aughor.tools.pairs import pair_witnesses, scan_pairs
+        from aughor.tools.shape import value_witnesses
         from aughor.tools.usage import witnesses_for_table
 
-        scan = pair_scan if pair_scan is not None else scan_pairs(
-            _row_sample(conn, table, columns, row_count))
+        # ONE sample, three readings. The value layer (AT-5) and the pair layer (AT-6) both
+        # answer from the same rows, which is not just a saved query: `f == (a > b)` and
+        # "these values are 0 or 1" have to be about the same 300 rows or the two layers can
+        # disagree about a column while both being right about their own sample.
+        rows = samples if samples is not None else _row_sample(conn, table, columns, row_count)
+        scan = pair_scan if pair_scan is not None else scan_pairs(rows)
         by_pair = pair_witnesses(scan)
+        by_value = {s.column: value_witnesses(s.values) for s in (rows or ())}
         by_usage = witnesses_for_table(table, [c for c, _ in columns], column_roles or {})
         declared = declared_concepts or {}
         for col, dtype in columns:
-            witnesses = _name_witnesses(col, dtype) + by_pair.get(col, []) + by_usage.get(col, [])
+            witnesses = (_name_witnesses(col, dtype) + by_value.get(col, [])
+                         + by_pair.get(col, []) + by_usage.get(col, []))
             # A human who typed the answer is the authority, not a fourth opinion.
             if declared.get(col):
                 from aughor.tools.concept import LAYER_DECLARED
@@ -1625,9 +1633,11 @@ def profile_connection(
         # witnesses below and the derived quantities on the table profile. Sampling twice
         # would cost a scan and risk the two disagreeing about the same table.
         pair_scan = None
+        samples = None
         try:
             from aughor.tools.pairs import derived_expressions, scan_pairs
-            pair_scan = scan_pairs(_row_sample(conn, table, cols, tp.row_count))
+            samples = _row_sample(conn, table, cols, tp.row_count)
+            pair_scan = scan_pairs(samples)
             tp.derived_quantities = [f.note for f in derived_expressions(pair_scan)]
         except Exception as exc:                  # noqa: BLE001 — profiling is best-effort
             from aughor.kernel.errors import tolerate
@@ -1640,6 +1650,7 @@ def profile_connection(
             declared_concepts=declared_cfg.get(table),
             column_roles=mined_roles,
             pair_scan=pair_scan,
+            samples=samples,
         )
         for cp in col_profs:
             column_profiles[f"{table}.{cp.column}"] = cp

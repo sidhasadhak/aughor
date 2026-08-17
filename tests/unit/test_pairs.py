@@ -102,7 +102,7 @@ def test_the_flag_is_recognised_as_a_stored_comparison():
     assert f is not None
     assert f.columns[0] == "Late_delivery_risk"
     assert set(f.columns[1:]) == {"Days for shipping (real)", "Days for shipment (scheduled)"}
-    assert f.roles == ("flag.derived_comparison", "measure.actual", "measure.planned")
+    assert f.roles == ("flag.binary", "measure.actual", "measure.planned")
     # The magnitude behind the flag is the whole point — intake had to invent this
     # subtraction from a prompt paragraph in six consecutive runs.
     assert f.expression == '"Days for shipping (real)" - "Days for shipment (scheduled)"'
@@ -250,7 +250,7 @@ def test_witnesses_are_pair_layer_and_carry_the_number():
     scan = scan_pairs([col("real", real), col("sched", sched), col("flag", flag)])
     w = pair_witnesses(scan)
     assert w["flag"][0].layer == LAYER_PAIR
-    assert w["flag"][0].concept == "flag.derived_comparison"
+    assert w["flag"][0].concept == "flag.binary"
     assert "%" in w["flag"][0].evidence          # the support, in the sentence a human reads
     # BOTH sides of the pair are witnessed — that is what makes this a second witness.
     assert w["real"][0].concept == "measure.actual"

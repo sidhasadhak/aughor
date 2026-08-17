@@ -17,10 +17,10 @@ Eight live runs of *"Is there a correlation between shipping delay and customer 
 `workspace/data_co`.
 
 **Status 2026-08-17: Track 1 COMPLETE** (AT-1, AT-2, AT-3 — §2, receipts in §7).
-**Track 2 COMPLETE except AT-5** (AT-4, AT-6, AT-7, AT-8 — receipts in §8).
-**AT-5 was dropped on the user's instruction mid-build**, so there is no value layer; the
-two-witness rule runs on name + pair + usage + declared. What that costs is written down in
-§8.3 rather than left to be discovered. **AT-0 re-measured and verified — §3.2.**
+**Track 2 COMPLETE** (AT-4, AT-6, AT-7, AT-8 — §8) plus **AT-5's bounded-numeric half — §9**.
+All five evidence layers now exist. AT-5's remaining half — the bundled vocabulary
+(ISO-3166/4217, US states, country and weekday names) — is scoped and not built.
+**AT-0 re-measured and verified — §3.2.**
 
 ---
 
@@ -496,3 +496,68 @@ columns. That is the honest floor of a four-layer system, not a defect in the re
   precisely because `from_dict` reads an old entry happily: without the bump every existing
   connection would have kept serving concept-free profiles and the wave would have been
   built, cached out, and invisible.
+
+---
+
+## 9 · AT-5, bounded-numeric half (2026-08-17) — the fifth layer
+
+`aughor/tools/shape.py`, 51 tests. Reads the row-aligned sample AT-6 already pulls, so it
+costs **zero extra queries**. Neither the column's NAME nor its declared DTYPE is consulted:
+the name is a different layer, and the dtype is the LOADER's opinion — the witness that was
+wrong about `Latitude` in the first place, and wrong in a way that depends on which
+warehouse the same file was loaded into.
+
+### 9.1 · What the four shapes say about all 105 tables
+
+| witness | fires on | correct |
+|---|---|---|
+| `flag.binary` | 2 — `Late_delivery_risk`, `housing.waterfront` | **2 / 2** |
+| `percent.fraction` | 10 — discounts, duty rates, open rates, fraud scores | **9 / 10** (`attribution.weight`, 0.4–1.0 over 3 values) |
+| `geo.longitude` | 1 — `Longitude` | **1 / 1** |
+| `geo.latitude` | 2 — `Latitude`, `Order Item Profit Ratio` | **1 / 2** — the false positive AT-0 predicted, and it stays a hint |
+
+Corpus-wide, name + value alone now type **9 of 890 columns (1.0%)** to CONFIDENT, and all
+nine are right on inspection. Six of them — `duty_rate`, `markdown_pct`, `open_rate`,
+`Order Item Discount Rate` and two duplicates — had **no concept at all** before this wave.
+
+On data_co the resolved set went 4 → 5 columns, and the three that already resolved are now
+carried by three agreeing layers instead of two: `Late_delivery_risk` 0.90 → **0.97**,
+`Latitude` / `Longitude` 0.86 → **0.93**.
+
+### 9.2 · `percent.whole` is not buildable, and AT-0 asked for it
+
+Q6's scope note reads "build `percent.fraction` vs `percent.whole`". Measured during this
+build: `0 ≤ v ≤ 100` fires on **82 of 890 columns** and about **two** are percentages. The
+band is where every small number lives — `quantity` 1–14, `csat` 1–5, `month` 1–12,
+`fiscal_quarter` 1–4, `bathrooms` 1–5.25, `weeks_of_cover` 2–29.9. Requiring a fractional
+part cuts it to 15, of which 13 are still wrong, and one of the survivors is `Latitude`.
+
+There is no range test that separates a whole-scale percentage from a small count, because
+there is no difference in the values. **The scale ambiguity AT-0 found is real and remains
+UNRESOLVED**; what this measures is that the value layer is not where it can be resolved.
+`percent.fraction` — bounded 0–1 *and* fractional — is a genuine signal and stays.
+
+### 9.3 · Two structural changes this wave forced
+
+1. **`flag.derived_comparison` collapsed into `flag.binary`.** Splitting them meant the
+   name and value layers voted for one concept while the pair layer voted for the other, so
+   the best-evidenced flag in the corpus resolved to a hint — a vote-split that would have
+   grown with every new layer. The concept now answers WHAT the column is (a 0/1
+   indicator); the comparison is WHY, and it survives in the evidence sentence and in the
+   table's derived quantities, which is where a reader looks anyway.
+2. **A latitude no longer needs a longitude.** Before the value layer, `latitude` was a
+   name with nothing to second it. Now its own values are the second witness, so a table
+   storing only a latitude gets one — while a column with identical values and a name that
+   says nothing (`score`, `Defect rates`) still types nothing. Both halves are pinned.
+
+`aughor/tools/pairs.py` no longer carries its own value parser or coordinate-precision
+band; both are imported from `shape`, which owns them. Two parsers over one sample is two
+chances to disagree about the same column.
+
+### 9.4 · What the vocabulary half would still buy
+
+Unbuilt, scoped, and each with its measured demand: ISO-4217 currency codes (2 columns —
+and AT-7's `money.amount` already says it "requires a currency witness" that nothing
+supplies), ISO-3166 vs US-state codes (4 columns — retires the `^[A-Z]{2}$` /
+`Customer State` false positive, still live), country names (data_co's 164 Spanish values),
+weekday/month names (**zero** columns measured across 105 tables). Checksums stay refused.

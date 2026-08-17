@@ -46,7 +46,7 @@ _ROLE_CONCEPTS: dict[str, tuple[str, float]] = {
     ROLE_SUM: ("measure.additive_total", 0.45),
     ROLE_AVG: ("rate.per_unit", 0.3),
     ROLE_JOIN: ("key.identifier", 0.5),
-    ROLE_FILTER_BINARY: ("flag.derived_comparison", 0.4),
+    ROLE_FILTER_BINARY: ("flag.binary", 0.4),
 }
 
 

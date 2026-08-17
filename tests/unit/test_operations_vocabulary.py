@@ -54,7 +54,7 @@ def test_a_per_unit_rate_may_be_averaged_and_never_summed():
 
 
 def test_a_flag_is_a_rate_not_a_magnitude():
-    ops = operations_for("flag.derived_comparison")
+    ops = operations_for("flag.binary")
     assert "AVG" in ops.aggregate
     assert "how often" in ops.note and "how much" in ops.note
 
@@ -94,9 +94,13 @@ def _emitted_concepts() -> set:
     block = text.split("_NAME_WITNESS_RULES", 1)[1].split("\ndef ", 1)[0]
     found |= set(re.findall(r'"([a-z_]+\.[a-z_]+)"', block))
 
+    # the VALUE layer — `_witness("concept", …)` calls
+    text = (_ROOT / "aughor" / "tools" / "shape.py").read_text()
+    found |= set(re.findall(r'_witness\(\s*\n?\s*"([a-z_]+\.[a-z_]+)"', text))
+
     # the PAIR layer — `roles=` tuples on each finding
     text = (_ROOT / "aughor" / "tools" / "pairs.py").read_text()
-    for roles in re.findall(r"roles=\(([^)]*)\)", text):
+    for roles in re.findall(r"roles=\(([^)]*)\)", text, re.DOTALL):
         found |= set(re.findall(r'"([a-z_]+\.[a-z_]+)"', roles))
 
     # the USAGE layer — the role→concept map
@@ -112,8 +116,9 @@ def test_the_scan_actually_finds_the_concepts_it_claims_to():
     worth anything if this passes first."""
     emitted = _emitted_concepts()
     assert len(emitted) >= 12, f"the source scan found only {emitted} — it has gone blind"
-    assert "geo.latitude" in emitted          # name AND pair
-    assert "flag.derived_comparison" in emitted
+    assert "geo.latitude" in emitted          # name AND value AND pair
+    assert "flag.binary" in emitted           # name AND value AND pair
+    assert "percent.fraction" in emitted      # value layer only — proves shape.py is scanned
     assert "measure.additive_total" in emitted
     assert "key.identifier" in emitted
 
