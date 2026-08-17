@@ -1,7 +1,7 @@
 """AT-5 — the VALUE layer, and the false positives it is required to keep making.
 
 Half of these tests assert that a witness fires on something that is NOT what the witness
-names: `fare_multiplier` (0.2–1.0) gets `percent.fraction`, `Defect rates` gets
+names: `fare_multiplier` (0.2–1.0) gets `percent.proportion`, `Defect rates` gets
 `geo.latitude`. That is not a bug being pinned, it is the contract. A value shape narrows
 the candidates and the resolver settles them against the other layers — the module's job is
 to be honest about what the numbers are consistent with, at a confidence that cannot act
@@ -76,7 +76,7 @@ def test_a_column_of_words_is_not_numeric():
 def test_a_mostly_numeric_column_still_counts_and_says_so():
     values = [f"{0.001 * i:.4f}" for i in range(N)] + ["n/a", "unknown"]   # 98.4% parse
     assert read_numeric(values).is_numeric
-    w = witness(values, "percent.fraction")
+    w = witness(values, "percent.proportion")
     assert w is not None
     assert "% of values parse as numbers" in w.evidence      # 120 of 122 rounds to 99%
 
@@ -135,7 +135,7 @@ def test_a_flag_cannot_type_a_column_by_itself():
 # ── proportions ──────────────────────────────────────────────────────────────
 
 def test_values_inside_zero_and_one_are_a_proportion():
-    w = witness([round(i / (N * 2), 4) for i in range(N)], "percent.fraction")
+    w = witness([round(i / (N * 2), 4) for i in range(N)], "percent.proportion")
     assert w is not None and w.confidence == 0.5
     assert "0…1" in w.evidence
 
@@ -146,20 +146,20 @@ def test_a_multiplier_also_reads_as_a_proportion_and_that_is_correct():
     12 bounded 0–1 columns AT-0 measured are not proportions, so this witness is scored
     where a second layer has to agree with it."""
     values = [round(0.2 + 0.8 * i / N, 4) for i in range(N)]
-    assert witness(values, "percent.fraction") is not None
+    assert witness(values, "percent.proportion") is not None
     # …and it cannot act: AT-4 caps a lone witness, whatever this layer's own certainty is
     assert not resolve_concept(value_witnesses(values)).is_confident
 
 
 def test_whole_integers_in_range_are_not_a_fraction():
     """A column of 0s and 1s and 2s is not a proportion however tightly it is bounded."""
-    assert "percent.fraction" not in concepts([i % 2 for i in range(N)])
+    assert "percent.proportion" not in concepts([i % 2 for i in range(N)])
 
 
 def test_a_negative_ratio_is_not_a_proportion():
     """`Order Item Profit Ratio` goes negative — a loss. Outside 0…1, so the shape does not
     claim it."""
-    assert "percent.fraction" not in concepts([round(-1 + 2 * i / N, 4) for i in range(N)])
+    assert "percent.proportion" not in concepts([round(-1 + 2 * i / N, 4) for i in range(N)])
 
 
 def test_zero_to_one_hundred_claims_NOTHING():

@@ -126,7 +126,7 @@ def test_the_scan_actually_finds_the_concepts_it_claims_to():
     assert len(emitted) >= 12, f"the source scan found only {emitted} — it has gone blind"
     assert "geo.latitude" in emitted          # name AND value AND pair
     assert "flag.binary" in emitted           # name AND value AND pair
-    assert "percent.fraction" in emitted      # shape.py's numeric branch
+    assert "percent.proportion" in emitted      # shape.py's numeric branch
     assert "net.ip_address" in emitted        # shape.py's _GRAMMARS table — no name rule
     assert "geo.region" in emitted            # shape.py's _SETS table
     assert "measure.additive_total" in emitted

@@ -550,6 +550,12 @@ _INDICATOR_NAME = re.compile(r"(_risk|_flag|_indicator|_ind)$", re.IGNORECASE)
 _PLACE_NAME = re.compile(
     r"(country|state|city|region|province|prefecture|district|market)", re.IGNORECASE)
 _PERCENT_NAME = re.compile(r"(percent|pct|ratio|rate|share)$", re.IGNORECASE)
+#: Deliberately NARROWER than `_PERCENT_NAME`. Saying a column is a proportion is a soft
+#: claim the two-witness rule can check; saying it is on the 0–100 scale multiplies somebody's
+#: number by a hundred. `rate`, `ratio` and `share` are not enough for that — `heart_rate`
+#: 40–100 and `exchange_rate` are rates and not percentages. Both are still caught when they
+#: sit inside 0–1, where the range needs no name at all.
+_PERCENT_SCALE_NAME = re.compile(r"(percent|pct)$", re.IGNORECASE)
 # AT-5's set and grammar witnesses need a name rule to agree WITH, or every one of them is
 # a lone witness by construction. Each of these names a concept the value layer can also
 # reach: a currency code, an address, a phone, a postal code, a weekday, a month.
@@ -584,7 +590,7 @@ _NAME_WITNESS_RULES: tuple = (
     (lambda c, d: bool(_COUNT_PATTERN.search(c.lower())), "count.quantity", 0.5, "named like a count"),
     (lambda c, d: bool(_CURRENCY_PATTERN.search(c.lower())), "money.amount", 0.5, "named like money"),
     (lambda c, d: bool(_DURATION_WORD.search(c.lower())), "duration.days", 0.5, "named like a duration"),
-    (lambda c, d: bool(_PERCENT_NAME.search(c.lower())), "percent.fraction", 0.45, "named like a proportion"),
+    (lambda c, d: bool(_PERCENT_NAME.search(c.lower())), "percent.proportion", 0.45, "named like a proportion"),
     (lambda c, d: bool(_PLACE_NAME.search(c.lower())), "geo.region", 0.45, "named like a place"),
     (lambda c, d: bool(_TIMESTAMP_TYPES.search(d or "")), "time.instant", 0.55, "declared as a timestamp"),
     # A date column the loader typed as text still says so in its NAME — `order date
@@ -619,10 +625,33 @@ def _name_witnesses(column: str, dtype: str) -> list:
     return out
 
 
-def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optional[str], Optional[str]]:
+def _value_interpretation(
+    col: str,
+    value_range: Optional[tuple],
+    concept: str = "",
+) -> tuple[Optional[str], Optional[str]]:
     """
     Returns (interpretation_string, unit) for measure columns.
     Purely deterministic — range + column name heuristics, no LLM.
+
+    AT-5 · THE PERCENT SCALE, and why it is resolved HERE and not by a concept. `0.81` and
+    `81` can be the same measurement, and reading one as the other is off by a hundred.
+    Measured across 105 tables, the range alone cannot say whether a 0–100 column is a
+    percentage at all: it fires on 82 columns and about two are (`quantity` 1–14, `csat`
+    1–5, `month` 1–12). And the concept system cannot rescue it either, because the VALUE
+    layer has nothing to contribute in that band — so a percent-named 0–100 column has one
+    witness, stays a hint, and never reaches a scale.
+
+    The scale is therefore a `unit` heuristic, which is what this function has always been:
+    it already decides `USD` from `_CURRENCY_PATTERN` and `days` from `_DURATION_PATTERN`
+    on the name alone. A looser contract than a concept, and the honest home for a fact
+    that cannot earn two independent witnesses.
+
+    What makes it safe is the narrowness of the token. Only `percent` and `pct` assert a
+    whole-percent scale; `rate`, `ratio` and `share` do not, because `heart_rate` 40–100 is
+    not a percentage and `exchange_rate` is not either. Those columns are still caught when
+    they sit in 0–1, where the range is unambiguous on its own. A confident
+    `percent.proportion` concept is accepted as the same evidence when there is one.
     """
     col_lower = col.lower()
     if value_range is None:
@@ -634,9 +663,14 @@ def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optio
     except (TypeError, ValueError):
         return None, None
 
-    # Range 0–1 → almost certainly a fraction / percentage
+    # Range 0–1 → almost certainly a fraction / percentage. Kept name-free and
+    # concept-free: it predates AT-5 and is right on its own.
     if 0 <= lo_f and hi_f <= 1.0:
         return "fraction 0–1 (likely percentage)", "percent_fraction"
+
+    says_percent = bool(_PERCENT_SCALE_NAME.search(col_lower)) or concept == "percent.proportion"
+    if says_percent and 0 <= lo_f and hi_f <= 100.0:
+        return "percentage 0–100 (already scaled — do NOT multiply by 100)", "percent_whole"
 
     # Name-based heuristics
     if _CURRENCY_PATTERN.search(col_lower):
@@ -1529,7 +1563,7 @@ def build_column_profiles(
 
         interp, unit = (None, None)
         if sem_type == "measure":
-            interp, unit = _value_interpretation(col, vrange)
+            interp, unit = _value_interpretation(col, vrange, concept=acted_concept)
 
         dist = dist_map.get(col, {})
         profiles.append(ColumnProfile(

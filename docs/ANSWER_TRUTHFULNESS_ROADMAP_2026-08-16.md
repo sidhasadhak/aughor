@@ -667,3 +667,42 @@ dimension and stays one, verified column by column.
 for every column, so `Customer City` came back as a numeric pair and looked like a defect.
 It is not a defect; the stub was. Re-run against the real connection, city and state route
 to group means correctly. *A probe that always says yes is not a probe.*
+
+---
+
+## 12 · The percent scale resolved (2026-08-17) — by asking one question instead of two
+
+AT-0's Q6 found 12 columns bounded 0–1 and 3 percent-named bounded 0–100 and called it a
+**SCALE AMBIGUITY**: `0.81` and `81` can be the same measurement, and reading one as the
+other is off by a hundred. §9 measured that the value layer cannot resolve it — `0 ≤ v ≤
+100` fires on 82 of 890 columns and about two are percentages — and recorded it as
+unresolved. That conclusion was right about the value layer and wrong about the problem.
+
+**The range was being asked two questions at once**: *is this a proportion at all* and *on
+which scale*. It can only answer the second. Asked only the second, it answers cleanly.
+
+- **0–1** needs no name and never did: a value in that band is a fraction, and
+  `_value_interpretation` has returned `percent_fraction` for it since long before this
+  program. 17 columns corpus-wide.
+- **0–100** needs a name, and a NARROW one. Only `percent` and `pct` assert a scale;
+  `rate`, `ratio` and `share` do not, because `heart_rate` 40–100 is a rate and is not a
+  percentage. Corpus-wide that fires on exactly **3 columns** — `discount_pct` 7–29,
+  `failure_rate_pct` 0–36.08, `gross_margin_pct` 29–51.5 — **which is AT-0's measured count
+  exactly**, with none of the 82.
+
+**It is a `unit` heuristic, not a concept, and that placement is the point.** A
+percent-named 0–100 column has one witness and can never get a second, because the value
+layer has nothing to contribute in that band — so under the AT-4 contract it would stay a
+hint forever and never reach a scale. `_value_interpretation` is the older, looser layer
+that already decides `USD` from a name and `days` from a name; a fact that cannot earn two
+independent witnesses belongs there and not in a system whose whole promise is that it
+never acts on one. The same division of labour as §11's `semantic_type` fallback.
+
+The concept was renamed `percent.fraction` → **`percent.proportion`** for the same reason
+`flag.derived_comparison` collapsed: a concept must not be finer than the coarsest layer
+that can see it, and the name layer cannot see a scale. The concept says *this is a
+proportion*; `unit` says *on which scale*.
+
+`PROFILE_LOGIC_VERSION` → `v7-percent-scale`. `unit` is stored per column, so
+`_value_interpretation` moves the cache key exactly as `_semantic_type` does — the rule
+§11 learned the hard way, applied without being taught twice.

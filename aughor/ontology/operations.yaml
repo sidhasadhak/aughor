@@ -107,7 +107,7 @@ concepts:
       A unit price summed across rows is the price of one of each thing, which is not a
       quantity anybody asked about. Multiply it by its count first, or average it.
 
-  percent.fraction:
+  percent.proportion:
     label: a proportion or rate
     aggregate: [AVG, MIN, MAX]
     never: [SUM]

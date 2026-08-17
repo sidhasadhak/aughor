@@ -52,13 +52,16 @@ def cache_path():
 #     caught me anyway: the fix was verified against a CACHED profile that still said
 #     `dimension`, and read as not working. Any change to `_semantic_type` moves what is
 #     stored here, so it moves this string.
+# v7: `unit` gains `percent_whole` — a percent-named column bounded 0–100 is already scaled.
+#     `unit` and `value_interpretation` are stored per column, so the same rule applies to
+#     `_value_interpretation` as to `_semantic_type`.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v6-postal-key"
+PROFILE_LOGIC_VERSION = "v7-percent-scale"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:

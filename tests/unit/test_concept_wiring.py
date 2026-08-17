@@ -355,3 +355,69 @@ def test_the_newest_cached_fingerprint_wins():
     _store.put("fp-order-probe:newfp", new)
     assert load_semantic_types("fp-order-probe")[("t", "zip")] == "key"
     assert load_concepts("fp-order-probe")[("t", "zip")] == "geo.postal_code"
+
+
+# ── the percent scale ────────────────────────────────────────────────────────
+
+_PCT_DDL = "CREATE TABLE m (discount_rate DOUBLE, failure_rate_pct DOUBLE, csat INTEGER, quantity INTEGER)"
+
+
+def _pct_rows(n: int = 120) -> str:
+    vals = ",".join(
+        f"({round(i / (n * 4), 4)}, {round(7 + 22 * i / n, 2)}, {1 + i % 5}, {1 + i % 14})"
+        for i in range(n))
+    return f"INSERT INTO m VALUES {vals}"
+
+
+_PCT_COLS = [("discount_rate", "DOUBLE"), ("failure_rate_pct", "DOUBLE"),
+             ("csat", "INTEGER"), ("quantity", "INTEGER")]
+
+
+def test_the_percent_SCALE_is_resolved_on_both_sides_of_one():
+    """AT-0's Q6 ambiguity, answered. `0.81` and `81` can be the same measurement and
+    reading one as the other is off by a hundred. The 0–1 case needs no name; the 0–100 case
+    needs a narrow one, because the range there is shared with every small count."""
+    profs = {p.column: p for p in
+             build_column_profiles(_conn(_PCT_DDL, _pct_rows()), "m", _PCT_COLS, set(), 120)}
+
+    frac = profs["discount_rate"]
+    assert concept_of(frac.concept, frac.concept_confidence) == "percent.proportion"
+    assert frac.unit == "percent_fraction"
+
+    whole = profs["failure_rate_pct"]
+    assert whole.unit == "percent_whole"
+    assert "do NOT multiply by 100" in (whole.value_interpretation or "")
+
+
+def test_a_rate_that_is_not_a_percentage_gets_no_whole_scale():
+    """The narrowness that makes the 0–100 branch safe: only `percent` and `pct` assert a
+    scale. `heart_rate` 40–100 is a rate and is not a percentage, and multiplying it by a
+    hundred would be this fix causing the error it exists to prevent."""
+    from aughor.tools.profiler import _value_interpretation
+
+    for loose in ("heart_rate", "exchange_rate", "win_ratio", "market_share"):
+        assert _value_interpretation(loose, (40.0, 100.0))[1] != "percent_whole", loose
+    for strict in ("failure_rate_pct", "discount_percent", "margin_pct"):
+        assert _value_interpretation(strict, (7.0, 29.0))[1] == "percent_whole", strict
+    # …and in 0–1 the range is unambiguous, so every one of them resolves without a name
+    for any_name in ("heart_rate", "failure_rate_pct", "anything_at_all"):
+        assert _value_interpretation(any_name, (0.0, 0.8))[1] == "percent_fraction"
+
+
+def test_the_0_to_100_branch_never_fires_without_a_confirmed_concept():
+    """The 82 false positives. `csat` (1–5) and `quantity` (1–14) sit in the same band and
+    no name calls them proportions, so nothing claims them."""
+    profs = {p.column: p for p in
+             build_column_profiles(_conn(_PCT_DDL, _pct_rows()), "m", _PCT_COLS, set(), 120)}
+    for innocent in ("csat", "quantity"):
+        assert profs[innocent].unit != "percent_whole", innocent
+        assert concept_of(profs[innocent].concept, profs[innocent].concept_confidence) != "percent.proportion"
+
+
+def test_a_percent_column_outside_both_bands_gets_no_scale():
+    from aughor.tools.profiler import _value_interpretation
+
+    assert _value_interpretation("x_pct", (0.0, 5000.0), concept="percent.proportion") == (None, None)
+    # a confident concept is accepted as the same evidence as the narrow name token
+    assert _value_interpretation("odd_name", (0.0, 100.0),
+                                 concept="percent.proportion")[1] == "percent_whole"

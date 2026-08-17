@@ -20,10 +20,10 @@ recorded, and `float()` erases the difference.
 
 **Scope.**
 
-    flag.binary        values are exactly {0, 1}
-    percent.fraction   inside [0, 1], not binary, and not whole numbers
-    geo.latitude       inside ±90, recorded to 4–10 decimals, many distinct
-    geo.longitude      inside ±180 and leaving ±90, same precision test
+    flag.binary          values are exactly {0, 1}
+    percent.proportion   inside [0, 1], not binary, and not whole numbers
+    geo.latitude         inside ±90, recorded to 4–10 decimals, many distinct
+    geo.longitude        inside ±180 and leaving ±90, same precision test
     …and for text, a GRAMMAR table (email, UUID, E.164, ZIP, IP, ISO-8601) and
     SET membership against `aughor.tools.vocab` (currency codes, country codes and
     names, US states, weekday and month names).
@@ -35,21 +35,23 @@ would give one concept the name's vote and another the value's, and a column wit
 agreeing layers would resolve to a hint. That is not hypothetical: it happened to the
 best-evidenced flag in the corpus and cost `flag.derived_comparison` its existence.
 
-**`percent.whole` is deliberately absent**, and AT-0 asked for it — its Q6 scope note reads
-"build `percent.fraction` vs `percent.whole`". Measured during this build across all 105
-tables, `0 ≤ v ≤ 100` fires on **82 columns** and about **two** of them are percentages:
-the band is where counts, ratings, quarters, months, weights, prices and small durations
-all live (`quantity` 1–14, `csat` 1–5, `month` 1–12, `bathrooms` 1–5.25). Requiring a
-fractional part cuts it to 15 and 13 of those are still wrong — one of the survivors is
-`Latitude`. There is no range test that separates a whole-scale percentage from a small
-count, because there is no difference in the values. The scale ambiguity AT-0 found is
-real and remains UNRESOLVED; what this measurement says is that the VALUE layer is not
-where it can be resolved.
+**There is no `percent.whole` CONCEPT, and the scale is resolved anyway.** AT-0's Q6 asked
+for "`percent.fraction` vs `percent.whole`", and measured here, `0 ≤ v ≤ 100` fires on **82
+of 890 columns** with about **two** percentages among them: that band is where counts,
+ratings, quarters, months, weights, prices and small durations all live (`quantity` 1–14,
+`csat` 1–5, `month` 1–12, `bathrooms` 1–5.25). Requiring a fractional part cuts it to 15 of
+which 13 are still wrong, one being `Latitude`.
 
-The grammar table (email, UUID, ISO-4217 …) and the set-membership witnesses (ISO-3166 vs
-US states, country names) are a later wave. Checksums — Luhn, IBAN, ISBN-13, EAN — are
-never coming: AT-0 found zero columns carrying one across 105 tables, and a module with
-real code, real tests and no customers is a cost with no answer attached.
+The range was being asked two questions at once — *is this a proportion at all* and *on
+which scale* — and it can only answer the second. So it answers only the second: this
+module emits the scale-agnostic `percent.proportion` for the unambiguous 0–1 band, two
+layers decide whether the column is a proportion, and `_value_interpretation` then reads
+the range GIVEN that verdict to set `unit` to `percent_fraction` or `percent_whole`. The 82
+false positives never arise because the 0–100 branch only runs under a confirmed concept.
+
+Checksums — Luhn, IBAN, ISBN-13, EAN — are never coming: AT-0 found zero columns carrying
+one across 105 tables, and a module with real code, real tests and no customers is a cost
+with no answer attached.
 
 **No witness here can type a column by itself**, and that is measurement rather than
 caution. Of the 5 columns in the corpus whose values sit inside ±90 at four decimals, 3 are
@@ -323,7 +325,7 @@ def value_witnesses(values: Iterable) -> list[Witness]:
     # The `all_integral` test is doing work — without it every 0/1/2 column joins in.
     if shape.lo >= 0.0 and shape.hi <= 1.0 and not shape.all_integral:
         out.append(_witness(
-            "percent.fraction", 0.5,
+            "percent.proportion", 0.5,
             f"every value inside 0…1 ({_range_text(shape)}){cast_note}"))
 
     # ── coordinates ───────────────────────────────────────────────────────────
