@@ -421,3 +421,27 @@ def test_a_percent_column_outside_both_bands_gets_no_scale():
     # a confident concept is accepted as the same evidence as the narrow name token
     assert _value_interpretation("odd_name", (0.0, 100.0),
                                  concept="percent.proportion")[1] == "percent_whole"
+
+
+def test_an_ip_column_can_now_reach_a_second_witness():
+    """`net.ip_address` was the one grammar concept with no name rule, so it could only
+    ever be a hint however clearly the values read as addresses."""
+    from aughor.tools.concept import resolve_concept
+    from aughor.tools.shape import value_witnesses
+
+    assert any(w.concept == "net.ip_address" for w in _name_witnesses("client_ip", "VARCHAR"))
+    values = [f"10.0.{i // 256}.{i % 256}" for i in range(120)]
+    verdict = resolve_concept(_name_witnesses("client_ip", "VARCHAR") + value_witnesses(values))
+    assert concept_of(verdict.concept, verdict.confidence) == "net.ip_address"
+
+
+def test_the_ip_rule_does_not_match_every_word_containing_ip():
+    """The separators are load-bearing on a token this short — and `zip` in particular is a
+    postal code three rules further up."""
+    for innocent in ("ship", "zip", "Customer Zipcode", "equipment", "recipient",
+                     "tooltip", "shipping_mode", "Shipping Mode", "clip_id", "description"):
+        assert not any(w.concept == "net.ip_address"
+                       for w in _name_witnesses(innocent, "VARCHAR")), innocent
+    for real in ("ip", "ip_address", "client_ip", "remote_addr", "ipv4", "IP Address"):
+        assert any(w.concept == "net.ip_address"
+                   for w in _name_witnesses(real, "VARCHAR")), real

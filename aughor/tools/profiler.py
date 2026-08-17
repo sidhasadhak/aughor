@@ -563,6 +563,12 @@ _CURRENCY_CODE_NAME = re.compile(r"(currency|ccy|curr_code)", re.IGNORECASE)
 _EMAIL_NAME = re.compile(r"(e?mail)", re.IGNORECASE)
 _PHONE_NAME = re.compile(r"(phone|mobile|msisdn|telephone)", re.IGNORECASE)
 _POSTAL_NAME = re.compile(r"(zip|postal|postcode|zipcode)", re.IGNORECASE)
+#: The separators are load-bearing on a token this short: a bare `ip` would match `ship`,
+#: `zip`, `equipment`, `recipient` and `tooltip`, and `zip` in particular is a postal code
+#: three rules further up. Requiring a boundary on both sides leaves only the real ones.
+_IP_NAME = re.compile(
+    r"(?:^|[\s_.-])(ip|ipv[46]|ip_?addr(?:ess)?|client_?ip|host_?ip|remote_?addr)(?:$|[\s_.-])",
+    re.IGNORECASE)
 _WEEKDAY_NAME = re.compile(r"(weekday|day_of_week|dayofweek|dow)$", re.IGNORECASE)
 _MONTH_NAME = re.compile(r"(?:^|[\s_-])month(?:_name)?$", re.IGNORECASE)
 #: `_DURATION_PATTERN` above is unanchored at the front, so it reads `Product Image` as a
@@ -603,6 +609,7 @@ _NAME_WITNESS_RULES: tuple = (
     (lambda c, d: bool(_EMAIL_NAME.search(c)), "contact.email", 0.6, "named like an address"),
     (lambda c, d: bool(_PHONE_NAME.search(c)), "contact.phone", 0.6, "named like a phone number"),
     (lambda c, d: bool(_POSTAL_NAME.search(c)), "geo.postal_code", 0.55, "named like a postal code"),
+    (lambda c, d: bool(_IP_NAME.search(c)), "net.ip_address", 0.6, "named like an IP address"),
     (lambda c, d: bool(_WEEKDAY_NAME.search(c)), "time.weekday", 0.6, "named like a weekday"),
     (lambda c, d: bool(_MONTH_NAME.search(c)), "time.month", 0.6, "named like a month"),
 )
