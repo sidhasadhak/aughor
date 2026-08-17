@@ -178,7 +178,7 @@ concepts:
     never: [SUM, AVG, CORR]
     numeric: false
     note: >
-      Personal data and an identifier, not a dimension worth grouping a report by. Count
+      PII, and an identifier rather than a dimension worth grouping a report by. Count
       distinct to size an audience; never put it in an answer.
 
   contact.phone:
@@ -188,7 +188,7 @@ concepts:
     numeric: false
     note: >
       Digits that are not a quantity — the leading + and the country code carry meaning and
-      arithmetic destroys both. Personal data, like an address.
+      arithmetic destroys both. PII, like an address.
 
   geo.postal_code:
     label: a postal code
@@ -204,7 +204,7 @@ concepts:
     aggregate: [COUNT_DISTINCT]
     never: [SUM, AVG, CORR]
     numeric: false
-    note: An identifier written with dots or colons. Personal data in most jurisdictions.
+    note: An identifier written with dots or colons. PII in most jurisdictions.
 
   time.weekday:
     label: a day of the week
