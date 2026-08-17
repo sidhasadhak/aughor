@@ -1,0 +1,616 @@
+<title>Agent Ops Control Room</title>
+<style>
+/* ── page tokens (theme-aware document around the mockup) ─────────────────── */
+:root{
+  --pg-bg:#F3F5F8; --pg-surface:#FFFFFF; --pg-ink:#151A21; --pg-muted:#5B6673; --pg-rule:#D9DFE6;
+  --pg-accent:#0C8CE9; --pg-code:#EAF0F6; --pg-soft:#F7F9FB;
+  --f-ui:"DM Sans",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --f-mono:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --pg-bg:#0F1318; --pg-surface:#151A21; --pg-ink:#E4E7EC; --pg-muted:#98A2AF; --pg-rule:#262D37;
+    --pg-accent:#4BA3F5; --pg-code:#1B212A; --pg-soft:#131820;
+  }
+}
+:root[data-theme="dark"]{
+  --pg-bg:#0F1318; --pg-surface:#151A21; --pg-ink:#E4E7EC; --pg-muted:#98A2AF; --pg-rule:#262D37;
+  --pg-accent:#4BA3F5; --pg-code:#1B212A; --pg-soft:#131820;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg-bg);color:var(--pg-ink);font-family:var(--f-ui);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--pg-accent)}
+.doc{max-width:1280px;margin:0 auto;padding:40px 24px 80px}
+.eyebrow{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--pg-muted);margin:0 0 10px;font-weight:600}
+h1{font-size:34px;line-height:1.15;letter-spacing:-.02em;margin:0 0 14px;font-weight:600;text-wrap:balance;max-width:24ch}
+h2{font-size:22px;letter-spacing:-.015em;margin:56px 0 14px;font-weight:600;text-wrap:balance}
+h3{font-size:16px;margin:0 0 6px;font-weight:600}
+p{margin:0 0 12px}
+.lede{font-size:17px;max-width:66ch;color:var(--pg-ink)}
+.muted{color:var(--pg-muted)}
+.prose{max-width:66ch}
+code,.mono{font-family:var(--f-mono);font-size:.92em;font-variant-numeric:tabular-nums}
+code{background:var(--pg-code);padding:1px 5px;border-radius:3px}
+.facts{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:18px 0 0}
+.facts li{border:1px solid var(--pg-rule);background:var(--pg-surface);border-radius:4px;padding:8px 12px;font-size:13px;line-height:1.4;max-width:380px}
+.facts b{font-family:var(--f-mono);font-weight:600}
+.frame-wrap{margin:34px -8px 0;overflow-x:auto;padding:0 8px 8px}
+.frame-note{display:flex;justify-content:space-between;align-items:baseline;gap:16px;font-size:12.5px;color:var(--pg-muted);margin:10px 4px 0}
+.frame-note b{color:var(--pg-ink);font-weight:600}
+.frame-note kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--pg-rule);border-radius:3px;padding:0 5px;background:var(--pg-surface)}
+
+/* ── the app frame — a depiction of the product's DARK theme, fixed on purpose ─ */
+.app{
+  --bg0:#0D1117;--bg1:#111418;--bg2:#161A20;--bg3:#1C2128;--bg4:#222A33;--hover:rgba(255,255,255,.04);--sel:rgba(12,140,233,.12);
+  --b0:#161A20;--b1:#1E2329;--b2:#252B33;--b3:#2E3540;
+  --t1:#E2E4E9;--t2:#939AA6;--t3:#6E7886;--t4:#525B69;
+  --blue3:#0C8CE9;--blue4:#4BA3F5;--blue1:#0A2540;--blue2:#0C3A5C;
+  --grn4:#2EC87B;--grn1:#0C2B1A;--grn2:#10522E;--amb4:#E0AD00;--amb1:#2A1D00;--amb2:#583C00;--red4:#E64848;--red1:#2A0E0E;--red2:#561A1A;--vio4:#8B68D8;--vio1:#190E3A;--cyn4:#30B8E0;
+  --r1:2px;--r2:4px;--r3:6px;--pill:999px;
+  position:relative;display:grid;grid-template-columns:172px 1fr;min-width:1120px;height:1180px;
+  background:var(--bg0);color:var(--t1);border:1px solid var(--b2);border-radius:8px;overflow:hidden;
+  font-family:var(--f-ui);font-size:13px;line-height:1.35;box-shadow:0 30px 80px -30px rgba(0,0,0,.55);
+}
+.app *{box-sizing:border-box}
+.app button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+.app button:focus-visible,.app [tabindex]:focus-visible{outline:2px solid var(--blue3);outline-offset:1px;border-radius:var(--r2)}
+.side{background:var(--bg1);border-right:1px solid var(--b1);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.side .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;padding:4px 6px 12px}
+.side .brand i{width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#8B68D8,#0C8CE9);display:inline-block}
+.side .grp{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding:12px 6px 4px;font-weight:600}
+.side .it{padding:6px 8px;border-radius:var(--r2);color:var(--t2);font-size:12.5px;display:flex;gap:8px;align-items:center}
+.side .it::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--b3);flex:0 0 auto}
+.side .it.on{background:var(--sel);color:var(--t1)}
+.side .it.on::before{background:var(--blue4)}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+.urlbar{font-family:var(--f-mono);font-size:11px;color:var(--t3);background:var(--bg1);border-bottom:1px solid var(--b1);padding:6px 14px;display:flex;gap:10px;align-items:center}
+.urlbar b{color:var(--t2);font-weight:500}
+.urlbar .dot{width:8px;height:8px;border-radius:50%;background:var(--b3)}
+.layerbar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--b1);background:var(--bg1);gap:12px}
+.layers{display:flex;gap:2px;background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r3);padding:2px}
+.layers button{padding:5px 11px;border-radius:var(--r2);color:var(--t2);font-size:12.5px;display:flex;align-items:center;gap:6px}
+.layers button.on{background:var(--bg4);color:var(--t1)}
+.layers .badge{background:var(--amb4);color:#1a1300;font-size:10px;font-weight:700;border-radius:var(--pill);padding:0 5px;line-height:15px}
+.controls{display:flex;gap:10px;align-items:center}
+.seg{display:flex;gap:1px;background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r3);padding:2px}
+.seg button{padding:4px 9px;border-radius:var(--r2);color:var(--t2);font-size:12px;font-family:var(--f-mono)}
+.seg button.on{background:var(--blue2);color:#CFE8FF}
+.seg button.plain.on{background:var(--bg4);color:var(--t1)}
+.ctl-label{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.content{flex:1;min-height:0;overflow:auto;padding:14px 14px 20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+.sec{position:relative}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
+.sec-h h4{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:600}
+.sec-h .sub{font-size:12px;color:var(--t3)}
+.linkish{color:var(--blue4);font-size:12px}
+.linkish:hover{text-decoration:underline}
+/* markers */
+.mk{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--blue3);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);z-index:5;box-shadow:0 0 0 3px var(--bg0)}
+/* status rail */
+.rail{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:7px;padding:5px 10px 5px 8px;border:1px solid var(--b2);border-radius:var(--pill);background:var(--bg2);font-size:12px;color:var(--t1)}
+.pill:hover{background:var(--bg3);border-color:var(--b3)}
+.pill .d{width:8px;height:8px;border-radius:50%;background:var(--t4)}
+.pill .d.run{background:var(--grn4);box-shadow:0 0 0 0 rgba(46,200,123,.6);animation:pulse 1.6s infinite}
+.pill .d.fail{background:var(--red4)} .pill .d.paused{background:var(--amb4)}
+.pill .n{font-family:var(--f-mono);color:var(--t2);font-size:11px}
+.pill.runner{border-style:dashed;color:var(--t2)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(46,200,123,.55)}70%{box-shadow:0 0 0 6px rgba(46,200,123,0)}100%{box-shadow:0 0 0 0 rgba(46,200,123,0)}}
+/* needs you */
+.needs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.card{background:var(--bg2);border:1px solid var(--b1);border-radius:var(--r3);padding:10px 12px}
+.need{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--amb4)}
+.need.critical{border-left-color:var(--red4)}
+.need .top{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.need .title{font-weight:600;font-size:13px;color:var(--t1)}
+.need .meta{font-size:12px;color:var(--t2)}
+.need .timer{font-family:var(--f-mono);font-size:12px;color:var(--amb4)}
+.need.critical .timer{color:var(--red4)}
+.need .acts{display:flex;gap:6px;margin-top:2px}
+.btn{padding:4px 10px;border-radius:var(--r2);border:1px solid var(--b3);background:var(--bg3);color:var(--t1);font-size:12px}
+.btn:hover{background:var(--bg4)}
+.btn.pri{background:var(--blue2);border-color:var(--blue2);color:#CFE8FF}
+.btn.ok{background:var(--grn2);border-color:var(--grn2);color:#B7F0D2}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:var(--pill);border:1px solid transparent;font-family:var(--f-mono)}
+.chip.vio{background:var(--vio1);color:#C9B8F5;border-color:#3a2a6a}
+.chip.amb{background:var(--amb1);color:#F2CE55;border-color:var(--amb2)}
+.chip.grn{background:var(--grn1);color:#8FE6B8;border-color:var(--grn2)}
+.chip.red{background:var(--red1);color:#FF9E9E;border-color:var(--red2)}
+.chip.blue{background:var(--blue1);color:#8FCBFF;border-color:var(--blue2)}
+.chip.grey{background:var(--bg3);color:var(--t2);border-color:var(--b2)}
+.need.done{opacity:.55}
+.need.done .acts{display:none}
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.tile{display:flex;flex-direction:column;gap:6px;text-align:left;width:100%;transition:border-color .15s,background .15s}
+.tile:hover{border-color:var(--b3);background:var(--bg3)}
+.tile .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--t2);font-weight:600;display:flex;justify-content:space-between}
+.tile .lbl i{font-style:normal;color:var(--t3);font-weight:500;letter-spacing:0;text-transform:none;font-size:11px}
+.tile .val{font-family:var(--f-mono);font-size:24px;line-height:1.05;color:var(--t1);font-weight:500;letter-spacing:-.01em;display:flex;align-items:baseline;gap:6px}
+.tile .val small{font-size:12px;color:var(--t2);font-family:var(--f-ui);font-weight:400}
+.tile .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.delta{font-family:var(--f-mono);font-size:11.5px;padding:1px 6px;border-radius:var(--r2);display:inline-flex;gap:4px;align-items:center}
+.delta.good{background:var(--grn1);color:var(--grn4)} .delta.bad{background:var(--red1);color:var(--red4)} .delta.na{background:var(--bg3);color:var(--t2)}
+.tile svg{display:block}
+.tile .cap{font-size:11.5px;color:var(--t3);line-height:1.35}
+.tile .cap b{color:var(--t2);font-weight:500}
+/* chart */
+.chartcard{padding:12px 12px 8px}
+.legend{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.lg{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--pill);border:1px solid var(--b2);font-size:11.5px;color:var(--t1);background:var(--bg3)}
+.lg i{width:9px;height:9px;border-radius:2px;background:var(--c)}
+.lg[aria-pressed="false"]{opacity:.45;text-decoration:line-through}
+.lg.runner i{background:repeating-linear-gradient(135deg,#6E7886 0 2px,transparent 2px 4px)}
+.tog{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--t2);margin-left:auto}
+.tog .sw{width:28px;height:16px;border-radius:var(--pill);background:var(--bg4);border:1px solid var(--b3);position:relative;transition:background .15s}
+.tog .sw::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:var(--t2);transition:left .15s,background .15s}
+.tog[aria-pressed="true"] .sw{background:var(--blue2);border-color:var(--blue2)} .tog[aria-pressed="true"] .sw::after{left:14px;background:#CFE8FF}
+.chartbox{position:relative;margin-top:8px;user-select:none}
+.chartbox svg{width:100%;height:210px;display:block;cursor:crosshair}
+.tip{position:absolute;pointer-events:none;background:var(--bg4);border:1px solid var(--b3);border-radius:var(--r3);padding:8px 10px;font-size:11.5px;min-width:170px;box-shadow:0 10px 30px -10px rgba(0,0,0,.6);display:none;z-index:4}
+.tip .h{font-family:var(--f-mono);color:var(--t2);margin-bottom:5px;font-size:11px}
+.tip .r{display:flex;justify-content:space-between;gap:12px;line-height:1.5}
+.tip .r i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px;background:var(--c)}
+.tip .r b{font-family:var(--f-mono);font-weight:500}
+.chart-foot{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--t3);margin-top:4px}
+.chart-foot .sel{color:var(--blue4)}
+.chart-foot .sel button{color:var(--t2);margin-left:8px;text-decoration:underline}
+/* fleet table */
+table.dt{width:100%;border-collapse:collapse;font-size:12.5px}
+.dt th{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--t2);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--b2);white-space:nowrap}
+.dt th.num,.dt td.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.dt td{padding:7px 8px;border-bottom:1px solid var(--b1);vertical-align:middle;color:var(--t1)}
+.dt tr.r{cursor:pointer;transition:background .12s}
+.dt tr.r:hover{background:var(--hover)}
+.dt tr.r.hl{background:var(--sel)}
+.dt tr.r.dim{opacity:.4}
+.dt .who{display:flex;align-items:center;gap:9px}
+.dt .sw{width:10px;height:10px;border-radius:2px;flex:0 0 auto;background:var(--c)}
+.dt .sw.runner{background:repeating-linear-gradient(135deg,#6E7886 0 2px,transparent 2px 4px)}
+.dt .nm{font-weight:600;color:var(--t1)}
+.dt .rl{color:var(--t2);font-size:11.5px}
+.dt .chev{display:inline-block;width:14px;color:var(--t3);transition:transform .15s;font-size:11px}
+.dt tr[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.dt td.spark svg{display:block}
+.dt .sub{color:var(--t3);font-size:11px;font-family:var(--f-mono)}
+.dt .sub.bad{color:var(--red4)}
+.dt .warn{color:var(--amb4)} .dt .bad{color:var(--red4)}
+.dt .exp{color:var(--blue4);font-size:12px;white-space:nowrap}
+.dt .exp:hover{text-decoration:underline}
+.lane{background:var(--bg1)}
+.lane td{padding:8px 8px 4px;border-bottom:1px solid var(--b2)}
+.lane .lt{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:600;display:flex;gap:10px;align-items:center}
+.lane .lt span{color:var(--t3);text-transform:none;letter-spacing:0;font-weight:400;font-size:11.5px}
+tr.det td{background:var(--bg1);padding:12px 12px 14px 40px;border-bottom:1px solid var(--b2)}
+.detg{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:18px;align-items:start}
+.detg h5{margin:0 0 6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:600}
+.cells{display:flex;gap:3px;flex-wrap:wrap}
+.cells i{width:14px;height:14px;border-radius:2px;background:var(--grn2);display:block}
+.cells i.f{background:var(--red4)} .cells i.o{background:var(--amb2)} .cells i.r{background:var(--blue3);animation:pulse 1.6s infinite}
+.bar{height:8px;border-radius:var(--r1);background:var(--bg4);overflow:hidden;display:flex}
+.bar span{height:100%;display:block}
+.mix{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--t2)}
+.mix .l{display:flex;justify-content:space-between}
+.mix .l b{color:var(--t1);font-weight:500;font-family:var(--f-mono)}
+.detl{display:flex;gap:14px;margin-top:10px;font-size:12px}
+.detl button{color:var(--blue4)}
+.detl button:hover{text-decoration:underline}
+/* jobs collapsed */
+.jobs .card{display:flex;justify-content:space-between;align-items:center;color:var(--t2);font-size:12.5px}
+/* drawer */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:380px;background:var(--bg1);border-left:1px solid var(--b2);transform:translateX(100%);transition:transform .2s ease;z-index:9;display:flex;flex-direction:column;box-shadow:-20px 0 50px -30px rgba(0,0,0,.7)}
+.drawer.open{transform:none}
+.drawer .dh{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 10px;border-bottom:1px solid var(--b1)}
+.drawer .dh h4{margin:0;font-size:14px;font-weight:600}
+.drawer .dh .k{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--t2);font-weight:600;margin-bottom:3px}
+.drawer .x{color:var(--t2);font-size:16px;padding:0 4px}
+.drawer .db{padding:14px 16px;overflow:auto;display:flex;flex-direction:column;gap:14px;font-size:12.5px}
+.drawer .big{font-family:var(--f-mono);font-size:30px;line-height:1;color:var(--t1)}
+.drawer .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12px}
+.drawer .kv dt{color:var(--t2);margin:0} .drawer .kv dd{margin:0;color:var(--t1);font-family:var(--f-mono)}
+.drawer .kv dd.txt{font-family:var(--f-ui)}
+.drawer h5{margin:0 0 6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:600}
+.drawer .open-list{display:block;background:var(--blue1);border:1px solid var(--blue2);color:#CFE8FF;border-radius:var(--r3);padding:9px 11px;font-size:12px}
+.drawer .open-list code{display:block;background:none;padding:0;color:#8FCBFF;margin-top:3px;font-size:11px;white-space:normal;word-break:break-all}
+.drawer .runs{display:flex;flex-direction:column;gap:4px}
+.drawer .runs div{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px solid var(--b1)}
+.drawer .runs .st{width:8px;height:8px;border-radius:2px;background:var(--grn4)} .drawer .runs .st.f{background:var(--red4)} .drawer .runs .st.o{background:var(--amb4)}
+.drawer .runs .m{color:var(--t2);font-family:var(--f-mono);font-size:11px}
+.drawer .note{color:var(--t3);font-size:11.5px;line-height:1.45}
+.mock-tag{position:absolute;left:190px;bottom:10px;font-size:10.5px;color:var(--t3);font-family:var(--f-mono);z-index:3;background:var(--bg0);padding:2px 6px;border:1px dashed var(--b3);border-radius:var(--r2)}
+/* ── doc body ─────────────────────────────────────────────────────────────── */
+.key{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 28px;margin-top:8px}
+.key .k{display:grid;grid-template-columns:26px 1fr;gap:12px;font-size:14px;line-height:1.5}
+.key .k b.mkk{width:22px;height:22px;border-radius:50%;background:var(--pg-accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);margin-top:2px}
+.key .k strong{display:block;font-weight:600}
+.key .k span{color:var(--pg-muted)}
+.wires{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:10px}
+.wire{background:var(--pg-surface);border:1px solid var(--pg-rule);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.wire h3{font-size:14px}
+.wire .job{font-size:12.5px;color:var(--pg-muted);margin-top:-6px}
+.wire ul{margin:0;padding-left:16px;font-size:12.5px;line-height:1.5}
+.wf{background:var(--pg-soft);border:1px solid var(--pg-rule);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:5px;min-height:150px}
+.wf .ln{height:6px;border-radius:2px;background:var(--pg-rule)}
+.wf .ln.s{width:55%} .wf .ln.m{width:75%} .wf .ln.acc{background:var(--pg-accent);opacity:.7}
+.wf .row2{display:grid;grid-template-columns:38% 1fr;gap:6px}
+.wf .bx{background:var(--pg-surface);border:1px solid var(--pg-rule);border-radius:3px;padding:6px;display:flex;flex-direction:column;gap:4px}
+.wf .tl{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.wf .tl i{display:block;height:20px;border-radius:2px;background:var(--pg-rule)}
+.wf .bars{display:flex;gap:2px;align-items:flex-end;height:36px}
+.wf .bars i{display:block;flex:1;border-radius:1px 1px 0 0;background:var(--pg-accent);opacity:.75}
+.wf .runline{display:flex;gap:2px;height:10px}
+.wf .runline i{display:block;flex:1;border-radius:2px;background:#2EC87B;opacity:.7}
+.wf .runline i.f{background:#E64848} .wf .runline i.o{background:#E0AD00}
+.wf .cardlet{border-left:3px solid #E0AD00;background:var(--pg-surface);border-radius:3px;padding:6px;display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--pg-muted)}
+.wf .cardlet b{font-family:var(--f-mono);color:#B58900;font-weight:600}
+.wf .fold{display:flex;gap:6px;align-items:center;font-size:10.5px;color:var(--pg-muted);background:var(--pg-surface);border:1px solid var(--pg-rule);border-radius:3px;padding:5px 6px}
+.wf .fold b{color:var(--pg-ink);font-weight:600}
+table.plan{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+.plan th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--pg-muted);border-bottom:1px solid var(--pg-rule);padding:8px 10px}
+.plan td{padding:9px 10px;border-bottom:1px solid var(--pg-rule);vertical-align:top;line-height:1.45}
+.plan td:first-child{white-space:nowrap;font-weight:600}
+.plan .eff{font-family:var(--f-mono);white-space:nowrap}
+.dec{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:8px}
+.dec div{background:var(--pg-surface);border:1px solid var(--pg-rule);border-radius:6px;padding:12px 14px;font-size:13.5px;line-height:1.5}
+.dec b{display:block;margin-bottom:3px}
+.dec em{color:var(--pg-muted);font-style:normal}
+@media (max-width:900px){.key,.dec{grid-template-columns:1fr}.wires{grid-template-columns:repeat(2,1fr)}h1{font-size:28px}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="doc">
+  <header class="doc-head">
+    <p class="eyebrow">Agent Ops · Overview · design proposal · 2026-08-17</p>
+    <h1>The Overview, redrawn as a control room</h1>
+    <p class="lede">A control room answers three questions in order — <b>what's wrong, what's running, what it cost</b> — and every number on it is a door to the list it was computed from. This mockup is live: switch the range, click a tile, drag across the chart, expand a row, accept a proposal.</p>
+    <ul class="facts">
+      <li><b>98%</b> of the "activity" on today's Overview is the automation engine's tick — 1,291 of 1,316 jobs in 24 h. Runs/min: <b>1.10</b> with it, <b>0.10</b> without.</li>
+      <li><b>0 of 7,365</b> session events carry an <code>agent_id</code>, so per-agent activity cannot be drawn until the emitters are repaired — the plan's first wave.</li>
+      <li>Labels sit at <b>4.23:1</b> contrast and captions at <b>2.76:1</b> (AA needs 4.5). The tokens that pass exist; the panels just don't use them.</li>
+    </ul>
+  </header>
+
+  <section class="frame-wrap">
+    <div class="app" id="app" aria-label="Mockup of the Agent Ops Overview">
+      <aside class="side" aria-hidden="true">
+        <div class="brand"><i></i>Aughor</div>
+        <div class="it">Home</div><div class="it">Inbox</div><div class="it">Data Canvas</div>
+        <div class="grp">Intelligence</div>
+        <div class="it">Briefing</div><div class="it">Deep analyses</div><div class="it">Health</div><div class="it">Playbook</div>
+        <div class="grp">Data</div>
+        <div class="it">Catalog</div><div class="it">SQL Editor</div><div class="it">Semantic Layer</div>
+        <div class="grp">Operations</div>
+        <div class="it on">Agent Ops</div><div class="it">Monitors</div><div class="it">Notifications</div><div class="it">Security &amp; Audit</div><div class="it">Evals</div>
+      </aside>
+      <main class="main">
+        <div class="urlbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; aughor.app/<b>agent-ops</b>?layer=overview&amp;range=<b id="url-range">24h</b><span id="url-extra"></span></div>
+        <div class="layerbar">
+          <div class="layers" role="tablist" aria-label="Agent Ops layers">
+            <button class="on" role="tab" aria-selected="true">Overview</button>
+            <button role="tab">Roster</button>
+            <button role="tab">Attention <span class="badge" id="att-badge">3</span></button>
+            <button role="tab">Activity</button>
+            <button role="tab">Runs</button>
+          </div>
+          <div class="controls">
+            <span class="ctl-label">Range</span>
+            <div class="seg" id="range" role="group" aria-label="Time range">
+              <button data-r="1h">1h</button><button data-r="24h" class="on">24h</button><button data-r="7d">7d</button><button data-r="30d">30d</button>
+            </div>
+            <div class="seg" role="group" aria-label="Density"><button class="plain on">Calm</button><button class="plain">NOC</button></div>
+          </div>
+        </div>
+
+        <div class="content" id="content">
+          <section class="sec" aria-label="Status rail">
+            <span class="mk" title="A · status rail">A</span>
+            <div class="sec-h"><h4>Agents · right now</h4><span class="sub" id="rail-sub"></span></div>
+            <div class="rail" id="rail"></div>
+          </section>
+
+          <section class="sec" aria-label="Needs you">
+            <span class="mk" title="B · needs you">B</span>
+            <div class="sec-h"><h4>Needs you</h4><button class="linkish" id="att-more">3 waiting · open Attention →</button></div>
+            <div class="needs" id="needs"></div>
+          </section>
+
+          <section class="sec" aria-label="Key figures">
+            <span class="mk" title="C · KPI tiles">C</span>
+            <div class="sec-h"><h4 id="tiles-h">Last 24 hours · agents only</h4><span class="sub" id="tiles-sub">click a tile to see where its number comes from</span></div>
+            <div class="tiles" id="tiles"></div>
+          </section>
+
+          <section class="sec chartcard card" aria-label="Activity chart">
+            <span class="mk" title="D · activity over the shared axis">D</span>
+            <div class="sec-h" style="margin-bottom:6px"><h4>Runs by agent · <span id="chart-bins" style="text-transform:none;letter-spacing:0;color:var(--t3);font-weight:500">hourly</span></h4><span class="sub">hover a bin · click to filter · drag to brush</span></div>
+            <div class="legend" id="legend"></div>
+            <div class="chartbox" id="chartbox"><svg id="chart" viewBox="0 0 1000 210" preserveAspectRatio="none" role="img" aria-label="Stacked bars of runs by agent"></svg><div class="tip" id="tip"></div></div>
+            <div class="chart-foot"><span id="chart-axis"></span><span class="sel" id="chart-sel"></span></div>
+          </section>
+
+          <section class="sec" aria-label="Fleet table">
+            <span class="mk" title="E · two lanes, same columns">E</span>
+            <div class="sec-h"><h4>All agents</h4><span class="sub" id="fleet-sub"></span></div>
+            <div class="card" style="padding:0 0 2px;overflow:hidden">
+              <table class="dt" id="fleet">
+                <thead><tr>
+                  <th style="width:26px"></th><th>Agent</th><th>Status</th><th>Activity <span style="color:var(--t3);text-transform:none;letter-spacing:0" id="th-span"></span></th>
+                  <th class="num">Runs</th><th class="num">Failures</th><th class="num">Tokens</th><th class="num">p95</th><th>Last run</th><th></th>
+                </tr></thead>
+                <tbody id="fleet-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="sec jobs" aria-label="Jobs">
+            <div class="sec-h"><h4>Jobs</h4><span class="sub">filtered by the same range and brush</span></div>
+            <div class="card"><span id="jobs-line">1 running · 24 finished in range · newest: Curator · profile · <span class="mono">3m ago</span></span><button class="linkish">Open jobs →</button></div>
+          </section>
+        </div>
+
+        <aside class="drawer" id="drawer" role="dialog" aria-label="Detail" aria-hidden="true">
+          <div class="dh"><div><div class="k" id="dk">Where this number comes from</div><h4 id="dt">—</h4></div><button class="x" id="dx" aria-label="Close">×</button></div>
+          <div class="db" id="db"></div>
+        </aside>
+        <div class="mock-tag">illustrative data · shaped like 2026-08-17 · the grammar is the proposal, not the numbers</div>
+      </main>
+    </div>
+    <div class="frame-note"><span><b>Try:</b> click <kbd>7d</kbd> · click the <b>Failures</b> tile · drag across the chart · click <b>Curator</b> · toggle <b>background runners</b> · <kbd>Esc</kbd> closes the drawer</span><span>Fonts and colours are the app's own tokens (DM Sans · IBM Plex Mono · <code>--chart-1…6</code> · <code>--t1/--t2</code>)</span></div>
+  </section>
+
+  <h2>What changed, and why</h2>
+  <div class="key">
+    <div class="k"><b class="mkk">A</b><div><strong>A status rail is the answer to "what's running".</strong><span>One pill per agent with its live state; click scrolls to the row. Background runners sit at the end, dashed, so the tick is visible without ever being counted as an agent.</span></div></div>
+    <div class="k"><b class="mkk">B</b><div><strong>Attention comes first, with an age and one action.</strong><span>The three oldest items from the Attention inbox, inline, with a live timer. Every field product we looked at leads with what needs a human; ours led with tokens/hour.</span></div></div>
+    <div class="k"><b class="mkk">C</b><div><strong>Tiles follow the StatTile spec the repo already has: value → delta vs prior window → sparkline → coverage.</strong><span>Runs counts agents only and says how many background runs it excluded. p50 is computed by the endpoint today and never rendered — it is now. Cost carries its unpriced share or does not appear.</span></div></div>
+    <div class="k"><b class="mkk">D</b><div><strong>One shared axis; every bin is a query.</strong><span>Stacked bars per agent, legend chips that toggle series and double as the swatch key for the table, hover for per-series values, click a bin to filter, drag to brush — the range, the tiles and the table all follow. Stacked because the total is the point.</span></div></div>
+    <div class="k"><b class="mkk">E</b><div><strong>Two lanes, identical columns, no dashes.</strong><span>Charters and custom agents in one grammar (their store gets runs in W0); Automations and Evals in a muted lane below, never summed into the agents' totals. Failures show orphaned restarts beside them, not inside them.</span></div></div>
+    <div class="k"><b class="mkk">F</b><div><strong>Rows expand in place.</strong><span>The last twenty runs as state cells, the model mix, the budget bar and three links — without leaving the table. "Explore ›" opens the drawer with the filtered runs and a link to the Roster page.</span></div></div>
+    <div class="k"><b class="mkk">G</b><div><strong>A drawer, not a modal, and every number is a door.</strong><span>Click any tile: its definition, denominator and coverage, and the URL of the list whose count equals it. That parity is a test in W0, not a promise.</span></div></div>
+    <div class="k"><b class="mkk">·</b><div><strong>Readability is a token rule, not a taste.</strong><span>Values in <code>--t1</code>, labels in <code>--t2</code>, captions in <code>--t3</code> only at ≥ 12 px, <code>--t4</code> never for text; state colour uses the ramps' text-grade steps (<code>grn4 / amb4 / red4</code>); the accent means interactive or selected and nothing else.</span></div></div>
+  </div>
+
+  <h2>The other four layers, in one job each</h2>
+  <div class="wires">
+    <div class="wire">
+      <h3>Roster</h3><div class="job">one agent, fully</div>
+      <div class="wf"><div class="row2"><div class="bx"><div class="ln acc"></div><div class="ln m"></div><div class="ln s"></div><div class="ln m"></div><div class="ln s"></div><div class="ln m"></div></div><div class="bx"><div class="ln acc" style="width:60%"></div><div class="tl"><i></i><i></i><i></i><i></i><i></i></div><div class="runline"><i></i><i></i><i class="o"></i><i></i><i></i><i class="f"></i><i></i><i></i><i></i><i></i></div><div class="ln m"></div><div class="ln s"></div></div></div></div>
+      <ul><li>Header with lane, status, budget bar</li><li>Same five tiles, scoped to this agent</li><li>Runs timeline → click a bar → trace</li><li>Charter and custom agent: one layout, source line differs</li></ul>
+    </div>
+    <div class="wire">
+      <h3>Attention</h3><div class="job">the inbox</div>
+      <div class="wf"><div class="cardlet"><span>proposal · refund_orders</span><b>3h 41m</b></div><div class="cardlet" style="border-left-color:#E64848"><span>paused run · gate</span><b style="color:#C42A2A">52m</b></div><div class="cardlet"><span>automation approval</span><b>12m</b></div><div class="ln s" style="margin-top:6px"></div><div class="ln m"></div></div>
+      <ul><li>Grouped by source, oldest first, live timers</li><li>One inline action per card; arrows + Enter</li><li>Two leading indicators: oldest waiting job, attempts on the worst job</li></ul>
+    </div>
+    <div class="wire">
+      <h3>Activity</h3><div class="job">Usage · Stream · Traces</div>
+      <div class="wf"><div class="tl"><i></i><i></i><i></i><i></i><i></i></div><div class="bars"><i style="height:40%"></i><i style="height:55%"></i><i style="height:35%"></i><i style="height:80%"></i><i style="height:60%"></i><i style="height:95%"></i><i style="height:50%"></i><i style="height:70%"></i><i style="height:45%"></i><i style="height:65%"></i><i style="height:30%"></i><i style="height:58%"></i></div><div class="row2" style="grid-template-columns:1fr 1fr"><div class="bx"><div class="ln acc s"></div><div class="ln m"></div><div class="ln m"></div><div class="ln s"></div></div><div class="bx"><div class="ln acc s"></div><div class="ln m"></div><div class="ln s"></div><div class="ln m"></div></div></div></div>
+      <ul><li><b>Usage</b> is the OpenRouter page: tiles, usage by model on the shared axis, Top models / Top call-sites with Explore ›</li><li><b>Stream</b> groups the tail by trace; model, caller, agent filters; warnings-first preset</li><li><b>Traces</b> gets a real timeline: bars, retries</li></ul>
+    </div>
+    <div class="wire">
+      <h3>Runs</h3><div class="job">collapsed by default</div>
+      <div class="wf"><div class="fold">▸ <b>Hourly jobs pulse</b> · 1,291 ticks · 0 fired · next 00:00</div><div class="fold" style="border-color:var(--pg-accent)">▾ <b>Refund spike guard</b> · fired 09:14 · 2 effects</div><div class="bx" style="margin-left:14px"><div class="ln acc s"></div><div class="ln m"></div><div class="ln s"></div></div><div class="fold">▸ <b>Deep run</b> · inv 0b3f2192 · 6 phases</div></div>
+      <ul><li>One row per automation with its ticks folded</li><li>Fired runs keep conditions → effects verbatim</li><li>Deep-run phase view unchanged</li></ul>
+    </div>
+  </div>
+
+  <h2>Before the page can be honest: the data plane (W0)</h2>
+  <div class="prose">
+    <p>Every wave in this repo that built a surface before its store existed shipped a panel that rendered empty. Four backend changes make the mockup drawable from real data:</p>
+    <p><b>Attribution.</b> Migration 9 on <code>session_events</code>: <code>job_id</code> and <code>charter_id</code> from a job contextvar (so charter identity finally joins model spend), <code>role</code> and <code>fallback</code> lifted out of <code>payload</code>, an index on <code>at</code>. <b>Time.</b> <code>from / to / bucket</code> on the fleet, model-usage and activity endpoints, plus one <code>/obs/timeseries?group=charter|model|kind|role</code>. <b>Drill.</b> <code>/activity</code> filters by <code>model, provider, caller, charter, job_id</code>; a count-parity ratchet ties every tile to the list it opens. <b>Cost.</b> Prices from the provider's own <code>/models</code> list, never hardcoded; unpriced calls stay counted and named. And the automation tick stops folding into "Unassigned kinds" — it becomes a runner the endpoint returns separately.</p>
+  </div>
+
+  <h2>Waves</h2>
+  <table class="plan">
+    <thead><tr><th>Wave</th><th>Scope</th><th>Effort</th><th>Proof</th></tr></thead>
+    <tbody>
+      <tr><td>W0 data plane</td><td>attribution · time buckets · drill filters · provider-fed prices · runners split out</td><td class="eff">2 d</td><td><code>charter_id</code> on ≥ 95% of new llm_calls; timeseries serves charter × hour; parity ratchet green</td></tr>
+      <tr><td>W1 Overview</td><td>this mockup: shared range in <code>headerControls</code>, rail, needs-you, StatTile row + drawer, ECharts stacked activity with brush, two-lane table with expand</td><td class="eff">2½ d</td><td>at 1280 × 720 the fold answers all three questions; runs/min shows agents only; zero dead numbers</td></tr>
+      <tr><td>W2 Activity</td><td>Usage (fold the orphaned <code>ActivityUsagePanel</code>), Stream grouped by trace, Traces timeline</td><td class="eff">2 d</td><td>Top models / call-sites drill to the filtered stream; fallback rate reads a column</td></tr>
+      <tr><td>W3 Roster · Attention · Runs</td><td>agent pages, inbox, folded ticks</td><td class="eff">2 d</td><td>custom-agent and charter pages render one layout</td></tr>
+      <tr><td>W4 readability</td><td>token rule across the surface, Sparkline hexes → tokens, className-driven type so <code>lint:tokens</code> sees it, light theme</td><td class="eff">1 d</td><td>every text token ≥ 4.5:1 in both themes; a surface-scoped lint pins it</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Decisions — locked 2026-08-17</h2>
+  <div class="dec">
+    <div><b>1 · The automation tick lives in a Background-runners lane on Overview</b><em>Muted, one row, never summed into the agents' totals — spend nobody can see is why the row exists.</em></div>
+    <div><b>2 · Dollars appear on Overview</b><em>Provider-fed prices at the open RBAC floor, always with the unpriced share stated; <code>/usage</code> keeps billing RBAC for the full ledger.</em></div>
+    <div><b>3 · Attention is a strip on Overview <u>and</u> a layer</b><em>The three oldest items inline; the inbox for everything else.</em></div>
+    <div><b>4 · The five layers stay under one shared range</b><em>Overview · Roster · Attention · Activity · Runs — the glossary's names; entity tabs not pursued.</em></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ── deterministic data ────────────────────────────────────────────────────
+  function rng(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  const AGENTS=[
+    {id:'scout',name:'Explorer',role:'Autonomous data explorer',kind:'charter',lane:'background',color:'#5A9FD6',rate:9,tokPer:4700,p95:'2m 51s',state:'running',live:1,budget:.31,mix:[['gpt-5.4-nano',.62],['nemotron-super',.38]],last:'4m ago',shape:'flat'},
+    {id:'analyst',name:'Analyst',role:'Deep analysis reasoner',kind:'charter',lane:'interactive',color:'#5FBE82',rate:6,tokPer:19600,p95:'3m 12s',state:'idle',live:0,budget:.24,mix:[['gemini-flash-lite',.55],['gpt-5.6-terra',.45]],last:'2h ago',shape:'day'},
+    {id:'insight',name:'Responder',role:'Quick answerer',kind:'charter',lane:'interactive',color:'#E0A54D',rate:0,tokPer:0,p95:'—',state:'unmetered',live:0,budget:0,mix:[],last:'—',shape:'flat',note:'quick answers are not metered as jobs yet'},
+    {id:'watcher',name:'Watcher',role:'KPI sentinel',kind:'charter',lane:'background',color:'#9B7BD4',rate:12,tokPer:500,p95:'4.1s',state:'idle',live:0,budget:.12,mix:[['gemini-flash-lite',1]],last:'31m ago',shape:'even'},
+    {id:'briefer',name:'Briefer',role:'Verdict synthesizer',kind:'charter',lane:'background',color:'#E07070',rate:2,tokPer:15500,p95:'48s',state:'idle',live:0,budget:.08,mix:[['nemotron-ultra',.7],['gpt-5.4-nano',.3]],last:'6h ago',shape:'morning'},
+    {id:'curator',name:'Curator',role:'Semantic-layer keeper',kind:'charter',lane:'background',color:'#4FC4C4',rate:24,tokPer:380,p95:'1m 15s',state:'running',live:1,budget:.05,mix:[['gemini-flash-lite',.9],['gpt-5.4-nano',.1]],last:'3m ago',shape:'even',failRate:.04,orphanRate:.04},
+    {id:'lux',name:'Luxury Revenue Analyst',role:'custom agent · LuxExperience',kind:'custom',lane:'interactive',color:'#BCA8F0',rate:4,tokPer:5500,p95:'41s',state:'idle',live:0,budget:0,mix:[['gpt-5.4-nano',1]],last:'1h ago',shape:'day',src:'session log'},
+    {id:'cust',name:'Customer Analytics Agent',role:'custom agent · Superstore',kind:'custom',lane:'interactive',color:'#78D8F8',rate:2,tokPer:4500,p95:'37s',state:'paused',live:0,budget:0,mix:[['gemini-flash-lite',1]],last:'yesterday',shape:'day',src:'session log'},
+  ];
+  const RUNNERS=[
+    {id:'auto',name:'Automations',role:'scheduled · one evaluation tick per minute · 0.02 s each',ticksPerDay:1291,fired:0,color:'#6E7886'},
+    {id:'evals',name:'Evals',role:'experiments · none in range',ticksPerDay:0,fired:0,color:'#6E7886'},
+  ];
+  const RANGES={
+    '1h':{buckets:12,bins:'5-min bins',scale:1/24,prior:'prior hour',axis:(i,n)=>{const m=(i-n)*5;return (m===0?'now':`${m}m`)},label:'Last hour'},
+    '24h':{buckets:24,bins:'hourly',scale:1,prior:'prior 24 h',axis:(i)=>`${String(i).padStart(2,'0')}:00`,label:'Last 24 hours'},
+    '7d':{buckets:28,bins:'6-hour bins',scale:7,prior:'prior 7 d',axis:(i)=>['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][Math.floor(i/4)]+(i%4===0?'':''),label:'Last 7 days'},
+    '30d':{buckets:30,bins:'daily',scale:30,prior:'prior 30 d',axis:(i)=>`${i+1<10?'0':''}${i+1} Aug`.replace(/^0?(\d+) Aug/,(m,d)=>`${(parseInt(d)+18)%31||31} ${parseInt(d)+18>31?'Aug':'Jul'}`),label:'Last 30 days'},
+  };
+  function shapeMul(shape,i,n){const x=i/n;
+    if(shape==='day') return 0.25+1.5*Math.max(0,Math.sin(Math.PI*((x*24-7)/12)));
+    if(shape==='morning') return x>0.3&&x<0.45?2.4:0.2;
+    return 1;}
+  const cache={};
+  function series(rangeKey,seedShift){
+    const k=rangeKey+':'+seedShift; if(cache[k]) return cache[k];
+    const R=RANGES[rangeKey]; const out={};
+    AGENTS.forEach((a,ai)=>{const r=rng(1000*ai+seedShift*77+R.buckets); const base=a.rate*R.scale/R.buckets;
+      out[a.id]=Array.from({length:R.buckets},(_,i)=>{const v=base*shapeMul(a.shape,i,R.buckets)*(0.35+r()*1.3); return v<0.5?(r()<v?1:0):Math.round(v)});
+      if(a.rate===0) out[a.id]=out[a.id].map(()=>0);
+    });
+    RUNNERS.forEach(rn=>{out[rn.id]=Array.from({length:R.buckets},()=>Math.round(rn.ticksPerDay*R.scale/R.buckets))});
+    cache[k]=out; return out;
+  }
+  const fmt=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e4?(n/1e3).toFixed(0)+'K':n>=1e3?(n/1e3).toFixed(1)+'K':String(Math.round(n));
+  const fmtI=n=>Math.round(n).toLocaleString('en-US');
+
+  // ── state ─────────────────────────────────────────────────────────────────
+  const S={range:'24h',hidden:new Set(),runners:false,brush:null,bin:null,expanded:null};
+  const $=id=>document.getElementById(id);
+  const sum=(arr,a,b)=>arr.slice(a,b+1).reduce((x,y)=>x+y,0);
+  function binWindow(){const R=RANGES[S.range];if(S.brush)return S.brush;if(S.bin!=null)return[S.bin,S.bin];return[0,R.buckets-1]}
+  function agentRuns(a,cur=true){const s=series(S.range,cur?1:2)[a.id];const[b0,b1]=cur?binWindow():[0,RANGES[S.range].buckets-1];return sum(s,b0,b1)}
+  function runnerRuns(r,cur=true){const s=series(S.range,cur?1:2)[r.id];const[b0,b1]=cur?binWindow():[0,RANGES[S.range].buckets-1];return sum(s,b0,b1)}
+  function windowLabel(){const R=RANGES[S.range];const w=binWindow();if(!S.brush&&S.bin==null)return R.label.toLowerCase();const a=R.axis(w[0],R.buckets),b=R.axis(w[1]+1,R.buckets);return S.bin!=null&&!S.brush?`bin ${a}`:`${a} → ${b}`}
+
+  // ── sparkline svg ─────────────────────────────────────────────────────────
+  function spark(vals,w,h,color,opts={}){const n=vals.length;const mx=Math.max(1,...vals);const pts=vals.map((v,i)=>[(i/(n-1))*(w-2)+1,h-2-(v/mx)*(h-6)]);
+    const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+    const area=d+` L${pts[n-1][0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z`;
+    const last=pts[n-1];const fails=(opts.fails||[]).map(i=>`<rect x="${(pts[i][0]-2).toFixed(1)}" y="${h-3}" width="4" height="3" fill="#E64848"/>`).join('');
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${area}" fill="${color}" opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linejoin="round"/>${fails}<circle cx="${last[0]}" cy="${last[1]}" r="2.2" fill="${color}"/></svg>`}
+
+  // ── rail ──────────────────────────────────────────────────────────────────
+  function renderRail(){const live=AGENTS.filter(a=>a.state==='running').length;
+    $('rail-sub').textContent=`${live} running · ${AGENTS.filter(a=>a.state==='idle').length} idle · 1 paused · 1 unmetered`;
+    $('rail').innerHTML=AGENTS.map(a=>{const cls=a.state==='running'?'run':a.state==='paused'?'paused':(a.failRate?'fail':'');
+      return `<button class="pill" data-go="${a.id}" title="Scroll to ${a.name}"><span class="d ${cls}"></span>${a.name}<span class="n">${a.state==='running'?a.live+' live':a.state==='unmetered'?'—':a.state}</span></button>`}).join('')
+      +RUNNERS.slice(0,1).map(r=>`<button class="pill runner" data-go="${r.id}"><span class="d"></span>${r.name}<span class="n">tick · 1/min</span></button>`).join('');
+    $('rail').querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>{const tr=document.querySelector(`tr[data-id="${b.dataset.go}"]`);if(!tr)return;tr.scrollIntoView({block:'center'});tr.classList.add('hl');setTimeout(()=>tr.classList.remove('hl'),1400)}))}
+
+  // ── needs you ─────────────────────────────────────────────────────────────
+  const NEEDS=[
+    {src:'proposal',chip:'vio',title:'refund_orders · 3 rows · Superstore',meta:'Analyst proposed a governed action · blast radius: 3 orders',since:3*3600+41*60,acts:[['Accept','ok'],['Reject','']]},
+    {src:'paused run',chip:'red',title:'Deep analysis paused at a gate',meta:'"Why did EMEA margin fall?" · waiting on a model pick',since:52*60,acts:[['Open & resume','pri']],critical:true},
+    {src:'automation',chip:'amb',title:'Refund spike guard · effect 2 needs approval',meta:'notify #finance · scheduled(0 9 * * *)',since:12*60,acts:[['Approve','ok'],['Open automation','']]},
+  ];
+  const t0=Date.now();
+  function tfmt(s){s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;return h?`${h}h ${String(m).padStart(2,'0')}m`:m?`${m}m ${String(sec).padStart(2,'0')}s`:`${sec}s`}
+  function renderNeeds(){$('needs').innerHTML=NEEDS.map((n,i)=>`<div class="card need ${n.critical?'critical':''} ${n.done?'done':''}" data-i="${i}"><div class="top"><span class="chip ${n.chip}">${n.src}</span><span class="timer" data-t="${i}">${tfmt(n.since)}</span></div><div class="title">${n.title}</div><div class="meta">${n.done?n.done:n.meta}</div><div class="acts">${n.acts.map(a=>`<button class="btn ${a[1]}" data-act="${a[0]}" data-i="${i}">${a[0]}</button>`).join('')}</div></div>`).join('');
+    $('needs').querySelectorAll('[data-act]').forEach(b=>b.addEventListener('click',()=>{const n=NEEDS[b.dataset.i];n.done=`${b.dataset.act==='Reject'?'Rejected':b.dataset.act.replace(/ .*/,'')+'ed'} just now · undo`;renderNeeds();const left=NEEDS.filter(x=>!x.done).length;$('att-badge').textContent=left;$('att-more').textContent=`${left} waiting · open Attention →`}))}
+  setInterval(()=>{const dt=(Date.now()-t0)/1000;document.querySelectorAll('.timer[data-t]').forEach(el=>{const n=NEEDS[el.dataset.t];if(!n.done)el.textContent=tfmt(n.since+dt)})},1000);
+
+  // ── tiles ─────────────────────────────────────────────────────────────────
+  function tileData(){const R=RANGES[S.range];const cur=AGENTS.reduce((s,a)=>s+agentRuns(a,true),0);const prior=AGENTS.reduce((s,a)=>s+agentRuns(a,false),0);
+    const bg=runnerRuns(RUNNERS[0],true);const w=binWindow();const frac=(w[1]-w[0]+1)/R.buckets;
+    const failed=Math.round(24*R.scale*frac*0.04),orph=Math.round(24*R.scale*frac*0.04),failedP=Math.round(24*R.scale*0.06);
+    const tokens=AGENTS.reduce((s,a)=>s+agentRuns(a,true)*a.tokPer,0),tokensP=AGENTS.reduce((s,a)=>s+agentRuns(a,false)*a.tokPer,0);
+    const cost=tokens/1e6*0.55,costP=S.range==='30d'?null:tokensP/1e6*0.55;
+    const totalSeries=Array.from({length:R.buckets},(_,i)=>AGENTS.reduce((s,a)=>s+series(S.range,1)[a.id][i],0)+(S.runners?series(S.range,1)[RUNNERS[0].id][i]:0));
+    const tokSeries=Array.from({length:R.buckets},(_,i)=>AGENTS.reduce((s,a)=>s+series(S.range,1)[a.id][i]*a.tokPer,0));
+    return {cur,prior,bg,failed,orph,failedP,tokens,tokensP,cost,costP,totalSeries,tokSeries,frac}}
+  function delta(cur,prior,goodWhenUp=true,unit=''){if(prior==null)return`<span class="delta na">— no prior data</span>`;if(!prior&&!cur)return`<span class="delta na">— flat</span>`;if(!prior)return`<span class="delta na">— no prior</span>`;const p=(cur-prior)/prior*100;const up=p>=0;const good=goodWhenUp?up:!up;const arrow=up?'▲':'▼';return`<span class="delta ${Math.abs(p)<1?'na':good?'good':'bad'}">${arrow} ${Math.abs(p).toFixed(0)}%${unit}</span>`}
+  function renderTiles(){const R=RANGES[S.range];const d=tileData();const w=windowLabel();
+    $('tiles-h').textContent=`${w} · ${S.runners?'incl. background runners':'agents only'}`;$('th-span').textContent=`· ${R.bins}`;
+    const tiles=[
+      {k:'runs',lbl:'Runs',val:fmtI(d.cur+(S.runners?d.bg:0)),unit:'',dl:delta(d.cur,d.prior),sp:spark(d.totalSeries,150,26,'#4BA3F5'),cap:S.runners?`<b>${fmtI(d.bg)}</b> of these are automation ticks · toggle off in the chart to see agents`:`<b>+${fmtI(d.bg)}</b> background runs excluded (automation tick, 1/min)`},
+      {k:'fail',lbl:'Failures',val:fmtI(d.failed),unit:'',dl:delta(d.failed,d.failedP,false),sp:spark(d.totalSeries.map((v,i)=>i%7===3?1:0),150,26,'#E64848'),cap:`<b>+${d.orph}</b> orphaned restarts — infrastructure, counted apart · rate <b>${d.cur?(d.failed/d.cur*100).toFixed(1):'0.0'}%</b> of ${fmtI(d.cur)}`,tone:d.failed?'bad':''},
+      {k:'lat',lbl:'p50 / p95',val:'38s <small>/ 3m 12s</small>',unit:'',dl:delta(38,44,false,''),sp:spark([30,41,36,52,44,38,35,61,40,38,37,39],150,26,'#9B7BD4'),cap:`over <b>${fmtI(d.cur)}</b> finished runs · p50 was computed and never shown before`},
+      {k:'tok',lbl:'Tokens',val:fmt(d.tokens),unit:'',dl:delta(d.tokens,d.tokensP,false),sp:spark(d.tokSeries,150,26,'#E0A54D'),cap:`metered on <b>78%</b> of finished runs · <b>22%</b> unmetered — unknown, not zero`},
+      {k:'cost',lbl:'Cost',val:'$'+d.cost.toFixed(2),unit:'',dl:delta(d.cost,d.costP,false),sp:spark(d.tokSeries,150,26,'#5FBE82'),cap:`from the provider's price list · <b>31%</b> of tokens unpriced (custom endpoints)`},
+    ];
+    $('tiles').innerHTML=tiles.map(t=>`<button class="card tile" data-tile="${t.k}"><span class="lbl">${t.lbl}<i>${R.label.replace('Last ','')}</i></span><span class="val" ${t.tone?'style="color:var(--red4)"':''}>${t.val}</span><span class="row">${t.dl}${t.sp}</span><span class="cap">${t.cap}</span></button>`).join('');
+    $('tiles').querySelectorAll('[data-tile]').forEach(b=>b.addEventListener('click',()=>openTile(b.dataset.tile,d)));}
+
+  // ── chart ─────────────────────────────────────────────────────────────────
+  function visibleSeries(){const list=AGENTS.filter(a=>!S.hidden.has(a.id)&&a.rate>0);return S.runners?[...list,RUNNERS[0]]:list}
+  function renderLegend(){$('legend').innerHTML=AGENTS.filter(a=>a.rate>0).map(a=>`<button class="lg" style="--c:${a.color}" data-lg="${a.id}" aria-pressed="${!S.hidden.has(a.id)}"><i></i>${a.name}</button>`).join('')
+      +`<button class="tog" id="tog-runners" aria-pressed="${S.runners}"><span class="sw"></span>include background runners</button>`;
+    $('legend').querySelectorAll('[data-lg]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.lg;S.hidden.has(id)?S.hidden.delete(id):S.hidden.add(id);renderAll()}));
+    $('tog-runners').addEventListener('click',()=>{S.runners=!S.runners;renderAll()})}
+  const CH={w:1000,h:210,padL:34,padR:8,padT:10,padB:22};
+  function renderChart(){const R=RANGES[S.range];const n=R.buckets;const ser=visibleSeries();const data=series(S.range,1);
+    const totals=Array.from({length:n},(_,i)=>ser.reduce((s,a)=>s+data[a.id][i],0));const mx=Math.max(1,...totals);const nice=mx<=5?5:mx<=10?10:Math.ceil(mx/Math.pow(10,Math.floor(Math.log10(mx))))*Math.pow(10,Math.floor(Math.log10(mx)));
+    const iw=CH.w-CH.padL-CH.padR,ih=CH.h-CH.padT-CH.padB;const bw=iw/n;const gap=Math.max(1.5,bw*0.18);
+    let g='';for(let k=0;k<=2;k++){const y=CH.padT+ih-(k/2)*ih;g+=`<line x1="${CH.padL}" x2="${CH.w-CH.padR}" y1="${y}" y2="${y}" stroke="#1E2329" stroke-width="1"/><text x="${CH.padL-6}" y="${y+3.5}" fill="#6E7886" font-size="10" text-anchor="end" font-family="IBM Plex Mono,Menlo,monospace">${fmt(nice*k/2)}</text>`}
+    let bars='';const w=binWindow();
+    for(let i=0;i<n;i++){let y=CH.padT+ih;const x=CH.padL+i*bw+gap/2;const inW=i>=w[0]&&i<=w[1];const dimmed=(S.brush||S.bin!=null)&&!inW;
+      ser.forEach(a=>{const v=data[a.id][i];if(!v)return;const h=v/nice*ih;y-=h;const fill=a.id==='auto'?'url(#hatch)':a.color;bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-gap).toFixed(1)}" height="${Math.max(0.5,h).toFixed(1)}" fill="${fill}" opacity="${dimmed?.25:.92}" rx="1"/>`});
+      bars+=`<rect class="hit" data-bin="${i}" x="${(CH.padL+i*bw).toFixed(1)}" y="${CH.padT}" width="${bw.toFixed(1)}" height="${ih}" fill="transparent"/>`}
+    let ax='';const step=n<=12?1:n<=24?3:n<=28?4:5;for(let i=0;i<n;i+=step){ax+=`<text x="${(CH.padL+i*bw+bw/2).toFixed(1)}" y="${CH.h-7}" fill="#939AA6" font-size="10" text-anchor="middle" font-family="IBM Plex Mono,Menlo,monospace">${R.axis(i,n)}</text>`}
+    let sel='';if(S.brush){const x0=CH.padL+S.brush[0]*bw,x1=CH.padL+(S.brush[1]+1)*bw;sel=`<rect x="${x0}" y="${CH.padT}" width="${x1-x0}" height="${ih}" fill="#0C8CE9" opacity=".12" stroke="#4BA3F5" stroke-width="1" pointer-events="none"/>`}
+    $('chart').innerHTML=`<defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#1C2128"/><line x1="0" y1="0" x2="0" y2="5" stroke="#6E7886" stroke-width="2"/></pattern></defs>${g}${bars}${ax}${sel}<line id="cursor" x1="0" x2="0" y1="${CH.padT}" y2="${CH.padT+ih}" stroke="#4BA3F5" stroke-dasharray="3 3" opacity="0"/>`;
+    $('chart-bins').textContent=R.bins;$('chart-axis').textContent=`${R.label} · ${n} bins · y = runs`;
+    $('chart-sel').innerHTML=(S.brush||S.bin!=null)?`${S.brush?'brushed':'filtered to'} ${windowLabel()} — tiles and table follow <button id="clear-sel">clear</button>`:'';
+    const cs=$('clear-sel');if(cs)cs.addEventListener('click',()=>{S.brush=null;S.bin=null;renderAll()})}
+  // Handlers are bound ONCE and read state at event time — re-binding on every render
+  // reset the drag state mid-brush (the first cut of this file did exactly that).
+  const drag={down:null,moved:false};
+  function initChart(){const svg=$('chart'),box=$('chartbox'),tip=$('tip');
+    const geo=()=>{const n=RANGES[S.range].buckets;return{n,bw:(CH.w-CH.padL-CH.padR)/n,ser:visibleSeries(),data:series(S.range,1),R:RANGES[S.range]}};
+    const binAt=(e,g)=>{const r=svg.getBoundingClientRect();const x=(e.clientX-r.left)/r.width*CH.w;return Math.max(0,Math.min(g.n-1,Math.floor((x-CH.padL)/g.bw)))};
+    svg.addEventListener('mousemove',e=>{const g=geo();const b=binAt(e,g);const cur=svg.querySelector('#cursor');if(cur){cur.setAttribute('x1',CH.padL+b*g.bw+g.bw/2);cur.setAttribute('x2',CH.padL+b*g.bw+g.bw/2);cur.setAttribute('opacity','.6')}
+      const rows=g.ser.slice().reverse().map(a=>`<div class="r"><span><i style="--c:${a.id==='auto'?'#6E7886':a.color}"></i>${a.name}</span><b>${fmtI(g.data[a.id][b])}</b></div>`).join('');const tot=g.ser.reduce((s,a)=>s+g.data[a.id][b],0);
+      tip.innerHTML=`<div class="h">${g.R.axis(b,g.n)} → ${g.R.axis(b+1,g.n)} · ${fmtI(tot)} runs</div>${rows}<div class="r" style="margin-top:4px;color:var(--t3)"><span>click → filter · drag → brush</span></div>`;tip.style.display='block';
+      const bx=box.getBoundingClientRect();let left=e.clientX-bx.left+14;if(left+190>bx.width)left=e.clientX-bx.left-200;tip.style.left=left+'px';tip.style.top=Math.max(0,e.clientY-bx.top-20)+'px';
+      if(drag.down!=null){if(b!==drag.down)drag.moved=true;S.brush=[Math.min(drag.down,b),Math.max(drag.down,b)];S.bin=null;renderChart()}});
+    svg.addEventListener('mousedown',e=>{drag.down=binAt(e,geo());drag.moved=false;e.preventDefault()});
+    svg.addEventListener('mouseup',e=>{if(drag.down==null)return;const b=binAt(e,geo());if(!drag.moved){S.brush=null;S.bin=(S.bin===b?null:b)}else{S.brush=[Math.min(drag.down,b),Math.max(drag.down,b)];S.bin=null}drag.down=null;renderAll()});
+    svg.addEventListener('mouseleave',()=>{tip.style.display='none';const cur=svg.querySelector('#cursor');if(cur)cur.setAttribute('opacity','0');if(drag.down!=null){drag.down=null;renderAll()}})}
+
+  // ── fleet table ───────────────────────────────────────────────────────────
+  function stateChip(a){if(a.state==='running')return`<span class="chip grn">● running</span>`;if(a.state==='paused')return`<span class="chip amb">paused</span>`;if(a.state==='unmetered')return`<span class="chip grey">not metered</span>`;return`<span class="chip grey">idle</span>`}
+  function renderFleet(){const R=RANGES[S.range];const data=series(S.range,1);const w=binWindow();
+    $('fleet-sub').textContent=`${windowLabel()} · charters and custom agents in one grammar · runners below, never summed in`;
+    const rowFor=a=>{const runs=agentRuns(a,true);const s=data[a.id];const fails=a.failRate?[Math.floor(R.buckets*0.55)]:[];const failed=a.failRate?Math.round(runs*a.failRate):0,orph=a.orphanRate?Math.round(runs*a.orphanRate):0;const tok=runs*a.tokPer;const dim=S.hidden.has(a.id);
+      return `<tr class="r ${dim?'dim':''}" data-id="${a.id}" tabindex="0" aria-expanded="${S.expanded===a.id}"><td><span class="chev">▶</span></td>
+        <td><div class="who"><span class="sw" style="--c:${a.color}"></span><div><div class="nm">${a.name}</div><div class="rl">${a.role}${a.src?` · <span class="sub">from ${a.src}</span>`:''}</div></div></div></td>
+        <td>${stateChip(a)}</td>
+        <td class="spark">${a.rate?spark(s,110,20,a.color,{fails}):'<span class="sub">'+(a.note||'—')+'</span>'}</td>
+        <td class="num">${a.rate?fmtI(runs):'<span class="sub">—</span>'}</td>
+        <td class="num">${a.rate?(failed?`<span class="bad">${failed}</span>`:'0')+(orph?` <span class="sub">+${orph} orphaned</span>`:''):'<span class="sub">—</span>'}</td>
+        <td class="num">${a.rate?fmt(tok):'<span class="sub">—</span>'}${a.id==='analyst'?' <span class="sub">·12% unmetered</span>':''}</td>
+        <td class="num">${a.p95}</td>
+        <td><span class="mono" style="color:var(--t2);font-size:11.5px">${a.last}</span></td>
+        <td><button class="exp" data-explore="${a.id}">Explore ›</button></td></tr>
+        ${S.expanded===a.id?detailRow(a,runs,failed,orph):''}`};
+    const runnerRow=r=>{const t=runnerRuns(r,true);return`<tr class="r" data-id="${r.id}" tabindex="0"><td></td><td><div class="who"><span class="sw runner"></span><div><div class="nm" style="color:var(--t2)">${r.name}</div><div class="rl">${r.role}</div></div></div></td><td><span class="chip grey">${r.id==='auto'?'ticking':'idle'}</span></td><td class="spark">${r.ticksPerDay?spark(series(S.range,1)[r.id],110,20,'#6E7886'):'<span class="sub">—</span>'}</td><td class="num" style="color:var(--t2)">${fmtI(t)} <span class="sub">ticks</span></td><td class="num" style="color:var(--t2)">${r.fired} <span class="sub">fired</span></td><td class="num"><span class="sub">0</span></td><td class="num" style="color:var(--t2)">${r.id==='auto'?'0.4s':'—'}</td><td><span class="mono" style="color:var(--t2);font-size:11.5px">${r.id==='auto'?'1m ago · next 00:00':'—'}</span></td><td><button class="exp" data-explore="${r.id}">Explore ›</button></td></tr>`};
+    $('fleet-body').innerHTML=`<tr class="lane"><td colspan="10"><div class="lt">Agents <span>${AGENTS.filter(a=>a.kind==='charter').length} charters · ${AGENTS.filter(a=>a.kind==='custom').length} custom agents · same columns, sources named per row</span></div></td></tr>`
+      +AGENTS.map(rowFor).join('')
+      +`<tr class="lane"><td colspan="10"><div class="lt">Background runners <span>counted separately — never in the agents' totals · what "Unassigned kinds" was</span></div></td></tr>`
+      +RUNNERS.map(runnerRow).join('');
+    $('fleet-body').querySelectorAll('tr.r').forEach(tr=>{const id=tr.dataset.id;const toggle=()=>{if(RUNNERS.some(r=>r.id===id))return openExplore(id);S.expanded=S.expanded===id?null:id;renderFleet()};
+      tr.addEventListener('click',e=>{if(e.target.closest('[data-explore]'))return;toggle()});
+      tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle()}})});
+    $('fleet-body').querySelectorAll('[data-explore]').forEach(b=>b.addEventListener('click',()=>openExplore(b.dataset.explore)));
+    const d=tileData();$('jobs-line').innerHTML=`${AGENTS.filter(a=>a.state==='running').length} running · ${fmtI(d.cur)} finished in ${windowLabel()} · newest: Curator · profile · <span class="mono">3m ago</span>`}
+  function detailRow(a,runs,failed,orph){const r=rng(a.id.length*31+7);const cells=Array.from({length:20},(_,i)=>{const x=r();const cls=a.failRate&&i===13?'f':a.orphanRate&&i===5?'o':(a.state==='running'&&i===19?'r':'');return`<i class="${cls}" title="run ${20-i} · ${cls==='f'?'failed':cls==='o'?'orphaned restart':cls==='r'?'running':'succeeded'}"></i>`}).join('');
+    const mix=a.mix.length?a.mix.map(([m,p])=>`<div class="l"><span>${m}</span><b>${Math.round(p*100)}%</b></div>`).join(''):'<div class="l"><span>no model calls attributed</span></div>';
+    const mixbar=a.mix.map(([m,p],i)=>`<span style="width:${p*100}%;background:${['#4BA3F5','#8B68D8','#30B8E0'][i]}"></span>`).join('');
+    const budget=a.budget?`<div class="bar"><span style="width:${a.budget*100}%;background:${a.budget>.8?'#E64848':a.budget>.5?'#E0AD00':'#2EC87B'}"></span></div><div class="mix" style="margin-top:5px"><div class="l"><span>token budget used this run</span><b>${Math.round(a.budget*100)}%</b></div></div>`:`<div class="mix"><div class="l"><span>no per-run budget for custom agents</span></div></div>`;
+    return `<tr class="det"><td colspan="10"><div class="detg"><div><h5>Last 20 runs</h5><div class="cells">${cells}</div><div class="mix" style="margin-top:6px"><div class="l"><span>${fmtI(runs)} runs in range</span><b>${failed} failed · ${orph} orphaned</b></div></div></div><div><h5>Model mix</h5><div class="bar">${mixbar}</div><div class="mix" style="margin-top:6px">${mix}</div></div><div><h5>Budget</h5>${budget}</div></div><div class="detl"><button>Open agent in Roster →</button><button data-explore="${a.id}">Runs list →</button><button>Traces →</button></div></td></tr>`}
+
+  // ── drawer ────────────────────────────────────────────────────────────────
+  const drawer=$('drawer');
+  function openDrawer(k,title,html){$('dk').textContent=k;$('dt').textContent=title;$('db').innerHTML=html;drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');$('dx').focus()}
+  function closeDrawer(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true')}
+  $('dx').addEventListener('click',closeDrawer);document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+  function qs(extra){const R=RANGES[S.range];return`from=${S.range==='24h'?'2026-08-16T22:00Z':S.range==='1h'?'2026-08-17T21:00Z':S.range==='7d'?'2026-08-10T22:00Z':'2026-07-18T22:00Z'}&to=now${S.brush||S.bin!=null?'&bins='+binWindow().join('-'):''}${extra?'&'+extra:''}`}
+  function openTile(k,d){const R=RANGES[S.range];const map={
+    runs:{t:'Runs',v:fmtI(d.cur+(S.runners?d.bg:0)),def:'Jobs created in the window whose kind belongs to an agent charter or a custom agent. Automation ticks and eval experiments are runners and are excluded unless toggled in.',den:`${fmtI(d.cur)} agent runs · ${fmtI(d.bg)} background runs excluded`,cov:'100% — every job has a kind',url:`/jobs?${qs('kind=exploration,investigation,profile,monitor,brief,custom')}`,list:'jobs'},
+    fail:{t:'Failures',v:fmtI(d.failed),def:'Runs that ended FAILED for a reason the agent produced. INTERRUPTED and FAILED-with-orphan-reason are counted apart as orphaned restarts.',den:`${fmtI(d.failed)} failed / ${fmtI(d.cur)} finished = ${d.cur?(d.failed/d.cur*100).toFixed(1):'0.0'}% · +${d.orph} orphaned`,cov:'100% — state is always recorded',url:`/jobs?${qs('state=FAILED')}`,list:'failed jobs'},
+    lat:{t:'p50 / p95 duration',v:'38s / 3m 12s',def:'Percentiles of finished_at − started_at over agent runs in the window. p50 is what a typical run takes; p95 is what a slow one takes.',den:`${fmtI(d.cur)} finished runs`,cov:'100%',url:`/jobs?${qs('sort=duration_desc')}`,list:'slowest runs'},
+    tok:{t:'Tokens',v:fmt(d.tokens),def:'Sum of metrics.total_tokens over finished agent runs. A run with no metrics is unmetered — unknown spend, never zero.',den:`metered on 78% of finished runs`,cov:'78% — 22% unmetered',url:`/activity?${qs('kind=llm_call')}`,list:'llm calls'},
+    cost:{t:'Cost',v:'$'+d.cost.toFixed(2),def:'Tokens × the provider’s own price list, cached from its /models response. Anything without a price stays counted as unpriced.',den:`priced 69% of tokens · 31% unpriced`,cov:'69% priced',url:`/usage?${qs('group=model')}`,list:'usage by model'},
+  }[k];
+    openDrawer('Where this number comes from',map.t,`<div class="big">${map.v}</div><dl class="kv"><dt>Window</dt><dd>${windowLabel()}</dd><dt>Definition</dt><dd class="txt">${map.def}</dd><dt>Denominator</dt><dd>${map.den}</dd><dt>Coverage</dt><dd>${map.cov}</dd><dt>vs prior</dt><dd>${R.prior}</dd></dl><a class="open-list" href="#" onclick="return false">Open the list — ${map.list} whose count equals this number<code>${map.url}</code></a><div class="note">The parity between this figure and that list's count is a ratchet test in W0 (the CR4 shape: <span class="mono">needs-human.count == Σ sources</span>).</div>`)}
+  function openExplore(id){const a=AGENTS.find(x=>x.id===id);const R=RANGES[S.range];
+    if(!a){const r=RUNNERS.find(x=>x.id===id);const t=runnerRuns(r,true);openDrawer('Background runner',r.name,`<div class="big">${fmtI(t)} <small style="font-size:12px;color:var(--t2);font-family:var(--f-ui)">ticks in ${windowLabel()}</small></div><dl class="kv"><dt>What it is</dt><dd class="txt">${r.role}. The engine records one job per evaluation tick, including ticks that evaluate and do nothing — this is the row that used to be called "Unassigned kinds".</dd><dt>Fired</dt><dd>${r.fired}</dd><dt>Tokens</dt><dd>0 — no model calls</dd></dl><a class="open-list" href="#" onclick="return false">Open in Runs — one row per automation, ticks folded<code>/agent-ops?layer=runs&${qs('runner='+r.id)}</code></a>`);return}
+    const runs=agentRuns(a,true);const rr=rng(id.length*13+3);const items=Array.from({length:Math.min(6,Math.max(1,runs))},(_,i)=>{const st=a.failRate&&i===2?'f':a.orphanRate&&i===4?'o':'';return`<div><span class="st ${st}"></span><span>${a.kind==='custom'?'"Why is GMV concentrated in a few collaborations?"':a.id==='curator'?'profile · '+['amazon','data_co','housing','scm','main','luxexperience'][i%6]:a.id==='scout'?'exploration · '+['scm','amazon','housing'][i%3]:a.id==='analyst'?'"Is delay correlated with location?"':a.id==='watcher'?'monitor · refund rate':'brief · workspace'}</span><span class="m">${st==='f'?'failed':st==='o'?'orphaned':'ok'}</span><span class="m">${Math.round(rr()*170+10)}s</span></div>`}).join('');
+    openDrawer(a.kind==='custom'?'Custom agent':'Charter',a.name,`<dl class="kv"><dt>Runs</dt><dd>${fmtI(runs)} in ${windowLabel()}</dd><dt>Source</dt><dd class="txt">${a.kind==='custom'?'session log (agent_id) — populated once W0 stamps it':'job metering (jobs.metrics)'}</dd><dt>Lane</dt><dd class="txt">${a.lane}</dd><dt>Model mix</dt><dd class="txt">${a.mix.map(m=>m[0]+' '+Math.round(m[1]*100)+'%').join(' · ')||'—'}</dd></dl><h5>Recent runs</h5><div class="runs">${items||'<div class="note">no runs in range</div>'}</div><a class="open-list" href="#" onclick="return false">Open agent in Roster<code>/agent-ops?layer=roster&agent=${a.id}&${qs('')}</code></a><div class="note">Arrow keys move the selection in the table behind; the drawer follows. Esc closes.</div>`)}
+
+  // ── range + boot ──────────────────────────────────────────────────────────
+  $('range').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.range=b.dataset.r;S.brush=null;S.bin=null;$('range').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));$('url-range').textContent=S.range;renderAll()}));
+  function renderAll(){renderTiles();renderLegend();renderChart();renderFleet();$('url-extra').textContent=(S.brush?`&bins=${S.brush[0]}-${S.brush[1]}`:S.bin!=null?`&bin=${S.bin}`:'')+(S.runners?'&runners=1':'')+(S.hidden.size?`&hide=${[...S.hidden].join(',')}`:'')}
+  renderRail();renderNeeds();initChart();renderAll();
+})();
+</script>

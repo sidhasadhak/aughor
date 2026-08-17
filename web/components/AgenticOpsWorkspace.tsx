@@ -92,7 +92,7 @@ export function AgenticOpsWorkspace({
       layers={LAYERS}
       layer={layer}
       onLayerChange={onLayerChange}
-      ariaLabel="Agents views"
+      ariaLabel="Agent Ops views"
       badges={{ attention }}
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
