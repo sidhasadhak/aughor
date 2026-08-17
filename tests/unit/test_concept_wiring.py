@@ -445,3 +445,53 @@ def test_the_ip_rule_does_not_match_every_word_containing_ip():
     for real in ("ip", "ip_address", "client_ip", "remote_addr", "ipv4", "IP Address"):
         assert any(w.concept == "net.ip_address"
                    for w in _name_witnesses(real, "VARCHAR")), real
+
+
+# ── the bare-name collision ──────────────────────────────────────────────────
+
+def test_two_tables_sharing_a_bare_name_profile_separately():
+    """`luxexperience.customers` (7 columns, 35,136 rows) and `main.customers` (5 columns,
+    59,430 rows) are different tables. Flattened to `customers`, the profiler ran
+    `DESCRIBE customers`, got whichever the search path resolved, profiled it twice, and
+    never profiled the other at all — one table's profile silently became another's."""
+    c = DuckDBConnection.__new__(DuckDBConnection)
+    c._path = Path(":memory:")
+    c._conn = duckdb.connect(":memory:")
+    c._connection_id = ""
+    c._schema_name = None
+    c._conn.execute("CREATE SCHEMA a; CREATE SCHEMA b")
+    c._conn.execute("CREATE TABLE a.customers (id INT, region VARCHAR, tier VARCHAR)")
+    c._conn.execute("CREATE TABLE b.customers (id INT, country VARCHAR)")
+    c._conn.execute("INSERT INTO a.customers SELECT i, 'r'||(i%4), 't'||(i%3) FROM range(200) t(i)")
+    c._conn.execute("INSERT INTO b.customers SELECT i, 'US' FROM range(50) t(i)")
+
+    tps, cps = profile_connection(c, ["a.customers", "b.customers"], {})
+
+    assert set(tps) == {"a.customers", "b.customers"}
+    assert tps["a.customers"].row_count == 200
+    assert tps["b.customers"].row_count == 50
+    # …and the column profiles do not overwrite each other
+    assert {p.column for p in cps.values() if p.table == "a.customers"} == {"id", "region", "tier"}
+    assert {p.column for p in cps.values() if p.table == "b.customers"} == {"id", "country"}
+
+
+def test_quirk_detection_survives_a_qualified_table_name():
+    """`detect_schema_quirks` read the table out of the KEY with `split(".", 1)`, which on
+    `schema.table.column` returns the SCHEMA — a lookup that silently matches nothing."""
+    from aughor.tools.profiler import detect_schema_quirks
+
+    c = DuckDBConnection.__new__(DuckDBConnection)
+    c._path = Path(":memory:")
+    c._conn = duckdb.connect(":memory:")
+    c._connection_id = ""
+    c._schema_name = None
+    c._conn.execute("CREATE SCHEMA s")
+    c._conn.execute("CREATE TABLE s.orders (order_id INT, customer_id INT, amount DOUBLE)")
+    c._conn.execute(
+        "INSERT INTO s.orders SELECT i, i % 40, i * 1.5 FROM range(300) t(i)")
+    tps, cps = profile_connection(c, ["s.orders"], {})
+    # the point is that it runs over a qualified key and can see the columns at all
+    detect_schema_quirks(tps, cps)
+    lookup = {(p.table, p.column) for p in cps.values()}
+    assert ("s.orders", "order_id") in lookup
+    assert ("s.orders", "customer_id") in lookup

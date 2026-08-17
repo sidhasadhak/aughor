@@ -1782,11 +1782,17 @@ def detect_schema_quirks(
     quirks: list[str] = []
 
     # Build lookup: table → {col_name → distinct_count}
+    # From the ATTRIBUTES, not by splitting the key. A key is `{table}.{column}` and the
+    # table half may itself be qualified — `luxexperience.customers.customer_id` — so
+    # `split(".", 1)` reads the SCHEMA as the table and the rest as the column, silently
+    # producing a lookup that matches nothing. The profile already carries both halves
+    # unambiguously; the key is a key, not a data structure.
     table_col_distinct: dict[str, dict[str, int]] = {}
     for key, cp in column_profiles.items():
-        if "." not in key:
+        tbl = getattr(cp, "table", "") or (key.rsplit(".", 1)[0] if "." in key else "")
+        col = getattr(cp, "column", "") or (key.rsplit(".", 1)[-1] if "." in key else "")
+        if not tbl or not col:
             continue
-        tbl, col = key.split(".", 1)
         table_col_distinct.setdefault(tbl, {})[col] = cp.distinct_count or 0
 
     for table, tp in table_profiles.items():
