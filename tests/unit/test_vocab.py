@@ -8,15 +8,17 @@ it at 50%, and the SHARE is the discriminator.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from aughor.tools.vocab import (
+    ALL_SETS,
     COUNTRY_NAMES,
     ISO3166_ALPHA2,
     ISO3166_ALPHA3,
     ISO4217,
     MONTH_NAMES,
-    SETS,
     US_STATE_CODES,
     WEEKDAY_NAMES,
     membership,
@@ -142,13 +144,26 @@ def test_months_in_several_languages(name):
 
 
 def test_every_published_set_is_non_empty_and_normalised():
-    for concept, vocabulary in SETS:
-        assert vocabulary, concept
+    for vocabulary in ALL_SETS:
+        assert vocabulary
         for key in vocabulary:
-            assert key == normalize(key), f"{concept} holds an unnormalised key {key!r}"
+            assert key == normalize(key), f"unnormalised key {key!r}"
 
 
 def test_no_empty_key_ever_enters_a_set():
     """An empty key would make every blank cell a member of every list."""
-    for _, vocabulary in SETS:
+    for vocabulary in ALL_SETS:
         assert "" not in vocabulary
+
+
+def test_this_module_publishes_no_concept_NAMES():
+    """It shipped naming `code.country`, `geo.us_state` and `geo.country_name` — three
+    concepts nothing emits and the operations vocabulary has no rows for — in the one file
+    the coverage ratchet does not read. The concept↔list mapping belongs beside the code
+    that emits the witness, so a drifted copy cannot exist here to drift."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "aughor" / "tools" / "vocab.py").read_text()
+    body = source.split('"""', 2)[-1]           # skip the module docstring
+    offenders = re.findall(r'"([a-z_]+\.[a-z_]+)"', body)
+    assert not offenders, f"vocab.py names concepts: {offenders}"

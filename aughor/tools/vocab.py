@@ -27,7 +27,6 @@ is refused, which is the correct answer for a list that does not contain them.
 from __future__ import annotations
 
 import unicodedata
-from functools import lru_cache
 
 
 def normalize(value) -> str:
@@ -172,22 +171,16 @@ Dicembre
 """)
 
 
-#: Every set this module publishes, by the concept it supports. `shape` iterates this rather
-#: than naming each one, so adding a list is adding a row — and
-#: `test_operations_covers_every_concept_the_layers_emit` then requires its operations row.
-SETS: tuple = (
-    ("code.currency", ISO4217),
-    ("code.country", ISO3166_ALPHA2 | ISO3166_ALPHA3),
-    ("geo.us_state", US_STATE_CODES),
-    ("geo.country_name", COUNTRY_NAMES),
-    ("time.weekday", WEEKDAY_NAMES),
-    ("time.month", MONTH_NAMES),
+#: Every list this module publishes. Deliberately WITHOUT the concept each supports: that
+#: mapping lives in `shape._SETS`, next to the code that emits the witness, and a copy here
+#: is a copy that drifts. It already did — this tuple shipped naming `code.country`,
+#: `geo.us_state` and `geo.country_name`, three concepts nothing emits and the operations
+#: vocabulary has no rows for, in the one file the coverage ratchet does not read.
+#: A vocabulary module publishes vocabulary.
+ALL_SETS: tuple = (
+    ISO3166_ALPHA2, ISO3166_ALPHA3, ISO4217, US_STATE_CODES,
+    COUNTRY_NAMES, WEEKDAY_NAMES, MONTH_NAMES,
 )
-
-
-@lru_cache(maxsize=4096)
-def _member(key: str, name: str) -> bool:
-    return key in dict(SETS)[name]
 
 
 def membership(values, vocabulary) -> float:
