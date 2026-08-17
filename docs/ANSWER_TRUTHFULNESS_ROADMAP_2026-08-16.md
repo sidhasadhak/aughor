@@ -618,3 +618,52 @@ reads both tables and asserts they are still there.
 
 Checksums remain refused: Luhn, IBAN mod-97, ISBN-13 and EAN are real code with real tests
 and, measured across 105 tables, zero customers.
+
+---
+
+## 11 · The zip-code gap closed (2026-08-17), and two bugs found closing it
+
+§10 left one item open: **AT-7's relationship guard did not fire on the very column it was
+built for.** `Order Zipcode` and `Customer Zipcode` reach no confident concept — `725` and
+`95125` have no shape distinguishing them from any small integer, so no value witness can
+ever second the name — and `forbids_numeric_relationship` therefore returned False. The
+test that "proved" the guard passed only because it handed the concept in by hand.
+
+**The fix reads a field that already had the answer.** `plan_relationship` now takes
+`col_semantic_types` and refuses a numeric read of a column the profiler types `key`. A
+confident concept still decides when there is one, in BOTH directions — `geo.latitude` says
+arithmetic is fine even though `_GEO_CODE_PATTERN` calls a latitude a key — and the
+semantic type only speaks when the concept system has nothing. That is the honest division:
+`semantic_type` is the older, looser field where one witness decides, and "is this an
+identifier" is exactly the question it has always answered.
+
+`_semantic_type` also learned that a postal-named TEXT column is a `key`. Only the POSTAL
+half of `_GEO_CODE_PATTERN` is applied there — a city, state or country name is a genuine
+dimension and stays one, verified column by column.
+
+| column | type | semantic_type | now routes to |
+|---|---|---|---|
+| `Order Zipcode` | BIGINT | key | numeric_by_category |
+| `Customer Zipcode` | VARCHAR | key *(new)* | numeric_by_category |
+| `Customer City` / `Customer State` | VARCHAR | dimension | numeric_by_category |
+| `Latitude` | VARCHAR | text, concept `geo.latitude` | numeric_pair — CORR, as intended |
+| `Order Item Product Price` | DOUBLE | measure | numeric_pair |
+
+**Two bugs surfaced only because the fix was verified live.**
+
+1. **`load_concepts` served a stale fingerprint** — and had done since §8. One connection
+   holds many cached fingerprints (fifteen for `workspace`); the store keeps them newest-
+   LAST and both accessors read with `setdefault`, so whichever entry came first won. A
+   profile rebuilt seconds ago could be shadowed by one from a schema version that no
+   longer exists. This is worse than staleness: **a correct fix lands and reads as
+   broken**, which is precisely what happened here. Newest now wins, and a test pins it.
+2. **A `_semantic_type` change needs a `PROFILE_LOGIC_VERSION` bump**, and the same trap
+   caught the same author twice in one day. v5 was bumped for exactly this reason and
+   documented as such; the postal change was then verified against a cached `dimension`
+   and read as not working. v6-postal-key.
+
+**And a note on how the first verification lied.** The initial check used
+`run=lambda sql: [(100, 100)]` as the TRY_CAST probe — a stub that answers "100% castable"
+for every column, so `Customer City` came back as a numeric pair and looked like a defect.
+It is not a defect; the stub was. Re-run against the real connection, city and state route
+to group means correctly. *A probe that always says yes is not a probe.*

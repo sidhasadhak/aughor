@@ -481,13 +481,21 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
     # query-free: no cached profiles means an empty map, and an empty map leaves this path
     # byte-identical to what six runs already measured.
     col_concepts: dict = {}
+    col_sem_types: dict = {}
     try:
-        from aughor.tools.profile_cache import load_concepts
+        from aughor.tools.profile_cache import load_concepts, load_semantic_types
         from aughor.tools.table_names import bare
         _bare_table = bare(metric_table)
         _conn_id = getattr(conn, "_connection_id", None) or "fixture"
         col_concepts = {
             col: concept for (tbl, col), concept in load_concepts(_conn_id).items()
+            if bare(tbl) == _bare_table
+        }
+        # The fallback for a column no concept can reach: a numeric postal code has no
+        # value shape to witness it, so it stays a hint forever while remaining exactly the
+        # column that must never be correlated.
+        col_sem_types = {
+            col: st for (tbl, col), st in load_semantic_types(_conn_id).items()
             if bare(tbl) == _bare_table
         }
     except Exception as _cx:
@@ -500,7 +508,8 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
         plan = plan_relationship(
             table=metric_table, left_column=left_sql, right_column=candidate,
             left_label=left_label, right_label=_candidate_label(candidate, right_sql, right_label),
-            col_types=col_types, run=_run, col_concepts=col_concepts)
+            col_types=col_types, run=_run, col_concepts=col_concepts,
+            col_semantic_types=col_sem_types)
         if plan.skipped or not plan.sql:
             if plan.skipped:
                 _logging.getLogger(__name__).info(

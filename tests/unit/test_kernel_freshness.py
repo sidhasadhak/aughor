@@ -56,13 +56,17 @@ def test_golden_profile_cache_survives_logic_version_extraction():
     """PROFILE_LOGIC_VERSION is baked into the hash INPUT, so its value IS the cache key.
 
     Originally pinned at "v4-valsample" to prove that extracting it from an inline literal
-    changed nothing. Bumped to "v5-concept" on 2026-08-17 for AT-4/AT-6 (per-column
-    `concept` + per-table `derived_quantities`, and a `semantic_type` change for
-    space-separated identifiers) — a DELIBERATE global miss, because `from_dict` reads a v4
-    entry happily and every existing connection would otherwise keep serving profiles that
-    silently lack every concept.
+    changed nothing. Bumped twice on 2026-08-17: "v5-concept" for AT-4/AT-6 (per-column
+    `concept`, per-table `derived_quantities`, and `semantic_type` for space-separated
+    identifiers), then "v6-postal-key" when a postal-named TEXT column became a `key`.
 
-    Both hashes stay pinned. The v4 line is what makes the bump legible as a bump rather
+    Both bumps are DELIBERATE global misses, because `from_dict` reads an older entry
+    happily and every existing connection would otherwise keep serving stale profiles. The
+    v6 one is here because it caught its own author: the postal fix was verified against a
+    CACHED profile that still said `dimension` and read as not working. **Any change to
+    `_semantic_type` moves what is stored, so it moves this string.**
+
+    Both hashes stay pinned. The v4 line is what makes a bump legible as a bump rather
     than as a hash that drifted: a version change must move every key, and an extraction
     must move none.
     """
@@ -70,8 +74,8 @@ def test_golden_profile_cache_survives_logic_version_extraction():
 
     from aughor.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
 
-    assert PROFILE_LOGIC_VERSION == "v5-concept"
-    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "099a493b84c9741e"
+    assert PROFILE_LOGIC_VERSION == "v6-postal-key"
+    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "fa43daeccad83c22"
     # the same inputs under the previous version — a different key, which is the point
     v4 = hashlib.md5(b"v4-valsample|items:3|orders:5").hexdigest()[:16]
     assert v4 == "191fd41b93f3a03e"

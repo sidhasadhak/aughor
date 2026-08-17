@@ -522,6 +522,15 @@ def _semantic_type(
             return "key"
         return "measure"
     if _TEXT_TYPES.search(dtype):
+        # A postal code is an identifier whichever type it lands in. `Order Zipcode` is
+        # BIGINT and reaches "key" through _GEO_CODE_PATTERN above; `Customer Zipcode` is
+        # VARCHAR holding `725` and `95125`, which casts to a number, correlates against
+        # anything and returns a coefficient with a p-value — every part well-formed and
+        # none of it meaning anything. Only the POSTAL half of _GEO_CODE_PATTERN is applied
+        # here: a city, state or country name is a genuine dimension and must keep being
+        # one, which is why this is not that pattern.
+        if _POSTAL_NAME.search(col):
+            return "key"
         cardinality = distinct_count / max(row_count, 1)
         if distinct_count <= 30 or cardinality < 0.02:
             return "dimension"

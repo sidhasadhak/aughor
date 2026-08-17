@@ -241,6 +241,7 @@ def plan_relationship(
     col_types: Optional[dict] = None,
     run: Optional[Callable[[str], Optional[list]]] = None,
     col_concepts: Optional[dict] = None,
+    col_semantic_types: Optional[dict] = None,
 ) -> RelationshipPlan:
     """Build the query whose SHAPE answers "how do these two relate", typed by the pair.
 
@@ -255,25 +256,44 @@ def plan_relationship(
     that answer is well-formed and none of it means anything, because zip 90210 is not
     larger than zip 90209. Reading the pair as a numeric-by-category comparison instead
     answers the question the user actually asked.
+
+    `col_semantic_types` is the FALLBACK for exactly that example, because the concept
+    system cannot reach it: `725` and `95125` have no shape distinguishing them from any
+    small integer, so no value witness can second the name and a real zip column stays a
+    hint forever. The profiler has always typed it `key` from its name alone — a looser
+    contract than a concept, and the right one to read here, since the question being asked
+    is only "is this an identifier". A confident concept still decides when there is one,
+    in both directions: `geo.latitude` says arithmetic is fine even though
+    `_GEO_CODE_PATTERN` calls a latitude a key.
     """
     types = {str(k).split(".")[-1].lower(): v for k, v in (col_types or {}).items()}
     known = set(types)
     concepts = {str(k).split(".")[-1].lower(): v for k, v in (col_concepts or {}).items()}
+    sem_types = {str(k).split(".")[-1].lower(): str(v or "").lower()
+                 for k, v in (col_semantic_types or {}).items()}
 
     def _declared(col: str) -> Optional[str]:
         name = bare_column(col, known)
         return types.get(name.lower()) if name else None
 
     def _forbidden(col: str) -> bool:
-        """True when this side's concept says arithmetic on it is meaningless."""
+        """True when arithmetic on this side would be meaningless.
+
+        A confident concept answers first and answers both ways — it can permit arithmetic
+        the profiler's own semantic type would have blocked. Only when there is no concept
+        does the semantic type get a say, and then only about identifiers.
+        """
         name = bare_column(col, known)
         if not name:
             return False
-        concept = concepts.get(name.lower())
-        if not concept:
-            return False
-        from aughor.ontology.operations import forbids_numeric_relationship
-        return forbids_numeric_relationship(str(concept))
+        key = name.lower()
+        concept = concepts.get(key)
+        if concept:
+            from aughor.ontology.operations import operations_for
+            ops = operations_for(str(concept))
+            if ops is not None:
+                return not ops.numeric
+        return sem_types.get(key, "") == "key"
 
     def _numeric(col: str) -> Optional[str]:
         if _forbidden(col):

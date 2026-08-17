@@ -274,3 +274,84 @@ def test_a_declaration_survives_a_yaml_round_trip(tmp_path, monkeypatch):
     assert load_table_config("c", "s", "t")["col"].concept == "geo.latitude"
     # and a config written before AT-4 reads back as "no declaration", not as a crash
     assert ColumnFlags().concept == ""
+
+
+# ── the gap no concept can close ─────────────────────────────────────────────
+
+def test_a_numeric_zipcode_is_not_correlated_even_though_no_concept_reaches_it():
+    """`Customer Zipcode` holds `725` and `95125` — three- and five-digit numbers with no
+    shape distinguishing them from any small integer, so no value witness can second the
+    name and the column stays a HINT forever. It is also exactly the column that must never
+    be correlated. The profiler has always typed it `key` from its name; that looser
+    contract is the right one to read for the narrow question 'is this an identifier'."""
+    plan = plan_relationship(
+        table="orders", left_column="delay_days", right_column="zipcode",
+        left_label="delay", right_label="zipcode",
+        col_types={"delay_days": "INTEGER", "zipcode": "BIGINT"},
+        run=_runner([(100, 100)]),
+        col_concepts={},                                  # nothing confident — the real case
+        col_semantic_types={"zipcode": "key"},
+    )
+    assert plan.kind == "numeric_by_category"
+    assert "CORR" not in plan.sql
+
+
+def test_a_confident_concept_still_overrules_the_semantic_type():
+    """`_GEO_CODE_PATTERN` calls a latitude a key. Two agreeing layers say it is a
+    coordinate, and a coordinate on a side of a correlation is the question the six runs
+    were about — so the concept decides, in the permissive direction too."""
+    plan = plan_relationship(
+        table="places", left_column="delay_days", right_column="latitude",
+        left_label="delay", right_label="latitude",
+        col_types={"delay_days": "INTEGER", "latitude": "DOUBLE"},
+        run=_runner([(100, 100)]),
+        col_concepts={"latitude": "geo.latitude"},
+        col_semantic_types={"latitude": "key"},
+    )
+    assert plan.kind == "numeric_pair"
+    assert "CORR" in plan.sql
+
+
+def test_a_measure_semantic_type_changes_nothing():
+    plan = plan_relationship(
+        table="orders", left_column="delay_days", right_column="revenue",
+        left_label="delay", right_label="revenue",
+        col_types={"delay_days": "INTEGER", "revenue": "DOUBLE"},
+        run=_runner([(100, 100)]),
+        col_semantic_types={"delay_days": "measure", "revenue": "measure"},
+    )
+    assert plan.kind == "numeric_pair"
+
+
+def test_semantic_types_are_read_back_from_the_cache_for_the_deep_path():
+    """The accessor the relationship scan actually calls — query-free, like load_concepts."""
+    from aughor.tools.profile_cache import load_semantic_types
+
+    conn = _conn(_GEO_DDL, _geo_rows())
+    conn._connection_id = "sem-type-probe"
+    profile_connection(conn, ["places"], {})
+    from aughor.tools.profile_cache import save_profiles
+    tps, cps = profile_connection(conn, ["places"], {})
+    save_profiles("sem-type-probe", "fp", tps, cps)
+    got = load_semantic_types("sem-type-probe")
+    assert got[("places", "latitude")] == "measure"
+    assert got[("places", "city")] == "dimension"
+
+
+def test_the_newest_cached_fingerprint_wins():
+    """One connection holds many fingerprints — fifteen for `workspace` — and the store
+    keeps them newest-LAST. Reading with `setdefault` served whichever came first, so a
+    profile rebuilt seconds ago was shadowed by one from a schema version that no longer
+    exists. The postal fix landed and read as not working because of exactly this."""
+    from aughor.tools.profile_cache import _store, load_concepts, load_semantic_types
+
+    old = {"columns": {"t.zip": {"table": "t", "column": "zip", "semantic_type": "dimension",
+                                 "concept": "geo.region", "concept_confidence": 0.9}},
+           "tables": {}}
+    new = {"columns": {"t.zip": {"table": "t", "column": "zip", "semantic_type": "key",
+                                 "concept": "geo.postal_code", "concept_confidence": 0.9}},
+           "tables": {}}
+    _store.put("fp-order-probe:oldfp", old)
+    _store.put("fp-order-probe:newfp", new)
+    assert load_semantic_types("fp-order-probe")[("t", "zip")] == "key"
+    assert load_concepts("fp-order-probe")[("t", "zip")] == "geo.postal_code"

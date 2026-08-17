@@ -47,13 +47,18 @@ def cache_path():
 #     `from_dict` already reads a v4 entry without raising, so without a new key every
 #     existing connection would keep serving profiles that silently lack every concept —
 #     the wave would be built, cached out, and invisible.
+# v6: a postal-named TEXT column is a `key`, not a dimension — `Customer Zipcode` holds
+#     `725` and `95125`, casts to a number and was correlatable. Same rule as v5 and it
+#     caught me anyway: the fix was verified against a CACHED profile that still said
+#     `dimension`, and read as not working. Any change to `_semantic_type` moves what is
+#     stored here, so it moves this string.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v5-concept"
+PROFILE_LOGIC_VERSION = "v6-postal-key"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
@@ -148,6 +153,13 @@ def load_concepts(connection_id: str) -> dict[tuple[str, str], str]:
     Hints never leave this function. `concept_of` is the filter, so a caller cannot
     accidentally act on one witness — which is the failure the whole contract exists for,
     one level up at the consumer.
+
+    ⚠ One connection holds MANY cached fingerprints — fifteen for `workspace` at the time
+    of writing — and the store keeps them in MRU insertion order, newest LAST. So this
+    walks them in order and lets later entries win. Reading with `setdefault` instead
+    silently served whichever fingerprint happened to come first, which meant a profile
+    rebuilt seconds ago could be shadowed by one from a schema version that no longer
+    exists. That is not a staleness nuisance: it is a fix that lands and reads as broken.
     """
     from aughor.tools.concept import concept_of
 
@@ -164,7 +176,34 @@ def load_concepts(connection_id: str) -> dict[tuple[str, str], str]:
             tbl, col = d.get("table"), d.get("column")
             concept = concept_of(d.get("concept"), d.get("concept_confidence"))
             if concept and tbl and col:
-                out.setdefault((tbl, col), concept)
+                out[(tbl, col)] = concept
+    return out
+
+
+def load_semantic_types(connection_id: str) -> dict[tuple[str, str], str]:
+    """Every profiled `semantic_type` for a connection, keyed (table, column).
+
+    A separate read from :func:`load_concepts` and deliberately so. `semantic_type` is the
+    older, looser field — one witness decides it and fifteen modules act on it — while
+    `concept` needs two agreeing layers. A caller that wants "is this an identifier" should
+    get the answer the profiler already has, rather than the concept system inventing one
+    from a single witness and breaking its own contract to do it.
+
+    Newest fingerprint wins, for the reason spelled out on :func:`load_concepts`.
+    """
+    out: dict[tuple[str, str], str] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            tbl, col, st = d.get("table"), d.get("column"), d.get("semantic_type")
+            if tbl and col and st:
+                out[(tbl, col)] = str(st)
     return out
 
 
