@@ -49,8 +49,31 @@ _current_job: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 )
 
 
+# The agent charter that owns the running job's kind (scout/analyst/curator/…). Resolved
+# ONCE at run start and carried on a contextvar, so every session event emitted anywhere
+# under the run can name its agent without a per-event job lookup. This is the write half
+# of Migration 9: `agent_id` says which CUSTOM agent asked and is empty for all platform
+# work, which left charter identity and model spend in two stores with no join.
+_current_charter: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_current_charter", default=None
+)
+
+
 def current_job_id() -> Optional[str]:
     return _current_job.get()
+
+
+def current_charter_id() -> Optional[str]:
+    return _current_charter.get()
+
+
+def run_attribution() -> tuple[str, str]:
+    """``(job_id, charter_id)`` for the run this code is executing under, ('','') outside
+    one. Degrades to empty rather than raising — attribution must never break a run."""
+    try:
+        return _current_job.get() or "", _current_charter.get() or ""
+    except Exception:
+        return "", ""
 
 
 class JobState:
@@ -321,6 +344,18 @@ class JobKernel:
         hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
         final = JobState.FAILED
         _token = _current_job.set(job_id)
+        # Resolve the owning charter once per run. `charter_for_kind` never raises and
+        # returns the _UNKNOWN charter for a kind nothing claims (the automation tick),
+        # which is exactly what the Overview's background-runner lane needs to see.
+        _charter_token = None
+        try:
+            from aughor.kernel.agents import charter_for_kind
+            _kind = (self.ledger.job_get(job_id) or {}).get("kind")
+            _charter_token = _current_charter.set(charter_for_kind(_kind).id)
+        except Exception as _c_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_c_exc, "charter attribution is best-effort; the run proceeds",
+                     counter="obs.job_charter")
         # Re-bind the job's tenant for the whole run (DATA-06 under identity). The org
         # was captured on the job row at submit; binding it HERE — not relying on the
         # implicit contextvar copy — means a job re-run by boot-recovery (no request
@@ -380,6 +415,8 @@ class JobKernel:
                     from aughor.kernel.errors import tolerate
                     tolerate(_t_exc, "job trace unbind", counter="obs.job_trace")
             _current_job.reset(_token)
+            if _charter_token is not None:
+                _current_charter.reset(_charter_token)
             reset_org_id(_org_token)
             hb.cancel()
             self._tasks.pop(job_id, None)

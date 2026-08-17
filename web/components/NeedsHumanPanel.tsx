@@ -21,6 +21,16 @@ import {
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
 
+/** A duration a person reads at a glance — "2h 14m", not 8040000. */
+function humanAge(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
 const SOURCE_CHIP: Record<NeedsHumanRow["source"], { hue: "caution" | "info" | "accent"; label: string }> = {
   kinetic_inbox: { hue: "caution", label: "proposal" },
   paused_run: { hue: "info", label: "paused run" },
@@ -60,11 +70,17 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   };
 
   if (error && !data) {
-    return <div style={{ padding: 24, color: "var(--red4)", fontSize: 12 }}>{error}</div>;
+    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
   }
   if (!data) {
-    return <div style={{ padding: 24, color: "var(--t3)", fontSize: 12 }}>Loading…</div>;
+    return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--t2)" }}>Loading…</div>;
   }
+
+  // Rows arrive sorted by waiting_ms desc, so the head is the oldest — but read it from
+  // the max rather than position 0, so a change of sort order upstream cannot silently
+  // turn this into "the age of whichever row happens to be first".
+  const oldest = data.rows.length
+    ? Math.max(...data.rows.map(r => r.waiting_ms ?? 0)) : null;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -74,6 +90,12 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
         <MiniStat value={data.sources.kinetic_inbox} label="Inbox proposals" />
         <MiniStat value={data.sources.paused_runs} label="Paused deep runs" />
         <MiniStat value={data.sources.automation_approvals} label="Automation approvals" />
+        {/* The leading indicator. A count says how many are waiting; the OLDEST says
+            whether anything has been abandoned — three items waiting a minute and three
+            waiting since Tuesday are the same count and a different situation. */}
+        <MiniStat label="Oldest waiting"
+          value={oldest == null ? "—" : humanAge(oldest)}
+          tone={oldest != null && oldest > 3_600_000 ? "var(--red4)" : undefined} />
       </MiniStatRow>
 
       {data.rows.length === 0 ? (
@@ -94,7 +116,7 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis",
                     whiteSpace: "nowrap" }}>{row.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>
                     waiting {relTime(row.since)}
                     {row.since_basis === "started_at" && " (since start — pause event aged out)"}
                     {row.connection_id ? ` · ${row.connection_id}` : ""}

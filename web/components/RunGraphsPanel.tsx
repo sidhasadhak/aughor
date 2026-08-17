@@ -12,7 +12,7 @@
  *     resolved server-side), the phases the checkpoint recorded, and the gate
  *     a paused run waits at, resumable through its native surface.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -81,6 +81,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [invs, setInvs] = useState<InvestigationListRow[]>([]);
   const [selectedInv, setSelectedInv] = useState<string | null>(null);
+  const [showTicks, setShowTicks] = useState(false);
   const [graph, setGraph] = useState<InvestigationGraph | null>(null);
 
   const load = useCallback(() => {
@@ -105,20 +106,80 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
     getInvestigationGraph(selectedInv).then(setGraph).catch(() => setGraph(null));
   }, [selectedInv]);
 
+  // A run that FIRED gets its own card; the rest fold into one row per automation. The
+  // split is on the outcome the engine recorded, never on a string in the reason.
+  const firedRuns = useMemo(() => runs.filter(r => r.outcome !== "not_fired"), [runs]);
+  const shownRuns = showTicks ? runs : firedRuns;
+  const folded = useMemo(() => {
+    if (showTicks) return [];
+    const by = new Map<string, { id: string; name: string; ticks: number; lastAt: string | null }>();
+    for (const r of runs) {
+      if (r.outcome !== "not_fired") continue;
+      const id = r.automation_id;
+      const seen = by.get(id);
+      if (seen) {
+        seen.ticks += 1;
+        if (!seen.lastAt || String(r.started_at) > seen.lastAt) seen.lastAt = r.started_at;
+      } else {
+        by.set(id, { id, name: r.automation_name || id, ticks: 1, lastAt: r.started_at });
+      }
+    }
+    return [...by.values()].sort((a, b) => b.ticks - a.ticks);
+  }, [runs, showTicks]);
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
       {/* ── (a) automation run strip ── */}
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 8 }}>
-        Automation runs — conditions → effects
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+        <span className="aug-label" style={{ color: "var(--t2)" }}>
+          Automation runs — conditions → effects
+        </span>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)", marginRight: "auto" }}>
+          {folded.length > 0
+            ? `${folded.length} automation${folded.length === 1 ? "" : "s"} · `
+              + `${runs.length - firedRuns.length} evaluated without firing, folded`
+            : "the engine records one run per tick, including ticks that do nothing"}
+        </span>
+        <Button variant="ghost" size="xs" onClick={() => setShowTicks(v => !v)}
+          style={{ color: "var(--blue4)" }}>
+          {showTicks ? "fold quiet ticks" : "show every tick"}
+        </Button>
       </div>
+
+      {/* A tick that evaluated and fired nothing is not a run worth a card — the engine
+          writes one per minute per automation, so the un-folded strip is a wall of
+          "evaluated — did not fire" with the real firings buried in it. One row per
+          automation carries the same facts; expanding it gives back every tick. */}
+      {!showTicks && folded.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+          {folded.map(f => (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10,
+              background: "var(--bg-1)", border: "1px solid var(--b1)",
+              borderRadius: "var(--r3)", padding: "8px 14px" }}>
+              <StatusChip hue="muted" strength="soft">quiet</StatusChip>
+              <span className="aug-fs-ui" style={{ fontWeight: 500 }}>{f.name}</span>
+              <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+                {f.ticks} tick{f.ticks === 1 ? "" : "s"} evaluated · none fired
+                {f.lastAt ? ` · last ${relTime(f.lastAt)}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
         {runs.length === 0 ? (
-          <div style={{ padding: 20, fontSize: 12, color: "var(--t3)",
+          <div className="aug-fs-sm" style={{ padding: 20, color: "var(--t2)",
             background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
             No automation runs yet. The engine records one run per tick — including
             ticks that evaluate and do nothing — for every automation you create.
           </div>
-        ) : runs.map(run => (
+        ) : shownRuns.length === 0 ? (
+          <div className="aug-fs-sm" style={{ padding: 20, color: "var(--t2)",
+            background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+            Every run in this window evaluated without firing — folded above. Nothing acted.
+          </div>
+        ) : shownRuns.map(run => (
           <div key={run.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
             borderRadius: "var(--r3)", padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -126,11 +187,11 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                 {run.outcome === "not_fired" ? "evaluated — did not fire" : run.outcome}
               </StatusChip>
               <span style={{ fontSize: 12, fontWeight: 500 }}>{run.automation_name || run.automation_id}</span>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+              <span style={{ fontSize: 12, color: "var(--t2)" }}>
                 {relTime(run.started_at)} · {fmtMs(run.duration_ms)}
               </span>
               {run.reason && (
-                <span style={{ fontSize: 11, color: "var(--t3)", flex: 1, minWidth: 0,
+                <span style={{ fontSize: 12, color: "var(--t3)", flex: 1, minWidth: 0,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                   title={run.reason}>
                   {run.reason}
@@ -138,7 +199,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
               )}
             </div>
             {run.conditions_fired.length > 0 && (
-              <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>
+              <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 6 }}>
                 conditions fired: {run.conditions_fired.join(", ")}
               </div>
             )}
@@ -146,7 +207,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
               <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
                 {run.effects.map((ef, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
-                    fontSize: 11, paddingLeft: 10, borderLeft: "2px solid var(--b1)" }}>
+                    fontSize: 12, paddingLeft: 10, borderLeft: "2px solid var(--b1)" }}>
                     <StatusChip hue={EFFECT_HUE[ef.status] ?? "muted"} strength="soft">
                       {ef.status}
                     </StatusChip>
@@ -159,7 +220,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
               </div>
             )}
             {run.error && (
-              <div style={{ fontSize: 11, color: "var(--red4)", marginTop: 6 }}>{run.error}</div>
+              <div style={{ fontSize: 12, color: "var(--red4)", marginTop: 6 }}>{run.error}</div>
             )}
           </div>
         ))}
@@ -183,7 +244,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                 background: selectedInv === inv.id ? "var(--bg-sel)" : undefined }}>
               <span style={{ display: "block", fontSize: 12, overflow: "hidden",
                 textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.question}</span>
-              <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+              <span style={{ display: "block", fontSize: 12, color: "var(--t2)", marginTop: 2 }}>
                 {inv.status}{inv.status === "paused" ? " — waiting on you" : ""} · {relTime(inv.started_at)}
               </span>
             </Button>
@@ -196,7 +257,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
           ) : (
             <>
               <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>{graph.question}</div>
-              <div style={{ fontSize: 11, color: "var(--t4)", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--t2)", marginBottom: 12 }}>
                 status {graph.status} · branch {graph.branch}
                 {graph.checkpoint.exists
                   ? ` · checkpoint step ${graph.checkpoint.step ?? "?"}${
@@ -212,8 +273,8 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                     const atGate = graph.interrupt.paused && graph.interrupt.gate === node;
                     return (
                       <span key={node} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        {i > 0 && <span style={{ color: "var(--t4)", fontSize: 10 }}>→</span>}
-                        <span style={{ fontSize: 10.5, padding: "3px 7px",
+                        {i > 0 && <span style={{ color: "var(--t2)", fontSize: 12 }}>→</span>}
+                        <span style={{ fontSize: 12, padding: "3px 7px",
                           borderRadius: "var(--r2)",
                           border: `1px solid ${atGate ? "var(--amb3)" : "var(--b1)"}`,
                           background: atGate ? "var(--amb1)" : "var(--bg-1)",
@@ -259,7 +320,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                   display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--amb5)", flex: 1 }}>
                     Paused at{" "}
-                    <code style={{ fontSize: 11 }} title={graph.interrupt.gate ?? undefined}>
+                    <code style={{ fontSize: 12 }} title={graph.interrupt.gate ?? undefined}>
                       {nodeLabel(graph.interrupt.gate ?? "")}
                     </code> —
                     resume with feedback from the deep analysis view.

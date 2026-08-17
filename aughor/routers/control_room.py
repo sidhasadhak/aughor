@@ -59,36 +59,119 @@ def _pct(values: list[float], q: float) -> Optional[float]:
     return round(ordered[min(len(ordered) - 1, int(len(ordered) * q))], 1)
 
 
+#: A runner named for what it IS, rather than for the fact that no charter claimed it.
+#: "Unassigned kinds" described the lookup that produced the row; a reader wants to know
+#: it is the automations engine.
+_RUNNER_NAMES = {
+    "automation": "Automations",
+    "eval_experiment": "Evals",
+}
+
+
+def _runner_role(kinds: list[str], fold: dict) -> str:
+    """One line saying what this runner does and how much of it is nothing.
+
+    The automation engine records a job PER TICK, including the overwhelming majority
+    that evaluate and fire nothing — so "1,291 runs" is a heartbeat, not work, and the
+    row has to say so or it reads as the busiest agent on the fleet.
+    """
+    if kinds == ["automation"]:
+        runs = int(fold.get("runs") or 0)
+        return (f"scheduled · one evaluation tick per minute · {runs:,} ticks in window, "
+                f"no model calls")
+    if kinds == ["eval_experiment"]:
+        return "eval experiments · run on demand"
+    return "job kinds with no charter: " + (", ".join(kinds) or "none")
+
+
+def _window_cost(win) -> dict:
+    """What the window's model calls cost, with the share nothing could price.
+
+    Priced from the provider's own published catalogue (never a hardcoded rate), and a
+    figure that cannot be completed says so: `unpriced_calls` is the number that stops a
+    small total reading as a cheap day.
+    """
+    from aughor.obs.usage import price_for
+    try:
+        rows = Ledger.default().session_events(
+            kind="llm_call", since=win.since, until=win.until, limit=20000)
+    except Exception:
+        logger.warning("fleet: window cost scan failed", exc_info=True)
+        return {"usd": None, "unpriced_calls": None, "is_complete": False, "calls": 0}
+    usd, unpriced = 0.0, 0
+    for e in rows:
+        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
+        if price is None:
+            unpriced += 1
+            continue
+        usd += (int(e.get("prompt_tokens") or 0) / 1e6) * price.input_per_1m
+        usd += (int(e.get("completion_tokens") or 0) / 1e6) * price.output_per_1m
+    return {"usd": round(usd, 4), "unpriced_calls": unpriced,
+            "is_complete": unpriced == 0, "calls": len(rows)}
+
+
 # ── CR3: the fleet overview ──────────────────────────────────────────────────────
 
 @router.get("/control-room/fleet")
-def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
-    """KPI tiles + one labelled fleet table (charters and personas).
+def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
+                   range: str = "", since: str = "", until: str = "",
+                   include_runners: bool = False):
+    """KPI tiles + the fleet table, over ONE window shared with every other panel.
 
-    Dollar cost is deliberately NOT here — it stays on `GET /usage`, which
-    carries its own RBAC (billing) and its own `cost_is_complete` caveat.
+    `range` (or explicit `since`/`until`) is the shared time axis; `window_minutes` /
+    `spark_hours` remain for callers that predate it. The tiles and the row sparklines
+    now bucket through the SAME window — they used to disagree by construction, the
+    tiles counting a 60-minute window while the sparks drew 24 hourly buckets.
+
+    **Runners are not agents.** Job kinds no charter claims — the automation engine's
+    every-minute evaluation tick, eval experiments — come back in `runners`, never in
+    `rows`, and never inside the tile counts unless `include_runners` is set. Measured
+    2026-08-17 that tick was 1,291 of 1,316 jobs in twenty-four hours, so folding it in
+    turns every agent metric into a rounding error on a cron and makes runs/min a
+    heartbeat reading.
+
+    Cost IS here now (roadmap decision 2, 2026-08-17), priced from the provider's own
+    catalogue and always carrying its unpriced share; `GET /usage` keeps the full ledger
+    behind billing RBAC.
     """
     from aughor.kernel.agents import is_enabled as charter_enabled
     from aughor.kernel.agents import charter_for_kind, list_charters
     from aughor.kernel.jobs import concurrency_policy
+    from aughor.obs.timeseries import RUNNER_CHARTER_ID, bucket_edges, resolve_window
     from aughor.obs.usage import usage_report
     from aughor.custom_agents.store import list_agents as list_personas
 
     ledger = Ledger.default()
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(minutes=max(1, int(window_minutes)))
-    spark_start = now - timedelta(hours=max(1, int(spark_hours)))
+    if range or since or until:
+        win = resolve_window(range, since=since, until=until)
+    else:
+        win = resolve_window(since=(now - timedelta(minutes=max(1, int(window_minutes))))
+                             .isoformat(), until=now.isoformat())
+    window_start = win.since_dt
+    window_minutes = max(1, int((win.until_dt - win.since_dt).total_seconds() // 60))
+    spark_start = window_start
 
-    jobs = ledger.jobs_where(limit=2000)
+    # One read, bounded by the window, for both the tiles and the sparks. `active` is
+    # deliberately unbounded by time — a job running since yesterday is running NOW.
+    jobs = ledger.jobs_where(since=win.since, until=win.until, limit=5000)
     active = ledger.jobs_where(states=_ACTIVE_STATES, limit=500)
 
     # ── tiles, from the jobs table ────────────────────────────────────────────
+    # Every job is tagged with its charter once, here, so "is this an agent or a runner"
+    # is decided in ONE place and the tiles, the sparks and the table cannot disagree.
+    for j in jobs:
+        j["_charter"] = charter_for_kind(j.get("kind")).id
+    runner_jobs = [j for j in jobs if j["_charter"] == RUNNER_CHARTER_ID]
+    agent_jobs = jobs if include_runners else [j for j in jobs
+                                               if j["_charter"] != RUNNER_CHARTER_ID]
+
     in_window: list[dict] = []
     durations_ms: list[float] = []
     failed = orphaned = succeeded = 0
     tokens = 0
     metered = unmetered = 0
-    for j in jobs:
+    for j in agent_jobs:
         created = _parse_ts(j.get("created_at"))
         if created is None or created < window_start:
             continue
@@ -138,10 +221,20 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
                    "per_hour": round(tokens / max(int(window_minutes) / 60, 1e-9))
                    if metered else None},
         "concurrency": concurrency_policy(),
+        # What was left OUT of every number above, stated rather than implied. A reader
+        # who sees "24 runs" while the machine did 1,315 things is owed the difference.
+        "runner_runs": len(runner_jobs),
+        "include_runners": bool(include_runners),
+        "window": win.as_dict(),
     }
+    tiles["cost"] = _window_cost(win)
 
     # ── charter rows, from job metering ──────────────────────────────────────
-    spark_buckets = max(1, int(spark_hours))
+    # Sparks bucket through the SHARED window, so a row's bars and the tiles above it
+    # describe the same span. They used to be independent (60-minute tiles, 24 hourly
+    # bars) — two time bases in one table, which is a chart that cannot be read.
+    spark_buckets = win.bucket_count
+    bucket_seconds = win.bucket_seconds
     by_charter: dict[str, dict] = {}
     for j in jobs:
         charter = charter_for_kind(j.get("kind"))
@@ -169,7 +262,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
                 row["last_run_at"] = str(j["created_at"])
             if created >= spark_start:
                 bucket = min(spark_buckets - 1,
-                             int((created - spark_start).total_seconds() // 3600))
+                             int((created - spark_start).total_seconds() // bucket_seconds))
                 row["spark"][bucket] += 1
 
     rows: list[dict] = []
@@ -186,14 +279,21 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
             "spend_source": "job_metering",
             **{k: v for k, v in fold.items() if k != "kinds"},
         })
-    # Job kinds no charter claims (e.g. `automation`, `eval_experiment`) would
-    # otherwise vanish from the table — spend nobody can see. One labelled row.
+    # Job kinds no charter claims are RUNNERS, not agents — the automation engine's
+    # every-minute evaluation tick, eval experiments. They used to fold into one row
+    # called "Unassigned kinds" sitting in the agent table, where the tick's 1,291 runs
+    # per day dwarfed every real agent and set the shape of every sparkline on the page.
+    # They come back in their own list now: still counted, still visible (spend nobody
+    # can see is the reason the row was invented), never mixed into the agents.
+    runners: list[dict] = []
     for worker_id, fold in by_charter.items():
-        rows.append({
-            "kind": "charter", "id": worker_id, "name": "Unassigned kinds",
-            "role": f"job kinds with no charter: {', '.join(sorted(fold['kinds']))}",
+        kinds = sorted(k for k in fold["kinds"] if k)
+        runners.append({
+            "kind": "runner", "id": worker_id,
+            "name": _RUNNER_NAMES.get(kinds[0] if len(kinds) == 1 else "", "Background runners"),
+            "role": _runner_role(kinds, fold),
             "icon": "gear", "lane": "background", "enabled": True,
-            "job_kinds": sorted(fold["kinds"]), "spend_source": "job_metering",
+            "job_kinds": kinds, "spend_source": "job_metering",
             **{k: v for k, v in fold.items() if k != "kinds"},
         })
 
@@ -207,7 +307,20 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
             report = usage_report(axes=("agent_id",))
             persona_usage = {r.key.get("agent_id"): r for r in report.rows}
         except Exception:
-            logger.warning("fleet: persona usage rollup failed", exc_info=True)
+            logger.warning("fleet: custom-agent usage rollup failed", exc_info=True)
+    # A custom agent's work is CALLS in the session log, not jobs in the kernel — it
+    # answers inside a request rather than submitting a run. Folding those calls into
+    # the same columns the charters use (runs, spark, tokens, last run) is what lets one
+    # table hold both without half its cells reading "—", and the `spend_source` on every
+    # row keeps the two populations legible rather than silently summed.
+    events_by_agent: dict[str, list[dict]] = {}
+    try:
+        for e in ledger.session_events(kind="llm_call", since=win.since, until=win.until,
+                                       limit=20000):
+            if e.get("agent_id"):
+                events_by_agent.setdefault(e["agent_id"], []).append(e)
+    except Exception:
+        logger.warning("fleet: custom-agent event scan failed", exc_info=True)
     for persona in (list_personas() if personas_on else []):
         usage_row = persona_usage.get(persona.id)
         if usage_row is None:
@@ -218,15 +331,33 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24):
                      "total_tokens": usage_row.total_tokens,
                      "failure_rate": (round(usage_row.failures / usage_row.calls, 3)
                                       if usage_row.calls else None)}
+        mine = events_by_agent.get(persona.id, [])
+        spark = [0] * spark_buckets
+        for e in mine:
+            idx = win.index_of(e.get("at") or "")
+            if idx is not None:
+                spark[idx] += 1
         rows.append({
             "kind": "persona", "id": persona.id, "name": persona.name,
             "enabled": persona.enabled, "connection_id": persona.connection_id,
             "last_eval": persona.last_eval, "eval_basis": persona.eval_basis,
             "spend_source": "session_log",
             "spend": spend,
+            # The shared columns, from the agent's own calls.
+            "runs": len({e.get("trace_id") for e in mine if e.get("trace_id")}),
+            "failed": sum(1 for e in mine if e.get("ok") is False),
+            "orphaned": 0,
+            "tokens": sum(int(e.get("total_tokens") or 0) for e in mine),
+            "metered_runs": sum(1 for e in mine if e.get("total_tokens") is not None),
+            "unmetered_runs": sum(1 for e in mine if e.get("total_tokens") is None),
+            "queries": 0,
+            "spark": spark,
+            "last_run_at": max((str(e.get("at") or "") for e in mine), default=None),
         })
 
-    return {"tiles": tiles, "rows": rows, "session_log_recording": True}
+    return {"tiles": tiles, "rows": rows, "runners": runners,
+            "window": win.as_dict(), "edges": bucket_edges(win),
+            "session_log_recording": True}
 
 
 # ── CR4: needs a human ───────────────────────────────────────────────────────────

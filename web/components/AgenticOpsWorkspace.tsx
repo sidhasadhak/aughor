@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
+import { RangePicker } from "@/components/agentops/RangePicker";
+import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { getNeedsHuman } from "@/lib/api";
 
@@ -39,12 +41,16 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 
 export type AgenticOpsLayer = "fleet" | "agents" | "attention" | "activity" | "runs";
 
+// Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
+// inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
+// containing a tab of the same name is the collision the glossary row exists to prevent),
+// and "Run graphs" becomes "Runs". The layer IDS are unchanged, so every deep link holds.
 const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
-  { id: "fleet",     icon: "gauge",    label: "Overview",   blurb: "What is running & what it costs" },
-  { id: "agents",    icon: "spark",    label: "Agents",     blurb: "Roster, governance & configuration" },
-  { id: "attention", icon: "hand",     label: "Attention",  blurb: "What needs a human, and for how long" },
-  { id: "activity",  icon: "activity", label: "Activity",   blurb: "Every event · one run reconstructed" },
-  { id: "runs",      icon: "flow",     label: "Run graphs", blurb: "Conditions → effects · deep analysis phases" },
+  { id: "fleet",     icon: "gauge",    label: "Overview",  blurb: "What's wrong · what's running · what it cost" },
+  { id: "agents",    icon: "spark",    label: "Roster",    blurb: "One agent, fully: health, runs, spend, config" },
+  { id: "attention", icon: "hand",     label: "Attention", blurb: "What needs a human, and for how long" },
+  { id: "activity",  icon: "activity", label: "Activity",  blurb: "Usage by model · the live tail · one run reconstructed" },
+  { id: "runs",      icon: "flow",     label: "Runs",      blurb: "Conditions → effects · deep analysis phases" },
 ];
 
 type Props = {
@@ -71,6 +77,10 @@ export function AgenticOpsWorkspace({
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
   const [attention, setAttention] = useState(0);
+  // ONE window for the whole surface, held here so every layer reads the same one and a
+  // brush drawn on the Overview still applies when the reader switches to Activity. Two
+  // independent windows on one page is how two tiles disagree with no visible reason.
+  const { range, setKey, setBrush, clearBrush } = useTimeRange();
 
   // The Attention badge — polled at workspace level so the count is visible
   // from every layer, not only when the Attention panel is open.
@@ -94,11 +104,12 @@ export function AgenticOpsWorkspace({
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
       badges={{ attention }}
+      headerControls={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "agents") return (
           <AgenticAgentsPanel workspaceId={workspaceId} workspaceName={workspaceName}
-            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} />
+            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range} />
         );
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}
@@ -107,14 +118,18 @@ export function AgenticOpsWorkspace({
         if (id === "activity") return (
           <AgenticActivityPanel
             focusInvestigationId={traceFocus?.investigationId}
-            focusTraceId={traceFocus?.traceId} />
+            focusTraceId={traceFocus?.traceId} range={range} />
         );
         if (id === "runs") return <RunGraphsPanel onOpenInvestigation={onOpenInvestigation} />;
         return (
-          <FleetOverviewPanel onOpenAgent={(id, kind) => {
-            setAgentFocus({ id, kind });
-            onLayerChange("agents");
-          }} /> // "fleet"
+          <FleetOverviewPanel
+            range={range} onBrush={setBrush} onClearBrush={clearBrush}
+            onOpenAttention={() => onLayerChange("attention")}
+            onOpenInvestigation={onOpenInvestigation}
+            onOpenAgent={(id, kind) => {
+              setAgentFocus({ id, kind });
+              onLayerChange("agents");
+            }} /> // "fleet"
         );
       }}
     />

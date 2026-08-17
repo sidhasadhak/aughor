@@ -18,7 +18,7 @@ export function Sparkline({
   values,
   width = 72,
   height = 18,
-  color = "#818cf8",
+  color = "var(--chart-4)",
   showDot = true,
 }: {
   values: number[];
@@ -44,7 +44,11 @@ export function Sparkline({
   const line = clean.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const area = `${line} L${x(clean.length - 1).toFixed(1)},${(height - pad).toFixed(1)} L${x(0).toFixed(1)},${(height - pad).toFixed(1)} Z`;
   const lastUp = clean[clean.length - 1] >= clean[0];
-  const endColor = lastUp ? "#34d399" : "#f87171";
+  // Tokens, not hexes: these three colours were hardcoded and so did not flip in light
+  // mode — the one primitive every trend on the platform draws through was the one that
+  // ignored the theme. `*4` is the text-grade step of each ramp, which is the one that
+  // clears AA contrast on both grounds.
+  const endColor = lastUp ? "var(--grn4)" : "var(--red4)";
 
   return (
     <svg width={width} height={height} className="shrink-0 align-middle" aria-hidden>
