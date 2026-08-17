@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatCount } from "@/lib/format";
 import {
+  conceptIfConfident,
   getSchemaProfile,
   getExplorationFindings,
   getCatalogTree,
@@ -64,6 +65,114 @@ function ShapeCell({ dist }: { dist: DistributionProfile | undefined }) {
   );
 }
 
+// ── Concept (Program AT) ───────────────────────────────────────────────────────
+// What a column IS, as opposed to how to handle it. Shown ONLY when two independent
+// witness layers agreed: a single witness is a hint, and rendering a hint here is how a
+// guess becomes a fact one paraphrase later. Empty for most columns, by design.
+
+const CONCEPT_TINT: Record<string, string> = {
+  geo: "var(--grn4)", flag: "var(--amb4)", key: "var(--blue4)", code: "var(--blue4)",
+  time: "var(--vio4)", money: "var(--grn4)", percent: "var(--vio4)", rate: "var(--vio4)",
+  count: "var(--t2)", measure: "var(--t2)", contact: "var(--red4)", net: "var(--red4)",
+  dimension: "var(--t2)",
+};
+
+const conceptTint = (concept: string) => CONCEPT_TINT[concept.split(".")[0]] ?? "var(--t3)";
+
+/** The layer each evidence sentence came from — `resolve_concept` prefixes them. */
+const evidenceLayer = (e: string) => (e.includes(":") ? e.split(":", 1)[0] : "");
+
+function ConceptBadge({ col }: { col: ColumnProfileData }) {
+  const concept = conceptIfConfident(col);
+  if (!concept) return null;
+  const tint = conceptTint(concept);
+  const layers = (col.concept_evidence ?? [])
+    .map(evidenceLayer)
+    .filter(l => l && l !== "hint only");
+  // The FAMILY is carried by the tint, so the badge shows only the specific half —
+  // `instant`, `latitude`, `binary`. At full length (`time.instant` is 73px) the badge
+  // starved a 157px cell that already holds a name, an FK chip and a semantic type, and
+  // `flight_date` rendered as `fli…`. The column's NAME is the one thing in that cell a
+  // reader cannot do without, so it never yields; this shrinks and ellipsises first.
+  const short = concept.includes(".") ? concept.split(".").slice(1).join(".") : concept;
+  return (
+    <span
+      title={`${concept} — agreed by ${layers.length} evidence layers (${layers.join(", ")}); click the row to read them`}
+      style={{
+        fontSize: 9, color: tint, background: `color-mix(in srgb, ${tint} 12%, transparent)`,
+        padding: "0 4px", borderRadius: 2, minWidth: 0, flexShrink: 1,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        fontFamily: "var(--font-mono)",
+      }}
+    >
+      {short}
+    </span>
+  );
+}
+
+function ConceptEvidence({ col }: { col: ColumnProfileData }) {
+  const concept = conceptIfConfident(col);
+  const evidence = col.concept_evidence ?? [];
+  if (!concept || evidence.length === 0) return null;
+  return (
+    <div style={{ padding: "6px 14px 8px 26px", background: "var(--bg-2)", borderBottom: "1px solid var(--b0)" }}>
+      <div style={{ fontSize: 10, color: "var(--t3)", marginBottom: 4 }}>
+        <span style={{ color: conceptTint(concept), fontFamily: "var(--font-mono)" }}>{concept}</span>
+        {" "}· agreed by {evidence.filter(e => evidenceLayer(e)).length} evidence layers
+        {col.unit ? ` · unit ${col.unit}` : ""}
+      </div>
+      {evidence.map((e, i) => {
+        const layer = evidenceLayer(e);
+        return (
+          <div key={i} style={{ display: "flex", gap: 6, marginTop: 2 }}>
+            <span style={{ fontSize: 9, color: "var(--t4)", minWidth: 52, flexShrink: 0, fontFamily: "var(--font-mono)" }}>
+              {layer || "—"}
+            </span>
+            <span style={{ fontSize: 10, color: "var(--t2)", lineHeight: 1.45 }}>
+              {layer ? e.slice(layer.length + 1).trim() : e}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DerivedQuantities({ tp }: { tp: TableProfileData | undefined }) {
+  const [open, setOpen] = useState(false);
+  const notes = tp?.derived_quantities ?? [];
+  if (notes.length === 0) return null;
+  // Collapsed by default. Each note is a full sentence carrying its support and row count,
+  // and `flights` has six of them — expanded, that is a wall of prose above the first
+  // column, which buries the table the reader came to look at.
+  return (
+    <div style={{ background: "var(--bg-2)", borderBottom: "1px solid var(--b0)" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
+          background: "none", border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "var(--t3)" }}>
+          {notes.length} derived {notes.length === 1 ? "quantity" : "quantities"}
+        </span>
+        <span style={{ fontSize: 10, color: "var(--t4)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          — arithmetic this table implies but does not store
+        </span>
+        <span style={{ fontSize: 9, color: "var(--t4)" }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 14px 8px" }}>
+          {notes.map((n, i) => (
+            <div key={i} style={{ fontSize: 10, color: "var(--t2)", lineHeight: 1.5, marginTop: 3 }}>· {n}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NullBar({ rate }: { rate: number }) {
   const pct = Math.round(rate * 100);
   const color = pct > 20 ? "var(--red3)" : pct > 5 ? "var(--amb3)" : "var(--grn3)";
@@ -79,7 +188,10 @@ function NullBar({ rate }: { rate: number }) {
   );
 }
 
-const GRID = "minmax(120px,1fr) 64px 78px 70px 116px minmax(96px,1fr)";
+// The COLUMN cell now carries a concept badge beside the name, so it takes a larger share
+// of the free space than the values column — 1.3fr against 1fr. Without it a 19-character
+// name like `scheduled_departure` left the badge 26px to render 46px of text.
+const GRID = "minmax(120px,1.3fr) 64px 78px 70px 116px minmax(96px,1fr)";
 
 function TableCard({
   table,
@@ -93,6 +205,9 @@ function TableCard({
   distFor: (col: ColumnProfileData) => DistributionProfile | undefined;
 }) {
   const [expanded, setExpanded] = useState(true);
+  //: Which column's concept evidence is open. One at a time — the evidence is three
+  //: sentences of prose and a wall of them is not readable.
+  const [openConcept, setOpenConcept] = useState<string | null>(null);
   const rowCount = tableProfile?.row_count;
   const grain = tableProfile?.grain_column;
   const ts = tableProfile?.primary_timestamp;
@@ -133,6 +248,7 @@ function TableCard({
 
       {expanded && (
         <div style={{ borderTop: "1px solid var(--b0)" }}>
+          <DerivedQuantities tp={tableProfile} />
           <div style={{
             display: "grid", gridTemplateColumns: GRID,
             padding: "5px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase",
@@ -146,25 +262,37 @@ function TableCard({
             <span>Values / Range</span>
           </div>
           {columns.map(col => (
+            <div key={col.column}>
             <div
-              key={col.column}
               style={{
                 display: "grid", gridTemplateColumns: GRID,
                 padding: "5px 14px", borderBottom: "1px solid var(--b0)", alignItems: "center",
+                cursor: conceptIfConfident(col) ? "pointer" : "default",
               }}
+              onClick={() => conceptIfConfident(col) &&
+                setOpenConcept(c => (c === col.column ? null : col.column))}
               onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
-                <span style={{ fontSize: 11, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span
+                  title={col.column}
+                  style={{ fontSize: 11, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0, maxWidth: "100%" }}
+                >
                   {col.column}
                 </span>
                 {col.is_fk && (
                   <span style={{ fontSize: 9, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 12%, transparent)", padding: "0 4px", borderRadius: 2, flexShrink: 0 }}>FK</span>
                 )}
-                {col.semantic_type && col.semantic_type !== "unknown" && (
+                {/* The semantic type gives way to a CONFIDENT concept rather than sitting
+                    beside it. `timestamp` next to `instant` says one thing twice, and on a
+                    long name it left the badge 8px to render 46px of text — a clipped
+                    badge reads as a defect, not as information. Where no concept resolved,
+                    the semantic type is still the best answer available and stays. */}
+                {col.semantic_type && col.semantic_type !== "unknown" && !conceptIfConfident(col) && (
                   <span style={{ fontSize: 9, color: "var(--t4)", flexShrink: 0 }}>{col.semantic_type}</span>
                 )}
+                <ConceptBadge col={col} />
               </div>
               <span style={{ fontSize: 10, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
                 {col.dtype?.split("(")[0].toUpperCase().slice(0, 10)}
@@ -192,6 +320,8 @@ function TableCard({
                   <span style={{ fontSize: 10, color: "var(--t4)" }}>—</span>
                 )}
               </div>
+            </div>
+            {openConcept === col.column && <ConceptEvidence col={col} />}
             </div>
           ))}
         </div>
