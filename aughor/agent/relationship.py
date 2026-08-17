@@ -240,21 +240,44 @@ def plan_relationship(
     right_label: str,
     col_types: Optional[dict] = None,
     run: Optional[Callable[[str], Optional[list]]] = None,
+    col_concepts: Optional[dict] = None,
 ) -> RelationshipPlan:
     """Build the query whose SHAPE answers "how do these two relate", typed by the pair.
 
     `col_types` maps a bare column name to its declared type; anything absent is probed
     (see `numeric_expression`) rather than assumed categorical, so a column the schema
     parse missed is not silently demoted.
+
+    `col_concepts` maps a bare column name to a CONFIDENT concept (AT-4: two agreeing
+    witness layers; a hint never arrives here). It is consulted for one purpose — refusing
+    arithmetic on a column whose concept forbids it. `Customer Zipcode` casts to a number,
+    correlates against anything, and returns a coefficient with a p-value; every part of
+    that answer is well-formed and none of it means anything, because zip 90210 is not
+    larger than zip 90209. Reading the pair as a numeric-by-category comparison instead
+    answers the question the user actually asked.
     """
     types = {str(k).split(".")[-1].lower(): v for k, v in (col_types or {}).items()}
     known = set(types)
+    concepts = {str(k).split(".")[-1].lower(): v for k, v in (col_concepts or {}).items()}
 
     def _declared(col: str) -> Optional[str]:
         name = bare_column(col, known)
         return types.get(name.lower()) if name else None
 
+    def _forbidden(col: str) -> bool:
+        """True when this side's concept says arithmetic on it is meaningless."""
+        name = bare_column(col, known)
+        if not name:
+            return False
+        concept = concepts.get(name.lower())
+        if not concept:
+            return False
+        from aughor.ontology.operations import forbids_numeric_relationship
+        return forbids_numeric_relationship(str(concept))
+
     def _numeric(col: str) -> Optional[str]:
+        if _forbidden(col):
+            return None
         return numeric_expression(col, _declared(col), table, run, known)
 
     l_lab = left_label or left_column

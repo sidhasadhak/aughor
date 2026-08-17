@@ -16,8 +16,11 @@ and 108 tests across `tests/unit/test_relationship_scan.py` and `tests/unit/test
 Eight live runs of *"Is there a correlation between shipping delay and customer location?"* on
 `workspace/data_co`.
 
-**Status 2026-08-17: Track 1 is COMPLETE** (AT-1, AT-2, AT-3 — §2, receipts in §7).
-Track 2 has not started; **AT-0 is its gate and is unspent.**
+**Status 2026-08-17: Track 1 COMPLETE** (AT-1, AT-2, AT-3 — §2, receipts in §7).
+**Track 2 COMPLETE except AT-5** (AT-4, AT-6, AT-7, AT-8 — receipts in §8).
+**AT-5 was dropped on the user's instruction mid-build**, so there is no value layer; the
+two-witness rule runs on name + pair + usage + declared. What that costs is written down in
+§8.3 rather than left to be discovered. **AT-0 re-measured and verified — §3.2.**
 
 ---
 
@@ -199,9 +202,103 @@ answer is "one dataset", **AT-6 is over-engineering and AT-4 + AT-5 are the deli
 Every wave in this repo's history moved its own scope on the pre-check (8 for 8); two were
 live defects. Spend the half-day.
 
+### 3.1 · AT-0 SPENT (2026-08-17) — 105 tables, 890 columns, 13 datasets
+
+Measured through the app's own loaders (`LocalUploadConnection` for uploads, read-only
+DuckDB for the demo canvases), so the dtypes are the ones the profiler actually sees. Two
+false starts are part of the finding: a hand-rolled `read_csv_auto` silently returned
+**zero rows for data_co** — the motivating dataset — and reported it as a clean negative,
+and an `all_varchar` fallback made every column look like castable text. *A failed probe
+and a true negative look identical.*
+
+| # | question | measured | scope move |
+|---|---|---|---|
+| Q1 | text columns numeric-castable | **15 of 522** (2.9%) in 4 tables; 11 of them data_co | build as a witness; query-time is already covered by `numeric_expression` |
+| Q2 | coordinate pairs | **1 real** (data_co) + **1 false-positive table** (scm `Shipping costs`/`Price`). Of 5 columns passing a bounded-±90 value test, **only 2 are coordinates — 60% false positive** | **cut the bundled city-centroid table** (1 dataset does not earn it). Keep a cheap structural partner test as *one* witness |
+| Q3 | binary flag beside a same-stem duration | **0 by shared stem** — and the motivating case is one of them: `Late_delivery_risk` vs `Days for shipping (real)` share no stem ("delivery" ≠ "shipping") | **the spec's lexical test would miss its own motivating case.** Replaced by a computed rule, below |
+| Q4 | name-witness vs value-witness disagreement | **27, across 9 of 13 datasets**, in 5 kinds | AT-4 + AT-5 justified corpus-wide, not by one dataset |
+| Q5 | grammars | 3 fire: email (4), ISO-3166-ish (4), ISO-4217 (2). **UUID, E.164, ZIP, IPv4, ISO-8601-in-text: zero. Checksums (Luhn/IBAN/ISBN/EAN): zero** | build the regex table (a row is nearly free); **skip the checksum module** — real code, real tests, zero customers |
+| Q6 | percent scale | 12 columns bounded 0–1, 3 percent-named bounded 0–100, across 6 datasets | build `percent.fraction` vs `percent.whole` |
+| Q7 | pairs | **arithmetic identity `a*b≈c`: 7, in 6 datasets — the most prevalent pair signal by far.** start/end timestamps: 4 datasets. actual/planned: 1. gross/net: 1, **a false positive on inspection** (`net_sales_eur_m` vs `gross_profit_eur_m` are different measures) | **reorder AT-6**: identity first, start/end second, actual/planned third. **Drop gross/net** |
+
+**Three findings that changed the design, not just the scope:**
+
+1. **Single witnesses false-positive at a measurable rate.** 3 of 5 bounded-±90 columns are
+   not coordinates; `^[A-Z]{2}$` matched `Customer State` (`UT`, `MD`, `GA`) as an ISO-3166
+   country code; and the arithmetic-identity sweep returned
+   `transactionID * unitPrice ≈ franchiseID` at 100% because `unitPrice` is the constant 3
+   and the tolerance was relative. The two-witness rule of AT-4 is **load-bearing, not
+   ceremony** — and identity witnesses must reject constant factors.
+2. **The derived-flag link is computable, and it is a PAIR rule.** No single-column
+   threshold explains `Late_delivery_risk` (nothing reaches 90%), but
+   `Late_delivery_risk == (real > scheduled)` holds on **97.55%** of 180,519 rows. So the
+   flag is recognised from the actual/planned pair AT-6 already finds — which is what turns
+   the prompt-only MAGNITUDE GUARD into a computed fact.
+3. **The categorical fingerprint must be multilingual and set-based, not pattern-based.**
+   data_co's `Order Country` holds 164 **Spanish** country names (`Brasil`, `Níger`,
+   `Papúa Nueva Guinea`, `EE. UU.`). A pattern cannot separate them from any other proper
+   noun; set membership can.
+
+**One live defect found by the pre-check** (the 9th wave in a row to find one): seven
+identifier columns in data_co — `Customer Id`, `Order Id`, `Order Item Id`, `Category Id`,
+`Department Id`, `Product Card Id`, `Product Category Id` — are **not recognised as keys**.
+`_KEY_PATTERN` requires `_id$` and `_KEY_PATTERN_CAMEL` requires `customerId`; a
+space-separated `Customer Id` matches neither, so it profiles as free `text` at 9,754
+distinct values.
+
+**Verdict: Track 2 proceeds, with AT-6 halved and AT-5 trimmed.** AT-4 in full, AT-5 minus
+checksums, AT-6 minus the centroid table and minus gross/net but plus the computed
+derived-flag rule, AT-7 and AT-8 as written.
+
 Track 1 first because it is cheaper, self-contained, and its proof is already running (the
 same question, the same counters). Track 2's contract (AT-4) can start in parallel; its
 witnesses cannot, until AT-0 says which are worth building.
+
+### 3.2 · AT-0 VERIFIED (2026-08-17) — re-measured after Track 2 shipped
+
+Every number above re-run against the same corpus, plus the three claims the pre-check
+script does not itself compute. **Six of seven questions reproduce exactly.** The two that
+move both move for a reason that is now written down.
+
+| claim | re-measured | verdict |
+|---|---|---|
+| 105 tables, 890 columns, 13 datasets | 105 / 890 / 13 | ✅ exact |
+| Q1 · 15 of 522 castable (2.9%), 4 tables, 11 in data_co | 15 of 522, 4 tables, 11 in data_co | ✅ exact |
+| Q2 · 1 real pair + 1 false-positive table; 5 bounded-±90, 2 real ⇒ 60% FP | 2 pair tables (data_co real, `scm.supply_chain_data` false); 5 bounded-±90 | ✅ exact |
+| Q3 · 0 flag/duration pairs by shared stem | 0 | ✅ exact |
+| Q4 · 27 name-vs-value disagreements, 5 kinds | **19**, 5 kinds | ⚠️ **−8, fully accounted** |
+| Q5 · email 4, ISO-3166-ish 4, ISO-4217 2; every other grammar 0 | 4 / 4 / 2, all others 0 | ✅ exact |
+| Q6 · 12 bounded 0–1, 3 percent-named bounded 0–100 | 12 / 3 | ✅ exact |
+| Q7 · identity `a*b≈c` 7 in 6 datasets; start/end 4; actual/planned 1; gross/net 1 (FP) | **8** in **6**; 4; 1; 1 | ⚠️ **+1, explained** |
+
+**Q4 −8 is this wave's own fix, exactly.** The eight columns that left the disagreement
+list are `Category Id`, `Customer Id`, `Department Id`, `Order Customer Id`, `Order Id`,
+`Order Item Id`, `Product Card Id`, `Product Category Id` — each moved `text → key` when
+`_KEY_PATTERN` learned that a separator can be a space. 19 + 8 = 27. AT-0's count was
+right and the live defect it found is closed.
+
+**Q7 +1 is one dataset counted twice, not a new finding.** data_co yields two identities
+(`Order Item Product Price × Order Item Quantity = Sales` and `Order Item Quantity ×
+Product Price = Sales`) because `Product Price` is a duplicate of `Order Item Product
+Price` — which AT-6's duplicate-column rule reports separately. Dataset count is unchanged
+at 6, and the claim the number supports — *the most prevalent pair signal by far* — holds.
+
+**And finding 1's false positive is gone.** AT-0 measured the identity sweep returning
+`transactionID × unitPrice ≈ franchiseID` at 100%. `scm.sales_transactions.unitPrice` is
+still the constant `3` across all 3,333 rows; the shipped rule returns **no identity for
+that table**. The constant-factor rejection works on the data that produced the defect.
+
+**Finding 2 reproduces to the digit:** `Late_delivery_risk == ("Days for shipping (real)" >
+"Days for shipment (scheduled)")` on **176,096 of 180,519 rows = 97.55%**, measured on the
+full table.
+
+**One methodological warning worth more than any of the numbers.** The first re-run
+reported *45 tables, 350 columns, 6 datasets* and clean zeros for Q1, Q2 and Q3 — the whole
+upload half of the corpus silently absent, because the script resolves the upload root
+RELATIVELY and it was run from a scratch directory. It printed no error. That is the third
+time in this program's history that a failed probe has been indistinguishable from a true
+negative, and the second time on this exact script. **Run it from the repo root, and check
+the table count against 105 before reading a single answer.**
 
 ---
 
@@ -292,3 +389,110 @@ geographic impact… explaining only 1.1% of total performance variance… (p = 
 significant and immaterial, both said, with the number. What is left is one guard
 misfiring on a correct sentence, and the two tracks above are the plan for making the next
 misfire structurally impossible rather than patched.
+
+---
+
+## 8 · Track 2 delivered (2026-08-17) — what a column IS, and what reads it
+
+`aughor/tools/pairs.py` (AT-6), `aughor/tools/usage.py` (AT-8),
+`aughor/ontology/operations.{py,yaml}` (AT-7), the witness/stamping seams in
+`aughor/tools/profiler.py`, `ColumnFlags.concept`, `profile_cache.load_concepts`, and
+`plan_relationship(col_concepts=…)`. 82 tests across five files; 6,431 in the suite.
+
+### 8.1 · What data_co resolves to now, and on what evidence
+
+Profiled live through the app's own loader — 53 columns, 1.5 s, the same
+`get_or_build_profiles` the API calls.
+
+| column | concept | conf | the two layers |
+|---|---|---|---|
+| `Late_delivery_risk` | `flag.derived_comparison` | 0.90 | named like an indicator **+** equals `real > scheduled` on 97.7% of sampled rows |
+| `Latitude` | `geo.latitude` | 0.86 | named like a latitude **+** partnered with a column that leaves ±90, both at 8 dp |
+| `Longitude` | `geo.longitude` | 0.86 | same pair, other side |
+| `Order Item Quantity` | `count.quantity` | 0.82 | named like a count **+** the whole-number factor of `price × qty = Sales` |
+
+Everything else resolved to a HINT or to nothing, which is the design. `Latitude` is
+`VARCHAR` in this export: it reaches its concept without its type, and without its name
+being the deciding vote.
+
+The schema the agent reads now carries the consequence, not just the label:
+
+```
+Latitude   text  | IS geo.latitude — a latitude in degrees — never SUM, AVG
+DERIVED QUANTITIES in data_co_supplychain (measured on sampled rows …):
+  · "Late_delivery_risk" holds 0/1 and equals ("Days for shipping (real)" >
+    "Days for shipment (scheduled)") on 97.7% of 300 sampled rows … The magnitude
+    behind it is "Days for shipping (real)" - "Days for shipment (scheduled)"
+```
+
+That last line is the MAGNITUDE GUARD stopping being a paragraph of prompt and becoming a
+measured fact about the table — the subtraction intake had to invent by itself in six
+consecutive runs.
+
+**Run 9 (`fce12fa9`, 19 s)** on the six-run question: headline *"Shipping delays are not
+meaningfully correlated with customer location across geographic dimensions"*, metric
+`AVG("Days for shipping (real)" - "Days for shipment (scheduled)")`, waterfall `[]`,
+`total_change_label` empty, confidence HIGH justified by effect size. Track 1's guarantees
+hold and nothing regressed.
+
+### 8.2 · Three things the build changed about its own plan, each on a measurement
+
+1. **AT-6's actual/planned rule was CUT.** The spec's signature — difference centred near
+   zero with a right tail — does not discriminate. Measured on data_co: the true pair sits
+   at a median absolute difference of 0.250× its own magnitude, `Sales per customer` ×
+   `Order Item Product Price` (unrelated) at 0.226, `Sales` × `Order Item Total` at 0.070.
+   No threshold admits the first and refuses the others. The first implementation shipped
+   **18 findings on the one table the rule existed for, all but one nonsense.** The concept
+   survives: the derived-flag rule names the same two columns from an *equality*.
+2. **A duplicate-column rule took the slot**, and earns it on the same table: data_co
+   carries **six** pairs that hold identical values on every sampled row (`Benefit per
+   order`/`Order Profit Per Order`, `Sales per customer`/`Order Item Total`, `Customer
+   Id`/`Order Customer Id`, `Category Id`/`Product Category Id`, `Order Item Cardprod
+   Id`/`Product Card Id`, `Order Item Product Price`/`Product Price`). The relationship
+   primitive refuses two sides naming the same COLUMN; nothing refused two names for one
+   column, and correlating those returns r = 1.0 as a discovery — Track 1's tautology,
+   through a door Track 1 did not close.
+3. **The first identity sweep found nothing and said nothing.** Its 20-column cap dropped
+   `Sales`, `Order Item Total` and `Product Price` from a 27-numeric-column table — exactly
+   where the identity lives. The cap is now 40, the search early-aborts instead of scoring
+   every triple, and **every truncation is printed**. A silent cap reads as "we looked at
+   everything".
+
+Two false positives AT-0 named in advance are refused by the shipped rules and pinned by
+regression tests: `scm.supply_chain_data`'s `Shipping costs`/`Price` (every range test
+passes; sixteen significant digits are a float printed in full, not a recorded precision),
+and `transactionID × unitPrice ≈ franchiseID` (the factor is the constant 3).
+
+### 8.3 · What is missing because AT-5 was dropped, stated plainly
+
+No value layer exists. Concretely, the following are **not** built and nothing else covers
+them:
+
+- **percent scale** — `percent.fraction` vs `percent.whole` is unresolved, so the 12
+  columns bounded 0–1 and the 3 percent-named columns bounded 0–100 that AT-0 measured are
+  still indistinguishable to every consumer;
+- **grammar/code witnesses** — email, UUID, ISO-4217, ISO-3166, US-state, E.164, ZIP,
+  IPv4/6, ISO-8601-in-text. AT-0's `^[A-Z]{2}$` false positive on `Customer State` is
+  therefore **not** retired: it remains a live 4-column disagreement in Q4;
+- **the categorical fingerprint** — data_co's 164 Spanish country names in `Order Country`
+  still reach no concept;
+- **numeric-castable text as a witness enabler** — `numeric_expression` still covers this
+  at query time, so nothing is broken, but the 15 castable text columns AT-0 found do not
+  contribute evidence at profile time.
+
+The consequence for the contract: with only four layers and no value layer, **most columns
+resolve to a hint or to nothing**. On data_co that is 4 confident concepts out of 53
+columns. That is the honest floor of a four-layer system, not a defect in the resolver.
+
+### 8.4 · Two live limitations, said now rather than found later
+
+- **AT-8 has almost nothing to read.** Mining `workspace`'s real history returns **3**
+  logged SQL statements and 3 (column, role) pairs, every one below `MIN_SUPPORT = 3` — so
+  the usage layer currently witnesses nothing anywhere. It is wired, correct, and idle
+  until real usage accumulates.
+- **Usage moves without the schema moving.** Profiles are cached by schema fingerprint, so
+  a column that becomes popular today is witnessed at the next profile REBUILD, not the
+  next query. `PROFILE_LOGIC_VERSION` was bumped `v4-valsample → v5-concept` for this wave
+  precisely because `from_dict` reads an old entry happily: without the bump every existing
+  connection would have kept serving concept-free profiles and the wave would have been
+  built, cached out, and invisible.

@@ -476,12 +476,31 @@ def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: l
             return None
 
     col_types = _typed_columns(schema or "")
+    # AT-7 — the concepts the profiler resolved for THIS table, so a side whose concept
+    # forbids arithmetic is compared across rather than correlated against. Best-effort and
+    # query-free: no cached profiles means an empty map, and an empty map leaves this path
+    # byte-identical to what six runs already measured.
+    col_concepts: dict = {}
+    try:
+        from aughor.tools.profile_cache import load_concepts
+        from aughor.tools.table_names import bare
+        _bare_table = bare(metric_table)
+        _conn_id = getattr(conn, "_connection_id", None) or "fixture"
+        col_concepts = {
+            col: concept for (tbl, col), concept in load_concepts(_conn_id).items()
+            if bare(tbl) == _bare_table
+        }
+    except Exception as _cx:
+        from aughor.kernel.errors import tolerate
+        tolerate(_cx, "concept lookup for the relationship scan is best-effort",
+                 counter="deep_analysis.concept_lookup")
+
     scored: list[tuple] = []          # (effect, right_sql, plan, result, reading)
     for candidate in _relationship_candidates(intake_data or {}, right_sql):
         plan = plan_relationship(
             table=metric_table, left_column=left_sql, right_column=candidate,
             left_label=left_label, right_label=_candidate_label(candidate, right_sql, right_label),
-            col_types=col_types, run=_run)
+            col_types=col_types, run=_run, col_concepts=col_concepts)
         if plan.skipped or not plan.sql:
             if plan.skipped:
                 _logging.getLogger(__name__).info(

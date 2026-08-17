@@ -41,13 +41,19 @@ def cache_path():
 # This module's producer-logic version — bump when the profile schema changes so stale
 # caches that lack new stats (distributions, period density) are rebuilt.
 # v4: adds high-cardinality entity value_sample (R5) — a rebuild populates it.
+# v5: adds AT-4 `concept`/`concept_confidence`/`concept_evidence` per column and AT-6
+#     `derived_quantities` per table, and CHANGES `semantic_type` for space-separated
+#     identifiers (`Customer Id` was profiling as free text). Both halves need the bump:
+#     `from_dict` already reads a v4 entry without raising, so without a new key every
+#     existing connection would keep serving profiles that silently lack every concept —
+#     the wave would be built, cached out, and invisible.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v4-valsample"
+PROFILE_LOGIC_VERSION = "v5-concept"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
@@ -129,6 +135,36 @@ def load_value_samples(connection_id: str) -> dict[tuple[str, str], list[str]]:
             tbl, col = d.get("table"), d.get("column")
             if vs and tbl and col:
                 out.setdefault((tbl, col), vs)
+    return out
+
+
+def load_concepts(connection_id: str) -> dict[tuple[str, str], str]:
+    """Every CONFIDENT concept for a connection, keyed (table, column). `{}` when none.
+
+    Read-only and query-free — the `load_value_samples` shape, for the same reason: a
+    caller mid-analysis needs the fact, not a rebuild, and recomputing a fingerprint here
+    would cost a DESCRIBE per table to arrive at a cache entry that is already loaded.
+
+    Hints never leave this function. `concept_of` is the filter, so a caller cannot
+    accidentally act on one witness — which is the failure the whole contract exists for,
+    one level up at the consumer.
+    """
+    from aughor.tools.concept import concept_of
+
+    out: dict[tuple[str, str], str] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            tbl, col = d.get("table"), d.get("column")
+            concept = concept_of(d.get("concept"), d.get("concept_confidence"))
+            if concept and tbl and col:
+                out.setdefault((tbl, col), concept)
     return out
 
 

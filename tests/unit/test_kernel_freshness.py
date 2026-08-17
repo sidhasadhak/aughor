@@ -53,12 +53,29 @@ def test_golden_schema_cache_scoped():
 
 
 def test_golden_profile_cache_survives_logic_version_extraction():
-    """PROFILE_LOGIC_VERSION was extracted from an inline "v4-valsample" literal. If the
-    extraction changed the hash, every profile cache in the world would miss at once."""
+    """PROFILE_LOGIC_VERSION is baked into the hash INPUT, so its value IS the cache key.
+
+    Originally pinned at "v4-valsample" to prove that extracting it from an inline literal
+    changed nothing. Bumped to "v5-concept" on 2026-08-17 for AT-4/AT-6 (per-column
+    `concept` + per-table `derived_quantities`, and a `semantic_type` change for
+    space-separated identifiers) — a DELIBERATE global miss, because `from_dict` reads a v4
+    entry happily and every existing connection would otherwise keep serving profiles that
+    silently lack every concept.
+
+    Both hashes stay pinned. The v4 line is what makes the bump legible as a bump rather
+    than as a hash that drifted: a version change must move every key, and an extraction
+    must move none.
+    """
+    import hashlib
+
     from aughor.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
 
-    assert PROFILE_LOGIC_VERSION == "v4-valsample"
-    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "191fd41b93f3a03e"
+    assert PROFILE_LOGIC_VERSION == "v5-concept"
+    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "099a493b84c9741e"
+    # the same inputs under the previous version — a different key, which is the point
+    v4 = hashlib.md5(b"v4-valsample|items:3|orders:5").hexdigest()[:16]
+    assert v4 == "191fd41b93f3a03e"
+    assert compute_schema_fingerprint({"orders": 5, "items": 3}) != v4
 
 
 def test_golden_ontology_store_survives_function_extraction():

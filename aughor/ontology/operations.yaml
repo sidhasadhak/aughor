@@ -1,0 +1,170 @@
+# AT-7 — the operations vocabulary: what each CONCEPT may and may not be used for.
+#
+# Not an ingested standard. A curated map from the concepts `aughor.tools.concept`
+# resolves to the operations those concepts admit — the layer that turns "this column is a
+# latitude" from a label into a consequence. A concept nothing consults is a receipt, and
+# this program does not produce receipts.
+#
+# Read this file as the answer to one question per row: if somebody wrote SUM() around this
+# column, would the number mean anything?
+#
+# Fields
+#   label       one human phrase, used in prompts and in the profile annotation
+#   aggregate   the aggregates that produce a meaningful number
+#   never       the operations that produce a well-formed wrong answer — the dangerous kind
+#   numeric     may this column stand on a side of a numeric relationship (CORR)?
+#               false does NOT mean "not a number": a zip code is a number and correlating
+#               it with anything is nonsense. This is the field `plan_relationship` reads.
+#   note        why, in one sentence a reader can check
+#
+# ⚠ Every concept any witness producer can emit MUST appear here —
+# `test_operations_covers_every_concept_the_layers_emit` enforces it. A vocabulary that
+# silently lacks the row for a concept degrades to "no opinion", which reads exactly like
+# "no objection".
+version: 1
+
+concepts:
+  geo.latitude:
+    label: a latitude in degrees
+    aggregate: [MIN, MAX]
+    never: [SUM, AVG]
+    numeric: true
+    note: >
+      Averaging latitudes finds a point in the sea between two cities, and summing them is
+      not a quantity at all. Correlating one against a measure is legitimate — that is the
+      question `is delay related to where the customer is` actually asks.
+
+  geo.longitude:
+    label: a longitude in degrees
+    aggregate: [MIN, MAX]
+    never: [SUM, AVG]
+    numeric: true
+    note: >
+      As for latitude, and worse near the antimeridian, where the mean of +179 and −179 is
+      zero — the middle of Africa.
+
+  geo.region:
+    label: a named place
+    aggregate: [COUNT, COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      A place name is a grouping key. Compare a measure ACROSS places; never do arithmetic
+      on the places themselves.
+
+  key.identifier:
+    label: an identifier
+    aggregate: [COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      An id is a name that happens to be spelled with digits. Order 90210 is not larger
+      than order 90209, so every arithmetic answer about it is well-formed and meaningless.
+
+  flag.derived_comparison:
+    label: a 0/1 indicator storing a comparison
+    aggregate: [AVG, SUM]
+    never: [CORR]
+    numeric: false
+    note: >
+      AVG over a 0/1 column is a RATE and answers "how often". It cannot answer "how much" —
+      that is the magnitude the flag was computed from, which the profile names beside it.
+      This is the MAGNITUDE GUARD, stated as a property of the column rather than as a
+      paragraph the model has to remember.
+
+  count.quantity:
+    label: a count of things
+    aggregate: [SUM, AVG, MIN, MAX]
+    never: []
+    numeric: true
+    note: Additive. Summing counts across any grouping is meaningful.
+
+  money.amount:
+    label: a monetary amount
+    aggregate: [SUM, AVG, MIN, MAX]
+    never: []
+    numeric: true
+    note: >
+      Additive WITHIN one currency. Summing across currencies without a conversion produces
+      a number with no unit — the defect a VARCHAR currency column hides best.
+
+  measure.additive_total:
+    label: an additive total
+    aggregate: [SUM, AVG, MIN, MAX]
+    never: []
+    numeric: true
+    note: >
+      Verified additive by an arithmetic identity on real rows — it is the product of the
+      two columns beside it, so summing it and summing its factors answer different
+      questions.
+
+  rate.per_unit:
+    label: a per-unit rate
+    aggregate: [AVG, MIN, MAX]
+    never: [SUM]
+    numeric: true
+    note: >
+      A unit price summed across rows is the price of one of each thing, which is not a
+      quantity anybody asked about. Multiply it by its count first, or average it.
+
+  percent.fraction:
+    label: a proportion or rate
+    aggregate: [AVG, MIN, MAX]
+    never: [SUM]
+    numeric: true
+    note: >
+      Ratios do not add. A weighted average needs the denominator the ratio was built from,
+      which the ratio itself no longer carries.
+
+  duration.days:
+    label: a duration
+    aggregate: [AVG, SUM, MIN, MAX]
+    never: []
+    numeric: true
+    note: Additive and averageable; a signed duration is a delay, where the sign carries the meaning.
+
+  measure.actual:
+    label: a measured outcome, against a plan
+    aggregate: [AVG, SUM, MIN, MAX]
+    never: []
+    numeric: true
+    note: >
+      Half of a plan/outcome pair. The interesting quantity is usually the DIFFERENCE, which
+      the profile names — reporting the outcome alone hides whether the plan was met.
+
+  measure.planned:
+    label: a planned value, against an outcome
+    aggregate: [AVG, MIN, MAX]
+    never: []
+    numeric: true
+    note: >
+      Half of a plan/outcome pair. A plan is what somebody intended, not what happened; it
+      is a baseline, never the answer to "how long did it take".
+
+  time.instant:
+    label: a point in time
+    aggregate: [MIN, MAX]
+    never: [SUM, AVG]
+    numeric: false
+    note: The mean of two dates is a date nothing happened on. Take spans, or group by period.
+
+  time.start:
+    label: the start of a span
+    aggregate: [MIN, MAX]
+    never: [SUM, AVG]
+    numeric: false
+    note: Paired with an end. The quantity is the span between them, which the profile names.
+
+  time.end:
+    label: the end of a span
+    aggregate: [MIN, MAX]
+    never: [SUM, AVG]
+    numeric: false
+    note: Paired with a start. The quantity is the span between them, which the profile names.
+
+  dimension.categorical:
+    label: a grouping dimension
+    aggregate: [COUNT, COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: Something to group BY. Compare measures across it; do no arithmetic on it.
