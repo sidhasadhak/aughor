@@ -3612,6 +3612,10 @@ export interface TableProfileData {
   date_range: [string, string] | null;
   freshness_lag_hours: number | null;
   computed_at: string;
+  /** AT-6 — quantities the table implies but does not store: the subtraction behind a 0/1
+   *  flag, the span between two timestamps, the product of a price and a count. Each note
+   *  already carries the support and the row count it was measured on. */
+  derived_quantities?: string[] | null;
 }
 
 export interface ColumnProfileData {
@@ -3625,6 +3629,25 @@ export interface ColumnProfileData {
   value_range: [string | number, string | number] | null;
   top_values: string[] | null;
   is_fk: boolean;
+  /** AT-4 — what the column IS, agreed by witnesses from two or more evidence layers.
+   *  Separate from `semantic_type` (how to HANDLE it) and empty far more often, which is
+   *  the point. Below 0.5 the concept is a HINT — one witness — and must not be shown as a
+   *  finding; `conceptIfConfident` is the only read. */
+  concept?: string | null;
+  concept_confidence?: number | null;
+  /** One sentence per agreeing layer, each carrying the numbers it agreed on. */
+  concept_evidence?: string[] | null;
+  unit?: string | null;
+  value_interpretation?: string | null;
+}
+
+/** The one honest read of a concept — mirrors `aughor.tools.concept.concept_of`.
+ *  Reading `.concept` without its confidence is the "one witness spoke and the system
+ *  believed it" failure the whole contract exists to prevent, one level up at the UI. */
+export function conceptIfConfident(col: ColumnProfileData): string {
+  const c = (col.concept ?? "").trim();
+  const conf = col.concept_confidence ?? 0;
+  return c && conf >= 0.5 ? c : "";
 }
 
 export interface SchemaProfile {

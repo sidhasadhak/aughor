@@ -23,11 +23,14 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
@@ -154,8 +157,15 @@ _FACT_SIGNALS: re.Pattern = _build_fact_signals()
 
 # ── Regex helpers ─────────────────────────────────────────────────────────────
 
+# The separator is a CLASS, not an underscore: AT-0's pre-check found seven identifier
+# columns in data_co — `Customer Id`, `Order Id`, `Order Item Id`, `Category Id`,
+# `Department Id`, `Product Card Id`, `Product Category Id` — that matched neither this
+# pattern (which required `_id$`) nor the camelCase one below (which required
+# `customerId`), so a space-separated id profiled as free `text` at 9,754 distinct values
+# and was offered to every dimension path. A CSV header writes what a human types, and a
+# human types a space.
 _KEY_PATTERN = re.compile(
-    r"(_id|_key|_code|_num|_number|_identifier|_pk|_uuid|_guid)$", re.IGNORECASE
+    r"[\s_-](id|key|code|num|number|identifier|pk|uuid|guid)$", re.IGNORECASE
 )
 # camelCase identifier suffixes — franchiseID, supplierID, customerID, eventGUID …
 # The snake_case _KEY_PATTERN above misses these: lowercasing erases the boundary
@@ -256,6 +266,16 @@ class ColumnProfile:
         "top_values",         # for dimensions: most frequent values
         "value_sample",       # high-card entity dims (30<distinct≤cap): the distinct set, for offline binding
         "is_fk",
+        # AT-4 — what the column IS, agreed by witnesses from ≥2 evidence layers.
+        # A SEPARATE field from `semantic_type`, never a replacement: `semantic_type`
+        # answers "how do I handle this" (key/measure/dimension/flag) and fifteen modules
+        # read it as truth. `concept` answers "what is this" under a stricter rule, and is
+        # empty far more often — that is the point. `aughor.tools.concept.resolve_concept`
+        # is its only writer; every reader goes through `concept_of()` so a hint (one
+        # witness, confidence < 0.5) can never be mistaken for a finding.
+        "concept",              # "geo.latitude", "flag.binary", "" when unresolved
+        "concept_confidence",   # 0.0–1.0; < CONFIDENT means HINT, act on nothing
+        "concept_evidence",     # the sentences a human reads to check the machine
     )
 
     def __init__(
@@ -278,6 +298,9 @@ class ColumnProfile:
         p25: Optional[float] = None,
         p50: Optional[float] = None,
         p75: Optional[float] = None,
+        concept: str = "",
+        concept_confidence: float = 0.0,
+        concept_evidence: Optional[list[str]] = None,
     ):
         self.table = table
         self.column = column
@@ -297,6 +320,9 @@ class ColumnProfile:
         self.top_values = top_values
         self.value_sample = value_sample
         self.is_fk = is_fk
+        self.concept = concept or ""
+        self.concept_confidence = float(concept_confidence or 0.0)
+        self.concept_evidence = list(concept_evidence or [])
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self.__slots__}
@@ -309,6 +335,14 @@ class ColumnProfile:
         obj = cls.__new__(cls)
         for k in cls.__slots__:
             setattr(obj, k, d.get(k))
+        # A cache written before AT-4 has no concept keys at all, and `d.get` hands back
+        # None for each. `concept_of(None, None)` is already "" — but `concept_evidence`
+        # would arrive as None where every reader expects a list, and `concept_confidence`
+        # as None where a comparison raises. Normalise on the way in: an old cache means
+        # "no concept", not "a concept whose fields are missing".
+        obj.concept = obj.concept or ""
+        obj.concept_confidence = float(obj.concept_confidence or 0.0)
+        obj.concept_evidence = list(obj.concept_evidence or [])
         return obj
 
 
@@ -321,6 +355,13 @@ class TableProfile:
         "n_periods", "trailing_partial", "time_grain",
         "freshness_lag_hours",
         "computed_at",
+        # AT-6 — quantities the table IMPLIES but does not store: the subtraction behind a
+        # 0/1 flag, the span between two timestamps, the product of a price and a count.
+        # One sentence each, already carrying its support and row count. Intake had to
+        # invent the first of these from a prompt paragraph in six consecutive runs; a
+        # measured fact about the table belongs in the schema, not in a rule the model is
+        # asked to remember.
+        "derived_quantities",
     )
 
     def __init__(
@@ -338,7 +379,9 @@ class TableProfile:
         n_periods: Optional[int] = None,
         trailing_partial: bool = False,
         time_grain: Optional[str] = None,
+        derived_quantities: Optional[list] = None,
     ):
+        self.derived_quantities = list(derived_quantities or [])
         self.table = table
         self.row_count = row_count
         self.grain_column = grain_column
@@ -391,6 +434,10 @@ class TableProfile:
         obj = cls.__new__(cls)
         for k in cls.__slots__:
             setattr(obj, k, d.get(k))
+        # A cache written before AT-6 has no key here and `d.get` hands back None where
+        # every reader expects a list — the same normalisation ColumnProfile does for
+        # `concept_evidence`. An old cache means "nothing derived", not "a broken field".
+        obj.derived_quantities = list(obj.derived_quantities or [])
         return obj
 
 
@@ -446,8 +493,16 @@ def _semantic_type(
     row_count: int,
     null_rate: float,
     value_range: Optional[tuple],
+    concept: str = "",
 ) -> str:
     col_lower = col.lower()
+    # AT-7's first consumer. `_GEO_CODE_PATTERN` below types anything place-shaped as a
+    # `key`, which is right for a postal code and wrong for a coordinate — and it was
+    # wrong for the one column that could have answered "where is this customer", so the
+    # relationship path never saw it. A CONFIDENT concept (two agreeing layers, never a
+    # hint) overrides the pattern; everything else reaches the pattern exactly as before.
+    if concept in ("geo.latitude", "geo.longitude") and _NUMERIC_TYPES.search(dtype or ""):
+        return "measure"
 
     if is_fk or _KEY_PATTERN.search(col_lower) or _KEY_PATTERN_CAMEL.search(col):
         return "key"
@@ -470,6 +525,15 @@ def _semantic_type(
             return "key"
         return "measure"
     if _TEXT_TYPES.search(dtype):
+        # A postal code is an identifier whichever type it lands in. `Order Zipcode` is
+        # BIGINT and reaches "key" through _GEO_CODE_PATTERN above; `Customer Zipcode` is
+        # VARCHAR holding `725` and `95125`, which casts to a number, correlates against
+        # anything and returns a coefficient with a p-value — every part well-formed and
+        # none of it meaning anything. Only the POSTAL half of _GEO_CODE_PATTERN is applied
+        # here: a city, state or country name is a genuine dimension and must keep being
+        # one, which is why this is not that pattern.
+        if _POSTAL_NAME.search(col):
+            return "key"
         cardinality = distinct_count / max(row_count, 1)
         if distinct_count <= 30 or cardinality < 0.02:
             return "dimension"
@@ -477,10 +541,127 @@ def _semantic_type(
     return "unknown"
 
 
-def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optional[str], Optional[str]]:
+# ── AT-4 · the NAME layer's witnesses ────────────────────────────────────────
+# The patterns above already encode what a name suggests; until now each one decided a
+# question by itself. Here they become witnesses instead — one layer's opinion, which needs
+# a second layer to agree before anything acts on it. Nothing above changes: `semantic_type`
+# still reads them exactly as it did.
+
+_LAT_NAME = re.compile(r"(?:^|[\s_-])lat(itude)?(?:$|[\s_-])", re.IGNORECASE)
+_LON_NAME = re.compile(r"(?:^|[\s_-])(lon|lng|long|longitude)(?:$|[\s_-])", re.IGNORECASE)
+_INDICATOR_NAME = re.compile(r"(_risk|_flag|_indicator|_ind)$", re.IGNORECASE)
+_PLACE_NAME = re.compile(
+    r"(country|state|city|region|province|prefecture|district|market)", re.IGNORECASE)
+_PERCENT_NAME = re.compile(r"(percent|pct|ratio|rate|share)$", re.IGNORECASE)
+#: Deliberately NARROWER than `_PERCENT_NAME`. Saying a column is a proportion is a soft
+#: claim the two-witness rule can check; saying it is on the 0–100 scale multiplies somebody's
+#: number by a hundred. `rate`, `ratio` and `share` are not enough for that — `heart_rate`
+#: 40–100 and `exchange_rate` are rates and not percentages. Both are still caught when they
+#: sit inside 0–1, where the range needs no name at all.
+_PERCENT_SCALE_NAME = re.compile(r"(percent|pct)$", re.IGNORECASE)
+# AT-5's set and grammar witnesses need a name rule to agree WITH, or every one of them is
+# a lone witness by construction. Each of these names a concept the value layer can also
+# reach: a currency code, an address, a phone, a postal code, a weekday, a month.
+_CURRENCY_CODE_NAME = re.compile(r"(currency|ccy|curr_code)", re.IGNORECASE)
+_EMAIL_NAME = re.compile(r"(e?mail)", re.IGNORECASE)
+_PHONE_NAME = re.compile(r"(phone|mobile|msisdn|telephone)", re.IGNORECASE)
+_POSTAL_NAME = re.compile(r"(zip|postal|postcode|zipcode)", re.IGNORECASE)
+#: The separators are load-bearing on a token this short: a bare `ip` would match `ship`,
+#: `zip`, `equipment`, `recipient` and `tooltip`, and `zip` in particular is a postal code
+#: three rules further up. Requiring a boundary on both sides leaves only the real ones.
+_IP_NAME = re.compile(
+    r"(?:^|[\s_.-])(ip|ipv[46]|ip_?addr(?:ess)?|client_?ip|host_?ip|remote_?addr)(?:$|[\s_.-])",
+    re.IGNORECASE)
+_WEEKDAY_NAME = re.compile(r"(weekday|day_of_week|dayofweek|dow)$", re.IGNORECASE)
+_MONTH_NAME = re.compile(r"(?:^|[\s_-])month(?:_name)?$", re.IGNORECASE)
+#: `_DURATION_PATTERN` above is unanchored at the front, so it reads `Product Image` as a
+#: duration — "im-AGE", and `average`, `package` and `mileage` the same way. Harmless where
+#: it is (that path only sees numeric measures) and not harmless here, where every column of
+#: every type is offered to every rule. Same words, requiring a separator in front.
+#: NOT `\b`: an underscore is a word character, so `\bdays$` does not match `lead_time_days`
+#: — the boundary is exactly where the separator is.
+_DURATION_WORD = re.compile(
+    r"(?:^|[\s_\-.()/])(days|hours|minutes|seconds|duration|age|lag|lead|delay)$",
+    re.IGNORECASE)
+
+#: What each name pattern is worth. Every one is below CONFIDENT on purpose: AT-0 measured
+#: 27 columns across 9 of 13 datasets where the name says one thing and the values say
+#: another, so a name is a lead, not a finding.
+_NAME_WITNESS_RULES: tuple = (
+    (lambda c, d: bool(_LAT_NAME.search(c)), "geo.latitude", 0.55, "named like a latitude"),
+    (lambda c, d: bool(_LON_NAME.search(c)), "geo.longitude", 0.55, "named like a longitude"),
+    (lambda c, d: bool(_KEY_PATTERN.search(c.lower()) or _KEY_PATTERN_CAMEL.search(c)),
+     "key.identifier", 0.6, "named like an identifier"),
+    (lambda c, d: bool(_FLAG_PATTERN.match(c.lower()) or _INDICATOR_NAME.search(c)),
+     "flag.binary", 0.5, "named like an indicator"),
+    (lambda c, d: bool(_BOOL_TYPES.search(d or "")),
+     "flag.binary", 0.5, "declared as a boolean"),
+    (lambda c, d: bool(_COUNT_PATTERN.search(c.lower())), "count.quantity", 0.5, "named like a count"),
+    (lambda c, d: bool(_CURRENCY_PATTERN.search(c.lower())), "money.amount", 0.5, "named like money"),
+    (lambda c, d: bool(_DURATION_WORD.search(c.lower())), "duration.days", 0.5, "named like a duration"),
+    (lambda c, d: bool(_PERCENT_NAME.search(c.lower())), "percent.proportion", 0.45, "named like a proportion"),
+    (lambda c, d: bool(_PLACE_NAME.search(c.lower())), "geo.region", 0.45, "named like a place"),
+    (lambda c, d: bool(_TIMESTAMP_TYPES.search(d or "")), "time.instant", 0.55, "declared as a timestamp"),
+    # A date column the loader typed as text still says so in its NAME — `order date
+    # (DateOrders)` is VARCHAR in data_co — and the value layer can read ISO-8601 out of
+    # the text, so the two layers can now meet on a column neither could type alone.
+    (lambda c, d: bool(_TIMESTAMP_PATTERN.search(c.lower())), "time.instant", 0.45,
+     "named like a date"),
+    (lambda c, d: bool(_CURRENCY_CODE_NAME.search(c)), "code.currency", 0.55,
+     "named like a currency code"),
+    (lambda c, d: bool(_EMAIL_NAME.search(c)), "contact.email", 0.6, "named like an address"),
+    (lambda c, d: bool(_PHONE_NAME.search(c)), "contact.phone", 0.6, "named like a phone number"),
+    (lambda c, d: bool(_POSTAL_NAME.search(c)), "geo.postal_code", 0.55, "named like a postal code"),
+    (lambda c, d: bool(_IP_NAME.search(c)), "net.ip_address", 0.6, "named like an IP address"),
+    (lambda c, d: bool(_WEEKDAY_NAME.search(c)), "time.weekday", 0.6, "named like a weekday"),
+    (lambda c, d: bool(_MONTH_NAME.search(c)), "time.month", 0.6, "named like a month"),
+)
+
+
+def _name_witnesses(column: str, dtype: str) -> list:
+    """The NAME layer's opinion about one column. Lazy import keeps the profiler light."""
+    from aughor.tools.concept import LAYER_NAME, Witness
+
+    name = column or ""
+    out = []
+    for matches, concept, confidence, why in _NAME_WITNESS_RULES:
+        try:
+            hit = matches(name, dtype or "")
+        except Exception:
+            hit = False
+        if hit:
+            out.append(Witness(layer=LAYER_NAME, concept=concept, confidence=confidence,
+                               evidence=f"{why} ({name})"))
+    return out
+
+
+def _value_interpretation(
+    col: str,
+    value_range: Optional[tuple],
+    concept: str = "",
+) -> tuple[Optional[str], Optional[str]]:
     """
     Returns (interpretation_string, unit) for measure columns.
     Purely deterministic — range + column name heuristics, no LLM.
+
+    AT-5 · THE PERCENT SCALE, and why it is resolved HERE and not by a concept. `0.81` and
+    `81` can be the same measurement, and reading one as the other is off by a hundred.
+    Measured across 105 tables, the range alone cannot say whether a 0–100 column is a
+    percentage at all: it fires on 82 columns and about two are (`quantity` 1–14, `csat`
+    1–5, `month` 1–12). And the concept system cannot rescue it either, because the VALUE
+    layer has nothing to contribute in that band — so a percent-named 0–100 column has one
+    witness, stays a hint, and never reaches a scale.
+
+    The scale is therefore a `unit` heuristic, which is what this function has always been:
+    it already decides `USD` from `_CURRENCY_PATTERN` and `days` from `_DURATION_PATTERN`
+    on the name alone. A looser contract than a concept, and the honest home for a fact
+    that cannot earn two independent witnesses.
+
+    What makes it safe is the narrowness of the token. Only `percent` and `pct` assert a
+    whole-percent scale; `rate`, `ratio` and `share` do not, because `heart_rate` 40–100 is
+    not a percentage and `exchange_rate` is not either. Those columns are still caught when
+    they sit in 0–1, where the range is unambiguous on its own. A confident
+    `percent.proportion` concept is accepted as the same evidence when there is one.
     """
     col_lower = col.lower()
     if value_range is None:
@@ -492,9 +673,14 @@ def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optio
     except (TypeError, ValueError):
         return None, None
 
-    # Range 0–1 → almost certainly a fraction / percentage
+    # Range 0–1 → almost certainly a fraction / percentage. Kept name-free and
+    # concept-free: it predates AT-5 and is right on its own.
     if 0 <= lo_f and hi_f <= 1.0:
         return "fraction 0–1 (likely percentage)", "percent_fraction"
+
+    says_percent = bool(_PERCENT_SCALE_NAME.search(col_lower)) or concept == "percent.proportion"
+    if says_percent and 0 <= lo_f and hi_f <= 100.0:
+        return "percentage 0–100 (already scaled — do NOT multiply by 100)", "percent_whole"
 
     # Name-based heuristics
     if _CURRENCY_PATTERN.search(col_lower):
@@ -508,6 +694,18 @@ def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optio
 
 
 # ── Core profile builders ─────────────────────────────────────────────────────
+
+#: How many tables one connection may profile. A cap is real — a 500-table warehouse must
+#: not spend minutes here — but 20 was far too low and it dropped tables SILENTLY. On the
+#: workspace connection that meant 40 of 60 tables unprofiled, including
+#: `data_co_supplychain`, which ranked 36th and so never appeared in the Schema Shape tab
+#: at all: the UI said "no profiled tables in this scope" and nothing said why.
+#:
+#: 60 is measured, not guessed. Profiling the largest table in the corpus — 53 columns,
+#: 180,519 rows, including the row sample and the pair scan — costs 0.39 s end to end, and
+#: a small one costs 0.06 s. Sixty tables is therefore ~12 s worst case and usually far
+#: less, against the ~8 s the old cap was saving.
+MAX_PROFILED_TABLES = 60
 
 _LARGE_TABLE_THRESHOLD = 500_000   # rows above which we skip full-scan queries
 # Composite-PK detection needs a COUNT(DISTINCT a,b) scan (no catalog stat exists for a
@@ -1071,6 +1269,52 @@ def build_table_profile(
     )
 
 
+# ── AT-6 · the row-aligned sample the pair rules need ────────────────────────
+
+#: Rows pulled per table for pair coherence. Measured on data_co (53 columns, 180,519
+#: rows): 300 rows finds every true pair rule the full table supports and the whole scan
+#: costs 0.23 s. Raising it buys nothing — a rule that holds on 300 random rows and fails
+#: on the table is not a rule.
+_PAIR_SAMPLE_ROWS = 300
+
+
+def _row_sample(conn: "DatabaseConnection", table: str, columns: list, row_count: int) -> list:
+    """One ROW-ALIGNED sample of every column, as text. `[]` on any failure.
+
+    Row alignment is the capability: `Late_delivery_risk == (real > scheduled)` cannot be
+    answered from three independent samples, only from three readings of the same rows.
+    Everything is cast to VARCHAR so one query covers a VARCHAR latitude and a BIGINT day
+    count alike — and so the DECIMAL PLACES survive, which is what separates a recorded
+    coordinate from a printed float.
+    """
+    from aughor.tools.pairs import ColumnSample
+
+    if not columns or row_count <= 0:
+        return []
+    names = [c for c, _ in columns]
+    selects = ", ".join(f'CAST({_q(c)} AS VARCHAR) AS "s{i}"' for i, c in enumerate(names))
+    large = row_count > _LARGE_TABLE_THRESHOLD
+    if large:
+        # Match the file's existing large-table idiom rather than reservoir-sampling a
+        # warehouse fact: a percentage sample is cheap, and 300 of those rows is plenty.
+        sql = (f"SELECT {selects} FROM {_qt(table)} USING SAMPLE {_SAMPLE_PCT} PERCENT "
+               f"LIMIT {_PAIR_SAMPLE_ROWS}")
+    else:
+        sql = f"SELECT {selects} FROM {_qt(table)} USING SAMPLE {_PAIR_SAMPLE_ROWS} ROWS"
+    r = conn.execute("__profiler__", sql)
+    if r.error or not r.rows:
+        # `USING SAMPLE` is DuckDB's spelling. Everywhere else, take the cheap prefix and
+        # accept that it is a prefix — a biased sample still answers "do these two columns
+        # hold the same value", and a failed probe must not look like a true negative.
+        r = conn.execute("__profiler__", f"SELECT {selects} FROM {_qt(table)} LIMIT {_PAIR_SAMPLE_ROWS}")
+    if r.error or not r.rows:
+        return []
+    return [
+        ColumnSample(column=c, dtype=dt, values=tuple(row[i] for row in r.rows))
+        for i, (c, dt) in enumerate(columns)
+    ]
+
+
 def build_column_profiles(
     conn: "DatabaseConnection",
     table: str,
@@ -1079,6 +1323,10 @@ def build_column_profiles(
     row_count: int,
     fast_stats: Optional[dict] = None,   # pre-fetched catalog stats for this table
     index_config: Optional[dict[str, bool]] = None,   # R11 per-column `index` decisions
+    declared_concepts: Optional[dict[str, str]] = None,  # AT-4 human-declared concepts
+    column_roles: Optional[dict] = None,                 # AT-8 mined usage roles
+    pair_scan=None,                                      # AT-6 PairScan, sampled once by the caller
+    samples=None,                                        # the ColumnSamples that scan came from
 ) -> list[ColumnProfile]:
     """
     Compute column profiles.
@@ -1277,6 +1525,45 @@ def build_column_profiles(
             if vals:
                 value_sample_map[col] = vals
 
+    # ── AT-4 · what each column IS, from witnesses in ≥2 layers ───────────────
+    # Best-effort in every direction: a failed sample, an unavailable query log or a
+    # missing config each cost this table its concepts and nothing else. A profile
+    # without a concept is the designed default — `concept_of()` reads it as "".
+    from aughor.tools.concept import concept_of as _concept_of
+
+    concept_verdicts: dict = {}
+    try:
+        from aughor.tools.concept import Witness, resolve_concept
+        from aughor.tools.pairs import pair_witnesses, scan_pairs
+        from aughor.tools.shape import value_witnesses
+        from aughor.tools.usage import witnesses_for_table
+
+        # ONE sample, three readings. The value layer (AT-5) and the pair layer (AT-6) both
+        # answer from the same rows, which is not just a saved query: `f == (a > b)` and
+        # "these values are 0 or 1" have to be about the same 300 rows or the two layers can
+        # disagree about a column while both being right about their own sample.
+        rows = samples if samples is not None else _row_sample(conn, table, columns, row_count)
+        scan = pair_scan if pair_scan is not None else scan_pairs(rows)
+        by_pair = pair_witnesses(scan)
+        by_value = {s.column: value_witnesses(s.values) for s in (rows or ())}
+        by_usage = witnesses_for_table(table, [c for c, _ in columns], column_roles or {})
+        declared = declared_concepts or {}
+        for col, dtype in columns:
+            witnesses = (_name_witnesses(col, dtype) + by_value.get(col, [])
+                         + by_pair.get(col, []) + by_usage.get(col, []))
+            # A human who typed the answer is the authority, not a fourth opinion.
+            if declared.get(col):
+                from aughor.tools.concept import LAYER_DECLARED
+                witnesses.append(Witness(
+                    layer=LAYER_DECLARED, concept=str(declared[col]), confidence=1.0,
+                    evidence="declared in the column config"))
+            verdict = resolve_concept(witnesses)
+            if verdict.concept:
+                concept_verdicts[col] = verdict
+    except Exception as exc:                      # noqa: BLE001 — profiling is best-effort
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "concept resolution is best-effort", counter="profiler.concept")
+
     # ── Assemble ColumnProfile objects ────────────────────────────────────────
     profiles: list[ColumnProfile] = []
     for col, dtype in columns:
@@ -1288,11 +1575,17 @@ def build_column_profiles(
         vrange  = value_ranges.get(col)
         is_fk   = col in fk_cols or bool(_KEY_PATTERN.search(col.lower()))
 
-        sem_type = _semantic_type(col, dtype, is_fk, distinct, row_count, null_rate, vrange)
+        verdict = concept_verdicts.get(col)
+        # `concept_of` is the single honest read: a hint (one witness) resolves to "" and
+        # changes nothing. Only two agreeing layers are allowed to move a semantic type.
+        acted_concept = _concept_of(
+            verdict.concept if verdict else "", verdict.confidence if verdict else 0.0)
+        sem_type = _semantic_type(col, dtype, is_fk, distinct, row_count, null_rate, vrange,
+                                  concept=acted_concept)
 
         interp, unit = (None, None)
         if sem_type == "measure":
-            interp, unit = _value_interpretation(col, vrange)
+            interp, unit = _value_interpretation(col, vrange, concept=acted_concept)
 
         dist = dist_map.get(col, {})
         profiles.append(ColumnProfile(
@@ -1300,6 +1593,9 @@ def build_column_profiles(
             column=col,
             dtype=dtype,
             semantic_type=sem_type,
+            concept=verdict.concept if verdict else "",
+            concept_confidence=verdict.confidence if verdict else 0.0,
+            concept_evidence=list(verdict.evidence) if verdict else [],
             null_rate=round(null_rate, 4),
             distinct_count=distinct,
             is_low_cardinality=is_low_card,
@@ -1349,14 +1645,36 @@ def profile_connection(
     # config changes nothing). Lazy import so the profiler stays import-light; any
     # hiccup falls back to the built-in gate.
     index_cfg: dict[str, dict[str, bool]] = {}
+    # AT-4's DECLARED layer, from the same file and the same read: a human who typed the
+    # answer is the authority, and `resolve_concept` treats them as such.
+    declared_cfg: dict[str, dict[str, str]] = {}
     try:
         from aughor.ontology.column_config import load_column_configs
         _cc_conn = getattr(conn, "_connection_id", None) or "fixture"
         _cc_schema = getattr(conn, "_schema_name", None) or "default"
         for (_t, _c), _fl in load_column_configs(_cc_conn, _cc_schema).items():
             index_cfg.setdefault(_t, {})[_c] = bool(_fl.index)
+            if getattr(_fl, "concept", ""):
+                declared_cfg.setdefault(_t, {})[_c] = str(_fl.concept)
     except Exception:
         index_cfg = {}
+        declared_cfg = {}
+
+    # AT-8's USAGE layer. Mined once per connection, best-effort: no history is the normal
+    # state of a fresh connection and costs nothing but the layer.
+    # ⚠ Profiles are cached by SCHEMA fingerprint and usage moves without the schema
+    # moving, so a column that becomes popular today is witnessed at the next profile
+    # REBUILD, not the next query. Stated here rather than found later as a bug.
+    mined_roles: dict = {}
+    try:
+        from aughor.sql.query_log_miner import collect_logged_sql, mine_query_log
+        _conn_id = getattr(conn, "_connection_id", None) or ""
+        if _conn_id:
+            sqls = collect_logged_sql(_conn_id)
+            if sqls:
+                mined_roles = dict(mine_query_log(sqls, dialect=dialect or "duckdb").column_roles)
+    except Exception:
+        mined_roles = {}
 
     # ── Pre-fetch catalog stats for ALL tables (cheap, no full scans) ─────────
     # {table_name: (row_count, {col: {...stats...}})}
@@ -1376,12 +1694,29 @@ def profile_connection(
             all_catalog[table] = (None, {})
 
     # ── Prioritise likely fact tables so they're profiled even in large schemas ─
+    # De-duplicated FIRST. `tables` holds BARE names, and a multi-schema connection carries
+    # collisions: the workspace has `luxexperience.customers` and `main.customers`, plus
+    # two `orders`. Profiling a name twice spent the budget twice and the second result
+    # overwrote the first in `column_profiles` (keyed "table.column"), so which profile
+    # survived depended on iteration order.
+    # ⚠ De-duplication makes that deterministic; it does not make it CORRECT. Two different
+    # tables sharing a bare name still resolve to one profile, and fixing that means keying
+    # the profile maps by qualified name — a change fifteen readers would have to follow.
+    seen: set = set()
+    unique = [t for t in tables if not (t in seen or seen.add(t))]
     prioritised = sorted(
-        tables,
+        unique,
         key=lambda t: (0 if _FACT_SIGNALS.match(t) else 1, t),
     )
+    if len(prioritised) > MAX_PROFILED_TABLES:
+        # Say what was dropped. A silent cap reads as "everything here is profiled", and
+        # downstream that is indistinguishable from "this table has nothing to say".
+        dropped = prioritised[MAX_PROFILED_TABLES:]
+        logger.warning(
+            "profiler: %d tables exceed the %d-table cap — %d not profiled: %s",
+            len(prioritised), MAX_PROFILED_TABLES, len(dropped), ", ".join(dropped[:20]))
 
-    for table in prioritised[:20]:
+    for table in prioritised[:MAX_PROFILED_TABLES]:
         fk_cols = fk_hints.get(table, set())
         catalog_rc, fast_stats = all_catalog.get(table, (None, {}))
 
@@ -1397,10 +1732,28 @@ def profile_connection(
         )
         table_profiles[table] = tp
 
+        # AT-6 — ONE row-aligned sample per table, feeding two consumers: the pair
+        # witnesses below and the derived quantities on the table profile. Sampling twice
+        # would cost a scan and risk the two disagreeing about the same table.
+        pair_scan = None
+        samples = None
+        try:
+            from aughor.tools.pairs import derived_expressions, scan_pairs
+            samples = _row_sample(conn, table, cols, tp.row_count)
+            pair_scan = scan_pairs(samples)
+            tp.derived_quantities = [f.note for f in derived_expressions(pair_scan)]
+        except Exception as exc:                  # noqa: BLE001 — profiling is best-effort
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "pair coherence is best-effort", counter="profiler.pairs")
+
         col_profs = build_column_profiles(
             conn, table, cols, fk_cols, tp.row_count,
             fast_stats=fast_stats,
             index_config=index_cfg.get(table),
+            declared_concepts=declared_cfg.get(table),
+            column_roles=mined_roles,
+            pair_scan=pair_scan,
+            samples=samples,
         )
         for cp in col_profs:
             column_profiles[f"{table}.{cp.column}"] = cp
@@ -1429,11 +1782,17 @@ def detect_schema_quirks(
     quirks: list[str] = []
 
     # Build lookup: table → {col_name → distinct_count}
+    # From the ATTRIBUTES, not by splitting the key. A key is `{table}.{column}` and the
+    # table half may itself be qualified — `luxexperience.customers.customer_id` — so
+    # `split(".", 1)` reads the SCHEMA as the table and the rest as the column, silently
+    # producing a lookup that matches nothing. The profile already carries both halves
+    # unambiguously; the key is a key, not a data structure.
     table_col_distinct: dict[str, dict[str, int]] = {}
     for key, cp in column_profiles.items():
-        if "." not in key:
+        tbl = getattr(cp, "table", "") or (key.rsplit(".", 1)[0] if "." in key else "")
+        col = getattr(cp, "column", "") or (key.rsplit(".", 1)[-1] if "." in key else "")
+        if not tbl or not col:
             continue
-        tbl, col = key.split(".", 1)
         table_col_distinct.setdefault(tbl, {})[col] = cp.distinct_count or 0
 
     for table, tp in table_profiles.items():
@@ -1506,6 +1865,9 @@ def render_profile_annotations(
     Kept intentionally compact — one line per column, token-budget-aware.
     Tables not in `relevant_tables` (when supplied) get summary line only.
     """
+    from aughor.ontology.operations import caveat_for
+    from aughor.tools.concept import concept_of
+
     if not table_profiles:
         return ""
 
@@ -1606,6 +1968,26 @@ def render_profile_annotations(
                 if dparts:
                     parts.append("| " + " · ".join(dparts))
 
+            # AT-4 — the concept, and ONLY when two layers agreed. A hint is deliberately
+            # invisible here: showing "possibly a latitude (0.49)" in a prompt is how a
+            # guess becomes a fact one paraphrase later, which is the failure this whole
+            # program exists to prevent.
+            concept = concept_of(getattr(cp, "concept", ""), getattr(cp, "concept_confidence", 0.0))
+            if concept:
+                # AT-7 — the concept AND its consequence. The label alone is a receipt;
+                # "never SUM" is the part that changes an answer.
+                caveat = caveat_for(concept)
+                parts.append(f"| IS {concept}" + (f" — {caveat}" if caveat else ""))
+
             lines.append(" ".join(parts))
+
+        # AT-6 — what the table implies but does not store. Placed after the columns so a
+        # reader has the names first, and worded as measured facts with their support.
+        derived = [d for d in (getattr(tp, "derived_quantities", None) or []) if d]
+        if derived:
+            lines.append(f"    DERIVED QUANTITIES in {table} (measured on sampled rows — "
+                         f"use these expressions rather than re-deriving them):")
+            for note in derived[:6]:
+                lines.append(f"      · {note}")
 
     return "\n".join(lines)

@@ -11,7 +11,10 @@ This module mines a list of historical SQL strings into DETERMINISTIC, reusable 
   * join edges     — ``a.col = b.col`` equalities across tables, ranked by how often they appear,
   * filter values  — common ``col = 'literal'`` / ``col IN (...)`` predicates (the real value domain),
   * named formulas — recurring ``<expression> AS <name>`` computations (the real business logic),
-  * column usage   — which columns are actually referenced (a schema-linking recall signal).
+  * column usage   — which columns are actually referenced (a schema-linking recall signal),
+  * column ROLES   — *how* each column is used: grouped, summed, averaged, joined on, or
+    filtered against 0/1. AT-8's usage layer. A count says a column matters; a role says
+    what it IS, and a column nobody ever sums is not a measure whatever its type says.
 
 It is pure and backend-agnostic (in: ``list[str]``; out: :class:`QueryLogFacts`) — the SOURCE of the
 queries is pluggable: Aughor's own logged queries now (:func:`collect_logged_sql`), the warehouse
@@ -39,6 +42,18 @@ def _alias_to_table(tree: exp.Expression) -> dict[str, str]:
     return m
 
 
+#: AT-8's role vocabulary. Deliberately small and syntactic: each one is a thing the SQL
+#: text says out loud, never an interpretation of it. `filter_binary` is the narrow case
+#: `col = 0` / `col = 1`, which is how a flag is used and is not how a measure is used.
+ROLE_GROUP_BY = "group_by"
+ROLE_SUM = "sum"
+ROLE_AVG = "avg"
+ROLE_JOIN = "join"
+ROLE_FILTER_BINARY = "filter_binary"
+
+ROLES = (ROLE_GROUP_BY, ROLE_SUM, ROLE_AVG, ROLE_JOIN, ROLE_FILTER_BINARY)
+
+
 def _is_computation(e: exp.Expression) -> bool:
     """True when a SELECT projection is a real computed formula (function / arithmetic / CASE /
     window), not a bare column, literal, or ``*`` — i.e. worth recording as business logic."""
@@ -61,6 +76,9 @@ class QueryLogFacts:
     filter_values: dict = field(default_factory=dict)           # "t.col" -> Counter(literal -> count)
     named_formulas: Counter = field(default_factory=Counter)    # (name, expr_sql) -> count
     column_usage: Counter = field(default_factory=Counter)      # "t.col" -> count
+    #: AT-8 — ("t.col", role) -> count, role ∈ ROLES. What analysts DO with a column,
+    #: which accretes from real history without anyone configuring anything.
+    column_roles: Counter = field(default_factory=Counter)
 
     def render_for_schema_context(
         self, *, min_support: int = 1, max_joins: int = 20, max_filter_cols: int = 12,
@@ -134,6 +152,8 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                 ql, qr = _qual(left), _qual(right)
                 if ql and qr and ql.split(".")[0].lower() != qr.split(".")[0].lower():
                     facts.join_edges[" = ".join(sorted([ql, qr]))] += 1
+                    facts.column_roles[(ql, ROLE_JOIN)] += 1
+                    facts.column_roles[(qr, ROLE_JOIN)] += 1
             else:                                      # column = literal filter
                 col = left if isinstance(left, exp.Column) else (right if isinstance(right, exp.Column) else None)
                 lit = _literal(left) or _literal(right)
@@ -141,6 +161,28 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                     qc = _qual(col)
                     if qc:
                         facts.filter_values.setdefault(qc, Counter())[str(lit)] += 1
+                        # `WHERE flag = 1` is how a flag is used. A measure is filtered by
+                        # range, an id by a specific value; only an indicator is compared
+                        # to 0 or 1 for equality.
+                        if str(lit).strip() in ("0", "1", "true", "false", "True", "False"):
+                            facts.column_roles[(qc, ROLE_FILTER_BINARY)] += 1
+
+        # AT-8 — how the column is USED. `GROUP BY x` says x is a dimension; `SUM(x)` says x
+        # is additive; the two are almost never the same column, and neither fact is in the
+        # schema.
+        for grp in tree.find_all(exp.Group):
+            for e in grp.expressions:
+                if isinstance(e, exp.Column):
+                    qc = _qual(e)
+                    if qc:
+                        facts.column_roles[(qc, ROLE_GROUP_BY)] += 1
+        for agg, role in ((exp.Sum, ROLE_SUM), (exp.Avg, ROLE_AVG)):
+            for node in tree.find_all(agg):
+                inner = node.this
+                if isinstance(inner, exp.Column):
+                    qc = _qual(inner)
+                    if qc:
+                        facts.column_roles[(qc, role)] += 1
 
         for inn in tree.find_all(exp.In):
             if isinstance(inn.this, exp.Column):

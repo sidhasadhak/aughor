@@ -429,6 +429,203 @@ def _run_association_scan(conn, question: str, dimensions: list, metric_table: s
     return result
 
 
+def _run_relationship_scan(conn, question: str, intake_data: dict, dimensions: list,
+                           metric_table: str, metric_sql: str, metric_label: str,
+                           phase_id: str, schema: str = "") -> Optional["InvestigationFinding"]:
+    """The one query that answers "how do these two relate", chosen by the pair's TYPES.
+
+    Two categories still go through `_run_association_scan` — the joint distribution and
+    its chi-square verdict are unchanged. What is new is that a pair is no longer REQUIRED
+    to be two categories: a measured quantity against another quantity is a correlation, and
+    a measured quantity against a category is a comparison of group means. Neither had a
+    query shape here, so both used to fall through to the marginal rankings.
+
+    Prefers the pair intake resolved (`relationship_left_sql` / `_right_sql`) over the
+    words the question happens to share with a column name. Falls back to the historical
+    dimension-pair matching so the categorical specimens behave exactly as before.
+    """
+    from aughor.agent.relationship import plan_relationship, read_relationship
+
+    pair = _intake_relationship_pair(intake_data or {})
+    if pair is None:
+        _named = _association_dimension_pair(question, dimensions)
+        _res = _run_association_scan(conn, question, dimensions, metric_table,
+                                     metric_sql, metric_label, phase_id)
+        if _res is not None and len(_named) >= 2:
+            return _association_finding(_res, _named[0].split(".")[-1], _named[1].split(".")[-1])
+        return None
+
+    left_sql, right_sql, left_label, right_label = pair
+    if not metric_table:
+        return None
+
+    import logging as _logging
+
+    def _run(sql: str):
+        """Probe channel for the type test. Deliberately NOT `_execute_safe`: a probe that
+        fails is an answer (this column is not a number), and routing it through the
+        repair loop would spend an LLM round-trip re-writing a question we are entitled to
+        hear 'no' to. Labelled, not dunder-internal, because it reads user data and every
+        query that does belongs in the audit trail."""
+        try:
+            res = conn.execute(f"{phase_id}_type_probe", sql)
+            if getattr(res, "error", None):
+                return None
+            return getattr(res, "rows", None)
+        except Exception:
+            return None
+
+    col_types = _typed_columns(schema or "")
+    # AT-7 — the concepts the profiler resolved for THIS table, so a side whose concept
+    # forbids arithmetic is compared across rather than correlated against. Best-effort and
+    # query-free: no cached profiles means an empty map, and an empty map leaves this path
+    # byte-identical to what six runs already measured.
+    col_concepts: dict = {}
+    col_sem_types: dict = {}
+    try:
+        from aughor.tools.profile_cache import load_concepts, load_semantic_types
+        from aughor.tools.table_names import bare
+        _bare_table = bare(metric_table)
+        _conn_id = getattr(conn, "_connection_id", None) or "fixture"
+        col_concepts = {
+            col: concept for (tbl, col), concept in load_concepts(_conn_id).items()
+            if bare(tbl) == _bare_table
+        }
+        # The fallback for a column no concept can reach: a numeric postal code has no
+        # value shape to witness it, so it stays a hint forever while remaining exactly the
+        # column that must never be correlated.
+        col_sem_types = {
+            col: st for (tbl, col), st in load_semantic_types(_conn_id).items()
+            if bare(tbl) == _bare_table
+        }
+    except Exception as _cx:
+        from aughor.kernel.errors import tolerate
+        tolerate(_cx, "concept lookup for the relationship scan is best-effort",
+                 counter="deep_analysis.concept_lookup")
+
+    scored: list[tuple] = []          # (effect, right_sql, plan, result, reading)
+    for candidate in _relationship_candidates(intake_data or {}, right_sql):
+        plan = plan_relationship(
+            table=metric_table, left_column=left_sql, right_column=candidate,
+            left_label=left_label, right_label=_candidate_label(candidate, right_sql, right_label),
+            col_types=col_types, run=_run, col_concepts=col_concepts,
+            col_semantic_types=col_sem_types)
+        if plan.skipped or not plan.sql:
+            if plan.skipped:
+                _logging.getLogger(__name__).info(
+                    "[deep] relationship scan skipped (%s): %s", candidate, plan.skipped)
+            continue
+
+        # The categorical branch has an owner already — one that carries the contingency
+        # grid, the heatmap and the residual analysis. Route to it rather than re-deriving
+        # a worse version of the same thing here. It is not scored against the others: a
+        # chi-square verdict is not on the variance-explained scale the ranking uses.
+        if plan.kind == "category_pair":
+            _res = _run_association_scan(conn, question, [left_sql, candidate], metric_table,
+                                         metric_sql, metric_label, phase_id)
+            if _res is None:
+                continue
+            _f = _association_finding(_res, left_sql.split(".")[-1], candidate.split(".")[-1])
+            if _f is not None:
+                return _f
+            continue
+
+        result = _execute_safe(conn, phase_id, plan.sql, schema=schema or None)
+        if result is None or getattr(result, "error", None) or not getattr(result, "rows", None):
+            _logging.getLogger(__name__).info(
+                "[deep] relationship scan (%s, %s) did not execute: %s", plan.kind, candidate,
+                getattr(result, "error", "no result"))
+            continue
+        reading = read_relationship(plan, list(result.columns), list(result.rows),
+                                    truncated=bool(getattr(result, "truncated", False)))
+        if reading is not None:
+            scored.append((reading.effect, candidate, plan, result, reading))
+
+    if not scored:
+        return None
+
+    # The STRONGEST candidate is the answer. Testing only the column the question's words
+    # happened to reach answers a narrower question than the one asked: "customer location"
+    # against `Customer Country` is a two-value test that cannot see anything city would
+    # show, and reporting its null as the verdict on location is the same overclaim in the
+    # other direction.
+    scored.sort(key=lambda s: s[0], reverse=True)
+    _effect, _cand, plan, result, reading = scored[0]
+    interpretation = reading.interpretation + _rival_candidates_note(scored)
+    from aughor.stats import stats as _st
+    _st.inc(f"deep_analysis.relationship_scan.{plan.kind}")
+    if len(scored) > 1:
+        _st.inc("deep_analysis.relationship_scan.multi_candidate")
+    return InvestigationFinding(
+        finding_id="relationship",
+        title=f"{plan.left_label} × {plan.right_label}: are they related?",
+        sql=result.sql,
+        columns=list(result.columns),
+        rows=result.rows[:_ASSOCIATION_GRID_MAX],
+        row_count=result.row_count,
+        error=None,
+        interpretation=interpretation,
+        key_numbers=[],
+        # A correlation is one number, not a ranking; a group-mean comparison IS a ranking
+        # of means and reads as one. Neither is a contingency grid, so neither gets a heatmap.
+        chart_type="table" if plan.kind == "numeric_pair" else "bar_horizontal",
+        stat_note=reading.technical,
+        is_significant=reading.significant,
+    )
+
+
+#: How many columns of one concept a relationship scan will test. Each is a real query, and
+#: past four the concept has stopped being one concept.
+_RELATIONSHIP_CANDIDATE_CAP = 4
+
+
+def _relationship_key(side: str) -> str:
+    """One column written three ways collapses to one key.
+
+    Intake names the primary and the alternatives in separate fields, and it does not spell
+    them identically — `"Customer City"`, `Customer City` and
+    `data_co.data_co_supplychain.Customer City` are the same column. A raw-string dedup let
+    the winner through twice, so the report said the question "was also asked of Customer
+    City (1.1%)" directly under the Customer City verdict."""
+    s = str(side or "").strip().split(".")[-1].strip()
+    if len(s) > 1 and s[0] == s[-1] == '"':
+        s = s[1:-1].replace('""', '"')
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _relationship_candidates(intake_data: dict, primary: str) -> list:
+    """The columns to test for the right-hand side: the primary first, then the others
+    intake says carry the same concept. De-duplicated, capped, order preserved."""
+    out = [primary]
+    seen = {_relationship_key(primary)}
+    for alt in (intake_data.get("relationship_right_alternatives") or []):
+        alt = str(alt or "").strip()
+        key = _relationship_key(alt)
+        if alt and key and key not in seen:
+            seen.add(key)
+            out.append(alt)
+    return out[:_RELATIONSHIP_CANDIDATE_CAP]
+
+
+def _candidate_label(candidate: str, primary: str, primary_label: str) -> str:
+    """The primary keeps intake's human label; an alternative is named by its own column,
+    so a reader can tell WHICH reading of the concept the verdict is about."""
+    if candidate == primary:
+        return primary_label
+    return _humanise_column(str(candidate).split(".")[-1])
+
+
+def _rival_candidates_note(scored: list) -> str:
+    """One sentence naming the other columns tested for the same concept, so a null verdict
+    reads as "location does not explain this" rather than "one column of it did not"."""
+    rest = scored[1:]
+    if not rest:
+        return ""
+    named = ", ".join(f"{s[2].right_label} ({s[0]:.1%})" for s in rest[:3])
+    return (f" The same question was also asked of {named} — shares of the variation "
+            f"explained — and the strongest of them is reported above.")
+
+
 def _safe_alias(label: str) -> str:
     """A SQL-safe alias from a human metric label ("Gross Sales" -> gross_sales)."""
     alias = re.sub(r"[^a-zA-Z0-9_]+", "_", (label or "metric").strip().lower()).strip("_")
@@ -552,6 +749,148 @@ ASSOCIATION_NULL_DIRECTIVE = (
     "(4) NOT frame the null result as a data gap or a limitation. A null result is a "
     "real finding with a real decision attached: do not segment on this pairing.\n\n"
 )
+
+
+def _drop_self_referential_segment(intake) -> Optional[str]:
+    """Clear a driver segment that is built from the metric's own columns. Returns the
+    reason when one was dropped, so the caller can leave a receipt and a test can assert
+    on it rather than on the absence of a field.
+
+    Deliberately a HARD drop, not a caveat. The comparison_segment block does not merely
+    add a query — it tells the planner this contrast IS the answer and to lead with it —
+    so a self-referential condition takes over the phase, and a note attached underneath a
+    100%-vs-0% chart is not a correction. The prompt now states the same rule (a model
+    that never writes the condition costs nothing here); this is the part that holds when
+    it does.
+    """
+    segment_sql = (getattr(intake, "comparison_segment_sql", "") or "").strip()
+    metric_sql = (getattr(intake, "metric_sql", "") or "").strip()
+    if not segment_sql or not metric_sql:
+        return None
+    from aughor.agent.relationship import self_referential_segment
+    reason = self_referential_segment(metric_sql, segment_sql)
+    if not reason:
+        return None
+    intake.comparison_segment_sql = ""
+    intake.comparison_segment_label = ""
+    intake.intake_notes = (
+        f"DRIVER CONTRAST DROPPED: {reason}. Answering by relating the metric to the other "
+        "columns the question names instead. " + (getattr(intake, "intake_notes", "") or "")
+    ).strip()
+    from aughor.stats import stats as _st
+    _st.inc("deep_analysis.self_referential_segment_dropped")
+    return reason
+
+
+#: Phrases by which a USER takes ownership of a causal assumption. A licence granted here is
+#: the user's, stated in the report as a premise — never something the model concluded. The
+#: model has no way to reach `causal` on observational data on its own, which is the point.
+_USER_CAUSAL_ASSUMPTION_RE = re.compile(
+    r"\b(?:assum(?:e|ing)|treat(?:ing)?\s+\w+\s+as\s+(?:the\s+)?caus|given\s+that\s+\w+\s+caus"
+    r"|take\s+it\s+as\s+given|suppose\s+that)\b[^.?!]*", re.I)
+
+
+def _claim_licence_section(intake_data: dict, phases: list) -> str:
+    """The licence directive appended to the synthesis prompt, plus the waterfall suppression.
+
+    An attribution waterfall decomposes a CHANGE into the causes that produced it. Asked for
+    over an associational cross-section there is no change and there are no causes, so the
+    model invents them: a live run emitted a cause of `-0.011 days` at `pct_of_total 100`,
+    which then tripped the sign/sum checks that exist to catch a real waterfall going wrong.
+    Not requesting it is the fix; the check stops firing because the artefact stops existing.
+    """
+    from aughor.agent.claim_type import admissible_verbs_directive, is_at_least
+    claim_type = (intake_data or {}).get("claim_type_suggestion") or ""
+    if not claim_type:
+        return ""
+    why = ""
+    for line in ((intake_data or {}).get("intake_notes") or "").split(". "):
+        if line.startswith("CLAIM LICENCE:"):
+            why = line.split("—", 1)[-1].strip()
+            break
+    out = "\n\n" + admissible_verbs_directive(claim_type, why or "by the design of this analysis")
+    if not is_at_least(claim_type, "causal"):
+        out += (
+            "\n\nATTRIBUTION WATERFALL — leave `attribution_waterfall` EMPTY and "
+            "`total_change_label` blank. A waterfall decomposes a change into the causes that "
+            "produced it; this analysis measured a relationship, not a change, and has no "
+            "causes to apportion. Inventing an entry to fill the field is a fabricated cause.")
+    return out
+
+
+def _stamp_claim_type(intake, question: str) -> str:
+    """Decide what kind of claim this design licences, and record it on the intake.
+
+    Deterministic, from the DESIGN — never from the prose and never from the model's opinion
+    of its own findings. Seven live runs produced one headline claiming a cause over a
+    cross-sectional scan ("driven by localized state-level bottlenecks") and every guard that
+    chased it did so by matching words. This sets the licence once so the sentence shape is
+    refused instead.
+    """
+    from aughor.agent.claim_type import resolve_claim_type
+    _assumption = ""
+    _m = _USER_CAUSAL_ASSUMPTION_RE.search(question or "")
+    if _m:
+        _assumption = _m.group(0).strip()
+    claim_type, why = resolve_claim_type(
+        cross_sectional=bool(getattr(intake, "cross_sectional", False)),
+        has_time_axis=(getattr(intake, "date_column", "") or "").strip().upper() not in ("", "NONE"),
+        intervention_column=(getattr(intake, "intervention_column", "") or ""),
+        user_assumption=_assumption,
+        declared=(getattr(intake, "claim_type_suggestion", "") or ""),
+    )
+    intake.claim_type_suggestion = claim_type
+    intake.intake_notes = (
+        f"CLAIM LICENCE: {claim_type} — {why}. " + (getattr(intake, "intake_notes", "") or "")
+    ).strip()
+    from aughor.stats import stats as _st
+    _st.inc(f"deep_analysis.claim_type.{claim_type}")
+    return claim_type
+
+
+def _intake_relationship_pair(intake_data: dict) -> Optional[tuple]:
+    """The two sides of a relationship question as intake resolved them, or None.
+
+    Word overlap between the question and the column names is what
+    `_dimensions_named_in_question` has, and it cannot bridge "customer location" to
+    `Customer City` or "shipping delay" to a subtraction of two shipping-day columns — so
+    on the question that motivated this whole path it matched nothing and no scan ran.
+    Concept-to-column is the one part of this the model is better at than a regex, so it
+    is asked for it directly; the shape of the query and the verdict stay in code.
+    """
+    left = (intake_data.get("relationship_left_sql") or "").strip()
+    right = (intake_data.get("relationship_right_sql") or "").strip()
+    if not left or not right or left.lower() == right.lower():
+        return None
+    return (left, right,
+            (intake_data.get("relationship_left_label") or "").strip() or left,
+            (intake_data.get("relationship_right_label") or "").strip() or right)
+
+
+def _population_note(orient_top: bool, is_ratio: bool) -> str:
+    """What the shown rows ARE — matched to the ORDER the scan actually ran in.
+
+    The scan sorts ascending by default and `_direction_plan` flips it to descending
+    whenever a higher value is the worse outcome. The note under the results did not
+    flip: it kept telling the narrator the rows were "the BOTTOM of the distribution,
+    never the top" while they were the top fifteen of five hundred. A note that
+    contradicts the data is worse than no note — on the live run the narrator read a
+    top-15 slice of 563 cities and reported "city-level rates range from 73.21% to
+    81.32%", when the real range across all cities was 27.6% to 81.3%.
+    """
+    end = "HIGHEST" if orient_top else "LOWEST"
+    other = "BOTTOM" if orient_top else "TOP"
+    order = ("highest first" if orient_top else
+             ("lowest ratio first" if is_ratio else "weakest first"))
+    return (
+        f"POPULATION NOTE: these rows are the {end}-ranked values ({order}) and may be a "
+        f"CAPPED subset (the query LIMITs the scan) — they are one END of the distribution, "
+        f"never the \"{other}\" and never the whole of it. Do NOT state a RANGE or a spread "
+        f"for the dimension from these rows: the range you can see is the range of the slice, "
+        f"not of the population. Speak only about the values actually shown (e.g. \"among the "
+        f"{end.lower()}-rate values shown\"), and if the row count equals the cap, say more "
+        f"values exist beyond it."
+    )
 
 
 def route_after_dimensional(state: AgentState) -> str:
@@ -1102,6 +1441,38 @@ def _results_to_text(results, max_rows: Optional[int] = None) -> str:
     return "\n\n".join(parts)
 
 
+def _results_text_with_verdicts(results, max_rows: Optional[int] = None) -> str:
+    """`_results_to_text`, with each result's statistical verdict ABOVE its rows.
+
+    The narrator used to write a phase's findings from rows alone, because the verdict was
+    computed afterwards in `_assemble_phase_findings` and only stamped onto the finished
+    finding. So a card could read "the significantly higher delay in Oklahoma suggests a
+    localized performance issue" directly above a `stat_note` saying the ordering was not
+    evidence of a difference at p = 0.072 — the model was never told, and then contradicted
+    a sentence it had not read.
+
+    This is the same defect the synthesis evidence log had, one altitude down, and it gets
+    the same fix: show the verdict to whoever is about to make the claim. The post-hoc stamp
+    stays as the backstop; this is the prevention.
+    """
+    if max_rows is None:
+        max_rows = _interpret_rows()
+    parts = []
+    for i, r in enumerate(results, 1):
+        parts.append(f"--- Query {i} ---")
+        verdict = None
+        if not getattr(r, "error", None) and getattr(r, "rows", None):
+            verdict = _ranking_noise_caveat(r.columns, r.rows, _hit_row_cap(r))
+        if verdict:
+            parts.append(
+                "STATISTICAL VERDICT for this query — it OVERRIDES what the rows below "
+                "suggest. Do NOT call any value here significant, an outlier, a bottleneck, "
+                "a driver or a localized issue, and do NOT recommend acting on one: "
+                + verdict)
+        parts.append(format_result_for_llm(r, max_rows=max_rows))
+    return "\n\n".join(parts)
+
+
 def _phase_result(
     phase_id: str,
     phase_name: str,
@@ -1307,6 +1678,156 @@ def _extreme_tie_note(columns, rows) -> Optional[str]:
         return None
 
 
+_LIMIT_RE = re.compile(r"\blimit\s+(\d+)\s*$", re.I)
+
+
+def _hit_row_cap(result) -> bool:
+    """True when the result returned exactly as many rows as its own LIMIT allowed — the
+    only evidence available here that the reader is looking at a slice rather than the
+    whole dimension. Reads the executed SQL, not the plan, so a repaired query is judged
+    on what actually ran."""
+    try:
+        m = _LIMIT_RE.search((getattr(result, "sql", "") or "").strip().rstrip(";"))
+        return bool(m and int(getattr(result, "row_count", 0) or 0) >= int(m.group(1)))
+    except Exception:
+        return False
+
+
+#: Column names a cross-sectional scan uses for the per-group record count.
+_COUNT_COL_NAMES = ("n", "n_records", "count", "row_count", "records")
+#: …and for the within-group spread the AVG block now asks for.
+_SD_COL_NAMES = ("sd", "sd_value", "stddev", "std_dev", "stdev")
+
+#: Records below which a group's average carries no comparable information. A documented
+#: convention, not a tuned parameter: it is the conventional floor for treating a sample
+#: mean as approximately normal, and every group under it in a ranking is there on the
+#: strength of a handful of records. Named so the sentence a reader sees can cite it.
+_MIN_N_FOR_A_MEAN = 30
+
+
+def _measure_and_count(columns, rows):
+    """(measure_idx, count_idx, sd_idx, counts) for a ranked group result, or Nones.
+
+    The measure is the first numeric column that is not the count or the spread — the
+    ranking's own subject. Never raises."""
+    cols = [str(c).strip().lower() for c in (columns or [])]
+    n_idx = next((i for i, c in enumerate(cols) if c in _COUNT_COL_NAMES), None)
+    sd_idx = next((i for i, c in enumerate(cols) if c in _SD_COL_NAMES), None)
+    m_idx = next((i for i, _c in enumerate(cols)
+                  if i not in (n_idx, sd_idx)
+                  and any(_as_float(r[i]) is not None for r in (rows or []) if i < len(r))), None)
+    counts = [int(v) for v in
+              (_as_float(r[n_idx]) for r in (rows or []) if n_idx is not None and n_idx < len(r))
+              if v is not None]
+    return m_idx, n_idx, sd_idx, counts
+
+
+def _ranking_noise_caveat(columns, rows, capped: bool) -> Optional[str]:
+    """A ranked slice whose ORDER is not evidence, said in the numbers that show it.
+    None when the ranking is real, or when the result cannot support the question.
+
+    Ranking descending with no volume floor puts the smallest groups on top, and this bit
+    the same investigation twice on two different metric kinds:
+
+    * as a RATE — the top 15 of 563 customer cities averaged 93 records against a median
+      city of 127, and their 73–81% band was reported as the city-level range, while
+      cities with 200+ records average 54.6%, the overall rate;
+    * as a MEAN, after the metric was corrected to measure delay in days — the top 15 of
+      1,089 order states averaged 6.3 records against a median state of 41 (16 states hold
+      exactly one record), and "highly variable at city and state levels" reached the
+      headline, while states with 200+ records average 0.559 days against a global 0.566.
+
+    So there are two branches, and the second exists because fixing the metric moved the
+    defect from the first. A rate goes to `assess_rate_uniformity` (Wilson intervals,
+    Bonferroni-corrected); a mean goes to `assess_group_means` when the scan carried the
+    within-group spread. Volume is reported either way — a ranking led by groups too small
+    to average is a fact about the query, not a statistic, and it is true even when no test
+    can be run at all.
+    """
+    try:
+        cols, rws = list(columns or []), list(rows or [])
+        if len(rws) < 2:
+            return None
+        m_idx, n_idx, sd_idx, counts = _measure_and_count(cols, rws)
+        truncation = (" These are the top rows of a capped scan, so this is a slice of the "
+                      "distribution and its span is not the population's range." if capped else "")
+        volume = (f" The shown groups hold {min(counts):,}–{max(counts):,} records each."
+                  if len(counts) >= 2 else "")
+
+        # A mean, tested FIRST when the scan carried a spread. `_analyze_rate_segments`
+        # reads any [0,1] column as a proportion, so an average delay of 0.5 DAYS comes
+        # back as a 50% rate and the caveat would describe days as a rate — the exact
+        # class of wrongness this guard exists to stop. A per-group standard deviation is
+        # unambiguous evidence that the column is a measured quantity, so it decides.
+        if m_idx is not None and n_idx is not None and sd_idx is not None:
+            from aughor.tools.stats import assess_group_means
+            groups = []
+            for r in rws:
+                mean = _as_float(r[m_idx]) if m_idx < len(r) else None
+                n = _as_float(r[n_idx]) if n_idx < len(r) else None
+                if mean is None or n is None or n <= 0:
+                    continue
+                sd = _as_float(r[sd_idx]) if sd_idx < len(r) else None
+                groups.append((str(r[0]), mean, sd if sd is not None else 0.0, int(n)))
+            verdict = assess_group_means(groups, str(cols[m_idx]), str(cols[0]))
+            if verdict is not None:
+                if verdict.differs:
+                    return None
+                return (f"This ordering is not evidence of a difference: the gaps between these "
+                        f"averages are inside the spread within each group "
+                        f"({verdict.technical})." + volume + truncation)
+
+        # A rate: the pooled-proportion test (Wilson intervals, Bonferroni-corrected)
+        # already runs on this shape and is the sharper instrument when it applies.
+        stat = next((s for s in analyze_query_result(cols, rws) if s.type == "uniformity"), None)
+        if stat is not None:
+            if stat.is_significant:
+                return None
+            return ("This ordering is not distinguishable from sampling noise: no group's rate "
+                    "differs from the pooled rate once its interval is drawn, so the leader is not "
+                    "a worse performer and no group-specific action follows from it."
+                    + volume + truncation)
+
+        # No test was possible. The volume fact still is, and on this shape it is the whole
+        # story — a top-of-ranking built from groups of a handful of records.
+        if len(counts) >= 2 and sorted(counts)[len(counts) // 2] < _MIN_N_FOR_A_MEAN:
+            return (f"This ordering is led by groups too small to average: over half of the rows "
+                    f"shown hold fewer than {_MIN_N_FOR_A_MEAN} records, so their position at the "
+                    f"top reflects how few records they have rather than how they perform."
+                    + volume + truncation)
+        return None
+    except Exception:
+        return None
+
+
+# The standout-claim predicate lives in report_checks (it is shared by the report-level
+# check, and this module sits above that one). Re-exported so the tests and the
+# finding-level backstop below keep one authority.
+from aughor.agent.report_checks import (  # noqa: E402
+    makes_unnegated_standout_claim as _makes_unnegated_standout_claim,
+)
+
+
+def _lead_with_verdict(finding: dict, verdict: str) -> None:
+    """Put the measured verdict IN FRONT of an interpretation that contradicts it.
+
+    Prevention is `_results_text_with_verdicts` — the narrator is now shown the verdict
+    before it writes. This is the backstop for when it writes the claim anyway, and it
+    deletes nothing: the model's sentence stays, with the statistic that governs it read
+    first. A reader who sees "Oklahoma is significantly higher" as the opening clause has
+    already formed the conclusion by the time a stat note underneath disagrees.
+    """
+    interp = (finding.get("interpretation") or "").strip()
+    if not interp or not _makes_unnegated_standout_claim(interp):
+        return
+    if interp.startswith(verdict[:40]):
+        return                       # already led with it — don't stack duplicates
+    finding["interpretation"] = f"{verdict} The phase narrator wrote: {interp}"
+    finding["is_significant"] = False
+    from aughor.stats import stats as _st
+    _st.inc("deep_analysis.finding_contradicted_its_verdict")
+
+
 def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label="", conn=None):
     """Build phase findings by binding each (query, result) to the narrator finding for
     its OWN dimension — never by list position. The displayed title is grounded in the
@@ -1368,6 +1889,16 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             _tie = _extreme_tie_note(r.columns, r.rows)
             if _tie:
                 f["stat_note"] = _tie
+        # A rate ranking that is only noise says so in its own numbers. This OVERWRITES the
+        # narrator's stat_note rather than joining it: the model's version is a paraphrase of
+        # this same test ("statistical analysis indicates no significant difference"), and
+        # printing both leaves the reader to decide which of two sentences about the same
+        # p-value to believe.
+        if not r.error and r.rows:
+            _noise = _ranking_noise_caveat(r.columns, r.rows, _hit_row_cap(r))
+            if _noise:
+                f["stat_note"] = _noise
+                _lead_with_verdict(f, _noise)
         out.append(f)
     return out
 
@@ -1841,6 +2372,11 @@ def _finding_earns_place(f: dict) -> bool:
     conclusion. The classes that cannot, and are dropped:
       • a suppressed metric — a failed computation teaches the reader nothing;
       • a zero-variance ranking — identical everywhere ⇒ no discrimination, no action;
+      • a SATURATED ranking — every group pinned at a boundary (0% / 100%), the signature
+        of grouping a rate by its own definition or by an event-only column. This is the
+        opposite of the zero-variance case and was invisible to it: 100-vs-0 has the
+        MAXIMUM spread a ranking can have, so the uniformity drop never fired and the
+        tautology led a live report as its first exhibit;
       • a self-declared-inconclusive finding — one that reaches no conclusion by its own
         admission ("Inconclusive — no peer range…"), unless it still carries a material
         opportunity number that stands on its own.
@@ -1848,6 +2384,8 @@ def _finding_earns_place(f: dict) -> bool:
     if f.get("_grain_repaired"):
         return True
     if f.get("_suppressed"):
+        return False
+    if _is_saturated(f.get("columns") or [], f.get("rows") or []):
         return False
     interp = (f.get("interpretation") or "").strip().lower()
     if (interp.startswith("inconclusive") or "no peer range" in interp
@@ -2488,7 +3026,15 @@ def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
     """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each).
     A SUPPRESSED finding's rows are the corrupt artifact, so they are redacted from the evidence:
     the synthesis model kept citing them (a single-period "58.04%" in the exec summary) even under
-    the hard don't-cite instruction. The SQL + caveat stay so it knows what was attempted."""
+    the hard don't-cite instruction. The SQL + caveat stay so it knows what was attempted.
+
+    Each finding's STATISTICAL VERDICT rides with its rows. Without it this block was numbers
+    alone, so the model writing the headline saw `Ilam | 3.2 | 5` and nothing else — while the
+    finding directly beneath that headline said the ordering was not evidence of a difference and
+    the groups held one to twenty-one records. The verdicts were computed, stamped on the finding
+    and drawn beside the chart; the only thing that never saw them was the thing writing the claim,
+    which is how "driven by localized state-level bottlenecks" reached the top of a report whose
+    own statistics refuse it."""
     if p.get("_hidden"):
         return ""                    # pruned as irrelevant — nothing for the narrator to cite
     lines = [f"\n=== {p['phase_name']} ==="]
@@ -2498,6 +3044,12 @@ def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
         if _is_suppressed_finding(f):
             lines.append(f"[values suppressed — {(f.get('interpretation') or 'computation artifact').strip()}]")
             continue
+        _verdict = (f.get("stat_note") or "").strip()
+        if _verdict:
+            lines.append(f"STATISTICAL VERDICT (overrides what the rows below suggest): {_verdict}")
+        _caveat = (f.get("trust_caveat") or "").strip()
+        if _caveat:
+            lines.append(f"TRUST CAVEAT: {_caveat}")
         if f["error"]:
             lines.append(f"ERROR: {f['error']}")
         elif f["columns"] and f["rows"]:
@@ -2578,6 +3130,12 @@ def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
             continue
         if f["columns"] and f["rows"]:
             label = (f.get("title") or "").strip()
+            # The verdict survives condensation ahead of the rows it governs: dropping it here
+            # would mean the phases most likely to be cited loosely — the ones that overflowed —
+            # are exactly the ones whose numbers arrive unqualified.
+            _verdict = (f.get("stat_note") or "").strip()
+            if _verdict:
+                lines.append(f"STATISTICAL VERDICT (overrides the rows below): {_verdict}")
             lines.append((f"{label}: " if label else "") + " | ".join(str(c) for c in f["columns"]))
             for row in f["rows"][:_CONDENSE_ROWS]:
                 lines.append(" | ".join(str(v) for v in row))
@@ -3979,6 +4537,12 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # column). This routes to the dimensional weakness scan instead of a temporal
     # baseline (also fewer phases → faster).
     if intake is not None:
+        # A driver segment built from the METRIC'S OWN columns is a restatement of the
+        # metric, not a driver of it: the group comparison it produces reads 100%/0% by
+        # construction. Drop it before it can route the phase, and say why in the notes —
+        # a contrast that silently disappears is as hard to debug as one that lies.
+        _drop_self_referential_segment(intake)
+        _stamp_claim_type(intake, question)
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
@@ -4735,7 +5299,7 @@ def run_analysis_phase(
             tolerate(_cov_exc, "join-coverage probe is best-effort", counter="deep_analysis.coverage_probe")
 
     # Step 3 — interpret
-    results_text = _results_to_text([r for _, r in results], max_rows=interpret_max_rows)
+    results_text = _results_text_with_verdicts([r for _, r in results], interpret_max_rows)
     interpretation = None
     try:
         if not _has_usable_data(results):
@@ -5522,14 +6086,17 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # one GROUP BY, no planner call. `analyze_query_result` then attaches the verdict
     # (tools/stats.assess_association), which is what lets the honest answer — "these are
     # independent" — reach the report at all.
+    #
+    # The joint distribution is the right shape for two CATEGORIES. When one side is a
+    # measured quantity it is the wrong one — you cannot cross a delay in days against a
+    # state — and the pair that motivated this path ("shipping delay" × "customer
+    # location") is exactly that shape. `_run_relationship_scan` picks the query from the
+    # TYPES of the two sides and keeps this categorical case as one of its three branches.
     _assoc_finding = None
     if dims_override is None and _question_asks_association(question):
-        _named = _association_dimension_pair(question, dimensions)
-        _assoc_result = _run_association_scan(conn, question, dimensions, metric_table,
-                                              metric_sql, metric_label, _phase_id)
-        if _assoc_result is not None and len(_named) >= 2:
-            _assoc_finding = _association_finding(
-                _assoc_result, _named[0].split(".")[-1], _named[1].split(".")[-1])
+        _assoc_finding = _run_relationship_scan(
+            conn, question, intake_data, dimensions, metric_table,
+            metric_sql, metric_label, _phase_id, schema)
 
     _causal_drill = dims_override is None
     _why_event_dims: list = []
@@ -5722,10 +6289,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "average'). Be explicit when the spread is tight and all values are healthy."
         ) + _direction_interp + _magnitude_interp,
         interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
-            question=question, metric_label=metric_label, results_text=results_text))
+            question=question, metric_label=metric_label, results_text=results_text,
+            population_note=_population_note(_orient_top, True)))
         if is_ratio else
         (lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
-            question=question, metric_label=metric_label, results_text=results_text)),
+            question=question, metric_label=metric_label, results_text=results_text,
+            population_note=_population_note(_orient_top, False))),
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
         question=question, connection_id=state.get("connection_id", ""),
@@ -5745,8 +6314,15 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             "metric table's rows. Recompute the RATE over the FULL population at the metric table's OWN "
             "grain — group by a column present for EVERY row, and DROP any dimension that lives on an "
             "event/child table (it cannot express a population rate).")
-        if _run2.ok and _run2.results and not all(
-                _is_saturated(r.columns, r.rows) for _q, r in _run2.results if not r.error and r.rows):
+        # Keep the re-plan when it carries FEWER saturated queries than the original. The
+        # test used to be `not all(...)` — satisfied by a re-plan that still contained the
+        # tautology as long as one other query was fine, which is the ordinary case: a
+        # five-query scan where one query is degenerate is never all-saturated, so the
+        # guard spent a whole extra planning round and then accepted the same bad exhibit.
+        def _n_saturated(run) -> int:
+            return sum(1 for _q, r in (run.results or [])
+                       if not r.error and r.rows and _is_saturated(r.columns, r.rows))
+        if _run2.ok and _run2.results and _n_saturated(_run2) < _n_saturated(_run):
             _run = _run2
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -7215,17 +7791,14 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # and nothing would say so. Run it once, here, single-threaded, before the fan-out.
     _assoc_finding = None
     if _question_asks_association(state.get("question", "")):
-        _named = _association_dimension_pair(state.get("question", ""),
-                                            intake_data.get("dimensions", []))
-        _res = _run_association_scan(conn, state.get("question", ""),
-                                     intake_data.get("dimensions", []),
-                                     intake_data.get("metric_table", ""),
-                                     intake_data.get("metric_sql", ""),
-                                     intake_data.get("metric_label", "the metric"),
-                                     "cross_section")
-        if _res is not None and len(_named) >= 2:
-            _assoc_finding = _association_finding(
-                _res, _named[0].split(".")[-1], _named[1].split(".")[-1])
+        _assoc_finding = _run_relationship_scan(
+            conn, state.get("question", ""), intake_data,
+            intake_data.get("dimensions", []),
+            intake_data.get("metric_table", ""),
+            intake_data.get("metric_sql", ""),
+            intake_data.get("metric_label", "the metric"),
+            "cross_section",
+            state.get("schema_context", ""))
 
     base_phases = state.get("investigation_phases", [])
     base_n = len(base_phases)
@@ -7694,7 +8267,8 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + cross_section_note + suppression_section
+    ) + contradiction_section + early_stop_note + cross_section_note + suppression_section + _claim_licence_section(
+        intake_data, phases)
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
     # phase had finished. Run it under a hard timeout; on timeout we fall through to the SAME
@@ -7754,7 +8328,8 @@ def ada_synthesize(state: AgentState) -> dict:
     if synth is not None:
         try:
             from aughor.agent.report_checks import run_report_checks
-            _violations = run_report_checks(synth, question, evidence_log)
+            _violations = run_report_checks(synth, question, evidence_log, phases,
+                                              (intake_data or {}).get("claim_type_suggestion") or "")
             if _violations:
                 from aughor.stats import stats as _st
                 _st.inc("deep_analysis.report_check_retry")
@@ -7768,7 +8343,8 @@ def ada_synthesize(state: AgentState) -> dict:
                         response_model=ADASynthesisModel)
                     if _retry is not None:
                         synth = _retry
-                        _violations = run_report_checks(synth, question, evidence_log)
+                        _violations = run_report_checks(synth, question, evidence_log, phases,
+                                              (intake_data or {}).get("claim_type_suggestion") or "")
                 except Exception as _exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_exc, "report-check retry is best-effort; the first draft "

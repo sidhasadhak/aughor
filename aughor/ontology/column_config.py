@@ -90,12 +90,21 @@ class ColumnFlags(BaseModel):
     visible: bool = True
     sample: bool = True
     index: bool = False
+    #: AT-4's DECLARED layer — what this column IS, when a human knows. Empty by default
+    #: and never computed: `resolve_concept` treats a declaration as authority rather than
+    #: as a fourth opinion, so nothing may write here except a person editing the YAML.
+    #: This is the one place in the concept system where certainty is legitimate.
+    concept: str = ""
     source: str = "default"          # "default" | "human"
     edited_at: str = ""
     note: str = ""
 
     def policy(self) -> tuple[bool, bool, bool]:
-        """The three decisions, for change detection during a defaults refresh."""
+        """The three decisions, for change detection during a defaults refresh.
+
+        `concept` is deliberately absent: it is a human's answer, not a policy output, so a
+        defaults refresh has nothing to compare it against and must never overwrite it.
+        """
         return (self.visible, self.sample, self.index)
 
 

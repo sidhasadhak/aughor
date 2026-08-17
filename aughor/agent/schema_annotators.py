@@ -93,11 +93,28 @@ def _intelligence(conn, base: str) -> str:
     from aughor.tools.profile_cache import get_or_build_profiles
     from aughor.tools.profiler import render_profile_annotations
     from aughor.tools.schema import compute_join_map, inject_value_annotations, parse_schema_tables
-    from aughor.tools.table_names import bare
 
     cid = _cid(conn)
     table_cols = parse_schema_tables(base)
-    tables = [bare(t) for t in table_cols]
+    # QUALIFIED names, not bare. Everything upstream already is — `parse_schema_tables`
+    # yields `luxexperience.customers`, and `compute_join_map` reports the same — and this
+    # one `bare()` call was flattening them, with two consequences on any multi-schema
+    # connection:
+    #
+    #   • two different tables collapsed to one key. `luxexperience.customers` (7 columns,
+    #     35,136 rows) and `main.customers` (5 columns, 59,430 rows) both became
+    #     `customers`; the profiler ran `DESCRIBE customers`, got whichever the search path
+    #     resolved, profiled it twice, and never profiled the other AT ALL.
+    #   • the profile cache could not be read back. The route computes its fingerprint from
+    #     `parse_schema_tables` — qualified — while this passed bare names, so the two
+    #     hashed differently and `/schema/profile` answered "not available" for a
+    #     connection that had just been profiled.
+    #
+    # The profiler already handles a qualified name end to end (`_qt` splits and quotes
+    # each part); nothing needed teaching, it just had to be told the truth. A
+    # single-schema connection parses to bare names anyway, so its keys and fingerprint
+    # are unchanged.
+    tables = list(table_cols)
     jmap = compute_join_map(table_cols)
     fk_hints: dict[str, set] = {t: set() for t in tables}
     for j in jmap.get("joins", []):
