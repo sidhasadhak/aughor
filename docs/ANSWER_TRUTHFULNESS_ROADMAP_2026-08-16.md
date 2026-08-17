@@ -561,3 +561,60 @@ and AT-7's `money.amount` already says it "requires a currency witness" that not
 supplies), ISO-3166 vs US-state codes (4 columns — retires the `^[A-Z]{2}$` /
 `Customer State` false positive, still live), country names (data_co's 164 Spanish values),
 weekday/month names (**zero** columns measured across 105 tables). Checksums stay refused.
+
+---
+
+## 10 · AT-5 complete (2026-08-17) — the bundled vocabulary
+
+`aughor/tools/vocab.py` (the lists), the grammar and set tables in `shape.py`, seven name
+rules so each new witness has something it can agree WITH, seven new operations rows.
+105 tests across `test_vocab.py` and `test_shape.py`.
+
+**Membership in a real set, never a pattern that resembles one.** `^[A-Z]{2}$` matched
+`Customer State` because every two-letter code has the same shape. Measured on that exact
+column: **95.7% US state codes, 50.0% ISO-3166 country codes.** One list accepts it, the
+other refuses it, and the share is the discriminator. **AT-0's false positive is retired** —
+`Customer State` now resolves to `geo.region` with the evidence reading *"100% of 38
+distinct values are US state codes"*.
+
+Coverage: **91 of 890 columns (10.2%)** now reach a confident concept from name + value
+alone, up from 9. The corpus counts reproduce AT-0's grammar measurement exactly — email
+**4**, ISO-4217 **2** — and add what AT-0 had no vocabulary to see: 21 place columns
+(including data_co's 164 Spanish country names at 100%) and 2 weekday columns AT-0 recorded
+as zero because its script had no weekday list.
+
+**Three design rules this wave had to obey, each bought earlier in the program:**
+
+1. **A concept is never finer than the coarsest layer that can see it.** The value layer
+   knows `Customer State` holds US state codes; the name layer only knows it is a place. So
+   both emit `geo.region` and the *kind* goes in the evidence. Country codes, country names
+   and US states all answer `geo.region` for the same reason, and a UUID answers
+   `key.identifier` rather than inventing a second name for an id.
+2. **Competing lists are settled inside the layer, not by the resolver.** `Customer State`
+   clears the threshold against two vocabularies; only the better-supported one is
+   reported, so a layer says one thing about one column.
+3. **Shares are computed over DISTINCT values.** One address repeated 10,000 times would
+   otherwise carry a column, and a skewed dimension would beat a varied one for reasons
+   unconnected to what the column is.
+
+**Two refusals worth reading as successes.** data_co's `Customer Email` holds `[REDACTED]`
+on every row: the name says email, the values say otherwise, the layers disagree and
+nothing is claimed. `Customer Zipcode` holds `725` and `95125` — three- and five-digit
+numbers with no distinguishing shape — so the name's suggestion stands unconfirmed. Both
+stay hints, which is the correct answer in both cases.
+
+**One independence caveat, recorded rather than discovered later.** A DATE-typed column
+stringifies to `2026-08-17`, so the ISO-8601 grammar matches *because of* its type, and the
+name layer's timestamp rule reads that same type — two witnesses, one source. It is left in
+because it cannot produce a wrong answer (a column the loader typed as a date is a date),
+but a confident `time.instant` on a DATE column is not two independent opinions. On a
+VARCHAR date column — data_co's `order date (DateOrders)` — the independence is real.
+
+**And the coverage ratchet caught itself going blind.** Its source scan read only
+`_witness(...)` calls, so it never saw the grammar and set TABLES — and still passed,
+because most of those concepts happen to have a name rule too. A guard reporting success
+while reading nothing is the failure this file exists to prevent, and it had it. It now
+reads both tables and asserts they are still there.
+
+Checksums remain refused: Luhn, IBAN mod-97, ISBN-13 and EAN are real code with real tests
+and, measured across 105 tables, zero customers.

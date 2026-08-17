@@ -264,3 +264,84 @@ def test_the_value_layer_supplies_the_second_witness_a_name_cannot():
 def test_evidence_always_carries_the_numbers_a_human_can_check():
     for w in value_witnesses(_LATS) + value_witnesses([i % 2 for i in range(N)]):
         assert any(ch.isdigit() for ch in w.evidence), w.evidence
+
+
+# ── text: grammars and curated lists ─────────────────────────────────────────
+
+def test_an_email_column_is_recognised():
+    values = [f"person{i}@example.com" for i in range(N)]
+    w = witness(values, "contact.email")
+    assert w is not None
+    assert "100% of" in w.evidence and "email address" in w.evidence
+
+
+def test_a_REDACTED_email_column_is_refused():
+    """data_co's `Customer Email` holds `[REDACTED]` on every row. The NAME says email and
+    the VALUES say otherwise, so the two layers disagree and nothing is claimed — which is
+    the entire thesis, arriving on a real column."""
+    assert concepts(["[REDACTED]"] * N) == set()
+
+
+def test_us_state_codes_beat_country_codes_on_the_same_values():
+    """`Customer State` is 96% US states and 50% ISO-3166. Both are the VALUE layer talking
+    about the same values, so only the better-supported list is reported — a layer says one
+    thing about one column."""
+    from aughor.tools.vocab import US_STATE_CODES, membership
+    values = ["AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA", "HI", "IA", "ID",
+              "IL", "IN", "KS", "KY", "LA", "MA", "MD", "MI", "MN", "MO", "MT", "NC", "ND",
+              "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "PR", "RI", "SC", "TN", "TX",
+              "UT", "VA", "WA", "WI", "WV", "91732", "95758"]
+    assert membership(values, US_STATE_CODES) >= 0.95
+    found = [w for w in value_witnesses(values) if w.concept == "geo.region"]
+    assert len(found) == 1, [w.evidence for w in found]
+    assert "US state codes" in found[0].evidence
+
+
+def test_spanish_country_names_reach_the_same_concept_as_country_codes():
+    """A place is a place whichever notation it arrives in — and that is the granularity
+    the NAME layer can also see, so the two can agree."""
+    values = ["Brasil", "Níger", "Papúa Nueva Guinea", "EE. UU.", "Myanmar (Birmania)",
+              "SudAfrica", "Bélgica", "Corea del Sur"] * 5
+    w = witness(values, "geo.region")
+    assert w is not None and "country names" in w.evidence
+    assert witness(["US", "GB", "DE", "IN", "BR"] * 8, "geo.region") is not None
+
+
+def test_a_currency_column_is_recognised_even_at_one_distinct_value():
+    """`luxexperience.orders.currency` holds a single code. AT-7's `money.amount` says it
+    requires a currency witness; this is the only thing that supplies one."""
+    w = witness(["EUR"] * N, "code.currency")
+    assert w is not None
+
+
+def test_a_region_column_is_not_a_country_column():
+    values = ["Caribbean", "Central Africa", "Central Asia", "East of USA", "Oceania",
+              "South Asia", "Western Europe"] * 10
+    assert "geo.region" not in concepts(values)
+
+
+def test_weekday_and_month_names_are_recognised_across_languages():
+    assert "time.weekday" in concepts(["Monday", "martes", "Mittwoch", "jeudi",
+                                       "Friday", "sábado", "domenica"] * 10)
+    assert "time.month" in concepts(["January", "febrero", "Mars", "April",
+                                     "maio", "Giugno"] * 10)
+
+
+def test_a_grammar_is_measured_over_DISTINCT_values():
+    """One address repeated 10,000 times would otherwise carry a column."""
+    assert concepts(["a@b.com"] * 200 + [f"junk{i}" for i in range(200)]) == set()
+
+
+def test_free_text_matches_nothing():
+    assert concepts([f"the quick brown fox {i}" for i in range(N)]) == set()
+
+
+def test_a_uuid_column_is_an_identifier_not_a_concept_of_its_own():
+    """A second name for `key.identifier` would split the vote with the name layer, which
+    already calls `*_uuid` an identifier."""
+    values = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(N)]
+    assert "key.identifier" in concepts(values)
+
+
+def test_text_shapes_are_skipped_on_a_short_sample():
+    assert value_witnesses([f"p{i}@example.com" for i in range(MIN_VALUES - 1)]) == []

@@ -541,6 +541,15 @@ _INDICATOR_NAME = re.compile(r"(_risk|_flag|_indicator|_ind)$", re.IGNORECASE)
 _PLACE_NAME = re.compile(
     r"(country|state|city|region|province|prefecture|district|market)", re.IGNORECASE)
 _PERCENT_NAME = re.compile(r"(percent|pct|ratio|rate|share)$", re.IGNORECASE)
+# AT-5's set and grammar witnesses need a name rule to agree WITH, or every one of them is
+# a lone witness by construction. Each of these names a concept the value layer can also
+# reach: a currency code, an address, a phone, a postal code, a weekday, a month.
+_CURRENCY_CODE_NAME = re.compile(r"(currency|ccy|curr_code)", re.IGNORECASE)
+_EMAIL_NAME = re.compile(r"(e?mail)", re.IGNORECASE)
+_PHONE_NAME = re.compile(r"(phone|mobile|msisdn|telephone)", re.IGNORECASE)
+_POSTAL_NAME = re.compile(r"(zip|postal|postcode|zipcode)", re.IGNORECASE)
+_WEEKDAY_NAME = re.compile(r"(weekday|day_of_week|dayofweek|dow)$", re.IGNORECASE)
+_MONTH_NAME = re.compile(r"(?:^|[\s_-])month(?:_name)?$", re.IGNORECASE)
 #: `_DURATION_PATTERN` above is unanchored at the front, so it reads `Product Image` as a
 #: duration — "im-AGE", and `average`, `package` and `mileage` the same way. Harmless where
 #: it is (that path only sees numeric measures) and not harmless here, where every column of
@@ -569,6 +578,18 @@ _NAME_WITNESS_RULES: tuple = (
     (lambda c, d: bool(_PERCENT_NAME.search(c.lower())), "percent.fraction", 0.45, "named like a proportion"),
     (lambda c, d: bool(_PLACE_NAME.search(c.lower())), "geo.region", 0.45, "named like a place"),
     (lambda c, d: bool(_TIMESTAMP_TYPES.search(d or "")), "time.instant", 0.55, "declared as a timestamp"),
+    # A date column the loader typed as text still says so in its NAME — `order date
+    # (DateOrders)` is VARCHAR in data_co — and the value layer can read ISO-8601 out of
+    # the text, so the two layers can now meet on a column neither could type alone.
+    (lambda c, d: bool(_TIMESTAMP_PATTERN.search(c.lower())), "time.instant", 0.45,
+     "named like a date"),
+    (lambda c, d: bool(_CURRENCY_CODE_NAME.search(c)), "code.currency", 0.55,
+     "named like a currency code"),
+    (lambda c, d: bool(_EMAIL_NAME.search(c)), "contact.email", 0.6, "named like an address"),
+    (lambda c, d: bool(_PHONE_NAME.search(c)), "contact.phone", 0.6, "named like a phone number"),
+    (lambda c, d: bool(_POSTAL_NAME.search(c)), "geo.postal_code", 0.55, "named like a postal code"),
+    (lambda c, d: bool(_WEEKDAY_NAME.search(c)), "time.weekday", 0.6, "named like a weekday"),
+    (lambda c, d: bool(_MONTH_NAME.search(c)), "time.month", 0.6, "named like a month"),
 )
 
 

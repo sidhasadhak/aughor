@@ -162,6 +162,68 @@ concepts:
     numeric: false
     note: Paired with a start. The quantity is the span between them, which the profile names.
 
+  code.currency:
+    label: an ISO-4217 currency code
+    aggregate: [COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      The witness `money.amount` has always required and never had. A money column is
+      additive only WITHIN one currency, and this is the column that says which — so a
+      total computed across more than one distinct value here has no unit.
+
+  contact.email:
+    label: an email address
+    aggregate: [COUNT, COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      Personal data and an identifier, not a dimension worth grouping a report by. Count
+      distinct to size an audience; never put it in an answer.
+
+  contact.phone:
+    label: a phone number
+    aggregate: [COUNT, COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      Digits that are not a quantity — the leading + and the country code carry meaning and
+      arithmetic destroys both. Personal data, like an address.
+
+  geo.postal_code:
+    label: a postal code
+    aggregate: [COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      Stored as digits and ordered like a number, which is exactly the trap: 90210 is not
+      larger than 90209, it is somewhere else. Group by it, join on it, never average it.
+
+  net.ip_address:
+    label: an IP address
+    aggregate: [COUNT_DISTINCT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: An identifier written with dots or colons. Personal data in most jurisdictions.
+
+  time.weekday:
+    label: a day of the week
+    aggregate: [COUNT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      A cyclical dimension: it has an order but no zero and no distance, so the mean of
+      Monday and Sunday is not a day. Group by it; compare measures across it.
+
+  time.month:
+    label: a month of the year
+    aggregate: [COUNT]
+    never: [SUM, AVG, CORR]
+    numeric: false
+    note: >
+      Cyclical, like a weekday, and routinely stored as 1–12 where it reads as a small
+      count. Averaging months answers nothing.
+
   dimension.categorical:
     label: a grouping dimension
     aggregate: [COUNT, COUNT_DISTINCT]

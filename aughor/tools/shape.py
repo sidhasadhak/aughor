@@ -18,12 +18,22 @@ So a column arrives as a tuple of stringified values and the rules read them as 
 Strings matter: `18.2514534` and `18.25` are different evidence about what somebody
 recorded, and `float()` erases the difference.
 
-**Scope.** This first wave is BOUNDED NUMERIC only:
+**Scope.**
 
     flag.binary        values are exactly {0, 1}
     percent.fraction   inside [0, 1], not binary, and not whole numbers
     geo.latitude       inside ±90, recorded to 4–10 decimals, many distinct
     geo.longitude      inside ±180 and leaving ±90, same precision test
+    …and for text, a GRAMMAR table (email, UUID, E.164, ZIP, IP, ISO-8601) and
+    SET membership against `aughor.tools.vocab` (currency codes, country codes and
+    names, US states, weekday and month names).
+
+**A concept is never made finer than the coarsest layer that can see it.** The value layer
+knows `Customer State` holds US state codes and the name layer only knows it is a place —
+so both emit `geo.region` and the *kind* goes in the evidence sentence. Splitting them
+would give one concept the name's vote and another the value's, and a column with two
+agreeing layers would resolve to a hint. That is not hypothetical: it happened to the
+best-evidenced flag in the corpus and cost `flag.derived_comparison` its existence.
 
 **`percent.whole` is deliberately absent**, and AT-0 asked for it — its Q6 scope note reads
 "build `percent.fraction` vs `percent.whole`". Measured during this build across all 105
@@ -56,6 +66,16 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from aughor.tools.concept import LAYER_VALUE, Witness
+from aughor.tools.vocab import (
+    COUNTRY_NAMES,
+    ISO3166_ALPHA2,
+    ISO3166_ALPHA3,
+    ISO4217,
+    MONTH_NAMES,
+    US_STATE_CODES,
+    WEEKDAY_NAMES,
+    membership,
+)
 
 #: Share of non-null sampled values that must parse as numbers before the numeric rules run
 #: at all. This is the "numeric-castable text" gate AT-0 measured at 15 of 522 text columns
@@ -74,6 +94,15 @@ MIN_VALUES = 30
 COORD_MIN_DECIMALS = 4
 COORD_MAX_DECIMALS = 10
 COORD_MIN_DISTINCT = 50
+
+#: A grammar is exact — an address either parses as an email or it does not — so it is held
+#: to a higher bar than a curated list, which is allowed real-world debris.
+GRAMMAR_SHARE = 0.95
+
+#: A set is allowed outliers, because real columns carry them: `Customer State` holds 44 US
+#: state codes and two zip codes (95.7%), and refusing it over those two would be refusing
+#: the answer to keep the rule tidy.
+SET_SHARE = 0.90
 
 _NUMERIC_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _NULLISH = {"", "null", "none", "nan", "na", "n/a"}
@@ -170,6 +199,87 @@ def _range_text(shape: NumericShape) -> str:
     return f"{shape.lo:g}…{shape.hi:g} over {shape.distinct} distinct values"
 
 
+# ── the grammar table ────────────────────────────────────────────────────────
+# One row per shape text can take. AT-0 measured only `email` firing anywhere in the corpus
+# — UUID, E.164, ZIP, IPv4 and ISO-8601-in-text are all zero across 105 tables — and the
+# rows are here anyway because a compiled regex is nearly free and the alternative is
+# noticing the gap the day a column needs it. Checksums are the opposite trade and stay
+# refused: Luhn, IBAN mod-97, ISBN-13 and EAN are real code with real tests and, measured,
+# zero customers.
+#
+# `key.identifier` for UUIDs rather than a concept of its own: the name layer already calls
+# `*_uuid` an identifier, and a second name for the same idea splits the vote.
+_GRAMMARS: tuple = (
+    ("contact.email", 0.7, "an email address",
+     re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")),
+    ("key.identifier", 0.75, "a UUID",
+     re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")),
+    ("contact.phone", 0.7, "an E.164 phone number", re.compile(r"^\+[1-9]\d{7,14}$")),
+    ("net.ip_address", 0.75, "an IPv4 address",
+     re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")),
+    ("net.ip_address", 0.75, "an IPv6 address",
+     re.compile(r"^(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$")),
+    ("geo.postal_code", 0.55, "a US ZIP code", re.compile(r"^\d{5}(?:-\d{4})?$")),
+    # ⚠ The one place this layer is not fully independent of the loader: a DATE-typed
+    # column stringifies to `2026-08-17`, so its values match because of its type, and the
+    # name layer's timestamp rule reads that same type. Two witnesses, one source. It is
+    # left in because it cannot produce a WRONG answer — a column the loader typed as a
+    # date is a date — but do not read a confident `time.instant` on a DATE column as two
+    # independent opinions. On a VARCHAR date column (data_co's `order date (DateOrders)`)
+    # the independence is real, and that is the case worth having.
+    ("time.instant", 0.7, "an ISO-8601 timestamp",
+     re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")),
+)
+
+#: Curated lists, and the concept each supports. Country codes, country names and US state
+#: codes all answer `geo.region` — a named place is a grouping key whichever notation it
+#: arrives in, and that is the granularity the NAME layer can also see.
+_SETS: tuple = (
+    ("code.currency", 0.7, "ISO-4217 currency codes", ISO4217),
+    ("geo.region", 0.65, "ISO-3166 country codes", ISO3166_ALPHA2 | ISO3166_ALPHA3),
+    ("geo.region", 0.65, "US state codes", US_STATE_CODES),
+    ("geo.region", 0.65, "country names", COUNTRY_NAMES),
+    ("time.weekday", 0.7, "weekday names", WEEKDAY_NAMES),
+    ("time.month", 0.7, "month names", MONTH_NAMES),
+)
+
+
+def _text_witnesses(values: tuple) -> list[Witness]:
+    """Grammars and set membership, over the DISTINCT values.
+
+    Distinct rather than rows throughout: a column where one address repeats 10,000 times
+    would otherwise pass on the strength of a single match, and a skewed dimension would
+    beat a varied one for no reason connected to what the column is.
+    """
+    distinct = {str(v).strip() for v in values if not is_nullish(v)}
+    if not distinct:
+        return []
+
+    out: list[Witness] = []
+    for concept, confidence, label, pattern in _GRAMMARS:
+        share = sum(1 for v in distinct if pattern.match(v)) / len(distinct)
+        if share >= GRAMMAR_SHARE:
+            out.append(_witness(
+                concept, confidence,
+                f"{share:.0%} of {len(distinct)} distinct values are {label}"))
+
+    # Competing lists are settled HERE, not by the resolver: `Customer State` is 95.7% US
+    # state codes and 50.0% ISO-3166 country codes, and both claims are the value layer
+    # speaking about the same values. Only the best-supported one is reported, so a layer
+    # says one thing about one column.
+    best: dict[str, tuple] = {}
+    for concept, confidence, label, vocabulary in _SETS:
+        share = membership(distinct, vocabulary)
+        if share >= SET_SHARE and share > best.get(concept, (0.0,))[0]:
+            best[concept] = (share, confidence, label)
+    for concept, (share, confidence, label) in best.items():
+        out.append(_witness(
+            concept, confidence,
+            f"{share:.0%} of {len(distinct)} distinct values are {label}"))
+    return out
+
+
 def value_witnesses(values: Iterable) -> list[Witness]:
     """The VALUE layer's opinion about one column, from its sampled values alone.
 
@@ -179,9 +289,14 @@ def value_witnesses(values: Iterable) -> list[Witness]:
     where that gets settled against the other layers. Choosing here would be the same
     mistake the module exists to prevent, one level earlier.
     """
-    shape = read_numeric(values)
+    raw = tuple(values or ())
+    shape = read_numeric(raw)
     if not shape.is_numeric:
-        return []
+        # Not numbers — so the question is what SHAPE the text takes, and which curated
+        # list it belongs to. A column is one or the other: a set of country codes is not
+        # also a bounded numeric, and running both would be inventing a second opinion out
+        # of the same observation.
+        return _text_witnesses(raw) if len(raw) >= MIN_VALUES else []
 
     cast_note = ""
     if shape.numeric_share < 1.0:

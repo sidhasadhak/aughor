@@ -94,9 +94,17 @@ def _emitted_concepts() -> set:
     block = text.split("_NAME_WITNESS_RULES", 1)[1].split("\ndef ", 1)[0]
     found |= set(re.findall(r'"([a-z_]+\.[a-z_]+)"', block))
 
-    # the VALUE layer — `_witness("concept", …)` calls
+    # the VALUE layer — the numeric branch's `_witness("concept", …)` calls AND the two
+    # rule TABLES, whose rows are plain tuples rather than calls. Reading only the calls
+    # made the scan miss every grammar and set concept while still passing, because most of
+    # them happen to have a name rule too — a guard that goes blind while reporting success
+    # is the exact failure this file exists to prevent, and it had it.
     text = (_ROOT / "aughor" / "tools" / "shape.py").read_text()
     found |= set(re.findall(r'_witness\(\s*\n?\s*"([a-z_]+\.[a-z_]+)"', text))
+    for table in ("_GRAMMARS", "_SETS"):
+        block = text.split(f"{table}: tuple = (", 1)
+        assert len(block) == 2, f"shape.py no longer defines {table} — the scan is blind"
+        found |= set(re.findall(r'\(\s*"([a-z_]+\.[a-z_]+)",', block[1].split("\n)", 1)[0]))
 
     # the PAIR layer — `roles=` tuples on each finding
     text = (_ROOT / "aughor" / "tools" / "pairs.py").read_text()
@@ -118,7 +126,9 @@ def test_the_scan_actually_finds_the_concepts_it_claims_to():
     assert len(emitted) >= 12, f"the source scan found only {emitted} — it has gone blind"
     assert "geo.latitude" in emitted          # name AND value AND pair
     assert "flag.binary" in emitted           # name AND value AND pair
-    assert "percent.fraction" in emitted      # value layer only — proves shape.py is scanned
+    assert "percent.fraction" in emitted      # shape.py's numeric branch
+    assert "net.ip_address" in emitted        # shape.py's _GRAMMARS table — no name rule
+    assert "geo.region" in emitted            # shape.py's _SETS table
     assert "measure.additive_total" in emitted
     assert "key.identifier" in emitted
 
