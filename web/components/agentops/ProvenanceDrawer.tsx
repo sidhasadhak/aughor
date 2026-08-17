@@ -56,8 +56,10 @@ export function ProvenanceDrawer({ open, data, onClose }: {
   return (
     <aside role="dialog" aria-label="Where this number comes from" aria-hidden={!open}
       // `inert` keeps a closed drawer out of the tab order — a keyboard user should not
-      // walk through a panel that is translated off screen.
-      {...(!open ? { inert: "" as unknown as boolean } : {})}
+      // walk through a panel that is translated off screen. React 19 takes a real boolean
+      // here; the empty-string idiom older versions needed now warns and reads as FALSE,
+      // which would leave the closed drawer focusable — the opposite of the intent.
+      inert={!open}
       style={{
         position: "absolute", top: 0, right: 0, bottom: 0, width: 372, zIndex: 9,
         background: "var(--bg-1)", borderLeft: "1px solid var(--b2)",

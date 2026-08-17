@@ -75,9 +75,15 @@ def list_jobs(state: Optional[str] = None, conn_id: Optional[str] = None,
         states = [state]
     else:
         states = None
-    jobs = Ledger.default().jobs_where(states=states, conn_id=conn_id, limit=min(int(limit), 500))
-    if kind:
-        jobs = [j for j in jobs if j.get("kind") == kind]
+    # `kind` filters IN THE QUERY, not after it. Filtering the fetched page client-side
+    # looks equivalent and is not: the newest 100 jobs are ~100% automation ticks (1,291 of
+    # 1,316 in a measured 24 hours), so `?kind=exploration` fetched a page of ticks, kept
+    # the rows matching, and returned NOTHING while explorations existed. An agent page
+    # asking for its own runs got an empty list and rendered "no runs" over a non-zero
+    # count — which is how this was found.
+    jobs = Ledger.default().jobs_where(states=states, conn_id=conn_id,
+                                       kinds=[kind] if kind else None,
+                                       limit=min(int(limit), 500))
     return [_view(j) for j in jobs]
 
 

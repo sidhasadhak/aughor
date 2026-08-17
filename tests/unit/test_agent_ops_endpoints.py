@@ -241,6 +241,20 @@ def test_runs_tile_equals_the_agent_jobs_it_links_to(client):
     assert sum(r["runs"] for r in body["runners"]) == 40
 
 
+def test_jobs_kind_filter_survives_a_page_full_of_runner_ticks(client):
+    """`?kind=` filtered the fetched PAGE, not the query. With 1,291 automation ticks to
+    25 agent runs in a measured day, the newest 100 rows are all ticks — so asking for an
+    agent's own kind returned an empty list while its runs existed. Found by an agent page
+    rendering "no runs in this window" beside a tile reading 2.
+    """
+    _seed(n_profile=2, n_automation=150)
+    rows = client.get("/jobs?kind=profile&limit=100").json()
+    assert len(rows) == 2, (
+        f"expected the 2 profile jobs, got {len(rows)} — the filter is being applied "
+        "after the limit, so a page of ticks crowds them out")
+    assert all(j["kind"] == "profile" for j in rows)
+
+
 def test_the_runs_per_minute_figure_is_agents_not_a_heartbeat(client):
     """Measured live 2026-08-17: 1.10 with the tick, 0.10 without. The tick is a cron."""
     _seed(n_profile=1, n_automation=59)
