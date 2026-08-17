@@ -75,8 +75,8 @@ def test_golden_profile_cache_survives_logic_version_extraction():
 
     from aughor.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
 
-    assert PROFILE_LOGIC_VERSION == "v7-percent-scale"
-    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "0a363adb06f35670"
+    assert PROFILE_LOGIC_VERSION == "v8-table-cap"
+    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "f8d6bf0025b139c9"
     # the same inputs under the previous version — a different key, which is the point
     v4 = hashlib.md5(b"v4-valsample|items:3|orders:5").hexdigest()[:16]
     assert v4 == "191fd41b93f3a03e"

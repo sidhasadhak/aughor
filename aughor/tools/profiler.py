@@ -23,11 +23,14 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
@@ -691,6 +694,18 @@ def _value_interpretation(
 
 
 # ── Core profile builders ─────────────────────────────────────────────────────
+
+#: How many tables one connection may profile. A cap is real — a 500-table warehouse must
+#: not spend minutes here — but 20 was far too low and it dropped tables SILENTLY. On the
+#: workspace connection that meant 40 of 60 tables unprofiled, including
+#: `data_co_supplychain`, which ranked 36th and so never appeared in the Schema Shape tab
+#: at all: the UI said "no profiled tables in this scope" and nothing said why.
+#:
+#: 60 is measured, not guessed. Profiling the largest table in the corpus — 53 columns,
+#: 180,519 rows, including the row sample and the pair scan — costs 0.39 s end to end, and
+#: a small one costs 0.06 s. Sixty tables is therefore ~12 s worst case and usually far
+#: less, against the ~8 s the old cap was saving.
+MAX_PROFILED_TABLES = 60
 
 _LARGE_TABLE_THRESHOLD = 500_000   # rows above which we skip full-scan queries
 # Composite-PK detection needs a COUNT(DISTINCT a,b) scan (no catalog stat exists for a
@@ -1679,12 +1694,29 @@ def profile_connection(
             all_catalog[table] = (None, {})
 
     # ── Prioritise likely fact tables so they're profiled even in large schemas ─
+    # De-duplicated FIRST. `tables` holds BARE names, and a multi-schema connection carries
+    # collisions: the workspace has `luxexperience.customers` and `main.customers`, plus
+    # two `orders`. Profiling a name twice spent the budget twice and the second result
+    # overwrote the first in `column_profiles` (keyed "table.column"), so which profile
+    # survived depended on iteration order.
+    # ⚠ De-duplication makes that deterministic; it does not make it CORRECT. Two different
+    # tables sharing a bare name still resolve to one profile, and fixing that means keying
+    # the profile maps by qualified name — a change fifteen readers would have to follow.
+    seen: set = set()
+    unique = [t for t in tables if not (t in seen or seen.add(t))]
     prioritised = sorted(
-        tables,
+        unique,
         key=lambda t: (0 if _FACT_SIGNALS.match(t) else 1, t),
     )
+    if len(prioritised) > MAX_PROFILED_TABLES:
+        # Say what was dropped. A silent cap reads as "everything here is profiled", and
+        # downstream that is indistinguishable from "this table has nothing to say".
+        dropped = prioritised[MAX_PROFILED_TABLES:]
+        logger.warning(
+            "profiler: %d tables exceed the %d-table cap — %d not profiled: %s",
+            len(prioritised), MAX_PROFILED_TABLES, len(dropped), ", ".join(dropped[:20]))
 
-    for table in prioritised[:20]:
+    for table in prioritised[:MAX_PROFILED_TABLES]:
         fk_cols = fk_hints.get(table, set())
         catalog_rc, fast_stats = all_catalog.get(table, (None, {}))
 

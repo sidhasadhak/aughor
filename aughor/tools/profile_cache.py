@@ -55,13 +55,16 @@ def cache_path():
 # v7: `unit` gains `percent_whole` — a percent-named column bounded 0–100 is already scaled.
 #     `unit` and `value_interpretation` are stored per column, so the same rule applies to
 #     `_value_interpretation` as to `_semantic_type`.
+# v8: the per-connection table cap goes 20 -> 60 and the list is de-duplicated first, so a
+#     connection profiles a different SET of tables than it used to. On the workspace that
+#     is 40 more tables, `data_co_supplychain` among them.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v7-percent-scale"
+PROFILE_LOGIC_VERSION = "v8-table-cap"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
