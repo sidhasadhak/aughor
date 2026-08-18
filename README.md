@@ -72,9 +72,11 @@ uv run aughor up       # 2. installs web deps on first run, starts API :8000 + w
 > with a message naming the extra to install, so nothing crashes; the features are simply
 > absent. See [Optional extras](#optional-extras).
 
-Then open **http://localhost:3000** — that's it. First boot auto-seeds a
-**synthetic demo dataset** and registers it as a connection, so there is
-something to explore before you connect anything real. `aughor up` never kills
+Then open **http://localhost:3000** — that's it. Aughor starts empty: **no data is
+created on your behalf**, so point it at a warehouse (**+ Add** in the sidebar) to
+begin. Want something to explore first? `uv run aughor seed` writes a **synthetic
+demo dataset** — 90 days of SaaS revenue with a discoverable outage — and it then
+appears as a connection. `aughor up` never kills
 an existing process: if a port is busy it tells you who owns it and exits
 (pick another with `--api-port` / `--web-port`).
 

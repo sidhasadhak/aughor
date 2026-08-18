@@ -43,8 +43,10 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 > `:8000`/`:3000` is already taken it reports who holds the port and exits, so
 > free it yourself or pick another with `--api-port` / `--web-port`.
 
-On first boot Aughor provisions a synthetic DuckDB fixture (`data/aughor.duckdb`)
-so you have something to query immediately. No real data required.
+Nothing is seeded on boot. Run `uv run aughor seed` to write the synthetic DuckDB
+fixture (`data/aughor.duckdb`) when you want something to query without connecting
+real data — it takes a couple of seconds and then shows up as a connection. The test
+suite seeds its own copy in a temp dir, so it never needs this.
 
 > **Most of `data/` is gitignored, but four paths are deliberately not:**
 > `data/context_graph/` (the Wave-C connection knowledge graph),

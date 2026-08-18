@@ -16,10 +16,17 @@ def _llm_readiness() -> dict:
     """The active LLM binding + whether it can plausibly serve — resolved from
     config only, NO network call (health must stay instant). `key_present` is
     True when the backend needs no key (local: ollama/lmstudio) or a key is
-    configured (Settings → Inference runtime config, or env); `ready` mirrors
-    it. Never raises: a broken LLM config must degrade this field, not 500
-    the health probe."""
-    out: dict = {"backend": None, "model": None, "key_present": False, "ready": False}
+    configured (Settings → Inference runtime config, or env). Never raises: a
+    broken LLM config must degrade this field, not 500 the health probe.
+
+    `ready` requires a model as well as a key. It used to mirror `key_present`
+    alone, so the default Ollama binding — which needs no key — reported ready on
+    an install with no model configured at all, and `aughor up` printed
+    "ollama · ? · ready" right before the first question failed with
+    NoModelConfigured. `reason` names which half is missing so the caller can say
+    so; both are resolved from config, still without a network call."""
+    out: dict = {"backend": None, "model": None, "key_present": False,
+                 "ready": False, "reason": "no_backend"}
     try:
         from aughor.llm import provider
         backend, model, _base_url = provider.resolve_binding("coder")
@@ -27,7 +34,11 @@ def _llm_readiness() -> dict:
         # provider._active_key is the same runtime-config→env key resolver the real
         # client builders use; reached as a module attribute (no private cross-import).
         key_present = backend not in provider.NEEDS_KEY or bool(provider._active_key(backend))
-        out["key_present"] = out["ready"] = key_present
+        out["key_present"] = key_present
+        # Nothing ships a default model (provider.NoModelConfigured): an empty model id
+        # means every request raises, which is the opposite of ready.
+        out["ready"] = bool(key_present and model)
+        out["reason"] = None if out["ready"] else ("no_key" if not key_present else "no_model")
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "health: LLM readiness resolution failed", counter="health.llm")
