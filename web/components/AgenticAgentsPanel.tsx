@@ -19,6 +19,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
 import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
 import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Button } from "@/components/ui/button";
@@ -95,12 +96,17 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         <div style={{ display: "flex", alignItems: "center", padding: "2px 6px 8px" }}>
           <span className="aug-label" style={{ color: "var(--t3)" }}>Custom agents</span>
           <span style={{ flex: 1 }} />
-          <Button variant="outline" size="xs"
-            onClick={() => setSelected({ kind: "hire" })}>+ Create</Button>
+          <Button variant="secondary" size="xs"
+            onClick={() => setSelected({ kind: "hire" })}>+ Create agent</Button>
         </div>
         {personas.length === 0 && (
-          <div style={{ fontSize: 12, color: "var(--t2)", padding: "0 6px 10px" }}>
-            None yet — create one from a pack or from scratch.
+          <div style={{ padding: "0 6px 10px" }}>
+            <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
+              No custom agents yet. An agent is a scope and a stance — where it may look,
+              and how it should think.
+            </p>
+            <Button variant="secondary" size="xs"
+              onClick={() => setSelected({ kind: "hire" })}>Create your first agent</Button>
           </div>
         )}
         {personas.map(p => (
@@ -128,8 +134,11 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             border: "1px solid var(--red2)", color: "var(--red5)" }}>{error}</div>
         )}
         {selected?.kind === "hire" ? (
-          <HireDetail onDone={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
-            onError={setError} />
+          <CreateAgentFlow
+            onCreated={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
+            onCancel={() => setSelected(personas[0]
+              ? { kind: "persona", id: personas[0].id }
+              : charters[0] ? { kind: "charter", id: charters[0].id } : null)} />
         ) : persona ? (
           <PersonaDetail key={persona.id} persona={persona} onChanged={reload}
             onDeleted={() => { setSelected(null); reload(); }}
@@ -749,86 +758,6 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
   );
 }
 
-// ── hire / create ────────────────────────────────────────────────────────────────
-
-function HireDetail({ onDone, onError }: {
-  onDone: (a: UserAgent) => void; onError: (e: string | null) => void;
-}) {
-  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
-  const [name, setName] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => { listAgentTemplates().then(setTemplates).catch(() => setTemplates([])); }, []);
-
-  const hire = async (tpl: AgentTemplate) => {
-    setSaving(true);
-    onError(null);
-    try { onDone((await createUserAgentFromTemplate({ pack_id: tpl.pack_id })).agent); }
-    catch (e) { onError(e instanceof Error ? e.message : String(e)); }
-    finally { setSaving(false); }
-  };
-
-  const create = async () => {
-    if (!name.trim()) { onError("Name is required."); return; }
-    setSaving(true);
-    onError(null);
-    try {
-      onDone(await createUserAgent({ name, instructions, connection_id: "",
-        schema_scope: "", doc_ids: [], pack_ids: [] }));
-    } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div style={{ padding: 20, maxWidth: 720 }}>
-      {templates.length > 0 && (
-        <>
-          <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 4 }}>
-            Create from a pack
-          </div>
-          <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 10, lineHeight: 1.5 }}>
-            Starts the agent with the pack&rsquo;s reasoning stance and keeps the pack
-            bound. Its questions come along as suggestions — each still needs reference
-            SQL for your connection before it can be measured.
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
-            {templates.map(t => (
-              <div key={t.pack_id} style={{ flex: "1 1 240px", maxWidth: 330, padding: 14,
-                display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-2)",
-                border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.45 }}>{t.persona}</div>
-                <div style={{ fontSize: 12, color: "var(--t2)" }}>
-                  {t.domains.join(" · ")}
-                  {t.suggested_goldens.length > 0
-                    ? ` — ${t.suggested_goldens.length} suggested questions` : ""}
-                </div>
-                <Button size="sm" variant="outline" disabled={saving}
-                  onClick={() => hire(t)} className="self-start">Create {t.name}</Button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 8 }}>
-        Or create from scratch
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 560 }}>
-        <input className="aug-input" placeholder="Name — e.g. Churn Analyst" value={name}
-          maxLength={120} onChange={e => setName(e.target.value)} />
-        <textarea className="aug-input" rows={4} maxLength={8000} value={instructions}
-          placeholder="Standing instructions (bind connection, documents and packs after creating)"
-          onChange={e => setInstructions(e.target.value)} />
-        <span>
-          <Button onClick={create} disabled={saving}>
-            {saving ? "Creating…" : "Create agent"}
-          </Button>
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
