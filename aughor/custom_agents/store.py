@@ -233,10 +233,21 @@ def list_goldens(agent_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def delete_golden(golden_id: str) -> bool:
+def delete_golden(golden_id: str, agent_id: Optional[str] = None) -> bool:
+    """Delete one golden. Pass ``agent_id`` to scope the delete to its owner.
+
+    The route has always taken both ids in its path and passed only the golden's, so the
+    agent id was decorative and any agent's URL could delete any golden. Scoping is
+    optional here rather than required so the existing single-argument callers keep their
+    meaning, but every route-level caller supplies it.
+    """
+    q = "DELETE FROM user_agent_goldens WHERE id = ?"
+    args: list = [golden_id]
+    if agent_id is not None:
+        q += " AND agent_id = ?"
+        args.append(agent_id)
     with _connect() as conn:
-        cur = conn.execute("DELETE FROM user_agent_goldens WHERE id = ?", (golden_id,))
-        return cur.rowcount > 0
+        return conn.execute(q, args).rowcount > 0
 
 
 def record_eval(agent_id: str, result: dict) -> None:

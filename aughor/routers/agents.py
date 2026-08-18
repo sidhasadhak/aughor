@@ -142,17 +142,31 @@ def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[st
 
 
 def _validate_agent_packs(pack_ids: Optional[list]) -> None:
+    """Refuse a pack id that does not EXIST. Do not refuse one that is not yet active.
+
+    These were the same check, and the asymmetry was a live trap: `create_from_template`
+    binds `pack_ids=[pack_id]` without validating, while this ran on every PATCH against
+    `active_packs()` — status == "active" only. The one pack that ships is `status: draft`,
+    so hiring from it produced an agent whose very next Save returned 422 about a binding
+    the user never chose, on the primary creation path.
+
+    Existence is the right gate here because activation is already enforced where it
+    matters: `packs.intake` steers a question only when the pack is active AND a human has
+    pinned it to that connection. Refusing the id at write time is a second, stricter gate
+    that contradicts the first and blocks a binding that is simply inert until the pack
+    ships. A typo is still a 422.
+    """
     if not pack_ids:
         return
     try:
-        from aughor.packs.intake import active_packs
-        known = {p.id for p in active_packs()}
+        from aughor.packs.intake import _PACKS_DIR, list_packs
+        known = set(list_packs(_PACKS_DIR))
     except Exception:
         known = set()
     missing = [p for p in pack_ids if p not in known]
     if missing:
         raise HTTPException(status_code=422,
-                            detail=f"unknown/inactive pack id(s): {', '.join(missing)}")
+                            detail=f"unknown pack id(s): {', '.join(missing)}")
 
 
 class UserAgentCreate(BaseModel):
@@ -354,7 +368,9 @@ def create_agent_golden(agent_id: str, body: GoldenCreate):
 @router.delete("/agents/custom/{agent_id}/goldens/{golden_id}")
 def delete_agent_golden(agent_id: str, golden_id: str):
     from aughor.custom_agents.store import delete_golden
-    if not delete_golden(golden_id):
+    # Scoped to the agent in the path. Unscoped, that path parameter was decorative and
+    # any agent's URL could delete any golden — the suite an agent is measured by.
+    if not delete_golden(golden_id, agent_id=agent_id):
         raise HTTPException(status_code=404, detail="No such golden")
     return {"deleted": golden_id}
 
