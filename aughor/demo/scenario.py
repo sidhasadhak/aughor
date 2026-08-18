@@ -1,9 +1,10 @@
 """The bundled demo scenario — a realistic SaaS revenue dataset with a real story.
 
-Seeded into ``data/aughor.duckdb`` (the builtin ``fixture`` connection) by both
-``aughor seed`` and the first-boot auto-seed (``setup.ensure_fixture_db``), so the
-first thing a new user explores contains an actual discoverable finding instead of
-uniform noise (W14) and both packaged CLI commands operate on the same file (W15).
+Seeded into ``data/aughor.duckdb`` (the builtin ``fixture`` connection) on request
+— by ``aughor seed`` or ``setup.ensure_fixture_db`` — so a user who wants something to
+explore gets an actual discoverable finding rather than uniform noise (W14), and both
+packaged CLI commands operate on the same file (W15). Nothing seeds it at boot: a data
+platform should not fabricate 72,000 rows on a fresh install nobody asked.
 
 Scenario baked in (deterministic, seed 42):
   - 90 days of revenue for ~800 customers
@@ -28,6 +29,30 @@ SEED = 42
 START_DATE = date(2025, 9, 1)
 DAYS = 90
 OUTAGE_DAY = 83  # day index from START_DATE
+
+#: Rows per INSERT in :func:`_bulk_insert`. DuckDB is columnar: a prepared single-row
+#: INSERT pays per-statement overhead that dwarfs the write, so `executemany` over the
+#: 72,000 daily_revenue rows cost ~98s — the entire first-boot delay, for 2 MB of data.
+#: Batching the same rows into multi-row VALUES measured 27x faster. 2,000 keeps the
+#: statement and its parameter list comfortably small.
+_INSERT_CHUNK = 2000
+
+
+def _bulk_insert(conn, table: str, rows: list, n_cols: int) -> None:  # noqa: ANN001
+    """INSERT `rows` into `table` in multi-row batches.
+
+    Same data and same order as `executemany` — only the statement shape changes, so
+    the deterministic seed still produces byte-identical content.
+    """
+    if not rows:
+        return
+    placeholder = f"({','.join('?' * n_cols)})"
+    for start in range(0, len(rows), _INSERT_CHUNK):
+        batch = rows[start:start + _INSERT_CHUNK]
+        conn.execute(
+            f"INSERT INTO {table} VALUES {','.join([placeholder] * len(batch))}",
+            [value for row in batch for value in row],
+        )
 
 
 def seed_scenario(conn) -> None:  # noqa: ANN001
@@ -75,10 +100,11 @@ def seed_scenario(conn) -> None:  # noqa: ANN001
             })
             cid += 1
 
-    conn.executemany(
-        "INSERT INTO main.customers VALUES (?, ?, ?, ?, ?, ?, ?)",
+    _bulk_insert(
+        conn, "main.customers",
         [[c[k] for k in ("customer_id", "name", "segment", "region", "plan", "mrr", "acquired_at")]
          for c in customers],
+        7,
     )
 
     # ── Events ────────────────────────────────────────────────────────────
@@ -149,7 +175,7 @@ def seed_scenario(conn) -> None:  # noqa: ANN001
 
             rows.append((current_date.isoformat(), c["customer_id"], round(base, 4), status))
 
-    conn.executemany("INSERT INTO main.daily_revenue VALUES (?, ?, ?, ?)", rows)
+    _bulk_insert(conn, "main.daily_revenue", rows, 4)
 
     # ── KPI daily (pre-aggregated) ─────────────────────────────────────────
     conn.execute("""
@@ -217,7 +243,7 @@ def seed_scenario_db(db_path: Path, *, overwrite: bool = False) -> dict:
     """Seed the scenario into a DuckDB file and return its verified summary.
 
     ``overwrite=True`` (the explicit ``aughor seed`` command) replaces an existing
-    file; the first-boot auto-seed path never passes it.
+    file; ``ensure_fixture_db`` (the idempotent opt-in path) never passes it.
     """
     import duckdb
 

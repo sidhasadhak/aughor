@@ -1,6 +1,10 @@
 {
   "name": "web",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "packageManager": "npm@10.9.7",
   "private": true,
   "license": "Apache-2.0",
   "scripts": {

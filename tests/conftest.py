@@ -172,6 +172,32 @@ def _seed_builtin_dbs():
     yield
 
 
+@pytest.fixture(scope="session")
+def duckdb_extension():
+    """Require a DuckDB extension, skipping only when it genuinely cannot be had.
+
+    DuckDB fetches extensions from extensions.duckdb.org on first use, so two tests in
+    this suite need the network despite CONTRIBUTING calling the suite hermetic — they
+    failed outright on an offline machine, and the `sqlite_scanner` one failed late and
+    misleadingly, because the app tolerates the ATTACH failure and the assertion then
+    tripped on an empty schema.
+
+    This is deliberately NOT `importorskip`-style blanket skipping: it runs wherever the
+    extension is reachable or already cached (CI included), and skips with the real cause
+    only when the download is impossible. A test that never runs would not catch the bug
+    it exists for.
+    """
+    import duckdb
+
+    def _ensure(name: str) -> None:
+        try:
+            duckdb.connect(":memory:").execute(f"INSTALL {name}; LOAD {name};")
+        except duckdb.Error as exc:
+            pytest.skip(f"DuckDB extension {name!r} unavailable (offline?): {exc}")
+
+    return _ensure
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _register_agent_plugins():
     """Plug the Agent into the Platform's registries for the whole test session —

@@ -53,7 +53,7 @@ jobs:
         # pyproject declares requires-python = ">=3.11". The hot path (PRs and
         # pushes to main) tests only the 3.11 floor; the weekly `schedule` run and
         # a manual `workflow_dispatch` expand to the full set. The suite is green on
-        # all three (verified locally, 4,700+ passed each); 3.12/3.13 rarely diverge
+        # all three (verified locally, 7,000+ passed each); 3.12/3.13 rarely diverge
         # from 3.11 between weekly runs, so this drops the per-run cost ~3x without
         # giving up multi-version coverage.
         python: >-
@@ -69,7 +69,11 @@ jobs:
       - name: Sync dependencies (all extras, from the committed lock)
         # --python pins the interpreter deterministically without a committed
         # .python-version (that file is gitignored so devs can pick their own).
-        run: uv sync --all-extras --frozen --python ${{ matrix.python }}
+        # --locked, not --frozen: --frozen installs from the lock without checking it
+        # against pyproject, so a stale lock rides along silently — which is how the
+        # langfuse specifier sat at >=2.0.0 in the lock while pyproject said >=4,<5, and
+        # every contributor's `uv sync` rewrote the file. --locked fails the build instead.
+        run: uv sync --all-extras --locked --python ${{ matrix.python }}
       - name: Run tests
         # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
         # Both need a real model + network and would hang/flake in CI.
@@ -152,7 +156,7 @@ jobs:
         with:
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --all-extras --frozen --python 3.11
+        run: uv sync --all-extras --locked --python 3.11
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

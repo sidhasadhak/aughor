@@ -1629,6 +1629,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Demo Connection
+         * @description Provision the bundled demo dataset and return its connection.
+         *
+         *     Nothing is seeded at boot — a data platform should not fabricate 72,000 rows of
+         *     synthetic revenue on a fresh install nobody asked. That left `aughor seed` as the
+         *     only way in, which a user who never opens a terminal cannot find, so this is the
+         *     same opt-in over HTTP: the first-run funnel's "Explore the demo" calls it.
+         *
+         *     Idempotent by construction — `ensure_fixture_db` only writes when the file is
+         *     absent, so a second call returns the existing connection and never touches data
+         *     the user may have changed. `seeded` says which happened.
+         */
+        post: operations["seed_demo_connection_connections_demo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/federate": {
         parameters: {
             query?: never;
@@ -13867,6 +13896,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seed_demo_connection_connections_demo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

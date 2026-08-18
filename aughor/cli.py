@@ -157,12 +157,21 @@ def _ensure_web_deps(root: Path) -> None:
 
 
 def _wait_for_health(
-    url: str, timeout: float = 30.0, *, is_alive: Optional[Callable[[], bool]] = None
+    url: str, timeout: float = 60.0, *, is_alive: Optional[Callable[[], bool]] = None,
+    notice: str = "", notice_after: float = 12.0,
 ) -> Optional[dict]:
     """Poll /health until it answers 200 (returns its JSON) or the timeout lapses
-    (returns None). `is_alive` short-circuits the wait when the API process dies."""
+    (returns None). `is_alive` short-circuits the wait when the API process dies.
+
+    `notice` is printed once, after `notice_after` seconds, so a slow start reads as
+    progress rather than a hang. The ceiling is generous because `is_alive` already
+    ends the wait the instant the API dies — waiting longer costs nothing on the
+    failure path, and giving up early on a slow machine cost the user the summary.
+    """
     import httpx
-    deadline = time.monotonic() + timeout
+    start = time.monotonic()
+    deadline = start + timeout
+    announced = False
     while time.monotonic() < deadline:
         if is_alive is not None and not is_alive():
             return None
@@ -172,6 +181,9 @@ def _wait_for_health(
                 return r.json()
         except Exception:
             r = None  # not accepting connections yet — keep polling
+        if notice and not announced and time.monotonic() - start >= notice_after:
+            console.print(f"[dim]{notice}[/dim]")
+            announced = True
         time.sleep(0.5)
     return None
 
@@ -183,22 +195,31 @@ def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optiona
     if web_port is not None:
         console.print(f"  Web   [bold]http://localhost:{web_port}[/bold]")
     if health is None:
-        console.print("  [yellow]/health did not answer within 30s — the API may still be starting; check the logs above.[/yellow]")
+        console.print("  [yellow]The API has not answered /health yet — it may still be starting.[/yellow]")
+        console.print("        [dim]The URLs above are still correct; check the logs for progress.[/dim]")
     else:
+        # No demo data is the DEFAULT state, not a fault — nothing is seeded on boot.
         if health.get("fixture_db"):
-            console.print("  Data  demo dataset ready [dim](auto-seeded on first boot)[/dim]")
+            console.print("  Data  demo dataset loaded")
         else:
-            console.print("  Data  [yellow]demo dataset not seeded yet[/yellow] [dim](run `aughor seed` if it never appears)[/dim]")
+            console.print("  Data  no demo data [dim](add a connection, or `aughor seed` for the demo)[/dim]")
         llm = health.get("llm") or {}
         backend, model = llm.get("backend") or "unknown", llm.get("model") or "?"
         if llm.get("ready"):
             console.print(f"  LLM   {backend} · {model} · [green]ready[/green]", soft_wrap=True)
         else:
-            console.print(f"  LLM   {backend} · {model} · [red]not ready (API key missing)[/red]", soft_wrap=True)
-            console.print(
-                "        Fix it in Settings → Inference in the web UI, or set AUGHOR_BACKEND/key envs in .env",
-                soft_wrap=True,
-            )
+            # Name the half that is missing: nothing ships a default model, so
+            # "API key missing" was the wrong diagnosis on every fresh install.
+            reason, fix = {
+                "no_model": ("no model configured",
+                             "Pick one in Settings → Inference (it lists what the backend serves), "
+                             "or set AUGHOR_CODER_MODEL / AUGHOR_NARRATOR_MODEL in .env"),
+                "no_key": ("API key missing",
+                           "Set the backend's key in Settings → Inference, or in .env"),
+            }.get(llm.get("reason"), ("not configured",
+                                      "Configure it in Settings → Inference, or in .env"))
+            console.print(f"  LLM   {backend} · {model} · [red]not ready ({reason})[/red]", soft_wrap=True)
+            console.print(f"        {fix}", soft_wrap=True)
     console.print()
     console.print("[dim]Ctrl-C stops everything.[/dim]")
     console.print()
@@ -252,8 +273,9 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool):
 
     Installs frontend deps on the first run, refuses to touch ports something
     else owns, waits for the API to come up healthy, then prints where
-    everything is (URLs, demo-data status, LLM readiness). First boot
-    auto-seeds a demo dataset. Ctrl-C stops both processes.
+    everything is (URLs, demo-data status, LLM readiness). No data is
+    created on your behalf — run `aughor seed` if you want the demo dataset.
+    Ctrl-C stops both processes.
     """
     if api_only and web_only:
         raise click.UsageError("--api-only and --web-only are mutually exclusive.")
@@ -291,6 +313,7 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool):
             health = _wait_for_health(
                 f"http://127.0.0.1:{api_port}/health",
                 is_alive=lambda: api_proc.poll() is None,
+                notice="Still starting — migrations run on first boot…",
             )
             if health is None and api_proc.poll() is not None:
                 console.print(f"[red]API exited during startup (code {api_proc.returncode})[/red] — see the logs above.")

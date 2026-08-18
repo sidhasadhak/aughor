@@ -113,7 +113,7 @@ async def _lifespan(app: "FastAPI"):
     # run_in_executor boundary, before any startup step dispatches into a thread.
     _install_context_executor()
     await _kernel_journal_boot()
-    await _setup_samples()
+    await _report_demo_data()
     # Orphaned investigations are recovered (salvaged, not blanket-failed) inside
     # _kernel_boot_recovery — AFTER kernel boot_recovery sweeps the job table, so
     # the salvage jobs we submit aren't themselves caught by that sweep.
@@ -360,36 +360,28 @@ async def _kernel_journal_boot() -> None:
         logger.warning("Kernel ledger unavailable at boot: %s", exc)
 
 
-async def _setup_samples() -> None:
-    # Run synchronous DB seeding off the event loop so startup returns instantly.
-    loop = asyncio.get_running_loop()
+async def _report_demo_data() -> None:
+    """Log whether demo data is present. Reports; never creates.
+
+    Booting used to seed the demo scenario, which wrote 72,000 rows of synthetic
+    revenue into a fresh install nobody asked for, and did it *inside* the lifespan —
+    so `Application startup complete` waited ~98s and `aughor up`'s health probe timed
+    out on the one boot where a new user most needs its summary.
+
+    A data platform should not fabricate data on startup: the demo is now opt-in
+    (`aughor seed`), and everything that reads these files already tolerates their
+    absence — the registry only advertises the demo connection once it exists, and the
+    Workspace folds in sample tables only when they do.
+    """
     try:
-        from aughor.demo.setup import ensure_fixture_db, ensure_samples_db
-
-        def _seed_and_validate() -> None:
-            # Guarantee the 'fixture' builtin connection has an openable DB — it's
-            # gitignored and otherwise never created (a fresh install had a broken
-            # "Fixture DB (demo)" connection).
-            ensure_fixture_db()
-            path = ensure_samples_db()
-            # Validate the seed actually holds tables — a half-written/corrupt seed
-            # is the root of the "sample data missing" class and must be loud.
-            import duckdb
-            conn = duckdb.connect(str(path), read_only=True)
-            try:
-                n = conn.execute(
-                    "SELECT COUNT(*) FROM duckdb_tables() WHERE internal = false"
-                ).fetchone()[0]
-            finally:
-                conn.close()
-            if n == 0:
-                logger.error("Samples DB validation FAILED: %s exists but has 0 tables", path)
-            else:
-                logger.info("Samples DB validated: %d tables at %s", n, path)
-
-        await loop.run_in_executor(None, _seed_and_validate)
+        from aughor.demo.setup import fixture_db_path
+        path = fixture_db_path()
+        if path.exists():
+            logger.info("Demo dataset present at %s", path)
+        else:
+            logger.info("No demo dataset — connect a warehouse, or run `aughor seed`")
     except Exception as exc:
-        logger.warning("Samples DB setup failed (non-fatal): %s", exc)
+        logger.warning("Demo data check failed (non-fatal): %s", exc)
 
 
 async def _purge_legacy_canvases() -> None:

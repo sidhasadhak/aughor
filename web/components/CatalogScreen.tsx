@@ -1450,7 +1450,12 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       .finally(() => setTreeL(false));
   };
 
-  useEffect(() => { loadTree(); }, [workspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Refetch when the set of connections changes, not only on workspace switch. The tree
+  // is built server-side from the registry, and this screen stays mounted behind the
+  // other tabs — so a connection added while it was mounted (the demo seed, or + Add)
+  // never appeared until a full page reload.
+  const connKey = connections.map(c => c.id).join(",");
+  useEffect(() => { loadTree(); }, [workspaceId, connKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (key: string) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isOpen = (key: string) => expanded.has(key);

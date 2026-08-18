@@ -5316,7 +5316,6 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     `narrate=true` prepends an LLM-authored executive summary (best-effort; the
     export still succeeds if the model is slow or unavailable)."""
     from fastapi.responses import Response
-    from aughor.export import ExportUnavailable, export_report
     from aughor.security.authz import check_owner
 
     check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org export
@@ -5326,6 +5325,21 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     fmt = (format or "pdf").lower()
     if fmt not in ("pdf", "pptx"):
         raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
+
+    # Imported after the authz/existence checks so a caller who may not read this
+    # investigation learns nothing about the deployment's configuration, and guarded
+    # separately from the render below: `aughor.export` pulls the extra's whole dependency
+    # closure at import time, and an ImportError here is the same CONFIGURATION state as
+    # ExportUnavailable — not a fault. Catching it only around export_report() let the
+    # matplotlib import escape as a 500.
+    try:
+        from aughor.export import ExportUnavailable, export_report
+    except ImportError as exc:
+        logger.warning("export requested but its extra failed to import: %s", exc)
+        raise HTTPException(status_code=501, detail=(
+            "Report export needs the 'export' extra (reportlab, python-pptx, matplotlib). "
+            f"Install it with:  uv sync --extra export   —  underlying import error: {exc}"))
+
     try:
         # The router resolves the effective currency (org override → profile) and injects
         # it — the platform-side export must not import agent-side settings itself.

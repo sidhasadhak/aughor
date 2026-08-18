@@ -31,6 +31,26 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+export interface DemoSeedResult {
+  /** The demo connection's id — present whether or not this call created it. */
+  id: string;
+  /** True when this call wrote the dataset; false when it already existed. */
+  seeded: boolean;
+  message: string;
+}
+
+/** Provision the bundled demo dataset and return its connection.
+ *
+ *  Nothing is seeded on boot, so a fresh install has no data at all — this is the
+ *  in-app half of `aughor seed`, for the user who never opens a terminal. Idempotent:
+ *  calling it when the demo already exists returns the connection with `seeded: false`
+ *  and leaves the data alone. */
+export async function seedDemoConnection(): Promise<DemoSeedResult> {
+  const res = await fetch(`${getApiBase()}/connections/demo`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to load the demo dataset");
+  return res.json();
+}
+
 // ── Capabilities (commercial tier gating) ──────────────────────────────────
 export interface Capabilities {
   tier: "free" | "pro" | "enterprise" | string;
