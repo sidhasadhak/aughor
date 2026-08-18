@@ -69,7 +69,11 @@ jobs:
       - name: Sync dependencies (all extras, from the committed lock)
         # --python pins the interpreter deterministically without a committed
         # .python-version (that file is gitignored so devs can pick their own).
-        run: uv sync --all-extras --frozen --python ${{ matrix.python }}
+        # --locked, not --frozen: --frozen installs from the lock without checking it
+        # against pyproject, so a stale lock rides along silently — which is how the
+        # langfuse specifier sat at >=2.0.0 in the lock while pyproject said >=4,<5, and
+        # every contributor's `uv sync` rewrote the file. --locked fails the build instead.
+        run: uv sync --all-extras --locked --python ${{ matrix.python }}
       - name: Run tests
         # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
         # Both need a real model + network and would hang/flake in CI.
@@ -152,7 +156,7 @@ jobs:
         with:
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --all-extras --frozen --python 3.11
+        run: uv sync --all-extras --locked --python 3.11
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

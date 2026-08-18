@@ -365,7 +365,7 @@ requires-dist = [
     { name = "ibis-framework", extras = ["duckdb", "postgres"], marker = "extra == 'warehouse'", specifier = ">=9.0.0" },
     { name = "instructor", specifier = ">=1.4.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "langfuse", marker = "extra == 'observability'", specifier = ">=2.0.0" },
+    { name = "langfuse", marker = "extra == 'observability'", specifier = ">=4,<5" },
     { name = "langgraph", specifier = ">=0.2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.0" },
     { name = "matplotlib", marker = "extra == 'export'", specifier = ">=3.11.0" },

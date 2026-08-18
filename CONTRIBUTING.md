@@ -14,7 +14,8 @@ Contributions are accepted under the [Apache License 2.0](LICENSE).
 | Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The frontend uses npm and `web/package-lock.json`. |
 
 An LLM backend is only needed to *run* Aughor, not to develop against it — the
-test suite is fully offline and hermetic.
+test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
+(see **Running the checks**).
 
 ## Setup
 
@@ -80,7 +81,7 @@ suite seeds its own copy in a temp dir, so it never needs this.
 CI runs exactly these four jobs. Run them locally before opening a PR:
 
 ```bash
-# 1. Backend tests — hermetic, no network, no LLM. ~3 min.
+# 1. Backend tests — hermetic, no LLM. 10-12 min (serial; xdist is not configured).
 uv run pytest -q -m "not e2e and not eval"
 
 # 2. Backend lint — the baseline is zero.
@@ -96,6 +97,23 @@ npm run lint:elements   # one-way ratchet: raw <button> count may only shrink
 # 4. Generated API client must not drift
 npm run gen:api && git diff --exit-code -- lib/api.gen.ts
 ```
+
+Two tests are not offline: `test_xlsx_reads` and `test_listed_and_queryable_when_flag_on`
+need DuckDB's `excel` and `sqlite_scanner` extensions, which DuckDB downloads from
+`extensions.duckdb.org` on first use. They run normally once the extension is fetched or
+cached, and **skip with the reason named** when it cannot be — so a green run on a locked-down
+machine shows two skips rather than two failures. The `duckdb_extension` fixture in
+`tests/conftest.py` is how; use it for any new test that needs one.
+
+### A dirty lockfile after `npm install`
+
+`web/package-lock.json` was written by npm 11, which records a `libc` field on
+platform-specific optional deps. npm 10 — what Node 20 bundles, and what CI runs — drops
+those fields on any `npm install`, so the file comes back dirty with ~30 deletions you did
+not make. `npm ci` is unaffected either way, so CI does not care; just don't commit that
+diff. Pinning the project to one npm (`packageManager` in `web/package.json`) would settle
+it, but it means choosing which npm the project targets — and CI's install step is written
+against npm 10 on purpose.
 
 ### Test markers
 

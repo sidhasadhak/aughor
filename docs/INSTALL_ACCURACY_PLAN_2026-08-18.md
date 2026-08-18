@@ -1,6 +1,6 @@
 # Install accuracy — verification findings and remediation plan (2026-08-18)
 
-**Status:** PR-1, PR-2 and PR-3 landed; PR-4 outstanding · **Scope:** README Quick Start, CONTRIBUTING setup, first-boot behaviour,
+**Status:** all four PRs landed · **Scope:** README Quick Start, CONTRIBUTING setup, first-boot behaviour,
 the `export` extra's degradation contract.
 
 The Quick Start was executed verbatim on a clean container and every documented claim around it
@@ -436,7 +436,7 @@ child PIDs to `data/.aughor.pids` and have `--stop` read that file — no patter
 | **PR-1** | W1 export degradation + the missing handler-time ratchet test | small | low | **landed** |
 | **PR-2** | W3 readiness, W4a–d first-boot + D1 default-off | medium | **medium** — changes default behaviour | **landed** |
 | **PR-3** | W2, W5, W7, W8, W10 — docs truth pass | medium | none | **landed** |
-| **PR-4** | W6, W9, W11 — repeatability | small | low (CI goes red until W9 re-locks) | outstanding |
+| **PR-4** | W6, W9, W11 — repeatability | small | low | **landed** |
 
 ### Measured after PR-2
 
@@ -459,6 +459,20 @@ figure-sets had drifted apart without saying which size each meant:
 | API import closure (a *different* measurement) | — | **106 MB**, 44 packages |
 | Backend tests | 4,700+ | **7,033** |
 | Suite wall clock | ~3 min | **10–12 min**, serial on 4 cores |
+
+### Changed during PR-4 — the npm half of W9
+
+W9 proposed pinning `packageManager` to `npm@10.9.7`. On inspection that is the wrong
+call and it was **not** done. `web/package-lock.json` was written by npm 11, which records
+a `libc` field on platform-specific optional deps; npm 10 strips those on any
+`npm install`. Pinning 10.9.7 would therefore force the lockfile into npm-10 format and
+discard that metadata, and pinning npm 11 contradicts CI's install step, which is written
+against npm 10 on purpose (`.github/workflows/ci.yml`). `npm ci` passes either way, so CI
+is unaffected and the churn is contributor-side only. Choosing which npm the project
+targets is a maintainer decision, so the hazard is documented in CONTRIBUTING instead.
+
+The uv half was done: the lockfile is re-locked, and both CI sync steps moved from
+`--frozen` to `--locked` so a stale lock fails the build rather than riding along.
 
 ### Deferred from PR-2 — the in-app "Load demo data" CTA
 
