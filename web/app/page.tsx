@@ -66,6 +66,7 @@ const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspa
 import { getApiBase, DEMO_PACK } from "@/lib/config";
 import {
   getConnections,
+  seedDemoConnection,
   getWorkspaces,
   createWorkspace as apiCreateWorkspace,
   type Workspace,
@@ -738,6 +739,7 @@ function HomeScreen({
   onOpenInvestigation,
   onAddConnection,
   onTryDemo,
+  demoLoading,
 }: {
   connections: Connection[];
   selectedConn: string;
@@ -747,6 +749,7 @@ function HomeScreen({
   onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
   onAddConnection: () => void;
   onTryDemo: () => void;
+  demoLoading: boolean;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -845,7 +848,7 @@ function HomeScreen({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
               {[
                 { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
-                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Browse the bundled BeautyCommerce sample workspace.",       cta: "Open the demo",    accent: "var(--vio3)", action: onTryDemo },
+                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Load a synthetic dataset — 90 days of SaaS revenue with a real outage to find.", cta: demoLoading ? "Loading…" : "Load the demo", accent: "var(--vio3)", action: onTryDemo, busy: demoLoading },
                 { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the deep analysis for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
               ].map(s => (
                 <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
@@ -855,7 +858,7 @@ function HomeScreen({
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5, flex: 1, marginBottom: 12 }}>{s.desc}</div>
-                  <button onClick={s.action} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: "pointer" }}>{s.cta} →</button>
+                  <button onClick={s.action} disabled={!!s.busy} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: s.busy ? "progress" : "pointer", opacity: s.busy ? 0.6 : 1 }}>{s.cta} →</button>
                 </div>
               ))}
             </div>
@@ -1808,14 +1811,36 @@ export default function Home() {
 
   const reloadConnections = () => getConnections().then(setConnections).catch(() => {});
 
-  // First-run funnel: select the best available demo connection and open the Catalog to browse it.
-  const tryDemo = () => {
-    const demo = connections.find(c => c.name === "BeautyCommerce")
-      || connections.find(c => c.id === "workspace")
-      || connections.find(c => c.builtin)
-      || connections[0];
-    if (demo) setSelectedConn(demo.id);
-    handleNavigate("catalog");
+  // First-run funnel: open the demo dataset, provisioning it first if it isn't there.
+  // Nothing is seeded on boot, so on a fresh install this used to land on an empty
+  // Workspace — the step promised a sample to browse and delivered nothing. The seed
+  // endpoint is idempotent, so a second click just reopens what exists.
+  const [demoLoading, setDemoLoading] = useState(false);
+  const tryDemo = async () => {
+    const existing = connections.find(c => c.id === "fixture")
+      || connections.find(c => c.name === "BeautyCommerce");
+    if (existing) {
+      setSelectedConn(existing.id);
+      handleNavigate("catalog");
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      const { id } = await seedDemoConnection();
+      // Both lists, not just connections: the Catalog renders `wsConnections`, which
+      // filters by the active workspace's membership, so refreshing connections alone
+      // left the new connection filtered out by a stale workspace and the demo looked
+      // like it had not loaded at all.
+      await Promise.all([reloadConnections(), reloadWorkspaces()]);
+      setSelectedConn(id);
+      handleNavigate("catalog");
+    } catch {
+      // Seeding is the only thing that can fail here, and it is recoverable — leave the
+      // user on the funnel with the step still actionable rather than navigating to an
+      // empty Catalog that looks broken.
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string) => {
@@ -2074,6 +2099,7 @@ export default function Home() {
                 onOpenInvestigation={openInvestigation}
                 onAddConnection={() => setShowAddConn(true)}
                 onTryDemo={tryDemo}
+                demoLoading={demoLoading}
               />
             )}
 

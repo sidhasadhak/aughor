@@ -93,6 +93,51 @@ def get_connections(request: Request):
     return conns
 
 
+@router.post("/connections/demo", status_code=201)
+async def seed_demo_connection():
+    """Provision the bundled demo dataset and return its connection.
+
+    Nothing is seeded at boot — a data platform should not fabricate 72,000 rows of
+    synthetic revenue on a fresh install nobody asked. That left `aughor seed` as the
+    only way in, which a user who never opens a terminal cannot find, so this is the
+    same opt-in over HTTP: the first-run funnel's "Explore the demo" calls it.
+
+    Idempotent by construction — `ensure_fixture_db` only writes when the file is
+    absent, so a second call returns the existing connection and never touches data
+    the user may have changed. `seeded` says which happened.
+    """
+    from aughor.demo.setup import ensure_fixture_db, fixture_db_path
+    from aughor.db.registry import BUILTIN_ID
+
+    existed = fixture_db_path().exists()
+    if not existed:
+        # Off the event loop: seeding is ~2s of CPU, and blocking here would stall
+        # every other request for its duration.
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, ensure_fixture_db)
+        except Exception as e:
+            logger.exception("demo seed failed")
+            raise HTTPException(status_code=500, detail=f"Could not seed the demo dataset: {e}")
+        if not fixture_db_path().exists():
+            raise HTTPException(status_code=500, detail="Demo seed reported success but wrote no file")
+
+    # The registry only advertises this connection once the file exists, so a caller
+    # that just seeded needs the schema cache cleared to see it as anything but empty.
+    _invalidate_schema_cache(BUILTIN_ID)
+    # Catalogs are derived from the registry at startup only, so a connection that
+    # appears afterwards is missing from the Catalog screen until the next restart —
+    # the demo would seed, be listed by /connections, and still not be browsable.
+    # The sync is idempotent and reads the registry, so this just adds the new one.
+    try:
+        from aughor.metastore import ensure_catalogs_for_connections
+        ensure_catalogs_for_connections()
+    except Exception as exc:
+        logger.warning("demo seeded but its catalog entry could not be created: %s", exc)
+    return {"id": BUILTIN_ID, "seeded": not existed,
+            "message": "Demo dataset ready" if existed else "Demo dataset created"}
+
+
 @router.post("/connections", status_code=201)
 async def create_connection(req: AddConnectionRequest,
                             idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):

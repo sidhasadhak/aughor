@@ -474,14 +474,26 @@ targets is a maintainer decision, so the hazard is documented in CONTRIBUTING in
 The uv half was done: the lockfile is re-locked, and both CI sync steps moved from
 `--frozen` to `--locked` so a stale lock fails the build rather than riding along.
 
-### Deferred from PR-2 — the in-app "Load demo data" CTA
+### PR-5 — the in-app "Load demo data" CTA (landed)
 
-W4b proposed pairing default-off with an empty-state button. It is **not** in PR-2.
-A button needs an API endpoint to seed on demand, and CONTRIBUTING's "build → wire →
-test → leverage" rule makes an endpoint with no caller the wrong half to ship alone —
-so this lands whole, with the web empty state, or not at all. Until then the opt-in is
-`aughor seed`, which the boot summary and the README both name. Worth doing: a web-only
-user never sees the terminal hint.
+Deferred from PR-2 and now shipped whole, per CONTRIBUTING's "build → wire → test →
+leverage": `POST /connections/demo` (idempotent, gated at `CONNECTION_CREATE` like
+adding a connection) plus the first-run funnel's step 2, which previously promised a
+"bundled BeautyCommerce sample workspace" and — after D1 — opened an empty Workspace.
+
+Driving it in a real browser found two client-side defects that no unit test would
+have caught, because the seed and the API were correct throughout:
+
+1. **The Catalog tree never refetched.** `CatalogScreen` loads a server-built tree in
+   `useEffect(…, [workspaceId])` and stays mounted behind the other tabs, so a
+   connection added while it was mounted never appeared. This affected the ordinary
+   **+ Add** flow too — a pre-existing bug, not one D1 introduced.
+2. **The workspace list went stale.** The Catalog renders `wsConnections`, filtered by
+   the active workspace's membership. Refreshing connections alone left the new
+   connection filtered out, so the demo looked like it had not loaded at all.
+
+Also fixed on the way: connections created after startup had no metastore catalog
+entry, because catalogs are derived from the registry at boot only.
 
 PR-1 first: it is the only item where the product misbehaves. PR-3 can land in parallel — it
 touches no code. PR-2 carries D1 and deserves its own review.

@@ -177,3 +177,58 @@ def test_seeding_the_demo_is_fast_enough_to_be_opt_in(monkeypatch, tmp_path):
     assert elapsed < 30, (
         f"seeding took {elapsed:.1f}s; it was ~98s with executemany and ~2s batched — "
         "a row-by-row INSERT has probably come back")
+
+
+# ── The demo dataset is reachable without a terminal ──────────────────────────
+
+def test_demo_endpoint_seeds_and_then_offers_the_connection(client, monkeypatch, tmp_path):
+    """`aughor seed` is the opt-in, but a user who never opens a terminal cannot find
+    it — so the first-run funnel needs the same act over HTTP."""
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+    assert "fixture" not in {c["id"] for c in client.get("/connections").json()}
+
+    resp = client.post("/connections/demo")
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["id"] == "fixture" and body["seeded"] is True, body
+    assert fake.exists()
+
+    listed = {c["id"] for c in client.get("/connections").json()}
+    assert "fixture" in listed, "seeding must make the connection appear"
+
+    # …and it must actually open — an advertised-but-broken connection is the bug
+    # auto-seeding used to hide.
+    sample = client.get("/connections/fixture/tables/customers/sample", params={"limit": 2})
+    assert sample.status_code == 200, sample.text
+    assert sample.json()["rows"], "the seeded demo connection returned no rows"
+
+
+def test_demo_endpoint_is_idempotent_and_never_clobbers(client, monkeypatch, tmp_path):
+    """A second click must not re-seed. `ensure_fixture_db` only writes when the file is
+    absent, so a user who has edited the demo keeps their edits."""
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+
+    assert client.post("/connections/demo").json()["seeded"] is True
+    stamp = fake.stat().st_mtime_ns
+
+    second = client.post("/connections/demo")
+    assert second.status_code == 201, second.text
+    assert second.json()["seeded"] is False, "a second call re-seeded"
+    assert fake.stat().st_mtime_ns == stamp, "the existing demo file was rewritten"
+
+
+def test_seeding_the_demo_requires_the_permission_that_adding_a_connection_does():
+    """It writes a file and makes a connection appear — the same act as POST
+    /connections, so it must not fall to the write floor a viewer clears."""
+    from aughor.rbac.permissions import Permission
+    from aughor.rbac.policy import required_permission
+
+    assert required_permission("POST", "/connections/demo") == Permission.CONNECTION_CREATE
+    assert (required_permission("POST", "/connections/demo")
+            == required_permission("POST", "/connections"))
