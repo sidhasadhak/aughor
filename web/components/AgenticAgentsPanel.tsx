@@ -54,7 +54,7 @@ function fmtBudget(n: number | null): string {
 }
 
 export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent,
-  range }: {
+  range, createSignal }: {
   workspaceId?: string;
   workspaceName?: string;
   /** CR1 drill-in: open a run's trace in the Activity layer's runs mode. */
@@ -63,6 +63,9 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   focusAgent?: { id: string; kind: "charter" | "persona" } | null;
   /** The surface's shared window — the agent page's own figures scope to it. */
   range?: TimeRange;
+  /** Bumped by the workspace's "+ Create agent" control, from any layer. A counter, not a
+   *  flag: pressing Create while already here must re-open the flow. */
+  createSignal?: number;
 }) {
   const [charters, setCharters] = useState<AgentRosterEntry[]>([]);
   const [personas, setPersonas] = useState<UserAgent[]>([]);
@@ -82,6 +85,9 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   useEffect(() => {
     if (focusAgent) setSelected({ kind: focusAgent.kind, id: focusAgent.id });
   }, [focusAgent]);
+  useEffect(() => {
+    if (createSignal) setSelected({ kind: "hire" });
+  }, [createSignal]);
 
   const charter = selected?.kind === "charter"
     ? charters.find(c => c.id === selected.id) : undefined;

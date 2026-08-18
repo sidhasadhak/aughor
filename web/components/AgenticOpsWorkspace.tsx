@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 import { RangePicker } from "@/components/agentops/RangePicker";
+import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { getNeedsHuman } from "@/lib/api";
@@ -77,6 +78,10 @@ export function AgenticOpsWorkspace({
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
   const [attention, setAttention] = useState(0);
+  // Creating an agent is reachable from EVERY layer, not just the one whose sidebar happens
+  // to hold the roster. A counter rather than a boolean: clicking Create while already on
+  // the Roster must re-open the flow, and a bool that is already true fires no change.
+  const [createSignal, setCreateSignal] = useState(0);
   // ONE window for the whole surface, held here so every layer reads the same one and a
   // brush drawn on the Overview still applies when the reader switches to Activity. Two
   // independent windows on one page is how two tiles disagree with no visible reason.
@@ -92,6 +97,19 @@ export function AgenticOpsWorkspace({
     return () => { alive = false; clearInterval(iv); };
   }, []);
 
+  // `?create=agent` opens the creation flow on arrival — the command palette's deep link,
+  // and a URL anyone can paste. The param is consumed so a refresh does not reopen it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create") !== "agent") return;
+    params.delete("create");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    onLayerChange("agents");
+    setCreateSignal(n => n + 1);
+  }, [onLayerChange]);
+
   const openTraceForInvestigation = useCallback((invId: string) => {
     setTraceFocus({ investigationId: invId });
     onLayerChange("activity");
@@ -104,12 +122,23 @@ export function AgenticOpsWorkspace({
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
       badges={{ attention }}
-      headerControls={<RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />}
+      headerControls={
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
+          <Button variant="secondary" size="xs"
+            title="Create a custom agent — a scope and a stance"
+            onClick={() => { onLayerChange("agents"); setCreateSignal(n => n + 1); }}
+            style={{ whiteSpace: "nowrap" }}>
+            + Create agent
+          </Button>
+        </div>
+      }
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "agents") return (
           <AgenticAgentsPanel workspaceId={workspaceId} workspaceName={workspaceName}
-            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range} />
+            focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range}
+            createSignal={createSignal} />
         );
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}
