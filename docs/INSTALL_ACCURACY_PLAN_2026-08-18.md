@@ -469,10 +469,29 @@ a `libc` field on platform-specific optional deps; npm 10 strips those on any
 discard that metadata, and pinning npm 11 contradicts CI's install step, which is written
 against npm 10 on purpose (`.github/workflows/ci.yml`). `npm ci` passes either way, so CI
 is unaffected and the churn is contributor-side only. Choosing which npm the project
-targets is a maintainer decision, so the hazard is documented in CONTRIBUTING instead.
+targets is a maintainer decision, so the hazard was documented in CONTRIBUTING instead.
+
+**Resolved 2026-08-18 (owner's call): pinned to npm 10.** `web/package.json` now
+declares `"packageManager": "npm@10.9.7"` (what Node 20 bundles and CI runs — zero CI
+changes), the lockfile was regenerated once into npm-10 canonical form (the `libc`
+fields are gone; a harmless install-time hint), and a second regeneration was verified
+to be a no-op. `corepack enable` gives every contributor that exact npm; the CONTRIBUTING
+note now describes the pin instead of the churn.
 
 The uv half was done: the lockfile is re-locked, and both CI sync steps moved from
 `--frozen` to `--locked` so a stale lock fails the build rather than riding along.
+
+### PR-6 — the two loose ends (landed)
+
+**The faux-LLM flake is fixed structurally.** `faux.calls()` returned refused requests
+alongside served ones, so a background thread left over from an earlier test (a
+scheduler heartbeat, a kernel task) firing one unscripted completion mid-test made an
+unrelated `(call,) = faux_llm.calls()` unpack two entries. A stray is by definition
+unscripted → refused, so `calls()` now returns served requests only and `refusals()`
+carries the rest; the refusal is still raised loudly to its own caller. The regression
+test spawns a real stray thread and fails on the previous code.
+
+**The npm decision** is recorded above under "Changed during PR-4".
 
 ### PR-5 — the in-app "Load demo data" CTA (landed)
 

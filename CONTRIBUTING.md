@@ -105,15 +105,15 @@ cached, and **skip with the reason named** when it cannot be — so a green run 
 machine shows two skips rather than two failures. The `duckdb_extension` fixture in
 `tests/conftest.py` is how; use it for any new test that needs one.
 
-### A dirty lockfile after `npm install`
+### The project pins npm 10
 
-`web/package-lock.json` was written by npm 11, which records a `libc` field on
-platform-specific optional deps. npm 10 — what Node 20 bundles, and what CI runs — drops
-those fields on any `npm install`, so the file comes back dirty with ~30 deletions you did
-not make. `npm ci` is unaffected either way, so CI does not care; just don't commit that
-diff. Pinning the project to one npm (`packageManager` in `web/package.json`) would settle
-it, but it means choosing which npm the project targets — and CI's install step is written
-against npm 10 on purpose.
+`web/package.json` declares `"packageManager": "npm@10.9.7"` — the npm that Node 20
+bundles and that CI runs — and the committed lockfile is in npm-10 form. Run
+`corepack enable` once (corepack ships with Node) and you get exactly that npm
+automatically. Without corepack you are fine on any npm 10.x; an npm 11 `npm install`
+rewrites the lockfile into 11-format (it re-adds `libc` fields on optional deps) — if
+you see ~30 insertions you didn't make, that's why: enable corepack, or don't commit
+the diff. `npm ci` is format-tolerant, so CI is unaffected either way.
 
 ### Test markers
 
