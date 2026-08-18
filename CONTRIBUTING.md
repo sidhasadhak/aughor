@@ -11,7 +11,7 @@ Contributions are accepted under the [Apache License 2.0](LICENSE).
 |---|---|---|
 | [uv](https://docs.astral.sh/uv/) | latest | Python dependency + venv manager. The lockfile is `uv.lock`. |
 | Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**. |
-| Node.js | 20 | CI pins **20**. The frontend uses npm and `web/package-lock.json`. |
+| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The frontend uses npm and `web/package-lock.json`. |
 
 An LLM backend is only needed to *run* Aughor, not to develop against it — the
 test suite is fully offline and hermetic.
@@ -32,7 +32,7 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 `./start.sh` also accepts `--api-only`, `--web-only`, and `--stop`.
 
 > **Use `--all-extras` for development.** A bare `uv sync` installs the serving core only
-> (225 MB rather than 622 MB, for size-limited deployments) and omits report export,
+> (a ~350 MB venv rather than ~1.2 GB, for size-limited deployments) and omits report export,
 > semantic search and the fast bulk reader. Nothing crashes without them — each degrades
 > with a message naming the extra — but tests that exercise those paths will skip, and you
 > will wonder why a PDF export returns 501. See **Optional extras** in the README.

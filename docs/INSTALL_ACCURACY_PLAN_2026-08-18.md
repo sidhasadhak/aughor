@@ -1,6 +1,6 @@
 # Install accuracy — verification findings and remediation plan (2026-08-18)
 
-**Status:** PR-1 and PR-2 landed; PR-3 and PR-4 outstanding · **Scope:** README Quick Start, CONTRIBUTING setup, first-boot behaviour,
+**Status:** PR-1, PR-2 and PR-3 landed; PR-4 outstanding · **Scope:** README Quick Start, CONTRIBUTING setup, first-boot behaviour,
 the `export` extra's degradation contract.
 
 The Quick Start was executed verbatim on a clean container and every documented claim around it
@@ -435,7 +435,7 @@ child PIDs to `data/.aughor.pids` and have `--stop` read that file — no patter
 |---|---|---|---|---|
 | **PR-1** | W1 export degradation + the missing handler-time ratchet test | small | low | **landed** |
 | **PR-2** | W3 readiness, W4a–d first-boot + D1 default-off | medium | **medium** — changes default behaviour | **landed** |
-| **PR-3** | W2, W5, W7, W8, W10 — docs truth pass | medium | none | outstanding |
+| **PR-3** | W2, W5, W7, W8, W10 — docs truth pass | medium | none | **landed** |
 | **PR-4** | W6, W9, W11 — repeatability | small | low (CI goes red until W9 re-locks) | outstanding |
 
 ### Measured after PR-2
@@ -446,6 +446,19 @@ child PIDs to `data/.aughor.pids` and have `--stop` read that file — no patter
 | Seeding the demo scenario | 98.2 s | **2.3 s** — byte-identical content |
 | Backend suite wall clock | 11 m 56 s | **10 m 23 s** (the seed runs once per session) |
 | Data written by a fresh boot | 3.7 MB, 72,000 synthetic rows | **none** |
+
+### Corrected figures (PR-3)
+
+Measured with the new `scripts/measure_footprint.py`, which exists because three
+figure-sets had drifted apart without saying which size each meant:
+
+| | README claimed | Measured |
+|---|---|---|
+| Serving-core venv | 225 MB | **~350 MB** |
+| All-extras venv | 622 MB | **~1.2 GB** |
+| API import closure (a *different* measurement) | — | **106 MB**, 44 packages |
+| Backend tests | 4,700+ | **7,033** |
+| Suite wall clock | ~3 min | **10–12 min**, serial on 4 cores |
 
 ### Deferred from PR-2 — the in-app "Load demo data" CTA
 

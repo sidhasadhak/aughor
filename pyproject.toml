@@ -48,8 +48,11 @@ dependencies = [
 
 [project.optional-dependencies]
 # ── Weight moved OFF the serving path (measured 2026-08-05) ────────────────────────────
-# The development environment is ~1.1 GB, but importing `aughor.api` and diffing
-# sys.modules shows the API's boot closure is 121 MB and a clean serving install 102 MB.
+# The development environment is ~1.2 GB, but importing `aughor.api` and diffing
+# sys.modules shows the API's boot closure is ~106 MB. Those are DIFFERENT measurements —
+# venv on disk vs import closure — and quoting one number for both is how the README's
+# figures drifted 2x out of date. Re-derive with `scripts/measure_footprint.py --compare`
+# rather than trusting the comment (re-measured 2026-08-18, linux-x86-64 / CPython 3.11).
 # The bulk sat in dependencies nothing on the request path imports. Splitting them out
 # makes a ~110 MB deployment real rather than theoretical, and each extra below is
 # guarded so a missing one degrades with a clear message instead of an ImportError.

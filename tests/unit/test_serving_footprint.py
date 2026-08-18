@@ -1,10 +1,15 @@
 """The serving footprint is a RATCHET, not a one-off cleanup.
 
-The development environment is ~1.1 GB and that was believed to rule out any
+The development environment is ~1.2 GB and that was believed to rule out any
 250 MB-limited deployment target. Measuring what the API actually loads — import
-`aughor.api`, diff `sys.modules` — gave a boot closure of 121 MB and a clean serving
-install of 102 MB. The weight was never on the request path; it was in dependencies
-nothing at boot imports (`docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md` §1).
+`aughor.api`, diff `sys.modules` — gives a boot closure of ~106 MB. The weight was never
+on the request path; it was in dependencies nothing at boot imports
+(`docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md` §1).
+
+Note which size is which: the venv on disk (~1.2 GB dev, ~350 MB serving core) and the
+import closure (~106 MB) are different measurements, and conflating them is how the
+README carried 225 MB / 622 MB long after both were wrong. `scripts/measure_footprint.py`
+prints all three so a doc number can be re-derived instead of remembered.
 
 Splitting those into extras is easy to undo by accident: one convenience import at
 module scope in a router or a `db/` module silently drags 312 MB back onto the serving

@@ -5,7 +5,7 @@
   <p><em>Your warehouse, always thinking.</em></p>
 
   <p>
-    <a href="https://github.com/sidhasadhak/aughor/notifications/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/notifications/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="License: Apache-2.0" /></a>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: alpha" />
     <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+" />
@@ -58,7 +58,7 @@ No dashboards to maintain. No SQL to write. No analyst backlog.
 
 ## Quick start
 
-**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, and **Node 20+**.
+**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, and **Node 20.9+**.
 
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git && cd aughor
@@ -67,7 +67,7 @@ uv run aughor up       # 2. installs web deps on first run, starts API :8000 + w
 ```
 
 > `--all-extras` gets you everything. A bare `uv sync` installs the **serving core** only —
-> 225 MB rather than 622 MB, for deployments with a size limit — and leaves out report
+> a ~350 MB venv rather than ~1.2 GB, for deployments with a size limit — and leaves out report
 > export, semantic search and the fast bulk reader. Each is optional by design and degrades
 > with a message naming the extra to install, so nothing crashes; the features are simply
 > absent. See [Optional extras](#optional-extras).
@@ -80,15 +80,17 @@ appears as a connection. `aughor up` never kills
 an existing process: if a port is busy it tells you who owns it and exits
 (pick another with `--api-port` / `--web-port`).
 
-**Pick your LLM.** Aughor defaults to [Ollama](https://ollama.com) on localhost.
-The built-in default models are Ollama *cloud-tier* (they need `ollama signin`);
-for a fully-local run, `ollama pull qwen2.5-coder:14b` and pin it (see below).
+**Pick your LLM.** Aughor defaults to [Ollama](https://ollama.com) on localhost, but
+**ships no default model** — nothing is assumed about another vendor's catalogue, so you
+name one before your first question. For a fully-local run, `ollama pull qwen2.5-coder:14b`
+and pin it (see below).
 Prefer a hosted API? Configure it in **Settings → Inference** in the web UI, or
 `cp .env.example .env` and set `AUGHOR_BACKEND` + key (Groq / Together /
 Anthropic / Gemini / OpenRouter blocks are inside — OpenRouter and Gemini both
 have a free tier that runs on a fresh key). The boot summary printed by `aughor up` shows
-whether your LLM is ready — the API serves without one, but questions fail
-until a backend is reachable.
+whether a backend and model are **configured**, and names whichever is missing; it makes
+no network call, so it cannot tell you the backend is reachable. The API serves without
+an LLM, but questions fail until one answers.
 
 To use your own data: click **+ Add** in the sidebar → paste a DuckDB path or a
 PostgreSQL DSN → Aughor starts exploring immediately.
@@ -284,7 +286,7 @@ aughor/
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
 ├── docs/             # architecture, adaptive-temporal-scope, mode cross-pollination, audits
-└── tests/            # pytest suite (4,700+ unit + integration; failure-path / fault-injection / chaos)
+└── tests/            # pytest suite (7,000+ unit + integration; failure-path / fault-injection / chaos)
 ```
 
 ## Configuration
@@ -314,8 +316,18 @@ The defaults assume a trusted single-user machine:
 
 The default install is the **serving core**: everything needed to connect data, explore it
 and answer questions. Features whose dependencies are large, or that need infrastructure
-you may not run, ship as extras — so a size-limited deployment carries 225 MB instead of
-622 MB.
+you may not run, ship as extras — so a size-limited deployment installs a ~350 MB venv
+instead of ~1.2 GB.
+
+Sizes are for the installed venv on linux-x86-64 / CPython 3.11 and move with platform
+and interpreter. They are not the same measurement as the API's **import closure** — the 106 MB
+of packages `import aughor.api` actually loads, which is what the extras split was designed
+around and what `tests/unit/test_serving_footprint.py` guards. Re-derive both rather than
+trusting these numbers to age well:
+
+```bash
+uv run python scripts/measure_footprint.py --compare
+```
 
 | Extra | Adds | Weight | Without it |
 |---|---|---|---|
@@ -340,9 +352,9 @@ fails if a heavy package returns to the API's import path.
 
 **Alpha.** No tagged release yet; `main` is the only supported branch.
 
-What is real today: the backend suite is **4,700+ tests**, green on Python 3.11,
-3.12 and 3.13, and runs fully offline — the full run is **~3 minutes** since the
-suite stopped making accidental live-model calls. `ruff` is at a zero baseline. The
+What is real today: the backend suite is **7,000+ tests**, green on Python 3.11,
+3.12 and 3.13, and runs offline — the full run takes **10–12 minutes** on four cores
+(it is serial; `pytest-xdist` is not configured). `ruff` is at a zero baseline. The
 frontend typechecks under `strict` and builds.
 
 What is not: there are **no frontend tests** — the frontend is guarded by
