@@ -2501,13 +2501,55 @@ def _dedupe_repeated_caveats(phases: list) -> None:
 # or the segment label). Used to test whether a ranking actually discriminates.
 _MEASURE_COL_RE = re.compile(
     r"(share|rate|pct|percent|metric_total|metric_value|_of_total|factor|ratio|utili[sz])", re.I)
+# CA-2 — the CHANGE column of a decomposition (`abs_change`, `delta`, `pct_change`,
+# `contribution`): when present it IS the ranking's measure — a decomposition exists to rank
+# segments by how much they moved. The name list above never contained these, so a
+# decomposition whose change column was 0 on every row (the Direkteingabe specimen: the
+# comparison window WAS the observation window) "earned its place" and was narrated as a
+# finding ("no significant variation ⇒ broad volume-based shift").
+_CHANGE_COL_RE = re.compile(
+    r"(abs_change|pct_change|rel_change|_change$|^change|_delta$|^delta|_diff$|^diff|contribution)", re.I)
+_OBS_COL_RE = re.compile(r"(^obs_|_obs$|^observation_|_observation$|^current_|^this_period)", re.I)
+_COMP_COL_RE = re.compile(r"(^comp_|_comp$|^comparison_|_comparison$|^prior_|^previous_|^prev_|^baseline_)", re.I)
 
 
 def _measure_col_index(cols: list) -> Optional[int]:
     for i, c in enumerate(cols):
+        if _CHANGE_COL_RE.search(str(c)):
+            return i
+    for i, c in enumerate(cols):
         if _MEASURE_COL_RE.search(str(c)):
             return i
     return None
+
+
+def _is_self_comparison_finding(f: dict) -> bool:
+    """A decomposition that compared a window AGAINST ITSELF — every observation column equals
+    its comparison column on every row, or the change column is zero on every row while the
+    observation varies. Such a table proves every segment equals itself; it can support no
+    claim about what moved, so it must not reach the narrator as evidence (CA-2; the cause
+    is closed at intake in CA-0 — this is the detector that was missing downstream)."""
+    cols = [str(c) for c in (f.get("columns") or [])]
+    rows = f.get("rows") or []
+    # Two or more segments: one row whose observation equals its comparison is a genuinely
+    # flat period (a stated fact); two or more ALL equal is a window compared against itself.
+    if len(rows) < 2 or len(cols) < 2:
+        return False
+    obs_idx = [i for i, c in enumerate(cols) if _OBS_COL_RE.search(c)]
+    comp_idx = [i for i, c in enumerate(cols) if _COMP_COL_RE.search(c)]
+    if obs_idx and comp_idx:
+        oi, ci = obs_idx[0], comp_idx[0]
+        pairs = [(_as_float(r[oi]), _as_float(r[ci])) for r in rows if max(oi, ci) < len(r)]
+        pairs = [(a, b) for a, b in pairs if a is not None and b is not None]
+        if pairs and all(abs(a - b) < 1e-9 for a, b in pairs):
+            return True
+    chg_idx = [i for i, c in enumerate(cols) if _CHANGE_COL_RE.search(c)]
+    if chg_idx and len(rows) >= 2:
+        vals = [_as_float(r[chg_idx[0]]) for r in rows if chg_idx[0] < len(r)]
+        vals = [v for v in vals if v is not None]
+        if vals and all(abs(v) < 1e-9 for v in vals):
+            return True
+    return False
 
 
 def _as_float(v) -> Optional[float]:
@@ -2563,6 +2605,8 @@ def _finding_earns_place(f: dict) -> bool:
             or "cannot be validated or refuted" in interp) and not _has_opportunity_number(f):
         return False
     if _is_zero_variance_ranking(f):
+        return False
+    if _is_self_comparison_finding(f):
         return False
     return True
 
@@ -3968,25 +4012,64 @@ def _flag_trailing_partial(intake, conn_id: str, table: str, date_col: str) -> "
     return _trailing_partial_decision(intake, _monthly_counts(conn_id, table, date_col, os_, oe_))
 
 
+# CA-2 — the facts in the evidence that bound how confident ANY report over it may be. The model
+# may lower its confidence below these; it may never stand above them. Each is read from the
+# phases themselves (the intake spec rows, the baseline's code markers, the findings' caveats),
+# so the ceiling is computable wherever the phases are — no new channel, no call-site change.
+_NO_PRIOR_PERIOD_RE = re.compile(r"no prior period", re.I)
+_SIG_NOT_ASSESSABLE_RE = re.compile(r"significance not assessable|not a significance verdict", re.I)
+
+
+def _evidence_confidence_ceiling(phases) -> tuple[str, str]:
+    """(ceiling, reason). HIGH unless the evidence cannot support it:
+      • no prior period exists (the intake spec's Comparison row says so) — a "why did it
+        change" answered without a comparison cannot be HIGH → MEDIUM;
+      • the baseline's significance could not be assessed (too few periods) → MEDIUM;
+      • any finding carries a trust caveat → MEDIUM (the pre-existing rule)."""
+    reasons: list[str] = []
+    for p in (phases or []):
+        if not isinstance(p, dict):
+            continue
+        if p.get("phase_id") == "intake":
+            for f in p.get("findings") or []:
+                for row in (f.get("rows") or []):
+                    if (isinstance(row, (list, tuple)) and len(row) >= 2 and str(row[0]).lower() == "comparison"
+                            and _NO_PRIOR_PERIOD_RE.search(str(row[1]))):
+                        reasons.append("no prior period exists in the data, so the change was described, not compared")
+        if _SIG_NOT_ASSESSABLE_RE.search(str(p.get("summary") or "")):
+            reasons.append("the baseline is too short for a significance verdict")
+        for f in p.get("findings") or []:
+            if _SIG_NOT_ASSESSABLE_RE.search(str(f.get("stat_note") or "")):
+                reasons.append("the baseline is too short for a significance verdict")
+                break
+    caveats = [f.get("trust_caveat") for p in (phases or []) if isinstance(p, dict)
+               for f in (p.get("findings") or []) if f.get("trust_caveat")]
+    if caveats:
+        reasons.append("a trust advisory fired on the evidence: " + str(caveats[0])
+                       + (f" (+{len(caveats) - 1} more)" if len(caveats) > 1 else ""))
+    if not reasons:
+        return "HIGH", ""
+    return "MEDIUM", "; ".join(dict.fromkeys(reasons))
+
+
 def _cap_confidence_on_trust_advisory(synth, phases) -> bool:
-    """Report-quality wiring gap #2: a report cannot honestly stand at HIGH confidence while a
-    trust advisory (an unverified/flagged finding) is shown unreconciled beneath it. Cap
-    HIGH → MEDIUM when any finding carries a ``trust_caveat``; returns True when it demoted.
-    Deterministic, no-op unless confidence is currently HIGH. Deliberately downstream of the
-    claim-grounding check being derived-number-aware (fix #3) so a valid % derivation, which no
-    longer trips the caveat, never costs confidence."""
+    """Report-quality wiring gap #2, widened in CA-2 into the evidence ceiling: a report cannot
+    honestly stand at HIGH confidence while a trust advisory (an unverified/flagged finding) is
+    shown unreconciled beneath it — nor when no prior period existed to compare against, nor
+    when the baseline was too short for any significance verdict. Cap HIGH → the ceiling
+    `_evidence_confidence_ceiling` computes; returns True when it demoted. Deterministic,
+    no-op unless confidence is currently HIGH. Deliberately downstream of the claim-grounding
+    check being derived-number-aware (fix #3) so a valid % derivation, which no longer trips
+    the caveat, never costs confidence."""
     if not synth or getattr(synth, "confidence", "") != "HIGH":
         return False
-    caveats = [f.get("trust_caveat") for p in (phases or []) for f in (p.get("findings") or [])
-               if f.get("trust_caveat")]
-    if not caveats:
+    ceiling, reason = _evidence_confidence_ceiling(phases)
+    if ceiling == "HIGH":
         return False
-    synth.confidence = "MEDIUM"
+    synth.confidence = ceiling
     synth.confidence_justification = (
-        "Capped below HIGH — a trust advisory fired on the evidence: "
-        + str(caveats[0])
-        + (f" (+{len(caveats) - 1} more)" if len(caveats) > 1 else "")
-        + ". " + (getattr(synth, "confidence_justification", "") or "")
+        "Capped below HIGH — " + reason + ". "
+        + (getattr(synth, "confidence_justification", "") or "")
     ).strip()
     return True
 
@@ -5598,6 +5681,56 @@ def run_analysis_phase(
                      fanout_caveat=_fanout_caveat, conn=conn)
 
 
+# CA-2 — a z-score needs a baseline. stats.py's own time-series test asks for ≥10 points and
+# stays silent below that; the baseline narrator is told to format "z = X.X — significant"
+# when a z is available, and it copies its OWN SQL's z — computed over whatever the baseline
+# window held. The receipt run of 2026-08-19 wrote "z = 3.8 — significant" over a two-month
+# baseline, and `code_significant` then fell back to that flag. Below this many periods a z
+# is not a verdict: the change is described, not tested.
+_MIN_BASELINE_PERIODS = 6
+_Z_NOTE_RE = re.compile(r"\bz\s*[=≈]\s*[-+]?\d+(?:\.\d+)?", re.I)
+
+
+def _longest_period_series(results) -> Optional[int]:
+    """The row count of the longest result that has a period/date column — the number of
+    periods any z in this phase could have been computed over. None when no result has one."""
+    from aughor.tools.stats import date_column_index
+    best: Optional[int] = None
+    for _, r in (results or []):
+        if getattr(r, "error", None) or not getattr(r, "rows", None) or not getattr(r, "columns", None):
+            continue
+        if date_column_index(list(r.columns)) is None:
+            continue
+        n = len(r.rows)
+        if best is None or n > best:
+            best = n
+    return best
+
+
+def _neutralize_short_baseline_z(findings, n_periods: int) -> int:
+    """Rewrite every model-written z verdict in `stat_note` into a non-verdict and clear the
+    finding's `is_significant` when the phase's longest period series holds fewer than
+    _MIN_BASELINE_PERIODS points. Returns how many findings were neutralized."""
+    touched = 0
+    for f in findings or []:
+        note = str(f.get("stat_note") or "")
+        m = _Z_NOTE_RE.search(note)
+        flagged = bool(f.get("is_significant"))
+        if not m and not flagged:
+            continue
+        if m:
+            z_txt = m.group(0)
+            f["stat_note"] = (
+                f"{z_txt} was computed over a baseline of {max(n_periods - 1, 0)} period(s) — not a "
+                f"significance verdict: at least {_MIN_BASELINE_PERIODS} are needed. The change is "
+                f"described, not tested; do not call it significant, anomalous or within normal "
+                f"variance.")
+        if flagged:
+            f["is_significant"] = False
+        touched += 1
+    return touched
+
+
 @_telemetry.node_span("ada_baseline")
 def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
@@ -5789,6 +5922,17 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     # baseline finding safely degrades to the frontend's auto inference).
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+
+    # CA-2 — too short a baseline for any z to be a verdict (see _MIN_BASELINE_PERIODS). The
+    # model's z notes become descriptions, its flags are cleared, and the routing signal goes
+    # back to "unknown → proceed" rather than to the model's flag — never to False, which
+    # would stop the investigation at the baseline on every short-history dataset.
+    _n_periods = _longest_period_series(results)
+    if code_sigma is None and _n_periods is not None and _n_periods < _MIN_BASELINE_PERIODS:
+        if _neutralize_short_baseline_z(findings, _n_periods):
+            summary = (f"{summary} [stats.py: significance not assessable — the baseline holds "
+                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]")
+            code_significant = None   # unknown → proceed; the model's z is not a verdict
 
     # Append sigma note to summary if available
     if code_sigma is not None:

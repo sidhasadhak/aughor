@@ -538,10 +538,32 @@ class FilterDomainWarning:
     valid_values: list[str]
     suggestion: str | None
     op: str = "="
+    #: CA-2 — the literal is a real stored value, but of ANOTHER column of the same table
+    #: (`CHANNEL_LVL_0 = 'Direkteingabe'` when 'Direkteingabe' lives only in CHANNEL_LVL_1).
+    #: The repair moves the predicate to that column; the literal itself is kept.
+    column_suggestion: str | None = None
+    #: CA-2 — the literal is in NO text column of the table at all: the predicate can only ever
+    #: match zero rows, and the honest report says the segment is absent, never invents one.
+    novel: bool = False
 
     def to_prompt_text(self) -> str:
         vals = ", ".join(repr(v) for v in self.valid_values[:12])
         sugg = f" Did you mean '{self.suggestion}'?" if self.suggestion else ""
+        if self.column_suggestion:
+            return (
+                f"FILTER COLUMN MISMATCH: {self.table}.{self.col} {self.op} '{self.bad_value}' "
+                f"matches NO rows — '{self.bad_value}' is not a value of {self.col} (its values "
+                f"are: {vals}) but IS a stored value of {self.table}.{self.column_suggestion}. "
+                f"Filter {self.column_suggestion} instead; keep the literal exactly as written."
+            )
+        if self.novel:
+            return (
+                f"FILTER VALUE ABSENT: {self.table}.{self.col} {self.op} '{self.bad_value}' "
+                f"matches NO rows — '{self.bad_value}' is not a stored value of {self.col} "
+                f"(values: {vals}) nor of any other text column in {self.table}. Do not invent "
+                f"a substitute: if no exact value fits the question, keep the query honest and "
+                f"let the result say the segment is absent."
+            )
         if self.op in ("!=", "NOT IN"):
             # A negated predicate on a missing value is a SILENT NO-OP: `status != 'cancelled'`
             # keeps every row when no row equals 'cancelled', so a filter meant to DROP those
@@ -712,12 +734,80 @@ def _highcard_bind_warnings(conn: "DatabaseConnection", t: str, c: str,
     return out
 
 
+_SIBLING_MAX_LITERALS = 2      # novel literals per query that get a sibling-column search
+_SIBLING_MAX_COLUMNS = 16      # text columns of the table probed per literal (LIMIT 1 each)
+_SIBLING_TEXT_TYPES = ("varchar", "text", "string", "char", "nvarchar", "bpchar", "enum")
+
+
+def _table_text_columns(conn: "DatabaseConnection", table: str) -> "list[str] | None":
+    """The text-typed columns of `table`, spelled as the schema declares them. Names come
+    from a zero-row projection (declared case survives; the cached type map lowercases);
+    types from the connection's cached introspection narrow to text columns when available,
+    and every column is a candidate when they are not (a CAST-to-VARCHAR equality on a
+    numeric column simply never matches). None when even the projection fails."""
+    try:
+        res = conn.execute("__filter_sibling_cols__", f"SELECT * FROM {_quote_table(table)} LIMIT 0")
+    except Exception:
+        return None
+    if res is None or res.error or not res.columns:
+        return None
+    declared = list(res.columns)
+    try:
+        from aughor.sql.trust_checks import connection_column_types
+        types = connection_column_types(getattr(conn, "_connection_id", ""), conn) or {}
+    except Exception:
+        types = {}
+    if not types:
+        return declared
+    bare = table.split(".")[-1].lower()
+    text_lower = {
+        key.rsplit(".", 1)[1] for key, dt in types.items()
+        if "." in key and key.rsplit(".", 1)[0].split(".")[-1] == bare
+        and any(tt in str(dt).lower() for tt in _SIBLING_TEXT_TYPES)
+    }
+    narrowed = [c for c in declared if c.lower() in text_lower]
+    return narrowed or declared
+
+
+def _sibling_columns_holding(conn: "DatabaseConnection", table: str, col: str,
+                             lit: str) -> "list[str] | None":
+    """Which OTHER text columns of `table` hold `lit` as an exact stored value. Bounded
+    (LIMIT 1 per column, ≤ _SIBLING_MAX_COLUMNS columns). Returns the column names as the
+    schema spells them, [] when none holds it, None when the probe could not run."""
+    cols = _table_text_columns(conn, table)
+    if cols is None:
+        return None
+    holders: list[str] = []
+    qt = _quote_table(table)
+    safe_lit = lit.replace("'", "''")
+    probed = 0
+    for c in cols:
+        if c.lower() == col.lower():
+            continue
+        if probed >= _SIBLING_MAX_COLUMNS:
+            break
+        probed += 1
+        try:
+            res = conn.execute(
+                "__filter_sibling_probe__",
+                f'SELECT 1 FROM {qt} WHERE CAST("{c}" AS VARCHAR) = \'{safe_lit}\' LIMIT 1',
+            )
+        except Exception:
+            return None
+        if res is None or res.error:
+            return None
+        if res.rows:
+            holders.append(c)
+    return holders
+
+
 def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[FilterDomainWarning]:
     """Flag WHERE/HAVING equality/IN literals that don't exist in an enumerable column's
     actual value domain (a guessed enum value). Fail-open; never raises."""
     import difflib
     from collections import defaultdict
     warnings: list[FilterDomainWarning] = []
+    sibling_budget = [_SIBLING_MAX_LITERALS]   # per-query cap on sibling-column probes
     try:
         by_col: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
         for t, c, lit, op in _extract_filter_literals(sql):
@@ -752,8 +842,28 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                         warnings.append(FilterDomainWarning(t, c, lit, vals, by_lower[lit.lower()], op))
                         continue
                     close = difflib.get_close_matches(lit, vals, n=1, cutoff=0.6)
-                    if close:  # only flag an obvious typo/variant, never a novel value
+                    if close:  # an obvious typo/variant of a stored value — bind to it
                         warnings.append(FilterDomainWarning(t, c, lit, vals, close[0], op))
+                        continue
+                    # CA-2 — a value with NO close neighbour used to be let through as "novel"
+                    # (a value this guard must not second-guess). For an ENUMERABLE column the
+                    # domain above is complete, so absence is certain: the predicate matches no
+                    # row. Two honest outcomes: the value lives in a sibling column of the same
+                    # table (the deep path's `CHANNEL_LVL_0 = 'Direkteingabe'` when it is a
+                    # CHANNEL_LVL_1 value — every query returned [] and the report invented a
+                    # segment), or it lives nowhere — and then nothing may be invented.
+                    if sibling_budget[0] <= 0:
+                        continue
+                    sibling_budget[0] -= 1
+                    holders = _sibling_columns_holding(conn, t, c, lit)
+                    if holders is None:
+                        continue                     # probe failed — stay fail-open, say nothing
+                    if len(holders) == 1:
+                        warnings.append(FilterDomainWarning(t, c, lit, vals, None, op,
+                                                            column_suggestion=holders[0]))
+                    elif not holders:
+                        warnings.append(FilterDomainWarning(t, c, lit, vals, None, op, novel=True))
+                    # 2+ holders: ambiguous — no repair, no warning (fail-open)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "filter_guard: value-domain probe failed — query allowed to proceed",
@@ -776,9 +886,21 @@ def repair_filter_literals(sql: str, warnings: list["FilterDomainWarning"],
     import sqlglot
     import sqlglot.expressions as exp
 
-    fixes = {(w.table.lower(), w.col.lower(), w.bad_value): w.suggestion
+    # Keyed by BARE table name: the warnings carry the qualified name (`traffic.t`) while
+    # `_resolve` below reads sqlglot's `Table.name`, which is bare — the schema lives in
+    # `.db`. Keying both sides on the bare name is what grounded_literals.py already relies
+    # on ("repair_filter_literals resolves BARE table names"); a value fix for a qualified
+    # table silently never matched (CA-2 receipt: the CHANNEL_LVL_0 swap detected and not
+    # rewritten until this normalization).
+    def _bare_tbl(name: str) -> str:
+        return (name or "").split(".")[-1].lower()
+
+    fixes = {(_bare_tbl(w.table), w.col.lower(), w.bad_value): w.suggestion
              for w in warnings if w.suggestion}
-    if not fixes:
+    # CA-2 — column swaps: the literal stays, the predicate moves to the column that holds it.
+    col_fixes = {(_bare_tbl(w.table), w.col.lower(), w.bad_value): w.column_suggestion
+                 for w in warnings if w.column_suggestion and not w.suggestion}
+    if not fixes and not col_fixes:
         return None
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
@@ -816,9 +938,14 @@ def repair_filter_literals(sql: str, warnings: list["FilterDomainWarning"],
         t = _resolve(col)
         if not t:
             continue
-        sugg = fixes.get((t.lower(), col.name.lower(), lit.this))
+        sugg = fixes.get((_bare_tbl(t), col.name.lower(), lit.this))
         if sugg is not None:
             lit.set("this", sugg)
+            changed = True
+            continue
+        new_col = col_fixes.get((_bare_tbl(t), col.name.lower(), lit.this))
+        if new_col:
+            col.set("this", exp.to_identifier(new_col, quoted=True))
             changed = True
     return tree.sql(dialect=dialect) if changed else None
 

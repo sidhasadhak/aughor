@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Optional, Any
 
 
 # ── Phase plan ─────────────────────────────────────────────────────────────────
@@ -221,12 +221,47 @@ _DIRECTION_UP = re.compile(r'\b(increas|grew|up|higher|gain|improv|recover|surge
 _DIRECTION_DOWN = re.compile(r'\b(declin|decreas|fell|drop|down|lower|reduc|shrunk|worsened)\b')
 
 
+# CA-2 — code-written significance verdicts. The stats.py marker is appended to a phase summary
+# by code; a finding's stat_note verdicts below are written by code (noise caveats, the
+# short-baseline note); `is_significant` is the flag the phase carries after every code override.
+# These are matched BEFORE any adjective in model prose — the word-lists are the fallback for a
+# phase that carries no structured signal at all.
+_CODE_SIG_POS = re.compile(r"\[stats\.py: σ=[-\d.]+ — significant anomaly\]")
+_CODE_SIG_NEG = re.compile(r"\[stats\.py: σ=[-\d.]+ — within normal variance\]")
+_CODE_NOTE_NEG = re.compile(
+    r"not evidence of a difference|not distinguishable from sampling noise|within normal variance"
+    r"|not a significance verdict|significance not assessable", re.I)
+
+
+def _phase_significance_signal(p: dict) -> Optional[bool]:
+    """True / False when the phase carries a structured significance verdict — the code-written
+    stats.py marker on its summary, or the `is_significant` flags its findings carry after every
+    code override; None only for a phase with no findings and no marker (prose-only)."""
+    summary = str(p.get("summary") or "")
+    if _CODE_SIG_POS.search(summary):
+        return True
+    if _CODE_SIG_NEG.search(summary):
+        return False
+    findings = [f for f in (p.get("findings") or []) if isinstance(f, dict)]
+    if not findings:
+        return None
+    if any(f.get("is_significant") for f in findings):
+        return True
+    # Findings exist and none is flagged: the phase's own typed channel carries no
+    # significance claim. That IS its verdict — an adjective in the summary ("a notable
+    # peak") is narration over findings the phase itself did not flag, and a code-written
+    # noise note only makes the same verdict explicit.
+    return False
+
+
 def detect_contradictions(phases: Any) -> ContradictionReport:
-    """Deterministically scan phase summaries for direct factual contradictions, as a
-    typed report. Same two detection classes the legacy string scanner used:
+    """Deterministically scan phases for direct factual contradictions, as a typed report.
+    Same two detection classes the legacy string scanner used:
 
       A. Significance flip — one phase calls the change significant/anomalous while
-         another calls it within normal variance.
+         another calls it within normal variance. CA-2: decided from CODE-written verdicts
+         first (`_phase_significance_signal`); the adjective word-lists apply only to a phase
+         that carries no structured signal — a model's "notable" never outranks a stat_note.
       B. Direction flip — one phase says a metric is up, another says it is down.
 
     Never raises — returns an empty report on any error."""
@@ -237,8 +272,23 @@ def detect_contradictions(phases: Any) -> ContradictionReport:
         summaries = [(p.get("phase_name", ""), (p.get("summary") or "").lower()) for p in phases]
 
         # ── Class A: significance flip ──────────────────────────────────────────
-        sig = [n for n, s in summaries if _SIG_POSITIVE.search(s)]
-        neg = [n for n, s in summaries if _SIG_NEGATIVE.search(s)]
+        sig: list = []
+        neg: list = []
+        for p, (name, s) in zip(phases, summaries):
+            signal = _phase_significance_signal(p) if isinstance(p, dict) else None
+            if signal is True:
+                sig.append(name)
+                continue
+            if signal is False:
+                neg.append(name)
+                continue
+            # no structured signal: fall back to the prose, with negated forms removed
+            # BEFORE the positive scan so "no significant variation" is not read as both.
+            stripped = _SIG_NEGATIVE.sub(" ", s)
+            if _SIG_NEGATIVE.search(s):
+                neg.append(name)
+            if _SIG_POSITIVE.search(stripped):
+                sig.append(name)
         if sig and neg:
             report.items.append(Contradiction(
                 kind="significance_flip",
