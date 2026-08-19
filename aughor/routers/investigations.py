@@ -773,6 +773,9 @@ class InvestigateRequest(BaseModel):
     # canvas composes on the previous query instead of starting cold — parity with the
     # quick /chat path. Same shape /chat + /ask accept.
     history: list[ChatHistoryTurn] = []
+    # CA-0: the conversation this deep turn belongs to. The quick and auto bodies already
+    # carry it; the explicit-deep body did not, so no deep run was ever filed under a session.
+    session_id: str = ""
     # P4 pause posture — see AskRequest.allow_clarify.
     allow_clarify: bool = True
 
@@ -3474,6 +3477,7 @@ async def _stream_investigation(
     requested_mode: str = "investigate",
     purpose: str = "",
     allow_clarify: bool = True,
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -3550,7 +3554,8 @@ async def _stream_investigation(
             return
 
     inv_id = create_investigation(question, connection_id, canvas_id=canvas_id,
-                                  agent_id=_current_agent_id(), purpose=purpose)
+                                  agent_id=_current_agent_id(), purpose=purpose,
+                                  session_id=session_id or "")
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
@@ -4332,6 +4337,7 @@ async def _investigation_job_streamed(
     requested_mode: str = "investigate",
     purpose: str = "",
     allow_clarify: bool = True,
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -4355,7 +4361,7 @@ async def _investigation_job_streamed(
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
                 requested_mode=requested_mode, purpose=purpose,
-                allow_clarify=allow_clarify,
+                allow_clarify=allow_clarify, session_id=session_id,
             ):
                 await queue.put(sse)
         finally:
@@ -4386,7 +4392,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
-            allow_clarify=req.allow_clarify,
+            allow_clarify=req.allow_clarify, session_id=req.session_id,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -4807,6 +4813,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             requested_mode=route.mode,
             allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
+            session_id=req.session_id,  # CA-0 — the deep run is filed under the conversation
         ):
             yield sse
     else:

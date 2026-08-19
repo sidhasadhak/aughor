@@ -138,10 +138,11 @@ class TestIntakeCoverageClamp:
         assert it.observation_start == "2024-05-01"
         assert it.observation_end == "2024-05-17"
         assert "Available history" in it.observation_label
-        # Comparison collapsed — no prior period exists
-        assert it.comparison_start == it.observation_start
-        assert it.comparison_end == it.observation_end
-        assert "no prior period" in it.comparison_label
+        # CA-0: no prior period exists → the comparison is CLEARED and the verdict typed,
+        # never collapsed onto the observation window.
+        assert (it.comparison_start, it.comparison_end) == ("", "")
+        assert it.no_prior_period is True
+        assert "no prior period" in it.comparison_label.lower()
         assert note and "DATA COVERAGE" in note
         assert "year-over-year" in note or "not applicable" in note
 

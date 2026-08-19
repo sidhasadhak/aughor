@@ -539,10 +539,10 @@ class AgentState(TypedDict):
     # Key = subq.id, value = formatted markdown paragraph of discovery results.
     subq_data_portrait: dict[str, str]
 
-    # ADA investigate mode state (only when query_mode == "investigate")
+    # Deep-analysis investigate mode state (only when query_mode == "investigate")
     investigation_phases: list[InvestigationPhaseResult]
     answer_report: Optional[AnswerReport]
-    _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
+    _ada_intake: Optional[dict]      # intake spec passed between deep-analysis phase nodes
     _clarify_pending: Optional[dict]  # P4 clarify gate: a material metric ambiguity awaiting the user's choice
     _allow_clarify: Optional[bool]    # request posture: may this run PAUSE to ask? (replaces the clarify flag)
     _suppressed_ratio: Optional[dict]  # a ratio metric proven corrupt (conditioned denom / fan-out): {metric_label, caveat, true_global_str} — synthesis scrubs it from every phase + cites the true level
@@ -550,7 +550,7 @@ class AgentState(TypedDict):
     # Plan-then-SQL: set by plan_queries, consumed by execute_planned_queries
     current_plan: Optional[dict]
 
-    # ADA inter-phase signals (set by each phase node, read by routers + next phases)
+    # Deep-analysis inter-phase signals (set by each phase node, read by routers + next phases)
     _baseline_summary: Optional[str]
     _baseline_passes: Optional[str]
     _baseline_significant: Optional[bool]  # code-level (stats.py) significance flag
@@ -562,6 +562,22 @@ class AgentState(TypedDict):
     _behavioral_summary: Optional[str]
     # parallel phase waves — the wave node's post-hoc routing decision (phase_waves.py)
     _wave_next: NotRequired[Optional[str]]
+    # CA-0 — channels that were WRITTEN by nodes but never declared here. LangGraph filters a
+    # node's output to the declared schema keys (langgraph/graph/state.py: `k in output_keys`),
+    # so an undeclared write is dropped silently at the node boundary: the plan built by
+    # the intake node never reached synthesis (orchestration_plan was null on 144/144 stored
+    # reports, plan_reconciliation always "unplanned"), and route_after_baseline's
+    # decompose-under-abstention branch read None on the serial path. Declared NotRequired so
+    # existing fixtures that build a bare state stay valid.
+    _orchestration_plan: NotRequired[Optional[dict]]   # plan_phases() output from the intake node → synthesis reconciliation
+    _baseline_rel_change: NotRequired[Optional[float]]  # earlier-vs-later-half relative change from the baseline node → router
+    _cross_section_summary: NotRequired[Optional[str]]  # cross-section phase summary (parallel path reads it from out)
+    _degenerate_seed: NotRequired[Optional[str]]        # the degenerate-seed verdict stamped on the cross-sectional path
+    # Forced pack steering for the pack eval harness (packs/engine_eval.py calls the explore
+    # node directly with these set). Declared so the node's read is a schema key, not a
+    # convention — and so the channel rot guard needs no allowlist.
+    _pack_injection_block: NotRequired[Optional[str]]
+    _pack_id: NotRequired[Optional[str]]
 
     # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·
     # profile · KB), carried so every node reads one consistent context instead of re-consulting

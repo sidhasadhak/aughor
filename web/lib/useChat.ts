@@ -144,7 +144,10 @@ export function useChat() {
           // seed_sql / seed_context: a drill seeded from a result (overview "explore this
           // fact", or any raw-seed deeper) anchors the deep analysis on the originating query/observation
           // even without an insight_id — the backend's _build_origin_finding raw-seed fallback.
-          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, seed_sql: opts.seedSql ?? null, seed_context: opts.seedContext ?? "", deep: opts.deep ?? false, history: chatHistory() }),
+          // session_id: CA-0 — the deep branch was the only body that did not send it, so no
+          // deep run was ever filed under the conversation it was asked in (and a follow-up
+          // could not find the run it followed). Same id the quick/auto bodies send.
+          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, seed_sql: opts.seedSql ?? null, seed_context: opts.seedContext ?? "", deep: opts.deep ?? false, history: chatHistory(), session_id: sessionIdRef.current }),
           signal,
         });
       } else if (mode === "auto") {

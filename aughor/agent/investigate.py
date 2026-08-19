@@ -146,6 +146,13 @@ def route_after_baseline(state: AgentState) -> str:
       4. Unknown → proceed (don't block on uncertainty)
     """
     question = state.get("question", "")
+    # CA-0: a typed verdict from the coverage clamp. With no period before the observation
+    # window, decomposition/dimensional phases can only compare a window against itself —
+    # the tautology that produced "no significant variation ⇒ broad volume-based shift".
+    # The baseline phase (the trend WITHIN the window) has already run; go write the report.
+    if (state.get("_ada_intake") or {}).get("no_prior_period"):
+        from aughor.stats import stats as _s; _s.inc("tier0_no_prior_period_skip")
+        return "ada_synthesize"
     if _question_asks_for_dimension(question):
         return "ada_decompose"  # never skip when user wants dimensional breakdown
 
@@ -1441,7 +1448,118 @@ def _results_to_text(results, max_rows: Optional[int] = None) -> str:
     return "\n\n".join(parts)
 
 
-def _results_text_with_verdicts(results, max_rows: Optional[int] = None) -> str:
+_PERIOD_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]00:00:00(?:\.0+)?)?$")
+
+
+def _partial_terminal_period_note(columns, rows, coverage_end: Optional[str]) -> Optional[str]:
+    """A code-written verdict when a time series' LAST period is incomplete — CA-0.
+
+    The Direkteingabe specimen's monthly baseline read Jun 29,903 · Jul 37,925 · Aug 32,912 and
+    the narrator wrote "partially correcting in August"; August had 18 of 31 days and was, per
+    day, the highest month (1,828 vs 1,223). Nothing told the model the period was partial.
+    This finds a period column (ISO dates, or month/day-aligned timestamps) in the rows,
+    infers the grain from the spacing, and when the data's last date (`coverage_end`) falls
+    before the final period's nominal end, returns one sentence naming the fraction covered
+    and — when the rows carry exactly one numeric measure — the per-day rate of the final
+    period against the previous one. It rides `stat_note`, so it reaches the phase narrator
+    BEFORE it writes and the synthesis evidence log as a STATISTICAL VERDICT."""
+    from datetime import date, timedelta
+    if not coverage_end or not columns or not rows or len(rows) < 2:
+        return None
+    try:
+        dmax = date.fromisoformat(str(coverage_end)[:10])
+    except (ValueError, TypeError):
+        return None
+    # the period column: every row parses as a date at 00:00
+    pcol = None
+    for ci in range(min(len(columns), 3)):
+        vals = [str(r[ci]) for r in rows if ci < len(r) and r[ci] is not None]
+        if len(vals) == len(rows) and all(_PERIOD_TS_RE.match(v) for v in vals):
+            pcol = ci
+            break
+    if pcol is None:
+        return None
+    try:
+        periods = sorted(date.fromisoformat(str(r[pcol])[:10]) for r in rows)
+    except (ValueError, TypeError):
+        return None
+    gaps = {(b - a).days for a, b in zip(periods, periods[1:])}
+    if not gaps or min(gaps) <= 0:
+        return None
+    last = periods[-1]
+    if all(p.day == 1 for p in periods) and min(gaps) >= 28:
+        grain = "month"
+        nxt = (last.replace(day=28) + timedelta(days=4)).replace(day=1)
+        nominal_end = nxt - timedelta(days=1)
+    elif gaps == {7}:
+        grain = "week"
+        nominal_end = last + timedelta(days=6)
+    elif gaps == {1}:
+        return None            # daily grain: a day is either there or not
+    else:
+        return None
+    if dmax >= nominal_end:
+        return None            # the last period is complete
+    full_days = (nominal_end - last).days + 1
+    covered = (dmax - last).days + 1
+    if covered <= 0 or covered >= full_days:
+        return None
+    label = last.strftime("%B %Y") if grain == "month" else f"week of {last.isoformat()}"
+    pct = round(100.0 * covered / full_days)
+    note = (f"PARTIAL FINAL PERIOD: {label} holds {covered} of {full_days} days ({pct}%) — "
+            f"its total is not comparable to a full {grain}; compare per-day rates, and do not "
+            f"read the smaller total as a drop or a correction.")
+    # per-day rate of the last vs previous period, when exactly one numeric measure exists
+    num_cols = [ci for ci in range(len(columns)) if ci != pcol
+                and all((ci < len(r)) and _is_num(r[ci]) for r in rows)]
+    if len(num_cols) == 1 and len(periods) >= 2:
+        mc = num_cols[0]
+        # every row's period parsed above and every value in `mc` passed _is_num — no guard needed
+        by_period = {date.fromisoformat(str(r[pcol])[:10]): float(str(r[mc]).replace(",", ""))
+                     for r in rows}
+        prev = periods[-2]
+        if grain == "month":
+            prev_nxt = (prev.replace(day=28) + timedelta(days=4)).replace(day=1)
+            prev_days = (prev_nxt - prev).days
+        else:
+            prev_days = 7
+        if last in by_period and prev in by_period and prev_days > 0:
+            last_rate = by_period[last] / covered
+            prev_rate = by_period[prev] / prev_days
+            note += (f" Per day: {label} {last_rate:,.0f} vs previous {grain} {prev_rate:,.0f}.")
+    return note
+
+
+def _is_num(v) -> bool:
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return True
+    try:
+        float(str(v).replace(",", ""))
+        return True
+    except ValueError:
+        return False
+
+
+def _stamp_partial_period_verdicts(findings, results, coverage_end: Optional[str]) -> None:
+    """Write the partial-final-period verdict onto each time-series finding's `stat_note` (the
+    channel the synthesis evidence log prints as STATISTICAL VERDICT). Findings are aligned to
+    results by index — _assemble_phase_findings appends one per result, in order."""
+    if not coverage_end:
+        return
+    for f, (_, r) in zip(findings or [], results or []):
+        if getattr(r, "error", None) or not getattr(r, "rows", None):
+            continue
+        note = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
+        if not note:
+            continue
+        prior = (f.get("stat_note") or "").strip()
+        f["stat_note"] = f"{prior} {note}".strip() if prior else note
+
+
+def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
+                                coverage_end: Optional[str] = None) -> str:
     """`_results_to_text`, with each result's statistical verdict ABOVE its rows.
 
     The narrator used to write a phase's findings from rows alone, because the verdict was
@@ -1469,6 +1587,10 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None) -> str:
                 "suggest. Do NOT call any value here significant, an outlier, a bottleneck, "
                 "a driver or a localized issue, and do NOT recommend acting on one: "
                 + verdict)
+        if coverage_end and not getattr(r, "error", None) and getattr(r, "rows", None):
+            _partial = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
+            if _partial:
+                parts.append("STATISTICAL VERDICT for this query — " + _partial)
         parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
@@ -1639,6 +1761,55 @@ def _has_usable_data(results) -> bool:
     narrator interpret call (a 30-80s LLM round-trip) when every query failed or came back
     empty — there is nothing to interpret, and the phase falls back to data-only findings."""
     return any((not r.error and (r.row_count or 0) > 0) for _, r in (results or []))
+
+
+def _finding_has_rows(f: dict) -> bool:
+    """The report-level twin of _has_usable_data, over a serialized finding dict.
+
+    A finding counts as evidence only if it came from a query (non-empty SQL — the synthetic
+    intake-spec finding and other code-built rows never count), did not error, and returned
+    at least one row. `row_count` is authoritative when present; `rows` is the fallback for
+    findings built before that field existed. Zero rows is not a finding about the world — it
+    is a filter that matched nothing — so it cannot support a confidence above LOW."""
+    if not isinstance(f, dict) or f.get("error"):
+        return False
+    if not (f.get("sql") or "").strip():
+        return False
+    rc = f.get("row_count")
+    if rc is None:
+        rc = len(f.get("rows") or [])
+    return (rc or 0) > 0
+
+
+def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict) -> bool:
+    """Force a report with NO evidence rows to read as a failure, never as an analysis.
+
+    Returns True when the floor fired. Keys on _finding_has_rows (row_count > 0 from a real
+    query): before CA-0 this tested `columns`, which a zero-row query still carries and which
+    the synthetic intake-spec finding always satisfied — so the floor never fired and a run
+    whose every query returned [] shipped confidence HIGH with a fabricated summary."""
+    all_f = [f for p in (phases or []) for f in (p.get("findings") or [])]
+    if any(_finding_has_rows(f) for f in all_f):
+        return False
+    synth.confidence = "LOW"
+    synth.confidence_justification = (
+        "No usable data was gathered — every query errored or returned zero rows, so no "
+        "finding can be confirmed. " + (synth.confidence_justification or "")
+    ).strip()
+    # RC5 — with NO usable data, the confidence floor alone left a LOW-confidence
+    # report still carrying a confident, fabricated waterfall ("apparel −7.0pp =
+    # −100%") and recommendations built from queries that all failed. Suppress them
+    # deterministically and replace the confident prose with an honest verdict, so a
+    # failed investigation reads as "could not analyze", never as invented causes.
+    synth.attribution_waterfall = []
+    synth.recommendations = []
+    _ml = (intake_data or {}).get("metric_label") or "the requested metric"
+    synth.headline = f"Data unavailable — {_ml} could not be analyzed"
+    synth.executive_summary = (
+        "Every diagnostic query failed or returned zero rows, so no cause can be "
+        "attributed and no recommendation can be made. " + (synth.executive_summary or "")
+    ).strip()[:600]
+    return True
 
 
 def _extreme_tie_note(columns, rows) -> Optional[str]:
@@ -3433,6 +3604,67 @@ _TRAILING_PARTIAL_RATIO = 0.5
 _MIN_TRAILING_MONTHS = 3
 
 
+def _window_label(start: str, end: str) -> str:
+    """A human label for a date window CODE chose, so a model-written label never survives a
+    window the model did not pick. Whole calendar months read as months ("July 2026",
+    "June–August 2026"); anything else as the ISO span. The Direkteingabe specimen shipped
+    "AT A GLANCE: February 2025" — the schema's own example string — over a window code had
+    already replaced with 2026-06-01 → 2026-08-18."""
+    from datetime import date, timedelta
+    s, e = (start or "")[:10], (end or "")[:10]
+    if not s or not e:
+        return f"{s} → {e}".strip(" →")
+    try:
+        ds, de = date.fromisoformat(s), date.fromisoformat(e)
+    except ValueError:
+        return f"{s} → {e}"
+    first_of_month = ds.day == 1
+    last_of_month = (de + timedelta(days=1)).day == 1
+    if first_of_month and last_of_month:
+        if (ds.year, ds.month) == (de.year, de.month):
+            return ds.strftime("%B %Y")
+        if ds.year == de.year:
+            return f"{ds.strftime('%B')}–{de.strftime('%B %Y')}"
+        return f"{ds.strftime('%B %Y')}–{de.strftime('%B %Y')}"
+    return f"{s} → {e}"
+
+
+def _preceding_window(obs_start: str, obs_end: str, dmin: str):
+    """The window immediately before the observation, if the data holds it; else None.
+
+    A whole-calendar-month observation gets the preceding calendar month(s) (July → June, not
+    "the 31 days before July 1"); anything else gets the equal-length window. A start that
+    misses the data's first day by ≤ 3 days (month-length differences) is clipped to it —
+    a 30-day June is a real prior period for a 31-day July. Returns (start, end) ISO dates."""
+    from datetime import date, timedelta
+    try:
+        ds, de = date.fromisoformat(obs_start[:10]), date.fromisoformat(obs_end[:10])
+        dm = date.fromisoformat(dmin[:10])
+    except (ValueError, TypeError):
+        return None
+    if de < ds:
+        return None
+    whole_months = ds.day == 1 and (de + timedelta(days=1)).day == 1
+    if whole_months:
+        n_months = (de.year - ds.year) * 12 + (de.month - ds.month) + 1
+        prev_end = ds - timedelta(days=1)                      # last day of the prior month
+        y, m = ds.year, ds.month - n_months
+        while m <= 0:
+            y, m = y - 1, m + 12
+        prev_start = date(y, m, 1)
+    else:
+        span = (de - ds).days
+        prev_end = ds - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span)
+    if prev_start < dm:
+        if (dm - prev_start).days > 3:
+            return None
+        prev_start = dm
+    if prev_end < prev_start:
+        return None
+    return prev_start.isoformat(), prev_end.isoformat()
+
+
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
     """Deterministically fit the intake's windows to the data that actually exists.
     The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
@@ -3445,8 +3677,13 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
       comparison set to the prior window — so we analyse the most recent data and a
       real prior-period (YoY) comparison becomes available instead of being forfeited.
       Specific periods named in the question (an explicit year) are left literal.
-    - A comparison with NO overlap collapses onto the observation window and is
-      relabelled — "compare vs an empty period" is the bug class this kills.
+    - A comparison with NO overlap (or one the model already set equal to the observation)
+      becomes the equal-length window immediately PRECEDING the observation when the data
+      holds it; when it does not, the comparison is CLEARED and `no_prior_period` is set —
+      a typed verdict the router reads to skip every period-over-period phase. It never
+      collapses onto the observation window: a window compared against itself returns
+      abs_change = 0 on every row, and the narrator then reports "no significant
+      variation" as a finding (the Direkteingabe specimen, 2026-08-19).
     - When the available history is short (<~45 days), the label says so and the
       note tells the planner to use a daily/weekly grain and skip MoM/YoY.
     """
@@ -3472,6 +3709,9 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
             f"(requested {intake.observation_start} → {intake.observation_end}, data spans {dmin} → {dmax})"
         )
         intake.observation_start, intake.observation_end = os_, oe_
+        # The model's label described the window it ASKED for; code just replaced that
+        # window, so the label is rewritten to describe the one the report will carry.
+        intake.observation_label = _window_label(os_, oe_)
 
     # ── Re-anchor a mis-placed RELATIVE window to the data's most-recent point ──
     # The LLM picks observation dates for a "last N / recent / trailing" framing, but it
@@ -3498,8 +3738,9 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
                 intake.comparison_start = (_new_ce - timedelta(days=_win)).date().isoformat()
                 intake.comparison_end = _new_ce.date().isoformat()
                 _months = max(1, round(_win / 30.44))
-                intake.observation_label = f"Last {_months} months (most recent in data)"
-                intake.comparison_label = f"Prior {_months} months"
+                _unit = "month" if _months == 1 else "months"
+                intake.observation_label = f"Last {_months} {_unit} (most recent in data)"
+                intake.comparison_label = f"Prior {_months} {_unit}"
                 notes.append(
                     f"observation re-anchored to the data's most recent window "
                     f"[{intake.observation_start} → {intake.observation_end}] — a relative "
@@ -3514,22 +3755,47 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
 
     cs_ = (getattr(intake, "comparison_start", "") or "")[:10]
     ce_ = (getattr(intake, "comparison_end", "") or "")[:10]
-    if cs_ and ce_:
-        if ce_ < dmin or cs_ > dmax:   # no overlap → no prior period exists
-            intake.comparison_start, intake.comparison_end = intake.observation_start, intake.observation_end
-            intake.comparison_label = "Same period (no prior period exists in the data)"
+    _obs_s0 = (intake.observation_start or "")[:10]
+    _obs_e0 = (intake.observation_end or "")[:10]
+    _no_overlap = bool(cs_ and ce_) and (ce_ < dmin or cs_ > dmax)
+    _self_compare = bool(cs_ and ce_) and (cs_ == _obs_s0 and ce_ == _obs_e0)
+    if cs_ and ce_ and not _no_overlap and not _self_compare:
+        # partial overlap → clip (a half-empty baseline skews stats)
+        ncs, nce, c_changed = _clip(cs_, ce_)
+        if c_changed:
+            intake.comparison_start, intake.comparison_end = ncs, nce
             notes.append(
-                f"comparison period {cs_} → {ce_} contains no data (data spans {dmin} → {dmax}); "
-                f"no prior period exists — trend/YoY/baseline comparisons are not possible"
+                f"comparison window clipped to the data's actual coverage [{ncs} → {nce}] "
+                f"(requested {cs_} → {ce_})"
             )
-        else:                          # partial overlap → clip (a half-empty baseline skews stats)
-            ncs, nce, c_changed = _clip(cs_, ce_)
-            if c_changed:
-                intake.comparison_start, intake.comparison_end = ncs, nce
-                notes.append(
-                    f"comparison window clipped to the data's actual coverage [{ncs} → {nce}] "
-                    f"(requested {cs_} → {ce_})"
-                )
+            if ncs == _obs_s0 and nce == _obs_e0:
+                _self_compare = True          # the clip collapsed it — same verdict below
+    if _no_overlap or _self_compare or not (cs_ and ce_):
+        # No usable comparison: the model's window holds no data, or it set the comparison
+        # equal to the observation (the old instruction), or it gave none. Prefer the
+        # equal-length window immediately before the observation — the analyst's default
+        # when a YoY window is missing — and only when the data cannot hold that, say so
+        # in a field the router can read. NEVER collapse onto the observation window.
+        _why = (f"comparison period {cs_} → {ce_} contains no data (data spans {dmin} → {dmax})"
+                if _no_overlap else
+                "comparison window was the observation window itself (a tautology, not a baseline)"
+                if _self_compare else "no comparison window was given")
+        _prev = _preceding_window(_obs_s0, _obs_e0, dmin)
+        if _prev:
+            intake.comparison_start, intake.comparison_end = _prev
+            intake.comparison_label = f"Preceding period ({_window_label(*_prev)})"
+            intake.no_prior_period = False
+            notes.append(f"{_why}; comparison set to the equal-length window immediately "
+                         f"preceding the observation [{_prev[0]} → {_prev[1]}]")
+        else:
+            intake.comparison_start, intake.comparison_end = "", ""
+            intake.comparison_label = "No prior period exists in the data"
+            intake.no_prior_period = True
+            notes.append(
+                f"{_why}; the data holds no period before the observation window — "
+                f"period-over-period, YoY and baseline comparisons are not possible; the "
+                f"report describes the observation window and says so"
+            )
 
     # ── Duration-mismatch guard ────────────────────────────────────────────────
     # After clipping, the prior window can end up FAR shorter than the observation
@@ -3564,14 +3830,21 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
         tolerate(_exc, "duration-mismatch guard is best-effort on malformed dates",
                  counter="intake.duration_mismatch_parse_failed")
 
+    # Short HISTORY — measured on the DATA's coverage, not the observation window. This used
+    # to measure the observation window, so a perfectly ordinary "July 2026" (31 days) over
+    # 79 days of data was relabelled "Available history (…~31 days)" and told the planner
+    # month-over-month framings do not apply. The label and the note are about what exists,
+    # so they key on [dmin, dmax] and fire only when the observation IS that short history.
     try:
-        cov_days = (datetime.fromisoformat(intake.observation_end)
-                    - datetime.fromisoformat(intake.observation_start)).days + 1
+        cov_days = (datetime.fromisoformat(dmax[:10]) - datetime.fromisoformat(dmin[:10])).days + 1
+        obs_days = (datetime.fromisoformat(intake.observation_end[:10])
+                    - datetime.fromisoformat(intake.observation_start[:10])).days + 1
     except (ValueError, TypeError):
-        cov_days = None
-    if cov_days is not None and cov_days < 45:
+        cov_days = obs_days = None
+    if (cov_days is not None and cov_days < 45 and obs_days is not None
+            and obs_days >= cov_days - 1):
         intake.observation_label = (
-            f"Available history ({intake.observation_start} → {intake.observation_end}, ~{cov_days} days)"
+            f"Available history ({intake.observation_start} → {intake.observation_end}, ~{obs_days} days)"
         )
         notes.append(
             f"only ~{cov_days} days of history exist — analyse at daily/weekly grain; "
@@ -3596,8 +3869,9 @@ def _validate_intake_windows(intake, dmin, dmax):
             f"The comparison period {intake.comparison_label} ({cs} → {ce}) falls OUTSIDE the "
             f"data range [{dmin} → {dmax}] — there is no data there, so the baseline would be empty. "
             f"Pick the most recent prior period that lies within [{dmin} → {dmax}]; if no prior "
-            f"period exists, set comparison_start/comparison_end equal to observation_start/"
-            f"observation_end and explain in intake_notes that there is no prior period to compare against."
+            f"period exists, leave comparison_start/comparison_end EMPTY and explain in intake_notes "
+            f"that there is no prior period to compare against — never set the comparison equal "
+            f"to the observation window."
         )
     return None
 
@@ -4791,7 +5065,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         ] if intake.cross_sectional else [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
             ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
-            ["Comparison", f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"],
+            ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
+                    if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
             ["Date column", intake.date_column],
             ["Primary table", intake.metric_table],
             ["Dimensions", ", ".join(intake.dimensions[:8])],
@@ -5040,6 +5315,7 @@ def run_analysis_phase(
     interpret_max_rows: Optional[int] = None,   # None → model-sized (A1 ModelProfile)
     grounding_block: Optional[str] = None,
     sql_transform=None,
+    coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -5299,7 +5575,8 @@ def run_analysis_phase(
             tolerate(_cov_exc, "join-coverage probe is best-effort", counter="deep_analysis.coverage_probe")
 
     # Step 3 — interpret
-    results_text = _results_text_with_verdicts([r for _, r in results], interpret_max_rows)
+    results_text = _results_text_with_verdicts([r for _, r in results], interpret_max_rows,
+                                               coverage_end=coverage_end)
     interpretation = None
     try:
         if not _has_usable_data(results):
@@ -5350,17 +5627,35 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     metric_table = intake_data.get("metric_table", "")
 
     # Step 1: Plan SQL
+    _no_prior = bool(intake_data.get("no_prior_period")) or not (comp_start and comp_end)
     plan_prompt = BASELINE_PLAN_PROMPT.format(
         question=question,
         metric_label=metric_label,
         metric_sql=metric_sql,
         observation_period=f"{obs_label} ({obs_start} to {obs_end})",
-        comparison_basis=f"{comp_label} ({comp_start} to {comp_end})",
+        comparison_basis=(f"{comp_label} ({comp_start} to {comp_end})" if not _no_prior
+                          else "NONE — no period before the observation window exists in the data"),
         date_column=date_col,
         metric_table=metric_table,
         schema=schema,
         events_section=events_section,
     )
+    if _no_prior:
+        # CA-0: with no prior period the generic instructions (13 trailing periods, a z-score
+        # against a baseline that excludes the observation) can only produce NULL statistics
+        # and a baseline window before the data begins. Describe the trend WITHIN the window.
+        plan_prompt += (
+            "\n\nNO PRIOR PERIOD EXISTS — the data covers only the observation window. Therefore:\n"
+            f"  - Query ONLY within {obs_start} → {obs_end}. Do NOT write a date range that starts "
+            "before it; do NOT attempt a trailing-baseline z-score or any period-over-period / "
+            "YoY change.\n"
+            "  - Describe the trend WITHIN the window at the finest informative grain: weekly "
+            "(DATE_TRUNC('week')) when the window is longer than 6 weeks, daily otherwise; add a "
+            "per-period average (metric ÷ days in period) so a partial final period is not read "
+            "as a drop.\n"
+            "  - One query may break the window into its earlier and later halves to show whether "
+            "the level moved within it.\n"
+        )
     # Append ontology entity context if available
     active_filter   = intake_data.get("active_filter")
     lifecycle_col   = intake_data.get("lifecycle_column")
@@ -5394,6 +5689,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         question=question, connection_id=state.get("connection_id", ""),
         exec_skipped_reason="No queries produced results.",
         grounding_block=intake_data.get("data_understanding_block"),
+        coverage_end=intake_data.get("data_coverage_end") or intake_data.get("observation_end"),
     )
     if not _run.ok:
         return {"investigation_phases": phases + [_run.error_phase]}
@@ -5459,6 +5755,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "baseline", conn=conn)
+        _stamp_partial_period_verdicts(findings, results,
+                                       intake_data.get("data_coverage_end") or intake_data.get("observation_end"))
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
         # If stats.py couldn't compute sigma, fall back to LLM's is_significant flags
@@ -8129,6 +8427,23 @@ def ada_synthesize(state: AgentState) -> dict:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
 
+    # CA-0 — no prior period: the data holds a single span. The report may describe what the
+    # window contains and how the level moved WITHIN it; it may not attribute a change to a
+    # segment (nothing was compared), and it must say plainly that no earlier period exists.
+    no_prior_note = ""
+    if intake_data.get("no_prior_period"):
+        _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
+        no_prior_note = (
+            "\n\nNO PRIOR PERIOD: the data covers only the observation window (" + _cov + "). "
+            "There is no earlier period to compare against, so this report DESCRIBES the window — "
+            "its level, its trend within the window (earlier vs later weeks/days, per-day averages), "
+            "and which segments carry the volume. It does NOT attribute a change to any segment and "
+            "does NOT call the distribution 'uniform' or 'unchanged': no comparison was made. Say in "
+            "the executive summary that no prior period exists and name what a longer history would "
+            "make answerable. total_change_label should be the metric total or 'N/A'; the "
+            "attribution_waterfall stays EMPTY."
+        )
+
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
     cross_section_note = ""
@@ -8267,7 +8582,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + cross_section_note + suppression_section + _claim_licence_section(
+    ) + contradiction_section + early_stop_note + no_prior_note + cross_section_note + suppression_section + _claim_licence_section(
         intake_data, phases)
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
@@ -8352,13 +8667,25 @@ def ada_synthesize(state: AgentState) -> dict:
                              counter="deep_analysis.report_check_retry_failed")
                 if _violations:
                     from aughor.stats import stats as _st2
+                    from aughor.agent.report_checks import reader_disclosure
                     _st2.inc("deep_analysis.report_check_violations_shipped")
                     if synth.confidence == "HIGH":
                         synth.confidence = "MEDIUM"
-                    synth.confidence_justification = (
-                        (synth.confidence_justification or "").rstrip()
-                        + " Deterministic checks flagged: " + " ".join(_violations)
-                    ).strip()
+                    # CA-0: the READER gets the disclosure, never the repair instruction. The
+                    # violation strings are written for the model ("replace each with the
+                    # evidence's own value …"); concatenating them here shipped that
+                    # second-person text into the PDF's Confidence section on 10 of 144
+                    # stored reports. The instruction still reaches the log for the operator.
+                    import logging as _rc_logging
+                    _rc_logging.getLogger(__name__).info(
+                        "[ada] report checks still failing after retry: %s",
+                        " | ".join(str(v) for v in _violations))
+                    _disclosure = reader_disclosure(_violations)
+                    if _disclosure:
+                        synth.confidence_justification = (
+                            (synth.confidence_justification or "").rstrip()
+                            + " " + _disclosure
+                        ).strip()
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "report checks are best-effort; an unverified report is the "
@@ -8391,29 +8718,10 @@ def ada_synthesize(state: AgentState) -> dict:
 
     # ── Honest confidence floor ───────────────────────────────────────────────
     # A run that gathered no usable data can never be HIGH/MEDIUM confidence,
-    # regardless of what the synthesis LLM claimed.
+    # regardless of what the synthesis LLM claimed. (Extracted to _apply_no_usable_data_floor
+    # in CA-0 so the zero-row shape is a unit test, not a production discovery.)
     if synth:
-        _all_f = [f for p in phases for f in (p.get("findings") or [])]
-        _with_data = [f for f in _all_f if not f.get("error") and (f.get("columns") or [])]
-        if not _with_data:
-            synth.confidence = "LOW"
-            synth.confidence_justification = (
-                "No usable data was gathered — every query errored or returned zero rows, so no "
-                "finding can be confirmed. " + (synth.confidence_justification or "")
-            ).strip()
-            # RC5 — with NO usable data, the confidence floor alone left a LOW-confidence
-            # report still carrying a confident, fabricated waterfall ("apparel −7.0pp =
-            # −100%") and recommendations built from queries that all failed. Suppress them
-            # deterministically and replace the confident prose with an honest verdict, so a
-            # failed investigation reads as "could not analyze", never as invented causes.
-            synth.attribution_waterfall = []
-            synth.recommendations = []
-            _ml = intake_data.get("metric_label") or "the requested metric"
-            synth.headline = f"Data unavailable — {_ml} could not be analyzed"
-            synth.executive_summary = (
-                "Every diagnostic query failed or returned zero rows, so no cause can be "
-                "attributed and no recommendation can be made. " + (synth.executive_summary or "")
-            ).strip()[:600]
+        _apply_no_usable_data_floor(synth, phases, intake_data)
 
     # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
     _cap_confidence_on_trust_advisory(synth, phases)

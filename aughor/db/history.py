@@ -144,6 +144,7 @@ def create_investigation(
     canvas_id: Optional[str] = None,
     agent_id: str = "",
     purpose: str = "",
+    session_id: str = "",
 ) -> str:
     """Insert a new in-progress row and return its ID.
 
@@ -151,14 +152,19 @@ def create_investigation(
     ('' when none), so the Agent Workspace can join run history per agent.
     ``purpose`` (R10) is the named starter's purpose tag ('' for a free-typed
     question) — the run's provenance, queryable like the agent.
+    ``session_id`` (CA-0) files the run under the conversation it was asked in. Deep runs
+    carried no session at all — both Direkteingabe specimens have session_id NULL — so a
+    follow-up could not find the run it was following up on. Stamped when the caller has
+    one; '' otherwise (the column stays NULL for a run asked outside any conversation).
     """
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or ""),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or "",
+         (session_id or None)),
     )
     c.commit()
     c.close()

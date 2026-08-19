@@ -101,8 +101,10 @@ TASK: Parse this question into a precise investigation specification.
    - PoP guard: the prior period must fall INSIDE the data's date range. If the prior period is
      before the earliest date (e.g. data starts 2024-05-01 but PoP would need April 2024), there
      is NO prior-period data — do NOT invent it. Either pick the most recent PRIOR period that
-     actually has data, or set comparison_start/comparison_end equal to observation_start/end and
-     state in intake_notes "no prior period available — only N period(s) of data".
+     actually has data, or leave comparison_start/comparison_end EMPTY ("") and state in
+     intake_notes "no prior period available — only N period(s) of data". NEVER set the
+     comparison equal to the observation window: a period compared against itself is a
+     tautology, not a baseline.
    - YoY guard: if the earliest date is AFTER the YoY period end (e.g. data starts 2025-01-01 but
      YoY needs 2024-06-01), there is NO prior-year data — do NOT set yoy_start/yoy_end. Note it.
    - If the schema date range covers less than 13 months total, use PoP only.
@@ -642,8 +644,9 @@ Write the complete, honest investigation report.
 SYNTHESIS_CORE_RULES = """REPORT RULES:
 - headline: max 16 words, answering the question ASKED — a breakdown question gets its \
 dimensional answer even when the overall change is normal variance.
-- Every number must appear in FULL EVIDENCE. Never estimate or derive one — a share no \
-query returned is described qualitatively, never manufactured.
+- Every number is either quoted from FULL EVIDENCE or plain arithmetic over two evidence \
+values (a change, a share, a difference). Never estimate — a figure no query returned and no \
+arithmetic reaches is described qualitatively, never manufactured.
 - If the evidence does not explain WHY, say "the data analysed does not reveal the \
 cause" and name what to check next. A negligible spread is negligible — say so; never \
 present a tiny sub-segment reversal as the driver.
@@ -698,6 +701,7 @@ class IntakeOutput(BaseModel):
     comparison_start: str = Field(description="ISO date of prior-period start")
     comparison_end: str = Field(description="ISO date of prior-period end")
     comparison_label: str = Field(description="e.g. 'January 2026 (MoM)'")
+    no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")
