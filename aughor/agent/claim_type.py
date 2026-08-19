@@ -34,13 +34,53 @@ CLAIM_TYPES = ("descriptive", "associational", "predictive", "causal")
 _RANK = {name: i for i, name in enumerate(CLAIM_TYPES)}
 
 #: Verbs that assert one thing BRINGS ABOUT another. Refused below `causal`.
-_CAUSAL_VERB_RE = re.compile(
-    r"\b(?:caus(?:e|es|ed|ing)|driv(?:e|es|en|ing)|drove|lead(?:s)?\s+to|led\s+to"
+#:
+#: CA-0 split. The first alternation is the CONNECTIVE causal vocabulary — a verb or phrase
+#: that only ever relates an agent to an outcome ("drives", "due to", "explains why"). The
+#: second is the CHANGE-OF-STATE verbs ("increase", "reduce", "improve"), which are causal
+#: ONLY in their transitive form — "the campaign increased traffic" names an agent changing
+#: a thing — and purely descriptive in their intransitive/nominal forms — "traffic increased
+#: 26.8%", "a comparable increase", "bounce worsened in August". The old single list refused
+#: every form, so a `descriptive` licence whose own directive says "report … how it changed"
+#: rejected the only verbs that describe change; the Direkteingabe specimen's #15 hits were
+#: both nominal "increase"s. The transitive test is a lookahead for a direct object: the verb
+#: followed by an optional determiner and a word that is not a preposition, comparative,
+#: adverb, conjunction or number.
+_CAUSAL_CONNECTIVE = (
+    r"caus(?:e|es|ed|ing)|driv(?:e|es|en|ing)|drove|lead(?:s)?\s+to|led\s+to"
     r"|result(?:s|ed)?\s+in|bring(?:s)?\s+about|brought\s+about|produc(?:e|es|ed)"
     r"|trigger(?:s|ed)?|induc(?:e|es|ed)|attributable\s+to|because\s+of"
     r"|due\s+to|responsible\s+for|explains?\s+why|the\s+reason\s+for"
-    r"|improv(?:e|es|ed)|worsen(?:s|ed)?|reduc(?:e|es|ed)|increas(?:e|es|ed)"
-    r"|decreas(?:e|es|ed)|boost(?:s|ed)?|hurt(?:s)?|stem(?:s|med)?\s+from)\b", re.I)
+    r"|stem(?:s|med)?\s+from")
+_CHANGE_VERB = (
+    r"improv(?:e|es|ed|ing)|worsen(?:s|ed|ing)?|reduc(?:e|es|ed|ing)|increas(?:e|es|ed|ing)"
+    r"|decreas(?:e|es|ed|ing)|boost(?:s|ed|ing)?|hurt(?:s|ing)?|lower(?:s|ed|ing)?"
+    r"|rais(?:e|es|ed|ing)|lift(?:s|ed|ing)?|cut(?:s|ting)?|inflat(?:e|es|ed|ing)"
+    r"|depress(?:es|ed|ing)?|erod(?:e|es|ed|ing)|suppress(?:es|ed|ing)?")
+#: What may follow a change verb WITHOUT making it transitive: prepositions and comparatives
+#: ("increased by 26%", "rose from X to Y", "an increase compared to"), adverbs ("improved
+#: slightly"), conjunctions, numbers and currency/percent marks.
+_NOT_AN_OBJECT = (
+    r"by|from|to|in|on|at|of|over|since|during|between|across|after|before|until|through"
+    r"|per|for|with|as|than|compared|versus|vs\.?|relative|against|and|but|or|nor|while|when"
+    r"|where|which|that|because|due|again|also|only|mostly|largely|overall|notably|materially"
+    r"|marginally|slightly|sharply|significantly|markedly|steadily|modestly|substantially"
+    r"|dramatically|further|considerably|gradually|rapidly|year|month|week|quarter|day"
+    # modals / auxiliaries / common participles and verbs: "the increase COULD not", "Traffic
+    # Increase HALTED by", "the increase WAS broad" — a change NOUN followed by a verb is not
+    # a change VERB followed by an object (live false positives on the first receipt run).
+    r"|can|could|may|might|will|would|shall|should|must|do|does|did|is|are|was|were|be|been"
+    r"|being|has|have|had|halted|stopped|failed|driven|caused|led|seen|observed|recorded"
+    r"|reported|noted|shown|followed|continued|remained|stayed|began|started|ended|coincided"
+    r"|occurred|happened|appears?|appeared|seems?|seemed|looks?|tends?|remains|represents"
+    r"|reflects|suggests|indicates|shows|means|implies|came|comes|went|goes"
+    r"|\d|[-+$€£%]")
+_TRANSITIVE_CHANGE = (
+    rf"(?:{_CHANGE_VERB})\s+"
+    r"(?:(?:the|a|an|its|their|our|his|her|this|that|these|those|overall|total|average|mean"
+    r"|median|net|gross|monthly|daily|weekly)\s+)?"
+    rf"(?!(?:{_NOT_AN_OBJECT})\b)[A-Za-z][\w-]*")
+_CAUSAL_VERB_RE = re.compile(rf"\b(?:{_CAUSAL_CONNECTIVE}|{_TRANSITIVE_CHANGE})\b", re.I)
 
 #: Verbs that assert one thing ANTICIPATES another. Refused below `predictive`.
 _PREDICTIVE_VERB_RE = re.compile(

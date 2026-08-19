@@ -63,10 +63,19 @@ def ada_phase_wave(state, conn) -> dict:
     base_phases = list(state.get("investigation_phases", []))
     base_n = len(base_phases)
 
+    # CA-0: with no period before the observation window, decompose/dimensional can only
+    # compare the window against itself (abs_change = 0 on every row). The serial router
+    # would drop them post-hoc; here they are not submitted at all — the wave's wall-clock
+    # win is not worth two tautological LLM plans that the router then discards.
+    members = _WAVE_ORDER
+    if (state.get("_ada_intake") or {}).get("no_prior_period"):
+        members = ("baseline",)
+        bump("deep_analysis.phase_wave_no_prior_period")
+
     results: dict[str, dict] = {}
     try:
-        with _fanout_region("ada.phase_waves"), ContextThreadPoolExecutor(max_workers=len(_WAVE_ORDER)) as pool:
-            futs = {pool.submit(_run_phase, fns[name], state, conn): name for name in _WAVE_ORDER}
+        with _fanout_region("ada.phase_waves"), ContextThreadPoolExecutor(max_workers=len(members)) as pool:
+            futs = {pool.submit(_run_phase, fns[name], state, conn): name for name in members}
             for fut in as_completed(futs):
                 name = futs[fut]
                 try:
@@ -84,7 +93,7 @@ def ada_phase_wave(state, conn) -> dict:
     except Exception as exc:
         # Executor-level failure must never break the investigation — serial fallback.
         logger.warning("[ada] phase wave pool failed (%s) — serial fallback", exc, exc_info=True)
-        for name in _WAVE_ORDER:
+        for name in members:
             if name not in results:
                 try:
                     results[name] = fns[name](state, conn=conn) or {}

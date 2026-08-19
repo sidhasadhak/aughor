@@ -9056,6 +9056,11 @@ export interface components {
             /** Seed Sql */
             seed_sql?: string | null;
             /**
+             * Session Id
+             * @default
+             */
+            session_id: string;
+            /**
              * Skip Cache
              * @default false
              */
