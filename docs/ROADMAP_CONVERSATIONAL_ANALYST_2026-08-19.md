@@ -11,7 +11,9 @@
 > Supersedes nothing that is locked (§6 of `PLATFORM_ROADMAP_2026-08-12.md` stands: one
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
-> Status: **proposed — not yet approved.** Decisions the user must take are in §5.
+> Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
+> (`c3ba392`); CA-2 built on `claude/ca2-guards-to-evidence` (see its STATUS). CA-1 next.
+> The §5 decisions remain open.
 
 ---
 
@@ -143,8 +145,7 @@ either carry `traffic` as the metric or return rows or ship LOW with "0 rows". S
 the 144 stored questions (read-only; throwaway `AUGHOR_SYSTEM_DB`): `orchestration_plan null` =
 0, `guard text leaked` = 0, `zero rows + HIGH` = 0.
 
-**STATUS 2026-08-19 — BUILT on branch `claude/ca0-stop-the-lying` (worktree
-`wonderful-poitras`), unpushed.** Receipt run in isolation (every store redirected to scratch,
+**STATUS 2026-08-19 — MERGED to main as [PR #359](https://github.com/sidhasadhak/aughor/pull/359) (`c3ba392`).** Receipt run in isolation (every store redirected to scratch,
 only the `traffic` upload copied, same gemini flash-lite model the specimens ran on, serial
 phases at 15 RPM) through the real `/investigate` route:
 - Run 1 (`b817b074`): `orchestration_plan` present, `planned = [intake, baseline,
@@ -208,6 +209,25 @@ Verification in the Track-A sense — no model strength prevents these:
 
 **Receipt:** each defect in §1 has a unit test with the specimen as fixture; the shadow re-run
 shows zero tautological findings (`obs == comp` on every row) across 144.
+
+**STATUS 2026-08-19 — BUILT on `claude/ca2-guards-to-evidence` (rebased onto #359's main), one
+commit, awaiting push approval.** What shipped vs the sketch above: the "zero-row conjunction
+probe" became something stronger — the filter guard finds the literal in a SIBLING column
+(`column_suggestion`) and `execute_guarded` MOVES the predicate deterministically before any
+model call (AST surgery + dry-run + guard re-probe); a literal in NO text column is a typed
+`novel` verdict that rides as a caveat ("the segment is absent, not zero") and is never fed to
+the model fix loop. Also: change-column-first `_measure_col_index` + `_is_self_comparison_finding`
+(tautologies never reach the narrator) · contradiction detector keys on structured verdicts
+(stats.py marker, `is_significant`; all-unflagged findings = "no claim"; negation stripped before
+the positive scan) · `_MIN_BASELINE_PERIODS = 6` (a model z over a shorter baseline becomes a
+description; fired live: "z = 2.47 … not a significance verdict") · `_evidence_confidence_ceiling`
+(HIGH capped on no-prior-period / short baseline / trust caveat; the model may only lower).
+**Receipt run:** the exact 7774b792 SQL against the real CSV through `execute_guarded` → repaired
+to `CHANNEL_LVL_1`, 3 rows (Desktop 531 orders), zero model calls; the novel value stays an
+honest absence. Trap fixed along the way: `repair_filter_literals` keyed fixes by the QUALIFIED
+table name but resolves sqlglot's BARE name — value repairs on schema-qualified tables had
+silently never matched (pre-existing). **Deferred to a later PR:** claim→evidence-id binding
+(rewrites report_checks.py on top of CA-0's Violation type).
 
 ### CA-3 — Deep analysis becomes the analyst (≈ 2–3 weeks; needs CA-1 for rendering, CA-2 for the guards; CI-4 finished)
 
