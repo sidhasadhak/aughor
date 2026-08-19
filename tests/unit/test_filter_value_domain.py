@@ -84,6 +84,12 @@ def test_correct_value_not_flagged_either_polarity():
     assert check_filter_value_domains(_conn(), "SELECT COUNT(*) FROM orders WHERE order_status != 'delivered'") == []
 
 
-def test_novel_value_with_no_near_match_left_alone():
-    # 'refunded' isn't a typo of any present value → high-precision: no warning.
-    assert check_filter_value_domains(_conn(), "SELECT COUNT(*) FROM orders WHERE order_status != 'refunded'") == []
+def test_novel_value_on_an_enumerable_column_is_an_honest_absence():
+    # CA-2: 'refunded' is no typo of any present value — and for an ENUMERABLE column the
+    # domain is complete, so the predicate certainly matches no row. It used to be let through
+    # silently ("never second-guess a novel value"); now it is a `novel` warning: no
+    # suggestion, no column swap, and the text forbids inventing a substitute. The executor
+    # attaches it as a caveat and never feeds it to the model fix loop.
+    w = check_filter_value_domains(_conn(), "SELECT COUNT(*) FROM orders WHERE order_status != 'refunded'")
+    assert len(w) == 1 and w[0].novel and w[0].suggestion is None and w[0].column_suggestion is None
+    assert "Do not invent a substitute" in w[0].to_prompt_text()

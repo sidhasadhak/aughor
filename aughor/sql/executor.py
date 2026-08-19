@@ -254,6 +254,18 @@ def execute_guarded(
             f"join guard: {_w.table_a}.{_w.col_a} ↔ {_w.table_b}.{_w.col_b} share only "
             f"{_w.overlap:.0%} of sampled values — the join may be unreliable{_rec}")
     for _w in _filter_warnings:
+        if getattr(_w, "column_suggestion", None):
+            _guard_caveats.append(
+                f"filter guard: '{_w.bad_value}' is not a value of {_w.table}.{_w.col} but is a "
+                f"value of {_w.table}.{_w.column_suggestion} — the predicate as written matches "
+                f"no row")
+            continue
+        if getattr(_w, "novel", False):
+            _guard_caveats.append(
+                f"filter guard: '{_w.bad_value}' is not a stored value of {_w.table}.{_w.col} or "
+                f"of any other text column in {_w.table} — the predicate matches no row; the "
+                f"segment is absent, not zero")
+            continue
         _sugg = f" (did you mean '{_w.suggestion}'?)" if _w.suggestion else ""
         _guard_caveats.append(
             f"filter guard: '{_w.bad_value}' is not a stored value of "
@@ -295,7 +307,47 @@ def execute_guarded(
                      counter="trust.e1_live")
             return []
 
-    if result.error or _zero_diag or _domain_warnings or _filter_warnings or _idmath_warn:
+    # CA-2 — a filter literal the guard can bind DETERMINISTICALLY (a stored-value spelling,
+    # or the same value in a sibling column of the same table) is repaired without a model
+    # call: AST surgery, dry-run, and the guard re-probed on the result. The deep path's
+    # `CHANNEL_LVL_0 = 'Direkteingabe'` (a CHANNEL_LVL_1 value) returned [] from every query
+    # and the report invented a segment; the LLM fix loop below never saw a diagnosis for it
+    # because a value with no close neighbour was treated as "novel". Only when the filter
+    # guard is the SOLE trigger — a hard error, a disjoint join or id-arithmetic still take
+    # the full loop with every diagnosis attached.
+    if (_filter_warnings and not result.error and not _domain_warnings and not _idmath_warn
+            and any(getattr(w, "suggestion", None) or getattr(w, "column_suggestion", None)
+                    for w in _filter_warnings)):
+        try:
+            from aughor.sql.join_guard import (
+                check_filter_value_domains as _cfvd_det,
+                repair_filter_literals as _repair_det,
+            )
+            _fixed = _repair_det(sql, _filter_warnings, dialect=getattr(conn, "dialect", "duckdb"))
+            if _fixed and _fixed.strip() != sql.strip():
+                with mlflow_tool_span("sql.execute.retry",
+                                      {"query_id": query_id, "sql": _fixed,
+                                       "dialect": getattr(conn, "dialect", "")}):
+                    _det_retry = conn.execute(query_id, _fixed)
+                if (not _det_retry.error and (_det_retry.row_count > 0 or not _zero_diag)
+                        and not _cfvd_det(conn, _fixed)):
+                    from aughor.stats import stats as _fg_stats
+                    _fg_stats.inc("filter_guard.deterministic_repair")
+                    _det_retry.sql = _fixed
+                    return _attach_caveats(_det_retry, _e1_caveats(_fixed))
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "deterministic filter repair is best-effort; the model fix loop "
+                           "runs next with the same diagnosis",
+                     counter="filter_guard.deterministic_repair_error")
+
+    # CA-2 — a NOVEL literal (in no text column of the table) is an honest zero, not a repair
+    # target: a model "fix" that merely drops the predicate would pass the acceptance gate
+    # below (rows > 0, no remaining filter warning) and silently answer a different question.
+    # Novel warnings ride as caveats only; the fix loop sees the actionable ones.
+    _filter_warnings_actionable = [w for w in _filter_warnings if not getattr(w, "novel", False)]
+
+    if result.error or _zero_diag or _domain_warnings or _filter_warnings_actionable or _idmath_warn:
         # No fixer supplied (template or provider missing) → deterministic-only mode:
         # the guards above have run; return the raw result WITH its caveats attached
         # (previously they were dropped here — the WP-1a swallow seam).
@@ -327,8 +379,8 @@ def execute_guarded(
             if _domain_warnings:
                 _dw_text = "\n".join(w.to_prompt_text() for w in _domain_warnings)
                 _diag = (f"{_diag}\n{_dw_text}" if _diag else f"DIAGNOSIS: {_dw_text}").strip() + "\n"
-            if _filter_warnings:
-                _fw_text = "\n".join(w.to_prompt_text() for w in _filter_warnings)
+            if _filter_warnings_actionable:
+                _fw_text = "\n".join(w.to_prompt_text() for w in _filter_warnings_actionable)
                 _diag = (f"{_diag}\n{_fw_text}" if _diag else f"DIAGNOSIS: {_fw_text}").strip() + "\n"
             if _idmath_warn:
                 _diag = (f"{_diag}\n{_idmath_warn}" if _diag else f"DIAGNOSIS: {_idmath_warn}").strip() + (
@@ -362,7 +414,7 @@ def execute_guarded(
                 fix_error = _err
             elif _domain_warnings:
                 fix_error = "A join is on value-disjoint columns (see DIAGNOSIS) — the result is unreliable."
-            elif _filter_warnings:
+            elif _filter_warnings_actionable:
                 fix_error = "A filter literal is absent from the column's value domain (see DIAGNOSIS) — the result silently includes/excludes the wrong rows."
             elif _idmath_warn:
                 fix_error = "A measure is multiplied by an id/key column (see DIAGNOSIS) — the aggregate is meaninglessly inflated."
@@ -399,7 +451,7 @@ def execute_guarded(
                 except Exception:
                     _accept = False
             # Never replace a query with one that STILL filters on a non-existent literal.
-            if _accept and _filter_warnings:
+            if _accept and _filter_warnings_actionable:
                 try:
                     from aughor.sql.join_guard import check_filter_value_domains as _cfvd
                     _accept = not _cfvd(conn, fix.fixed_sql)
@@ -414,9 +466,13 @@ def execute_guarded(
                     _accept = False
             if _accept:
                 # The acceptance gates above re-probed every triggering guard against
-                # the fixed SQL, so an accepted repair carries no guard caveats.
+                # the fixed SQL, so an accepted repair carries no guard caveats — except a
+                # NOVEL-literal caveat, which is not a defect the repair addressed.
                 retry.sql = fix.fixed_sql
                 result = retry
+                _novel_caveats = [c for c in _guard_caveats if "the segment is absent, not zero" in c]
+                if _novel_caveats:
+                    result = _attach_caveats(result, _novel_caveats)
             else:
                 result = _attach_caveats(result, _guard_caveats)
         except Exception as _exc:
@@ -424,4 +480,7 @@ def execute_guarded(
             tolerate(_exc, "post-execute LLM fix is best-effort; returning the raw retry "
                            "result", counter="ada.exec_retry_fix")
             result = _attach_caveats(result, _guard_caveats)
-    return _attach_caveats(result, _e1_caveats(result.sql))
+    # A NOVEL-literal caveat (CA-2) never enters the fix block above, so it is attached here —
+    # the only knowledge the reader has that the zero is an absence, not a measurement.
+    _novel_caveats = [c for c in _guard_caveats if "the segment is absent, not zero" in c]
+    return _attach_caveats(result, [*_novel_caveats, *_e1_caveats(result.sql)])

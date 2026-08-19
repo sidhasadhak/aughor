@@ -1050,6 +1050,14 @@ def _date_column_index(columns: list[str]) -> Optional[int]:
     return None
 
 
+def date_column_index(columns: list[str]) -> Optional[int]:
+    """Public: the index of the first period/date-named column, or None. The same name
+    heuristic `analyze_query_result` uses to pick its time axis — exposed so callers that
+    must agree with it (the baseline's minimum-periods rule, CA-2) import the interface,
+    not the underscore."""
+    return _date_column_index(columns)
+
+
 def _numeric_column_indices(columns: list[str], rows: list[list]) -> list[int]:
     idxs = []
     for i, col in enumerate(columns):
