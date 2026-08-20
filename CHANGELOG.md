@@ -21,6 +21,12 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A table in a chat answer renders as a table.** The answer surface had an
+  inline-only renderer — bold, figures, currency — so a turn that tabulated its result
+  put every pipe and dash on screen: `| Route ID | Number of Flights | | :--- | :--- |
+  | ZRH-LHR | 108 |`. Answer text carrying a markdown table now renders it, and
+  paragraphs separated by blank lines stay separate paragraphs instead of collapsing
+  into one.
 - **A question that asks to see the data is no longer answered as a failed
   comparison.** "Give me route wise number of flights" run deep came back framed around
   a comparison nobody asked for — "no prior period exists in the current dataset to

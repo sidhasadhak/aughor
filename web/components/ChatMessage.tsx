@@ -27,6 +27,7 @@ import {
   BriefMeta,
   type BriefMetric,
 } from "@/components/brief/Brief";
+import { hasProseBlocks, renderProseBlocks } from "@/components/brief/BriefProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -1034,7 +1035,13 @@ function NarrativeBrief({
         />
       )}
 
-      {turn.headline
+      {/* A conversational answer lands on `headline`, and it is not always one line: a
+          turn that tabulates its result puts a markdown table there, and the headline
+          organ renders it pipe by literal pipe. Block-structured text takes the block
+          renderer; a one-line conclusion keeps the headline treatment it was built for. */}
+      {turn.headline && hasProseBlocks(turn.headline)
+        ? <div className="flex flex-col gap-1">{renderProseBlocks(turn.headline)}</div>
+        : turn.headline
         ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
         : streamingHeadline != null
           ? <BriefHeadline animate={false} className="aug-stream-in">{safePartial(streamingHeadline)}</BriefHeadline>
