@@ -83,6 +83,14 @@ class Channel {
     this.partId = nextId();
   }
 
+  /** The channel's identity, stamped on every `text-start` so the accumulated
+   *  `TextUIPart` keeps it (`providerMetadata` survives accumulation) — the
+   *  projection needs to tell a headline block from a narrative block, and part
+   *  ORDER cannot carry that: which channel opens first depends on the run. */
+  private meta() {
+    return { aughor: { channel: this.key } };
+  }
+
   /** Convert one REPLACE-style partial into APPEND chunks. */
   take(full: string): AughorChunk[] {
     const chunks: AughorChunk[] = [];
@@ -93,7 +101,7 @@ class Channel {
     // blocks for two pieces of text this way.
     if (!this.open && !full) return chunks;
     if (!this.open) {
-      chunks.push({ type: "text-start", id: this.partId });
+      chunks.push({ type: "text-start", id: this.partId, providerMetadata: this.meta() });
       this.open = true;
     }
     if (full.startsWith(this.emitted)) {
@@ -104,7 +112,7 @@ class Channel {
       // and open a fresh one, never a spliced edit.
       chunks.push({ type: "text-end", id: this.partId });
       this.partId = this.nextId();
-      chunks.push({ type: "text-start", id: this.partId });
+      chunks.push({ type: "text-start", id: this.partId, providerMetadata: this.meta() });
       if (full) chunks.push({ type: "text-delta", id: this.partId, delta: full });
     }
     this.emitted = full;
@@ -138,13 +146,44 @@ const TEXT_CHANNELS: Record<string, { field: string; channel: string }> = {
   narrative_delta: { field: "narrative", channel: "narrative" },
   insight_delta: { field: "narrative", channel: "narrative" }, // legacy spelling
   headline_delta: { field: "headline", channel: "headline" },
-  report_delta: { field: "executive_summary", channel: "narrative" },
+  // Its own channel, not narrative's: the reducer kept `reportStream` (live deep
+  // synthesis) and `narrativeStream` (quick-answer prose) as separate fields, and
+  // the projection can only keep them separate if the channel stamp does.
+  report_delta: { field: "executive_summary", channel: "report" },
   // settled — the final text for that channel
   narrative: { field: "narrative", channel: "narrative" },
   insight: { field: "insight", channel: "narrative" },
   headline: { field: "headline", channel: "headline" },
   answer: { field: "answer", channel: "narrative" },
 };
+
+/**
+ * Settled prose frames that ALSO ride as typed data parts (CA-1).
+ *
+ * The text channel carries only the words, and the reducer read MORE than words
+ * off these frames: `narrative` carries anomalies/trend/confidence, `headline`
+ * is the field the turn stores verbatim, `answer` is the final_text terminal.
+ * Routing them to text alone silently dropped that structure — the projection
+ * that replaced the reducer needs the whole payload, so the settled frame emits
+ * both. Deltas stay text-only; the value maps the legacy `insight` spelling
+ * onto the platform's own name so the vocabulary stays one word wide.
+ */
+const SETTLED_DATA_PARTS: Record<string, string> = {
+  narrative: "narrative",
+  insight: "narrative",
+  headline: "headline",
+  answer: "answer",
+};
+
+/**
+ * Gate frames — the run PAUSED for the user (P3 plan review / P4 clarify) and
+ * the upstream stream simply ends, without a `done`. Without this the route's
+ * "upstream ended without a terminal frame" abort fires on every gate, marking
+ * a deliberate pause as a dropped connection. The gate part is emitted, the
+ * message closes cleanly, and the resume arrives as its own turn (a side POST
+ * keyed by investigation id, per the CA roadmap).
+ */
+const GATE_FRAMES = new Set(["plan_pending", "clarify_pending"]);
 
 export interface AdapterResult {
   chunks: AughorChunk[];
@@ -241,6 +280,15 @@ export class AughorToUIMessage {
     const ch = TEXT_CHANNELS[event];
     if (ch !== undefined) {
       chunks.push(...this.channel(ch.channel).take(String(data[ch.field] ?? "")));
+      // A settled frame's structure rides as a data part alongside its text —
+      // unless the frame is genuinely empty (no words, no other fields), which
+      // would project a hollow value over a real one.
+      const settled = SETTLED_DATA_PARTS[event];
+      if (settled) {
+        const hasText = Boolean(String(data[ch.field] ?? ""));
+        const hasMore = Object.keys(data).some((k) => k !== ch.field && k !== "type");
+        if (hasText || hasMore) chunks.push(this.data(settled, data));
+      }
       return { chunks, investigationId: this.invId, terminal: false };
     }
 
@@ -254,14 +302,32 @@ export class AughorToUIMessage {
       return { chunks, investigationId: this.invId, terminal: true };
     }
 
+    if (GATE_FRAMES.has(event)) {
+      // A pause, not a finish — but the MESSAGE closes cleanly, because the
+      // upstream ends here without a `done` and a half-open message would
+      // otherwise be reported as a dropped connection.
+      chunks.push(...this.closeAll());
+      chunks.push(this.data(event, data));
+      chunks.push(...this.finish());
+      return { chunks, investigationId: this.invId, terminal: true };
+    }
+
     if (event === "error") {
       chunks.push(...this.closeAll());
+      // The typed tail (Wave R4: reason/retryable/recovery/hint) rides as data —
+      // the protocol's `error` chunk carries one string, and collapsing the
+      // payload into it is how the one recovery worth offering got lost.
+      chunks.push(this.data("error", data));
       chunks.push({ type: "error", errorText: String(data["message"] ?? "stream error") });
       chunks.push(...this.finish());
       return { chunks, investigationId: this.invId, terminal: true };
     }
 
     if (event === "done") {
+      // `done` sometimes names the Trust Receipt (has_receipt/inv_id) — the
+      // reducer read it, so the projection must be able to. A bare `done`
+      // stays partless.
+      if (data["has_receipt"]) chunks.push(this.data("done", data));
       chunks.push(...this.finish());
       return { chunks, investigationId: this.invId, terminal: true };
     }

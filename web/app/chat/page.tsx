@@ -10,10 +10,12 @@
  * from frame to destination: "Open in workbench" is a link, and if this route
  * underwhelms we lose a route, not an application.
  *
- * What is deliberately NOT here: regen/edit affordances and the parts-model message
- * schema (they ride CI-1d's AI-SDK adoption), and any second copy of chat state —
- * thread selection uses the SAME remount mechanism the workspace uses (key bump),
- * so ChatPanel remains the one owner of a conversation's lifecycle.
+ * CA-1: the panel underneath crossed the seam — every turn streams through the
+ * AI-SDK parts model (`/api/chat` → `projectThread` → the organ suite), thread
+ * selection restores `UIMessage[]` via `setMessages`, and regen/edit ride along.
+ * What is still deliberately NOT here: any second copy of chat state — thread
+ * selection uses the SAME remount mechanism the workspace uses (key bump), so
+ * ChatPanel remains the one owner of a conversation's lifecycle.
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";

@@ -213,7 +213,9 @@ BASELINE: dict[str, int] = {
     # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
     # saying "finding" there (the glossary word) paid for the API names they must import.
     "insight": 1959,
-    "investigation_in_web": 659,
+    # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
+    # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
+    "investigation_in_web": 617,
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,

@@ -1,8 +1,28 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useInvestigationThread, type ThreadRunOpts } from "@/lib/useInvestigationThread";
-import { ChatMessage, type SourcePanelData } from "@/components/ChatMessage";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { PartsMessage } from "@/components/chat/PartsMessage";
+import type { SourcePanelData } from "@/components/ChatMessage";
+import { projectThread, newSessionId } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
+
+export interface ThreadRunOpts {
+  connectionId: string;
+  /** Scope a non-canvas investigation to a specific schema (multi-schema connections). */
+  schema?: string | null;
+  canvasId?: string | null;
+  /** The exact query the seed finding came from — anchors the deep analysis on the real tables/window. */
+  seedSql?: string | null;
+  /** Free-text seed (e.g. the briefing claim being pulled on). */
+  seedContext?: string;
+  /** The originating finding's insight id. When it resolves to a dossier, the deep analysis is
+   *  seeded with the RICH dossier (grounded values + verified structure) instead of
+   *  just seedContext/seedSql — the same seed the chat "Investigate deeper" uses. */
+  insightId?: string | null;
+  /** Bypass the similar-investigation cache so you observe live execution. */
+  skipCache?: boolean;
+}
 
 export interface InlineInvestigationThreadProps {
   /** The natural-language question that drives the deep analysis' phase routing. */
@@ -13,15 +33,17 @@ export interface InlineInvestigationThreadProps {
   onClose?: () => void;
   /** Escape hatch — re-open the same question in the full Ask surface. */
   onOpenInAsk?: (q: string) => void;
-  /** Open the SQL + rows source panel (optional; threaded into ChatMessage). */
+  /** Open the SQL + rows source panel (optional; threaded into PartsMessage). */
   onShowSource?: (data: SourcePanelData) => void;
 }
 
 /**
  * Capability A "pull the thread": an investigation that streams IN PLACE inside the
- * briefing. It owns one useInvestigationThread (one SSE stream, one AbortController),
- * seeded with the originating finding + its SQL, and renders the live phases + deep
- * report by reusing the chat surface's <ChatMessage>. Aborts its stream on unmount.
+ * briefing. CA-1: one `useAughorChat` conversation per thread instance (its own
+ * session, its own abort), fired once on mount with the seeded `/investigate`
+ * options riding the send's body; the turn renders through the same
+ * `projectThread` → `PartsMessage` path as the chat surfaces. Aborts its stream
+ * on unmount.
  */
 export function InlineInvestigationThread({
   question,
@@ -30,7 +52,12 @@ export function InlineInvestigationThread({
   onOpenInAsk,
   onShowSource,
 }: InlineInvestigationThreadProps) {
-  const { turn, streaming, run, stop } = useInvestigationThread();
+  const [sessionId] = useState(() => newSessionId());
+  const { messages, sendMessage, stop, status, error } = useAughorChat({
+    connectionId: opts.connectionId,
+    sessionId,
+  });
+  const streaming = status === "submitted" || status === "streaming";
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -38,11 +65,32 @@ export function InlineInvestigationThread({
       startedRef.current = true;
       // skip_cache so an inline drill always runs LIVE against the seeded query/window
       // rather than replaying a similar cached investigation.
-      run(question, { ...opts, skipCache: opts.skipCache ?? true });
+      void sendMessage(
+        { text: question, metadata: { mode: "investigate" } },
+        { body: {
+          mode: "investigate",
+          schema: opts.schema ?? null,
+          canvas_id: opts.canvasId ?? null,
+          seed_sql: opts.seedSql ?? null,
+          seed_context: opts.seedContext ?? "",
+          insight_id: opts.insightId ?? null,
+          // This surface always runs the live investigation in place — never the
+          // Tier-0 dossier card — so bypass the short-circuit while still feeding
+          // the dossier (when present) as the seed.
+          deep: true,
+          skip_cache: opts.skipCache ?? true,
+        } },
+      );
     }
     return () => { stop(); };  // abort the SSE stream when the thread is collapsed/unmounted
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const turns = useMemo(() => projectThread(messages, {
+    streaming,
+    transportError: status === "error" ? (error?.message ?? "The investigation failed.") : null,
+  }), [messages, streaming, status, error]);
+  const last = turns[turns.length - 1];
 
   return (
     <div
@@ -70,7 +118,7 @@ export function InlineInvestigationThread({
         </span>
         <span style={{ display: "inline-flex", gap: 10 }}>
           {streaming && (
-            <button className="aug-label" onClick={stop} style={_linkBtn} title="Stop this investigation">
+            <button className="aug-label" onClick={() => stop()} style={_linkBtn} title="Stop this investigation">
               Stop
             </button>
           )}
@@ -87,8 +135,14 @@ export function InlineInvestigationThread({
         </span>
       </div>
 
-      {turn ? (
-        <ChatMessage turn={turn} onFollowUp={onOpenInAsk} onRunFresh={onOpenInAsk} onShowSource={onShowSource} />
+      {last ? (
+        <PartsMessage
+          turn={last.turn}
+          message={last.assistantMsg}
+          onFollowUp={onOpenInAsk}
+          onRunFresh={onOpenInAsk}
+          onShowSource={onShowSource}
+        />
       ) : (
         <span className="aug-text-ui" style={{ color: "var(--t3)" }}>Starting investigation…</span>
       )}

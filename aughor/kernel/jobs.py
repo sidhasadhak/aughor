@@ -92,7 +92,7 @@ _STALE_SECONDS = 120
 #: interrupted run's result is UNKNOWN, not known-bad — "failed" claims a fact
 #: nobody observed — so every surface that reports an orphaned/interrupted run
 #: appends this exact wording rather than coining its own (the web side mirrors it
-#: in web/lib/investigationStream.ts UNCERTAIN_RESULT). The shared vocabulary landed
+#: in web/lib/chatTurn.ts UNCERTAIN_RESULT). The shared vocabulary landed
 #: first so wordings could not diverge; the terminal status followed and is now
 #: ``JobState.INTERRUPTED`` — this sentence explains such a run, it no longer
 #: substitutes for the missing status.

@@ -11,7 +11,7 @@ import LightbulbIcon from "@atlaskit/icon/core/lightbulb";
 import MinusIcon     from "@atlaskit/icon/core/minus";
 import DatabaseIcon  from "@atlaskit/icon/core/database";
 import type { InvestigationState } from "@/lib/types";
-import type { ChatTurn } from "@/lib/useChat";
+import type { ChatTurn } from "@/lib/chatTurn";
 import { localizeCurrency } from "@/lib/orgSettings";
 
 // Map a ChatTurn → InvestigationState so the trace can be rendered both inline

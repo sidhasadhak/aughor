@@ -10,6 +10,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## [Unreleased]
 
+### Changed
+- **The chat crossed the seam (CA-1).** Every chat surface — the workspace panel, the
+  full-page `/chat`, "Ask this briefing" and inline briefing threads — now streams
+  through the AI-SDK parts model (`/api/chat`): the 107-case frame reducer is deleted,
+  turns are a pure projection over typed message parts (an unrecognised backend frame
+  renders as a labelled block instead of silence), thread restore is `setMessages` over
+  a new `GET /chat-sessions/{id}/messages` returning the thread as `UIMessage[]`, and
+  messages gain edit-and-resend and regenerate. Plan/clarify approvals remain side
+  POSTs keyed by investigation id.
+
 ### Added
 - **Ask this briefing** — a side panel holding one conversation, pinned to insights
   mode and scoped to the briefing's connection and schema. Grounded server-side in the

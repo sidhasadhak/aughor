@@ -12,7 +12,8 @@
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
 > Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
-> (`c3ba392`); CA-2 built on `claude/ca2-guards-to-evidence` (see its STATUS). CA-1 next.
+> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1 built on
+> `claude/ca-1-continuation-t0ax40` (see its STATUS). CA-3/CA-4 next.
 > The §5 decisions remain open.
 
 ---
@@ -188,6 +189,48 @@ phases at 15 RPM) through the real `/investigate` route:
 involvement (the reducer file is gone); transcript parity vs the old path on the same session id;
 five frontend gates green; `lint:elements` still 69/69.
 
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40`.** What shipped vs the sketch:
+- **The reducer stack is gone**: `investigationStream.ts` (846), `lib/useChat.ts`,
+  `useInvestigationThread.ts` and `aguiTransport.ts` deleted; `/chat/parts` deleted; the
+  vocabulary ratchet's `investigation_in_web` baseline fell 659 → 617 with them. The `ChatTurn`
+  SHAPE survives in `lib/chatTurn.ts` — the organs speak it — but accumulation became a pure
+  projection (`projectTurn`/`projectThread`) over an AI-SDK `UIMessage`'s parts: same fields,
+  same semantics, derived instead of dispatched. Streamed form == persisted form == projected
+  form. Every chat surface crossed together: ChatPanel (workspace + `/chat`), `BriefAskPanel`
+  (migrated, not kept on the seam) and the briefing's `InlineInvestigationThread`.
+- **"All 37 parts" became 41**: the adapter was silently dropping structure the reducer read —
+  settled `narrative` (anomalies/trend/confidence), `answer`, the Wave-R4 `error` tail, `done`'s
+  receipt id. Those now ride as declared data parts beside the text channels; text blocks carry a
+  channel stamp (`providerMetadata.aughor.channel`, incl. a separate `report` channel for deep
+  synthesis prose) so the projection reconstructs `headlineStream`/`narrativeStream`/`reportStream`
+  faithfully. Gate frames (`plan_pending`/`clarify_pending`) close the message cleanly instead of
+  reading as a dropped connection. Part coverage is a FAILING TEST, not a habit: every declared
+  key must project or be named in `FALLBACK_PARTS` (`chatTurn.test.ts`; parity tests run frames
+  through the real adapter AND the SDK's own `readUIMessageStream`).
+- **The transport**: `/api/chat` is now THE proxy — the reducer's three doors preserved verbatim
+  (`/investigate`, forced-quick `/chat`, unified `/ask`), per-turn options in the send body,
+  P3/P4 approvals as `resume` bodies mapped onto the same feedback side-POST keyed by
+  investigation id (the user's decision is a visible turn; the resumed run streams as its answer).
+  Compact history is DERIVED from the SDK's own messages server-side (`historyFrom`) — one memory,
+  no parallel client array. WP-2 drop-recovery moved into the route (bounded poll of
+  `/investigations/{id}`, recovered report re-fed through the adapter).
+- **Thread restore is `setMessages`**: new `GET /chat-sessions/{id}/messages` returns `UIMessage[]`
+  in exactly the streamed shape (pytest pins the mapping incl. the interrupted-turn uncertainty
+  sentence); ChatPanel's 40-field manual restore literal and `restore()` are gone. Deliberate
+  deviation: `_ReconstructedTurn` STAYS — it is `resolve_history`'s prompt memory for
+  session-addressed non-web callers (MCP, scheduled), not UI restore; `/turns` also stays for
+  API compatibility. Affordances: edit-and-resend on the question bubble (SDK truncate-and-branch),
+  Regenerate on the last turn, stop/interrupt preserved; chips/stick-to-bottom/greeting carried over.
+- **Receipt run**: five gates green (`lint` byte-identical finding count to main, tokens/format/
+  vars clean, `lint:elements` 69/69), `tsc` clean, 73 web tests + targeted backend battery
+  (ratchet/contract 93 + area suites) green, production build green with `/chat/parts` gone.
+  Live: this environment has no model key, so the browser run drove the REAL client seam
+  (composer → `/api/chat` → adapter → SDK → projection → organs) against a frame-replay backend
+  speaking the exact wire vocabulary — quick turn (route banner, streamed headline, figure,
+  narrative, follow-ups), deep turn (guard receipt, phases, `answer_report` report), and
+  reload-restore via `/messages` on the same session id, screenshots captured, no console errors.
+  The with-a-model transcript-parity pass rides the next keyed environment (CA-3 needs one anyway).
+
 ### CA-2 — Guards move to the evidence layer (≈ 1 week; parallel with CA-1)
 
 Verification in the Track-A sense — no model strength prevents these:
@@ -210,8 +253,7 @@ Verification in the Track-A sense — no model strength prevents these:
 **Receipt:** each defect in §1 has a unit test with the specimen as fixture; the shadow re-run
 shows zero tautological findings (`obs == comp` on every row) across 144.
 
-**STATUS 2026-08-19 — BUILT on `claude/ca2-guards-to-evidence` (rebased onto #359's main), one
-commit, awaiting push approval.** What shipped vs the sketch above: the "zero-row conjunction
+**STATUS 2026-08-19 — MERGED to main as [PR #360](https://github.com/sidhasadhak/aughor/pull/360) (`689b949`), built on `claude/ca2-guards-to-evidence`.** What shipped vs the sketch above: the "zero-row conjunction
 probe" became something stronger — the filter guard finds the literal in a SIBLING column
 (`column_suggestion`) and `execute_guarded` MOVES the predicate deterministically before any
 model call (AST surgery + dry-run + guard re-probe); a literal in NO text column is a typed

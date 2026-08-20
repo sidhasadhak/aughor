@@ -5427,6 +5427,77 @@ def get_chat_session_turns(session_id: str):
     return turns
 
 
+def _turn_to_ui_messages(t: dict) -> list[dict]:
+    """One stored chat turn as an AI-SDK `UIMessage` pair (CA-1).
+
+    The persisted form and the streamed form are the same shape: text parts carry
+    the prose (channel-stamped exactly as the live adapter stamps them), typed
+    ``data-*`` parts carry the structure, and the web client's ``projectTurn``
+    derives the turn from either without knowing which it got. That equivalence is
+    what let the client's 40-field manual restore literal be deleted — restoring a
+    thread is ``setMessages`` and nothing else.
+
+    An interrupted turn carries a ``data-error`` part with the shared uncertainty
+    sentence (kernel/jobs.py UNCERTAIN_RESULT): the partial it produced renders,
+    and the tail says plainly that it is missing — a partial presented as complete
+    is a worse lie than not restoring it.
+    """
+    from aughor.kernel.jobs import UNCERTAIN_RESULT
+
+    parts: list[dict] = []
+    if t.get("headline"):
+        parts.append({
+            "type": "text", "text": t["headline"], "state": "done",
+            "providerMetadata": {"aughor": {"channel": "headline"}},
+        })
+        parts.append({"type": "data-headline", "data": {"headline": t["headline"]}})
+    if t.get("sql"):
+        parts.append({"type": "data-sql", "data": {"sql": t["sql"]}})
+    if t.get("columns"):
+        parts.append({"type": "data-columns", "data": {"columns": t["columns"]}})
+    if t.get("rows"):
+        parts.append({"type": "data-rows", "data": {"rows": t["rows"]}})
+    if t.get("chart_type"):
+        parts.append({"type": "data-chart_type", "data": {"chart_type": t["chart_type"]}})
+    if t.get("tables_used"):
+        parts.append({"type": "data-tables_used", "data": {"tables": t["tables_used"]}})
+    if t.get("intent") or t.get("approach"):
+        parts.append({"type": "data-analysis", "data": {
+            "intent": t.get("intent") or "", "steps": t.get("approach") or [],
+        }})
+    # WIRE-NAME BOUNDARY — the stored key is `insight` (report_json["insight"], a
+    # persisted identity); the wire part is `narrative`, the platform's own word.
+    if t.get("insight"):
+        parts.append({"type": "data-narrative", "data": t["insight"]})
+    if t.get("overview_report"):
+        parts.append({"type": "data-overview_report",
+                      "data": {"overview_report": t["overview_report"]}})
+    if (t.get("status") or "complete") == "interrupted":
+        parts.append({"type": "data-error", "data": {
+            "message": f"This answer was interrupted — {UNCERTAIN_RESULT}.",
+        }})
+    elif t.get("sql"):
+        # The turn id IS the receipt key; the receipt surface 404-noops gracefully
+        # if this turn predates receipts.
+        parts.append({"type": "data-done", "data": {"has_receipt": True, "inv_id": t["id"]}})
+    return [
+        {"id": f"{t['id']}-q", "role": "user",
+         "parts": [{"type": "text", "text": t.get("question") or ""}]},
+        {"id": t["id"], "role": "assistant", "parts": parts},
+    ]
+
+
+@router.get("/chat-sessions/{session_id}/messages")
+def get_chat_session_messages(session_id: str):
+    """The thread as AI-SDK ``UIMessage[]`` (CA-1) — thread selection on the web
+    is ``setMessages`` over this, the same shape the live stream accumulates.
+    Org-scoped in the store, like the turns read."""
+    turns = get_session_turns(session_id)
+    if not turns:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return [m for t in turns for m in _turn_to_ui_messages(t)]
+
+
 @router.get("/answer/{connection_id}/{inv_id}/receipt")
 def get_answer_receipt(connection_id: str, inv_id: str):
     """K3-wide Trust Receipt for an agentic (deep-analysis) answer report — executed

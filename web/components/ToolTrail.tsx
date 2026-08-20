@@ -19,7 +19,7 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
-import type { ConverseStep } from "@/lib/investigationStream";
+import type { ConverseStep } from "@/lib/chatTurn";
 
 /** What the reader gains from each tool, per roster id. */
 const TOOL_LABEL: Record<string, string> = {
