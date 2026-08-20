@@ -1543,6 +1543,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chat Session Route
+         * @description Delete a thread and every turn's full footprint — history rows, evidence
+         *     claims, vector entries, the title override (CA-5).
+         *
+         *     A real delete, not a hidden flag: the History panel's per-run delete already
+         *     removes runs outright, and a thread the user asked to be gone that still steered
+         *     future analysis from the RAG index would be the same lie CA-0 went after.
+         */
+        delete: operations["delete_chat_session_route_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Chat Session Route
+         * @description Rename a thread (CA-5). The rail's titles were derived from the opening
+         *     question — a good default, a bad permanent name. Org-scoped in the store, like
+         *     every other read and write keyed by a session id.
+         */
+        patch: operations["rename_chat_session_route_chat_sessions__session_id__patch"];
+        trace?: never;
+    };
     "/chat-sessions/{session_id}/messages": {
         parameters: {
             query?: never;
@@ -9192,6 +9223,12 @@ export interface components {
              */
             chart_palette: string;
             /**
+             * Chat First Home
+             * @description Land on the conversation instead of the workbench (CA-5 / CI-6b). Off by default: an org that navigates by the workbench should not have its entry point moved out from under it by an upgrade.
+             * @default false
+             */
+            chat_first_home: boolean;
+            /**
              * Company Name
              * @description Display name of the company/organization
              * @default
@@ -9516,6 +9553,18 @@ export interface components {
              * @default
              */
             actor: string;
+        };
+        /**
+         * RenameChatSessionRequest
+         * @description A thread's user-chosen name. Empty clears it back to the opening question.
+         */
+        RenameChatSessionRequest: {
+            /**
+             * Title
+             * @description The thread's display name; empty restores the derived title.
+             * @default
+             */
+            title: string;
         };
         /** RescopeRequest */
         RescopeRequest: {
@@ -13755,6 +13804,70 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_route_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_chat_session_route_chat_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameChatSessionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -1,0 +1,31 @@
+kind: column
+fqn: default.QuarterRegion.region
+title: region
+summary: '`region` (VARCHAR / dimension) — primary key; e.g. APAC, NA, EMEA'
+facts:
+  data_type: VARCHAR
+  semantic_type: dimension
+  is_primary_key: true
+  is_foreign_key: false
+  null_rate: 0.0
+  unit: ''
+  value_interpretation: ''
+  measure_grain: ''
+  sample_values:
+  - APAC
+  - NA
+  - EMEA
+  visible: true
+  sample: true
+  index: true
+questions: []
+children: []
+content_hash: 122e35bcfefb5198
+checksum: 269e42661462aeef
+child_checksums: {}
+provenance:
+  connection_id: workspace
+  schema: default
+  table: QuarterRegion
+enriched_summary: ''
+enriched_hash: ''

@@ -1,0 +1,19 @@
+kind: connection
+fqn: workspace
+title: workspace
+summary: 'workspace: schema default — 1 documented tables.'
+facts:
+  schemas:
+  - default
+  n_tables: 1
+questions: []
+children:
+- default
+content_hash: 33428a50d33d000e
+checksum: 81c7b5c35200a4ac
+child_checksums:
+  default: c252b801008294ca
+provenance:
+  connection_id: workspace
+enriched_summary: ''
+enriched_hash: ''

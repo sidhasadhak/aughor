@@ -1,0 +1,21 @@
+kind: schema
+fqn: default
+title: default
+summary: 'default: 1 tables, 0 relationships — key entities: QuarterRegion.'
+facts:
+  n_tables: 1
+  n_relationships: 0
+  schema_fingerprint: f29ea8d121bb33c1
+  skipped_tables: []
+questions: []
+children:
+- default.QuarterRegion
+content_hash: 7d7c2d3015ea3751
+checksum: c252b801008294ca
+child_checksums:
+  default.QuarterRegion: a65f09dd9f03ccbe
+provenance:
+  connection_id: workspace
+  schema: default
+enriched_summary: ''
+enriched_hash: ''

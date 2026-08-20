@@ -73,6 +73,15 @@ export function effectiveChartPalette(): string {
   return _cache?.chart_palette ?? "";
 }
 
+/**
+ * Whether this org lands on the conversation instead of the workbench (CA-5 / CI-6b).
+ * False until the settings actually load, so the workbench — today's behaviour — is
+ * what a slow or failed settings fetch degrades to.
+ */
+export function effectiveChatFirstHome(): boolean {
+  return _cache?.chat_first_home === true;
+}
+
 /** The org IANA timezone (e.g. "Europe/London"), or "" to use the viewer's local zone. */
 export function effectiveTimezone(): string {
   return _cache?.timezone ?? "";

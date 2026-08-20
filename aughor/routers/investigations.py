@@ -5550,6 +5550,38 @@ def list_chat_sessions_route(conn_id: Optional[str] = None, limit: int = 30):
     return list_chat_sessions(conn_id, limit=limit)
 
 
+class RenameChatSessionRequest(BaseModel):
+    """A thread's user-chosen name. Empty clears it back to the opening question."""
+    title: str = Field(default="", max_length=200,
+                       description="The thread's display name; empty restores the derived title.")
+
+
+@router.patch("/chat-sessions/{session_id}")
+def rename_chat_session_route(session_id: str, req: RenameChatSessionRequest):
+    """Rename a thread (CA-5). The rail's titles were derived from the opening
+    question — a good default, a bad permanent name. Org-scoped in the store, like
+    every other read and write keyed by a session id."""
+    from aughor.db.history import rename_chat_session
+    if not rename_chat_session(session_id, req.title):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "title": req.title.strip()[:200]}
+
+
+@router.delete("/chat-sessions/{session_id}", status_code=204)
+def delete_chat_session_route(session_id: str):
+    """Delete a thread and every turn's full footprint — history rows, evidence
+    claims, vector entries, the title override (CA-5).
+
+    A real delete, not a hidden flag: the History panel's per-run delete already
+    removes runs outright, and a thread the user asked to be gone that still steered
+    future analysis from the RAG index would be the same lie CA-0 went after.
+    """
+    from aughor.db.purge import purge_chat_session_artifacts
+    counts = purge_chat_session_artifacts(session_id)
+    if not counts.get("investigations"):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
 @router.get("/chat-sessions/{session_id}/turns")
 def get_chat_session_turns(session_id: str):
     turns = get_session_turns(session_id)

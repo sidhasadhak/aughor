@@ -1,0 +1,27 @@
+kind: column
+fqn: default.QuarterRegion.orders
+title: orders
+summary: '`orders` (BIGINT / measure)'
+facts:
+  data_type: BIGINT
+  semantic_type: measure
+  is_primary_key: false
+  is_foreign_key: false
+  null_rate: 0.0
+  unit: ''
+  value_interpretation: ''
+  measure_grain: ''
+  visible: true
+  sample: false
+  index: false
+questions: []
+children: []
+content_hash: 1f304f2980aa5036
+checksum: ca7798a9e3bbd851
+child_checksums: {}
+provenance:
+  connection_id: workspace
+  schema: default
+  table: QuarterRegion
+enriched_summary: ''
+enriched_hash: ''

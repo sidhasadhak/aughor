@@ -145,6 +145,8 @@ export interface OrgSettings {
   date_format: string;
   fiscal_year_start_month: number;
   chart_palette: string;
+  /** CA-5 — land on the conversation instead of the workbench. */
+  chat_first_home: boolean;
 }
 
 export async function getOrgSettings(): Promise<OrgSettings> {

@@ -31,7 +31,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import type { ChatTurn } from "@/lib/chatTurn";
-import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -897,13 +897,102 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
 // ── Quick answer, rendered as a clean Brief ───────────────────────────────────
 // Headline + narrative prose + the one framed result (chart / table /
 // metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
+/**
+ * CA-5 — the follow-up row stops being only *questions*.
+ *
+ * A suggestion that can only re-ask is half a suggestion: after an answer the two
+ * things an analyst most often wants are "go deeper on this" and "keep this", and
+ * both already existed in this app — as a conditional escalate bar that appeared only
+ * when the backend offered it, and as a pin path reachable from the briefing and the
+ * query builder but not from the conversation that produced the number.
+ *
+ * The actions are DERIVED from the turn, not sent over the wire: the client already
+ * holds the whole projected turn (CA-1), so what a turn affords is a function of what
+ * it contains. A backend frame restating that would be a second copy of state that can
+ * disagree with the first.
+ *
+ * Pin goes through the SAME guarded door the Query Builder uses — the server re-runs
+ * the SQL through the guard battery and REFUSES a card whose query errors or is
+ * blocked. A pinned number that nobody re-checked is exactly the lie CA-0 went after.
+ */
+function TurnActions({
+  turn, connectionId, onDrill,
+}: {
+  turn: ChatTurn;
+  connectionId?: string;
+  onDrill?: () => void;
+}) {
+  const [pin, setPin] = useState<"idle" | "pinning" | "pinned" | "error">("idle");
+  const [pinMsg, setPinMsg] = useState("");
+
+  // Whether going deeper is even meaningful is the CALLER's knowledge, not a wire
+  // value re-read here: the quick surface passes `onDrill`, the deep one cannot go
+  // deeper and passes nothing.
+  const canPin = !!connectionId && !!turn.sql && turn.rows.length > 0;
+  const canDrill = !!onDrill && !!turn.question;
+  if (!canPin && !canDrill) return null;
+
+  const doPin = async () => {
+    if (!connectionId || !turn.sql) return;
+    setPin("pinning"); setPinMsg("");
+    try {
+      await pinQueryToDashboard(connectionId, turn.sql, turn.headline || turn.question);
+      setPin("pinned");
+    } catch (e) {
+      setPin("error");
+      setPinMsg((e as Error).message || "Couldn't pin");
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      {canDrill && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={onDrill}
+          title="Re-run this question as a full deep analysis"
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+        >
+          <span aria-hidden className="shrink-0 text-zinc-500">⌕</span>
+          Run a deep analysis
+        </Button>
+      )}
+      {canPin && pin !== "pinned" && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={doPin}
+          disabled={pin === "pinning"}
+          title={pinMsg || "Pin this result to the dashboard (re-run through the guard battery first)"}
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+        >
+          <span aria-hidden className="shrink-0 text-zinc-500">📌</span>
+          {pin === "pinning" ? "Pinning…" : pin === "error" ? "Retry pin" : "Pin to dashboard"}
+        </Button>
+      )}
+      {pin === "pinned" && (
+        <span className="aug-fs-sm text-emerald-400">✓ Pinned to dashboard</span>
+      )}
+      {pin === "error" && pinMsg && (
+        <span className="aug-fs-xs text-zinc-500" title={pinMsg}>
+          {/* The guard battery refusing is INFORMATION, not a glitch to hide. */}
+          {pinMsg.slice(0, 80)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function NarrativeBrief({
-  turn, connectionId, onShowSource, onFollowUp, onRunFresh,
+  turn, connectionId, onShowSource, onFollowUp, onRunFresh, onDrill,
 }: {
   turn: ChatTurn;
   connectionId?: string;
   onShowSource?: (data: SourcePanelData) => void;
   onFollowUp?: (q: string) => void;
+  /** CA-5 — re-ask this turn's question as a deep analysis. */
+  onDrill?: () => void;
   onRunFresh?: (q: string) => void;
 }) {
   const streaming = turn.status === "loading";
@@ -1010,6 +1099,10 @@ function NarrativeBrief({
             ))}
           </div>
         </BriefSection>
+      )}
+
+      {!streaming && (
+        <TurnActions turn={turn} connectionId={connectionId} onDrill={onDrill} />
       )}
 
       {/* Hover toolbar (CK-grade): message actions stay invisible until the turn is
@@ -1566,6 +1659,7 @@ export function ChatMessage({
           onShowSource={onShowSource}
           onFollowUp={onFollowUp}
           onRunFresh={onRunFresh}
+          onDrill={onDeeper ? () => onDeeper(turn.question, null) : undefined}
         />
       )}
 
@@ -1617,6 +1711,7 @@ export function ChatMessage({
               ))}
             </div>
           )}
+          <TurnActions turn={turn} connectionId={connectionId} />
         </>
       )}
 

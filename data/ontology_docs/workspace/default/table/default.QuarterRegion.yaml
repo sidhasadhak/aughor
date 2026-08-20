@@ -1,0 +1,37 @@
+kind: table
+fqn: default.QuarterRegion
+title: QuarterRegion
+summary: 'QuarterRegion (reference data) — grain: region (verified) — 3 rows — 3 columns
+  (2 measures, 0 dimensions).'
+facts:
+  entity_id: QuarterRegion
+  entity_type: reference_data
+  identity_key: region
+  grain_verified: true
+  source_tables:
+  - quarter_regions
+  n_measures: 2
+  n_dimensions: 0
+  has_lifecycle: false
+  relationships: []
+  row_count: 3
+questions:
+- Which QuarterRegions have the highest Orders?
+- How many QuarterRegions are there?
+children:
+- default.QuarterRegion.orders
+- default.QuarterRegion.region
+- default.QuarterRegion.revenue
+content_hash: 53db4ac0f1bad68e
+checksum: a65f09dd9f03ccbe
+child_checksums:
+  default.QuarterRegion.region: 269e42661462aeef
+  default.QuarterRegion.orders: ca7798a9e3bbd851
+  default.QuarterRegion.revenue: 813969dab2d87728
+provenance:
+  connection_id: workspace
+  schema: default
+  table: QuarterRegion
+  fqn: default.quarter_regions
+enriched_summary: ''
+enriched_hash: ''
