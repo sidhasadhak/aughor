@@ -51,8 +51,13 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   breakdown that was actually requested. The deep path is built around "why did X
   change", and a listing fell through it. A request for a breakdown or a count is now
   recognised from the question and reported as what it is: the totals, how they are
-  distributed, what leads and trails. Cause questions and weakness diagnostics keep their
-  own framing, and a change question whose data holds no earlier period still says so.
+  distributed, what leads and trails — including a question with no breakdown at all
+  ("what is the average order value"), which fell through the same gap. A weakness scan
+  ("which route is weakest") no longer carries the missing-period apology either: it
+  compares dimensions, not periods. Cause questions keep their own framing, causal
+  wording is honoured wherever it appears ("what is the reason revenue dropped" opens
+  like a lookup and is not one), and a change question whose data holds no earlier period
+  still says so.
 - **A deep analysis no longer reports its own findings as a failure.** A run that
   answered from an ad-hoc query — no phase tool firing — published the headline "Data
   unavailable — flight count could not be analyzed" and the sentence "Every diagnostic

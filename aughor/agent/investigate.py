@@ -833,31 +833,56 @@ _DESCRIPTIVE_ASK_RE = re.compile(
     r"\b(give me|show|list|display|what (?:is|are|was|were) the|how many|how much|"
     r"count of|number of|total(?:s)? (?:of|by)|breakdown|break down|distribution|"
     r"split by|group(?:ed)? by)\b", re.I)
-_BY_DIMENSION_RE = re.compile(r"\b(by|per|across|for each)\b|\bwise\b", re.I)
+#: Causal and change vocabulary. A question carrying any of it asks what MOVED or WHY,
+#: whatever its opening words — "what is the reason revenue dropped" opens like a lookup
+#: and is not one. Unlike a list of the nouns a warehouse might hold, this class is small
+#: and closed, which is what makes matching on it defensible.
+_CAUSE_WORDS_RE = re.compile(
+    r"\b(why|reason|cause[sd]?|drove|driv\w+|drop\w*|fell|fall\w*|declin\w+|ros[e]?|rise|"
+    r"rising|increas\w+|decreas\w+|grew|grow\w*|shrank|shrink\w*|lost|lose|losing|chang\w+|"
+    r"mov\w+|spike[sd]?|surge[sd]?|worse|better)\b", re.I)
 
 
 def _is_descriptive_question(question: str) -> bool:
     """True for "give me route wise number of flights" — a request to see the data.
 
-    Deliberately yields to the two routes that already exist: a temporal-change question
-    ("why did revenue drop") and a diagnostic one ("where are we losing money") are about
-    a movement or a weakness, and both keep their own framing.
+    Yields to the two routes that already exist: a temporal-change question ("why did
+    revenue drop") and a diagnostic one ("where are we losing money") are about a
+    movement or a weakness, and both keep their own framing. Causal vocabulary
+    disqualifies on its own, because those two predicates are narrower than they look —
+    "what is the reason revenue dropped" reads as neither.
+
+    A dimension is NOT required. Requiring one was the conservative first cut, and a
+    sweep of question shapes showed what it cost: "what is the average order value" and
+    "how many flights are there" fell through to the change frame and earned a report
+    about a comparison nobody asked for. A question with no dimension is still a request
+    to see the data.
     """
     q = question or ""
     if _is_temporal_change_question(q) or _is_diagnostic_question(q):
         return False
-    return bool(_DESCRIPTIVE_ASK_RE.search(q)) and bool(_BY_DIMENSION_RE.search(q))
+    if _CAUSE_WORDS_RE.search(q):
+        return False
+    return bool(_DESCRIPTIVE_ASK_RE.search(q))
 
 
 def _framing_note(intake_data: dict) -> str:
     """How synthesis must FRAME this run, decided from the design.
 
-    Three shapes, most specific first: a question that asked for a breakdown, a
-    run whose data holds no earlier period, and everything else. The order
-    matters — a descriptive request usually ALSO has no prior period, and telling
-    it to lament one produced the apology that shipped over a correct breakdown.
+    Most specific first: a scan that compares dimensions rather than periods, a question
+    that asked for a breakdown, a run whose data holds no earlier period, and everything
+    else. The order matters — the first two usually ALSO have no prior period, and
+    telling them to lament one produced the apology that shipped over a correct
+    breakdown.
     """
     note = ""
+    if intake_data.get("cross_sectional"):
+        # A "which is weakest" scan compares dimensions, not periods, so a missing prior
+        # period is as irrelevant to it as it is to a listing. The cross-sectional note
+        # assembled separately IS this run's framing; the lament would only add an
+        # apology for a comparison it never meant to make. Found by sweeping the question
+        # shapes rather than from a screenshot — it had been shipping all along.
+        return ""
     if intake_data.get("descriptive_only"):
         # The question asked to SEE the data, not to explain a movement in it. Framing
         # such a run as a comparison produces a report that opens "Data unavailable …

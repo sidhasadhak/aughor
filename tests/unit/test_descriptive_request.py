@@ -27,6 +27,12 @@ from aughor.agent.investigate import _is_descriptive_question
     "breakdown of sales by channel",
     "how many flights by carrier",
     "what are the totals by month",
+    # No dimension, and still a request to see the data. Requiring one was the
+    # conservative first cut; a sweep of question shapes found these falling through to
+    # the change frame and earning a report about a comparison nobody asked for.
+    "what is the average order value",
+    "how many flights are there",
+    "what is the total revenue",
 ])
 def test_a_request_to_see_the_data_is_descriptive(q):
     assert _is_descriptive_question(q)
@@ -39,7 +45,9 @@ def test_a_request_to_see_the_data_is_descriptive(q):
     ("where are we losing money by segment", "a diagnostic WITH a dimension"),
     ("why did Direkteingabe traffic move in August", "the specimen question"),
     ("compare November to October by region", "an explicit comparison"),
-    ("show me the dashboard", "an ask with no dimension is not a breakdown"),
+    ("what is the reason revenue dropped", "opens like a lookup, asks for a cause"),
+    ("how many orders did we lose", "a count question about a loss"),
+    ("show me why sales declined", "a listing verb over a cause question"),
 ])
 def test_the_routes_that_already_exist_keep_their_framing(q, why):
     """The two established routes must not be swallowed: a movement and a weakness are
@@ -109,3 +117,14 @@ def test_descriptive_wins_over_no_prior_period():
 def test_an_ordinary_change_run_gets_no_extra_framing():
     from aughor.agent.investigate import _framing_note
     assert _framing_note({"comparison_label": "October 2024 (MoM)"}) == ""
+
+
+def test_a_weakness_scan_is_not_asked_to_lament_a_missing_period():
+    """A "which is weakest" scan compares dimensions, not periods — a missing prior
+    period is as irrelevant to it as to a listing. Found by sweeping the question shapes
+    rather than from a screenshot; it had been shipping the apology all along."""
+    from aughor.agent.investigate import _framing_note
+
+    assert _framing_note({"cross_sectional": True, "no_prior_period": True,
+                          "observation_start": "2024-06-01",
+                          "observation_end": "2024-06-07"}) == ""
