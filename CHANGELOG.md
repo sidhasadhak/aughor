@@ -21,6 +21,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A quick answer can no longer cite numbers its own query did not return.** The
+  chart, the table and the receipt all came from the result set; the sentence above them
+  was whatever the model wrote, and nothing compared the two — so a question about
+  flights per route was answered with a tidy table of 108 / 96 / 84 while the chart
+  beside it, drawn from the same rows, showed 28 / 42 / 35. Every number in the closing
+  answer is now checked against the rows the turn executed: a magnitude blown out of
+  scale, and — new — a value cited next to a label the result actually contains. An
+  unsupported answer gets one chance to be rewritten from the real values, and is
+  withheld rather than shown if it still cannot be grounded. The guard appears in the
+  receipt chain, so what it caught is inspectable.
 - **A question about the data's own subject is no longer refused.** Asking "give me
   route wise number of flights" answered `"flights" is not present in this data.` on a
   warehouse whose first table is flights. The ground-first resolver takes the noun after

@@ -235,3 +235,48 @@ def test_numeric_cells_block_truncates():
     rows = [[float(i)] for i in range(60)]
     block = numeric_cells_block(rows, limit=10)
     assert "more)" in block
+
+
+# ── cited pairs ───────────────────────────────────────────────────────────────
+# The magnitude rule above exempts small counts on purpose, so a fabricated table of
+# entity → value pairs passed it untouched (live: flights per route reported 108 / 96 /
+# 84 against real counts of 28 / 42 / 35). A pair carries its own referent — the label
+# names the row — so it can be checked strictly without flagging the qualifiers that
+# surround it.
+import pytest  # noqa: E402
+
+from aughor.explorer.grounding import ungrounded_label_values  # noqa: E402
+
+_ROUTES = [["ZRH-LHR", 28], ["GVA-LHR", 42], ["ZRH-CDG", 35]]
+
+
+def test_a_fabricated_table_is_caught_pair_by_pair():
+    bad = ungrounded_label_values(
+        "| ZRH-LHR | 108 | | GVA-LHR | 96 | | ZRH-CDG | 84 |", _ROUTES)
+    assert bad == ["zrh-lhr=108", "gva-lhr=96", "zrh-cdg=84"]
+
+
+def test_the_number_may_come_before_its_label():
+    """Prose puts it either side; a forward-only scan reads this as no claim at all."""
+    assert ungrounded_label_values("It was 500 flights on ZRH-LHR.", _ROUTES) == ["zrh-lhr=500"]
+
+
+@pytest.mark.parametrize("text, why", [
+    ("| ZRH-LHR | 28 | | GVA-LHR | 42 |", "the values ARE the row's"),
+    ("28 flights ran on ZRH-LHR, and 42 on GVA-LHR", "same, written as prose"),
+    ("ZRH-LHR flew 28 flights over 7 days", "a qualifier beside a true value"),
+    ("ZRH-LHR is the busiest route", "a label with no number is not a claim"),
+    ("Showing the top 10 of 84 unique routes", "qualifiers that name no row"),
+])
+def test_no_false_positives(text, why):
+    """A guard that invents failures is worse than the one it replaced — these are the
+    shapes that surrounded the real fabrication in the same answer."""
+    assert ungrounded_label_values(text, _ROUTES) == [], why
+
+
+def test_rounding_a_writer_would_do_is_accepted():
+    assert ungrounded_label_values("revenue on ZRH-LHR was 1000.4", [["ZRH-LHR", 1000.0]]) == []
+
+
+def test_a_result_with_no_labels_checks_nothing():
+    assert ungrounded_label_values("108 flights", [[28], [42]]) == []
