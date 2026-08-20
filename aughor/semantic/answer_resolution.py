@@ -479,6 +479,30 @@ def _rank_dim_columns(cols: list[tuple[str, str]], prefer_tables: Optional[set],
                                         0 if tc[0] in prefer else 1))
 
 
+def _norm_name(s: str) -> str:
+    """A schema identifier and a typed noun reduced to the same key.
+
+    Case, spacing/underscores and a trailing plural all differ between what a person
+    types ("flights", "order items") and what the warehouse calls it ("flight",
+    "order_items"), and none of those differences mean anything here. The plural fold
+    is deliberately crude and applied to BOTH sides, so it only ever has to be
+    self-consistent — "address" folding to "addres" still matches "addresses".
+    """
+    n = re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")
+    return n[:-1] if n.endswith("s") and len(n) > 3 else n
+
+
+def _relation_names(tables: dict) -> set:
+    """Every table and column name in scope, normalised for comparison."""
+    names = set()
+    for t, cols in (tables or {}).items():
+        names.add(_norm_name(t.split(".")[-1]))
+        for c in cols or []:
+            names.add(_norm_name(c))
+    names.discard("")
+    return names
+
+
 def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
                    value_samples: Optional[dict] = None, question: str = ""):
     """Injection-safe existence probe: is ``token`` a value in any string dimension column?
@@ -662,7 +686,22 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
                 from aughor.kernel.errors import tolerate
                 tolerate(_idx_exc, "column-config sample retire-filter is best-effort",
                          counter="ontology.column_config", conn_id=connection_id or None)
+        # A noun that NAMES a table or a column is what the question is ABOUT — the
+        # subject or the breakdown — not a value to filter by. "number of flights" asks
+        # about the flights TABLE; "sales for region" names the region COLUMN. Probing a
+        # dimension for the literal string 'flights' finds nothing (no row's carrier is
+        # "flights"), and the sweep's honest "absent" then became a terminal abstention:
+        # `"flights" is not present in this data.` on an airline warehouse whose very
+        # first table is flights. Skipped before the probe, so it also costs nothing.
+        #
+        # Fixed here rather than by adding "flights" to `_STOP`: that list is a
+        # hand-maintained denylist of measure and glue words, and no list of English
+        # nouns can anticipate the next warehouse's subject (shipments, claims, trips,
+        # policies). The schema in front of us already knows its own nouns.
+        schema_names = _relation_names(tables)
         for token in candidates:
+            if _norm_name(token) in schema_names:
+                continue
             matches = _annotation_matches(token, domains)
             if matches:
                 t, c, v, conf = _pick(matches, mtables)

@@ -21,6 +21,14 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A question about the data's own subject is no longer refused.** Asking "give me
+  route wise number of flights" answered `"flights" is not present in this data.` on a
+  warehouse whose first table is flights. The ground-first resolver takes the noun after
+  a preposition as a filter candidate and asks every text column whether any row equals
+  it; nothing equals "flights", and that honest "absent" became a dead end. A noun that
+  names a table or a column is now read as the question's subject or breakdown, never as
+  a missing value — decided against the schema in front of it rather than a stopword
+  list. A genuinely absent entity still abstains exactly as before.
 - **A file dropped into the chat lands in the right place, and says so.** Attachments
   all went to the document store, so a dropped CSV became text the model could read
   about rather than a table it could query; upload failures were swallowed and the
