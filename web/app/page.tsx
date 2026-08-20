@@ -1793,8 +1793,29 @@ export default function Home() {
 
   // Populate the org-settings cache that the display formatters read (currency symbol,
   // date format) with the active workspace's effective settings; refresh on switch.
+  //
+  // CA-5 / CI-6b — the same fetch decides where an org LANDS. An org that has chosen
+  // the conversation as its front door is sent to /chat, but only from a bare "/":
+  // a deep link (?chat=…, a canvas, a shared view) names its destination, and a
+  // redirect that overrode it would break every link this app has ever handed out.
+  // The hop happens once per load, and /chat carries "Open in workbench" back.
+  const redirectedHome = useRef(false);
   useEffect(() => {
-    getEffectiveSettings(selectedWorkspace || undefined).then(setOrgSettingsCache).catch(() => {});
+    getEffectiveSettings(selectedWorkspace || undefined)
+      .then((settings) => {
+        setOrgSettingsCache(settings);
+        if (
+          settings?.chat_first_home &&
+          !redirectedHome.current &&
+          typeof window !== "undefined" &&
+          window.location.pathname === "/" &&
+          window.location.search === ""
+        ) {
+          redirectedHome.current = true;
+          window.location.replace("/chat");
+        }
+      })
+      .catch(() => {});
   }, [selectedWorkspace]);
 
   const reloadWorkspaces = () => getWorkspaces().then(setWorkspaces).catch(() => {});

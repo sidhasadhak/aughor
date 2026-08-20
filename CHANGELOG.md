@@ -10,6 +10,15 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## [Unreleased]
 
+### Fixed
+- **A file dropped into the chat lands in the right place, and says so.** Attachments
+  all went to the document store, so a dropped CSV became text the model could read
+  about rather than a table it could query; upload failures were swallowed and the
+  question was asked anyway, answered from whatever else was in scope. Data files now
+  become tables on the active connection, other files remain documents, drag-and-drop
+  works on the whole conversation, and every outcome — success or the backend's own
+  refusal — is shown.
+
 ### Changed
 - **Charts follow the exhibit spec (CA-4).** The chart palette is now computed, never
   eyeballed: a six-check validator (lightness band, chroma floor, colour-vision-deficiency
@@ -48,6 +57,14 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   POSTs keyed by investigation id.
 
 ### Added
+- **Conversations you can keep (CA-5).** The threads rail gained rename (inline; clearing
+  the name restores the opening question), delete (with a confirm, and a real delete —
+  the thread's turns, evidence claims and index entries go with it), and a filter that
+  appears once there are enough threads to need one. A finished answer now offers
+  actions beside its follow-up questions — run it as a deep analysis, or pin its result
+  to the dashboard, where the server re-runs the SQL through the guard battery before
+  accepting a card. A new org setting opens the app on the conversation instead of the
+  workbench (off by default).
 - **Ask this briefing** — a side panel holding one conversation, pinned to insights
   mode and scoped to the briefing's connection and schema. Grounded server-side in the
   same cached brief the page is showing (flag `ask.brief_context`, default off).

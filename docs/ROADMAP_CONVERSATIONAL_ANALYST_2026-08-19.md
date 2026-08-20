@@ -12,8 +12,9 @@
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
 > Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
-> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1, CA-3 and CA-4 built on
-> `claude/ca-1-continuation-t0ax40` (see their STATUS blocks). CA-5 is the open wave.
+> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1, CA-3 and CA-4 merged as #361
+> (`73caa9f`); CA-5 built on `claude/ca-5-fluidity` (see their STATUS blocks). The arc's
+> waves are all built.
 > §5-3 (PDF renderer) is DECIDED — (a), node subprocess; the rest of §5 remains open.
 
 ---
@@ -453,6 +454,51 @@ the conversation's visible reasoning; threads rail with rename/delete/search; su
 follow-ups that are *actions* (drill, save, pin); attachments — a CSV dropped into chat becomes a
 workspace upload (the path the specimen used); chat-first home per org (CI-6b's deferred
 switch); the BYOK model chip; message edit/regenerate already free from CA-1. Guards unchanged.
+
+**STATUS 2026-08-20 — BUILT on `claude/ca-5-fluidity`.** Half this wave had already landed as a
+by-product of CA-1/CA-3 and was verified rather than rebuilt: the Elements organs are live
+(`ChainOfThought` on the tool trail and the guard-receipt chain, `Task` on phases, `Shimmer` on
+the streaming scaffold), the tool trail IS the conversation's visible reasoning as of CA-3, the
+BYOK model chip sits in the `/chat` header, and edit/regenerate came free with CA-1. What this
+wave actually built:
+- **The rail stopped being read-only.** Rename (inline, Enter to save, empty restores the
+  derived title), delete (confirm in place, then a REAL delete — turns, evidence claims and
+  vector entries, via a new `purge_chat_session_artifacts`; a thread the user asked to be rid of
+  that still steered future analysis from the RAG index would be CA-0's lie again), and a filter
+  that appears only past six threads. New store table `chat_session_meta` (migration v5): the
+  title override belongs to the SESSION, and a session spans many rows, so writing it onto every
+  turn would have had no owner. Both writes are tenant-scoped through the same predicate the
+  reads use — session ids are random, which is not an authorization model.
+- **Follow-ups gained actions.** A finished turn now offers "Run a deep analysis" and "Pin to
+  dashboard" beside the question chips. The actions are DERIVED from the turn, not sent over the
+  wire: the client already holds the whole projected turn (CA-1), so a backend frame restating
+  what it affords would be a second copy of state that can disagree with the first. Pin goes
+  through the Query Builder's guarded door — the server re-runs the SQL through the guard battery
+  and refuses a card whose query errors or is blocked.
+- **Attachments got the right door and an honest voice.** Every attachment used to go to
+  `/documents/upload`, so a dropped CSV became prose the model could read *about* rather than a
+  table it could query; and the call site caught upload failures and asked the question anyway
+  ("Non-fatal"), so a question about a file that never arrived was answered from whatever else
+  was in scope. Now the file's KIND picks the door (data → the connection's file ingest → a real
+  table; everything else → the document store), drag-and-drop works on the whole conversation,
+  and every outcome — including the backend's own refusal sentence — is rendered.
+- **Chat-first home per org (§5-4).** A `chat_first_home` org setting (default OFF — an org that
+  navigates by the workbench should not have its entry point moved by an upgrade), honoured only
+  from a bare `/`: a deep link names its destination, and a redirect that overrode it would break
+  every link the app has handed out.
+- **Receipt run**: ruff clean, tsc clean, all five web gates green, 8 new backend tests (rename,
+  clear, 404, delete-with-footprint, name-ghost, and a tenant-isolation case for each write) plus
+  the ratchet/contract battery — with the one pre-existing keyless exception (`test_ratchet_live_
+  smoke`). The vocabulary ratchet caught two new `investigat*` uses in web and both were fixed at
+  the cause, not the baseline: one re-derived a wire literal the caller already knew, the other
+  was a user-facing label that should have said "deep analysis". Live: rail filter → rename →
+  reload (the rename PERSISTED, not just optimistic) → delete-with-confirm; the action row on a
+  restored result-bearing turn, and a pin the guard battery accepted; and the CSV drop on both
+  paths — `quarter_regions.csv → main.quarter_regions` on the upload connection, and
+  "Connection is not a file connector" shown on screen for the read-only one.
+- Deliberate deviations: "save" in the action row stays the existing `Save as skill` button (deep
+  turns only, its own state machine) rather than being duplicated as a chip; the action row
+  self-hides on deep turns, which have no single SQL to pin — an investigation is not one card.
 
 ---
 

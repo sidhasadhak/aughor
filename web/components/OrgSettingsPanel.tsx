@@ -27,7 +27,7 @@ import { OrgByokSection } from "@/components/OrgByokSection";
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
   currency_code: "", timezone: "", date_format: "", fiscal_year_start_month: 1,
-  chart_palette: "",
+  chart_palette: "", chat_first_home: false,
 };
 
 const CURRENCIES = ["", "USD", "EUR", "GBP", "JPY", "CNY", "INR", "AUD", "CAD", "CHF", "SGD", "BRL", "ZAR"];
@@ -144,6 +144,23 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     </div>
   );
 
+  /** A yes/no setting. Its own helper because `onChange` reads `value`, and a
+      checkbox carries its state on `checked`. */
+  const BoolField = (k: keyof OrgSettings, label: string, hint: string) => (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+      <input
+        type="checkbox"
+        checked={!!s[k]}
+        onChange={(e) => { setSaved(false); setS((prev) => ({ ...prev, [k]: e.target.checked })); }}
+        style={{ marginTop: 2, cursor: "pointer" }}
+      />
+      <span style={{ display: "flex", flexDirection: "column" }}>
+        <span style={labelStyle}>{label}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{hint}</span>
+      </span>
+    </label>
+  );
+
   if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
 
   return (
@@ -206,6 +223,13 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           {SelectField("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
         </div>
         <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
+        <div style={{ marginTop: 12 }}>
+          {BoolField(
+            "chat_first_home",
+            "Open on the conversation",
+            "Land on the chat instead of the workbench. The workbench stays one click away.",
+          )}
+        </div>
       </div>
 
       {/* Models & keys (CI-5b) — org scope AND multi-tenant only. Single-tenant

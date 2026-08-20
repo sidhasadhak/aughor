@@ -9,7 +9,8 @@ import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import CompassIcon        from "@atlaskit/icon/core/compass";
-import { uploadDocument, listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
+import { listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
+import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
@@ -606,6 +607,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [thumbsDone, setThumbsDone] = useState<Map<string, "helpful" | "unhelpful">>(new Map());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  // CA-5 — attachments land NOW, not at send: a file whose upload is deferred to the
+  // next question can fail silently after the question has already gone. `pending` is
+  // the in-flight name; `results` are the outcomes, each of which must be rendered.
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<AttachmentResult[]>([]);
+  const [dragging, setDragging] = useState(false);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const wasStreamingRef         = useRef(false);
@@ -846,6 +853,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
 
+  /** Upload one attachment through the door its kind names, and SHOW the outcome. */
+  const takeFile = useCallback(async (file: File) => {
+    setAttachedFile(null);
+    setUploading(file.name);
+    const res = await uploadAttachment(file, connectionId);
+    setUploading(null);
+    setUploads((prev) => [...prev, res]);
+  }, [connectionId]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    for (const f of files) void takeFile(f);
+  }, [takeFile]);
+
   const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
     // Only an EMPTY question is refused. Sending while a turn streams is not an error —
@@ -856,18 +879,15 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // dropped it.
     if (!question) return;
     setInput("");
-    // Upload attached file first, then send the question
-    if (attachedFile) {
-      try {
-        await uploadDocument(attachedFile);
-      } catch {
-        // Non-fatal: still send the question even if upload fails
-      }
-      setAttachedFile(null);
-    }
+    // A file still sitting in the composer goes through the SAME door a dropped one
+    // does — and its outcome is rendered rather than swallowed. The old path caught
+    // and discarded upload errors, then asked the question anyway: the answer that
+    // came back was about whatever else was in scope, with nothing on screen saying
+    // the file never arrived.
+    if (attachedFile) await takeFile(attachedFile);
     sendQuestion(question, m ?? mode, opts ?? {});
     textareaRef.current?.focus();
-  }, [input, sendQuestion, mode, attachedFile]);
+  }, [input, sendQuestion, mode, attachedFile, takeFile]);
 
   const isEmpty = messages.length === 0;
 
@@ -912,7 +932,86 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "var(--bg-1)" }}>
+    <div
+      className="flex-1 flex flex-col min-w-0 overflow-hidden"
+      style={{ background: "var(--bg-1)", position: "relative" }}
+      onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+      onDragLeave={(e) => {
+        // Only the drag leaving the PANEL counts — crossing a child's edge fires
+        // dragleave too, and clearing on those makes the overlay strobe.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={onDrop}
+    >
+      {/* CA-5 — drop a file straight into the conversation. A data file becomes a
+          queryable table on this connection; anything else becomes retrieval context. */}
+      {dragging && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "var(--bg-0)", opacity: .94,
+            border: "2px dashed var(--blue3)", borderRadius: "var(--r3)",
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div className="aug-fs-md" style={{ color: "var(--t1)", fontWeight: 600 }}>
+              Drop to add to this conversation
+            </div>
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 4 }}>
+              A CSV or spreadsheet becomes a table you can ask about · other files become context
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* What actually happened to each attachment — including the failures the old
+          path swallowed. */}
+      {(uploading || uploads.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 16px 0" }}>
+          {uploading && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              Importing {uploading}…
+            </span>
+          )}
+          {uploads.map((u, i) => (
+            <span
+              key={`${u.filename}-${i}`}
+              className="aug-fs-xs"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "2px 8px", borderRadius: "var(--r2)",
+                background: u.error ? "var(--red1)" : "var(--bg-2)",
+                border: `1px solid ${u.error ? "var(--red3)" : "var(--b1)"}`,
+                color: u.error ? "var(--red5)" : "var(--t2)",
+                maxWidth: 460,
+              }}
+              title={u.error || (u.table ? `Imported as ${u.table}` : "Added as context")}
+            >
+              <span aria-hidden>{u.error ? "⚠" : u.table ? "▦" : "📄"}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {u.error
+                  ? `${u.filename} — ${u.error}`
+                  : u.table
+                    ? `${u.filename} → ${u.table}`
+                    : `${u.filename} added as context`}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                title="Dismiss"
+                aria-label="Dismiss"
+                onClick={() => setUploads((prev) => prev.filter((_, j) => j !== i))}
+                className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+                style={{ marginLeft: 2, opacity: .6, lineHeight: 1, color: "inherit" }}
+              >
+                ×
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {isEmpty ? (
         /* ── Empty state ── */
