@@ -6,8 +6,11 @@ Covers the four legs of the grammar wave:
   W2 — the semantic color policy (severity ramp only for rate/percent rankings);
   W3 — reference lines (segment-weighted average, R15 benchmark, peer median),
        range-clipped so an out-of-range line can't distort the axis;
-  W4 — the PRINT renderer speaks the same grammar: aughor/export/charts.py must
-       honour the same exhibit + column_units, and stay byte-identical without them.
+  W4 — the PRINT renderer speaks the same grammar. It no longer speaks it by
+       MIRRORING: CA-4 made print run the web's own resolver (ECharts SSR via
+       aughor/export/echarts.py), so "same grammar" is now identity rather than a
+       promise two renderers keep. These tests assert the exhibit + column_units
+       reach that shared renderer, and that an absent spec changes nothing.
 """
 from __future__ import annotations
 

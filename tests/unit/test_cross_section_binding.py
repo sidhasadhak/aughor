@@ -22,10 +22,13 @@ def _q(title, chart="bar_horizontal"):
     return types.SimpleNamespace(title=title, chart_type=chart, sql="SELECT ...")
 
 
-def _f(title, interp, sig=False):
+def _f(title, interp, sig=False, claim=None):
+    # A stand-in for PhaseFindingModel — it must carry the SAME attribute surface the
+    # real model does, or a field added there (CA-4's `claim`) is exercised nowhere and
+    # the binder's read of it fails only in production.
     return types.SimpleNamespace(
         title=title, interpretation=interp, key_numbers=[],
-        chart_type="auto", stat_note=None, is_significant=sig,
+        chart_type="auto", stat_note=None, is_significant=sig, claim=claim,
     )
 
 
