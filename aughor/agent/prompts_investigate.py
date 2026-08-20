@@ -702,6 +702,7 @@ class IntakeOutput(BaseModel):
     comparison_end: str = Field(description="ISO date of prior-period end")
     comparison_label: str = Field(description="e.g. 'January 2026 (MoM)'")
     no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
+    descriptive_only: bool = Field(default=False, description="True when the question asks for a breakdown or a count rather than a change or a cause (set by code from the question; leave False).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")

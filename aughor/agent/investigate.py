@@ -825,6 +825,84 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
     return out
 
 
+#: A question that asks to SEE the data — a breakdown, a count, a listing — rather than
+#: to explain a movement in it. Both halves are required: the ask ("give me", "how many",
+#: "breakdown of") and the dimension it is asked across ("by", "per", "… wise"), so a bare
+#: "show me the dashboard" is not mistaken for one.
+_DESCRIPTIVE_ASK_RE = re.compile(
+    r"\b(give me|show|list|display|what (?:is|are|was|were) the|how many|how much|"
+    r"count of|number of|total(?:s)? (?:of|by)|breakdown|break down|distribution|"
+    r"split by|group(?:ed)? by)\b", re.I)
+_BY_DIMENSION_RE = re.compile(r"\b(by|per|across|for each)\b|\bwise\b", re.I)
+
+
+def _is_descriptive_question(question: str) -> bool:
+    """True for "give me route wise number of flights" — a request to see the data.
+
+    Deliberately yields to the two routes that already exist: a temporal-change question
+    ("why did revenue drop") and a diagnostic one ("where are we losing money") are about
+    a movement or a weakness, and both keep their own framing.
+    """
+    q = question or ""
+    if _is_temporal_change_question(q) or _is_diagnostic_question(q):
+        return False
+    return bool(_DESCRIPTIVE_ASK_RE.search(q)) and bool(_BY_DIMENSION_RE.search(q))
+
+
+def _framing_note(intake_data: dict) -> str:
+    """How synthesis must FRAME this run, decided from the design.
+
+    Three shapes, most specific first: a question that asked for a breakdown, a
+    run whose data holds no earlier period, and everything else. The order
+    matters — a descriptive request usually ALSO has no prior period, and telling
+    it to lament one produced the apology that shipped over a correct breakdown.
+    """
+    note = ""
+    if intake_data.get("descriptive_only"):
+        # The question asked to SEE the data, not to explain a movement in it. Framing
+        # such a run as a comparison produces a report that opens "Data unavailable …
+        # no prior period exists to facilitate a comparative analysis" and closes
+        # "future analysis will require a broader historical dataset" — an apology for
+        # failing at something nobody asked for, printed over the breakdown that WAS
+        # asked for. A listing has no prior period because it needs none.
+        note = (
+            "\n\nDESCRIPTIVE REQUEST: the question asks for a breakdown or a count, not for "
+            "a cause or a change. Report WHAT THE DATA SHOWS: the totals asked for, how they "
+            "are distributed across the dimension, which entries lead and trail, and any "
+            "concentration worth naming. Do NOT discuss prior periods, comparisons, "
+            "trends you did not measure, or what a longer history would allow — none of it "
+            "was asked. Do NOT frame the answer as a limitation. total_change_label should "
+            "be the metric total or 'N/A'; the attribution_waterfall stays EMPTY."
+        )
+    elif intake_data.get("no_prior_period"):
+        _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
+        note = (
+            "\n\nNO PRIOR PERIOD: the data covers only the observation window (" + _cov + "). "
+            "There is no earlier period to compare against, so this report DESCRIBES the window — "
+            "its level, its trend within the window (earlier vs later weeks/days, per-day averages), "
+            "and which segments carry the volume. It does NOT attribute a change to any segment and "
+            "does NOT call the distribution 'uniform' or 'unchanged': no comparison was made. Say in "
+            "the executive summary that no prior period exists and name what a longer history would "
+            "make answerable. total_change_label should be the metric total or 'N/A'; the "
+            "attribution_waterfall stays EMPTY."
+        )
+
+    return note
+
+
+def _comparison_basis(intake_data: dict) -> str:
+    """What this report was measured AGAINST, or "" when nothing was.
+
+    Two designs compare nothing: a cross-sectional scan (which dimension is weakest)
+    and a descriptive request (give me X by Y). Printing a comparison basis under
+    either invents a frame the run never had — live, a breakdown carried
+    "vs No prior period exists in the data", which is true and irrelevant.
+    """
+    if intake_data.get("cross_sectional") or intake_data.get("descriptive_only"):
+        return ""
+    return intake_data.get("comparison_label", "")
+
+
 def _stamp_claim_type(intake, question: str) -> str:
     """Decide what kind of claim this design licences, and record it on the intake.
 
@@ -3095,7 +3173,7 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
         observation_period=(intake_data.get("data_coverage_label", "") if _xsec
                             else intake_data.get("observation_label", "")),
         metric_definition=_metric_definition_receipt(intake_data),
-        comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+        comparison_basis=_comparison_basis(intake_data),
         total_change_label="",
         phases=phases,
         attribution_waterfall=[],
@@ -4953,6 +5031,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # a contrast that silently disappears is as hard to debug as one that lies.
         _drop_self_referential_segment(intake)
         _stamp_claim_type(intake, question)
+        # What the question ASKED for, decided from the question alone. A listing is not
+        # a comparison that failed, and a report that apologises for a prior period the
+        # user never asked about is answering a different question.
+        intake.descriptive_only = _is_descriptive_question(question)
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
@@ -8665,19 +8747,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # CA-0 — no prior period: the data holds a single span. The report may describe what the
     # window contains and how the level moved WITHIN it; it may not attribute a change to a
     # segment (nothing was compared), and it must say plainly that no earlier period exists.
-    no_prior_note = ""
-    if intake_data.get("no_prior_period"):
-        _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
-        no_prior_note = (
-            "\n\nNO PRIOR PERIOD: the data covers only the observation window (" + _cov + "). "
-            "There is no earlier period to compare against, so this report DESCRIBES the window — "
-            "its level, its trend within the window (earlier vs later weeks/days, per-day averages), "
-            "and which segments carry the volume. It does NOT attribute a change to any segment and "
-            "does NOT call the distribution 'uniform' or 'unchanged': no comparison was made. Say in "
-            "the executive summary that no prior period exists and name what a longer history would "
-            "make answerable. total_change_label should be the metric total or 'N/A'; the "
-            "attribution_waterfall stays EMPTY."
-        )
+    no_prior_note = _framing_note(intake_data)
 
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
@@ -9177,7 +9247,7 @@ def ada_synthesize(state: AgentState) -> dict:
             metric=intake_data.get("metric_label", ""),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),
-            comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+            comparison_basis=_comparison_basis(intake_data),
             total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,
             attribution_waterfall=waterfall,

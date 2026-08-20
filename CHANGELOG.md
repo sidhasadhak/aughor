@@ -21,6 +21,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A question that asks to see the data is no longer answered as a failed
+  comparison.** "Give me route wise number of flights" run deep came back framed around
+  a comparison nobody asked for — "no prior period exists in the current dataset to
+  facilitate a comparative analysis", a `vs No prior period exists in the data` subtitle,
+  and a closing line about needing a broader historical dataset — printed over the
+  breakdown that was actually requested. The deep path is built around "why did X
+  change", and a listing fell through it. A request for a breakdown or a count is now
+  recognised from the question and reported as what it is: the totals, how they are
+  distributed, what leads and trails. Cause questions and weakness diagnostics keep their
+  own framing, and a change question whose data holds no earlier period still says so.
 - **A deep analysis no longer reports its own findings as a failure.** A run that
   answered from an ad-hoc query — no phase tool firing — published the headline "Data
   unavailable — flight count could not be analyzed" and the sentence "Every diagnostic
