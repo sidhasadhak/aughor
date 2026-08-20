@@ -1788,15 +1788,38 @@ def _finding_has_rows(f: dict) -> bool:
     return (rc or 0) > 0
 
 
-def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict) -> bool:
+def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict,
+                                extra_evidence_rows: int = 0) -> bool:
     """Force a report with NO evidence rows to read as a failure, never as an analysis.
 
     Returns True when the floor fired. Keys on _finding_has_rows (row_count > 0 from a real
     query): before CA-0 this tested `columns`, which a zero-row query still carries and which
     the synthetic intake-spec finding always satisfied — so the floor never fired and a run
-    whose every query returned [] shipped confidence HIGH with a fabricated summary."""
+    whose every query returned [] shipped confidence HIGH with a fabricated summary.
+
+    ``extra_evidence_rows`` is evidence the PHASES never captured — the analyst loop
+    (CA-3) can answer from an ad-hoc ``run_sql`` without any phase tool running, and
+    those rows are as real as a finding's. Counting only findings, this floor read such
+    a run as a total failure and printed "Every diagnostic query failed or returned zero
+    rows" above the correct totals it had just computed. Saying a run failed when it did
+    not is the same lie CA-0 exists to prevent, pointed the other way.
+
+    Evidence outside the phases still does not make the REPORT structurally sound: the
+    waterfall and recommendations are built from phase findings that do not exist. So
+    that case keeps the suppression and the confidence floor, and drops only the claim
+    that nothing was gathered."""
     all_f = [f for p in (phases or []) for f in (p.get("findings") or [])]
     if any(_finding_has_rows(f) for f in all_f):
+        return False
+
+    if (extra_evidence_rows or 0) > 0:
+        synth.confidence = "LOW"
+        synth.confidence_justification = (
+            "No structured phase produced evidence; this rests on ad-hoc queries run "
+            "during the analysis. " + (synth.confidence_justification or "")
+        ).strip()
+        synth.attribution_waterfall = []
+        synth.recommendations = []
         return False
     synth.confidence = "LOW"
     synth.confidence_justification = (
@@ -8946,7 +8969,8 @@ def ada_synthesize(state: AgentState) -> dict:
     # regardless of what the synthesis LLM claimed. (Extracted to _apply_no_usable_data_floor
     # in CA-0 so the zero-row shape is a unit test, not a production discovery.)
     if synth:
-        _apply_no_usable_data_floor(synth, phases, intake_data)
+        _apply_no_usable_data_floor(synth, phases, intake_data,
+                                    state.get("_analyst_evidence_rows") or 0)
 
     # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
     _cap_confidence_on_trust_advisory(synth, phases)

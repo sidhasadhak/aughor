@@ -70,6 +70,11 @@ class AnalystTurn:
     emitted_phases: int = 0
     #: Tools that produced at least one phase — the "did any evidence land" signal.
     phase_tools_run: list[str] = field(default_factory=list)
+    #: Rows returned by tools that do NOT build a phase — `run_sql` above all. The
+    #: report's no-data floor counts phase FINDINGS, so an analyst that answered from
+    #: an ad-hoc query left it looking at nothing and the run was declared a total
+    #: failure over its own correct numbers. This is the evidence it could not see.
+    evidence_rows: int = 0
 
     @property
     def intake(self) -> dict:
@@ -90,6 +95,23 @@ class AnalystTurn:
         if fresh:
             self.phase_tools_run.append(tool)
         return fresh
+
+
+def _record_evidence(turn: "AnalystTurn", result: Any) -> Any:
+    """Pass a tool result through, counting any rows it carried.
+
+    Wrapped around the tools that return data WITHOUT building a phase. A phase tool
+    needs nothing here — its findings are the evidence, and the floor already reads
+    them."""
+    try:
+        rows = result.get("rows") if isinstance(result, dict) else None
+        if rows:
+            turn.evidence_rows += len(rows)
+    except Exception as exc:                      # noqa: BLE001 — never break a tool
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "evidence-row accounting is best-effort; the tool result stands",
+                 counter="analyst.evidence_count")
+    return result
 
 
 def _spec_overrides(intake: dict, args: dict) -> dict:
@@ -575,8 +597,9 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
             parameters={"type": "object", "properties": {
                 "sql": {"type": "string", "description": "One SELECT statement."},
             }, "required": ["sql"]},
-            run=lambda a: run_sql(cid, a, emit=emit, user_question=user_question,
-                                  canvas_id=canvas_id),
+            run=lambda a: _record_evidence(
+                turn, run_sql(cid, a, emit=emit, user_question=user_question,
+                              canvas_id=canvas_id)),
         ),
         ToolSpec(
             name="list_tables",
@@ -815,6 +838,9 @@ def run_analyst(
 
     answer = (result.answer or "").strip()
     state["_analyst_conclusion"] = answer
+    # What the loop gathered outside the phase tools. Absent/zero ⇒ the floor behaves
+    # exactly as it did for the phase script, which never had any.
+    state["_analyst_evidence_rows"] = turn.evidence_rows
 
     report: Optional[dict] = None
     if turn.emitted_phases > 0:

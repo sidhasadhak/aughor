@@ -201,7 +201,7 @@ BASELINE: dict[str, int] = {
     # 628 → 602: CA-3 reworded the uppercase-acronym prose in investigate.py and the
     # router to "deep-analysis" — the analyst module's unavoidable phase-node call
     # sites (the API names stay frozen) ride inside that paydown.
-    "ada": 602,
+    "ada": 601,
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,

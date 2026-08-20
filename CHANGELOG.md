@@ -21,6 +21,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A deep analysis no longer reports its own findings as a failure.** A run that
+  answered from an ad-hoc query — no phase tool firing — published the headline "Data
+  unavailable — flight count could not be analyzed" and the sentence "Every diagnostic
+  query failed or returned zero rows" directly above the correct totals it had just
+  computed. The guard that forces an evidence-free report to read as a failure counted
+  only findings belonging to a phase, and an ad-hoc query produces none. It now also
+  counts the rows the analysis gathered outside its phases: a run with real evidence
+  keeps its own headline, while still being held to LOW confidence with its attribution
+  and recommendations withheld, because no structured phase stands behind them. A run
+  that genuinely gathered nothing still says so.
 - **A quick answer can no longer cite numbers its own query did not return.** The
   chart, the table and the receipt all came from the result set; the sentence above them
   was whatever the model wrote, and nothing compared the two — so a question about
