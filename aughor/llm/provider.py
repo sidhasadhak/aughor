@@ -752,6 +752,16 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict
     id: str = ""
+    #: Non-standard fields the wire hung on THIS call, kept verbatim so a loop can hand
+    #: them back. Google's OpenAI-compatible endpoint returns Gemini's reasoning
+    #: signature here (``extra_content.google.thought_signature``) and REFUSES any later
+    #: request whose function calls replay without it — 400 INVALID_ARGUMENT, "Function
+    #: call is missing a thought_signature in functionCall parts". Rebuilding the
+    #: assistant message from name + arguments alone dropped it, so every multi-step
+    #: loop died on its SECOND request while single-shot calls were untouched. Opaque on
+    #: purpose: the transport round-trips what it was handed rather than learning any one
+    #: vendor's schema.
+    extra_content: Optional[dict] = None
 
 
 class ToolTurn(BaseModel):
@@ -778,6 +788,25 @@ class ToolTurn(BaseModel):
         return self.tool_call is not None
 
 
+def _vendor_extras(call: Any) -> Optional[dict]:
+    """The non-standard fields a backend hung on one tool call, as plain data.
+
+    Checked on ``model_extra`` as well as the attribute: ``extra_content`` is not part
+    of the OpenAI schema, so the SDK keeps it as an UNMODELLED extra (its models are
+    ``extra="allow"``) — which of the two surfaces it lands on depends on the client
+    version, and a reader that consulted only one would silently find nothing on the
+    other and reintroduce the very drop this exists to prevent.
+    """
+    raw = getattr(call, "extra_content", None)
+    if raw is None:
+        extras = getattr(call, "model_extra", None)
+        if isinstance(extras, dict):
+            raw = extras.get("extra_content")
+    if hasattr(raw, "model_dump"):            # a typed model on some client versions
+        raw = raw.model_dump()
+    return raw if isinstance(raw, dict) and raw else None
+
+
 def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
     """Read one OpenAI-compatible completion as a :class:`ToolTurn`.
 
@@ -801,7 +830,8 @@ def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
         if not isinstance(parsed, dict):
             return ToolTurn(malformed=f"{name}: arguments were {type(parsed).__name__}, not an object")
         return ToolTurn(tool_call=ToolCall(name=name, arguments=parsed,
-                                           id=str(getattr(calls[0], "id", "") or "")))
+                                           id=str(getattr(calls[0], "id", "") or ""),
+                                           extra_content=_vendor_extras(calls[0])))
 
     # A reasoning model's reply can live on `reasoning`/`reasoning_content` while
     # `content` stays null. Read those too rather than reporting silence — but only as a

@@ -248,3 +248,68 @@ def test_the_nudge_does_not_let_the_turn_exceed_its_budget(provider):
 
     assert result.stop_reason == "budget"
     assert len(result.steps) <= 3
+
+
+# ── the vendor's own bookkeeping survives the round trip ──────────────────────
+# Found live, on Gemini, in Quick mode: every multi-step turn died on its SECOND
+# request with 400 INVALID_ARGUMENT, "Function call is missing a thought_signature in
+# functionCall parts ... position 2". Google's OpenAI-compatible endpoint signs the
+# model's reasoning and hangs the signature off the tool call; the loop rebuilt the
+# assistant message from name + arguments and dropped it. Deep analysis was untouched
+# because the phase script asks for a SHAPE once per phase and never replays a call.
+
+_SIGNED = {"google": {"thought_signature": "Ci8BgOe...opaque"}}
+
+
+def test_a_signed_call_is_replayed_with_its_signature(provider):
+    """The signature must come back verbatim on the echoed call — the whole reason the
+    second request is refused without it."""
+    from aughor.llm import faux
+
+    set_responses([
+        FauxToolCall(payload={"sql": "a"}, name="run_sql", extra_content=_SIGNED),
+        "412 orders",
+    ])
+
+    run_tool_loop(provider, "sys", "how many orders?", [_tool()])
+
+    assistant = [m for m in faux.calls()[-1].kwargs["messages"]
+                 if m.get("role") == "assistant"]
+    assert len(assistant) == 1
+    assert assistant[0]["tool_calls"][0]["extra_content"] == _SIGNED
+
+
+def test_an_unsigned_call_gains_no_empty_field(provider):
+    """A backend that signs nothing must see the message it always saw — an
+    `extra_content: null` invented for it is a new, untested wire shape."""
+    from aughor.llm import faux
+
+    set_responses([FauxToolCall(payload={"sql": "a"}, name="run_sql"), "412"])
+
+    run_tool_loop(provider, "sys", "q", [_tool()])
+
+    assistant = [m for m in faux.calls()[-1].kwargs["messages"]
+                 if m.get("role") == "assistant"]
+    assert "extra_content" not in assistant[0]["tool_calls"][0]
+
+
+@pytest.mark.parametrize("scripted, why", [
+    ("", "the model said nothing"),
+    (FauxToolCall(payload="{not valid json", name="run_sql"), "the arguments would not parse"),
+])
+def test_a_call_the_model_never_made_is_not_invented(provider, scripted, why):
+    """Both recovery paths used to fabricate an assistant tool call named "unknown" so
+    the feedback had something to answer. That call carries no signature — because the
+    model never made it — so on Gemini the invented call fails the same 400 the real
+    fix prevents. The feedback is a user message instead."""
+    from aughor.llm import faux
+
+    set_responses([scripted, "412"])
+
+    run_tool_loop(provider, "sys", "q", [_tool()])
+
+    messages = faux.calls()[-1].kwargs["messages"]
+    invented = [m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")]
+    assert invented == [], f"{why}: a function call was invented for it"
+    assert any(m["role"] == "user" and "tool" in str(m.get("content", "")).lower()
+               for m in messages[1:]), f"{why}: the feedback never reached the model"

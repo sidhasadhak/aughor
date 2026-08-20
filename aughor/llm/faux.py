@@ -136,6 +136,11 @@ class FauxToolCall:
     payload: Any
     name: str = "structured_output"
     id: str = "call_faux_1"
+    #: Vendor extras to hang on the call, as a real binding would — Gemini's
+    #: `{"google": {"thought_signature": ...}}` is the case that matters. Scripting it
+    #: is what lets a test prove the loop hands the signature back, which no amount of
+    #: offline reasoning about the OpenAI schema could show.
+    extra_content: Optional[dict] = None
 
 
 @dataclass(frozen=True)
@@ -289,10 +294,15 @@ def _completion(text: str, *, system: str, user: str,
     """
     _tool_calls = None
     if tool_call is not None:
-        _tool_calls = [SimpleNamespace(
+        _fields: dict[str, Any] = dict(
             id=tool_call.id, type="function",
             function=SimpleNamespace(name=tool_call.name, arguments=text),
-        )]
+        )
+        # Only when scripted. The real SDK leaves the attribute ABSENT unless the vendor
+        # sent one, so a faux that always defined it would hide a reader that never looks.
+        if tool_call.extra_content is not None:
+            _fields["extra_content"] = tool_call.extra_content
+        _tool_calls = [SimpleNamespace(**_fields)]
     return SimpleNamespace(
         choices=[SimpleNamespace(
             message=SimpleNamespace(content=None if tool_call else text,

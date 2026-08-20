@@ -11,6 +11,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Fixed
+- **Quick answers no longer fail on their second step with Gemini.** Google signs a
+  thinking model's reasoning and returns the signature attached to the tool call it
+  made; the same signature has to come back on every replay of that call, or the API
+  refuses the request (`400 INVALID_ARGUMENT`, "Function call is missing a
+  thought_signature in functionCall parts"). The tool loop rebuilt each assistant
+  message from the call's name and arguments alone, so the signature was dropped and
+  any turn that needed more than one tool call died — reading the schema and then
+  querying it was enough to trigger it. The transport now carries a tool call's vendor
+  fields through verbatim, and the loop no longer invents a function call the model
+  never made when handing back a parse error or a nudge.
 - **A file dropped into the chat lands in the right place, and says so.** Attachments
   all went to the document store, so a dropped CSV became text the model could read
   about rather than a table it could query; upload failures were swallowed and the
