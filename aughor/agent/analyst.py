@@ -97,20 +97,67 @@ class AnalystTurn:
         return fresh
 
 
-def _record_evidence(turn: "AnalystTurn", result: Any) -> Any:
-    """Pass a tool result through, counting any rows it carried.
+def _adhoc_title(columns: list, question: str) -> str:
+    """A name for a query the model framed itself. It supplies no title — the phase
+    tools get theirs from a plan — so it comes from the shape of what came back."""
+    cols = [str(c) for c in (columns or []) if str(c).strip()]
+    if len(cols) == 2:
+        return f"{cols[1]} by {cols[0]}"
+    if len(cols) == 1:
+        return str(cols[0])
+    return (question or "Query result").strip()[:80]
 
-    Wrapped around the tools that return data WITHOUT building a phase. A phase tool
-    needs nothing here — its findings are the evidence, and the floor already reads
-    them."""
+
+def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
+    """Pass a tool result through, and make its rows part of the investigation.
+
+    A query the model framed itself is evidence exactly as a phase tool's query is —
+    but only phase tools built a phase, so `run_sql` rows reached the narrator's prose
+    and nothing else. A deep turn answered that way rendered as three sentences with no
+    table and no chart, while the QUICK path, which renders its rows directly, showed
+    the whole breakdown. Deep looked thinner than quick for asking the same question.
+
+    So the rows become a finding in a phase of their own, and stream as one: the report
+    draws it with the same organs it draws every other finding, and the run's own SQL is
+    on the page instead of only in the receipt. One phase per query — the loop's slices
+    ARE the story of the turn, and folding them into a single box would hide that it
+    took four cuts to get there.
+    """
     try:
-        rows = result.get("rows") if isinstance(result, dict) else None
-        if rows:
+        if isinstance(result, dict) and result.get("rows"):
+            rows = result["rows"]
             turn.evidence_rows += len(rows)
+            cols = result.get("columns") or []
+            n = len(turn.phase_tools_run) + 1
+            turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
+                "phase_id": f"adhoc_{n}",
+                "phase_name": _adhoc_title(cols, turn.state.get("question", "")),
+                "phase_icon": "🔎",
+                "status": "complete",
+                # Empty: the narrator writes the prose from the evidence log, and a
+                # summary invented here would be a second voice on the same rows.
+                "summary": "",
+                "findings": [{
+                    "finding_id": f"adhoc_{n}_1",
+                    "title": _adhoc_title(cols, turn.state.get("question", "")),
+                    "sql": (args or {}).get("sql", ""),
+                    "columns": cols,
+                    "rows": rows[:50],
+                    "row_count": len(rows),
+                    "error": None,
+                    "interpretation": "",
+                    "key_numbers": [],
+                    "chart_type": "auto",
+                    "stat_note": None,
+                    "is_significant": False,
+                }],
+                "skipped_reason": None,
+                "caveats": [],
+            }]}, tool="run_sql")
     except Exception as exc:                      # noqa: BLE001 — never break a tool
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "evidence-row accounting is best-effort; the tool result stands",
-                 counter="analyst.evidence_count")
+        tolerate(exc, "ad-hoc evidence capture is best-effort; the tool result stands",
+                 counter="analyst.evidence_capture")
     return result
 
 
@@ -598,8 +645,8 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
                 "sql": {"type": "string", "description": "One SELECT statement."},
             }, "required": ["sql"]},
             run=lambda a: _record_evidence(
-                turn, run_sql(cid, a, emit=emit, user_question=user_question,
-                              canvas_id=canvas_id)),
+                turn, a, run_sql(cid, a, emit=emit, user_question=user_question,
+                                 canvas_id=canvas_id)),
         ),
         ToolSpec(
             name="list_tables",

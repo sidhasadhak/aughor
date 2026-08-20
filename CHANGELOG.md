@@ -21,6 +21,22 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A deep analysis shows the queries it ran.** Only the four phase tools built a
+  phase, and the report draws its exhibits from phase findings — so a turn the analyst
+  answered with its own `run_sql` rendered as a few sentences with no table and no chart,
+  while the quick path, which draws its rows directly, showed the whole breakdown. Deep
+  read as thinner than quick for the same question. A query the model frames itself now
+  becomes a finding in a phase of its own, streams as one, and is drawn by the same
+  organs as every other finding, carrying its own SQL.
+- **An answer no longer reports a change that never happened.** A quick answer opened
+  "Compared to the previous report from August 20, 2026, the picture has expanded
+  significantly. While the previous report only listed three routes… the current data
+  reflects a much broader set of 84 routes." Nothing in the data had changed: the earlier
+  turn was a run that reported it could not analyse anything and named three routes as
+  examples, and the cross-session block offered it as a baseline and asked for a
+  comparison. A run that reported no data is no longer offered as one, and the
+  instruction now says what is comparable — a differing value for the same measure, never
+  how many rows an answer happened to list.
 - **A table in a chat answer renders as a table.** The answer surface had an
   inline-only renderer — bold, figures, currency — so a turn that tabulated its result
   put every pipe and dash on screen: `| Route ID | Number of Flights | | :--- | :--- |

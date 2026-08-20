@@ -1221,14 +1221,24 @@ def build_prior_answers_section(priors) -> str:
     Deliberately carries the headline and the date only, never the prior SQL: re-running
     an old query is the model's decision to make from today's schema, not something to
     copy."""
-    priors = list(priors or [])
+    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+
+    # A run that reported it could not analyse anything is not a baseline. Offered as
+    # one, the model dutifully compared against it — live, an answer opened "Compared to
+    # the previous report from August 20, 2026, the picture has expanded significantly"
+    # when the earlier turn had simply failed and this one had not.
+    priors = [p for p in (priors or [])
+              if not (p.get("headline") or "").startswith(NO_DATA_HEADLINE_PREFIX)]
     if not priors:
         return ""
     lines = [
         "PREVIOUSLY ASKED — this same question was answered in an earlier session. "
         "Answer from TODAY's data first, then say plainly whether the picture is "
         "unchanged or what moved. Never restate a previous answer as if it were current, "
-        "and never cite its numbers as this turn's evidence:",
+        "and never cite its numbers as this turn's evidence. Compare LIKE WITH LIKE: only "
+        "a differing VALUE for the same measure is a change. How many rows an answer "
+        "listed, or which examples it happened to name, is a difference in what was "
+        "SHOWN — never report it as the data having grown, shrunk or expanded:",
     ]
     for p in priors:
         when = str(p.get("asked_at", ""))[:10] or "an earlier session"

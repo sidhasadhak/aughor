@@ -357,3 +357,51 @@ def test_run_sql_evidence_reaches_the_reports_no_data_floor(monkeypatch, traffic
     assert seen["evidence_rows"] == 2, (
         "the rows run_sql returned never reached synthesis, so the floor still sees "
         "an empty run and will declare the turn a failure")
+
+
+def test_an_ad_hoc_query_reaches_the_report_as_a_drawable_phase(monkeypatch, traffic_db,
+                                                                faux_llm):
+    """End to end through the runner: a turn answered by `run_sql` alone must arrive at
+    synthesis with a phase carrying the rows, or the report has nothing to draw and deep
+    renders thinner than quick for the same question."""
+    from aughor.llm.faux import FauxToolCall
+
+    seen = {}
+
+    def _fake_intake(state, conn=None):
+        return {"_ada_intake": {"metric_label": "flights", "metric_sql": "COUNT(*)",
+                                "metric_table": "traffic", "date_column": "traffic.day",
+                                "observation_start": "2026-08-01",
+                                "observation_end": "2026-08-18",
+                                "observation_label": "August 2026",
+                                "dimensions": [], "data_understanding_block": ""},
+                "investigation_phases": [{
+                    "phase_id": "intake", "phase_name": "Question Intake",
+                    "phase_icon": "🎯", "status": "complete", "summary": "spec",
+                    "findings": []}]}
+
+    def _fake_synthesize(state):
+        seen["phases"] = state.get("investigation_phases") or []
+        return {}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake, synthesize=_fake_synthesize)
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+                        lambda cid, a, **kw: {"columns": ["route", "n"],
+                                              "rows": [["GVA-FRA", 42], ["ZRH-BUD", 35]]})
+
+    faux_llm.set_responses([
+        FauxToolCall(payload={"sql": "SELECT route, COUNT(*) FROM traffic GROUP BY 1"},
+                     name="run_sql"),
+        "GVA-FRA leads at 42 flights.",
+    ])
+
+    frames: list[tuple] = []
+    an.run_analyst("conn-t", "give me route wise number of flights", persist=False,
+                   emit=lambda t, p: frames.append((t, p)))
+
+    # the rows arrived at synthesis as a phase with a finding, not just as prose
+    drawable = [f for p in seen["phases"] for f in (p.get("findings") or []) if f.get("rows")]
+    assert drawable, "synthesis saw no finding carrying rows — nothing to draw"
+    assert drawable[0]["rows"] == [["GVA-FRA", 42], ["ZRH-BUD", 35]]
+    # …and it streamed, so the user watches the slice land
+    assert [t for t, _ in frames].count("phase_complete") == 2   # intake + the query

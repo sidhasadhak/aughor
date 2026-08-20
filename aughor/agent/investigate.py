@@ -1866,6 +1866,12 @@ def _finding_has_rows(f: dict) -> bool:
     return (rc or 0) > 0
 
 
+#: How a report that gathered nothing announces itself. A literal this module WRITES,
+#: so code that must recognise one later matches its own output rather than guessing at
+#: prose — the prior-answers block uses it to refuse a comparison against a failed run.
+NO_DATA_HEADLINE_PREFIX = "Data unavailable — "
+
+
 def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict,
                                 extra_evidence_rows: int = 0) -> bool:
     """Force a report with NO evidence rows to read as a failure, never as an analysis.
@@ -1912,7 +1918,7 @@ def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict,
     synth.attribution_waterfall = []
     synth.recommendations = []
     _ml = (intake_data or {}).get("metric_label") or "the requested metric"
-    synth.headline = f"Data unavailable — {_ml} could not be analyzed"
+    synth.headline = f"{NO_DATA_HEADLINE_PREFIX}{_ml} could not be analyzed"
     synth.executive_summary = (
         "Every diagnostic query failed or returned zero rows, so no cause can be "
         "attributed and no recommendation can be made. " + (synth.executive_summary or "")
