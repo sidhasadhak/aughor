@@ -73,7 +73,7 @@ def test_dropped_narrator_finding_falls_back_to_data_only():
 
     product = findings[2]
     assert "product" in product["title"].lower()
-    assert product["interpretation"] == "Query executed."  # data-only, not a borrowed narrative
+    assert product["interpretation"] == ""  # data-only, not a borrowed narrative — and no filler
 
 
 def test_chart_primary_is_metric_strips_share_keeps_average():

@@ -2020,7 +2020,9 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             f = InvestigationFinding(
                 finding_id=f"{id_prefix}_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation=(r.error or "Query executed."),
+                # An error is the finding's honest prose; a clean run gets NO filler — "Query
+                # executed." is trace, not analysis, and the report renders only real prose.
+                error=r.error, interpretation=(r.error or ""),
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
                 trust_caveat=None,
             )
@@ -5923,7 +5925,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                 rows=r.rows[:50],
                 row_count=r.row_count,
                 error=r.error,
-                interpretation=f"Query executed: {r.row_count} rows returned." if not r.error else r.error,
+                interpretation=r.error or "",
                 key_numbers=[],
                 chart_type=q.chart_type,
                 stat_note=None,
@@ -5931,8 +5933,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = f"Baseline computed for {obs_label}."
-        passes_to_next = summary
+        # The user-facing summary stays EMPTY when interpretation produced nothing — "Baseline
+        # computed" is process trace, and the report skips empty prose (charts still render).
+        # The descriptive line survives on `passes_to_next`, the internal phase hand-off.
+        summary = ""
+        passes_to_next = f"Baseline computed for {obs_label}."
         if code_significant is None:
             code_significant = True  # unknown → assume significant, don't block
 
@@ -5949,13 +5954,14 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     if code_sigma is None and _n_periods is not None and _n_periods < _MIN_BASELINE_PERIODS:
         if _neutralize_short_baseline_z(findings, _n_periods):
             summary = (f"{summary} [stats.py: significance not assessable — the baseline holds "
-                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]")
+                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]").strip()
             code_significant = None   # unknown → proceed; the model's z is not a verdict
 
     # Append sigma note to summary if available
     if code_sigma is not None:
         sig_label = "significant anomaly" if code_significant else "within normal variance"
-        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]"
+        # .strip(): the Verifier's note must land even when the base summary is empty.
+        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]".strip()
 
     # ── Premise validation: detect when observation period contradicts the question's intent ──
     # e.g. question asks "why did revenue DROP?" but obs period actually showed a rise.
@@ -6052,7 +6058,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                                 is_significant=True,
                             )
                             findings = [correction_finding] + findings
-                            summary = f"⚠️ {correction_note} | {summary}"
+                            summary = f"⚠️ {correction_note} | {summary}" if summary else f"⚠️ {correction_note}"
                             passes_to_next = correction_note + " " + passes_to_next
 
                             # Update _ada_intake so all downstream phases use correct periods
@@ -6164,14 +6170,14 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"decomp_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Metric decomposition complete."
-        passes_to_next = summary
+        summary = ""  # trace, not analysis — empty renders nothing; the hand-off keeps the line
+        passes_to_next = "Metric decomposition complete."
 
     # A decomposition ranks sub-drivers → a sorted bar (a change/contribution finding keeps 'auto' so
     # the frontend's sign-aware diverging bar isn't flattened).
@@ -6271,14 +6277,14 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"dim_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Dimensional analysis complete."
-        passes_to_next = summary
+        summary = ""  # trace, not analysis — empty renders nothing; the hand-off keeps the line
+        passes_to_next = "Dimensional analysis complete."
 
     # A dimensional drill-down ranks where the metric concentrates → a sorted bar; a contribution/
     # change finding keeps 'auto' so the frontend's diverging (green/red by sign) bar is preserved.
@@ -6382,13 +6388,13 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"beh_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Behavioral and operational analysis complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     phase = _phase_result(
         "behavioral", "Behavioral & Operational", "👥",
@@ -6799,12 +6805,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             InvestigationFinding(
                 finding_id=f"{_fprefix}_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Cross-sectional scan complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
@@ -7589,12 +7595,12 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         findings = [
             InvestigationFinding(
                 finding_id=f"when_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Trend computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "line"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Temporal trend complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     # A trend is a line (intent-driven); its peak/trough/avg key numbers are recomputed from the FULL
     # series so they match the chart (the interpret LLM only saw a window).
@@ -7696,12 +7702,12 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
         findings = [
             InvestigationFinding(
                 finding_id=f"why_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Composition computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Return composition computed."
+        summary = ""  # trace, not analysis — the report renders only real prose
     for _f in findings:
         # Chart the SHARE only — a composition is parts-of-a-whole, so the count and the share are the
         # SAME story; a count-bar + share-line dual-axis combo is redundant clutter (the line just
@@ -7817,12 +7823,12 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
         findings = [
             InvestigationFinding(
                 finding_id=f"interaction_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Interaction computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "WHY×WHERE interaction computed."
+        summary = ""  # trace, not analysis — the report renders only real prose
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     for _f in findings:
         _normalize_pct_key_numbers(_f)
@@ -7898,7 +7904,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
         tolerate(_exc, "benchmark lens best-effort; skipped", counter="deep_analysis.benchmark_lens")
         return None
     return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
-                                "📊", "benchmark", metric_label, "Reason benchmark computed.",
+                                "📊", "benchmark", metric_label,
                                 peer_median_ref=True)
 
 
@@ -7949,11 +7955,11 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
         tolerate(_exc, "reason drill lens best-effort; skipped", counter="deep_analysis.reason_drill_lens")
         return None
     return _lens_phase_from_run(_run, "reason_drill", "Reason Drill — Which Products Concentrate It",
-                                "🎯", "drill", metric_label, "Reason drill computed.")
+                                "🎯", "drill", metric_label)
 
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
-                         metric_label: str, empty_summary: str,
+                         metric_label: str,
                          peer_median_ref: bool = False,
                          opportunity: Optional[dict] = None) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
@@ -7975,12 +7981,12 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         findings = [
             InvestigationFinding(
                 finding_id=f"{fprefix}_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = empty_summary
+        summary = ""  # trace, not analysis — the report renders only real prose
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     # R15 on the lens path. The utilization lens plans exactly R15's grid (segment,
     # metric_total, n) and then ASKED THE MODEL to "size the opportunity as gap ×
@@ -8193,7 +8199,6 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 continue
             ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
                                       spec["fprefix"], spec["metric_label"],
-                                      f"{spec['title']} computed.",
                                       opportunity=spec.get("opportunity"))
             if ph:
                 phases.append(ph)
