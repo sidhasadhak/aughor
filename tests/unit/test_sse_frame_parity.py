@@ -33,7 +33,13 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _BACKEND = _ROOT / "aughor" / "routers" / "investigations.py"
-_STREAM = _ROOT / "web" / "lib" / "investigationStream.ts"
+# CA-1 retired the 107-case reducer; the consumer side is now three artifacts.
+# `chatTurn.ts` PROJECTS a frame into the turn, `uiMessageAdapter.ts` routes the
+# prose frames to text channels, and `aughorUIDataTypes.ts` declares the frames
+# that deliberately render nothing.
+_PROJECTION = _ROOT / "web" / "lib" / "chatTurn.ts"
+_ADAPTER = _ROOT / "web" / "lib" / "uiMessageAdapter.ts"
+_DATA_TYPES = _ROOT / "web" / "lib" / "aughorUIDataTypes.ts"
 
 _NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
@@ -77,19 +83,31 @@ def _dynamic_vars(src: str) -> set[str]:
 
 
 def _consumed_frames() -> tuple[set[str], set[str]]:
-    """(dispatched, deliberately-unrendered) as declared by the shipping frontend."""
-    src = _STREAM.read_text()
-    start = src.index("export async function consumeStream")
-    # Bound the slice at the next top-level declaration: a lowercase `case` in some later
-    # helper must not read as "the dispatcher handles this frame".
-    rest = src[start + 1:]
-    end = re.search(r"\n(?:export )?(?:async )?function ", rest)
-    body = rest[: end.start()] if end else rest
-    cases = set(re.findall(rf'case\s+"({_NAME})"\s*:', body))
+    """(rendered, deliberately-unrendered) as declared by the shipping frontend.
 
-    m = re.search(r"const UNRENDERED_FRAMES = new Set\(\[(.*?)\]\)", src, re.S)
-    assert m, "UNRENDERED_FRAMES not found — the dispatcher moved; update this parser"
-    return cases, set(re.findall(rf'"({_NAME})"', m.group(1)))
+    Post-CA-1 a frame is RENDERED if the projection has a projector for it, or the
+    adapter routes it to a text channel (prose frames become channel-stamped text
+    parts, not data parts). Everything else is either declared unrendered or —
+    the property the closed switch could not offer — reaches the shell named, as
+    a labelled block. That escape hatch is why this gate no longer guards against
+    silence; it guards against a frame nobody chose to render.
+    """
+    proj = _PROJECTION.read_text()
+    start = proj.index("const PART_PROJECTORS")
+    body = proj[start:proj.index("export const PROJECTED_PARTS")]
+    # One indent level: the map's own keys, never a nested object's.
+    projected = set(re.findall(rf'^  ({_NAME})\s*:', body, re.M))
+    projected |= set(re.findall(rf'^  "({_NAME})"\s*:', body, re.M))
+
+    adapter = _ADAPTER.read_text()
+    tc = re.search(r"const TEXT_CHANNELS[^=]*=\s*\{(.*?)\n\};", adapter, re.S)
+    assert tc, "TEXT_CHANNELS not found — the adapter moved; update this parser"
+    projected |= set(re.findall(rf'^  ({_NAME})\s*:', tc.group(1), re.M))
+
+    types = _DATA_TYPES.read_text()
+    m = re.search(r"export const UNRENDERED_FRAMES[^=]*=\s*new Set\(\[(.*?)\]\)", types, re.S)
+    assert m, "UNRENDERED_FRAMES not found — the declaration moved; update this parser"
+    return projected, set(re.findall(rf'"({_NAME})"', m.group(1)))
 
 
 def test_no_unreadable_emission_sites():
@@ -161,18 +179,22 @@ def test_the_converse_relay_relays_too_and_names_its_own_frames_literally():
 
 
 def test_every_emitted_frame_has_a_consumer_or_a_stated_reason():
-    """The gate. A frame with neither is a silent drop, which is what this prevents."""
+    """The gate. Before CA-1 a frame with neither was a SILENT drop; now it reaches
+    the shell as a labelled "unrecognised" block — visible, but still not rendered.
+    Visible-but-unrendered is a cheaper bug than silence and a worse one to ship, so
+    the gate stands: every emitted frame is projected, routed to a text channel, or
+    named as deliberately unrendered."""
     emitted = _emitted_frames()
     assert emitted, "parsed zero frames — the _sse() call shape changed; fix the parser"
 
-    dispatched, unrendered = _consumed_frames()
-    assert dispatched, "parsed zero cases — the dispatcher moved; fix the parser"
+    rendered, unrendered = _consumed_frames()
+    assert rendered, "parsed zero projectors — the projection moved; fix the parser"
 
-    orphaned = emitted - dispatched - unrendered
+    orphaned = emitted - rendered - unrendered
     assert not orphaned, (
         f"SSE frames emitted with no consumer and no stated reason: {sorted(orphaned)}. "
-        "Add a `case` to consumeStream, or add the name to UNRENDERED_FRAMES with the "
-        "reason it renders nowhere."
+        "Add a projector to chatTurn.ts's PART_PROJECTORS (or a TEXT_CHANNELS entry for "
+        "prose), or add the name to UNRENDERED_FRAMES with the reason it renders nowhere."
     )
 
 
@@ -193,21 +215,30 @@ def test_unrendered_list_does_not_outlive_its_frames():
     )
 
 
-#: Dispatcher cases with no producer anywhere in the repo. Kept, not deleted, because a
-#: frontend that still understands an older wire name is what makes a rolling deploy safe —
-#: but tracked here so the set cannot grow quietly. `answer` predates the `headline` frame;
-#: if it is still unclaimed next time this list is read, delete the case.
-_CASES_WITHOUT_PRODUCER = frozenset({"answer"})
+#: Projectors with no producer IN THE SCANNED SURFACE. Kept, not deleted, because a
+#: frontend that still understands an older wire name is what makes a rolling deploy safe,
+#: because a RESTORED turn replays these names from storage where old rows still carry
+#: them, and because one of them is produced by a router this parser does not read.
+#: Tracked here so the set cannot grow quietly:
+#:   answer, insight, insight_delta — pre-rename spellings (`headline`, `narrative`)
+#:   figure                         — the AG-UI seam's composite frame (routers/agui.py,
+#:                                    a different surface than the `/ask` one scanned here)
+#:   status                         — declared in the part vocabulary; the native stream
+#:                                    spells progress with phase frames, so the projector
+#:                                    is defensive rather than dead
+_CASES_WITHOUT_PRODUCER = frozenset({
+    "answer", "insight", "insight_delta", "figure", "status",
+})
 
 
 def test_dispatcher_has_no_new_cases_without_producers():
-    """The third direction. Rot arrives from the frontend side too: a case for a frame the
-    backend no longer sends reads as coverage while covering nothing."""
+    """The third direction. Rot arrives from the frontend side too: a projector for a
+    frame the backend no longer sends reads as coverage while covering nothing."""
     emitted = _emitted_frames()
-    dispatched, _ = _consumed_frames()
+    rendered, _ = _consumed_frames()
     # `ada_report` is a documented deliberate alias handled beside `answer_report`.
-    unclaimed = dispatched - emitted - _CASES_WITHOUT_PRODUCER - {"ada_report"}
+    unclaimed = rendered - emitted - _CASES_WITHOUT_PRODUCER - {"ada_report"}
     assert not unclaimed, (
-        f"dispatcher cases with no backend producer: {sorted(unclaimed)}. Delete them, or "
+        f"projectors with no backend producer: {sorted(unclaimed)}. Delete them, or "
         "add to _CASES_WITHOUT_PRODUCER with the reason the compatibility branch stays."
     )

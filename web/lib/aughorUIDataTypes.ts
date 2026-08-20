@@ -12,16 +12,17 @@
  * exists rather than the adapter casting to `data-${string}` and moving on.
  *
  * THE NAMES ARE MEASURED, NOT GUESSED. They were extracted from the lowercase
- * (wire-frame) arm of `investigationStream.ts`'s dispatch, which is the
- * authority on what the backend actually emits; the C1 spike's hand-written set
- * covered 14 of them. Frames that legitimately change no rendered state live in
- * that module's `UNRENDERED_FRAMES` and are deliberately absent here — a frame
- * being unrendered is a decision, and this map is the place it stays visible.
+ * (wire-frame) arm of the retired reducer's dispatch, which was the authority on
+ * what the backend actually emits; the C1 spike's hand-written set covered 14 of
+ * them. Frames that legitimately change no rendered state live in
+ * `UNRENDERED_FRAMES` below and are deliberately absent from the map — a frame
+ * being unrendered is a decision, and this file is the place it stays visible.
  *
  * `unknown` rather than concrete shapes: this map's job is to make the part
  * NAMES a closed, checkable set. The payload shapes are owned by
- * `investigationStream.ts`, and duplicating them here would create a second
- * authority that drifts — the failure this whole programme keeps finding.
+ * `chatTurn.ts`'s projection (the reducer's heir), and duplicating them here
+ * would create a second authority that drifts — the failure this whole
+ * programme keeps finding.
  */
 
 /*
@@ -51,6 +52,13 @@ export type AughorEvidenceData = {
   // surfaced this one as unrecognised — the extraction picked up the delta and
   // not its terminal twin.
   "headline": unknown;
+  // Settled prose frames ALSO ride as data parts (CA-1): the text channel keeps
+  // the words streaming, but `narrative` carries anomalies/trend/confidence and
+  // `answer` is the final_text terminal — payload the reducer used to capture
+  // and the text channel alone silently dropped. The legacy `insight` spelling
+  // is normalised to `narrative` at the adapter, so it needs no name here.
+  "narrative": unknown;
+  "answer": unknown;
   "sql": unknown;
   "columns": unknown;
   "rows": unknown;
@@ -90,6 +98,21 @@ export type AughorProgressData = {
 }
 
 /**
+ * Terminal frames — the turn's tail, as data (CA-1).
+ *
+ * The reducer read structure off both of these that the SDK's own terminal
+ * chunks cannot carry: `error` has the Wave-R4 typed tail (reason/retryable/
+ * recovery/hint — the one recovery worth offering), and `done` names the Trust
+ * Receipt (`has_receipt`/`inv_id`). The adapter still emits the protocol's
+ * `error`/`finish` chunks — these parts ride ALONGSIDE them so the payload
+ * reaches the message rather than dying in a string.
+ */
+export type AughorTerminalData = {
+  "error": unknown;
+  "done": unknown;
+}
+
+/**
  * The escape hatch — a frame the backend emits that this map does not name.
  *
  * A closed map and a no-swallow rule look contradictory: an undeclared name
@@ -112,6 +135,7 @@ export type AughorUIDataTypes = AughorReportData &
   AughorEvidenceData &
   AughorGateData &
   AughorProgressData &
+  AughorTerminalData &
   AughorEscapeHatchData;
 
 /** The report frames, as a runtime set — terminal, and each replaces the stream. */
@@ -129,29 +153,40 @@ export const REPORT_FRAMES = new Set<keyof AughorReportData>([
 const DECLARED = [
   "answer_report", "ada_report", "report", "dossier_report", "overview_report",
   "explore_report",
-  "route", "headline", "sql", "columns", "rows", "chart_type", "chart_config", "tables_used",
+  "route", "headline", "narrative", "answer", "sql", "columns", "rows", "chart_type",
+  "chart_config", "tables_used",
   "queries_executed", "figure", "receipt_id", "context_assembled", "guard_receipt",
   "playbook_refs", "hypotheses", "score", "analysis",
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
   "inspect_warning",
+  "error", "done",
   "unknown_frame",
 ] as const satisfies readonly (keyof AughorUIDataTypes)[];
 
 export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
 
 /**
- * Frames that legitimately change no rendered state — mirrored from
- * `investigationStream.ts`'s `UNRENDERED_FRAMES`, which is the authority.
+ * Frames that legitimately change no rendered state. THE authority since CA-1
+ * retired the reducer (`investigationStream.ts`), whose own list this used to
+ * mirror; the reasons each name is here are preserved from that list:
+ *
+ *   explore_plan · subq_answer — incremental only; the terminal `explore_report`
+ *     carries the same arrays, so the end state is complete.
+ *   start — the run id it carries is harvested by the adapter for drop-recovery;
+ *     the rest is a stream-opening marker.
+ *   learning · activations — flag-gated per-run receipts no surface renders.
+ *   compiled · trusted — quick-body internals; nothing renders them.
+ *   fanout — every emission is paired with a `guard_receipt` frame that IS
+ *     rendered, so the interpretation reaches the user.
+ *   paused — dormant `hitl` branch no web caller arms (tracked separately).
  *
  * These must NOT ride the escape hatch. An unrecognised frame and a deliberately
  * silent one look identical once both render as "unrecognised: <name>", and
- * that equivalence is the exact confusion the reducer's own list was created to
- * end — its comment records that nine frame types were reaching no consumer
- * with nobody aware of it. Surfacing `compiled` as unknown would re-create the
- * ambiguity in a new place: a live run did surface it, which is how this list
- * got here.
+ * that equivalence is the exact confusion this list exists to end — the
+ * reducer's comment recorded that nine frame types were reaching no consumer
+ * with nobody aware of it.
  *
  * Skipping them is a DECISION, not a swallow. The difference is that this list
  * is written down, and a frame absent from BOTH it and the declared map still

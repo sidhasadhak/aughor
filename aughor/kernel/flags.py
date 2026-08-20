@@ -265,7 +265,7 @@ FLAG_DEFAULT: dict = {
 FLAG_META = {
     "ask.converse": {
         "label": "Answer through a conversation, not a single compiled query",
-        "description": "Add a THIRD body behind /ask: a real agent turn whose tools wrap the existing guarded pipelines. The model chooses which tool the conversation needs — including the tool of just answering — instead of every message being compiled as a query spec. Guards are unchanged and stay INSIDE the tools; the deterministic quick/deep bodies survive as the fast path and gain a caller. Off by default → /ask behaves exactly as today.",
+        "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import AtlasSendIcon      from "@atlaskit/icon/core/send";
 import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
 import CloseIcon          from "@atlaskit/icon/core/close";
@@ -9,13 +9,14 @@ import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import CompassIcon        from "@atlaskit/icon/core/compass";
-import { uploadDocument, listUserAgents, recordOverviewDrill, type UserAgent } from "@/lib/api";
-import { useChat, UNCERTAIN_RESULT, type DebugEvent, type ChatTurn } from "@/lib/useChat";
+import { uploadDocument, listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
+import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
-import type { OverviewReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
-import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { PartsMessage } from "./chat/PartsMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { WhyThisNumber } from "./WhyThisNumber";
 
@@ -301,6 +302,18 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 }
 
 // ── Debug log drawer ──────────────────────────────────────────────────────────
+// CA-1: fed from the SDK's onData callback (every typed data part as it arrives)
+// rather than the retired reducer's SSE tap. Text deltas don't appear — the
+// drawer's job is "which frames arrived", and every frame that isn't pure text
+// is a data part now.
+
+export interface DebugEvent {
+  ts: number;            // Date.now()
+  type: string;          // data part name (the wire frame's type)
+  summary: string;       // brief human-readable summary
+  payload: unknown;      // full payload (shown on expand)
+}
+const MAX_LOG = 300;
 
 function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject<DebugEvent[]>; onClose: () => void }) {
   const [events, setEvents] = useState<DebugEvent[]>([]);
@@ -507,8 +520,6 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
 let _urlSessionUnclaimed = true;
 
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
-  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, sessionId, eventLogRef } = useChat();
-
   // Read during the first render, into a ref, because both this component and page.tsx's
   // URL-sync effect rewrite the query string — whichever ran first would erase the id
   // before the restore below could read it. A ref initializer is safe here specifically
@@ -524,6 +535,63 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     resumeIdRef.current = restoreSessionId || fromUrl || "";
   }
   const resumeId = resumeIdRef.current || null;
+
+  // The conversation's identity. A resumed thread adopts its own id (reading a
+  // session back and continuing it are the same act); "Clear" mints a fresh one,
+  // which rebuilds the Chat instance and with it an empty message list.
+  const [sessionId, setSessionId] = useState<string>(() => resumeId || newSessionId());
+
+  // Debug event log — ring buffer, never triggers re-render; read on demand.
+  const eventLogRef = useRef<DebugEvent[]>([]);
+
+  // Wall-clock per turn, keyed by the turn's USER message id. The SDK message
+  // carries no clock, so the surface that watches the stream measures it — the
+  // "Completed in …" line and the arrival-fade both read from here. STATE, not a
+  // ref: the projection reads it during render, and a ref written after the
+  // stream settles would leave "Completed in" invisible until an unrelated
+  // re-render. Restored turns are absent (inert), as the old restore left them.
+  const [timings, setTimings] = useState<Map<string, { startedAt: number; elapsedMs: number | null }>>(new Map());
+
+  const {
+    messages, sendMessage, setMessages, regenerate, stop: sdkStop, status, error, clearError,
+  } = useAughorChat({
+    connectionId,
+    sessionId,
+    body: canvasId ? { canvas_id: canvasId } : undefined,
+    onData: (part) => {
+      const payload = (part as { data: unknown }).data;
+      eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), {
+        ts: Date.now(),
+        type: part.type.slice("data-".length),
+        summary: JSON.stringify(payload ?? {}).slice(0, 80),
+        payload,
+      }];
+    },
+  });
+
+  const busy = status === "submitted" || status === "streaming";
+
+  // ── messages → turns: the projection that replaced the reducer ─────────────
+  // `projectThread` is pure, so this is a derivation, not a second store.
+  const turns = useMemo(() => projectThread(messages, {
+    streaming: busy,
+    transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
+    timingFor: (id) => timings.get(id),
+  }), [messages, busy, status, error, timings]);
+
+  // Wall-clock bookkeeping: stamp a turn when its stream opens, freeze it when
+  // the stream settles. Mirrors the reducer's ASK / finish() pair.
+  useEffect(() => {
+    const last = turns[turns.length - 1];
+    if (!last) return;
+    const t = timings.get(last.userMsg.id);
+    if (busy && !t) {
+      setTimings((prev) => new Map(prev).set(last.userMsg.id, { startedAt: Date.now(), elapsedMs: null }));
+    } else if (!busy && t && t.elapsedMs == null) {
+      setTimings((prev) => new Map(prev).set(last.userMsg.id, { ...t, elapsedMs: Date.now() - t.startedAt }));
+    }
+  }, [busy, turns, timings]);
+
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
   // User-defined agents: the roster + the picked persona.
@@ -563,7 +631,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // empty for as long as its fetch is in flight, so that version deleted the id a beat
     // before the turns arrived — and the id is the only handle the conversation has.
     if (!resumeId) {
-      clear();
+      setSessionId(newSessionId()); // a fresh Chat instance — the conversation resets with it
       const params = new URLSearchParams(window.location.search);
       if (params.has("chat")) {
         params.delete("chat");
@@ -630,82 +698,21 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // Bounded and silent. It gives up after ~12s rather than polling forever, and an
     // empty session (a stale or shared link) simply stays empty — the same outcome as
     // before, reached a few seconds later.
+    //
+    // CA-1: the endpoint returns `UIMessage[]` — the same shape the stream
+    // accumulates — so restoring a thread IS `setMessages`. The 40-field manual
+    // turn literal this used to build is gone; `projectTurn` derives the turn
+    // from the same parts either way.
     const attempt = (tries: number) => {
-      fetch(`${getApiBase()}/chat-sessions/${resumeId}/turns`)
-        .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; status?: string; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
+      fetch(`${getApiBase()}/chat-sessions/${encodeURIComponent(resumeId)}/messages`)
+        .then(r => (r.ok ? r.json() : []))
+        .then((msgs: AughorUIMessage[]) => {
           if (cancelled) return;
-          if (!turns.length) {
+          if (!Array.isArray(msgs) || !msgs.length) {
             if (tries > 0) setTimeout(() => { if (!cancelled) attempt(tries - 1); }, 1500);
             return;
           }
-          restore(turns.map(t => ({
-          id: t.id,
-          question: t.question,
-          mode: "ask" as const,
-          // A turn the user stopped is restored as an ERROR, not as `done`. It carries
-          // whatever it had produced, and `done` would present that partial as the whole
-          // answer — a turn that looks finished and is simply missing its tail is a worse
-          // lie than not restoring it. `error` is the only terminal state the renderer has
-          // that shows the body AND says the tail is missing; the message is the shared
-          // interrupted sentence, so this reads the same as a mid-session interrupt.
-          status: (t.status === "interrupted" ? "error" : "done") as "error" | "done",
-          guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
-          converseSteps: [],   // CI-6a: the tool trail is live-stream evidence too
-          scanItems: [], scanProgress: null,
-          route: null,
-          agent: null,
-          clarify: null,
-          escalate: null,
-          // Restored turns: the turn id IS the receipt key; the component 404-noops
-          // gracefully if this turn predates receipts.
-          receiptId: t.sql ? t.id : null,
-          publicReceiptId: null,   // restored turns use the per-mode receipt route (receiptId)
-          sql: t.sql || null,
-          columns: t.columns || [],
-          rows: t.rows || [],
-          headline: t.headline || null,
-          headlineStream: null,   // restored turns never carry deltas (inert, startedAt 0)
-          chartType: t.chart_type || null,
-          statusText: null,
-          phases: [],
-          deepReport: null,
-          report: null,
-          queryMode: null,
-          subQuestions: [],
-          subqAnswers: [],
-          exploreReport: null,
-          dossierReport: null,
-          dossierInsightId: null,
-          overviewReport: t.overview_report || null,
-          queriesExecuted: [],
-          latestScore: null,
-          hypotheses: [],
-          investigationId: null,
-          tablesUsed: t.tables_used || [],
-          contextManifest: null,
-          planPending: null,
-          clarifyPending: null,
-          analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
-          followups: [],
-          error: t.status === "interrupted"
-            ? `This answer was interrupted — ${UNCERTAIN_RESULT}.`
-            : null,
-          errorDetail: null,   // no live error to classify; an interrupt is not a failure
-          startedAt: 0,
-          elapsedMs: null,
-          fromCache: false,
-          cachedQuestion: null,
-          inspectWarning: null,
-          playbookRefs: [],
-          // WIRE-NAME BOUNDARY — the stored key is `insight` (report_json["insight"], a
-          // persisted identity); the turn field is `narrative`.
-          narrative: t.insight || null,
-          narrativeStream: null,   // deltas are live-only; history restores the final narrative
-          reportStream: null,
-          clarifyingQuestions: [],
-          clarifyingContext: "",
-          })), resumeId);
+          setMessages(msgs);
         })
         .catch(() => {});
     };
@@ -713,6 +720,79 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── The actions (the reducer hook's verbs, on the SDK's transport) ──────────
+
+  /** Per-turn options, exactly the reducer path's `ask` opts. */
+  interface AskOpts {
+    skipCache?: boolean; schema?: string | null; insightId?: string;
+    seedSql?: string | null; seedContext?: string; deep?: boolean;
+    depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string;
+    clarifySubject?: string; clarifySource?: string;
+    requestMode?: "investigate" | "explore"; purpose?: string;
+  }
+
+  const sendQuestion = useCallback((question: string, m: "auto" | "ask" | "investigate" = "auto", opts: AskOpts = {}) => {
+    // An interrupt — the user sent this while a turn was still streaming. The SDK
+    // abort settles the outgoing turn with whatever it produced (the projection
+    // reads a non-streaming message as done), and the new send is its own turn.
+    if (busy) sdkStop();
+    if (status === "error") clearError();
+    // The turn's initial mode drives the loading UI until the router's `route`
+    // receipt corrects it; a starter's requestMode always routes deep.
+    const initialMode: "ask" | "investigate" = m === "investigate" || opts.requestMode ? "investigate" : "ask";
+    void sendMessage(
+      { text: question, metadata: { mode: initialMode } },
+      { body: {
+        mode: m,
+        depth: opts.depth ?? "auto",
+        schema: opts.schema ?? null,
+        agent_id: agentId || null,
+        skip_clarify: opts.skipClarify ?? false,
+        clarify_reading: opts.clarifyReading ?? "",
+        clarify_subject: opts.clarifySubject ?? "",
+        clarify_source: opts.clarifySource ?? "",
+        insight_id: opts.insightId ?? null,
+        deep: opts.deep ?? false,
+        seed_sql: opts.seedSql ?? null,
+        seed_context: opts.seedContext ?? "",
+        skip_cache: opts.skipCache ?? false,
+        request_mode: opts.requestMode ?? null,
+        purpose: opts.purpose ?? "",
+      } },
+    );
+  }, [busy, status, sdkStop, clearError, sendMessage, agentId]);
+
+  const stop = useCallback(() => { sdkStop(); }, [sdkStop]);
+
+  const clear = useCallback(() => {
+    sdkStop();
+    setTimings(new Map());
+    eventLogRef.current = [];
+    setSessionId(newSessionId()); // a fresh Chat instance — empty conversation, new session row
+  }, [sdkStop]);
+
+  // P3/P4 gate approvals — still side POSTs keyed by investigation id (the route
+  // maps `resume` onto the feedback endpoint); the user's decision is a visible
+  // turn, and the resumed run streams back as its answer.
+  const resumePlan = useCallback((invId: string, keep: number[]) => {
+    void sendMessage(
+      { text: `Proceed with ${keep.length || "all"} sub-question${keep.length === 1 ? "" : "s"}.`,
+        metadata: { mode: "investigate" } },
+      { body: { resume: { kind: "plan", investigation_id: invId, keep_subquestions: keep } } },
+    );
+  }, [sendMessage]);
+
+  const rejectPlan = useCallback((invId: string) => {
+    void cancelInvestigation(invId).catch(() => { /* best-effort */ });
+  }, []);
+
+  const resumeClarify = useCallback((invId: string, choice: string) => {
+    void sendMessage(
+      { text: choice, metadata: { mode: "investigate" } },
+      { body: { resume: { kind: "clarify", investigation_id: invId, choice } } },
+    );
+  }, [sendMessage]);
 
   // ── The conversation's id lives in the URL, so a reload resumes it ──────────
   // Written once the conversation has something worth coming back to, and removed when it
@@ -726,33 +806,33 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // erasing the other's keys.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!state.turns.length) return;   // see below: emptiness is not a reason to forget
+    if (!messages.length) return;   // see below: emptiness is not a reason to forget
     const params = new URLSearchParams(window.location.search);
     if (params.get("chat") === sessionId) return;
     params.set("chat", sessionId);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
-  }, [state.turns.length, sessionId]);
+  }, [messages.length, sessionId]);
 
   // ── Scroll: follow the newest content while pinned to the bottom, release
   //    the moment the user scrolls up to read, snap back on completion. ───────
-  const streamingKey = state.turns.map(t => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
-  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: state.streaming });
+  const streamingKey = turns.map(({ turn: t }) => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
+  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: busy });
 
   useEffect(() => {
-    if (wasStreamingRef.current && !state.streaming && state.turns.length > 0) {
-      const lastTurn = state.turns[state.turns.length - 1];
+    if (wasStreamingRef.current && !busy && turns.length > 0) {
+      const lastTurn = turns[turns.length - 1].turn;
       setTimeout(() => {
         const el = turnTopRefs.current.get(lastTurn.id);
         el?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 150);
     }
-    wasStreamingRef.current = state.streaming;
-  }, [state.streaming]); // eslint-disable-line
+    wasStreamingRef.current = busy;
+  }, [busy]); // eslint-disable-line
 
   // Auto-submit a question injected from outside (e.g. "Investigate" from the Ontology canvas)
   const initialFiredRef = useRef(false);
   useEffect(() => {
-    if (!initialQuestion || initialFiredRef.current || state.streaming) return;
+    if (!initialQuestion || initialFiredRef.current || busy) return;
     if (initialMode) setMode(initialMode);
     // Small delay so the component is fully mounted and mode is set.
     // The fired-latch is set INSIDE the timer: StrictMode's dev double-invoke
@@ -760,7 +840,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // would make the second setup bail — auto-submit would never fire in dev.
     const t = setTimeout(() => {
       initialFiredRef.current = true;
-      ask(initialQuestion, connectionId, initialMode ?? "investigate", { canvasId: canvasId ?? undefined, insightId: initialInsightId });
+      sendQuestion(initialQuestion, initialMode ?? "investigate", { insightId: initialInsightId });
     }, 80);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -769,10 +849,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
     // Only an EMPTY question is refused. Sending while a turn streams is not an error —
-    // it is the interrupt: `ask` aborts the in-flight request before starting, and the
-    // backend's core stops at its next cancellation checkpoint rather than running on for
-    // a client that has moved on. Refusing here (as this did) made an enabled input worse
-    // than a disabled one: it accepted the text and silently dropped it.
+    // it is the interrupt: `sendQuestion` aborts the in-flight request before starting,
+    // and the backend's core stops at its next cancellation checkpoint rather than
+    // running on for a client that has moved on. Refusing here (as this did) made an
+    // enabled input worse than a disabled one: it accepted the text and silently
+    // dropped it.
     if (!question) return;
     setInput("");
     // Upload attached file first, then send the question
@@ -784,11 +865,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       }
       setAttachedFile(null);
     }
-    ask(question, connectionId, m ?? mode, { ...opts, canvasId: canvasId ?? undefined, agentId: agentId || undefined });
+    sendQuestion(question, m ?? mode, opts ?? {});
     textareaRef.current?.focus();
-  }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile, agentId]);
+  }, [input, sendQuestion, mode, attachedFile]);
 
-  const isEmpty = state.turns.length === 0;
+  const isEmpty = messages.length === 0;
 
   // R10 — THUMBS→priors: a helpful verdict teaches the learned table prior
   // (the same counter overview drills + query popularity feed). Fire-and-forget.
@@ -817,7 +898,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     textareaRef,
     input,
     setInput,
-    streaming: state.streaming,
+    streaming: busy,
     mode,
     setMode,
     onSend: handleSend,
@@ -946,7 +1027,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
             {/* Scrollable messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
               <div className="py-8 w-[90%] max-w-[var(--measure-chat)] mx-auto">
-                {state.turns.map((turn, i) => (
+                {turns.map(({ turn, userMsg, assistantMsg }, i) => (
                   <div
                     key={turn.id}
                     className="aug-anim-up"
@@ -958,15 +1039,16 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {i > 0 && <div className="border-t border-zinc-800 my-8" />}
                     <DepthBanner
                       turn={turn}
-                      onRerun={(depth) => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth })}
+                      onRerun={(depth) => sendQuestion(turn.question, "auto", { depth })}
                     />
                     <AgentBadge turn={turn} />
                     {/* WP-2 — isolate a single answer's render: a throw here (a malformed
                         report, a recovered-report shape mismatch) must not white-screen the
                         conversation or kill the composer. */}
                     <ErrorBoundary label="This answer couldn't be displayed.">
-                      <ChatMessage
+                      <PartsMessage
                         turn={turn}
+                        message={assistantMsg}
                         connectionId={connectionId}
                         // Wave 2 / 2.1 — tag the turn so chip adoption is QUERYABLE. A
                         // clicked follow-up was indistinguishable from a typed question,
@@ -976,8 +1058,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onFollowUp={(q) => handleSend(q, undefined, { purpose: "followup" })}
                         onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                         onShowSource={setSourcePanel}
-                        onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
-                        onExploreFact={(q, o) => { recordOverviewDrill(connectionId, { canvasId: canvasId ?? undefined, lens: o.lens, table: o.table }); ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, seedSql: o.seedSql, seedContext: o.seedContext, deep: true }); }}
+                        onDeeper={(q, insightId) => sendQuestion(q, "investigate", { insightId: insightId ?? undefined, deep: true })}
+                        onExploreFact={(q, o) => { recordOverviewDrill(connectionId, { canvasId: canvasId ?? undefined, lens: o.lens, table: o.table }); sendQuestion(q, "investigate", { seedSql: o.seedSql, seedContext: o.seedContext, deep: true }); }}
                         onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                         onRejectPlan={(invId) => rejectPlan(invId)}
                         onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
@@ -987,19 +1069,25 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         // place. That is what makes "never a dropped or duplicated turn" true
                         // by construction rather than by care.
                         onRetry={(q) => handleSend(q)}
+                        // CA-1 — edit-and-resend: replaces THIS user message and re-sends;
+                        // the SDK truncates the thread from here (branching, the cheap way).
+                        onEdit={(q) => void sendMessage(
+                          { text: q, messageId: userMsg.id, metadata: { mode: "ask" } },
+                          { body: { mode: "auto" } },
+                        )}
                       />
                     </ErrorBoundary>
                     {turn.clarify && (
                       <ClarifyCard
                         turn={turn}
-                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
-                        onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                        onClarify={(detail) => sendQuestion(`${turn.question} — ${detail}`, "auto", { skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
+                        onAnswerAnyway={() => sendQuestion(turn.question, "auto", { skipClarify: true })}
                       />
                     )}
                     {turn.escalate && (
                       <EscalateBar
                         turn={turn}
-                        onEscalate={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth: "deep", skipClarify: true })}
+                        onEscalate={() => sendQuestion(turn.question, "auto", { depth: "deep", skipClarify: true })}
                       />
                     )}
                     {/* Wave S2 — ONE receipt surface per answer. Two panels used to render
@@ -1033,6 +1121,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
                     {turn.status === "done" && turn.publicReceiptId && (
                       <WhyThisNumber receiptId={turn.publicReceiptId} />
+                    )}
+                    {/* CA-1 — regenerate: re-run the LAST turn's question as a fresh
+                        answer (the SDK re-sends the same user message). Last turn only —
+                        regenerating an earlier turn would truncate the thread below it. */}
+                    {i === turns.length - 1 && turn.status !== "loading" && assistantMsg && (
+                      <div style={{ display: "inline-flex" }}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => { if (busy) sdkStop(); void regenerate(); }}
+                          title="Ask this again — a fresh answer replaces this one"
+                          className="h-auto gap-1 px-1.5 py-0.5 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+                        >
+                          ↺ Regenerate
+                        </Button>
+                      </div>
                     )}
                     {/* Post-run feedback — shown once per completed deep analysis with hypotheses */}
                     {turn.mode === "investigate" &&

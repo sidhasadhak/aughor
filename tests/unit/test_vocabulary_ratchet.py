@@ -178,7 +178,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # What is banned is describing OUR design system as Tableau's.
         r"(?i)tableau|\btab10\b", ("web",),
         ("web/lib/chartPalettes.ts", "web/lib/orgSettings.ts",
-         "web/components/QueryBuilder.tsx", "web/components/Chart.tsx"),
+         "web/components/QueryBuilder.tsx",
+         # CA-4 moved Chart.tsx's resolver (and its palette-name doc comment)
+         # into resolveOption.ts — the exemption follows the code.
+         "web/components/charts/resolveOption.ts"),
         "our design system is ours; name the colour scheme, not its origin",
     ),
     "mindsdb": (
@@ -195,7 +198,10 @@ BASELINE: dict[str, int] = {
     # most of them ada-era prose. Counted over `git ls-files` only — a box that has run
     # the eval suite feeds the scanner untracked MLflow yaml under evals/bakeoff_out/,
     # which is what CI's fresh checkout will never see.
-    "ada": 628,   # paid down by flag endgame Wave 6 (the ada.parallel_* aliases left with their targets)
+    # 628 → 602: CA-3 reworded the uppercase-acronym prose in investigate.py and the
+    # router to "deep-analysis" — the analyst module's unavoidable phase-node call
+    # sites (the API names stay frozen) ride inside that paydown.
+    "ada": 602,
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,
@@ -213,7 +219,9 @@ BASELINE: dict[str, int] = {
     # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
     # saying "finding" there (the glossary word) paid for the API names they must import.
     "insight": 1959,
-    "investigation_in_web": 659,
+    # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
+    # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
+    "investigation_in_web": 617,
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,

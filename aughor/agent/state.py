@@ -357,9 +357,15 @@ class InvestigationFinding(TypedDict):
     # "41.0%", not "0.4". Absent → the UI falls back to its column-name heuristics. Units: "percent".
     column_units: NotRequired[dict[str, str]]
     # Chart-grammar exhibit spec: deterministic chart SEMANTICS —
-    # {"color": {"mode": "severity"|...}, "ref_lines": [{value,label,kind}], "label_points", "quadrant"}.
+    # {"color": {"mode": "severity"|...}, "ref_lines": [{value,label,kind}], "label_points", "quadrant",
+    #  "emphasis": ["<subject entity>"]}.
     # Built by aughor/agent/exhibit.py from the finding's own rows; absent → legacy rendering.
     exhibit: NotRequired[dict]
+    # CA-4 "title = claim": the one-sentence claim the exhibit demonstrates — the chart's
+    # title on every surface; `title` keeps the query's descriptive name (the source chip).
+    claim: NotRequired[Optional[str]]
+    # CA-4 subtitle: scope · period · unit, assembled deterministically from the intake.
+    subtitle: NotRequired[Optional[str]]
 
 
 class InvestigationPhaseResult(TypedDict):
@@ -578,6 +584,11 @@ class AgentState(TypedDict):
     # convention — and so the channel rot guard needs no allowlist.
     _pack_injection_block: NotRequired[Optional[str]]
     _pack_id: NotRequired[Optional[str]]
+    # CA-3 — the analyst loop's own closing statement (the model's cause-with-size
+    # conclusion, or its account of what the data cannot tell). Part of the evidence
+    # the narrator writes the report from; absent/empty on every phase-script run,
+    # so synthesis is byte-identical there.
+    _analyst_conclusion: NotRequired[Optional[str]]
 
     # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·
     # profile · KB), carried so every node reads one consistent context instead of re-consulting

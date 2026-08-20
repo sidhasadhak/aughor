@@ -14,6 +14,8 @@
  * bake a concrete font stack. Keep it in sync with --font-ui.
  */
 
+import { CHART_SERIES } from "@/components/charts/echarts/palette";
+
 const FONT_STACK = "'DM Sans', system-ui, -apple-system, sans-serif";
 
 /** Read a CSS custom property off <html>, with a dark-mode fallback for SSR. */
@@ -37,18 +39,11 @@ export interface ChartTokens {
 
 /** Resolve every token the chart theme needs from the current CSS context. */
 export function readChartTokens(): ChartTokens {
-  const palette = [
-    cssVar("--chart-1", "#4C8EEE"),
-    cssVar("--chart-2", "#2EC87B"),
-    cssVar("--chart-3", "#E0AD00"),
-    cssVar("--chart-4", "#8B68D8"),
-    cssVar("--chart-5", "#E64848"),
-    cssVar("--chart-6", "#30B8E0"),
-    // Extended hues for high-cardinality categorical encodings — the overflow ramp
-    // past the six brand tokens. This is their single home (REC-U4).
-    "#F97316", "#EC4899", "#10B981", "#6366F1", "#F59E0B", "#14B8A6",
-    "#A855F7", "#22D3EE", "#84CC16", "#E879F9", "#34D399", "#FB923C",
-  ];
+  // Six slots and no more (CA-4): the overflow ramp is gone — a 7th+ series is a
+  // data problem the builders solve by folding to "Other", never a generated hue
+  // (a generated hue is indistinguishable from an existing one under CVD).
+  // Fallbacks are the dark literals from palette.ts — the SSR default theme.
+  const palette = CHART_SERIES.dark.map((hex, k) => cssVar(`--chart-${k + 1}`, hex));
   return {
     palette,
     axis: cssVar("--chart-axis", "#2A2C2F"),
@@ -106,13 +101,19 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
     line: {
       lineStyle: { width: 2, cap: "round", join: "round" },
       symbol: "circle",
-      symbolSize: 6,
+      // ≥8px markers with a 2px surface ring — the ring keeps a dot legible
+      // where it crosses its own line or a neighbour (CA-4 mark specs).
+      symbolSize: 8,
+      itemStyle: { borderColor: t.surface, borderWidth: 2 },
       smooth: false,
       label: dataLabel,
     },
-    bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, label: dataLabel },
+    // 4px rounded data-end, square at the baseline; a 1px surface-colour border
+    // renders the 2px seam between touching marks (stacked segments) — the gap
+    // does the separating, invisible against the card for a lone bar.
+    bar: { itemStyle: { borderRadius: [4, 4, 0, 0], borderColor: t.surface, borderWidth: 1 }, label: dataLabel },
     pie: { itemStyle: { borderWidth: 1, borderColor: t.surface }, label: { ...dataLabel, textBorderWidth: 2 } },
-    scatter: { symbolSize: 9 },
+    scatter: { symbolSize: 9, itemStyle: { borderColor: t.surface, borderWidth: 2 } },
     legend: {
       // Anchor to the top. Without an explicit position ECharts drops the legend to the
       // bottom, where it collides with the x-axis time/category labels on multi-series
@@ -139,6 +140,27 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
 }
 
 export const AUGHOR_THEME_NAME = "aughor";
+
+/**
+ * The LIGHT token set for HEADLESS print rendering (the PDF/PPTX chart is a
+ * light-surface artifact) — no document to read CSS vars from, so the values
+ * are the light literals: series from palette.ts (gated by lint:palette), chrome
+ * from tokens-v2.css's light block. Print uses a generic sans: the SVG is
+ * rasterized where DM Sans isn't installed, so naming it would lie.
+ */
+export function printChartTokens(): ChartTokens {
+  return {
+    palette: [...CHART_SERIES.light],
+    axis: "rgba(20,40,80,.12)",
+    grid: "rgba(20,40,80,.06)",
+    tick: "#66738A",
+    t1: "#1C2330",
+    t3: "#8593A6",
+    tooltipBg: "#FFFFFF",
+    tooltipBorder: "#E7ECF3",
+    surface: "#FFFFFF",
+  };
+}
 
 /**
  * Register (or re-register) the Aughor theme on an echarts module with the

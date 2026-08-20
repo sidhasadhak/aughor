@@ -1,5 +1,5 @@
 """
-ADA (Autonomous Intelligence Platform) — structured investigation engine.
+deep-analysis (Autonomous Intelligence Platform) — structured investigation engine.
 
 Replaces the hypothesis-scoring pipeline for investigate-mode questions with
 an 8-phase analytical lifecycle that produces a progressive, number-backed
@@ -1010,7 +1010,7 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
 
 
 def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date_column: str, question: str) -> str:
-    """A JOIN-COMPLETE filtered schema for the ADA coder. Keeping only the metric +
+    """A JOIN-COMPLETE filtered schema for the deep-analysis coder. Keeping only the metric +
     dimension tables drops the table that holds the date/join columns (revenue on
     `invoices`, the timestamp on `orders`), so the coder hallucinates a date column on
     the metric table. This keeps the metric + dimension tables, the date column's host
@@ -1375,7 +1375,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                     _s.inc("deep_analysis.semantic_steps_skipped_nontext")
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
-                tolerate(_e, "ADA semantic step is best-effort; raw result still used",
+                tolerate(_e, "deep-analysis semantic step is best-effort; raw result still used",
                          counter="deep_analysis.semantic_step_failed")
         out.append((q, r))
     return out
@@ -1605,6 +1605,12 @@ def _phase_result(
     skipped_reason: Optional[str] = None,
     caveats: Optional[list[str]] = None,
 ) -> InvestigationPhaseResult:
+    # CA-4 form-by-job: the model names a JOB ("magnitude", "trend", …); the
+    # form is resolved here — the one seam every phase's findings pass through —
+    # so streamed frames and persisted reports carry engine hints only.
+    from aughor.agent.chart_vocab import resolve_chart_type
+    for _f in findings:
+        _f["chart_type"] = resolve_chart_type(_f.get("chart_type"))
     return InvestigationPhaseResult(
         phase_id=phase_id,
         phase_name=phase_name,
@@ -1627,6 +1633,7 @@ def _finding_from_result_and_model(
     return InvestigationFinding(
         finding_id=finding_id,
         title=model.title,
+        claim=(model.claim or None),
         sql=result.sql,
         columns=result.columns,
         rows=result.rows[:50],
@@ -2020,14 +2027,16 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             f = InvestigationFinding(
                 finding_id=f"{id_prefix}_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation=(r.error or "Query executed."),
+                # An error is the finding's honest prose; a clean run gets NO filler — "Query
+                # executed." is trace, not analysis, and the report renders only real prose.
+                error=r.error, interpretation=(r.error or ""),
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
                 trust_caveat=None,
             )
         # ADVISORY trust check — reuse the explorer's verify_insight battery (impossible
         # magnitude, fan-out artifact, vacuous CASE, ungrounded claim). It NEVER blocks: the
         # answer is always shown; an untrusted result just carries a caveat the UI surfaces.
-        # conn=None → static checks only (no live cardinality probe), to keep ADA snappy.
+        # conn=None → static checks only (no live cardinality probe), to keep deep-analysis snappy.
         # `diagnose_conn` is narrower: it is used ONLY on the degenerate-result branch, to
         # tell "this data is missing" apart from "this data is text we failed to parse".
         # That branch is already rare, so the live probe costs a healthy run nothing — and
@@ -2836,6 +2845,19 @@ _FINDING_CHANGE_RE = re.compile(
     r"(change|delta|growth|\bmom\b|\byoy\b|\bwow\b|\bqoq\b|_chg$|_diff$|vs_prev|^prev_|_prev$|contribution)", re.I)
 
 
+def _finding_subtitle(intake: dict) -> str:
+    """CA-4 subtitle: scope · period · unit, assembled deterministically from the
+    intake spec — the context line under a claim title, so the title can be the
+    claim alone. Empty when the intake carries none of it."""
+    scope = str(intake.get("comparison_segment_label") or intake.get("metric_table") or "").strip()
+    period = str(intake.get("observation_label") or "").strip()
+    comp = str(intake.get("comparison_label") or "").strip()
+    if period and comp:
+        period = f"{period} vs {comp}"
+    unit = str(intake.get("metric_label") or "").strip()
+    return " · ".join(p for p in (scope, period, unit) if p)
+
+
 def _chart_type_for_finding(finding: dict, intent: str) -> str:
     """Pick a finding's chart from its NARRATIVE intent, VERIFIED against the data's actual shape so a
     mislabelled intent degrades to 'auto' (frontend inference) instead of forcing a wrong chart. See
@@ -3324,6 +3346,14 @@ def _evidence_budget() -> int:
         return _EVIDENCE_BUDGET
 
 
+def condense_phase_evidence(p: "InvestigationPhaseResult") -> str:
+    """Public alias (stable cross-module interface) — the analyst loop (CA-3) hands each
+    phase tool's result back to the model in the same deterministic, number-preserving
+    condensation synthesis reads, so the model reasons over exactly the evidence the
+    narrator will later cite."""
+    return _condense_phase_evidence(p)
+
+
 def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
     """Deterministic, number-preserving condensation of ONE overflow phase — no LLM.
 
@@ -3462,7 +3492,7 @@ def _resolve_probe_ref(table: str, date_column: str) -> tuple[str, str]:
 
 def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
     """Authoritative (min, max) of the metric table's date column via one cheap
-    probe. The DATA PORTRAIT is empty on the ADA path (scan_context is never
+    probe. The DATA PORTRAIT is empty on the deep-analysis path (scan_context is never
     populated before intake), so profile-text parsing alone leaves the window
     validation blind — this asks the database itself. Returns (None, None) on
     any failure; the clamp then no-ops."""
@@ -4228,7 +4258,7 @@ def _scrub_xsec_reasoning(notes: str) -> str:
 
 _AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
 
-# Shared grounding rule appended to every ADA plan node's terse system prompt so the
+# Shared grounding rule appended to every deep-analysis plan node's terse system prompt so the
 # coder treats the SCHEMA as authoritative and JOINs to reach columns on other tables
 # (e.g. a timestamp on `orders` when the metric is on `invoices`) instead of inventing one.
 _ADA_SQL_GROUNDING = (
@@ -4299,7 +4329,7 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
     """Render the structured ``origin_finding`` into INTAKE_PROMPT's additive ORIGIN
     FINDING section. Returns "" when there is no origin (a cold-start question), so a
     normal investigation's prompt is byte-for-byte unchanged. When present, it binds
-    ADA's spec to the finding the explorer already established — so a drill EXTENDS that
+    deep-analysis's spec to the finding the explorer already established — so a drill EXTENDS that
     work (explains why) instead of re-deriving the metric/tables/window from scratch."""
     if not origin:
         return ""
@@ -4510,7 +4540,7 @@ def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric
                                    llm_sql: str, governed_name: str, governed_sql: str) -> None:
     """P4 — when intake resolved a metric to its GOVERNED definition over a materially-different parsed
     reading, crystallize that as an Ambiguity-Ledger resolution so the definition BURNS DOWN per
-    connection and is read back as a plan-time prior on EVERY path (chat + future ADA), not just this
+    connection and is read back as a plan-time prior on EVERY path (chat + future deep-analysis), not just this
     run. The two candidate readings are the LLM's parsed formula and the governed one; the resolution
     is execution-grounded (P1 dry-ran the governed formula before pinning). Source=``probe`` — the
     lowest ledger authority, so it never clobbers a user clarify or a reviewer verdict (override-wins).
@@ -5086,7 +5116,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # METRIC TABLE (not the whole connection: on multi-dataset connections the global
     # range mixes datasets and masks an empty window). The LLM retry above only asks;
     # this enforces. The portrait parse is the cheap path, but scan_context is empty
-    # on the ADA entry points — the DB probe is the authoritative fallback.
+    # on the deep-analysis entry points — the DB probe is the authoritative fallback.
     # Deterministic DATA COVERAGE span — one MIN/MAX probe of the metric's date column, run
     # UNCONDITIONALLY (T4-2): it drives the temporal window clamp below AND lets the report state the
     # real coverage window (even a cross-sectional scan spans a real range the reader should see),
@@ -5319,6 +5349,13 @@ _QUESTION_UP_RE = re.compile(
 )
 
 
+def detect_question_direction(question: str) -> Optional[str]:
+    """Public alias (stable cross-module interface) — the analyst's `premise_check`
+    tool (CA-3) reads the question's expected direction with the same detector the
+    baseline phase's inline check uses."""
+    return _detect_question_direction(question)
+
+
 def _detect_question_direction(question: str) -> Optional[str]:
     """Return 'down' if question implies a drop, 'up' if it implies a rise, else None."""
     if _QUESTION_DOWN_RE.search(question):
@@ -5400,7 +5437,7 @@ def run_analysis_phase(
     sql_transform=None,
     coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
 ) -> "_PhaseRun":
-    """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
+    """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every deep-analysis phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
     phase for the caller to return. The interpret prompt is built by ``interpret_user_fn(
     results_text)`` since it depends on the executed results.
@@ -5472,7 +5509,7 @@ def run_analysis_phase(
     # Fan-out guard (CHASM) — a metric aggregated across a join that MULTIPLIES its home
     # table's rows inflates the total. Real failure: a "stockout days by category" scan summed
     # inventory_snapshots (product×month grain) AFTER joining order_items (2.37M line-items),
-    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the ADA phases
+    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the deep-analysis phases
     # did not. Detect SUM/AVG/COUNT-over-chasm on the planned SQL and force ONE corrective re-plan
     # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
     _fanout_caveat = None
@@ -5688,6 +5725,9 @@ def run_analysis_phase(
 # baseline, and `code_significant` then fell back to that flag. Below this many periods a z
 # is not a verdict: the change is described, not tested.
 _MIN_BASELINE_PERIODS = 6
+#: Public alias (stable cross-module interface) — the analyst's `z_score` tool (CA-3)
+#: applies the same minimum-baseline rule this module's baseline phase does.
+MIN_BASELINE_PERIODS = _MIN_BASELINE_PERIODS
 _Z_NOTE_RE = re.compile(r"\bz\s*[=≈]\s*[-+]?\d+(?:\.\d+)?", re.I)
 
 
@@ -5905,7 +5945,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                 rows=r.rows[:50],
                 row_count=r.row_count,
                 error=r.error,
-                interpretation=f"Query executed: {r.row_count} rows returned." if not r.error else r.error,
+                interpretation=r.error or "",
                 key_numbers=[],
                 chart_type=q.chart_type,
                 stat_note=None,
@@ -5913,15 +5953,21 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = f"Baseline computed for {obs_label}."
-        passes_to_next = summary
+        # The user-facing summary stays EMPTY when interpretation produced nothing — "Baseline
+        # computed" is process trace, and the report skips empty prose (charts still render).
+        # The descriptive line survives on `passes_to_next`, the internal phase hand-off.
+        summary = ""
+        passes_to_next = f"Baseline computed for {obs_label}."
         if code_significant is None:
             code_significant = True  # unknown → assume significant, don't block
 
     # A baseline is a metric over time → a line (intent-driven; shape-verified, so a non-temporal
     # baseline finding safely degrades to the frontend's auto inference).
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     # CA-2 — too short a baseline for any z to be a verdict (see _MIN_BASELINE_PERIODS). The
     # model's z notes become descriptions, its flags are cleared, and the routing signal goes
@@ -5931,13 +5977,14 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     if code_sigma is None and _n_periods is not None and _n_periods < _MIN_BASELINE_PERIODS:
         if _neutralize_short_baseline_z(findings, _n_periods):
             summary = (f"{summary} [stats.py: significance not assessable — the baseline holds "
-                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]")
+                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]").strip()
             code_significant = None   # unknown → proceed; the model's z is not a verdict
 
     # Append sigma note to summary if available
     if code_sigma is not None:
         sig_label = "significant anomaly" if code_significant else "within normal variance"
-        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]"
+        # .strip(): the Verifier's note must land even when the base summary is empty.
+        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]".strip()
 
     # ── Premise validation: detect when observation period contradicts the question's intent ──
     # e.g. question asks "why did revenue DROP?" but obs period actually showed a rise.
@@ -6034,7 +6081,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                                 is_significant=True,
                             )
                             findings = [correction_finding] + findings
-                            summary = f"⚠️ {correction_note} | {summary}"
+                            summary = f"⚠️ {correction_note} | {summary}" if summary else f"⚠️ {correction_note}"
                             passes_to_next = correction_note + " " + passes_to_next
 
                             # Update _ada_intake so all downstream phases use correct periods
@@ -6146,19 +6193,27 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"decomp_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Metric decomposition complete."
-        passes_to_next = summary
+        summary = ""  # trace, not analysis — empty renders nothing; the hand-off keeps the line
+        passes_to_next = "Metric decomposition complete."
 
     # A decomposition ranks sub-drivers → a sorted bar (a change/contribution finding keeps 'auto' so
     # the frontend's sign-aware diverging bar isn't flattened).
+    # CA-4 emphasis: when the question names a subject segment, the chart paints
+    # that segment in the accent hue and the rest in the de-emphasis gray.
+    from aughor.agent.exhibit import emphasis_from_intake, stamp_emphasis
+    _emph = emphasis_from_intake(intake_data)
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        stamp_emphasis(_f, _emph)
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     phase = _phase_result(
         "decomposition", "Metric Decomposition", "🧩",
@@ -6253,19 +6308,26 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"dim_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Dimensional analysis complete."
-        passes_to_next = summary
+        summary = ""  # trace, not analysis — empty renders nothing; the hand-off keeps the line
+        passes_to_next = "Dimensional analysis complete."
 
     # A dimensional drill-down ranks where the metric concentrates → a sorted bar; a contribution/
     # change finding keeps 'auto' so the frontend's diverging (green/red by sign) bar is preserved.
+    # CA-4 emphasis: the question's subject segment leads; peers recede to gray.
+    from aughor.agent.exhibit import emphasis_from_intake, stamp_emphasis
+    _emph = emphasis_from_intake(intake_data)
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        stamp_emphasis(_f, _emph)
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     phase = _phase_result(
         "dimensional", "Dimensional Analysis", "🔬",
@@ -6364,13 +6426,13 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
             InvestigationFinding(
                 finding_id=f"beh_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type,
                 stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Behavioral and operational analysis complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     phase = _phase_result(
         "behavioral", "Behavioral & Operational", "👥",
@@ -6781,12 +6843,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             InvestigationFinding(
                 finding_id=f"{_fprefix}_{i}", title=q.title, sql=r.sql,
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
-                error=r.error, interpretation="Query executed.",
+                error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Cross-sectional scan complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
@@ -6828,8 +6890,15 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
         # reference lines (segment-weighted average; the R15 best-peer benchmark),
         # computed from this finding's own rows. No model, no extra query; fail-open.
-        from aughor.agent.exhibit import exhibit_for_cross_section
+        from aughor.agent.exhibit import (
+            emphasis_from_intake, exhibit_for_cross_section, stamp_emphasis,
+        )
         exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
+        # CA-4 emphasis: the question's subject segment leads; peers recede.
+        stamp_emphasis(f, emphasis_from_intake(intake_data))
+        _sub = _finding_subtitle(intake_data)
+        if _sub:
+            f.setdefault("subtitle", _sub)
 
     for f in findings:
         _polish_xsec_finding(f)
@@ -7571,12 +7640,12 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
         findings = [
             InvestigationFinding(
                 finding_id=f"when_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Trend computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "line"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Temporal trend complete."
+        summary = ""  # trace, not analysis — the report renders only real prose
 
     # A trend is a line (intent-driven); its peak/trough/avg key numbers are recomputed from the FULL
     # series so they match the chart (the interpret LLM only saw a window).
@@ -7678,12 +7747,12 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
         findings = [
             InvestigationFinding(
                 finding_id=f"why_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Composition computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "Return composition computed."
+        summary = ""  # trace, not analysis — the report renders only real prose
     for _f in findings:
         # Chart the SHARE only — a composition is parts-of-a-whole, so the count and the share are the
         # SAME story; a count-bar + share-line dual-axis combo is redundant clutter (the line just
@@ -7799,12 +7868,12 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
         findings = [
             InvestigationFinding(
                 finding_id=f"interaction_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Interaction computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = "WHY×WHERE interaction computed."
+        summary = ""  # trace, not analysis — the report renders only real prose
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     for _f in findings:
         _normalize_pct_key_numbers(_f)
@@ -7880,7 +7949,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
         tolerate(_exc, "benchmark lens best-effort; skipped", counter="deep_analysis.benchmark_lens")
         return None
     return _lens_phase_from_run(_run, "reason_benchmark", "Reason Benchmark — Is the Cause Abnormal?",
-                                "📊", "benchmark", metric_label, "Reason benchmark computed.",
+                                "📊", "benchmark", metric_label,
                                 peer_median_ref=True)
 
 
@@ -7931,11 +8000,11 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
         tolerate(_exc, "reason drill lens best-effort; skipped", counter="deep_analysis.reason_drill_lens")
         return None
     return _lens_phase_from_run(_run, "reason_drill", "Reason Drill — Which Products Concentrate It",
-                                "🎯", "drill", metric_label, "Reason drill computed.")
+                                "🎯", "drill", metric_label)
 
 
 def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: str,
-                         metric_label: str, empty_summary: str,
+                         metric_label: str,
                          peer_median_ref: bool = False,
                          opportunity: Optional[dict] = None) -> Optional[dict]:
     """Shared tail for the forward-chained WHY lenses (benchmark/drill): assemble findings from a
@@ -7957,12 +8026,12 @@ def _lens_phase_from_run(_run, phase_id: str, title: str, emoji: str, fprefix: s
         findings = [
             InvestigationFinding(
                 finding_id=f"{fprefix}_{i}", title=q.title, sql=r.sql, columns=r.columns, rows=r.rows[:50],
-                row_count=r.row_count, error=r.error, interpretation="Computed.",
+                row_count=r.row_count, error=r.error, interpretation=r.error or "",
                 key_numbers=[], chart_type=(q.chart_type or "bar_horizontal"), stat_note=None, is_significant=False,
             )
             for i, (q, r) in enumerate(results)
         ]
-        summary = empty_summary
+        summary = ""  # trace, not analysis — the report renders only real prose
     _tag_percent_columns(findings, re.compile(r"share|pct|percent|_of_total", re.I))
     # R15 on the lens path. The utilization lens plans exactly R15's grid (segment,
     # metric_total, n) and then ASKED THE MODEL to "size the opportunity as gap ×
@@ -8175,7 +8244,6 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                 continue
             ph = _lens_phase_from_run(_run, spec["phase_id"], spec["title"], spec["emoji"],
                                       spec["fprefix"], spec["metric_label"],
-                                      f"{spec['title']} computed.",
                                       opportunity=spec.get("opportunity"))
             if ph:
                 phases.append(ph)
@@ -8717,6 +8785,19 @@ def ada_synthesize(state: AgentState) -> dict:
         tolerate(_exc, "agent brief is advisory; synthesis proceeds without it",
                  counter="deep_analysis.synth_context")
 
+    # CA-3 — the analyst loop's own closing statement rides as evidence: the model
+    # that CHOSE the slices says what it concluded, and the narrator writes the
+    # report from the same evidence log plus that conclusion. Claims are still
+    # bound by the checks below — the conclusion steers emphasis, never licence.
+    # Empty on every phase-script run, so this string is "" there and the prompt
+    # is byte-identical.
+    _analyst_note = (state.get("_analyst_conclusion") or "").strip()
+    analyst_conclusion_section = (
+        "\n\nTHE ANALYST'S OWN CONCLUSION (from the live tool loop that produced the "
+        "evidence above — weigh it, but cite only what the evidence supports):\n"
+        + _analyst_note
+    ) if _analyst_note else ""
+
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
@@ -8726,7 +8807,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + no_prior_note + cross_section_note + suppression_section + _claim_licence_section(
+    ) + contradiction_section + early_stop_note + no_prior_note + cross_section_note + suppression_section + analyst_conclusion_section + _claim_licence_section(
         intake_data, phases)
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
@@ -9139,7 +9220,7 @@ def ada_synthesize(state: AgentState) -> dict:
 
             completed_ts = datetime.now(timezone.utc).isoformat()
 
-            # Prefer ADA phases (richer provenance — has per-finding SQL)
+            # Prefer deep-analysis phases (richer provenance — has per-finding SQL)
             if phases:
                 claims = extract_claims_from_ada_phases(
                     investigation_id=investigation_id,

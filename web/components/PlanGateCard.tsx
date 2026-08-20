@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
-import type { PlanPending } from "@/lib/investigationStream";
+import type { PlanPending } from "@/lib/chatTurn";
 
 const PURPOSE_LABEL: Record<string, string> = {
   landscape: "landscape",

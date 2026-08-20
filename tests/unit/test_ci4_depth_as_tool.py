@@ -114,31 +114,38 @@ def test_deep_analysis_joins_the_converse_roster():
     assert "deep_analysis" in [s.name for s in ct.converse_tools("c1")]
 
 
-def test_the_tool_submits_through_the_one_door(monkeypatch):
-    """The body is Wave H5's neutral runner — the same build_ask_stream door every
-    caller uses — and the return value is the HANDLE, because a submitted run's
-    report does not exist yet and pretending otherwise would be the tool lying."""
-    from aughor import runners
+def test_the_tool_runs_the_analyst_inline(monkeypatch):
+    """CA-3: the tool's body IS the analyst loop, run in this turn — the phases stream
+    through the turn's own frame channel and the return value summarizes the report
+    the user already watched, never a background handle."""
+    from aughor.agent import analyst as an
 
     monkeypatch.setattr("aughor.licensing.has_capability",
                         lambda cap, **kw: True)
     seen = {}
 
-    def _fake_run(req, *, caller=""):
-        seen["question"] = req.question
-        seen["connection_id"] = req.connection_id
-        seen["caller"] = caller
-        return runners.InvestigationRun("executed", "job j1", job_id="j1",
-                                        basis="submitted")
+    def _fake_analyst(connection_id, question, **kw):
+        seen["question"] = question
+        seen["connection_id"] = connection_id
+        seen["session_id"] = kw.get("session_id")
+        seen["emit_bound"] = kw.get("emit") is not None
+        return an.AnalystResult(
+            answer="bots did it", report={"headline": "Bots did it",
+                                          "confidence": "MEDIUM",
+                                          "executive_summary": "A bot cohort."},
+            steps=[], stop_reason="answered", investigation_id="inv-9")
 
-    monkeypatch.setattr("aughor.runners.run_investigation", _fake_run)
+    monkeypatch.setattr("aughor.agent.analyst.run_analyst", _fake_analyst)
 
-    out = ct.deep_analysis("c1", {"question": "why did margin fall?"})
+    out = ct.deep_analysis("c1", {"question": "why did margin fall?"},
+                           emit=lambda t, p: None, session_id="s1")
 
     assert seen == {"question": "why did margin fall?", "connection_id": "c1",
-                    "caller": "converse"}
-    assert out["status"] == "executed" and out["job_id"] == "j1"
-    assert "background" in out["note"], "the model must be able to say where it lands"
+                    "session_id": "s1", "emit_bound": True}
+    assert out["status"] == "completed" and out["investigation_id"] == "inv-9"
+    assert out["headline"] == "Bots did it"
+    assert "streamed" in out["note"], (
+        "the model must know the report already reached the user")
 
 
 def test_a_missing_capability_is_a_value_not_a_silent_downgrade(monkeypatch):
@@ -154,14 +161,15 @@ def test_a_missing_capability_is_a_value_not_a_silent_downgrade(monkeypatch):
 
 
 def test_a_refused_run_reports_its_sentence(monkeypatch):
-    from aughor import runners
-
+    """The custom-agent refusal gate survives the CI-4→CA-3 body swap: an agent that may
+    not investigate is refused BEFORE the analyst starts, with the authored sentence."""
     monkeypatch.setattr("aughor.licensing.has_capability",
                         lambda cap, **kw: True)
-    monkeypatch.setattr(
-        "aughor.runners.run_investigation",
-        lambda req, caller="": runners.InvestigationRun(
-            "refused", "this agent may not investigate"))
+    monkeypatch.setattr("aughor.runners.refusal_for",
+                        lambda req: "this agent may not investigate")
+    monkeypatch.setattr("aughor.agent.analyst.run_analyst",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("the analyst must not run after a refusal")))
 
     out = ct.deep_analysis("c1", {"question": "why?"})
 

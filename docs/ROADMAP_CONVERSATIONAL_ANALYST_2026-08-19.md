@@ -12,8 +12,9 @@
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
 > Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
-> (`c3ba392`); CA-2 built on `claude/ca2-guards-to-evidence` (see its STATUS). CA-1 next.
-> The §5 decisions remain open.
+> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1, CA-3 and CA-4 built on
+> `claude/ca-1-continuation-t0ax40` (see their STATUS blocks). CA-5 is the open wave.
+> §5-3 (PDF renderer) is DECIDED — (a), node subprocess; the rest of §5 remains open.
 
 ---
 
@@ -188,6 +189,48 @@ phases at 15 RPM) through the real `/investigate` route:
 involvement (the reducer file is gone); transcript parity vs the old path on the same session id;
 five frontend gates green; `lint:elements` still 69/69.
 
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40`.** What shipped vs the sketch:
+- **The reducer stack is gone**: `investigationStream.ts` (846), `lib/useChat.ts`,
+  `useInvestigationThread.ts` and `aguiTransport.ts` deleted; `/chat/parts` deleted; the
+  vocabulary ratchet's `investigation_in_web` baseline fell 659 → 617 with them. The `ChatTurn`
+  SHAPE survives in `lib/chatTurn.ts` — the organs speak it — but accumulation became a pure
+  projection (`projectTurn`/`projectThread`) over an AI-SDK `UIMessage`'s parts: same fields,
+  same semantics, derived instead of dispatched. Streamed form == persisted form == projected
+  form. Every chat surface crossed together: ChatPanel (workspace + `/chat`), `BriefAskPanel`
+  (migrated, not kept on the seam) and the briefing's `InlineInvestigationThread`.
+- **"All 37 parts" became 41**: the adapter was silently dropping structure the reducer read —
+  settled `narrative` (anomalies/trend/confidence), `answer`, the Wave-R4 `error` tail, `done`'s
+  receipt id. Those now ride as declared data parts beside the text channels; text blocks carry a
+  channel stamp (`providerMetadata.aughor.channel`, incl. a separate `report` channel for deep
+  synthesis prose) so the projection reconstructs `headlineStream`/`narrativeStream`/`reportStream`
+  faithfully. Gate frames (`plan_pending`/`clarify_pending`) close the message cleanly instead of
+  reading as a dropped connection. Part coverage is a FAILING TEST, not a habit: every declared
+  key must project or be named in `FALLBACK_PARTS` (`chatTurn.test.ts`; parity tests run frames
+  through the real adapter AND the SDK's own `readUIMessageStream`).
+- **The transport**: `/api/chat` is now THE proxy — the reducer's three doors preserved verbatim
+  (`/investigate`, forced-quick `/chat`, unified `/ask`), per-turn options in the send body,
+  P3/P4 approvals as `resume` bodies mapped onto the same feedback side-POST keyed by
+  investigation id (the user's decision is a visible turn; the resumed run streams as its answer).
+  Compact history is DERIVED from the SDK's own messages server-side (`historyFrom`) — one memory,
+  no parallel client array. WP-2 drop-recovery moved into the route (bounded poll of
+  `/investigations/{id}`, recovered report re-fed through the adapter).
+- **Thread restore is `setMessages`**: new `GET /chat-sessions/{id}/messages` returns `UIMessage[]`
+  in exactly the streamed shape (pytest pins the mapping incl. the interrupted-turn uncertainty
+  sentence); ChatPanel's 40-field manual restore literal and `restore()` are gone. Deliberate
+  deviation: `_ReconstructedTurn` STAYS — it is `resolve_history`'s prompt memory for
+  session-addressed non-web callers (MCP, scheduled), not UI restore; `/turns` also stays for
+  API compatibility. Affordances: edit-and-resend on the question bubble (SDK truncate-and-branch),
+  Regenerate on the last turn, stop/interrupt preserved; chips/stick-to-bottom/greeting carried over.
+- **Receipt run**: five gates green (`lint` byte-identical finding count to main, tokens/format/
+  vars clean, `lint:elements` 69/69), `tsc` clean, 73 web tests + targeted backend battery
+  (ratchet/contract 93 + area suites) green, production build green with `/chat/parts` gone.
+  Live: this environment has no model key, so the browser run drove the REAL client seam
+  (composer → `/api/chat` → adapter → SDK → projection → organs) against a frame-replay backend
+  speaking the exact wire vocabulary — quick turn (route banner, streamed headline, figure,
+  narrative, follow-ups), deep turn (guard receipt, phases, `answer_report` report), and
+  reload-restore via `/messages` on the same session id, screenshots captured, no console errors.
+  The with-a-model transcript-parity pass rides the next keyed environment (CA-3 needs one anyway).
+
 ### CA-2 — Guards move to the evidence layer (≈ 1 week; parallel with CA-1)
 
 Verification in the Track-A sense — no model strength prevents these:
@@ -210,8 +253,7 @@ Verification in the Track-A sense — no model strength prevents these:
 **Receipt:** each defect in §1 has a unit test with the specimen as fixture; the shadow re-run
 shows zero tautological findings (`obs == comp` on every row) across 144.
 
-**STATUS 2026-08-19 — BUILT on `claude/ca2-guards-to-evidence` (rebased onto #359's main), one
-commit, awaiting push approval.** What shipped vs the sketch above: the "zero-row conjunction
+**STATUS 2026-08-19 — MERGED to main as [PR #360](https://github.com/sidhasadhak/aughor/pull/360) (`689b949`), built on `claude/ca2-guards-to-evidence`.** What shipped vs the sketch above: the "zero-row conjunction
 probe" became something stronger — the filter guard finds the literal in a SIBLING column
 (`column_suggestion`) and `execute_guarded` MOVES the predicate deterministically before any
 model call (AST surgery + dry-run + guard re-probe); a literal in NO text column is a typed
@@ -260,6 +302,57 @@ the report either names the Chrome-105 bot population with its size or states wh
 test; the follow-up "only focus on Chrome" keeps `traffic` and returns rows. Plus: the 20 real
 transcripts CI-0 reads, re-read — the "mechanical" moments named in CI-0 gone or replaced.
 
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40` (with CA-1).** What shipped vs
+the sketch:
+- **Phases became tools** (`aughor/agent/analyst.py`): `baseline`/`decompose`/`cross_section`
+  wrap the existing phase nodes verbatim over a synthetic agent state — every CA-0/CA-2 guard
+  runs by construction, and the Verifier's annotations land inside each tool's evidence.
+  `z_score` (guarded execute + `analyze_query_result`, refuses under `MIN_BASELINE_PERIODS`),
+  `premise_check` (three scalar-subquery probe; verdicts `premise_holds` / `window_corrected` —
+  re-anchors the spec — / `premise_contradicted` / `no_prior_period` / `not_assessable`),
+  `value_lookup` (bounded LIMIT probes, honest absence), `profile_column`, plus `run_sql` /
+  `describe_table` and the platform roster. Grain/window/metric latitude is per-call spec
+  overrides applied to a COPY of the intake.
+- **The analyst loop**: `run_analyst` = intake once → `run_tool_loop` under `deep_loop_steps`
+  (new `ModelProfile` knob: 10 baseline / 24 capable, env `AUGHOR_DEEP_LOOP_STEPS`) with the
+  stopping rule in the system prompt; the loop's own conclusion rides `_analyst_conclusion`
+  into `ada_synthesize` (section absent ⇒ byte-identical phase-script runs), the narrator's
+  `answer_report` closes the turn. Complete runs persist with the report; a prose-only
+  conclusion persists a minimal investigate report rather than lying about phases.
+- **The door**: `_analyst_eligible` = `ask.converse` ∧ deep/escalate ∧ not dossier-forced ∧ not
+  explore; the phase script REMAINS the flag-off fallback (§5 posture: flag off in deployments,
+  local dev ON). The converse roster's `deep_analysis` now runs the analyst inline (with the
+  custom-agent refusal pre-check); the route receipt claims `body: "analyst"`.
+- **Frames stream through the turn**: `_stream_analyst` on the same converse bridge —
+  `converse_step` per tool choice, `phase_complete` per new slice, `guard_receipt` /
+  `phase_progress` / `report_delta` relayed from inside phase bodies via a progress-sink shim,
+  then `tables_used` + `answer_report` + `done {body, stop_reason, steps}`. CA-1's parts path
+  renders all of it with zero web changes this wave (a new tool shows its raw id in the trail
+  by design — the roster map learns nice names later).
+- **Follow-ups carry the spec**: `_followup_origin` — the hard "FOLLOW-UP — compose…" directive
+  when the heuristic fires, a soft "PRIOR TURN (context, not a mandate)" otherwise — attached
+  on every deep turn with history, phase script included, so `is_followup` is not the only door.
+- **Receipt run**: ruff clean; targeted pytest green (20 unit tests over tools/loop/door, 2
+  integration tests over the full `/ask` seam, the ratchet/contract battery — with one
+  exception that predates this wave: `test_ratchet_live_smoke` fails identically on the clean
+  tree in this keyless environment, its live pipeline metering 0 tokens). Ratchets: the
+  'ada' vocabulary baseline FELL 628 → 602 (prose de-jargoned in the touched files); swallow
+  and private-import counts held via `tolerate(...)` and new public aliases. Live: this
+  environment has no model key, so the browser receipt drove the REAL path end to end
+  (composer → `/ask` auto-depth → deterministic deep route → `_stream_analyst` → intake → loop
+  → guard battery over the seeded outage-scenario DuckDB → synthesize → parts render) with the
+  faux backend scripting only the model's choices: route banner `body: analyst`, tool trail
+  (baseline, decompose), streamed phases with real charts and a Verifier stat note, report +
+  bottom line — screenshots captured. The honesty seam showed up live: an earlier mis-pointed
+  connection turned every query into a Catalog Error and the report guard REWROTE the scripted
+  headline to "Data unavailable" — exactly the CA-0 contract.
+- Deliberate deviations & deferred: dossier-forced and explore turns keep their own bodies (the
+  door excludes them). Deep turns still do not restore into the thread on reload — parity with
+  the phase script (the run files an `investigations` row under the session; restoring reports
+  through `/messages` is follow-on work, not a CA-3 regression). The live-model receipt — the
+  Direkteingabe specimen at finer-than-month grain, the "only focus on Chrome" follow-up, and
+  the CI-0 transcript re-read — rides the next keyed environment, same as CA-1's parity pass.
+
 ### CA-4 — Charts: the exhibit spec (≈ 1 week; parallel with CA-3)
 
 - **Emphasis form**, default whenever a subject exists: backend stamps `exhibit.emphasis =
@@ -285,6 +378,73 @@ transcripts CI-0 reads, re-read — the "mechanical" moments named in CI-0 gone 
 **Receipt:** the specimen's four charts re-rendered in `/chart-lab` and screenshotted; the
 validator passes light + dark; a PDF and the web card of the same finding are visually the same
 chart.
+
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40` (with CA-1/CA-3).** What
+shipped vs the sketch:
+- **Palette by computation**: the six-check validator is vendored
+  (`web/scripts/validate_palette.mjs`) behind a new `lint:palette` CI gate that also
+  drift-checks the CSS tokens against the palette's new single TS source
+  (`components/charts/echarts/palette.ts`). Light mode passes with ZERO hex changes — a pure
+  re-order (the old order sat orange beside green: ΔE 0.7 under protanopia, indistinguishable;
+  the new worst adjacent pair is 20.7) — with orange and cyan sub-3:1 under the documented
+  relief rule (finding cards ship direct labels + a table view). Dark re-stepped five tokens
+  into the lightness band (worst adjacent CVD 9.9); both modes share one hue order so a series
+  keeps its hue family across theme flips. The 12-hue overflow ramp is DELETED: past six series
+  the builders fold the tail into "Other" in a new `--chart-deemph` gray (below the chroma
+  floor by design — it can never read as a seventh series). Small multiples paint every cell
+  slot-1 (identity is the cell title, not a hue); the sign pair moved onto the status threshold
+  tokens; the heatmap ramps come from the exhibit grammar; theme.ts's fallbacks import the TS
+  source, killing the fallback-drift class outright.
+- **Mark specs**: bar width from the band (`barCategoryGap` 35%, cap 48px) plus a max plot
+  width for ≤4-category vertical bars; 4px rounded data ends (horizontal bars round the END,
+  square at the baseline); 2px surface seams between stacked segments; ≥8px line markers with a
+  2px surface ring; hairline grid; **selective labels** (≤8 marks label all, else endpoint +
+  extremes + the subject — all-on retired); value axes carry titles with units. Grain date
+  ticks were already in.
+- **Emphasis form**: `exhibit.emphasis` stamped from the intake's `comparison_segment_sql`
+  equality literals — only when the value actually appears in the finding's rows — and
+  rendered on bars, multi-line, stacked and scatter: the subject in the accent hue, everything
+  else in the de-emphasis gray, the subject always labeled. Deliberate deviation: the
+  lifecycle `active_filter` is NOT read — it scopes the population, it is not the subject.
+- **Title = claim**: a `claim` field on the finding (the pydantic field description IS the
+  one prompt line), `subtitle` = scope · period · unit assembled deterministically from the
+  intake. Web figures lead with the claim; the query's descriptive name stays on the
+  source-data affordance; the PDF finding heading prefers the claim too.
+- **Form by job**: the model's chart vocabulary is now seven JOBS plus annotated specialised
+  shapes (`chart_vocab.py` `CHART_JOBS`/`JOB_TO_FORM`; both deep Literals rewritten; jobs
+  resolve to engine forms at `_phase_result` and the quick seam; the web mirror
+  `JOB_TO_ENGINE_HINT` is parity-tested against the Python map). `inferChartType` is the job
+  ladder — one row → stat tile, composition never auto-infers a donut, and a period pair
+  renders the NEW `delta-bar` (signed change, both period values in the tooltip) instead of
+  grouped obs/comp bars. `scoreDualAxis` is deleted and dual axes are banned end to end:
+  combo/pareto left the gallery and the registry, the backend's concentration→pareto
+  auto-upgrade is removed, and two new parity tests pin the ban and the job mirror. Deviation:
+  `chartTypeInference.ts` the FILE survives as the vocabulary home (union/maps/labels/
+  gallery) — the sketch's target was the inference mechanism, which is replaced; deleting the
+  file would only churn seven importers and the parity parser's anchor.
+- **One renderer (§5-3 decided: (a))**: Chart.tsx's dispatch cascade is extracted into a pure
+  `resolveOption.ts`; a small SSR entry bundles it with ECharts (esbuild, version-pinned) into
+  the committed `aughor/export/chart_ssr.bundle.mjs`, drift-checked in CI. The Python export
+  runs it as a node subprocess → SVG: the PDF embeds the VECTOR (svglib), PPTX rasterizes only
+  where a renderPM backend exists and otherwise degrades to the data table. The 676-line
+  matplotlib port is DELETED with its hand-mirrored constants family; matplotlib left the
+  export extra (svglib joined). The org money symbol threads through (symbol→code shim), and
+  print resolves the light tokens via an explicit mode override. The unification immediately
+  caught two real parity gaps: exhibit mode `"sign"` existed only in the matplotlib port (now
+  in `barOption`), and a malformed exhibit could throw in the browser (now sanitized fail-open
+  at the shared seam, with `"none"` honoured everywhere).
+- **Receipt run**: web gates green (tsc; tokens/format/vars/elements; the NEW `lint:palette`;
+  73 vitest; production build); ruff clean; the targeted backend battery green with the W4
+  print-renderer tests rewritten onto the SSR seam (they skip honestly where node/bundle are
+  absent) — the only failure remains the pre-existing keyless `test_ratchet_live_smoke`.
+  Live: `/chart-lab` re-rendered light + dark on the new palette including the new Delta and
+  Emphasis cards (screenshots captured), and a PDF built end to end whose chart is the
+  resolver's own vector output — claim heading, the subject emphasized with peers in the
+  de-emphasis gray, axis titled with its unit, CHF threaded through (specimen attached to the
+  session). Deferred: PPTX charts need a renderPM backend (rlPyCairo) in the deployment;
+  choropleth/point-map fall to tables in print (no geo layer shipped); saved "combo" viz
+  configs downgrade through inference (dual axes are banned); and the job vocabulary's
+  live-prompt quality rides the next keyed environment, like CA-3's live-model receipt.
 
 ### CA-5 — Fluidity (ongoing after CA-1/CA-3; the "frontier-chat feel")
 
@@ -338,6 +498,10 @@ changes shape there).
 3. **Where the PDF chart is rendered** — ECharts SSR needs Node: (a) a Node subprocess in the
    Python export path, (b) the web app renders the PDF, or (c) keep matplotlib and accept drift.
    *Recommendation: (b) on Vercel, (a) self-hosted; never (c).*
+   **DECIDED 2026-08-20 by the user: (a)** — the export path runs the committed
+   `aughor/export/chart_ssr.bundle.mjs` (the web resolver + ECharts, esbuild-pinned,
+   CI drift-checked) as a node subprocess; deployments need node on PATH (or
+   `AUGHOR_NODE_BIN`), and a missing node degrades honestly to data tables.
 4. **Chat-first home by default** — `/` lands on `/chat` per org once CA-1 lands? Deferred from
    CI-6b; now cheap.
 5. **Retire `BriefAskPanel`'s reducer dependency in CA-1 or later** — migrate now (one more

@@ -157,7 +157,7 @@ export interface paths {
          * Get Ada Receipt
          * @deprecated
          * @description @deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
-         *     for the `ADA`→answer rename (REC-U9).
+         *     for the acronym→answer rename (REC-U9).
          */
         get: operations["get_ada_receipt_ada__connection_id___inv_id__receipt_get"];
         put?: never;
@@ -1535,6 +1535,28 @@ export interface paths {
          *     title, turn count, last activity. Org-scoped in the store, like the turns read.
          */
         get: operations["list_chat_sessions_route_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chat Session Messages
+         * @description The thread as AI-SDK ``UIMessage[]`` (CA-1) — thread selection on the web
+         *     is ``setMessages`` over this, the same shape the live stream accumulates.
+         *     Org-scoped in the store, like the turns read.
+         */
+        get: operations["get_chat_session_messages_chat_sessions__session_id__messages_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -13730,6 +13752,37 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_messages_chat_sessions__session_id__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

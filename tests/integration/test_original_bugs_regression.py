@@ -93,11 +93,16 @@ def test_wch1b_chatpanel_autosubmit_latches_inside_the_timer():
 
     i_timer = block.find("setTimeout(")
     i_latch = block.find("initialFiredRef.current = true")
-    i_ask = block.find("ask(initialQuestion")
+    # Match the SHAPE, not one function's name: whatever the sender is called
+    # (`ask` before CA-1, `sendQuestion` after), what matters is that the seeded
+    # question is sent from inside the timer. A name-pinned grep failed the day
+    # the send was renamed, while the mechanism it guards was untouched.
+    m_send = re.search(r"[A-Za-z_][A-Za-z0-9_]*\(initialQuestion", block)
+    i_ask = m_send.start() if m_send else -1
 
     assert i_timer != -1, "auto-submit no longer defers via setTimeout"
     assert i_latch != -1, "the fired-latch assignment is gone"
-    assert i_ask != -1, "auto-submit no longer calls ask(initialQuestion, ...)"
+    assert i_ask != -1, "auto-submit no longer sends initialQuestion"
 
     # The latch MUST come after setTimeout( — i.e. inside the deferred callback,
     # not eagerly in the effect body where StrictMode would defeat it.
@@ -105,8 +110,8 @@ def test_wch1b_chatpanel_autosubmit_latches_inside_the_timer():
         "initialFiredRef is latched BEFORE/outside the setTimeout — the StrictMode "
         "double-invoke bug that blanks the canvas has regressed."
     )
-    # And the ask() must be inside the timer too (after the latch, before the closing).
-    assert i_latch < i_ask, "ask() is no longer guarded by the in-timer latch"
+    # And the send must be inside the timer too (after the latch, before the closing).
+    assert i_latch < i_ask, "the send is no longer guarded by the in-timer latch"
 
 
 # ── WCH-2: sample data missing → must SURFACE an error, never silent-empty ─────

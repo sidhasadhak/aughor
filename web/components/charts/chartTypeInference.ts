@@ -40,7 +40,8 @@ export type ChartType =
   | "area"
   | "bar"
   | "grouped-bar"
-  | "combo"      // bar + line with dual y-axes
+  | "combo"      // bar + line with dual y-axes — LEGACY ONLY (never offered, never inferred; §6 bans dual axes)
+  | "delta-bar"  // signed per-item delta (obs − comp) — the period-over-period form
   | "stacked-bar"
   | "scatter"
   | "heatmap"
@@ -70,7 +71,7 @@ export type ChartType =
 /** ChartType (hyphenated) → the underscore hint `<Chart>` dispatches on. */
 export const TYPE_TO_HINT: Record<ChartType, string> = {
   "line": "line", "area": "area", "multi-line": "multi_line", "small-multiples": "small_multiples",
-  "bar": "bar", "grouped-bar": "combo", "combo": "combo", "stacked-bar": "stacked_bar",
+  "bar": "bar", "grouped-bar": "grouped_bar", "combo": "combo", "delta-bar": "delta_bar", "stacked-bar": "stacked_bar",
   "scatter": "scatter", "heatmap": "heatmap", "matrix": "heatmap", "pie": "pie", "treemap": "treemap",
   "counter": "counter", "funnel": "funnel", "histogram": "histogram", "boxplot": "boxplot",
   "sankey": "sankey", "waterfall": "waterfall",
@@ -83,7 +84,7 @@ export const TYPE_TO_HINT: Record<ChartType, string> = {
  *  Databricks-style; an incompatible pick degrades rather than being hidden. Excludes the
  *  internal-only `matrix` (folds into heatmap) and `table` (a separate view toggle). */
 export const ALL_CHART_TYPES: ChartType[] = [
-  "bar", "line", "area", "combo", "grouped-bar", "stacked-bar", "multi-line", "small-multiples",
+  "bar", "line", "area", "delta-bar", "grouped-bar", "stacked-bar", "multi-line", "small-multiples",
   "scatter", "pie", "treemap", "heatmap", "histogram", "boxplot", "funnel", "waterfall",
   "sankey", "counter", "line-forecast", "gantt", "choropleth", "point-map",
 ];
@@ -94,6 +95,10 @@ export const ALL_CHART_TYPES: ChartType[] = [
 export const HINT_TO_TYPE: Record<string, ChartType> = {
   line: "line", area: "area", multi_line: "multi-line", small_multiples: "small-multiples",
   bar: "bar", bar_horizontal: "bar", bar_vertical: "bar", combo: "combo", stacked_bar: "stacked-bar",
+  grouped_bar: "grouped-bar", delta_bar: "delta-bar",
+  // CA-4 form-by-job: the model names the data's JOB; each job renders as its form.
+  magnitude: "bar", trend: "line", identity: "stacked-bar", change: "delta-bar",
+  share: "stacked-bar", distribution: "histogram", relation: "scatter",
   scatter: "scatter", heatmap: "heatmap", matrix: "heatmap", pie: "pie", treemap: "treemap", pareto: "bar",
   counter: "counter", funnel: "funnel", histogram: "histogram", boxplot: "boxplot", sankey: "sankey",
   waterfall: "waterfall", line_forecast: "line-forecast", gantt: "gantt", choropleth: "choropleth", point_map: "point-map",
@@ -103,11 +108,18 @@ export const HINT_TO_TYPE: Record<string, ChartType> = {
 export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
   "auto": "Auto", "line": "Line", "area": "Area", "multi-line": "Multi-line",
   "small-multiples": "Small multiples", "bar": "Bar", "grouped-bar": "Grouped", "combo": "Combo",
-  "stacked-bar": "Stacked", "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
+  "stacked-bar": "Stacked", "delta-bar": "Delta", "scatter": "Scatter", "heatmap": "Heatmap", "matrix": "Matrix",
   "pie": "Pie", "treemap": "Treemap", "counter": "Counter", "funnel": "Funnel",
   "histogram": "Histogram", "boxplot": "Box plot", "sankey": "Sankey", "waterfall": "Waterfall",
   "line-forecast": "Line (forecast)", "gantt": "Gantt", "choropleth": "Choropleth map", "point-map": "Point map",
   "table": "Table",
+};
+
+/** CA-4 form-by-job: job token → the underscore engine hint its form renders as.
+ *  MIRRORS aughor/agent/chart_vocab.py JOB_TO_FORM — the parity test walks both. */
+export const JOB_TO_ENGINE_HINT: Record<string, string> = {
+  magnitude: "bar_horizontal", trend: "line", identity: "stacked_bar",
+  change: "delta_bar", share: "stacked_bar", distribution: "histogram", relation: "scatter",
 };
 
 export interface InferredChart {
@@ -121,55 +133,67 @@ export interface InferredChart {
 // so the type-inference here and the renderer in Chart.tsx share ONE source of truth.
 
 /**
- * Score whether a multi-measure, single-category chart should be a dual-axis COMBO
- * (bar + line on independent y-axes) or a plain single-measure BAR.
+ * CA-4 form-by-job: what to do with MULTIPLE measures over one category — the
+ * successor of the dual-axis scorer (dual axes are banned, §6; two measures of
+ * different units get the primary alone, never two y-scales).
  *
- * A dual axis only EARNS its complexity when the two measures can't honestly share
- * one axis — they're different UNITS (a magnitude + a 0–1 rate) or wildly different
- * SCALES (>=25x). Two same-unit, similar-scale counts on independent axes are
- * actively MISLEADING (they look equal when they aren't), so those collapse to a
- * single bar of the primary magnitude. Returns the chosen bar (+ line) column idx.
+ *   • a PERIOD PAIR (obs/comp, current/previous, two date-named columns of the
+ *     same unit) → "delta": one signed delta bar — never grouped before/after
+ *     bars (the reader wants the change, not two heights to subtract mentally);
+ *   • same-unit, similar-scale measures → "grouped" (≤4 series, one honest axis);
+ *   • different units or a ≥25x scale gap → "bar" of the primary magnitude (the
+ *     second measure stays in the table/tooltip).
  */
-export function scoreDualAxis(
+const PAIR_BEFORE = /(^|_)(prev|previous|prior|last|comp|comparison|baseline|before|old)($|_)/i;
+const PAIR_AFTER = /(^|_)(curr|current|this|obs|observation|now|after|new|latest)($|_)/i;
+const PAIR_DATEISH = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|q[1-4]|20\d\d|\d{4}_\d{2}|_w?\d{1,2}$)/i;
+
+export function chooseMultiMeasure(
   columns: string[],
   rows: unknown[][],
   numericIdxs: number[],
-): { combo: boolean; barIdx: number; lineIdx?: number; groupIdxs: number[]; reason: string } {
+): { mode: "delta" | "grouped" | "bar"; barIdx: number; pair?: [number, number]; groupIdxs: number[]; reason: string } {
   const nums = (i: number) => rows.map((r) => Number((r as unknown[])[i])).filter((v) => !isNaN(v));
   const maxAbs = (i: number) => { const v = nums(i); return v.length ? Math.max(...v.map(Math.abs)) : 0; };
   const isShare = (i: number) => {
     const v = nums(i);
     return v.length > 0 && SHARE_COL.test(columns[i]) && v.every((n) => Math.abs(n) <= 1.0001);
   };
-  // Real measures only: not an id/key, not audit-only instrumentation, and has at least one
-  // non-null numeric value (an all-null column carries nothing and must never reach a chart).
-  // Fall back to the unfiltered set only if excluding instrumentation would leave nothing.
   const _real = numericIdxs.filter((i) => !isIdLike(columns[i]) && !INSTRUMENTATION.test(columns[i]) && nums(i).length > 0);
   const measures = _real.length ? _real : numericIdxs.filter((i) => !isIdLike(columns[i]) && nums(i).length > 0);
   const rates     = measures.filter(isShare).sort((a, b) => maxAbs(b) - maxAbs(a));
   const absolutes = measures.filter((i) => !isShare(i)).sort((a, b) => maxAbs(b) - maxAbs(a));
   const primary   = absolutes[0] ?? rates[0] ?? measures[0] ?? numericIdxs[0];
 
-  if (measures.length < 2) return { combo: false, barIdx: primary, groupIdxs: [primary], reason: "single measure" };
+  if (measures.length < 2) return { mode: "bar", barIdx: primary, groupIdxs: [primary], reason: "single measure" };
 
-  // (1) magnitude + rate → genuinely different units → dual axis clarifies
-  if (absolutes.length >= 1 && rates.length >= 1) {
-    return { combo: true, barIdx: absolutes[0], lineIdx: rates[0], groupIdxs: [absolutes[0], rates[0]], reason: "magnitude + rate" };
+  // Period pair → delta. Same unit only (two absolutes or two rates); the pair is
+  // recognised by before/after naming or two date-named columns.
+  const sameUnit = absolutes.length >= 2 ? absolutes : rates.length >= 2 ? rates : [];
+  if (sameUnit.length === 2 && measures.length === 2) {
+    const [a, b] = sameUnit;
+    const named = (PAIR_BEFORE.test(columns[a]) && PAIR_AFTER.test(columns[b]))
+      || (PAIR_BEFORE.test(columns[b]) && PAIR_AFTER.test(columns[a]))
+      || (PAIR_DATEISH.test(columns[a]) && PAIR_DATEISH.test(columns[b]));
+    if (named) {
+      const before = PAIR_BEFORE.test(columns[a]) || (!PAIR_BEFORE.test(columns[b]) && columns[a] < columns[b]) ? a : b;
+      const after = before === a ? b : a;
+      return { mode: "delta", barIdx: after, pair: [before, after], groupIdxs: [before, after], reason: "period pair" };
+    }
   }
-  // (2) two absolutes with a large scale gap → the smaller would vanish on a shared axis
+
+  // Different units, or a scale gap that would bury the smaller → the primary alone.
+  if (absolutes.length >= 1 && rates.length >= 1) {
+    return { mode: "bar", barIdx: absolutes[0], groupIdxs: [absolutes[0]], reason: "mixed units — primary only (no dual axis)" };
+  }
   if (absolutes.length >= 2) {
     const ratio = maxAbs(absolutes[1]) > 0 ? maxAbs(absolutes[0]) / maxAbs(absolutes[1]) : Infinity;
-    if (ratio >= 25) return { combo: true, barIdx: absolutes[0], lineIdx: absolutes[1], groupIdxs: [absolutes[0], absolutes[1]], reason: `scale gap ${Math.round(ratio)}x` };
+    if (ratio >= 25) return { mode: "bar", barIdx: absolutes[0], groupIdxs: [absolutes[0]], reason: `scale gap ${Math.round(ratio)}x — primary only` };
   }
-  // Same UNIT (multiple absolutes, or multiple rates), similar scale → a GROUPED bar
-  // shows them side by side on one honest shared axis (no dropped series, no
-  // misleading independent axes). Cap at 4 series for readability.
-  const sameUnit = absolutes.length >= 2 ? absolutes : rates;
   if (sameUnit.length >= 2) {
-    return { combo: false, barIdx: primary, groupIdxs: sameUnit.slice(0, 4), reason: "grouped (same-unit measures)" };
+    return { mode: "grouped", barIdx: primary, groupIdxs: sameUnit.slice(0, 4), reason: "grouped (same-unit measures)" };
   }
-  // Fallback → one honest bar of the primary magnitude
-  return { combo: false, barIdx: primary, groupIdxs: [primary], reason: "single bar" };
+  return { mode: "bar", barIdx: primary, groupIdxs: [primary], reason: "single bar" };
 }
 
 /**
@@ -180,13 +204,21 @@ export function inferChartType(
   columns: string[],
   rows: unknown[][],
 ): InferredChart | null {
-  if (!columns.length || rows.length < 2) return null;
+  if (!columns.length || !rows.length) return null;
   // Chart-grammar gate: a stats/entity-profile grid is a table, never a chart.
   if (isUngraphableGrid(columns, rows)) return null;
 
   const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
 
   if (!numericIdxs.length) return null;
+
+  // CA-4 form-by-job: ONE ROW is a headline number, not a one-bar bar chart —
+  // the stat tile is the form.
+  if (rows.length === 1) {
+    const m = numericIdxs.find((i) => !isIdLike(columns[i]) && !INSTRUMENTATION.test(columns[i])) ?? numericIdxs[0];
+    return { type: "counter", xCol: catIdxs[0] ?? dateIdxs[0] ?? m, yCols: [m] };
+  }
+  if (rows.length < 2) return null;
 
   const dateIdx = dateIdxs[0];
   const catIdx  = catIdxs[0];
@@ -251,10 +283,12 @@ export function inferChartType(
     const uniqueCatCount = countUnique(rows, catIdx);
 
     if (numericIdxs.length >= 2) {
-      const d = scoreDualAxis(columns, rows, numericIdxs);
-      return d.combo
-        ? { type: "combo", xCol: catIdx, yCols: [d.barIdx, d.lineIdx!] }
-        : { type: "bar",   xCol: catIdx, yCols: [d.barIdx] };
+      // CA-4: never a dual axis. A period pair renders its DELTA (never grouped
+      // before/after bars); same-unit measures group; mixed units keep the primary.
+      const d = chooseMultiMeasure(columns, rows, numericIdxs);
+      if (d.mode === "delta" && d.pair) return { type: "delta-bar", xCol: catIdx, yCols: [d.pair[0], d.pair[1]] };
+      if (d.mode === "grouped") return { type: "grouped-bar", xCol: catIdx, yCols: d.groupIdxs };
+      return { type: "bar", xCol: catIdx, yCols: [d.barIdx] };
     }
 
     // Single measure — composition (pie/treemap) for an ADDITIVE magnitude OR a SHARE that sums to a
@@ -267,8 +301,11 @@ export function inferChartType(
     const isShareComposition = SHARE_COL.test(columns[numIdx]) && shareVals.length > 0
       && (Math.abs(shareSum - 100) <= 2 || Math.abs(shareSum - 1) <= 0.02);
 
+    // CA-4: composition never auto-infers a donut — a ranked bar of the parts
+    // reads the magnitudes directly (pie stays a manual pick). Many-part additive
+    // compositions keep the treemap (7-24 parts, where a bar's long tail buries it).
     if ((additive || isShareComposition) && uniqueCatCount <= 6) {
-      return { type: "pie", xCol: catIdx, yCols: numericIdxs };
+      return { type: "bar", xCol: catIdx, yCols: numericIdxs };
     }
     if (additive && uniqueCatCount > 6 && uniqueCatCount <= 24) {
       return { type: "treemap", xCol: catIdx, yCols: numericIdxs };
@@ -314,7 +351,7 @@ export function availableChartTypes(columns: string[], rows: unknown[][]): Chart
   }
 
   if (hasCat && !hasDate) {
-    if (nNum >= 2) add("combo");
+    if (nNum >= 2) { add("grouped-bar"); add("delta-bar"); }
     add("bar");
     if (nNum === 1 && countUnique(rows, catIdxs[0]) <= 12) add("pie");
     add("treemap");
@@ -349,7 +386,8 @@ export function availableTypesFor(inferred: ChartType): ChartType[] {
     case "scatter":     return ["scatter", "bar", "histogram"];
     case "pie":         return ["pie", "bar", "treemap", "funnel"];
     case "treemap":     return ["treemap", "bar", "pie"];
-    case "combo":       return ["combo", "bar"];
+    case "delta-bar":   return ["delta-bar", "grouped-bar", "bar"];
+    case "grouped-bar": return ["grouped-bar", "delta-bar", "bar"];
     default:            return ["bar", "line", "counter"];
   }
 }

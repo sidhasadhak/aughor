@@ -30,7 +30,7 @@ import {
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
-import { ChatTurn } from "@/lib/useChat";
+import type { ChatTurn } from "@/lib/chatTurn";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
@@ -1298,19 +1298,7 @@ function InsightDetails({
   );
 }
 
-export function ChatMessage({
-  turn,
-  connectionId,
-  onFollowUp,
-  onRunFresh,
-  onShowSource,
-  onDeeper,
-  onExploreFact,
-  onApprovePlan,
-  onRejectPlan,
-  onChooseClarify,
-  onRetry,
-}: {
+export interface ChatMessageProps {
   turn: ChatTurn;
   connectionId?: string;
   onFollowUp?: (q: string) => void;
@@ -1324,8 +1312,36 @@ export function ChatMessage({
   onChooseClarify?: (invId: string, option: string) => void;
   /** Wave R4 — re-ask this turn's question after a retryable failure. */
   onRetry?: (question: string) => void;
-}) {
+  /** CA-1 — replace this turn's question and re-send from here (edit-and-resend). */
+  onEdit?: (newQuestion: string) => void;
+}
+
+export function ChatMessage({
+  turn,
+  connectionId,
+  onFollowUp,
+  onRunFresh,
+  onShowSource,
+  onDeeper,
+  onExploreFact,
+  onApprovePlan,
+  onRejectPlan,
+  onChooseClarify,
+  onRetry,
+  onEdit,
+}: ChatMessageProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // CA-1 edit-and-resend: the question bubble becomes an editor; sending replaces
+  // this user message and truncates the thread from here (the SDK's own branch
+  // semantics), so the edited question is an ordinary new turn.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const submitEdit = () => {
+    const q = draft.trim();
+    if (!q || !onEdit) return;
+    setEditing(false);
+    onEdit(q);
+  };
   const isInvestigate = turn.mode === "investigate";
   const hasResult = isInvestigate
     ? !!(turn.deepReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
@@ -1368,12 +1384,51 @@ export function ChatMessage({
               <Chevron open={!collapsed} />
             </Button>
           )}
-          <div
-            className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
-            style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
-          >
-            {turn.question}
-          </div>
+          {isDone && onEdit && !editing && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => { setDraft(turn.question); setEditing(true); }}
+              className="h-auto w-auto p-0.5 mt-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-transparent dark:hover:bg-transparent"
+              title="Edit and re-send — the conversation continues from this question"
+            >
+              Edit
+            </Button>
+          )}
+          {editing ? (
+            <div className="flex flex-col gap-1.5" style={{ minWidth: 280 }}>
+              <textarea
+                autoFocus
+                rows={2}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEdit(); }
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                className="w-full aug-fs-sm text-zinc-100 rounded-[var(--r3)] px-3 py-2 resize-none focus:outline-none"
+                style={{ background: "var(--bg-2)", border: "1px solid var(--bfocus)" }}
+              />
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="ghost" size="xs" onClick={() => setEditing(false)}
+                  className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                  Cancel
+                </Button>
+                <Button variant="ghost" size="xs" onClick={submitEdit} disabled={!draft.trim()}
+                  className="h-auto px-2 py-0.5 aug-fs-xs font-medium rounded text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
+                  style={{ background: "var(--blue-solid)" }}>
+                  Send
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
+              style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
+            >
+              {turn.question}
+            </div>
+          )}
         </div>
       </div>
 

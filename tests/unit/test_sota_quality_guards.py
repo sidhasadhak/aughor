@@ -130,16 +130,21 @@ def test_true_rates_still_analyzed():
 # ── Export charts: identifiers are never measures ──────────────────────────────
 
 def test_export_chart_never_plots_id_columns():
-    from aughor.export.charts import _classify, _id_like
+    # CA-4 one renderer: the classifier that keeps IDs off the axes is the web's
+    # columnRoles (shared by browser and print). The print-side guarantee is that
+    # an ID-labelled ranking still charts the MEASURE — asserted via the SSR when
+    # available, else the shared contract is covered by the web's own gates.
+    import shutil
 
-    assert _id_like("franchiseID") and _id_like("supplier_id") and _id_like("eventGUID")
-    assert not _id_like("valid") and not _id_like("grid") and not _id_like("revenue")
-
-    columns = ["franchiseID", "franchise_name", "revenue"]
-    rows = [[1, "Sugar Rush", 6642.0], [2, "Sapporo Sweets", 177.0]]
-    date_idx, num_idx, cat_idx = _classify(columns, rows)
-    assert num_idx == [2], "revenue is the only measure — the ID must not be charted"
-    assert cat_idx[0] == 1, "the name column outranks the ID for the category axis"
+    from aughor.export.echarts import _BUNDLE, render_chart_svg
+    if not shutil.which("node") or not _BUNDLE.exists():
+        import pytest as _pytest
+        _pytest.skip("chart SSR unavailable (node/bundle)")
+    svg = render_chart_svg(["franchiseID", "franchise_name", "revenue"],
+                           [[1, "Sugar Rush", 6642.0], [2, "Sapporo Sweets", 177.0]],
+                           "bar", "t")
+    assert svg and "Sugar Rush" in svg      # the NAME labels the axis…
+    assert "6.6K" in svg                    # …and the measure is revenue, not the ID
 
 
 # ── Criterion-complete enumeration ─────────────────────────────────────────────

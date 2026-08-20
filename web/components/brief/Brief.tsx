@@ -219,11 +219,14 @@ export function FigureCaption({ source }: { source: FigureSource }) {
 
 export function BriefFigure({
   caption,
+  subcaption,
   source,
   children,
   className = "",
 }: {
   caption?: string;
+  /** CA-4: the context line under a claim caption — scope · period · unit. */
+  subcaption?: string;
   source?: FigureSource;
   children: React.ReactNode;
   className?: string;
@@ -233,7 +236,12 @@ export function BriefFigure({
       className={`rounded-md border border-zinc-700/50 overflow-hidden p-3 m-0 ${className}`}
       style={{ background: "var(--bg-0)" }}
     >
-      {caption && <figcaption className="aug-fs-xs text-zinc-500 mb-2">{caption}</figcaption>}
+      {caption && (
+        <figcaption className={`aug-fs-xs ${subcaption ? "text-zinc-300" : "text-zinc-500"} ${subcaption ? "mb-0.5" : "mb-2"}`}>
+          {caption}
+        </figcaption>
+      )}
+      {subcaption && <div className="aug-fs-xs text-zinc-500 mb-2">{subcaption}</div>}
       {children}
       {source && <FigureCaption source={source} />}
     </figure>

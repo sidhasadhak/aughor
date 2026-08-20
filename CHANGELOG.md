@@ -10,6 +10,43 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## [Unreleased]
 
+### Changed
+- **Charts follow the exhibit spec (CA-4).** The chart palette is now computed, never
+  eyeballed: a six-check validator (lightness band, chroma floor, colour-vision-deficiency
+  separation, normal-vision floor, contrast against the real card surface) runs in CI on
+  both themes, the light palette was re-ordered so no confusable hues sit adjacent, the
+  dark palette re-stepped into its lightness band, and the 12-hue overflow ramp is gone —
+  past six series a chart folds the tail into "Other" in a dedicated de-emphasis gray.
+  Marks follow fixed specs (band-derived bar widths, rounded data ends, surface seams,
+  selective labels, unit-titled axes). Findings gain an **emphasis form** (the question's
+  subject in the accent hue, peers receding) and a **claim title** with a deterministic
+  scope · period · unit subtitle. The model now names the data's JOB (magnitude, trend,
+  identity, change, share, distribution, relation) instead of picking among two dozen
+  chart shapes; a period-over-period pair renders as a signed delta bar, and dual-axis
+  charts are banned outright. PDF/PPTX charts come from the web's own chart resolver
+  (ECharts server-side-rendered SVG via a node subprocess, embedded as vectors in the
+  PDF) — the separate matplotlib chart port is deleted, so the export can no longer
+  drift from what the app shows.
+- **Deep analysis became the analyst (CA-3).** Behind the `ask.converse` flag, a deep
+  `/ask` turn now runs a tool loop instead of the fixed phase script: the phase library
+  (baseline, decompose, cross-section) plus new deterministic probes (`z_score`,
+  `premise_check`, `value_lookup`, `profile_column`) become tools the model sequences
+  under a per-tier step budget (`deep_loop_steps`), with every guard and Verifier check
+  still inside each tool body. Each tool choice and completed slice streams through the
+  turn (`converse_step`, `phase_complete`, guard receipts, report deltas), and the
+  narrator synthesizes the report from the loop's evidence, weighing the loop's own
+  conclusion. Deep follow-ups carry the prior turn's spec — as a mandate when the turn
+  is a recognized follow-up, as context otherwise. Flag off (the default in
+  deployments), the phase script serves unchanged.
+- **The chat crossed the seam (CA-1).** Every chat surface — the workspace panel, the
+  full-page `/chat`, "Ask this briefing" and inline briefing threads — now streams
+  through the AI-SDK parts model (`/api/chat`): the 107-case frame reducer is deleted,
+  turns are a pure projection over typed message parts (an unrecognised backend frame
+  renders as a labelled block instead of silence), thread restore is `setMessages` over
+  a new `GET /chat-sessions/{id}/messages` returning the thread as `UIMessage[]`, and
+  messages gain edit-and-resend and regenerate. Plan/clarify approvals remain side
+  POSTs keyed by investigation id.
+
 ### Added
 - **Ask this briefing** — a side panel holding one conversation, pinned to insights
   mode and scoped to the briefing's connection and schema. Grounded server-side in the

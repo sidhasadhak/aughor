@@ -17,7 +17,7 @@ import {
   ChainOfThoughtSearchResults,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
-import type { GuardReceipt } from "@/lib/investigationStream";
+import type { GuardReceipt } from "@/lib/chatTurn";
 
 /** Human labels per guard id — the backend names the mechanism; the surface
  *  names what the reader gains. Unknown guards fall back to their raw id, so a

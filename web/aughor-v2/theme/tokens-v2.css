@@ -78,9 +78,15 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
   --shadow-md: 0 8px 30px rgba(0,0,0,.50);
 
-  /* Chart palette — calm sky-blue lead, muted categoricals (charts never shout) */
-  --chart-1: #5A9FD6; --chart-2: #5FBE82; --chart-3: #E0A54D;
-  --chart-4: #9B7BD4; --chart-5: #E07070; --chart-6: #4FC4C4;
+  /* Chart palette — calm sky-blue lead, muted categoricals (charts never shout).
+     CA-4: re-stepped into the dark lightness band (OKLCH L 0.48–0.67) and ordered
+     for CVD safety — same hue order as light so a series keeps its hue family
+     across theme flips. Mirrored in charts/echarts/palette.ts; the lint:palette
+     gate validates both and fails on drift. Six slots is the ceiling — past six
+     series the chart folds to "Other" (--chart-deemph), never a seventh hue. */
+  --chart-1: #569BD2; --chart-2: #4BAB70; --chart-3: #9B7BD4;
+  --chart-4: #C1882B; --chart-5: #2BA8A9; --chart-6: #DD6E6E;
+  --chart-deemph: #4E5A6A;
   --chart-threshold-warn:   #E0A54D;
   --chart-threshold-crit:   #E07070;
   --chart-threshold-target: #5FBE82;
@@ -125,9 +131,14 @@
   --shadow-sm: 0 1px 2px rgba(20,40,80,.06);
   --shadow-md: 0 4px 16px rgba(20,40,80,.10), 0 1px 3px rgba(20,40,80,.06);
 
-  /* Categorical chart palette + light axes */
-  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #FF7F0E;
-  --chart-4: #9467BD; --chart-5: #D62728; --chart-6: #17BECF;
+  /* Categorical chart palette + light axes. CA-4: same six hexes as before,
+     re-ordered for CVD safety (orange no longer sits beside green — that pair
+     measured ΔE 0.7 under protanopia; this order's worst adjacent pair is 20.7).
+     Orange and cyan sit below 3:1 on white under the documented relief rule:
+     finding cards ship direct labels and a table view. Mirror + gate as above. */
+  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #9467BD;
+  --chart-4: #FF7F0E; --chart-5: #17BECF; --chart-6: #D62728;
+  --chart-deemph: #B9C2CE;
   --chart-threshold-warn:   #B25D00;
   --chart-threshold-crit:   #D62728;
   --chart-threshold-target: #2CA02C;

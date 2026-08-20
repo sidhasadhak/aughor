@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from .charts import render_chart
+from .echarts import render_chart_svg, svg_to_png
 
 
 # ── Blocks ────────────────────────────────────────────────────────────────────
@@ -33,6 +33,7 @@ class Block:
     items: list[str] = field(default_factory=list)
     keynums: list[KeyNumber] = field(default_factory=list)
     png: Optional[bytes] = None
+    svg: Optional[bytes] = None   # CA-4 one-renderer: the SSR vector; PDF embeds it, PPTX rasterizes
     caption: str = ""
     columns: list[str] = field(default_factory=list)
     rows: list[list] = field(default_factory=list)
@@ -88,18 +89,30 @@ def _round_cell(v):
     return v
 
 
+def _chart_block(columns, rows, chart_type, title, *, units=None,
+                 exhibit=None, money_symbol: str = "") -> Optional[Block]:
+    """CA-4 one-renderer: the chart comes from the web's own resolver (ECharts
+    SSR → SVG). The PDF embeds the vector; the PNG rides along for PPTX when a
+    raster backend exists. None when no honest chart exists (→ table)."""
+    svg = render_chart_svg(columns or [], rows or [], chart_type or "auto", title,
+                           units=units, exhibit=exhibit, money_symbol=money_symbol)
+    if not svg:
+        return None
+    return Block("chart", svg=svg.encode("utf-8"), png=svg_to_png(svg), caption=title)
+
+
 def _chart_or_table(columns, rows, chart_type, title, units=None, exhibit=None,
                     money_symbol: str = "") -> list[Block]:
     """Render a chart if the data supports it; always include the data table too
     (capped) so the document carries the underlying numbers."""
     out: list[Block] = []
-    png = render_chart(columns or [], rows or [], chart_type or "auto", title,
-                       units=units, exhibit=exhibit, money_symbol=money_symbol)
-    if png:
-        out.append(Block("chart", png=png, caption=title))
+    chart = _chart_block(columns, rows, chart_type, title, units=units,
+                         exhibit=exhibit, money_symbol=money_symbol)
+    if chart:
+        out.append(chart)
     if columns and rows:
         table_rows = [[_round_cell(v) for v in row] for row in rows[:25]]
-        out.append(Block("table", columns=columns, rows=table_rows, caption="" if png else title))
+        out.append(Block("table", columns=columns, rows=table_rows, caption="" if chart else title))
     return out
 
 
@@ -115,10 +128,10 @@ def _exhibit_argument(columns, rows, chart_type, title, units=None, exhibit=None
     if not columns or len(rows) < 2:
         return []
     if (chart_type or "auto") != "none":
-        png = render_chart(columns, rows, chart_type or "auto", title, units=units,
-                           exhibit=exhibit, money_symbol=money_symbol)
-        if png:
-            return [Block("chart", png=png, caption=title)]
+        chart = _chart_block(columns, rows, chart_type, title, units=units,
+                             exhibit=exhibit, money_symbol=money_symbol)
+        if chart:
+            return [chart]
     table_rows = [[_round_cell(v) for v in row] for row in rows[:8]]
     return [Block("table", columns=columns, rows=table_rows, caption=title)]
 
@@ -286,7 +299,9 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
                 continue
             blocks.append(Block(
                 "finding",
-                caption=f.get("title") or "",
+                # CA-4 title = claim: the finding leads with the claim it proves;
+                # the query's descriptive name stays as the chart caption below.
+                caption=f.get("claim") or f.get("title") or "",
                 text=f.get("interpretation") or "",
                 tag=(f.get("stat_note") or "") if f.get("is_significant") else "",
             ))
@@ -345,14 +360,15 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
         # A waterfall entry's share is SIGNED (what pushed the metric up vs down), and the
         # web already colours it by sign — the PDF used to flatten every cause to one hue,
         # so a reader couldn't tell a driver from an offset without reading the bullets.
-        png = render_chart(
+        chart = _chart_block(
             ["cause", "share"],
             [[w.get("cause", ""), w.get("pct_of_total", 0)] for w in wf],
-            "bar", "Share of total change",
+            "change", "Share of total change",
             units={"share": "percent"}, exhibit={"color": {"mode": "sign"}},
         )
-        if png:
-            blocks.append(Block("chart", png=png, caption="Share of the total change, by cause"))
+        if chart:
+            chart.caption = "Share of the total change, by cause"
+            blocks.append(chart)
         blocks.append(_bul([
             f"{w.get('cause', '')}: {w.get('amount_label', '')} "
             f"({w.get('pct_of_total', 0):+.0f}% of total"
@@ -404,9 +420,10 @@ def _build_analysis(inv: dict) -> ExportDoc:
     for q in (inv.get("query_history") or [])[:6]:
         cols, rows = q.get("columns"), q.get("rows")
         if cols and rows and len(rows) >= 2:
-            png = render_chart(cols, rows, q.get("chart_type"), q.get("purpose") or q.get("question") or "")
-            if png:
-                blocks.append(Block("chart", png=png, caption=q.get("purpose") or q.get("question") or ""))
+            chart = _chart_block(cols, rows, q.get("chart_type"), q.get("purpose") or q.get("question") or "")
+            if chart:
+                chart.caption = q.get("purpose") or q.get("question") or ""
+                blocks.append(chart)
     if rep.get("what_is_not_the_cause"):
         blocks.append(_h("Ruled out"))
         blocks.append(_bul(list(rep["what_is_not_the_cause"])))

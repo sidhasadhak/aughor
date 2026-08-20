@@ -1,8 +1,15 @@
 """Report export → PDF / PPTX (charts, document model, endpoint serializer)."""
 import pytest
 
+import shutil as _shutil
+from pathlib import Path as _Path
+
 from aughor.export import build_export_doc, export_report
-from aughor.export.charts import render_chart
+from aughor.export.echarts import render_chart_svg, render_charts_svg
+
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
+                          reason="chart SSR needs node + chart_ssr.bundle.mjs")
 
 _PNG = b"\x89PNG"
 _PDF = b"%PDF"
@@ -81,22 +88,45 @@ def _analysis_inv() -> dict:
 
 # ── charts ──────────────────────────────────────────────────────────────────
 
-def test_render_chart_returns_png():
-    png = render_chart(["category", "v"], [["a", 1], ["b", 2], ["c", 3]], "bar", "t")
-    assert png and png[:4] == _PNG
+@_ssr
+def test_render_chart_svg_returns_svg():
+    # CA-4 one renderer: the print chart is the web resolver's own SVG.
+    svg = render_chart_svg(["category", "v"], [["a", 1], ["b", 2], ["c", 3]], "bar", "t")
+    assert svg and svg.lstrip().startswith("<svg")
 
 
-def test_render_chart_line_and_pie():
-    line = render_chart(["period", "v"], [["2025-01-01", 1], ["2025-02-01", 2]], "line", "t")
-    pie = render_chart(["cat", "v"], [["a", 3], ["b", 1]], "pie", "t")
-    assert line and line[:4] == _PNG
-    assert pie and pie[:4] == _PNG
+@_ssr
+def test_render_chart_svg_line_and_jobs():
+    line = render_chart_svg(["period", "v"], [["2025-01-01", 1], ["2025-02-01", 2]], "line", "t")
+    # A CA-4 job token resolves to its form in the same renderer.
+    mag = render_chart_svg(["cat", "v"], [["a", 3], ["b", 1], ["c", 2]], "magnitude", "t")
+    assert line and line.lstrip().startswith("<svg")
+    assert mag and mag.lstrip().startswith("<svg")
 
 
-def test_render_chart_none_when_not_chartable():
-    assert render_chart(["a", "b"], [["x", "y"]], "bar", "t") is None       # no numeric column
-    assert render_chart(["a", "v"], [["x", 1]], "none", "t") is None        # explicit none
-    assert render_chart([], [], "bar", "t") is None                          # empty
+@_ssr
+def test_render_chart_svg_none_when_not_chartable():
+    assert render_chart_svg(["a", "b"], [["x", "y"]], "bar", "t") is None   # no numeric column
+    assert render_chart_svg(["a", "v"], [["x", 1]], "none", "t") is None    # explicit none
+    assert render_chart_svg([], [], "bar", "t") is None                     # empty
+
+
+@_ssr
+def test_render_charts_svg_batch_aligns_index_for_index():
+    svgs = render_charts_svg([
+        {"columns": ["c", "v"], "rows": [["a", 1], ["b", 2]], "chart_type": "bar", "title": "one"},
+        {"columns": ["a", "b"], "rows": [["x", "y"]], "chart_type": "bar", "title": "no chart"},
+        {"columns": ["c", "v"], "rows": [["a", 3], ["b", 4]], "chart_type": "line", "title": "two"},
+    ])
+    assert len(svgs) == 3
+    assert svgs[0] and svgs[2] and svgs[1] is None
+
+
+def test_render_chart_svg_fails_open_without_node(monkeypatch):
+    # No node on PATH → None, never an exception (the document falls back to tables).
+    from aughor.export import echarts as E
+    monkeypatch.setattr(E, "_node_bin", lambda: None)
+    assert E.render_chart_svg(["c", "v"], [["a", 1], ["b", 2]], "bar", "t") is None
 
 
 # ── document model ──────────────────────────────────────────────────────────
@@ -112,8 +142,10 @@ def test_ada_doc_has_rich_structure():
     assert {"heading", "chart", "recs"} <= kinds
     assert "keynums" not in kinds
     assert doc.kind == "ada"
-    # a chart block carries real PNG bytes
-    assert any(b.kind == "chart" and b.png and b.png[:4] == _PNG for b in doc.blocks)
+    # a chart block carries the SSR's vector SVG (PNG rides along only where a
+    # raster backend exists — PPTX degrades honestly without one)
+    assert any(b.kind == "chart" and b.svg and b.svg.lstrip().startswith(b"<svg")
+               for b in doc.blocks)
 
 
 def test_chat_and_analysis_dispatch():

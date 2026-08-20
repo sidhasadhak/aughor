@@ -16,7 +16,15 @@ from aughor.agent.investigate import (
     _fmt_compact_num,
     _tag_currency_columns,
 )
-from aughor.export.charts import _fmt_for
+import pytest
+import shutil as _shutil
+from pathlib import Path as _Path
+
+from aughor.export.echarts import render_chart_svg
+
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
+                          reason="chart SSR needs node + chart_ssr.bundle.mjs")
 from aughor.export.document import build_export_doc
 
 
@@ -55,23 +63,29 @@ def test_currency_tag_is_a_noop_without_a_source_token():
     assert "column_units" not in f
 
 
+@_ssr
 def test_export_formatter_prefixes_the_source_currency():
-    fmt = _fmt_for("ticket fare revenue", {"ticket fare revenue": "currency:CHF"})
-    assert fmt(1951747.0) == "CHF 2.0M"
-    fmt_usd = _fmt_for("x", {"x": "currency:USD"})
-    assert fmt_usd(1500.0) == "$1.5K"
+    # CA-4 one renderer: the SOURCE-currency unit hint reaches the print axis
+    # through the web's own valueFormatter — assert it in the rendered SVG.
+    svg = render_chart_svg(["cat", "ticket fare revenue"],
+                           [["a", 1951747.0], ["b", 1200000.0]], "bar", "t",
+                           units={"ticket fare revenue": "currency:CHF"})
+    assert svg and "CHF" in svg
 
 
+@_ssr
 def test_export_money_symbol_fallback_matches_the_web():
-    # No unit hint: a money-named column carries the connection's effective symbol
-    # (the web's behavior) — the PDF axis can no longer read bare "34.7M" while the
-    # app shows "CHF 34.7M". Source-currency units still beat the fallback; a
-    # non-money column stays bare.
-    fmt = _fmt_for("net revenue", None, money_symbol="CHF ")
-    assert fmt(34741777.0) == "CHF 34.7M"
-    assert _fmt_for("records", None, money_symbol="CHF ")(77281) == "77.3K"
-    assert _fmt_for("net revenue", {"net revenue": "currency:USD"},
-                    money_symbol="CHF ")(1500.0) == "$1.5K"
+    # No unit hint: a money-named column carries the connection's effective
+    # symbol, threaded to the headless renderer as money_symbol — the PDF axis
+    # can no longer read bare "34.7M" while the app shows "CHF 34.7M".
+    svg = render_chart_svg(["cat", "net revenue"],
+                           [["a", 34741777.0], ["b", 21000000.0]], "bar", "t",
+                           money_symbol="CHF ")
+    assert svg and "CHF" in svg
+    bare = render_chart_svg(["cat", "records"],
+                            [["a", 77281.0], ["b", 50000.0]], "bar", "t",
+                            money_symbol="CHF ")
+    assert bare and "CHF" not in bare
 
 
 # ── 2 · fallback headline word-boundary cut ──────────────────────────────────
