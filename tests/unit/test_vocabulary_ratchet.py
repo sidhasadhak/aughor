@@ -178,7 +178,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # What is banned is describing OUR design system as Tableau's.
         r"(?i)tableau|\btab10\b", ("web",),
         ("web/lib/chartPalettes.ts", "web/lib/orgSettings.ts",
-         "web/components/QueryBuilder.tsx", "web/components/Chart.tsx"),
+         "web/components/QueryBuilder.tsx",
+         # CA-4 moved Chart.tsx's resolver (and its palette-name doc comment)
+         # into resolveOption.ts — the exemption follows the code.
+         "web/components/charts/resolveOption.ts"),
         "our design system is ours; name the colour scheme, not its origin",
     ),
     "mindsdb": (

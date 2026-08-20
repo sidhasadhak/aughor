@@ -12,7 +12,8 @@ import type { EChartsOption } from "echarts";
 import { compactNumber, pct, cleanLabel, detectGranularity, fmtDate, normDateStr, type Gran } from "@/lib/format";
 import { SHARE_COL } from "@/components/charts/columnRoles";
 import { effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
-import { type ExhibitSpec, severityRamp, rampStops, refMarkLine } from "@/components/charts/exhibit";
+import { type ExhibitSpec, isEmphasized, severityRamp, rampStops, refMarkLine } from "@/components/charts/exhibit";
+import { resolveDeemph, resolveSeries, resolveSign } from "@/components/charts/echarts/palette";
 
 export type Row = Record<string, unknown>;
 
@@ -137,6 +138,53 @@ function withTitle(title: string | undefined): Pick<EChartsOption, "title"> {
   return title ? { title: { text: title } } : {};
 }
 
+// Neutral chart-furniture gray (axis titles, reference lines, gradient-legend
+// text) — reads on both themes, never claims a series hue.
+const REF_NEUTRAL = "#9DA1A8";
+
+// ── CA-4 mark specs ──────────────────────────────────────────────────────────
+// Bar width comes from the band: ~35% of each band stays air, and the cap stops
+// wide plots from rendering slabs. Horizontal bars round the data END (the right
+// edge), never the baseline — the theme's [4,4,0,0] covers vertical bars.
+const BAR_SPEC = { barCategoryGap: "35%", barMaxWidth: 48 } as const;
+const barEndRadius = (horizontal: boolean | undefined): Record<string, unknown> =>
+  horizontal ? { borderRadius: [0, 4, 4, 0] } : {};
+
+// Selective labels: past this many marks, "a number on every point" stops being
+// read — label the endpoint and the extremes and let axis/tooltip/table carry
+// the rest (all-on is retired; CA-4).
+const LABEL_ALL_MAX = 8;
+
+/** Per-datum label gate for a series: all indices when the series is short,
+ *  else first + last + max + min. */
+function selectiveIdx(values: (number | null)[]): Set<number> {
+  const keep = new Set<number>();
+  if (values.length <= LABEL_ALL_MAX) { values.forEach((_, k) => keep.add(k)); return keep; }
+  let maxI = -1, minI = -1;
+  values.forEach((v, k) => {
+    if (v == null || !isFinite(v)) return;
+    if (maxI < 0 || v > (values[maxI] as number)) maxI = k;
+    if (minI < 0 || v < (values[minI] as number)) minI = k;
+  });
+  keep.add(0); keep.add(values.length - 1);
+  if (maxI >= 0) keep.add(maxI);
+  if (minI >= 0) keep.add(minI);
+  return keep;
+}
+
+/** Value-axis title with its unit — "Revenue ($)", "Late rate (%)" — so the
+ *  axis names what the ticks are counting (CA-4 mark specs). */
+function axisTitle(rows: Row[], y: string, units?: Record<string, string>): string {
+  const share = isShareField(rows, y, units);
+  const srcCur = units?.[y]?.startsWith("currency:") ? units[y].slice("currency:".length) : null;
+  const sym = share ? "%"
+    : srcCur ? (CURRENCY_SYMBOLS[srcCur] ?? srcCur).trim()
+    : isMoneyColumn(y) ? effectiveCurrencySymbol().trim() : "";
+  const base = fieldLabel(y);
+  return sym && !base.includes(sym) ? `${base} (${sym})` : base;
+}
+const AXIS_NAME_STYLE = { fontSize: 11, color: REF_NEUTRAL } as const;
+
 // ── color binding (the Databricks "Color" field) ─────────────────────────────
 // A chart can colour its marks by a CHOSEN column instead of the plotted measure:
 //   • a dimension  → one discrete hue per value + a legend  ("categorical")
@@ -144,7 +192,53 @@ function withTitle(title: string | undefined): Pick<EChartsOption, "title"> {
 // The scale is resolved from exhibit.color.mode when set, else inferred from whether the
 // field's values are numeric. Absent a field → callers keep their prior rendering.
 
-const REF_NEUTRAL = "#9DA1A8";
+// ── series-count ceiling (CA-4) ──────────────────────────────────────────────
+// Six palette slots is the ceiling — there is no overflow ramp. A chart asked to
+// draw more groups folds the tail into "Other" (the de-emphasis gray), never a
+// generated seventh hue: a generated hue is indistinguishable from an existing
+// one under CVD and breaks the palette's validated guarantees.
+const MAX_SERIES = 6;
+const OTHER_NAME = "Other";
+
+/** Fold a long-tailed group column: keep the top (max−1) groups by Σ|y| and
+ *  re-aggregate every other row into one "Other" row per x bucket. `groups`
+ *  preserves discovery order when nothing folds (byte-identical legacy), else
+ *  kept-by-size with "Other" last. */
+function foldGroups(
+  rows: Row[], x: string, group: string, y: string, max = MAX_SERIES,
+): { rows: Row[]; groups: string[]; folded: boolean } {
+  const totals = new Map<string, number>();
+  const discovery: string[] = [];
+  for (const r of rows) {
+    const g = String(r[group]);
+    if (!totals.has(g)) discovery.push(g);
+    const v = Math.abs(num(r[y]));
+    totals.set(g, (totals.get(g) ?? 0) + (isFinite(v) ? v : 0));
+  }
+  if (discovery.length <= max) return { rows, groups: discovery, folded: false };
+  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
+  const keep = new Set(ranked.slice(0, max - 1));
+  const out: Row[] = [];
+  const other = new Map<string, Row>();
+  for (const r of rows) {
+    if (keep.has(String(r[group]))) { out.push(r); continue; }
+    const xv = String(r[x]);
+    const acc = other.get(xv);
+    const v = isFinite(num(r[y])) ? num(r[y]) : 0;
+    if (acc) acc[y] = num(acc[y]) + v;
+    else other.set(xv, { ...r, [group]: OTHER_NAME, [y]: v });
+  }
+  out.push(...other.values());
+  return { rows: out, groups: [...ranked.slice(0, max - 1), OTHER_NAME], folded: true };
+}
+
+/** Explicit series color for the folded "Other" — the de-emphasis gray, applied
+ *  to line and fill alike so the fold can never claim a palette slot. */
+function otherStyle(folded: boolean, g: string): Record<string, unknown> {
+  if (!folded || g !== OTHER_NAME) return {};
+  const dee = resolveDeemph();
+  return { itemStyle: { color: dee }, lineStyle: { color: dee } };
+}
 
 /** Is the color field numeric across the rows (→ default to a continuous gradient)? */
 function colorIsNumeric(rows: Row[], field: string): boolean {
@@ -229,33 +323,37 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
       boundaryGap: false,
       axisLabel: i.xKind === "time" ? { formatter: dateAxisLabel(i.rows, i.x), hideOverlap: true } : { hideOverlap: true },
     },
-    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: i.ys.map((y, k) => ({
-      name: fieldLabel(y),
-      type: "line",
-      data: cats.map((c) => { const r = byX.get(c); return r == null ? null : num(r[y]); }),
-      showSymbol: cats.length <= 60,
-      symbolSize: 5,
-      areaStyle: area ? { opacity: 0.18 } : { opacity: 0.06 },
-      emphasis: { focus: "series" },
-      label: i.labels ? { show: true, position: "top", fontSize: 11, formatter: (p: { value: unknown }) => fmt(p.value) } : undefined,
-      labelLayout: i.labels ? { hideOverlap: true } : undefined,
-      // Reference lines (peer median / global average / benchmark) ride the first series.
-      markLine: k === 0 ? refMarkLine(i.exhibit?.ref_lines ?? [], "y", fmt) : undefined,
-    })),
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) },
+      name: axisTitle(i.rows, i.ys[0], i.units), nameLocation: "middle", nameGap: 44, nameTextStyle: AXIS_NAME_STYLE },
+    series: i.ys.map((y, k) => {
+      const data = cats.map((c) => { const r = byX.get(c); return r == null ? null : num(r[y]); });
+      // Selective labels: the endpoint and the extremes, never every point.
+      const keep = selectiveIdx(data);
+      return {
+        name: fieldLabel(y),
+        type: "line" as const,
+        data,
+        showSymbol: cats.length <= 60,
+        areaStyle: area ? { opacity: 0.18 } : { opacity: 0.06 },
+        emphasis: { focus: "series" as const },
+        label: i.labels ? { show: true, position: "top" as const, fontSize: 11,
+          formatter: (p: { value: unknown; dataIndex: number }) => (keep.has(p.dataIndex) ? fmt(p.value) : "") } : undefined,
+        labelLayout: i.labels ? { hideOverlap: true } : undefined,
+        // Reference lines (peer median / global average / benchmark) ride the first series.
+        markLine: k === 0 ? refMarkLine(i.exhibit?.ref_lines ?? [], "y", fmt) : undefined,
+      };
+    }),
   };
 }
 
 /** One line per distinct value of the `color` group field (long → multi-series). */
 export function multiLineOption(i: BuildInput): EChartsOption {
   const y = i.ys[0];
-  const cats = categories(i.rows, i.x, i.xKind ?? "time");
-  const groups: string[] = [];
+  const { rows: frows, groups, folded } = foldGroups(i.rows, i.x, i.color!, y);
+  const cats = categories(frows, i.x, i.xKind ?? "time");
   const cell = new Map<string, number>(); // `${group}__${x}` → value
-  for (const r of i.rows) {
-    const g = String(r[i.color!]);
-    if (!groups.includes(g)) groups.push(g);
-    cell.set(`${g}__${String(r[i.x])}`, num(r[y]));
+  for (const r of frows) {
+    cell.set(`${String(r[i.color!])}__${String(r[i.x])}`, num(r[y]));
   }
   const fmt = valueFormatter(i.rows, y, i.units);
   return {
@@ -269,14 +367,27 @@ export function multiLineOption(i: BuildInput): EChartsOption {
       axisLabel: i.xKind !== "category" ? { formatter: dateAxisLabel(i.rows, i.x), hideOverlap: true } : { hideOverlap: true },
     },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: groups.map((g) => ({
-      name: g,
-      type: "line",
-      data: cats.map((c) => { const v = cell.get(`${g}__${c}`); return v == null ? null : v; }),
-      showSymbol: cats.length <= 40,
-      symbolSize: 4,
-      emphasis: { focus: "series" },
-    })),
+    series: groups.map((g) => {
+      const subject = isEmphasized(i.exhibit, g);
+      const anySubject = groups.some((gg) => isEmphasized(i.exhibit, gg));
+      // Emphasis form: the subject series in the accent hue, the rest in one
+      // de-emphasis gray — the many-line chart becomes one story + context.
+      const emphStyle = anySubject
+        ? (subject
+          ? { lineStyle: { color: resolveSeries()[0], width: 2.5 }, itemStyle: { color: resolveSeries()[0] }, z: 3 }
+          : { lineStyle: { color: resolveDeemph(), width: 1.5 }, itemStyle: { color: resolveDeemph() } })
+        : {};
+      return {
+        name: g,
+        type: "line" as const,
+        data: cats.map((c) => { const v = cell.get(`${g}__${c}`); return v == null ? null : v; }),
+        showSymbol: cats.length <= 40,
+        symbolSize: 4,
+        emphasis: { focus: "series" as const },
+        ...otherStyle(folded, g),
+        ...emphStyle,
+      };
+    }),
   };
 }
 
@@ -322,8 +433,13 @@ export function smallMultiplesOption(i: BuildInput): EChartsOption {
       axisLabel: { show: rr === rows - 1, formatter: xLabel, hideOverlap: true, fontSize: 10 }, axisTick: { show: false } });
     yAxes.push({ gridIndex: k, type: "value", max: ymax || undefined, splitLine: { show: false },
       axisLabel: { show: cc === 0, formatter: (v: number) => fmt(v), fontSize: 10 } });
-    series.push({ name: g, type: "line", xAxisIndex: k, yAxisIndex: k, showSymbol: false, lineStyle: { width: 1.5 },
-      areaStyle: { opacity: 0.08 }, data: cats.map((c) => { const v = cell.get(`${g}__${c}`); return v == null ? null : v; }) });
+    // Every cell wears slot 1: identity is the cell TITLE, not a hue — nine hues
+    // for nine cells would spend the whole palette re-encoding what the grid
+    // already says (and an all-pairs form caps far below nine).
+    series.push({ name: g, type: "line", xAxisIndex: k, yAxisIndex: k, showSymbol: false,
+      lineStyle: { width: 1.5, color: resolveSeries()[0] }, itemStyle: { color: resolveSeries()[0] },
+      areaStyle: { opacity: 0.08, color: resolveSeries()[0] },
+      data: cats.map((c) => { const v = cell.get(`${g}__${c}`); return v == null ? null : v; }) });
     titles.push({ text: g, left: `${left}%`, top: `${top}%`, textStyle: { fontSize: 11, fontWeight: 500 } });
   });
   return {
@@ -371,9 +487,15 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
     axisLabel: { hideOverlap: true, ...(style.horizontal ? {} : { interval: 0 }) },
     ...(style.horizontal ? { inverse: true } : {}),   // largest at top for ranked horizontal
   };
-  const valAxis = { type: "value" as const, axisLabel: { formatter: (v: number) => fmt(v) } };
+  const valAxis = {
+    type: "value" as const, axisLabel: { formatter: (v: number) => fmt(v) },
+    name: axisTitle(i.rows, y, i.units), nameLocation: "middle" as const,
+    nameGap: style.horizontal ? 26 : 44, nameTextStyle: AXIS_NAME_STYLE,
+  };
+  const labelIdx = selectiveIdx(values);
   const label = i.labels
-    ? { show: true, fontSize: 11, distance: 5, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
+    ? { show: true, fontSize: 11, distance: 5, position: (style.horizontal ? "right" : "top") as "right" | "top",
+        formatter: (p: { value: unknown; dataIndex: number }) => (labelIdx.has(p.dataIndex) ? fmt(p.value) : "") }
     : undefined;
   // Reference lines: on a horizontal bar the VALUE axis is x, so the line is vertical.
   const markLine = refMarkLine(i.exhibit?.ref_lines ?? [], style.horizontal ? "x" : "y", fmt);
@@ -384,16 +506,15 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   //    per x → a single-segment bar coloured by its group; N rows sharing an x → N stacked
   //    segments (the real "split by colour"). Legend carries the groups.
   if (binding && binding.scale === "categorical") {
-    const groups: string[] = [];
+    const { rows: brows, groups, folded } = foldGroups(rows, i.x, binding.field, y);
     const xcats: string[] = [];
     const cell = new Map<string, number>();
     const xtotal = new Map<string, number>();
-    for (const r of rows) {
+    for (const r of brows) {
       const xv = gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x]);
       const gv = String(r[binding.field]);
       const nv = isFinite(num(r[y])) ? num(r[y]) : 0;
       if (!xcats.includes(xv)) xcats.push(xv);
-      if (!groups.includes(gv)) groups.push(gv);
       cell.set(`${xv}\u0000${gv}`, (cell.get(`${xv}\u0000${gv}`) ?? 0) + nv);
       xtotal.set(xv, (xtotal.get(xv) ?? 0) + nv);
     }
@@ -415,11 +536,12 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       xAxis: style.horizontal ? valAxis : pivotCat,
       yAxis: style.horizontal ? pivotCat : valAxis,
       series: groups.map((g, gi) => ({
-        name: g, type: "bar", stack: "cbind", barMaxWidth: 34,
+        name: g, type: "bar", stack: "cbind", ...BAR_SPEC,
         data: xcats.map((x) => { const v = cell.get(`${x}\u0000${g}`); return v == null ? null : v; }),
         label, labelLayout: i.labels ? { hideOverlap: true } : undefined,
         emphasis: { focus: "series" },
         markLine: gi === 0 ? markLine : undefined,
+        ...otherStyle(folded, g),
       })),
     };
   }
@@ -447,7 +569,8 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       xAxis: style.horizontal ? valAxis : catAxis,
       yAxis: style.horizontal ? catAxis : valAxis,
       series: [{
-        name: fieldLabel(y), type: "bar", barMaxWidth: 34, label,
+        name: fieldLabel(y), type: "bar", ...BAR_SPEC, label,
+        itemStyle: barEndRadius(style.horizontal) as unknown as undefined,
         labelLayout: i.labels ? { hideOverlap: true } : undefined, markLine,
         data: values.map((v, idx) => ({ value: v, itemStyle: { color: ramp(Number(rows[idx][binding.field])) } })),
       }],
@@ -459,27 +582,47 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   //    "severity" exhibit ramps the bars by their own value — the redundant encoding that makes
   //    a worst-N ranking read at a glance.
   let itemStyle: { color: (p: { value: number }) => string } | undefined;
-  if (style.diverging) {
-    itemStyle = { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") };
+  const hasEmphasis = !!i.exhibit?.emphasis?.length && rows.some((r) => isEmphasized(i.exhibit, r[i.x]));
+  // An explicit exhibit `sign` mode means the same thing the name-based diverging
+  // gate means: the value's sign IS its meaning (parity with the print grammar).
+  if (style.diverging || i.exhibit?.color?.mode === "sign") {
+    // Sign is a good/bad meaning, so it wears the status threshold tokens —
+    // never a series slot (palette.ts CHART_SIGN mirrors the CSS).
+    const sign = resolveSign();
+    itemStyle = { color: (p: { value: number }) => (p.value >= 0 ? sign.pos : sign.neg) };
+  } else if (hasEmphasis) {
+    // The emphasis form: the question's subject wears the accent hue, every
+    // other bar recedes to the de-emphasis gray — the chart says what the
+    // sentence says. Beats severity (a subject outranks a ramp).
+    const accent = resolveSeries()[0];
+    const dee = resolveDeemph();
+    itemStyle = { color: (p: { value: number; dataIndex: number }) =>
+      (isEmphasized(i.exhibit, rows[p.dataIndex]?.[i.x]) ? accent : dee) } as unknown as typeof itemStyle;
+    // The subject is always labeled, whatever the selective-label rule kept.
+    rows.forEach((r, k) => { if (isEmphasized(i.exhibit, r[i.x])) labelIdx.add(k); });
   } else if (i.exhibit?.color?.mode === "severity" && values.length >= 3) {
     const finite = values.filter((v) => isFinite(v));
     const ramp = severityRamp(Math.min(...finite), Math.max(...finite), y);
     itemStyle = { color: (p: { value: number }) => ramp(p.value) };
   }
 
+  // A vertical bar with ≤4 categories on a wide card would scatter thin bars
+  // across the full width — cap the plot so the group reads as one comparison.
+  const fewCats = !style.horizontal && labels.length > 0 && labels.length <= 4;
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
+    ...(fewCats ? { grid: { width: labels.length * 96, left: "center", ...GRID_CONTAIN } } : {}),
     xAxis: style.horizontal ? valAxis : catAxis,
     yAxis: style.horizontal ? catAxis : valAxis,
     series: [{
       name: fieldLabel(y), type: "bar", data: values, label,
-      // Fixed bar thickness so few bars don't stretch into slabs — the chart HEIGHT adapts to the bar
-      // count (Chart.tsx), the bars don't. ECharts caps at barMaxWidth and centres within each band.
-      barMaxWidth: 34,
+      // Width from the band, capped — the chart HEIGHT adapts to the bar count
+      // (Chart.tsx); the bars never fill their slot.
+      ...BAR_SPEC,
       // Drop any data label that would collide instead of overprinting a neighbour.
       labelLayout: i.labels ? { hideOverlap: true } : undefined,
-      itemStyle: itemStyle as unknown as undefined,
+      itemStyle: { ...barEndRadius(style.horizontal), ...(itemStyle ?? {}) } as unknown as undefined,
       markLine,
     }],
   };
@@ -494,8 +637,56 @@ export function groupedBarOption(i: BuildInput): EChartsOption {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
     legend: { data: i.ys.map(fieldLabel) },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
-    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: i.ys.map((y) => ({ name: fieldLabel(y), type: "bar", barMaxWidth: 34, data: i.rows.map((r) => num(r[y])) })),
+    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) },
+      name: axisTitle(i.rows, i.ys[0], i.units), nameLocation: "middle", nameGap: 44, nameTextStyle: AXIS_NAME_STYLE },
+    series: i.ys.map((y) => ({ name: fieldLabel(y), type: "bar", ...BAR_SPEC, data: i.rows.map((r) => num(r[y])) })),
+  };
+}
+
+/** CA-4 "change" form: the signed per-item delta of a period pair — ys =
+ *  [before, after]; renders (after − before) as one horizontal diverging bar,
+ *  sorted by |Δ|. Never grouped before/after bars: the reader wants the change,
+ *  not two heights to subtract mentally. Both period values ride the tooltip. */
+export function deltaBarOption(i: BuildInput): EChartsOption {
+  const [before, after] = i.ys;
+  const agg = new Map<string, { a: number; b: number }>();
+  for (const r of i.rows) {
+    const k = String(r[i.x]);
+    const cur = agg.get(k) ?? { a: 0, b: 0 };
+    cur.a += isFinite(num(r[before])) ? num(r[before]) : 0;
+    cur.b += isFinite(num(r[after])) ? num(r[after]) : 0;
+    agg.set(k, cur);
+  }
+  const entries = [...agg.entries()].map(([k, v]) => ({ k, delta: v.b - v.a, a: v.a, b: v.b }))
+    .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+  const fmt = valueFormatter(i.rows, after, i.units);
+  const sign = resolveSign();
+  const labelIdx = selectiveIdx(entries.map((e) => e.delta));
+  return {
+    ...withTitle(i.title),
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "shadow" },
+      formatter: (ps: unknown) => {
+        const p = (ps as { dataIndex: number }[])[0];
+        const e = entries[p.dataIndex];
+        if (!e) return "";
+        return `${e.k}<br/>${fieldLabel(after)}: ${fmt(e.b)}<br/>${fieldLabel(before)}: ${fmt(e.a)}<br/>Δ ${fmt(e.delta)}`;
+      },
+    },
+    xAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) },
+      name: `Δ ${axisTitle(i.rows, after, i.units)}`, nameLocation: "middle", nameGap: 26, nameTextStyle: AXIS_NAME_STYLE },
+    yAxis: { type: "category", data: entries.map((e) => e.k), inverse: true, axisLabel: { hideOverlap: true } },
+    series: [{
+      name: `Δ ${fieldLabel(after)}`, type: "bar", ...BAR_SPEC,
+      data: entries.map((e) => ({
+        value: e.delta,
+        itemStyle: { color: e.delta >= 0 ? sign.pos : sign.neg, borderRadius: e.delta >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4] },
+        label: i.labels === false ? undefined : { position: e.delta >= 0 ? "right" : "left" },
+      })),
+      label: i.labels === false ? undefined : { show: true, fontSize: 11, distance: 5,
+        formatter: (p: { value: unknown; dataIndex: number }) => (labelIdx.has(p.dataIndex) ? fmt(p.value) : "") },
+      labelLayout: { hideOverlap: true },
+    }],
   };
 }
 
@@ -503,13 +694,11 @@ export function groupedBarOption(i: BuildInput): EChartsOption {
  *  100% so the SHIFT in composition over time reads directly (the go-to for composition-over-time). */
 export function stackedBarOption(i: BuildInput, percent = false): EChartsOption {
   const y = i.ys[0];
-  const cats = categories(i.rows, i.x, i.xKind);
-  const groups: string[] = [];
+  const { rows: frows, groups, folded } = foldGroups(i.rows, i.x, i.color!, y);
+  const cats = categories(frows, i.x, i.xKind);
   const cell = new Map<string, number>();
-  for (const r of i.rows) {
-    const g = String(r[i.color!]);
-    if (!groups.includes(g)) groups.push(g);
-    cell.set(`${g}__${String(r[i.x])}`, num(r[y]));
+  for (const r of frows) {
+    cell.set(`${String(r[i.color!])}__${String(r[i.x])}`, num(r[y]));
   }
   // For 100%-stacked, divide each cell by its x-bucket total so every bar sums to 100.
   const totals = new Map<string, number>();
@@ -536,10 +725,18 @@ export function stackedBarOption(i: BuildInput, percent = false): EChartsOption 
     yAxis: percent
       ? { type: "value", max: 100, axisLabel: { formatter: (v: number) => `${v}%` } }
       : { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: groups.map((g) => ({
-      name: g, type: "bar", stack: "total", barMaxWidth: 40,
-      data: cats.map((c) => at(g, c)),
-    })),
+    series: groups.map((g) => {
+      const anySubject = groups.some((gg) => isEmphasized(i.exhibit, gg));
+      const emphStyle = anySubject
+        ? { itemStyle: { color: isEmphasized(i.exhibit, g) ? resolveSeries()[0] : resolveDeemph() } }
+        : {};
+      return {
+        name: g, type: "bar" as const, stack: "total", ...BAR_SPEC,
+        data: cats.map((c) => at(g, c)),
+        ...otherStyle(folded, g),
+        ...emphStyle,
+      };
+    }),
   };
 }
 
@@ -582,8 +779,9 @@ export function pieOption(i: BuildInput): EChartsOption {
 
 // Point labels stay legible only while the plot is sparse; past this they overprint.
 const _SCATTER_LABEL_MAX = 40;
-// One hue per group stays readable up to the palette's brand range; beyond, group into "Other".
-const _SCATTER_GROUP_MAX = 8;
+// A scatter is an all-pairs form — any two groups can sit side by side — so the
+// series ceiling is the palette's slot count; beyond, group into "Other".
+const _SCATTER_GROUP_MAX = MAX_SERIES;
 
 /** Two numerics, correlation / outlier detection. Optionally: `color` groups the
  *  points into per-category series (hue + legend = a third dimension), `pointLabel`
@@ -633,14 +831,22 @@ export function scatterOption(i: BuildInput): EChartsOption {
       byGroup.get(g)!.push(r);
     }
     const ranked = [...byGroup.entries()].sort((a, b) => b[1].length - a[1].length);
-    const kept = ranked.slice(0, _SCATTER_GROUP_MAX);
-    const rest = ranked.slice(_SCATTER_GROUP_MAX).flatMap(([, rs]) => rs);
-    const entries: [string, Row[]][] = rest.length ? [...kept, ["Other", rest]] : kept;
+    const kept = ranked.slice(0, _SCATTER_GROUP_MAX - 1);
+    const rest = ranked.slice(_SCATTER_GROUP_MAX - 1).flatMap(([, rs]) => rs);
+    const foldedHere = ranked.length > _SCATTER_GROUP_MAX;
+    const entries: [string, Row[]][] = foldedHere
+      ? [...kept, [OTHER_NAME, rest]]
+      : ranked;
     groups = entries.map(([g]) => g);
+    const anySubject = entries.some(([g]) => isEmphasized(i.exhibit, g));
     series = entries.map(([g, rs]) => ({
       name: g, type: "scatter", symbolSize: 9, data: rs.map(pointOf),
       label, labelLayout: showPointLabels ? { hideOverlap: true } : undefined,
       emphasis: { focus: "series" },
+      ...otherStyle(foldedHere, g),
+      ...(anySubject
+        ? { itemStyle: { color: isEmphasized(i.exhibit, g) ? resolveSeries()[0] : resolveDeemph() } }
+        : {}),
     }));
   } else {
     series = [{
@@ -764,7 +970,11 @@ export function heatmapOption(i: BuildInput): EChartsOption {
       min: diverging ? -Math.max(Math.abs(min), Math.abs(max)) : (isFinite(min) ? Math.min(0, min) : 0),
       max: isFinite(max) ? max : 1,
       calculable: true, orient: "horizontal", left: "center", bottom: 0,
-      inRange: { color: diverging ? ["#E64848", "#2A2C2F", "#2EC87B"] : ["#0e2440", "#244E86", "#4C8EEE"] },
+      // Diverging wears the sign pair around a neutral gray midpoint (never a hue
+      // at the midpoint); sequential magnitude wears the exhibit's one-hue ramp.
+      inRange: { color: diverging
+        ? [resolveSign().neg, resolveDeemph(), resolveSign().pos]
+        : rampStops(i.ys[0]).map((s) => s.color) },
       formatter: (v: number) => fmt(v),
     } as unknown as EChartsOption["visualMap"],
     series: [{ type: "heatmap", data, emphasis: { itemStyle: { borderColor: "#fff", borderWidth: 1 } } }],
@@ -1018,8 +1228,8 @@ export function waterfallOption(i: BuildInput): EChartsOption {
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: [
       { name: "base", type: "bar", stack: "wf", silent: true, itemStyle: { color: "transparent" }, emphasis: { itemStyle: { color: "transparent" } }, data: base },
-      { name: "Increase", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#2EC87B" }, data: ups, label: dlabel ? { ...dlabel, position: "top" } : undefined },
-      { name: "Decrease", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: "#E64848" }, data: downs, label: dlabel ? { ...dlabel, position: "bottom" } : undefined },
+      { name: "Increase", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: resolveSign().pos }, data: ups, label: dlabel ? { ...dlabel, position: "top" } : undefined },
+      { name: "Decrease", type: "bar", stack: "wf", barMaxWidth: 40, itemStyle: { color: resolveSign().neg }, data: downs, label: dlabel ? { ...dlabel, position: "bottom" } : undefined },
     ],
   };
 }
@@ -1094,14 +1304,18 @@ export function ganttOption(i: BuildInput): EChartsOption {
   const catField = i.color && i.color !== i.x ? i.color : null;
   const groups: string[] = [];
   if (catField) for (const r of i.rows) { const c = String(r[catField]); if (!groups.includes(c)) groups.push(c); }
-  const PALETTE = ["#4C8EEE", "#2EC87B", "#E6A23C", "#B37FEB", "#E64848", "#36CFC9", "#F2789F", "#9DA1A8"];
+  // Spans are colored per datum (a custom series can't lean on the theme's
+  // rotation), so read the live series slots; a 7th+ category folds to the
+  // de-emphasis gray rather than cycling back onto a claimed hue.
+  const SLOTS = resolveSeries();
   const parse = (v: unknown) => new Date(normDateStr(String(v))).getTime();
   const fmtDay = (t: number) => fmtDate(new Date(t).toISOString().slice(0, 10), "day");
   const data = i.rows.map((r) => {
     const cat = catField ? String(r[catField]) : "";
+    const gi = groups.indexOf(cat);
     return {
       value: [tasks.indexOf(String(r[i.x])), parse(r[g.start]), parse(r[g.end]), cat],
-      itemStyle: { color: catField ? PALETTE[Math.max(0, groups.indexOf(cat)) % PALETTE.length] : "#4C8EEE" },
+      itemStyle: { color: catField ? (gi < SLOTS.length ? SLOTS[Math.max(0, gi)] : resolveDeemph()) : SLOTS[0] },
     };
   });
   const ganttSeries = {

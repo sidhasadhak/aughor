@@ -11,6 +11,22 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Changed
+- **Charts follow the exhibit spec (CA-4).** The chart palette is now computed, never
+  eyeballed: a six-check validator (lightness band, chroma floor, colour-vision-deficiency
+  separation, normal-vision floor, contrast against the real card surface) runs in CI on
+  both themes, the light palette was re-ordered so no confusable hues sit adjacent, the
+  dark palette re-stepped into its lightness band, and the 12-hue overflow ramp is gone —
+  past six series a chart folds the tail into "Other" in a dedicated de-emphasis gray.
+  Marks follow fixed specs (band-derived bar widths, rounded data ends, surface seams,
+  selective labels, unit-titled axes). Findings gain an **emphasis form** (the question's
+  subject in the accent hue, peers receding) and a **claim title** with a deterministic
+  scope · period · unit subtitle. The model now names the data's JOB (magnitude, trend,
+  identity, change, share, distribution, relation) instead of picking among two dozen
+  chart shapes; a period-over-period pair renders as a signed delta bar, and dual-axis
+  charts are banned outright. PDF/PPTX charts come from the web's own chart resolver
+  (ECharts server-side-rendered SVG via a node subprocess, embedded as vectors in the
+  PDF) — the separate matplotlib chart port is deleted, so the export can no longer
+  drift from what the app shows.
 - **Deep analysis became the analyst (CA-3).** Behind the `ask.converse` flag, a deep
   `/ask` turn now runs a tool loop instead of the fixed phase script: the phase library
   (baseline, decompose, cross-section) plus new deterministic probes (`z_score`,

@@ -357,9 +357,15 @@ class InvestigationFinding(TypedDict):
     # "41.0%", not "0.4". Absent → the UI falls back to its column-name heuristics. Units: "percent".
     column_units: NotRequired[dict[str, str]]
     # Chart-grammar exhibit spec: deterministic chart SEMANTICS —
-    # {"color": {"mode": "severity"|...}, "ref_lines": [{value,label,kind}], "label_points", "quadrant"}.
+    # {"color": {"mode": "severity"|...}, "ref_lines": [{value,label,kind}], "label_points", "quadrant",
+    #  "emphasis": ["<subject entity>"]}.
     # Built by aughor/agent/exhibit.py from the finding's own rows; absent → legacy rendering.
     exhibit: NotRequired[dict]
+    # CA-4 "title = claim": the one-sentence claim the exhibit demonstrates — the chart's
+    # title on every surface; `title` keeps the query's descriptive name (the source chip).
+    claim: NotRequired[Optional[str]]
+    # CA-4 subtitle: scope · period · unit, assembled deterministically from the intake.
+    subtitle: NotRequired[Optional[str]]
 
 
 class InvestigationPhaseResult(TypedDict):

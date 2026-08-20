@@ -394,21 +394,25 @@ def _grid_rows(n_rows=4, n_cols=5):
 
 
 def test_a_contingency_grid_renders_as_a_heatmap():
-    """`render_chart` had no heatmap branch, so an 8x21 contingency fell through to the
-    bar renderer: 21 bars labelled "A320" over and over, with the second dimension
-    nowhere on the chart. Worse than no chart, because it looks like an answer."""
-    from aughor.export.charts import render_chart
+    """The old print port had no heatmap branch, so an 8x21 contingency fell through
+    to the bar renderer: 21 bars labelled "A320" over and over, with the second
+    dimension nowhere on the chart. The one-renderer print path (CA-4) draws the
+    web's own heatmap."""
+    import pytest as _pytest
 
-    png = render_chart(["dim_a", "dim_b", "n_records"], _grid_rows(), "heatmap", "t")
-    assert png and png[:4] == b"\x89PNG"
+    from aughor.export.echarts import render_chart_svg
+    svg = render_chart_svg(["dim_a", "dim_b", "n_records"], _grid_rows(), "heatmap", "t")
+    if svg is None:
+        _pytest.skip("chart SSR unavailable (node/bundle)")
+    assert svg.lstrip().startswith("<svg")
 
 
 def test_a_one_dimensional_result_does_not_pretend_to_be_a_grid():
-    from aughor.export.charts import render_chart
+    from aughor.export.echarts import render_chart_svg
 
     rows = [["a", 1.0], ["b", 2.0], ["c", 3.0]]
-    png = render_chart(["dim", "n"], rows, "heatmap", "t")
-    assert png is None or png[:4] == b"\x89PNG"   # falls back, never raises
+    svg = render_chart_svg(["dim", "n"], rows, "heatmap", "t")
+    assert svg is None or svg.lstrip().startswith("<svg")   # falls back, never raises
 
 
 def test_the_finding_carries_the_whole_grid_not_a_50_row_preview():

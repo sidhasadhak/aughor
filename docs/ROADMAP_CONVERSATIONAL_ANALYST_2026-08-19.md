@@ -12,9 +12,9 @@
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
 > Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
-> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1 and CA-3 built on
-> `claude/ca-1-continuation-t0ax40` (see their STATUS blocks). CA-4 next.
-> The §5 decisions remain open.
+> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1, CA-3 and CA-4 built on
+> `claude/ca-1-continuation-t0ax40` (see their STATUS blocks). CA-5 is the open wave.
+> §5-3 (PDF renderer) is DECIDED — (a), node subprocess; the rest of §5 remains open.
 
 ---
 
@@ -379,6 +379,73 @@ the sketch:
 validator passes light + dark; a PDF and the web card of the same finding are visually the same
 chart.
 
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40` (with CA-1/CA-3).** What
+shipped vs the sketch:
+- **Palette by computation**: the six-check validator is vendored
+  (`web/scripts/validate_palette.mjs`) behind a new `lint:palette` CI gate that also
+  drift-checks the CSS tokens against the palette's new single TS source
+  (`components/charts/echarts/palette.ts`). Light mode passes with ZERO hex changes — a pure
+  re-order (the old order sat orange beside green: ΔE 0.7 under protanopia, indistinguishable;
+  the new worst adjacent pair is 20.7) — with orange and cyan sub-3:1 under the documented
+  relief rule (finding cards ship direct labels + a table view). Dark re-stepped five tokens
+  into the lightness band (worst adjacent CVD 9.9); both modes share one hue order so a series
+  keeps its hue family across theme flips. The 12-hue overflow ramp is DELETED: past six series
+  the builders fold the tail into "Other" in a new `--chart-deemph` gray (below the chroma
+  floor by design — it can never read as a seventh series). Small multiples paint every cell
+  slot-1 (identity is the cell title, not a hue); the sign pair moved onto the status threshold
+  tokens; the heatmap ramps come from the exhibit grammar; theme.ts's fallbacks import the TS
+  source, killing the fallback-drift class outright.
+- **Mark specs**: bar width from the band (`barCategoryGap` 35%, cap 48px) plus a max plot
+  width for ≤4-category vertical bars; 4px rounded data ends (horizontal bars round the END,
+  square at the baseline); 2px surface seams between stacked segments; ≥8px line markers with a
+  2px surface ring; hairline grid; **selective labels** (≤8 marks label all, else endpoint +
+  extremes + the subject — all-on retired); value axes carry titles with units. Grain date
+  ticks were already in.
+- **Emphasis form**: `exhibit.emphasis` stamped from the intake's `comparison_segment_sql`
+  equality literals — only when the value actually appears in the finding's rows — and
+  rendered on bars, multi-line, stacked and scatter: the subject in the accent hue, everything
+  else in the de-emphasis gray, the subject always labeled. Deliberate deviation: the
+  lifecycle `active_filter` is NOT read — it scopes the population, it is not the subject.
+- **Title = claim**: a `claim` field on the finding (the pydantic field description IS the
+  one prompt line), `subtitle` = scope · period · unit assembled deterministically from the
+  intake. Web figures lead with the claim; the query's descriptive name stays on the
+  source-data affordance; the PDF finding heading prefers the claim too.
+- **Form by job**: the model's chart vocabulary is now seven JOBS plus annotated specialised
+  shapes (`chart_vocab.py` `CHART_JOBS`/`JOB_TO_FORM`; both deep Literals rewritten; jobs
+  resolve to engine forms at `_phase_result` and the quick seam; the web mirror
+  `JOB_TO_ENGINE_HINT` is parity-tested against the Python map). `inferChartType` is the job
+  ladder — one row → stat tile, composition never auto-infers a donut, and a period pair
+  renders the NEW `delta-bar` (signed change, both period values in the tooltip) instead of
+  grouped obs/comp bars. `scoreDualAxis` is deleted and dual axes are banned end to end:
+  combo/pareto left the gallery and the registry, the backend's concentration→pareto
+  auto-upgrade is removed, and two new parity tests pin the ban and the job mirror. Deviation:
+  `chartTypeInference.ts` the FILE survives as the vocabulary home (union/maps/labels/
+  gallery) — the sketch's target was the inference mechanism, which is replaced; deleting the
+  file would only churn seven importers and the parity parser's anchor.
+- **One renderer (§5-3 decided: (a))**: Chart.tsx's dispatch cascade is extracted into a pure
+  `resolveOption.ts`; a small SSR entry bundles it with ECharts (esbuild, version-pinned) into
+  the committed `aughor/export/chart_ssr.bundle.mjs`, drift-checked in CI. The Python export
+  runs it as a node subprocess → SVG: the PDF embeds the VECTOR (svglib), PPTX rasterizes only
+  where a renderPM backend exists and otherwise degrades to the data table. The 676-line
+  matplotlib port is DELETED with its hand-mirrored constants family; matplotlib left the
+  export extra (svglib joined). The org money symbol threads through (symbol→code shim), and
+  print resolves the light tokens via an explicit mode override. The unification immediately
+  caught two real parity gaps: exhibit mode `"sign"` existed only in the matplotlib port (now
+  in `barOption`), and a malformed exhibit could throw in the browser (now sanitized fail-open
+  at the shared seam, with `"none"` honoured everywhere).
+- **Receipt run**: web gates green (tsc; tokens/format/vars/elements; the NEW `lint:palette`;
+  73 vitest; production build); ruff clean; the targeted backend battery green with the W4
+  print-renderer tests rewritten onto the SSR seam (they skip honestly where node/bundle are
+  absent) — the only failure remains the pre-existing keyless `test_ratchet_live_smoke`.
+  Live: `/chart-lab` re-rendered light + dark on the new palette including the new Delta and
+  Emphasis cards (screenshots captured), and a PDF built end to end whose chart is the
+  resolver's own vector output — claim heading, the subject emphasized with peers in the
+  de-emphasis gray, axis titled with its unit, CHF threaded through (specimen attached to the
+  session). Deferred: PPTX charts need a renderPM backend (rlPyCairo) in the deployment;
+  choropleth/point-map fall to tables in print (no geo layer shipped); saved "combo" viz
+  configs downgrade through inference (dual axes are banned); and the job vocabulary's
+  live-prompt quality rides the next keyed environment, like CA-3's live-model receipt.
+
 ### CA-5 — Fluidity (ongoing after CA-1/CA-3; the "frontier-chat feel")
 
 The vendored Elements organs (`ChainOfThought`, `Shimmer`, `Task`) on tool steps; tool-trail as
@@ -431,6 +498,10 @@ changes shape there).
 3. **Where the PDF chart is rendered** — ECharts SSR needs Node: (a) a Node subprocess in the
    Python export path, (b) the web app renders the PDF, or (c) keep matplotlib and accept drift.
    *Recommendation: (b) on Vercel, (a) self-hosted; never (c).*
+   **DECIDED 2026-08-20 by the user: (a)** — the export path runs the committed
+   `aughor/export/chart_ssr.bundle.mjs` (the web resolver + ECharts, esbuild-pinned,
+   CI drift-checked) as a node subprocess; deployments need node on PATH (or
+   `AUGHOR_NODE_BIN`), and a missing node degrades honestly to data tables.
 4. **Chat-first home by default** — `/` lands on `/chat` per org once CA-1 lands? Deferred from
    CI-6b; now cheap.
 5. **Retire `BriefAskPanel`'s reducer dependency in CA-1 or later** — migrate now (one more

@@ -74,6 +74,24 @@ def _image(png: bytes, max_w: float = _CONTENT_W):
     return Image(io.BytesIO(png), width=w, height=h)
 
 
+def _svg_flowable(svg: bytes, max_w: float = _CONTENT_W):
+    """CA-4 one-renderer: the chart arrives as the web resolver's own SVG —
+    embedded as a VECTOR drawing scaled to the content width (crisp at any
+    zoom; no raster backend needed). None on any parse failure → png/table."""
+    try:
+        from svglib.svglib import svg2rlg
+        drawing = svg2rlg(io.StringIO(svg.decode("utf-8", "replace")))
+        if drawing is None or not drawing.width:
+            return None
+        s = min(1.0, max_w / float(drawing.width))
+        drawing.scale(s, s)
+        drawing.width *= s
+        drawing.height *= s
+        return drawing
+    except Exception:
+        return None
+
+
 def _table(columns, rows, S):
     cols = columns[:7]
     ncol = len(cols)
@@ -152,12 +170,18 @@ def _flow(block: Block, S) -> list:
     elif block.kind == "keynums" and block.keynums:
         out.append(_keynums(block.keynums, S))
         out.append(Spacer(1, 4))
-    elif block.kind == "chart" and block.png:
-        # No caption under a chart: the figure draws its own title (charts.py ax.set_title),
-        # so the PDF was printing every chart's name twice. The Block keeps the caption —
-        # slides use it as the slide heading, where the PNG title isn't a heading.
-        out.append(_image(block.png))
-        out.append(Spacer(1, 6))
+    elif block.kind == "chart" and (block.svg or block.png):
+        # No caption under a chart: the figure draws its own title (the ECharts
+        # option's title block), so the PDF was printing every chart's name
+        # twice. The Block keeps the caption — slides use it as the slide
+        # heading, where the figure title isn't a heading. Vector SVG preferred;
+        # PNG only as the fallback.
+        fl = _svg_flowable(block.svg) if block.svg else None
+        if fl is None and block.png:
+            fl = _image(block.png)
+        if fl is not None:
+            out.append(fl)
+            out.append(Spacer(1, 6))
     elif block.kind == "table" and block.columns:
         out.append(_table(block.columns, block.rows, S))
         if block.caption:

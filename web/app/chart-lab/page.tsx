@@ -18,6 +18,7 @@ import {
   counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
   type Row,
 } from "@/components/charts/echarts";
+import { deltaBarOption } from "@/components/charts/echarts/builders";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { getEffectiveSettings } from "@/lib/api";
@@ -49,6 +50,12 @@ const paymentMix: Row[] = [
 ].map(([method, amount]) => ({ method, amount }));
 
 const revProfit: Row[] = REGIONS.map((region, i) => ({ region, revenue: 900_000 + i * 220_000, profit: 180_000 + i * 40_000 }));
+
+// CA-4 delta form: a period pair (prev vs current revenue) renders its signed delta.
+const revPair: Row[] = REGIONS.map((region, i) => ({
+  region, revenue_prev: 900_000 + i * 220_000,
+  revenue_current: 900_000 + i * 220_000 + (i % 2 === 0 ? 120_000 : -90_000),
+}));
 
 // Combo: a magnitude (revenue) + a 0–1 rate (margin_rate) → dual axis earns its keep.
 const revMargin: Row[] = REGIONS.map((region, i) => ({ region, revenue: 900_000 + i * 220_000, margin_rate: 0.18 + i * 0.06 }));
@@ -220,6 +227,16 @@ export default function ChartLab() {
         </Card>
         <Card title="Pareto — GMV concentration (80/20)">
           <EChart option={paretoOption({ rows: gmvByCategory, x: "category", ys: ["gmv"] })} height={270} />
+        </Card>
+        <Card title="CA-4 Delta — period pair renders the signed change (never grouped obs/comp)">
+          <EChart option={deltaBarOption({ rows: revPair, x: "region", ys: ["revenue_prev", "revenue_current"], labels: true })} height={270} />
+        </Card>
+        <Card title="CA-4 Emphasis — the subject leads, peers recede" height={340}>
+          <Chart
+            {...toTable(revProfit, ["region", "revenue"])}
+            chartType="magnitude" chrome={false} showLabels
+            exhibit={{ emphasis: [REGIONS[2]] }}
+          />
         </Card>
         {auto && (
           <Card title={`Auto-inference → ${auto.type}`}>

@@ -61,6 +61,8 @@ interface InvestigationFinding {
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
   column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec | null;  // chart-grammar semantics
+  claim?: string | null;     // CA-4: the one-sentence claim — the chart's title when present
+  subtitle?: string | null;  // CA-4: scope · period · unit under the claim
 }
 
 interface InvestigationPhase {
@@ -198,15 +200,18 @@ function sourceLabel(title: string): string {
 function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  // CA-4 "title = claim": the claim leads the figure; the query's descriptive
+  // name stays on the source-data affordance below.
+  const headline = finding.claim?.trim() || finding.title;
 
   return (
     <div className="flex flex-col gap-2.5">
       {/* Chart — the framed figure */}
       {hasChart && (
-        <BriefFigure caption={finding.title}>
+        <BriefFigure caption={headline} subcaption={finding.subtitle?.trim() || undefined}>
           {/* Deep Analysis chart — renders clean; the hover pencil opens the side-panel
               viz editor (chart type / fields / transform / labels), Databricks-style. */}
-          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
+          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={headline} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
         </BriefFigure>
       )}
 

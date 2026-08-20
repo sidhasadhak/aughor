@@ -741,7 +741,7 @@ class SemanticStep(BaseModel):
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
-    chart_type: Literal["auto", "bar", "bar_horizontal", "bar_vertical", "line", "multi_line", "area", "stacked_bar", "scatter", "pie", "pareto", "treemap", "heatmap", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
     rationale: str
     semantic: Optional[SemanticStep] = Field(
         default=None,
@@ -767,9 +767,18 @@ class PhaseKeyNumberModel(BaseModel):
 
 class PhaseFindingModel(BaseModel):
     title: str
+    claim: Optional[str] = Field(
+        default=None,
+        description=(
+            "The one-sentence CLAIM this exhibit demonstrates — it becomes the chart's "
+            "title ('APAC drove the November dip', never 'Revenue by region'). State "
+            "the finding with its direction; the query's descriptive name stays on "
+            "`title` and moves to the source affordance."
+        ),
+    )
     interpretation: str
     key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
-    chart_type: Literal["auto", "bar", "bar_horizontal", "bar_vertical", "line", "multi_line", "area", "stacked_bar", "scatter", "pie", "pareto", "treemap", "heatmap", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
     stat_note: Optional[str] = None
     is_significant: bool = False
 

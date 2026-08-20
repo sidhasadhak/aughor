@@ -872,59 +872,7 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-# Concentration / 80-20 intent — only the QUESTION carries this, so the chart
-# selection has to read it here (the renderer never sees the question). Models
-# inconsistently emit a share column or the literal "pareto" chart_type, so this
-# makes the intent deterministic.
-_CONCENTRATION_RE = re.compile(
-    r"80[\s/_-]?20|pareto|concentrat|cumulative\s+share|long\s+tail|"
-    r"(few|handful|top)\b.{0,40}\b(drive|account|make up|generate)\b.{0,20}\b(most|majority|bulk)",
-    re.IGNORECASE,
-)
-_PARETO_BLOCK = {"line", "none", "heatmap", "scatter", "stacked_bar", "multi_line", "area"}
 _ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
-
-
-def _maybe_pareto(question: str, columns: list[str], rows: list, current: str) -> str:
-    """Force a Pareto when the question asks about concentration/80-20 and the
-    result is a single category(+id) ranking over a measure. The renderer
-    computes the cumulative curve itself, so no share column is required."""
-    if current in _PARETO_BLOCK:
-        return current
-    if not question or not _CONCENTRATION_RE.search(question):
-        return current
-    if not columns or len(rows) < 4:
-        return current
-    sample = rows[0]
-    if not isinstance(sample, (list, tuple)):
-        return current
-
-    def _numlike(v: object) -> bool:
-        # QueryResult stringifies every cell, so numbers arrive as strings.
-        if isinstance(v, bool):
-            return False
-        if isinstance(v, (int, float)):
-            return True
-        if isinstance(v, str):
-            s = v.strip().replace(",", "")
-            if not s or s == "NULL":
-                return False
-            try:
-                float(s)
-                return True
-            except ValueError:
-                return False
-        return False
-
-    num_idx = [i for i, v in enumerate(sample) if _numlike(v)]
-    cat_idx = [i for i in range(len(columns)) if i not in num_idx]
-    # A ranking = at least one dimension + at least one measure. When the only
-    # dimension is an id (numeric → counted above), still treat it as a ranking.
-    if num_idx and cat_idx:
-        return "pareto"
-    if len(num_idx) >= 2 and any(_ID_COL_RE.search(c) for c in columns):
-        return "pareto"
-    return current
 
 
 def _coerce_list_str(v: object) -> list[str]:
@@ -2652,15 +2600,13 @@ def _answer_core(
                         "detail": _e1_msgs[:400]})
             except Exception as _e:
                 logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
-        # Deterministic concentration→pareto (the renderer never sees the question).
-        _chart_before = answer.chart_type
-        answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
-        if answer.chart_type != _chart_before:
-            _receipt({
-                "guard": "concentration_pareto", "action": "overrode_chart",
-                "detail": ("the question asks about concentration (80/20) over a ranked "
-                           "measure; a Pareto states that claim, the picked chart did not"),
-                "before": _chart_before, "after": answer.chart_type})
+        # CA-4 form-by-job: the model names the data's JOB ("magnitude", "trend",
+        # …); resolve it to the engine hint here so chart_config, persistence and
+        # the wire all speak forms. (The concentration→pareto auto-upgrade died
+        # with the dual-axis ban — §6: no dual-axis charts, nothing upgrades into
+        # one; a concentration question reads on the sorted ranking itself.)
+        from aughor.agent.chart_vocab import resolve_chart_type
+        answer.chart_type = resolve_chart_type(answer.chart_type)
         # Chart-grammar exhibit for the quick answer — computed from the result grid alone
         # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
         # chart_config so no new event/persistence surface is needed; absent when the

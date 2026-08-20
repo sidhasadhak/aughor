@@ -1605,6 +1605,12 @@ def _phase_result(
     skipped_reason: Optional[str] = None,
     caveats: Optional[list[str]] = None,
 ) -> InvestigationPhaseResult:
+    # CA-4 form-by-job: the model names a JOB ("magnitude", "trend", …); the
+    # form is resolved here — the one seam every phase's findings pass through —
+    # so streamed frames and persisted reports carry engine hints only.
+    from aughor.agent.chart_vocab import resolve_chart_type
+    for _f in findings:
+        _f["chart_type"] = resolve_chart_type(_f.get("chart_type"))
     return InvestigationPhaseResult(
         phase_id=phase_id,
         phase_name=phase_name,
@@ -1627,6 +1633,7 @@ def _finding_from_result_and_model(
     return InvestigationFinding(
         finding_id=finding_id,
         title=model.title,
+        claim=(model.claim or None),
         sql=result.sql,
         columns=result.columns,
         rows=result.rows[:50],
@@ -2836,6 +2843,19 @@ _FINDING_DATE_RE = re.compile(
     r"(?:^|_)(?:date|month|week|day|year|quarter|period|created|updated|timestamp)s?(?:_|$)|_at$|_ts$", re.I)
 _FINDING_CHANGE_RE = re.compile(
     r"(change|delta|growth|\bmom\b|\byoy\b|\bwow\b|\bqoq\b|_chg$|_diff$|vs_prev|^prev_|_prev$|contribution)", re.I)
+
+
+def _finding_subtitle(intake: dict) -> str:
+    """CA-4 subtitle: scope · period · unit, assembled deterministically from the
+    intake spec — the context line under a claim title, so the title can be the
+    claim alone. Empty when the intake carries none of it."""
+    scope = str(intake.get("comparison_segment_label") or intake.get("metric_table") or "").strip()
+    period = str(intake.get("observation_label") or "").strip()
+    comp = str(intake.get("comparison_label") or "").strip()
+    if period and comp:
+        period = f"{period} vs {comp}"
+    unit = str(intake.get("metric_label") or "").strip()
+    return " · ".join(p for p in (scope, period, unit) if p)
 
 
 def _chart_type_for_finding(finding: dict, intent: str) -> str:
@@ -5943,8 +5963,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     # A baseline is a metric over time → a line (intent-driven; shape-verified, so a non-temporal
     # baseline finding safely degrades to the frontend's auto inference).
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "trend")
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     # CA-2 — too short a baseline for any z to be a verdict (see _MIN_BASELINE_PERIODS). The
     # model's z notes become descriptions, its flags are cleared, and the routing signal goes
@@ -6181,8 +6204,16 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     # A decomposition ranks sub-drivers → a sorted bar (a change/contribution finding keeps 'auto' so
     # the frontend's sign-aware diverging bar isn't flattened).
+    # CA-4 emphasis: when the question names a subject segment, the chart paints
+    # that segment in the accent hue and the rest in the de-emphasis gray.
+    from aughor.agent.exhibit import emphasis_from_intake, stamp_emphasis
+    _emph = emphasis_from_intake(intake_data)
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        stamp_emphasis(_f, _emph)
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     phase = _phase_result(
         "decomposition", "Metric Decomposition", "🧩",
@@ -6288,8 +6319,15 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     # A dimensional drill-down ranks where the metric concentrates → a sorted bar; a contribution/
     # change finding keeps 'auto' so the frontend's diverging (green/red by sign) bar is preserved.
+    # CA-4 emphasis: the question's subject segment leads; peers recede to gray.
+    from aughor.agent.exhibit import emphasis_from_intake, stamp_emphasis
+    _emph = emphasis_from_intake(intake_data)
+    _sub = _finding_subtitle(intake_data)
     for _f in findings:
         _f["chart_type"] = _chart_type_for_finding(_f, "ranking")
+        stamp_emphasis(_f, _emph)
+        if _sub:
+            _f.setdefault("subtitle", _sub)
 
     phase = _phase_result(
         "dimensional", "Dimensional Analysis", "🔬",
@@ -6852,8 +6890,15 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         # Chart-grammar exhibit — severity ramp for a rate ranking + deterministic
         # reference lines (segment-weighted average; the R15 best-peer benchmark),
         # computed from this finding's own rows. No model, no extra query; fail-open.
-        from aughor.agent.exhibit import exhibit_for_cross_section
+        from aughor.agent.exhibit import (
+            emphasis_from_intake, exhibit_for_cross_section, stamp_emphasis,
+        )
         exhibit_for_cross_section(f, is_ratio=is_ratio, is_percent=_metric_is_pct)
+        # CA-4 emphasis: the question's subject segment leads; peers recede.
+        stamp_emphasis(f, emphasis_from_intake(intake_data))
+        _sub = _finding_subtitle(intake_data)
+        if _sub:
+            f.setdefault("subtitle", _sub)
 
     for f in findings:
         _polish_xsec_finding(f)

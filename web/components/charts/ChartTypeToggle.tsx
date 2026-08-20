@@ -17,6 +17,7 @@ const ICONS: Record<ChartType | "auto", string> = {
   bar:            "▬",
   "grouped-bar":  "▦",
   "combo":        "◫",
+  "delta-bar":    "±",
   "stacked-bar":  "▥",
   scatter:        "⁘",
   heatmap:        "▣",
