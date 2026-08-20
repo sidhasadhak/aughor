@@ -157,7 +157,7 @@ export interface paths {
          * Get Ada Receipt
          * @deprecated
          * @description @deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
-         *     for the `ADA`→answer rename (REC-U9).
+         *     for the acronym→answer rename (REC-U9).
          */
         get: operations["get_ada_receipt_ada__connection_id___inv_id__receipt_get"];
         put?: never;
