@@ -11,6 +11,17 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Changed
+- **Deep analysis became the analyst (CA-3).** Behind the `ask.converse` flag, a deep
+  `/ask` turn now runs a tool loop instead of the fixed phase script: the phase library
+  (baseline, decompose, cross-section) plus new deterministic probes (`z_score`,
+  `premise_check`, `value_lookup`, `profile_column`) become tools the model sequences
+  under a per-tier step budget (`deep_loop_steps`), with every guard and Verifier check
+  still inside each tool body. Each tool choice and completed slice streams through the
+  turn (`converse_step`, `phase_complete`, guard receipts, report deltas), and the
+  narrator synthesizes the report from the loop's evidence, weighing the loop's own
+  conclusion. Deep follow-ups carry the prior turn's spec — as a mandate when the turn
+  is a recognized follow-up, as context otherwise. Flag off (the default in
+  deployments), the phase script serves unchanged.
 - **The chat crossed the seam (CA-1).** Every chat surface — the workspace panel, the
   full-page `/chat`, "Ask this briefing" and inline briefing threads — now streams
   through the AI-SDK parts model (`/api/chat`): the 107-case frame reducer is deleted,

@@ -261,20 +261,20 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
     return out
 
 
-def deep_analysis(connection_id: str, args: dict) -> dict:
-    """Launch the autonomous deep analysis as a supervised background job (CI-4).
+def deep_analysis(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
+                  session_id: str = "", canvas_id: Optional[str] = None) -> dict:
+    """Run the deep analysis as the ANALYST LOOP, inline (CA-3).
 
-    The conversation reaching for depth, not a second deep pipeline: the body is Wave
-    H5's neutral runner — the SAME ``build_ask_stream`` door every caller uses — so the
-    agent-refusal gates, budgets and receipts all apply exactly as they do when a person
-    presses the button. Submitted, never awaited: a deep run takes minutes, and a
-    conversation turn that blocked on it would hold the whole session hostage. The
-    return value is the HANDLE (job id, and where results land), which is what the
-    model needs to say something true about what it just started.
+    The conversation reaching for depth — and since CA-3 the depth IS a conversation:
+    the analyst loop (`agent/analyst.py`) runs the phase library as tools under the
+    deep step budget, streams its phases through this turn's own frame channel, and
+    ends in a real synthesized report. What CI-4 background-submitted as the phase
+    script now happens in the turn the user is watching, which is the whole thesis —
+    the user watches the analyst slice; the report is the summary of what they watched.
 
-    Capability-checked here as a VALUE rather than left to the route's silent
-    downgrade: a tool named deep_analysis that quietly served a quick answer would be
-    the tool lying about itself.
+    Capability-checked here as a VALUE rather than left to a silent downgrade: a tool
+    named deep_analysis that quietly served a quick answer would be the tool lying
+    about itself.
     """
     from aughor.licensing import Capability, has_capability
 
@@ -285,25 +285,44 @@ def deep_analysis(connection_id: str, args: dict) -> dict:
         return {"status": "unavailable",
                 "reason": "deep analysis is not included in this connection's plan"}
 
-    from aughor.runners import InvestigationRequest, run_investigation
+    # The custom-agent refusal gate survives the CI-4→CA-3 body swap: an agent that may
+    # not investigate is refused BEFORE any work starts, with the authored sentence.
+    try:
+        from aughor.custom_agents.context import current_agent
+        from aughor.runners import InvestigationRequest, refusal_for
+        _agent = current_agent()
+        refusal = refusal_for(InvestigationRequest(
+            question=question, connection_id=connection_id,
+            agent_id=_agent.id if _agent is not None else None))
+        if refusal:
+            return {"status": "refused", "reason": refusal}
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the custom-agent refusal pre-check is best-effort; the ask path "
+                      "raises its own refusals", counter="converse.deep_refusal_check")
 
-    run = run_investigation(
-        InvestigationRequest(question=question, connection_id=connection_id),
-        caller="converse",
+    from aughor.agent.analyst import run_analyst
+
+    result = run_analyst(
+        connection_id, question,
+        session_id=session_id, canvas_id=canvas_id,
+        emit=emit, purpose="converse_deep",
     )
-    out = {"status": run.status, "basis": run.basis}
-    if run.job_id:
-        out["job_id"] = run.job_id
-    if run.investigation_id:
-        out["investigation_id"] = run.investigation_id
-    if run.status == "executed" and run.basis == "submitted":
-        out["note"] = ("running in the background — the report lands in the Analysis "
-                       "panel and the fleet view when it completes (usually a few "
-                       "minutes)")
-    elif run.status == "refused":
-        out["reason"] = run.message
-    elif run.status == "failed":
-        out["error"] = run.message
+    out: dict = {
+        "status": "completed" if (result.report or result.answer) else "inconclusive",
+        "stop_reason": result.stop_reason,
+        "steps": len(result.steps),
+    }
+    if result.investigation_id:
+        out["investigation_id"] = result.investigation_id
+    if result.report:
+        out["headline"] = result.report.get("headline")
+        out["confidence"] = result.report.get("confidence")
+        out["executive_summary"] = str(result.report.get("executive_summary") or "")[:1200]
+        out["note"] = ("the full report already streamed to the user — summarize its "
+                       "conclusion in your answer; do not re-derive it")
+    elif result.answer:
+        out["conclusion"] = result.answer
     return out
 
 
@@ -428,15 +447,19 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ToolSpec(
             name="deep_analysis",
             description=(
-                "Launch Aughor's autonomous multi-step deep analysis in the "
-                "background — hypotheses, verified evidence, a full report with "
-                "recommendations. For open-ended why / root-cause / driver questions "
-                "that one query cannot answer, and only with the user's clear intent: "
-                "it runs for minutes and spends real budget. Returns a handle, not "
-                "the report — tell the user where the result will land."
+                "Run Aughor's multi-step deep analysis for one question, live in this "
+                "turn: the analyst loop slices the data (baseline, decomposition, "
+                "cross-sections, its own SQL), streams each phase to the user as it "
+                "lands, and ends in a full synthesized report with a confidence "
+                "verdict. For open-ended why / root-cause / driver questions that one "
+                "query cannot answer, and only with the user's clear intent: it runs "
+                "for minutes and spends real budget. The report streams to the user "
+                "directly — your job afterwards is to state its conclusion, not to "
+                "re-derive it."
             ),
             parameters=_QUESTION_PARAMS,
-            run=lambda a: deep_analysis(connection_id, a),
+            run=lambda a: deep_analysis(connection_id, a, emit=emit,
+                                        session_id=session_id, canvas_id=canvas_id),
         ),
     ] + platform_tools(connection_id, session_id=session_id)
 

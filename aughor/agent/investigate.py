@@ -1,5 +1,5 @@
 """
-ADA (Autonomous Intelligence Platform) — structured investigation engine.
+deep-analysis (Autonomous Intelligence Platform) — structured investigation engine.
 
 Replaces the hypothesis-scoring pipeline for investigate-mode questions with
 an 8-phase analytical lifecycle that produces a progressive, number-backed
@@ -1010,7 +1010,7 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
 
 
 def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date_column: str, question: str) -> str:
-    """A JOIN-COMPLETE filtered schema for the ADA coder. Keeping only the metric +
+    """A JOIN-COMPLETE filtered schema for the deep-analysis coder. Keeping only the metric +
     dimension tables drops the table that holds the date/join columns (revenue on
     `invoices`, the timestamp on `orders`), so the coder hallucinates a date column on
     the metric table. This keeps the metric + dimension tables, the date column's host
@@ -1375,7 +1375,7 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                     _s.inc("deep_analysis.semantic_steps_skipped_nontext")
             except Exception as _e:
                 from aughor.kernel.errors import tolerate
-                tolerate(_e, "ADA semantic step is best-effort; raw result still used",
+                tolerate(_e, "deep-analysis semantic step is best-effort; raw result still used",
                          counter="deep_analysis.semantic_step_failed")
         out.append((q, r))
     return out
@@ -2027,7 +2027,7 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
         # ADVISORY trust check — reuse the explorer's verify_insight battery (impossible
         # magnitude, fan-out artifact, vacuous CASE, ungrounded claim). It NEVER blocks: the
         # answer is always shown; an untrusted result just carries a caveat the UI surfaces.
-        # conn=None → static checks only (no live cardinality probe), to keep ADA snappy.
+        # conn=None → static checks only (no live cardinality probe), to keep deep-analysis snappy.
         # `diagnose_conn` is narrower: it is used ONLY on the degenerate-result branch, to
         # tell "this data is missing" apart from "this data is text we failed to parse".
         # That branch is already rare, so the live probe costs a healthy run nothing — and
@@ -3324,6 +3324,14 @@ def _evidence_budget() -> int:
         return _EVIDENCE_BUDGET
 
 
+def condense_phase_evidence(p: "InvestigationPhaseResult") -> str:
+    """Public alias (stable cross-module interface) — the analyst loop (CA-3) hands each
+    phase tool's result back to the model in the same deterministic, number-preserving
+    condensation synthesis reads, so the model reasons over exactly the evidence the
+    narrator will later cite."""
+    return _condense_phase_evidence(p)
+
+
 def _condense_phase_evidence(p: InvestigationPhaseResult) -> str:
     """Deterministic, number-preserving condensation of ONE overflow phase — no LLM.
 
@@ -3462,7 +3470,7 @@ def _resolve_probe_ref(table: str, date_column: str) -> tuple[str, str]:
 
 def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
     """Authoritative (min, max) of the metric table's date column via one cheap
-    probe. The DATA PORTRAIT is empty on the ADA path (scan_context is never
+    probe. The DATA PORTRAIT is empty on the deep-analysis path (scan_context is never
     populated before intake), so profile-text parsing alone leaves the window
     validation blind — this asks the database itself. Returns (None, None) on
     any failure; the clamp then no-ops."""
@@ -4228,7 +4236,7 @@ def _scrub_xsec_reasoning(notes: str) -> str:
 
 _AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
 
-# Shared grounding rule appended to every ADA plan node's terse system prompt so the
+# Shared grounding rule appended to every deep-analysis plan node's terse system prompt so the
 # coder treats the SCHEMA as authoritative and JOINs to reach columns on other tables
 # (e.g. a timestamp on `orders` when the metric is on `invoices`) instead of inventing one.
 _ADA_SQL_GROUNDING = (
@@ -4299,7 +4307,7 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
     """Render the structured ``origin_finding`` into INTAKE_PROMPT's additive ORIGIN
     FINDING section. Returns "" when there is no origin (a cold-start question), so a
     normal investigation's prompt is byte-for-byte unchanged. When present, it binds
-    ADA's spec to the finding the explorer already established — so a drill EXTENDS that
+    deep-analysis's spec to the finding the explorer already established — so a drill EXTENDS that
     work (explains why) instead of re-deriving the metric/tables/window from scratch."""
     if not origin:
         return ""
@@ -4510,7 +4518,7 @@ def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric
                                    llm_sql: str, governed_name: str, governed_sql: str) -> None:
     """P4 — when intake resolved a metric to its GOVERNED definition over a materially-different parsed
     reading, crystallize that as an Ambiguity-Ledger resolution so the definition BURNS DOWN per
-    connection and is read back as a plan-time prior on EVERY path (chat + future ADA), not just this
+    connection and is read back as a plan-time prior on EVERY path (chat + future deep-analysis), not just this
     run. The two candidate readings are the LLM's parsed formula and the governed one; the resolution
     is execution-grounded (P1 dry-ran the governed formula before pinning). Source=``probe`` — the
     lowest ledger authority, so it never clobbers a user clarify or a reviewer verdict (override-wins).
@@ -5086,7 +5094,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # METRIC TABLE (not the whole connection: on multi-dataset connections the global
     # range mixes datasets and masks an empty window). The LLM retry above only asks;
     # this enforces. The portrait parse is the cheap path, but scan_context is empty
-    # on the ADA entry points — the DB probe is the authoritative fallback.
+    # on the deep-analysis entry points — the DB probe is the authoritative fallback.
     # Deterministic DATA COVERAGE span — one MIN/MAX probe of the metric's date column, run
     # UNCONDITIONALLY (T4-2): it drives the temporal window clamp below AND lets the report state the
     # real coverage window (even a cross-sectional scan spans a real range the reader should see),
@@ -5319,6 +5327,13 @@ _QUESTION_UP_RE = re.compile(
 )
 
 
+def detect_question_direction(question: str) -> Optional[str]:
+    """Public alias (stable cross-module interface) — the analyst's `premise_check`
+    tool (CA-3) reads the question's expected direction with the same detector the
+    baseline phase's inline check uses."""
+    return _detect_question_direction(question)
+
+
 def _detect_question_direction(question: str) -> Optional[str]:
     """Return 'down' if question implies a drop, 'up' if it implies a rise, else None."""
     if _QUESTION_DOWN_RE.search(question):
@@ -5400,7 +5415,7 @@ def run_analysis_phase(
     sql_transform=None,
     coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
 ) -> "_PhaseRun":
-    """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
+    """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every deep-analysis phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
     phase for the caller to return. The interpret prompt is built by ``interpret_user_fn(
     results_text)`` since it depends on the executed results.
@@ -5472,7 +5487,7 @@ def run_analysis_phase(
     # Fan-out guard (CHASM) — a metric aggregated across a join that MULTIPLIES its home
     # table's rows inflates the total. Real failure: a "stockout days by category" scan summed
     # inventory_snapshots (product×month grain) AFTER joining order_items (2.37M line-items),
-    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the ADA phases
+    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the deep-analysis phases
     # did not. Detect SUM/AVG/COUNT-over-chasm on the planned SQL and force ONE corrective re-plan
     # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
     _fanout_caveat = None
@@ -5688,6 +5703,9 @@ def run_analysis_phase(
 # baseline, and `code_significant` then fell back to that flag. Below this many periods a z
 # is not a verdict: the change is described, not tested.
 _MIN_BASELINE_PERIODS = 6
+#: Public alias (stable cross-module interface) — the analyst's `z_score` tool (CA-3)
+#: applies the same minimum-baseline rule this module's baseline phase does.
+MIN_BASELINE_PERIODS = _MIN_BASELINE_PERIODS
 _Z_NOTE_RE = re.compile(r"\bz\s*[=≈]\s*[-+]?\d+(?:\.\d+)?", re.I)
 
 
@@ -8717,6 +8735,19 @@ def ada_synthesize(state: AgentState) -> dict:
         tolerate(_exc, "agent brief is advisory; synthesis proceeds without it",
                  counter="deep_analysis.synth_context")
 
+    # CA-3 — the analyst loop's own closing statement rides as evidence: the model
+    # that CHOSE the slices says what it concluded, and the narrator writes the
+    # report from the same evidence log plus that conclusion. Claims are still
+    # bound by the checks below — the conclusion steers emphasis, never licence.
+    # Empty on every phase-script run, so this string is "" there and the prompt
+    # is byte-identical.
+    _analyst_note = (state.get("_analyst_conclusion") or "").strip()
+    analyst_conclusion_section = (
+        "\n\nTHE ANALYST'S OWN CONCLUSION (from the live tool loop that produced the "
+        "evidence above — weigh it, but cite only what the evidence supports):\n"
+        + _analyst_note
+    ) if _analyst_note else ""
+
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
@@ -8726,7 +8757,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note + no_prior_note + cross_section_note + suppression_section + _claim_licence_section(
+    ) + contradiction_section + early_stop_note + no_prior_note + cross_section_note + suppression_section + analyst_conclusion_section + _claim_licence_section(
         intake_data, phases)
     # Issue-1 fix (frugal) — BOUND the synthesis LLM call. The cloud narrator can stall for many
     # minutes, and a hung synthesis used to leave the user with no report at all even though every
@@ -9139,7 +9170,7 @@ def ada_synthesize(state: AgentState) -> dict:
 
             completed_ts = datetime.now(timezone.utc).isoformat()
 
-            # Prefer ADA phases (richer provenance — has per-finding SQL)
+            # Prefer deep-analysis phases (richer provenance — has per-finding SQL)
             if phases:
                 claims = extract_claims_from_ada_phases(
                     investigation_id=investigation_id,

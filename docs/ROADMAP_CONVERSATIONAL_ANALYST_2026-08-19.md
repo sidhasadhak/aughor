@@ -12,8 +12,8 @@
 > application, brain in Python, BYOK, tiered writes). It *finishes* what Arc CI left half-built
 > (CI-1d's migration, CI-4's door, CI-6a's frame streaming) and adds what the deep dive found.
 > Status: **APPROVED by the user 2026-08-19 ("all in").** CA-0 merged to main as #359
-> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1 built on
-> `claude/ca-1-continuation-t0ax40` (see its STATUS). CA-3/CA-4 next.
+> (`c3ba392`); CA-2 merged as #360 (`689b949`); CA-1 and CA-3 built on
+> `claude/ca-1-continuation-t0ax40` (see their STATUS blocks). CA-4 next.
 > The §5 decisions remain open.
 
 ---
@@ -301,6 +301,57 @@ segment at a finer grain than month within budget (BROWSER_VERSION/ISP/day or eq
 the report either names the Chrome-105 bot population with its size or states what it could not
 test; the follow-up "only focus on Chrome" keeps `traffic` and returns rows. Plus: the 20 real
 transcripts CI-0 reads, re-read — the "mechanical" moments named in CI-0 gone or replaced.
+
+**STATUS 2026-08-20 — BUILT on `claude/ca-1-continuation-t0ax40` (with CA-1).** What shipped vs
+the sketch:
+- **Phases became tools** (`aughor/agent/analyst.py`): `baseline`/`decompose`/`cross_section`
+  wrap the existing phase nodes verbatim over a synthetic agent state — every CA-0/CA-2 guard
+  runs by construction, and the Verifier's annotations land inside each tool's evidence.
+  `z_score` (guarded execute + `analyze_query_result`, refuses under `MIN_BASELINE_PERIODS`),
+  `premise_check` (three scalar-subquery probe; verdicts `premise_holds` / `window_corrected` —
+  re-anchors the spec — / `premise_contradicted` / `no_prior_period` / `not_assessable`),
+  `value_lookup` (bounded LIMIT probes, honest absence), `profile_column`, plus `run_sql` /
+  `describe_table` and the platform roster. Grain/window/metric latitude is per-call spec
+  overrides applied to a COPY of the intake.
+- **The analyst loop**: `run_analyst` = intake once → `run_tool_loop` under `deep_loop_steps`
+  (new `ModelProfile` knob: 10 baseline / 24 capable, env `AUGHOR_DEEP_LOOP_STEPS`) with the
+  stopping rule in the system prompt; the loop's own conclusion rides `_analyst_conclusion`
+  into `ada_synthesize` (section absent ⇒ byte-identical phase-script runs), the narrator's
+  `answer_report` closes the turn. Complete runs persist with the report; a prose-only
+  conclusion persists a minimal investigate report rather than lying about phases.
+- **The door**: `_analyst_eligible` = `ask.converse` ∧ deep/escalate ∧ not dossier-forced ∧ not
+  explore; the phase script REMAINS the flag-off fallback (§5 posture: flag off in deployments,
+  local dev ON). The converse roster's `deep_analysis` now runs the analyst inline (with the
+  custom-agent refusal pre-check); the route receipt claims `body: "analyst"`.
+- **Frames stream through the turn**: `_stream_analyst` on the same converse bridge —
+  `converse_step` per tool choice, `phase_complete` per new slice, `guard_receipt` /
+  `phase_progress` / `report_delta` relayed from inside phase bodies via a progress-sink shim,
+  then `tables_used` + `answer_report` + `done {body, stop_reason, steps}`. CA-1's parts path
+  renders all of it with zero web changes this wave (a new tool shows its raw id in the trail
+  by design — the roster map learns nice names later).
+- **Follow-ups carry the spec**: `_followup_origin` — the hard "FOLLOW-UP — compose…" directive
+  when the heuristic fires, a soft "PRIOR TURN (context, not a mandate)" otherwise — attached
+  on every deep turn with history, phase script included, so `is_followup` is not the only door.
+- **Receipt run**: ruff clean; targeted pytest green (20 unit tests over tools/loop/door, 2
+  integration tests over the full `/ask` seam, the ratchet/contract battery — with one
+  exception that predates this wave: `test_ratchet_live_smoke` fails identically on the clean
+  tree in this keyless environment, its live pipeline metering 0 tokens). Ratchets: the
+  'ada' vocabulary baseline FELL 628 → 602 (prose de-jargoned in the touched files); swallow
+  and private-import counts held via `tolerate(...)` and new public aliases. Live: this
+  environment has no model key, so the browser receipt drove the REAL path end to end
+  (composer → `/ask` auto-depth → deterministic deep route → `_stream_analyst` → intake → loop
+  → guard battery over the seeded outage-scenario DuckDB → synthesize → parts render) with the
+  faux backend scripting only the model's choices: route banner `body: analyst`, tool trail
+  (baseline, decompose), streamed phases with real charts and a Verifier stat note, report +
+  bottom line — screenshots captured. The honesty seam showed up live: an earlier mis-pointed
+  connection turned every query into a Catalog Error and the report guard REWROTE the scripted
+  headline to "Data unavailable" — exactly the CA-0 contract.
+- Deliberate deviations & deferred: dossier-forced and explore turns keep their own bodies (the
+  door excludes them). Deep turns still do not restore into the thread on reload — parity with
+  the phase script (the run files an `investigations` row under the session; restoring reports
+  through `/messages` is follow-on work, not a CA-3 regression). The live-model receipt — the
+  Direkteingabe specimen at finer-than-month grain, the "only focus on Chrome" follow-up, and
+  the CI-0 transcript re-read — rides the next keyed environment, same as CA-1's parity pass.
 
 ### CA-4 — Charts: the exhibit spec (≈ 1 week; parallel with CA-3)
 

@@ -73,3 +73,24 @@ def test_investigate_request_accepts_history():
     req = InvestigateRequest(question="follow up", connection_id="c",
                              history=[{"question": "q", "sql": "SELECT 1", "columns": [], "headline": "", "key_rows": []}])
     assert len(req.history) == 1 and req.history[0].sql == "SELECT 1"
+
+
+def test_soft_form_carries_the_spec_without_the_regex_gate():
+    """CA-3, defect ⑦: `is_followup` missed "only focus on…", so the deep follow-up
+    lost its metric and returned zero rows. The prior spec now ALWAYS rides — the
+    soft form grants the MODEL the decision instead of the regex."""
+    from aughor.routers.investigations import _followup_origin
+
+    history = [{"question": "how did Direkteingabe traffic develop?",
+                "sql": "SELECT day, SUM(sessions) FROM traffic GROUP BY 1",
+                "headline": "Traffic grew through August", "key_rows": [["2026-08-01", 900]]}]
+
+    hard = _followup_origin(history, followup=True)
+    soft = _followup_origin(history, followup=False)
+
+    assert hard["finding"].startswith("FOLLOW-UP"), "the detected form stays a mandate"
+    assert soft["finding"].startswith("PRIOR TURN"), "the soft form is context, not a mandate"
+    assert "only" in soft["finding"] and "ignore this context" in soft["finding"], (
+        "the soft directive must name the continuation cues AND the opt-out")
+    # Both carry the same base to compose on.
+    assert hard["sql"] == soft["sql"] == history[0]["sql"]

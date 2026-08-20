@@ -72,6 +72,12 @@ class ModelProfile:
     #: rather than as a module constant because it is a capability knob, and ModelProfile
     #: exists so those stop coming back as constants.
     tool_loop_steps: int
+    #: Max tool-choosing turns per ANALYST deep turn (CA-3). A deep question is
+    #: allowed to slice, see, and slice again — several times over what a quick
+    #: converse turn may spend — because the alternative is the fixed phase script
+    #: this budget exists to retire. A knob, not a constant (§5.2 of the CA roadmap):
+    #: what a deep turn may spend is a per-binding capability decision.
+    deep_loop_steps: int
     #: Reasoning effort for backends that expose it ("low"|"medium"|"high").
     reasoning_effort: str
     #: A3 linker budgets — rank bounds for the schema-linking pre-filter; the char
@@ -122,6 +128,10 @@ _BASELINE = dict(
     # a weaker model that has not converged in four steps is usually looping, and each
     # step is a whole request against a 1,000/day free-tier allowance.
     tool_loop_steps=4,
+    # The analyst's deep-turn ceiling (CA-3): enough steps to reach a concrete segment
+    # at a finer grain than the question's, tight enough that a looping baseline model
+    # cannot spend a day's allowance on one turn.
+    deep_loop_steps=10,
 )
 
 # The budgets for a large-context binding — reached by any model whose provider declares
@@ -152,6 +162,9 @@ _CAPABLE = dict(
     # A capable model can afford to look something up, be wrong, and recover — which is
     # the whole argument for a loop over a single shot.
     tool_loop_steps=8,
+    # The analyst may slice, see, and slice again (CA-3) — a real investigation is
+    # several looks, and a capable binding can afford the requests.
+    deep_loop_steps=24,
 )
 
 #: Context window (in tokens) at which a binding earns the CAPABLE budgets. 60k chars of
@@ -374,6 +387,7 @@ def profile_for(role: str = "coder", *, model: Optional[str] = None) -> ModelPro
         max_output_tokens=max_out,
         structured_attempts=attempts,
         tool_loop_steps=max(1, _int_env("AUGHOR_TOOL_LOOP_STEPS", tier["tool_loop_steps"])),
+        deep_loop_steps=max(1, _int_env("AUGHOR_DEEP_LOOP_STEPS", tier["deep_loop_steps"])),
         reasoning_effort=effort,
         linker_top_tables=tier["linker_top_tables"],
         linker_top_cols=tier["linker_top_cols"],
