@@ -21,6 +21,15 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   querying it was enough to trigger it. The transport now carries a tool call's vendor
   fields through verbatim, and the loop no longer invents a function call the model
   never made when handing back a parse error or a nudge.
+- **A deep analysis breaks the data down the way the question asked.** "Give me route
+  wise number of flights" produced a report ranking market, origin, destination and haul
+  — every dimension except route — and framed each one as a weakness scan ("does not
+  represent a performance deficit") for a question that asked for a count. The intake
+  model picks the drill-down dimensions and had simply dropped the one the question
+  named; a breakdown the question states outright now leads them, matched against real
+  schema columns (a table's own key is excluded, since grouping by it yields one row per
+  record). A request to see the data also keeps its descriptive framing when it routes
+  cross-sectionally, instead of being told to hunt for underperformance.
 - **A deep analysis shows the queries it ran.** Only the four phase tools built a
   phase, and the report draws its exhibits from phase findings — so a turn the analyst
   answered with its own `run_sql` rendered as a few sentences with no table and no chart,

@@ -843,6 +843,61 @@ _CAUSE_WORDS_RE = re.compile(
     r"mov\w+|spike[sd]?|surge[sd]?|worse|better)\b", re.I)
 
 
+#: Words that are never a dimension, however they read next to one.
+_DIM_STOPWORDS = frozenset({
+    "give", "show", "list", "display", "the", "and", "for", "with", "per", "each",
+    "wise", "number", "count", "total", "totals", "sum", "average", "avg", "many",
+    "much", "what", "which", "where", "how", "are", "was", "were", "there", "data",
+    "breakdown", "distribution", "split", "group", "grouped", "across", "top", "all",
+})
+
+
+def _norm_col(name: str) -> str:
+    """A column and the word a person uses for it, reduced to one key: case, separators,
+    a trailing plural and a trailing ``_id`` all differ without meaning anything
+    ("route" is how you ask for ``route_id``)."""
+    n = re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+    # Plural BEFORE the suffix: "route ids" has to become "route_id" before the strip
+    # can see it, or it stops at "route_id" and never meets the column "route".
+    if n.endswith("s") and len(n) > 3:
+        n = n[:-1]
+    if n.endswith("_id"):
+        n = n[:-3]
+    return n
+
+
+def _question_named_dimensions(question: str, schema: str, prefer_table: str = "") -> list:
+    """``table.column`` for every dimension the QUESTION itself names.
+
+    The intake model chooses the drill-down dimensions, and it does not reliably keep the
+    one that was asked for: a live run answering "give me route wise number of flights"
+    ranked market, origin, destination and haul — every dimension except route. The
+    question named its breakdown outright, so it is not the model's to omit.
+
+    Columns on the metric's own table come first, since that is the grain being counted.
+    """
+    if not question or not schema:
+        return []
+    from aughor.semantic.answer_resolution import schema_columns
+
+    words = {_norm_col(w) for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", question)}
+    words -= {_norm_col(w) for w in _DIM_STOPWORDS}
+    hits, seen = [], set()
+    for table, col in schema_columns(schema):
+        # A column named after its OWN table is that table's key — `flight_id` on
+        # `flights`. Grouping by it yields one row per record, so the noun "flights"
+        # naming it is the subject of the question, never its breakdown. `route_id` on
+        # the same table is a real dimension, which is why the `_id` suffix cannot be
+        # the test.
+        if _norm_col(col) == _norm_col(table.split(".")[-1]):
+            continue
+        if _norm_col(col) in words and f"{table}.{col}" not in seen:
+            seen.add(f"{table}.{col}")
+            hits.append((table.lower() == (prefer_table or "").lower(), f"{table}.{col}"))
+    hits.sort(key=lambda h: not h[0])          # metric table's own columns lead
+    return [d for _, d in hits]
+
+
 def _is_descriptive_question(question: str) -> bool:
     """True for "give me route wise number of flights" — a request to see the data.
 
@@ -876,14 +931,13 @@ def _framing_note(intake_data: dict) -> str:
     breakdown.
     """
     note = ""
-    if intake_data.get("cross_sectional"):
-        # A "which is weakest" scan compares dimensions, not periods, so a missing prior
-        # period is as irrelevant to it as it is to a listing. The cross-sectional note
-        # assembled separately IS this run's framing; the lament would only add an
-        # apology for a comparison it never meant to make. Found by sweeping the question
-        # shapes rather than from a screenshot — it had been shipping all along.
-        return ""
     if intake_data.get("descriptive_only"):
+        # FIRST, ahead of cross_sectional. A listing routes cross-sectionally whenever it
+        # names no time comparison, and checking that first swallowed this branch whole:
+        # the run kept only the weakness framing, and a report answering "give me route
+        # wise number of flights" came back ranking market, origin, destination and haul,
+        # each concluding it "does not represent a performance deficit". Nobody asked
+        # which segment was weak.
         # The question asked to SEE the data, not to explain a movement in it. Framing
         # such a run as a comparison produces a report that opens "Data unavailable …
         # no prior period exists to facilitate a comparative analysis" and closes
@@ -899,6 +953,11 @@ def _framing_note(intake_data: dict) -> str:
             "was asked. Do NOT frame the answer as a limitation. total_change_label should "
             "be the metric total or 'N/A'; the attribution_waterfall stays EMPTY."
         )
+    elif intake_data.get("cross_sectional"):
+        # A "which is weakest" scan compares dimensions, not periods, so a missing prior
+        # period is as irrelevant to it as to a listing, and its own note (assembled
+        # separately) is already this run's framing.
+        return ""
     elif intake_data.get("no_prior_period"):
         _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
         note = (
@@ -5066,6 +5125,20 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # a comparison that failed, and a report that apologises for a prior period the
         # user never asked about is answering a different question.
         intake.descriptive_only = _is_descriptive_question(question)
+        # The breakdown the question NAMED leads the dimensions, whatever the model
+        # chose. Live: "give me route wise number of flights" came back ranking market,
+        # origin, destination and haul — every dimension except route. A question that
+        # says which cut it wants is not the model's to overrule.
+        try:
+            _named = _question_named_dimensions(
+                question, state.get("schema_context", "") or "", intake.metric_table or "")
+            if _named:
+                intake.dimensions = _named + [d for d in (intake.dimensions or [])
+                                              if d not in _named]
+        except Exception as _dim_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_dim_exc, "question-named dimensions are best-effort; the model's "
+                               "own choice still serves", counter="deep_analysis.named_dims")
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
@@ -8783,7 +8856,8 @@ def ada_synthesize(state: AgentState) -> dict:
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
     cross_section_note = ""
-    if "cross_section" in phase_ids or intake_data.get("cross_sectional"):
+    if (("cross_section" in phase_ids or intake_data.get("cross_sectional"))
+            and not intake_data.get("descriptive_only")):
         cross_section_note = (
             "\n\nNOTE: This is a CROSS-SECTIONAL diagnostic (where/which is weakest), not a temporal "
             "change. Do NOT frame it as a period-over-period decline. Lead with WHERE value is lowest "

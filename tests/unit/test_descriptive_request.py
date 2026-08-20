@@ -128,3 +128,24 @@ def test_a_weakness_scan_is_not_asked_to_lament_a_missing_period():
     assert _framing_note({"cross_sectional": True, "no_prior_period": True,
                           "observation_start": "2024-06-01",
                           "observation_end": "2024-06-07"}) == ""
+
+
+def test_a_listing_is_never_told_to_hunt_for_weakness():
+    """The regression this pins, from an exported report: a listing routes
+    cross-sectionally whenever it names no time comparison, and checking cross_sectional
+    FIRST swallowed the descriptive branch whole — so "give me route wise number of
+    flights" came back ranking market, origin, destination and haul, each concluding it
+    "does not represent a performance deficit"."""
+    from aughor.agent.investigate import _framing_note
+
+    note = _framing_note({"descriptive_only": True, "cross_sectional": True,
+                          "no_prior_period": True})
+
+    assert note.lstrip().startswith("DESCRIPTIVE REQUEST")
+
+
+def test_a_real_weakness_scan_still_gets_its_own_framing():
+    """Ordering must not cost the cross-sectional route its behaviour: with no
+    descriptive verdict it still yields to its own note."""
+    from aughor.agent.investigate import _framing_note
+    assert _framing_note({"cross_sectional": True, "no_prior_period": True}) == ""

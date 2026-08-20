@@ -763,3 +763,14 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
     except Exception:
         return Resolution(question=question)  # answerable, no constraints — never break the answer
     return r
+
+
+def schema_columns(schema: str) -> list:
+    """``[(table, column)]`` for every column the schema declares.
+
+    Public because the intake needs the same reading of the same string: a question that
+    NAMES its breakdown ("route wise") has to be matched against real columns, and two
+    parsers of one format drift.
+    """
+    tables, _ = _parse_schema(schema)
+    return [(t, c) for t, cols in (tables or {}).items() for c in (cols or [])]
