@@ -15,7 +15,7 @@
  */
 
 import { cleanLabel } from "@/lib/format";
-import { classifyColumns } from "@/components/charts/columnRoles";
+import { classifyColumns, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
 
 /** The four post-processing ops the edit panel offers, mirroring aughor/tools/postproc.py. */
@@ -233,9 +233,15 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // down, and category labels need the room), and vertically when x is time (a trend reads
   // across). Only `bar_vertical` forces the upright form. Encoding the same rule here is
   // what stops the Phase 2 diff from flagging every explicit `bar` as a regression.
-  const isTimeX = (inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol)) === dateCol;
-  // A user override beats the rule; absent, the rule decides exactly as before.
-  const horizontal = orient ? orient === "horizontal" : (hint !== "bar_vertical" && !isTimeX);
+  const bandCol = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol);
+  const isTimeX = bandCol === dateCol;
+  // Density decides too: past HORIZONTAL_MAX_CATS distinct categories a lying-down ranking
+  // either shrinks below legibility or needs a scrollbar, so it stands up.
+  const bandCount = bandCol ? new Set(rows.map((r) => r[columns.indexOf(bandCol)])).size : 0;
+  // A user override beats the rule; absent, the rule decides.
+  const horizontal = orient
+    ? orient === "horizontal"
+    : (hint !== "bar_vertical" && !isTimeX && bandCount <= HORIZONTAL_MAX_CATS);
 
   /**
    * Tier 1 draws SIX types and refuses everything else.

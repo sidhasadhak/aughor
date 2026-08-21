@@ -159,3 +159,15 @@ export function classifyColumns(
   });
   return { dateIdxs, numericIdxs, catIdxs };
 }
+
+/**
+ * Above this many categories a ranking stops reading horizontally.
+ *
+ * Orientation is a density decision, not just a type one. A handful of named categories
+ * reads best lying down — the labels get room and the ranking is obvious at a glance. Past
+ * roughly a dozen, horizontal bars either shrink below legibility or push the chart into a
+ * scroll, and the honest form is the dense upright one, the way a daily series is drawn.
+ * Both resolvers read this number so the two engines cannot disagree about it.
+ */
+export const HORIZONTAL_MAX_CATS = 12;
+

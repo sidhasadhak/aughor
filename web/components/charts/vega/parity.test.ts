@@ -163,6 +163,35 @@ describe("Vega tier-1 resolver", () => {
     expect(forced!.resolved).toBe("bar");
   });
 
+  it("stands a ranking up once there are too many categories to read lying down", () => {
+    const few = Array.from({ length: 8 }, (_, i) => [`Cat ${i}`, 100 - i] as unknown[]);
+    const many = Array.from({ length: 30 }, (_, i) => [`Cat ${i}`, 100 - i] as unknown[]);
+    const cols = ["category", "gmv"];
+
+    // A handful of named categories reads best lying down.
+    expect(resolveVegaSpec({ columns: cols, rows: few, chartType: "bar" })!.resolved).toBe("bar_horizontal");
+
+    // Past the threshold it stands up, EVEN when the backend hint asked for horizontal:
+    // the hint is a suggestion about form, and 30 horizontal bars either shrink below
+    // legibility or need a scrollbar, which is the thing a chart must never be.
+    expect(resolveVegaSpec({ columns: cols, rows: many, chartType: "bar" })!.resolved).toBe("bar");
+    expect(resolveVegaSpec({ columns: cols, rows: many, chartType: "bar_horizontal" })!.resolved).toBe("bar");
+
+    // An explicit user choice still wins over the density rule.
+    expect(resolveVegaSpec({ columns: cols, rows: many, chartType: "bar", orient: "horizontal" })!.resolved)
+      .toBe("bar_horizontal");
+
+    // And the ECharts path agrees: with many categories the VALUE axis is y (upright).
+    const axisType = (o: unknown, k: "xAxis" | "yAxis") => {
+      const ax = (o as Record<string, unknown>)[k];
+      return (Array.isArray(ax) ? ax[0] : ax) as { type?: string } | undefined;
+    };
+    const eMany = resolveChartOption({ columns: cols, rows: many, chartType: "bar" })!;
+    expect(axisType(eMany.option, "yAxis")?.type).toBe("value");
+    const eFew = resolveChartOption({ columns: cols, rows: few, chartType: "bar" })!;
+    expect(axisType(eFew.option, "xAxis")?.type).toBe("value");
+  });
+
   it("lets the user override orientation, on BOTH engines", () => {
     const columns = ["category", "gmv"];
     const rows = [["Apparel", 4.2e6], ["Home", 2.4e6]];

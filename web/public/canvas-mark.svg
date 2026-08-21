@@ -14,14 +14,11 @@
     </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="512" height="512" fill="#0f0f13" rx="80"/>
+  <!-- No background: the mark sits on whatever surface holds it, so it reads on the
+       light theme as well as the dark one. -->
 
   <!-- Gradient border frame -->
   <rect x="64" y="64" width="384" height="384" rx="72" fill="none" stroke="url(#grad1)" stroke-width="12" filter="url(#glow1)"/>
-
-  <!-- Inner dark area -->
-  <rect x="76" y="76" width="360" height="360" rx="64" fill="#1a1a24"/>
 
   <!-- Sparkle/Star -->
   <path d="M256 176 C256 176, 264 216, 264 216 C264 216, 304 224, 304 224 C304 224, 264 232, 264 232 C264 232, 256 272, 256 272 C256 272, 248 232, 248 232 C248 232, 208 224, 208 224 C208 224, 248 216, 248 216 C248 216, 256 176, 256 176 Z" 

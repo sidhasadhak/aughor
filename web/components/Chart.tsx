@@ -191,11 +191,16 @@ export function Chart({
           (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
       {(() => {
         const _catN = built.xCategories;
-        // In fill mode the chart takes the whole box (no 350px cap, no few-category width cap).
+        // In fill mode the chart takes the whole box (no few-category width cap).
         const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
         const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
+        /* A chart is a picture, not a viewport. It used to cap at 350px and scroll inside
+           that box, so a ranking with many categories became a thing you scrolled through
+           instead of a shape you read — and the axis scrolled out of sight with it. The
+           chart now renders at its natural height and the card grows; orientation flips to
+           upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
         return (
-      <div ref={outerRef} style={{ maxHeight: fill ? undefined : 350, height: fill ? chartH : undefined, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
+      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
         {built.engine === "vega"
           ? <VegaChart spec={built.spec} height={chartH} onSelect={onSelect} onReady={ready} />
           : <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={ready} />}

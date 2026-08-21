@@ -18,7 +18,7 @@ import {
 } from "@/components/charts/echarts/builders";
 import {
   SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
-  isIdLike, isUngraphableGrid, GEO_NAME_COL, LAT_COL, LON_COL,
+  isIdLike, isUngraphableGrid, GEO_NAME_COL, LAT_COL, LON_COL, HORIZONTAL_MAX_CATS,
 } from "@/components/charts/columnRoles";
 import { chooseMultiMeasure, JOB_TO_ENGINE_HINT } from "@/components/charts/chartTypeInference";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
@@ -287,7 +287,7 @@ export function resolveChartOption(
     if (!option && _cbField && catCol && !dateCol
         && (hint === "bar" || hint === "bar_horizontal" || hint === "bar_vertical" || hint === "combo" || hint === "grouped_bar" || hint === "auto")) {
       option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
-                         { horizontal: orientH(hint !== "bar_vertical") });
+                         { horizontal: orientH(hint !== "bar_vertical" && nCats <= HORIZONTAL_MAX_CATS) });
       defaultH = Math.max(180, new Set(data.map((d) => d[catCol])).size * 42 + 60);
     }
 
@@ -358,7 +358,7 @@ export function resolveChartOption(
     //      of metric vs row-count — second-guessing the backend and discarding exhibit.order.
     if (!option && catCol && (hint === "bar" || hint === "bar_horizontal")) {
       option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
-                         { horizontal: orientH(true), diverging: _isChangeMetric });
+                         { horizontal: orientH(nCats <= HORIZONTAL_MAX_CATS), diverging: _isChangeMetric });
       defaultH = Math.max(110, nCats * 46 + 44);
     }
     // 13b. Explicit CA-4 forms — the delta pair ("change" job) and grouped bars.
@@ -370,7 +370,7 @@ export function resolveChartOption(
         defaultH = Math.max(110, nCats * 46 + 44);
       } else {
         // No detectable pair → the change is already a single signed measure.
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(true), diverging: true });
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(nCats <= HORIZONTAL_MAX_CATS), diverging: true });
         defaultH = Math.max(110, nCats * 46 + 44);
       }
     }
@@ -387,12 +387,12 @@ export function resolveChartOption(
         const primary = columns[d.barIdx] ?? chartNumericCols[0];
         if (d.mode === "delta" && d.pair) { option = deltaBarOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [columns[d.pair[0]], columns[d.pair[1]]], labels: lbls }); defaultH = Math.max(110, nCats * 46 + 44); }
         else if (d.mode === "grouped" && d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
-        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(true) }); defaultH = Math.max(110, nCats * 46 + 44); }
+        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(nCats <= HORIZONTAL_MAX_CATS) }); defaultH = Math.max(110, nCats * 46 + 44); }
       } else if (_isChangeMetric) {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(true), diverging: true });
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(nCats <= HORIZONTAL_MAX_CATS), diverging: true });
         defaultH = Math.max(110, nCats * 46 + 44);
       } else {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(true) });
+        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: orientH(nCats <= HORIZONTAL_MAX_CATS) });
         defaultH = Math.max(110, nCats * 46 + 44);
       }
     }
