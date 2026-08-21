@@ -85,9 +85,9 @@ export function printVegaTokens(): VegaTokens {
 /**
  * Build the Vega-Lite config from resolved tokens. Mark specs mirror the ECharts theme
  * one-for-one so the Phase 1 comparison is about the ENGINE, not about two different
- * designers: 2px round-capped lines, ≥8px points with a 2px surface ring, a 4px rounded
- * bar data-end anchored to the baseline, a 1px surface seam between touching marks,
- * horizontal grid only, circle legend symbols on top, transparent background.
+ * designers: 2px round-capped lines, ≥8px points with a 2px surface ring, SQUARE bar ends,
+ * a 1px surface seam between touching marks, horizontal grid only, circle legend symbols on
+ * top, transparent background.
  */
 export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
   const label = { font: t.font, fontSize: 11, color: t.tick };
@@ -136,7 +136,7 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
       anchor: "start", offset: 8, subtitleFont: t.font, subtitleColor: t.t3, subtitleFontSize: 11,
     },
 
-    bar: { cornerRadiusEnd: 4, stroke: t.surface, strokeWidth: 1 },
+    bar: { stroke: t.surface, strokeWidth: 1 },
     line: { strokeWidth: 2, strokeCap: "round", strokeJoin: "round" },
     point: { size: 70, filled: true, stroke: t.surface, strokeWidth: 2 },
     arc: { stroke: t.surface, strokeWidth: 1 },

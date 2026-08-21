@@ -108,10 +108,10 @@ export function buildAughorTheme(t: ChartTokens): Record<string, unknown> {
       smooth: false,
       label: dataLabel,
     },
-    // 4px rounded data-end, square at the baseline; a 1px surface-colour border
-    // renders the 2px seam between touching marks (stacked segments) — the gap
-    // does the separating, invisible against the card for a lone bar.
-    bar: { itemStyle: { borderRadius: [4, 4, 0, 0], borderColor: t.surface, borderWidth: 1 }, label: dataLabel },
+    // Square bar ends. A 1px surface-colour border renders the 2px seam between
+    // touching marks (stacked segments) — the gap does the separating, invisible
+    // against the card for a lone bar.
+    bar: { itemStyle: { borderColor: t.surface, borderWidth: 1 }, label: dataLabel },
     pie: { itemStyle: { borderWidth: 1, borderColor: t.surface }, label: { ...dataLabel, textBorderWidth: 2 } },
     scatter: { symbolSize: 9, itemStyle: { borderColor: t.surface, borderWidth: 2 } },
     legend: {

@@ -144,11 +144,9 @@ const REF_NEUTRAL = "#9DA1A8";
 
 // ── CA-4 mark specs ──────────────────────────────────────────────────────────
 // Bar width comes from the band: ~35% of each band stays air, and the cap stops
-// wide plots from rendering slabs. Horizontal bars round the data END (the right
-// edge), never the baseline — the theme's [4,4,0,0] covers vertical bars.
+// wide plots from rendering slabs. Bar ends are SQUARE in every orientation — the
+// per-orientation corner radius this file used to add is gone, along with the theme's.
 const BAR_SPEC = { barCategoryGap: "35%", barMaxWidth: 48 } as const;
-const barEndRadius = (horizontal: boolean | undefined): Record<string, unknown> =>
-  horizontal ? { borderRadius: [0, 4, 4, 0] } : {};
 
 // Selective labels: past this many marks, "a number on every point" stops being
 // read — label the endpoint and the extremes and let axis/tooltip/table carry
@@ -570,7 +568,6 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       yAxis: style.horizontal ? catAxis : valAxis,
       series: [{
         name: fieldLabel(y), type: "bar", ...BAR_SPEC, label,
-        itemStyle: barEndRadius(style.horizontal) as unknown as undefined,
         labelLayout: i.labels ? { hideOverlap: true } : undefined, markLine,
         data: values.map((v, idx) => ({ value: v, itemStyle: { color: ramp(Number(rows[idx][binding.field])) } })),
       }],
@@ -622,7 +619,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
       ...BAR_SPEC,
       // Drop any data label that would collide instead of overprinting a neighbour.
       labelLayout: i.labels ? { hideOverlap: true } : undefined,
-      itemStyle: { ...barEndRadius(style.horizontal), ...(itemStyle ?? {}) } as unknown as undefined,
+      itemStyle: (itemStyle ?? undefined) as unknown as undefined,
       markLine,
     }],
   };
@@ -680,7 +677,7 @@ export function deltaBarOption(i: BuildInput): EChartsOption {
       name: `Δ ${fieldLabel(after)}`, type: "bar", ...BAR_SPEC,
       data: entries.map((e) => ({
         value: e.delta,
-        itemStyle: { color: e.delta >= 0 ? sign.pos : sign.neg, borderRadius: e.delta >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4] },
+        itemStyle: { color: e.delta >= 0 ? sign.pos : sign.neg },
         label: i.labels === false ? undefined : { position: e.delta >= 0 ? "right" : "left" },
       })),
       label: i.labels === false ? undefined : { show: true, fontSize: 11, distance: 5,
