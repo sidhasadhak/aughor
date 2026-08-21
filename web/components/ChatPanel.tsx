@@ -1283,7 +1283,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     pointerEvents: "all", padding: "5px 12px 5px 9px",
                     fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",
                     color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
-                    boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                    boxShadow: "var(--shadow-lg)",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}

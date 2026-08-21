@@ -131,7 +131,7 @@ function ToastRow({ t }: { t: ToastData }) {
         border: "1px solid var(--b2)",
         borderLeft: `2px solid ${k.color}`,
         borderRadius: "var(--r3)",
-        boxShadow: "0 8px 24px rgba(0,0,0,.28)",
+        boxShadow: "var(--shadow-lg)",
       }}
     >
       <span

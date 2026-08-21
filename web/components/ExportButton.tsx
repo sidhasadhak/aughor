@@ -67,7 +67,7 @@ export function ExportButton({ invId }: { invId: string }) {
           position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50,
           width: 210, padding: 6, borderRadius: "var(--r2)",
           background: "var(--bg-1)", border: "1px solid var(--b2)",
-          boxShadow: "0 8px 28px rgba(0,0,0,.24)",
+          boxShadow: "var(--shadow-lg)",
         }}>
           <button style={item} disabled={!!busy} onClick={() => go("pdf")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}

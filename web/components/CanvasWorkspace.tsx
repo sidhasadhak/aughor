@@ -277,7 +277,7 @@ function SettingsPopover({
         background: "var(--bg-2)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", padding: "16px",
         width: 280, display: "flex", flexDirection: "column", gap: 10,
-        boxShadow: "0 8px 32px rgba(0,0,0,.4)",
+        boxShadow: "var(--shadow-lg)",
       }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>

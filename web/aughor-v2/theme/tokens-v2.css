@@ -106,6 +106,12 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,.50);
   --shadow-md: 0 1px 2px rgba(0,0,0,.50), 0 6px 16px rgba(0,0,0,.40);
 
+  /* The modal scrim. ONE value, because a system has one scrim — the seven
+     hand-tuned blacks this replaces ranged .32–.70 with no rule behind the
+     spread. Deep here, because the dialog above it is barely lighter than the
+     page and needs the separation. */
+  --scrim: rgba(0, 0, 0, .65);
+
   /* Chart palette — unchanged by this re-skin, and deliberately so. The six
      series were CHOSEN by the validator, not by eye: re-stepped into the dark
      lightness band (OKLCH L 0.48–0.67) and ordered by exhaustive search for
@@ -162,6 +168,11 @@
 
   --shadow-sm: 0 1px 2px rgba(17,23,28,.08);
   --shadow-md: 0 1px 2px rgba(17,23,28,.08), 0 4px 12px rgba(17,23,28,.06);
+
+  /* Lighter than dark's, and deliberately so: a white dialog on a light page
+     already separates by shadow and hairline, so the scrim only has to dim.
+     The dark-mode 65% black rendered the whole page muddy grey here. */
+  --scrim: rgba(17, 23, 28, .32);
 
   /* Categorical series — see the note in the dark block: chosen by the
      validator, left alone by the re-skin. Chrome follows the new tokens. */

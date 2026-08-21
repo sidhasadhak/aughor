@@ -481,7 +481,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                 position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30,
                 minWidth: 160, padding: 4,
                 background: "var(--bg-2)", border: "1px solid var(--b2)",
-                borderRadius: "var(--r2)", boxShadow: "0 8px 28px rgba(0,0,0,.35)",
+                borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
               }}>
                 {(["activity", "modified", "name", "tables"] as const).map(opt => (
                   <button
@@ -602,7 +602,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             background: "var(--bg-2)", border: "1px solid var(--b2)",
             borderRadius: "var(--r3)", padding: "24px 24px 20px",
             width: 360, display: "flex", flexDirection: "column", gap: 12,
-            boxShadow: "0 20px 60px rgba(0,0,0,.4)",
+            boxShadow: "var(--shadow-xl)",
           }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
             <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>

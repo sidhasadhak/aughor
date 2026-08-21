@@ -43,9 +43,13 @@
 .aug-input { border-radius: var(--r2); }
 .aug-input:focus { border-color: var(--bfocus); box-shadow: 0 0 0 3px var(--acc-dim, rgba(59,130,246,.16)); }
 
-/* ── Data table — roomier, smoother hover ────────────────────────────────── */
-.aug-dt thead th { font-size: 10.5px; letter-spacing: .08em; padding: 9px 16px; }
-.aug-dt tbody td { padding: 11px 16px; font-size: 12.5px; }
+/* ── Data table ──────────────────────────────────────────────────────────────
+   Type on the scale: 11px header (the legibility floor, uppercase + tracked),
+   13px cell (base UI size). The half-pixel sizes that stood here were off the
+   scale in both directions. Cell PADDING is left alone deliberately — it sets
+   row height, which is a density decision rather than a typographic one. */
+.aug-dt thead th { font-size: 11px; letter-spacing: .08em; padding: 9px 16px; }
+.aug-dt tbody td { padding: 11px 16px; font-size: 13px; }
 .aug-dt tbody tr { transition: background var(--dur-fast) var(--ease-out); }
 
 /* ── Topbar — flat, hairline-separated (no glass; chrome recedes) ─────────── */

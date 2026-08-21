@@ -911,7 +911,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
           position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
           padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
           background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
-          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
+          boxShadow: "var(--shadow-lg)", maxWidth: 420,
         }}>{hint}</div>
       )}
       {/* Left sidebar — domain list */}

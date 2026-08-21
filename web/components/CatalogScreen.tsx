@@ -1128,9 +1128,9 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
               {/* Confirmation popup */}
               {confirmDel && (
                 <>
-                  <div onClick={() => setConfirmDel(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 300 }} />
+                  <div onClick={() => setConfirmDel(false)} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 300 }} />
                   <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 301, width: 340,
-                    background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 8, padding: 20, boxShadow: "0 24px 64px rgba(0,0,0,.6)" }}>
+                    background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 8, padding: 20, boxShadow: "var(--shadow-xl)" }}>
                     <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 8 }}>Remove connection?</p>
                     <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.5, marginBottom: 18 }}>
                       <span style={{ color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{entry.name}</span> will be disconnected and removed from your catalog. This cannot be undone.

@@ -149,7 +149,7 @@ function ReceiptPopover({
         style={{
           position: "fixed", left, top, zIndex: 200, width: 380,
           background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
-          boxShadow: "0 8px 28px rgba(0,0,0,.45)", padding: 13,
+          boxShadow: "var(--shadow-lg)", padding: 13,
           display: "flex", flexDirection: "column", gap: 9,
         }}
       >

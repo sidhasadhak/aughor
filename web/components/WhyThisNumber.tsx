@@ -198,7 +198,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
       aria-modal="true"
       aria-label="Why this number — Trust Receipt"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}
+      style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}
     >
       <div style={{
         width: "100%", maxWidth: 460, height: "100%", background: "var(--bg-1)",

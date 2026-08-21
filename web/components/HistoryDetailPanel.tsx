@@ -378,7 +378,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
               style={{
                 background: "var(--bg-0)",
                 border: "1px solid rgba(255,255,255,0.09)",
-                boxShadow: "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+                boxShadow: "var(--shadow-lg), 0 1px 0 rgba(255,255,255,0.04) inset",
               }}
             >
               <textarea

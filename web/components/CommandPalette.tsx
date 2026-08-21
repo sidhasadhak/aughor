@@ -341,7 +341,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       <div
         onClick={onClose}
         className="aug-anim-fade"
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200 }}
+        style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }}
       />
 
       {/* Palette */}
@@ -350,7 +350,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         zIndex: 201, width: "100%", maxWidth: 580,
         background: "var(--bg-2)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "0 24px 64px rgba(0,0,0,.65)",
+        boxShadow: "var(--shadow-xl)",
       }}>
         {/* Input row */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>

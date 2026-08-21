@@ -166,7 +166,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           background: "var(--bg-1)", border: "1px solid var(--b2)",
           borderRadius: "var(--r3)", width: 560,
           display: "flex", flexDirection: "column",
-          boxShadow: "0 20px 60px rgba(0,0,0,.45)",
+          boxShadow: "var(--shadow-xl)",
           height: "76vh", maxHeight: 720,
         }}
       >
