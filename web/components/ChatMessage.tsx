@@ -946,7 +946,9 @@ function TurnActions({
           title="Re-run this question as a full deep analysis"
           className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
         >
-          <span aria-hidden className="shrink-0 text-zinc-500">⌕</span>
+          {/* The same glyph the Deep analyses nav item wears, so the action and the
+              destination read as the same thing. */}
+          <Icon name="search" size={13} className="shrink-0 text-zinc-500" />
           Run a deep analysis
         </Button>
       )}
@@ -959,7 +961,7 @@ function TurnActions({
           title={pinMsg || "Pin this result to the dashboard (re-run through the guard battery first)"}
           className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
         >
-          <span aria-hidden className="shrink-0 text-zinc-500">📌</span>
+          <Icon name="pin" size={13} className="shrink-0 text-zinc-500" />
           {pin === "pinning" ? "Pinning…" : pin === "error" ? "Retry pin" : "Pin to dashboard"}
         </Button>
       )}
