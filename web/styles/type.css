@@ -71,6 +71,10 @@
 .aug-fs-h2      { font-size: 15px; }  /* subheadings */
 .aug-fs-h1      { font-size: 18px; }  /* headings */
 .aug-fs-display { font-size: 22px; }  /* hero stat numbers */
+.aug-fs-glyph   { font-size: 28px; }  /* an ICON rendered as text — the emoji in an
+                                         empty state. Sanctioned as a step because four
+                                         ad-hoc sizes (24/28/30/32) were all doing this
+                                         one job; it is the only step above --display. */
 
 /* ── Section label (UPPERCASE, 11px minimum) ── */
 /* Overrides the aug-label in globals.css — kept here as canonical definition.

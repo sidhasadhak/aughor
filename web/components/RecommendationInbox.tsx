@@ -229,7 +229,7 @@ function InvCard({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {pending > 0 && (
-            <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[var(--r-pill)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
+            <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[var(--r-chip)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
               {pending} pending
             </span>
           )}
@@ -355,7 +355,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
         </div>
         <div className="flex items-center gap-2">
           {pendingCount > 0 && (
-            <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-pill)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
+            <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[var(--r-chip)] bg-amber-500/20 border border-amber-500/30 text-amber-400">
               {pendingCount} pending
             </span>
           )}

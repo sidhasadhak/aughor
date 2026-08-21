@@ -9,7 +9,7 @@
  * and renders every toast, wherever it was raised.
  *
  * Design language: flat aug-panel surface (bg-1 lifted over content), a kind-coloured
- * left accent + glyph, DM Sans title / mono glyph, the shared type scale. Dark-only,
+ * left accent + glyph, Inter title / mono glyph, the shared type scale. Dark-only,
  * like the rest of the app. Auto-dismisses (errors linger longest); hover pauses the
  * timer; manual × dismiss. Announced via a stable aria-live region.
  */
@@ -131,7 +131,7 @@ function ToastRow({ t }: { t: ToastData }) {
         border: "1px solid var(--b2)",
         borderLeft: `2px solid ${k.color}`,
         borderRadius: "var(--r3)",
-        boxShadow: "0 8px 24px rgba(0,0,0,.28)",
+        boxShadow: "var(--shadow-lg)",
       }}
     >
       <span

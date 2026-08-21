@@ -33,7 +33,7 @@ function DialogOverlay({
       className={cn(
         // App modal chrome: 70% scrim + blur, above the sidebar/topbar stack (z 300 —
         // matches the hand-rolled modals this file replaces).
-        "fixed inset-0 isolate z-[300] bg-black/70 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[300] bg-[var(--scrim)] duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}

@@ -58,17 +58,17 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
         }}>{Math.round((claim.confidence ?? 0) * 100)}%</span>
         {claim.metric_used && (
           <span style={{
-            padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10,
+            padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 11,
             background: "var(--bg-3)", border: "1px solid var(--b1)",
             color: "var(--t3)", fontFamily: "var(--font-mono)",
           }}>{claim.metric_used}</span>
         )}
         {fb && (
-          <span style={{ fontSize: 10, fontWeight: 600, color: FEEDBACK_META[fb].color }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: FEEDBACK_META[fb].color }}>
             ● {FEEDBACK_META[fb].label}
           </span>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>
           {fmtWhen(claim.created_at)}
         </span>
       </div>
@@ -77,12 +77,12 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
       <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.6 }}>{claim.claim_text}</div>
 
       {/* Meta row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 10, color: "var(--t4)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 11, color: "var(--t4)" }}>
         {claim.data_freshness && <span>data as of {fmtWhen(claim.data_freshness)}</span>}
         {claim.sql_source && (
           <button onClick={() => setShowSql(s => !s)} style={{
             background: "transparent", border: "none", color: "var(--blue4)",
-            cursor: "pointer", fontSize: 10, padding: 0,
+            cursor: "pointer", fontSize: 11, padding: 0,
           }}>{showSql ? "hide source query" : "show source query"}</button>
         )}
       </div>

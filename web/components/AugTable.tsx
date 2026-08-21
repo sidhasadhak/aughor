@@ -91,9 +91,9 @@ function buildAntTheme(mode: "dark" | "light"): ThemeConfig {
       // Brand (interaction accent)
       colorPrimary:         v("--blue3"),
       colorPrimaryHover:    v("--blue4"),
-      // Misc — grid stays DM Sans (text columns readable); numeric formatting keeps tabular alignment
+      // Misc — grid stays Inter (text columns readable); numeric formatting keeps tabular alignment
       fontSize:             12,
-      fontFamily:           "'DM Sans', system-ui, sans-serif",
+      fontFamily:           "'Inter', system-ui, sans-serif",
       borderRadius:         6,   // --r1 (v2 control radius; was the retired 3px)
       borderRadiusSM:       4,
       controlHeight:        30,

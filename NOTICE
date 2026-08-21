@@ -16,21 +16,25 @@ License for the specific language governing permissions and limitations under
 the License.
 
 --------------------------------------------------------------------------------
-THIRD-PARTY COMPONENTS REDISTRIBUTED IN THIS REPOSITORY
+THIRD-PARTY COMPONENTS REDISTRIBUTED WITH THIS SOFTWARE
 --------------------------------------------------------------------------------
 
-The following third-party assets are checked into this repository and
-redistributed under their own licenses.
+The following third-party assets are redistributed under their own licenses.
 
-1. DM Sans (font files)
-   web/public/fonts/DMSans-VariableFont_opsz,wght.ttf
-   web/public/fonts/DMSans-Italic-VariableFont_opsz,wght.ttf
+1. Inter and JetBrains Mono (fonts)
 
-   Copyright 2014 The DM Sans Project Authors
-   (https://github.com/googlefonts/dm-fonts)
+   Fetched at build time by next/font/google and self-hosted in the build
+   output. No font files are checked into this repository, but the built
+   application redistributes them, so they are attributed here.
 
-   Licensed under the SIL Open Font License, Version 1.1.
-   Full license text: web/public/fonts/OFL.txt
+   Inter — Copyright 2020 The Inter Project Authors
+   (https://github.com/rsms/inter)
+
+   JetBrains Mono — Copyright 2020 The JetBrains Mono Project Authors
+   (https://github.com/JetBrains/JetBrainsMono)
+
+   Both licensed under the SIL Open Font License, Version 1.1.
+   Full license text: https://openfontlicense.org
 
 --------------------------------------------------------------------------------
 THIRD-PARTY CODE ADAPTED INTO THIS REPOSITORY

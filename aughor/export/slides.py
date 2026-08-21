@@ -16,11 +16,18 @@ from pptx.util import Inches, Pt
 
 from .document import Block, ExportDoc
 
-_INDIGO = RGBColor(0x4F, 0x46, 0xE5)
-_INK = RGBColor(0x18, 0x18, 0x1B)
-_BODY = RGBColor(0x3F, 0x3F, 0x46)
-_MUTED = RGBColor(0x71, 0x71, 0x7A)
-_BG = RGBColor(0xF4, 0xF4, 0xF5)
+# Palette — the light theme, literal.
+# A print artifact has no document to read CSS vars from, so these mirror
+# web/aughor-v2/theme/tokens-v2.css's [data-theme="light"] block by hand and must
+# move with it (the same contract as printChartTokens() in the web chart theme).
+#   _ACCENT --blue3 · _INK --t1 · _MUTED --t2 · _LINE --b2 · _BG --bg-3
+# _BODY is _INK: this system has one ink for prose and one for meta, and the old
+# third grey was a leftover from a palette that is no longer used anywhere.
+_ACCENT = RGBColor(0x1F, 0x6C, 0xB0)
+_INK = RGBColor(0x11, 0x17, 0x1C)
+_BODY = _INK
+_MUTED = RGBColor(0x5F, 0x72, 0x81)
+_BG = RGBColor(0xF4, 0xF7, 0xF9)
 _WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
 _W = Inches(13.333)
@@ -41,11 +48,11 @@ def _title_bar(slide, text: str):
     run.text = text
     run.font.size = Pt(24)
     run.font.bold = True
-    run.font.color.rgb = _INDIGO
+    run.font.color.rgb = _ACCENT
     # accent underline
     line = slide.shapes.add_shape(1, _MARGIN, Inches(1.35), Inches(1.1), Pt(3))
     line.fill.solid()
-    line.fill.fore_color.rgb = _INDIGO
+    line.fill.fore_color.rgb = _ACCENT
     line.line.fill.background()
     return slide
 
@@ -101,7 +108,7 @@ class _Deck:
             _para(tf, "   ·   ".join(doc.meta), size=11, color=_MUTED, space_before=14)
         bar = s.shapes.add_shape(1, _MARGIN, Inches(2.1), Inches(1.6), Pt(4))
         bar.fill.solid()
-        bar.fill.fore_color.rgb = _INDIGO
+        bar.fill.fore_color.rgb = _ACCENT
         bar.line.fill.background()
 
     def _new_section(self, heading: str):
@@ -145,7 +152,7 @@ class _Deck:
             cell = gtable.cell(0, j)
             cell.text = str(c)[:30]
             cell.fill.solid()
-            cell.fill.fore_color.rgb = _INDIGO
+            cell.fill.fore_color.rgb = _ACCENT
             para = cell.text_frame.paragraphs[0]
             para.runs[0].font.size = Pt(11)
             para.runs[0].font.bold = True
@@ -166,7 +173,7 @@ class _Deck:
         elif b.kind == "prose":
             tf = self._body_tf()
             if b.tag:
-                _para(tf, b.tag.upper(), size=9, bold=True, color=_INDIGO, space_before=6)
+                _para(tf, b.tag.upper(), size=9, bold=True, color=_ACCENT, space_before=6)
             _para(tf, b.text, size=14, color=_BODY)
         elif b.kind == "bullets":
             tf = self._body_tf()

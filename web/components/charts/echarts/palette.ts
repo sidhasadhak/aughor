@@ -38,15 +38,15 @@ export const CHART_DEEMPH: Record<ChartMode, string> = {
  *  Mirrors --bg-2. */
 export const CHART_SURFACE: Record<ChartMode, string> = {
   light: "#FFFFFF",
-  dark: "#19212B",
+  dark: "#12191F",
 };
 
 /** Sign-diverging pair (change metrics: positive/negative). Wears the status
  *  threshold tokens — sign is a good/bad meaning, not a series identity.
  *  Mirrors --chart-threshold-target / --chart-threshold-crit. */
 export const CHART_SIGN: Record<ChartMode, { pos: string; neg: string }> = {
-  light: { pos: "#2CA02C", neg: "#D62728" },
-  dark: { pos: "#5FBE82", neg: "#E07070" },
+  light: { pos: "#177A56", neg: "#B8283F" },
+  dark: { pos: "#57C79A", neg: "#F08A9C" },
 };
 
 const cssVar = (name: string): string =>

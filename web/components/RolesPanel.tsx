@@ -16,7 +16,7 @@ const ROLE_TINT: Record<string, string> = {
 function Chip({ label, tint }: { label: string; tint?: string }) {
   return (
     <span style={{
-      fontSize: 10, fontFamily: "var(--font-mono, monospace)", padding: "2px 7px",
+      fontSize: 11, fontFamily: "var(--font-mono, monospace)", padding: "2px 7px",
       borderRadius: "var(--r2)", background: "var(--bg-2)",
       border: `1px solid var(--b1)`, color: tint || "var(--t2)", whiteSpace: "nowrap",
     }}>{label}</span>

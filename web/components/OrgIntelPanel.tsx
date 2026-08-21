@@ -53,7 +53,7 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
         {insight.domain && (
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.06em",
@@ -67,9 +67,9 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
           </span>
         )}
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t3)" }}>{insight.angle}</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>{insight.angle}</span>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 10, color: nov.color, fontWeight: 600 }}>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>
           {nov.label} novelty
         </span>
       </div>
@@ -81,13 +81,13 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
 
       {/* Footer row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-        <span style={{ fontSize: 10, color: "var(--t3)" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
           Promoted {fmtDate(insight.promoted_at)}
         </span>
         {insight.canvas_id && (
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               color: "var(--t3)",
               background: "var(--bg-2)",
               borderRadius: 3,
@@ -103,7 +103,7 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
           disabled={deleting}
           style={{
             marginLeft: "auto",
-            fontSize: 10,
+            fontSize: 11,
             color: deleting ? "var(--t3)" : "var(--red3)",
             background: "none",
             border: "none",
@@ -221,7 +221,7 @@ export function OrgIntelPanel() {
               color: "var(--t3)",
             }}
           >
-            <span style={{ fontSize: 32, opacity: 0.25 }}>◈</span>
+            <span style={{ fontSize: 28, opacity: 0.25 }}>◈</span>
             <span style={{ fontSize: 12 }}>
               {search ? "No findings match your filter" : "No org-wide intelligence yet"}
             </span>
@@ -239,7 +239,7 @@ export function OrgIntelPanel() {
                 <section key={domain}>
                   <div
                     style={{
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: 700,
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",

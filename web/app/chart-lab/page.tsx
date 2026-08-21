@@ -273,7 +273,7 @@ export default function ChartLab() {
         </Card>
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         Native-fit viz types (2026-07 wave) — Counter · Funnel · Histogram · Box · Sankey · Waterfall
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -301,7 +301,7 @@ export default function ChartLab() {
         </Card>
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         Color binding — colour marks by a chosen field
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -337,7 +337,7 @@ export default function ChartLab() {
         </Card>
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         Tier-2 viz types — Line (forecast) · Gantt · Choropleth · Point map
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -359,7 +359,7 @@ export default function ChartLab() {
         </Card>
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         &lt;Chart&gt; component — end-to-end (column resolution → dispatch → chrome)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -384,7 +384,7 @@ export default function ChartLab() {
         ))}
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         percent unit hint + adaptive bar sizing + labels (report fixes #1–#3)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -439,7 +439,7 @@ export default function ChartLab() {
         ))}
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         &lt;ResultChartCard&gt; — clean chart, edit in the side panel (hover the pencil)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
@@ -479,7 +479,7 @@ export default function ChartLab() {
         />
       </div>
 
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
         &lt;KpiStripView&gt; — key-metrics scorecard (semantic deltas + sparklines)
       </h2>
       <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>

@@ -139,14 +139,14 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
       {/* Novelty + angle */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9, flexWrap: "wrap" }}>
         <span style={{
-          fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 500,
+          fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 500,
           background: nv.bg, color: nv.color, border: `0.5px solid ${nv.border}`,
         }}>
           {nv.label}
         </span>
         {insight.angle && (
           <span style={{
-            fontSize: 10, padding: "2px 8px", borderRadius: 4,
+            fontSize: 11, padding: "2px 8px", borderRadius: 4,
             background: dm.bg, color: `${dm.color}cc`, border: `0.5px solid ${dm.border}`,
           }}>
             {insight.angle.replace(/_/g, " ")}
@@ -162,14 +162,14 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
       {/* Footer */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 8 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>
             confidence{" "}
             <span style={{ color: confidenceLabel(insight.confidence) === "high" ? "var(--grn4)" : confidenceLabel(insight.confidence) === "medium" ? "var(--blue4)" : "var(--red4)" }}>
               {confidenceLabel(insight.confidence)}
             </span>
           </span>
           {insight.entities_involved.length > 0 && (
-            <span style={{ fontSize: 10, color: "var(--t4)" }}>
+            <span style={{ fontSize: 11, color: "var(--t4)" }}>
               {insight.entities_involved.slice(0, 3).join(" · ")}
             </span>
           )}
@@ -177,13 +177,13 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {canvasId && (
             promoted ? (
-              <span style={{ fontSize: 10, color: "var(--grn4)" }}>Promoted ✓</span>
+              <span style={{ fontSize: 11, color: "var(--grn4)" }}>Promoted ✓</span>
             ) : (
               <button
                 onClick={handlePromote}
                 disabled={promoting}
                 style={{
-                  fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                  fontSize: 11, padding: "2px 8px", borderRadius: 4,
                   background: "var(--grn1)", color: "var(--grn4)",
                   border: "0.5px solid var(--grn2)",
                   cursor: promoting ? "wait" : "pointer",
@@ -198,7 +198,7 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
             <button
               onClick={() => openInQuery?.({ sql: insight.sql, connId: connectionId, mode: "sql" })}
               title="Open this query in the Query Builder"
-              style={{ fontSize: 10, color: "var(--blue4)", background: "var(--blue1)", border: "0.5px solid var(--blue2)", borderRadius: 4, cursor: "pointer", padding: "2px 8px" }}
+              style={{ fontSize: 11, color: "var(--blue4)", background: "var(--blue1)", border: "0.5px solid var(--blue2)", borderRadius: 4, cursor: "pointer", padding: "2px 8px" }}
             >
               Open in SQL Editor →
             </button>
@@ -206,7 +206,7 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
           {insight.sql && (
             <button
               onClick={() => setSqlOpen(o => !o)}
-              style={{ fontSize: 10, color: "var(--t4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              style={{ fontSize: 11, color: "var(--t4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
             >
               {sqlOpen ? "SQL ▲" : "SQL ▼"}
             </button>
@@ -217,7 +217,7 @@ function FindingCard({ insight, canvasId, connectionId }: { insight: Exploration
       {/* SQL */}
       {sqlOpen && insight.sql && (
         <pre style={{
-          marginTop: 8, fontSize: 10, fontFamily: "var(--font-code)",
+          marginTop: 8, fontSize: 11, fontFamily: "var(--font-code)",
           color: "var(--t3)", background: "var(--bg-0)", borderRadius: 4,
           padding: "8px 10px", overflowX: "auto",
           whiteSpace: "pre-wrap", wordBreak: "break-all",
@@ -285,7 +285,7 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, canvasId, on
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block", flexShrink: 0 }} />
           <span style={{ fontSize: 13, fontWeight: 500, color: meta.color }}>{domain}</span>
-          <span style={{ fontSize: 10, color: `${meta.color}88` }}>
+          <span style={{ fontSize: 11, color: `${meta.color}88` }}>
             {data.insights.length} finding{data.insights.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -293,7 +293,7 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, canvasId, on
           onClick={handleExtend}
           disabled={extending}
           style={{
-            fontSize: 10, padding: "3px 9px", borderRadius: 4,
+            fontSize: 11, padding: "3px 9px", borderRadius: 4,
             background: `${meta.color}15`, color: meta.color,
             border: `0.5px solid ${meta.border}`,
             cursor: extending ? "wait" : "pointer",
@@ -311,7 +311,7 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, canvasId, on
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
             {breakdown.map(b => (
               <span key={b.label} style={{
-                fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                fontSize: 11, padding: "2px 8px", borderRadius: 4,
                 background: b.bg, color: b.color, border: `0.5px solid ${b.border}`,
               }}>
                 {b.count} {b.label}
@@ -338,10 +338,10 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, canvasId, on
 
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>
             {data.angles_covered.length} angle{data.angles_covered.length !== 1 ? "s" : ""} covered
           </span>
-          <span style={{ fontSize: 10, color: meta.color }}>View findings →</span>
+          <span style={{ fontSize: 11, color: meta.color }}>View findings →</span>
         </div>
       </div>
     </div>
@@ -408,7 +408,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
         </button>
         <span style={{ color: "var(--t4)", fontSize: 12 }}>|</span>
         <span style={{ fontSize: 13, fontWeight: 500, color: meta.color }}>{domain}</span>
-        <span style={{ fontSize: 10, color: `${meta.color}88` }}>
+        <span style={{ fontSize: 11, color: `${meta.color}88` }}>
           {data.insights.length} finding{data.insights.length !== 1 ? "s" : ""}
         </span>
         <div style={{ flex: 1 }} />
@@ -416,7 +416,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           onClick={handleExtend}
           disabled={extending}
           style={{
-            fontSize: 10, padding: "3px 9px", borderRadius: 4,
+            fontSize: 11, padding: "3px 9px", borderRadius: 4,
             background: `${meta.color}15`, color: meta.color,
             border: `0.5px solid ${meta.border}`,
             cursor: extending ? "wait" : "pointer",
@@ -434,7 +434,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           value={filterNovelty ?? ""}
           onChange={e => setFilterNovelty(e.target.value !== "" ? Number(e.target.value) : null)}
           style={{
-            fontSize: 10, padding: "4px 8px", borderRadius: 4,
+            fontSize: 11, padding: "4px 8px", borderRadius: 4,
             background: "var(--bg-0)",
             color: filterNovelty !== null ? noveltyMeta(filterNovelty).color : "var(--t3)",
             border: "0.5px solid var(--b1)", cursor: "pointer",
@@ -452,7 +452,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
             value={filterAngle ?? ""}
             onChange={e => setFilterAngle(e.target.value || null)}
             style={{
-              fontSize: 10, padding: "4px 8px", borderRadius: 4,
+              fontSize: 11, padding: "4px 8px", borderRadius: 4,
               background: "var(--bg-0)",
               color: filterAngle ? meta.color : "var(--t3)",
               border: "0.5px solid var(--b1)", cursor: "pointer",
@@ -483,7 +483,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
         {hasFilters && (
           <button
             onClick={() => { setFilterNovelty(null); setFilterAngle(null); setSearch(""); }}
-            style={{ fontSize: 10, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
           >
             Clear ×
           </button>
@@ -493,7 +493,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
         <button
           onClick={() => setShowTrace(v => !v)}
           style={{
-            fontSize: 10, padding: "4px 10px", borderRadius: 4,
+            fontSize: 11, padding: "4px 10px", borderRadius: 4,
             background: showTrace ? "var(--blue1)" : "var(--bg-0)",
             color: showTrace ? "var(--blue4)" : "var(--t4)",
             border: `0.5px solid ${showTrace ? "var(--blue2)" : "var(--b1)"}`,
@@ -511,7 +511,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
             const nv = noveltyMeta(filterNovelty);
             return (
               <span style={{
-                fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                fontSize: 11, padding: "2px 8px", borderRadius: 4,
                 background: nv.bg, color: nv.color, border: `0.5px solid ${nv.border}`,
                 display: "inline-flex", alignItems: "center", gap: 4,
               }}>
@@ -522,7 +522,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           })()}
           {filterAngle !== null && (
             <span style={{
-              fontSize: 10, padding: "2px 8px", borderRadius: 4,
+              fontSize: 11, padding: "2px 8px", borderRadius: 4,
               background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}`,
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
@@ -532,7 +532,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           )}
           {search && (
             <span style={{
-              fontSize: 10, padding: "2px 8px", borderRadius: 4,
+              fontSize: 11, padding: "2px 8px", borderRadius: 4,
               background: "var(--bg-0)", color: "var(--t2)", border: "0.5px solid var(--b1)",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
@@ -540,7 +540,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
               <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
             </span>
           )}
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>
             {filtered.length} result{filtered.length !== 1 ? "s" : ""}
           </span>
         </div>

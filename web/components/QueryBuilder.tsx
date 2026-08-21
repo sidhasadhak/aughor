@@ -1685,7 +1685,7 @@ export function QueryBuilder({
               const found = isPrimary || !!js?.join;
               return (
                 <span key={t} title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : undefined}
-                  className={`flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 ${
+                  className={`flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-chip)] border shrink-0 ${
                     isPrimary ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
                     : found ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                             : "bg-amber-500/10  border-amber-500/30  text-amber-300"
@@ -1698,7 +1698,7 @@ export function QueryBuilder({
             })}
           </div>
         ) : result ? (
-          <span className="flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
+          <span className="flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-chip)] border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
             <span className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-violet-400" />
             imported query · edit SQL below
           </span>
@@ -1763,7 +1763,7 @@ export function QueryBuilder({
             return (
               <span style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
-                fontSize: 10.5, fontWeight: 600, padding: "2px 9px", borderRadius: 999,
+                fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: "var(--r-chip)",
                 background: ok ? "var(--grn1)" : "var(--red1)",
                 border: `1px solid ${ok ? "var(--grn2)" : "var(--red2)"}`,
                 color: ok ? "var(--grn4)" : "var(--red4)",

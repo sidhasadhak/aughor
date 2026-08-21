@@ -53,7 +53,7 @@ export function UpgradeModal() {
             </svg>
           </div>
           <div>
-            <DialogTitle style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>
+            <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>
               Unlock {info.feature}
             </DialogTitle>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
