@@ -29,6 +29,11 @@ export interface FormCtx {
   yTitle?: string | null;
   showLabels: boolean;
   base: Record<string, unknown>;
+  /** Sanitised exhibit — the forms that can honour it read it from here. */
+  exhibit?: {
+    label_points?: boolean | null;
+    quadrant?: { x?: number | null; y?: number | null } | null;
+  } | null;
 }
 
 export interface FormResult {
@@ -64,7 +69,7 @@ const LAT = /(^|_)(lat|latitude)$/i;
 const LON = /(^|_)(lon|lng|long|longitude)$/i;
 
 export function resolveExtendedForm(type: string, c: FormCtx): FormResult | null {
-  const { columns, rows, data, numCols, catCols, dateCol, measure, base } = c;
+  const { columns, rows, data, numCols, catCols, dateCol, measure, base, exhibit: ex } = c;
   const yT = title(c.yTitle, measure);
 
   switch (type) {
@@ -77,8 +82,32 @@ export function resolveExtendedForm(type: string, c: FormCtx): FormResult | null
         y: { field: y, type: "quantitative", axis: valueAxis(title(c.yTitle, y), c.format) },
       };
       if (catCols.length) enc.color = { field: catCols[0], type: "nominal", sort: null };
+
+      // `label_points` puts the entity's name beside its dot — outlier IDENTITY, which is
+      // the whole reason a scatter is drawn. `quadrant` adds the mean/median dividers that
+      // turn a cloud into four readable regions. Both are exhibit semantics, and without
+      // them a "rich" scatter was byte-identical to a plain one.
+      const label = c.columns.find((n) => n !== x && n !== y && !c.numCols.includes(n));
+      const layers: Record<string, unknown>[] = [{ mark: { type: "point", tooltip: true } }];
+      if (ex?.label_points && label) {
+        layers.push({
+          mark: { type: "text", align: "left", dx: 6, dy: -4, fontSize: 10 },
+          encoding: { text: { field: label, type: "nominal" } },
+        });
+      }
+      const q = ex?.quadrant;
+      if (q && Number.isFinite(q.x)) {
+        layers.push({ data: { values: [{ __q: q.x }] }, mark: { type: "rule", strokeDash: [4, 4] },
+                      encoding: { x: { field: "__q", type: "quantitative" } } });
+      }
+      if (q && Number.isFinite(q.y)) {
+        layers.push({ data: { values: [{ __q: q.y }] }, mark: { type: "rule", strokeDash: [4, 4] },
+                      encoding: { y: { field: "__q", type: "quantitative" } } });
+      }
       return { resolved: "scatter", defaultH: 340, xCategories: 0,
-               spec: { ...base, mark: { type: "point", tooltip: true }, encoding: enc } };
+               spec: layers.length > 1
+                 ? { ...base, layer: layers, encoding: enc }
+                 : { ...base, ...layers[0], encoding: enc } };
     }
 
     // ── two dimensions and a magnitude ─────────────────────────────────────
@@ -148,7 +177,35 @@ export function resolveExtendedForm(type: string, c: FormCtx): FormResult | null
       // `c.band` already holds the first category — and the form then refused itself.
       const bandField = dateCol ?? catCols[0];
       const series = catCols.find((x) => x !== bandField);
-      if (!bandField || !series) return null;
+      if (!bandField) return null;
+
+      /**
+       * No second dimension, but two or more measures: the MEASURES are the series.
+       * `region × revenue × profit` has one category and nothing to group by, so a fold
+       * turns the measure names into a series column — which is what a reader means by
+       * "compare revenue and profit per region", and what the retired combo form drew with
+       * a second y-axis. One scale, no second axis.
+       */
+      if (!series) {
+        if (numCols.length < 2) return null;
+        return {
+          resolved: grouped ? "grouped-bar" : "stacked-bar", defaultH: 320,
+          xCategories: new Set(rows.map((r) => r[columns.indexOf(bandField)])).size,
+          spec: {
+            ...base,
+            transform: [{ fold: numCols, as: ["__measure", "__value"] }],
+            mark: { type: "bar", tooltip: true },
+            encoding: {
+              x: { field: bandField, type: dateCol === bandField ? "temporal" : "nominal",
+                   axis: bandAxis(title(c.xTitle, bandField)) },
+              y: { field: "__value", type: "quantitative", stack: grouped ? null : "zero",
+                   axis: valueAxis(title(c.yTitle, "value"), c.format) },
+              color: { field: "__measure", type: "nominal", sort: null },
+              ...(grouped ? { xOffset: { field: "__measure", sort: null } } : {}),
+            },
+          },
+        };
+      }
       const enc: Record<string, unknown> = {
         x: { field: bandField, type: dateCol === bandField ? "temporal" : "nominal",
              axis: bandAxis(title(c.xTitle, bandField)) },

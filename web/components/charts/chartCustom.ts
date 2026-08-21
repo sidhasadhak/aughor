@@ -8,7 +8,7 @@
 
 export interface ChartCustom {
   format?: string;        // d3 number format for the quantitative axis (e.g. ",.0f", "$,.2f", "~s")
-  colorScheme?: string;   // categorical palette name (e.g. "tableau10", "set2")
+  colorScheme?: string;   // categorical palette name (a named scheme, e.g. "set2")
   xTitle?: string;
   yTitle?: string;
   legend?: "right" | "bottom" | "top" | "left" | "none";

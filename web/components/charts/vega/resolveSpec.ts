@@ -15,7 +15,8 @@
  */
 
 import { cleanLabel } from "@/lib/format";
-import { classifyColumns, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
+import { currencySymbol, effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
+import { classifyColumns, isIdLike, isUngraphableGrid, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
@@ -125,6 +126,8 @@ export interface ResolveSpecArgs {
   transform?: TransformSpec | null;
   /** The backend's exhibit spec — chart SEMANTICS, never data. */
   exhibit?: ExhibitSpec | Record<string, unknown> | null;
+  /** Authoritative per-column display unit, e.g. {"leakage_rate": "percent"}. */
+  columnUnits?: Record<string, string> | null;
 }
 
 export interface ResolvedSpec {
@@ -180,12 +183,33 @@ function valueFormat(format?: string | null): string {
 }
 
 /** Value axis: no domain line, horizontal grid. Band axis: domain line, no grid. */
-function valueAxis(title: string | null | undefined, format?: string | null) {
+/** d3's `~s` renders 6.6k and 1.2G; every other number in this product reads 6.6K and 1.2B.
+ *  The axis formats through an expression so the two surfaces agree. */
+/**
+ * The app's own compact number, as a Vega expression: 6642 → "6.6K", 26766377 → "26.8M".
+ * d3's `~s` renders "6.642k" and "26.766377M", which is neither what lib/format produces nor
+ * what any other number on the page looks like — a print chart reading 6.642K beside a card
+ * reading 6.6K is the kind of difference a reader notices and cannot explain.
+ */
+const COMPACT = (v: string) =>
+  `(abs(${v}) >= 1e9 ? format(${v}/1e9,'.1f')+'B'` +
+  ` : abs(${v}) >= 1e6 ? format(${v}/1e6,'.1f')+'M'` +
+  ` : abs(${v}) >= 1e3 ? format(${v}/1e3,'.1f')+'K'` +
+  ` : format(${v},''))`;
+const SI = (inner: string) => `replace(replace(${inner}, 'k', 'K'), 'G', 'B')`;
+// A caller-supplied format wins; the default SI goes through the app's compact form.
+const SI_LABEL = (f: string, prefix: string) =>
+  `'${prefix}' + ` + (f === "~s" ? COMPACT("datum.value") : SI(`format(datum.value, '${f}')`));
+const SI_TEXT = (field: string, f: string, prefix: string) =>
+  `'${prefix}' + ` + (f === "~s" ? COMPACT(`datum['${field}']`) : SI(`format(datum['${field}'], '${f}')`));
+
+function valueAxis(title: string | null | undefined, format?: string | null, prefix = "") {
   return {
     // An axis says what it measures. The reference labels both ("Values", "Date"); an
     // unlabelled axis makes the reader infer the measure from the title or the legend.
     // A caller-supplied title always wins; null means "use the field name".
     title: title ?? null, format: valueFormat(format),
+    labelExpr: SI_LABEL(valueFormat(format), prefix),
     grid: true, domain: false,
     // tickCount belongs HERE, not in the config's axisY: on a horizontal bar the value
     // axis is X, so a count set per-orientation silently stops applying and the axis
@@ -211,7 +235,7 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
-          transform, exhibit: exhibitRaw } = args;
+          transform, exhibit: exhibitRaw, columnUnits } = args;
   // Fail-open on a malformed spec: a bad exhibit costs its semantics, never the chart —
   // the same contract the ECharts resolver held.
   const exhibit = sanitizeExhibit(exhibitRaw as Parameters<typeof sanitizeExhibit>[0]);
@@ -220,10 +244,36 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const hint = String(chartType ?? "auto").toLowerCase();
   if (hint === "none") return null;
 
+  /**
+   * The chart-grammar gate, applied to EVERY hint and not only to `auto`.
+   *
+   * A summary-statistics profile (min/max/mean/std/p1/p99), a grid of four or more measures,
+   * or a category column with one constant value has no honest chart in it — grouped
+   * micro-bars over min and std say nothing. `inferChartType` consults this gate, so the
+   * auto path was covered; an explicit "bar" hint walked straight past it and drew the
+   * meaningless chart anyway.
+   */
+  if (isUngraphableGrid(columns, rows)) return null;
+
   const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
   const dateCol = dateIdxs.length ? columns[dateIdxs[0]] : undefined;
-  const numCols = numericIdxs.map((i) => columns[i]);
-  const catCols = catIdxs.map((i) => columns[i]);
+  /**
+   * An ID is numeric and is never the answer. `franchiseID` sorts ahead of `revenue` in
+   * column order, so taking the first numeric column plotted the identifier and labelled the
+   * axis "franchiseID" — a chart of row numbers. Identifier-shaped names are dropped from
+   * the measure candidates; if that leaves nothing, the full set stands rather than refusing.
+   */
+  const _allNum = numericIdxs.map((i) => columns[i]);
+  const _realNum = _allNum.filter((c) => !isIdLike(c) && !/(^|_)(id)$/i.test(c));
+  const numCols = _realNum.length ? _realNum : _allNum;
+  /**
+   * An identifier can be categorical too. `franchiseID` holds 1 and 2, which classifies as a
+   * dimension, and taking the first one labelled the axis "1, 2" while `franchise_name` sat
+   * unused beside it — a ranking of row numbers. Identifier-shaped names lose to real ones.
+   */
+  const _allCat = catIdxs.map((i) => columns[i]);
+  const _realCat = _allCat.filter((c) => !isIdLike(c) && !/(^|_)(id)$/i.test(c));
+  const catCols = _realCat.length ? _realCat : _allCat;
   if (!numCols.length) return null;
 
   // `auto` defers to the ONE shared inference — the same function the ECharts path calls, and
@@ -234,6 +284,10 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
 
   let type: string = hint;
   if (inferred) type = inferred.type as ChartType;
+  // `combo` is a dual-axis form §6 bans and the exhibit grammar retired, but inference can
+  // still name it on a two-measure result. It renders as a grouped bar: same two measures,
+  // one scale, no second axis to mislead with.
+  if (type === "combo") type = "grouped-bar";
   // HINT_TO_TYPE collapses `pareto` to `bar` — true of the ECharts path, where a pareto WAS
   // a bar with a second axis bolted on. Here it is its own form, so it must survive the map.
   else if (HINT_TO_TYPE[hint] && hint !== "bar_horizontal" && !EXTENDED_TYPES.has(hint)) type = HINT_TO_TYPE[hint];
@@ -265,7 +319,60 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
                              "multi_line", "area", "counter", "pie"]);
   if (!SUPPORTED.has(type) && !EXTENDED_TYPES.has(type)) return null;
 
+  /**
+   * Percent units, scaled ONCE from the column's own values.
+   *
+   * A "percent" column arrives either as a fraction (0.61) or already scaled (2.6 meaning
+   * 2.6%), and the two cannot be told apart per-tick — testing each value is what produced
+   * the broken axis reading "0.0% 50.0% 100.0% 1.5%". The column decides: if nothing exceeds
+   * 1.5 the values are fractions and Vega-Lite's own `%` format (which multiplies by 100)
+   * applies; otherwise they are already scaled and are divided back down first, so 2.6 stays
+   * 2.6% and never becomes 260%.
+   */
+  /**
+   * What a money axis is prefixed with. A per-column `currency:CHF` hint is the SOURCE
+   * currency and is authoritative — the warehouse said so. Absent that, a money-named
+   * column carries the connection's effective symbol, so a PDF axis cannot read a bare
+   * "34.7M" while the app beside it reads "CHF 34.7M".
+   */
+  const moneyPrefix = (col: string): string => {
+    const unit = String(columnUnits?.[col] ?? "");
+    if (unit.toLowerCase().startsWith("currency:")) {
+      const code = unit.slice("currency:".length).trim();
+      return code ? `${currencySymbol(code) || code} ` : "";
+    }
+    return isMoneyColumn(col) ? effectiveCurrencySymbol() : "";
+  };
+
+  const measureIsPercent = (col: string): boolean =>
+    String(columnUnits?.[col] ?? "").toLowerCase() === "percent";
+  const percentAlreadyScaled = (col: string): boolean => {
+    const i = columns.indexOf(col);
+    if (i < 0) return false;
+    const vals = rows.map((r) => Number(r[i])).filter((v) => Number.isFinite(v));
+    return vals.some((v) => Math.abs(v) > 1.5);
+  };
+
   const data = { values: toRecords(columns, rows) };
+
+  /**
+   * Ranking order is applied to the DATA, not to the encoding.
+   *
+   * `sort: {field, order}` on a band encoding is silently discarded the moment a spec has
+   * more than one layer — value labels, a reference line — because the layers union the
+   * scale's domain and Vega-Lite will not union a sort. It warns and carries on, so
+   * `exhibit.order: "asc"` produced a chart identical to the default. Sorting the rows
+   * cannot be dropped by anything downstream.
+   */
+  function orderedValues(measureCol: string, asc: boolean): Record<string, unknown>[] {
+    const vals = [...data.values];
+    vals.sort((a, b) => {
+      const av = Number(a[measureCol]); const bv = Number(b[measureCol]);
+      if (!Number.isFinite(av) || !Number.isFinite(bv)) return 0;
+      return asc ? av - bv : bv - av;
+    });
+    return vals;
+  }
 
   // A transform replaces the plotted measure with the column it derives, and rides on the
   // spec so it persists with the chart's intent instead of being a mutation applied to the
@@ -282,7 +389,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   if (EXTENDED_TYPES.has(type)) {
     const ext = resolveExtendedForm(type, {
       columns, rows, data, numCols, catCols, dateCol, measure, band,
-      format, xTitle, yTitle, showLabels, base,
+      format, xTitle, yTitle, showLabels, base, exhibit,
     });
     // A form that cannot be built from THIS data (a scatter with one measure, a point map
     // with no coordinates) refuses rather than approximating — the same contract as the
@@ -383,14 +490,19 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   }
 
   // ---- bar (vertical and horizontal) ----------------------------------------------------
-  const valueEnc = { field: measure, type: "quantitative",
-                     axis: valueAxis(axisTitle(horizontal ? xTitle : yTitle, measure), format) };
+  const pct = measureIsPercent(measure);
+  const pctScaled = pct && percentAlreadyScaled(measure);
+  const valueField = pctScaled ? `${measure}__frac` : measure;
+  const valueEnc = { field: valueField, type: "quantitative",
+                     axis: valueAxis(axisTitle(horizontal ? xTitle : yTitle, measure),
+                                     pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
     field: band,
     type: (dateCol === band ? "temporal" : "nominal") as string,
     axis: bandAxis(axisTitle(horizontal ? yTitle : xTitle, band)),
     // Lead with the largest — the ranking the question implies. Ties break stably.
-    sort: horizontal ? { field: measure, order: "descending" } : null,
+    // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
+    sort: null,
   };
   // opacity belongs in the SHARED encoding, not on a layer: the object below is spread over
   // the spec AFTER any layer's own encoding, so a selection declared on the layer was being
@@ -452,11 +564,17 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const layers: Record<string, unknown>[] = [
     { mark: { type: "bar", tooltip: true }, params: [SELECT_PARAM(band)] },
   ];
+  const pctTransform = pctScaled
+    ? [{ calculate: `datum['${measure}'] / 100`, as: valueField }]
+    : [];
   if (showLabels) {
     layers.push({
       mark: { type: "text", align: horizontal ? "left" : "center", baseline: "middle",
               dx: horizontal ? 5 : 0, dy: horizontal ? 0 : -8 },
-      encoding: { text: { field: measure, type: "quantitative", format: valueFormat(format) } },
+      // A calculate rather than `format`, so the mark labels read in the same casing as the
+      // axis beside them instead of 6.6k next to 6.6K.
+      transform: [{ calculate: SI_TEXT(valueField, valueFormat(format), moneyPrefix(measure)), as: "__valueLabel" }],
+      encoding: { text: { field: "__valueLabel", type: "nominal" } },
     });
   }
 
@@ -470,7 +588,15 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       // A reference line is its own layer with its own data, so any ref line forces the
       // layered form even where a lone bar would not have needed one.
       const all = [...layers, ...refLineLayers(horizontal)];
-      return all.length > 1 ? { ...base, layer: all, encoding } : { ...base, ...all[0], encoding };
+      const withTf = pctTransform.length ? { transform: pctTransform } : {};
+      // `order: "asc"` means the query asked for the BOTTOM of the ranking, so lead with the
+      // row it led with instead of burying it at the far end.
+      const sorted = horizontal
+        ? { data: { values: orderedValues(measure, exhibit?.order === "asc") } }
+        : {};
+      return all.length > 1
+        ? { ...base, ...sorted, ...withTf, layer: all, encoding }
+        : { ...base, ...sorted, ...withTf, ...all[0], encoding };
     })(),
   };
 }

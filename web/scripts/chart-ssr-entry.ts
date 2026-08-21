@@ -72,6 +72,7 @@ async function renderOne(req: ChartRequest): Promise<string | null> {
   const resolved = resolveVegaSpec({
     columns, rows, chartType,
     exhibit: req.exhibit ?? null,
+    columnUnits: req.column_units ?? null,
     showLabels: req.labels !== false,
     title: req.title ?? null,
   });

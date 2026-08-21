@@ -1023,7 +1023,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
 
-            {/* Suggestions — Databricks Genie form: a plain list, hairline-separated, one
+            {/* Suggestions — the reference form: a plain list, hairline-separated, one
                 colour, left aligned. The cards this replaced carried a two-column grid, a
                 border per item, an icon per item and three colour treatments (blue for the
                 overview starter, green for investigate, grey otherwise), which made a list
