@@ -153,3 +153,47 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
     text: { font: t.font, fontSize: 11, fontWeight: 500, fill: t.t1 },
   };
 }
+
+/**
+ * The same tokens, in RAW VEGA's config shape.
+ *
+ * Tier 3 hands Vega a spec directly, skipping the Vega-Lite compiler — which is also the
+ * thing that was applying `buildVegaConfig`. Without this, an ejected chart would silently
+ * fall back to Vega's own blue-and-grey defaults and stop following the token layer, which
+ * is exactly the failure the June hex-walk represented. The two configs are NOT the same
+ * object: Vega-Lite names its mark families after encodings (`bar`, `point`), Vega names
+ * them after primitives (`rect`, `symbol`), so the mapping is written out rather than
+ * spread across.
+ */
+export function buildVegaRuntimeConfig(t: VegaTokens): Record<string, unknown> {
+  const label = { font: t.font, fontSize: 11, fill: t.tick };
+  return {
+    background: "transparent",
+    range: { category: t.palette, ordinal: t.palette },
+    axis: {
+      labelFont: t.font, labelFontSize: 11, labelColor: t.tick, labelPadding: 6,
+      titleFont: t.font, titleFontSize: 11, titleFontWeight: 500, titleColor: t.t3,
+      domainColor: t.axis, domainWidth: 1, tickColor: t.axis, ticks: false,
+      grid: true, gridColor: t.grid, gridWidth: 1,
+    },
+    legend: {
+      labelFont: t.font, labelFontSize: 11, labelColor: t.t1,
+      titleFont: t.font, titleFontSize: 11, titleColor: t.t3,
+      symbolStrokeWidth: 0, orient: "top-right", direction: "vertical",
+    },
+    title: { font: t.font, fontSize: 13, fontWeight: 600, color: t.t1, anchor: "start" },
+    // Primitive marks, not encoding names — this is where the two config shapes diverge.
+    // `fill` is NOT optional here. A mark with no colour encoding — every bar in a funnel,
+    // every span in a gantt — falls back to Vega's own #4c78a8, which is a perfectly
+    // plausible blue and therefore invisible as a bug until you read the fill attribute.
+    // Same failure as tier 1's config.mark.color, one config shape over.
+    rect: { fill: t.palette[0], stroke: t.surface, strokeWidth: 1 },
+    symbol: { size: 70, fill: t.palette[0], stroke: t.surface, strokeWidth: 2 },
+    line: { stroke: t.palette[0], strokeWidth: 2, strokeCap: "round", strokeJoin: "round" },
+    arc: { fill: t.palette[0], stroke: t.surface, strokeWidth: 1 },
+    path: { fill: t.palette[0] },
+    rule: { stroke: t.t3 },
+    text: { ...label, fill: t.t1, fontWeight: 500 },
+  };
+}
+

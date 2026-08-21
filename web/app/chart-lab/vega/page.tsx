@@ -17,6 +17,7 @@ import { EChart } from "@/components/charts/echarts";
 import { resolveChartOption } from "@/components/charts/resolveOption";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { resolveTier3Spec } from "@/components/charts/vega/tier3";
 
 const MONTHS = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08"];
 const REGIONS = ["North", "South", "East", "West"];
@@ -48,6 +49,16 @@ const paymentMix = {
 
 const oneNumber = { columns: ["net_revenue"], rows: [[8_660_000]] as unknown[][] };
 
+// Tier 3 — the four Vega-Lite cannot express, hand-authored as raw Vega.
+const funnelData = { columns: ["stage", "count"],
+  rows: [["Visit", 10_000], ["Cart", 3_200], ["Checkout", 1_400], ["Paid", 900]] as unknown[][] };
+const ganttData = { columns: ["task", "start", "end"],
+  rows: [["Ingest", "2024-01-01", "2024-01-06"], ["Model", "2024-01-04", "2024-01-15"],
+         ["Review", "2024-01-14", "2024-01-20"], ["Ship", "2024-01-19", "2024-01-24"]] as unknown[][] };
+const sankeyData = { columns: ["source", "target", "value"],
+  rows: [["Organic", "Signup", 500], ["Paid", "Signup", 300], ["Organic", "Bounce", 200],
+         ["Referral", "Signup", 120], ["Paid", "Bounce", 80]] as unknown[][] };
+
 interface Case {
   hint: string;
   label: string;
@@ -65,6 +76,13 @@ const CASES: Case[] = [
   { hint: "counter", label: "counter", share: "3.1%", note: "A headline number: not a plot at all.", data: oneNumber },
   { hint: "bar", label: "bar", share: "2.6%", note: "Vertical magnitude by category.", data: byCategory },
   { hint: "pie", label: "pie", share: "0.6%", note: "Part-to-whole, five slices.", data: paymentMix },
+
+  // Tier 3. Share is 0% for all four — none has ever been persisted; they are ported so
+  // that a second chart engine does not have to stay alive to draw them.
+  { hint: "treemap", label: "treemap · tier 3", share: "0%", note: "Hierarchy layout — no Vega-Lite equivalent.", data: byCategory },
+  { hint: "funnel", label: "funnel · tier 3", share: "0%", note: "Centred bars — not an encoding of a scale.", data: funnelData },
+  { hint: "gantt", label: "gantt · tier 3", share: "0%", note: "Spans on a time axis.", data: ganttData },
+  { hint: "sankey", label: "sankey · tier 3", share: "0%", note: "Flow layout Vega has no transform for — computed in TS, emitted as data.", data: sankeyData },
 ];
 
 function Pane({ title, children }: { title: string; children: React.ReactNode }) {
@@ -83,9 +101,13 @@ function Comparison({ c, showLabels }: { c: Case; showLabels: boolean }) {
     () => resolveChartOption({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint, showLabels }),
     [c, showLabels],
   );
+  const tier3 = useMemo(
+    () => resolveTier3Spec({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint }),
+    [c],
+  );
   const vega = useMemo(
-    () => resolveVegaSpec({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint, showLabels }),
-    [c, showLabels],
+    () => tier3 ?? resolveVegaSpec({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint, showLabels }),
+    [tier3, c, showLabels],
   );
 
   const h = Math.max(echarts?.defaultH ?? 300, vega?.defaultH ?? 300);
@@ -103,8 +125,10 @@ function Comparison({ c, showLabels }: { c: Case; showLabels: boolean }) {
         <Pane title="ECharts — today">
           {echarts ? <EChart option={echarts.option} height={h} /> : <div className="aug-fs-ui" style={{ opacity: 0.6 }}>no chart</div>}
         </Pane>
-        <Pane title="Vega-Lite — tier 1">
-          {vega ? <VegaChart spec={vega.spec} height={h} onCompiled={setCompiled} /> : <div className="aug-fs-ui" style={{ opacity: 0.6 }}>no chart</div>}
+        <Pane title={vega?.tier === 3 ? "Vega — tier 3 (hand-authored)" : "Vega-Lite — tier 1"}>
+          {vega
+            ? <VegaChart spec={vega.spec} tier={vega.tier} height={h} onCompiled={setCompiled} />
+            : <div className="aug-fs-ui" style={{ opacity: 0.6 }}>no chart</div>}
         </Pane>
       </div>
 

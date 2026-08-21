@@ -22,6 +22,7 @@ import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { resolveTier3Spec } from "@/components/charts/vega/tier3";
 import { chartEngine, CHART_ENGINE_DEFAULT, CHART_ENGINE_EVENT, type ChartEngine } from "@/lib/chartEngine";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
 import { resolveChartOption, type ChartCustom } from "@/components/charts/resolveOption";
@@ -139,18 +140,23 @@ export function Chart({
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
   type Built =
     | { engine: "echarts"; option: EChartsOption; defaultH: number; xCategories: number }
-    | { engine: "vega"; spec: Record<string, unknown>; defaultH: number; xCategories: number };
+    | { engine: "vega"; spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
 
   const built = useMemo<Built | null>(() => {
     if (engine === "vega") {
       // Same intent, different target language.
+      // Tier 3 first: the four types Vega-Lite cannot express are hand-authored Vega, and
+      // tier 1 would only refuse them anyway.
+      const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
+      if (t3) return { engine: "vega", spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
+
       const v = resolveVegaSpec({ columns, rows, chartType, showLabels, format: custom?.format ?? null,
                                   xTitle: custom?.xTitle ?? null, yTitle: custom?.yTitle ?? null,
                                   orient: custom?.orient ?? null,
                                   transform: custom?.transform ?? null });
       // null here means "tier 1 does not draw this type" — fall through to ECharts, which
       // still draws every type. parity.test.ts pins that both engines agree about refusal.
-      if (v) return { engine: "vega", spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories };
+      if (v) return { engine: "vega", spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 };
     }
     const e = resolveChartOption({ columns, rows, chartType, chartConfig, custom, columnUnits, exhibit, showLabels });
     if (!e) return null;
@@ -202,7 +208,7 @@ export function Chart({
         return (
       <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
         {built.engine === "vega"
-          ? <VegaChart spec={built.spec} height={chartH} onSelect={onSelect} onReady={ready} />
+          ? <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
           : <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={ready} />}
       </div>
         );

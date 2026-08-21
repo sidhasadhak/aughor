@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { buildVegaConfig, readVegaTokens } from "@/components/charts/vega/config";
+import { buildVegaConfig, buildVegaRuntimeConfig, readVegaTokens } from "@/components/charts/vega/config";
 import type { ChartInstance, PngOptions } from "@/lib/chartExport";
 
 type VegaModules = {
@@ -35,8 +35,11 @@ function loadVega(): Promise<VegaModules> {
 }
 
 interface Props {
-  /** A Vega-Lite spec — tier 1 from resolveVegaSpec, or a hand-authored tier-2 spec. */
+  /** A Vega-Lite spec — tier 1 from resolveVegaSpec, or a hand-authored tier-2 spec.
+   *  When `tier` is 3 this is a RAW VEGA spec and skips the compiler entirely. */
   spec: Record<string, unknown>;
+  /** 1 or 2 → Vega-Lite (compiled here). 3 → raw Vega, rendered as written. */
+  tier?: 1 | 2 | 3;
   height?: number;
   className?: string;
   /** Called with the compiled Vega spec — the tier-3 starting point. */
@@ -47,7 +50,7 @@ interface Props {
   onReady?: (instance: ChartInstance) => void;
 }
 
-export function VegaChart({ spec, height = 300, className, onCompiled, onSelect, onReady }: Props) {
+export function VegaChart({ spec, tier = 1, height = 300, className, onCompiled, onSelect, onReady }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<{ finalize: () => void } | null>(null);
   const onCompiledRef = useRef(onCompiled);
@@ -76,7 +79,11 @@ export function VegaChart({ spec, height = 300, className, onCompiled, onSelect,
       .then(({ vega, vl, tooltip }) => {
         if (cancelled || !containerRef.current) return;
         const el = containerRef.current;
-        const config = buildVegaConfig(readVegaTokens(el));
+        const tokens = readVegaTokens(el);
+        // Tier 3 skips the Vega-Lite compiler, which is ALSO what applies the theme — so it
+        // needs the same tokens in Vega's own config shape, or an ejected chart quietly
+        // reverts to Vega's built-in blues and stops following the token layer.
+        const config = tier === 3 ? buildVegaRuntimeConfig(tokens) : buildVegaConfig(tokens);
 
         /**
          * Size is compiled INTO the spec rather than pushed into the view's signals.
@@ -97,11 +104,14 @@ export function VegaChart({ spec, height = 300, className, onCompiled, onSelect,
           if (w <= 0) return;
           try {
             const sized = { ...spec, width: w, height };
-            // vl.compile() IS the tier-3 eject: its output is a valid raw Vega spec.
-            const compiled = vl.compile(sized as unknown as Parameters<typeof vl.compile>[0], { config }).spec;
-            onCompiledRef.current?.(compiled);
+            // vl.compile() IS the tier-3 eject: its output is a valid raw Vega spec. A spec
+            // that is ALREADY tier 3 is parsed as written.
+            const runtime = tier === 3
+              ? vega.parse(sized as Parameters<typeof vega.parse>[0], config as Parameters<typeof vega.parse>[1])
+              : vega.parse(vl.compile(sized as unknown as Parameters<typeof vl.compile>[0], { config }).spec);
+            onCompiledRef.current?.(sized);
             viewRef.current?.finalize();
-            const view = new vega.View(vega.parse(compiled), { renderer: "svg", container: el, hover: true });
+            const view = new vega.View(runtime, { renderer: "svg", container: el, hover: true });
             view.tooltip(new tooltip.Handler().call);
             viewRef.current = view;
 
@@ -159,7 +169,7 @@ export function VegaChart({ spec, height = 300, className, onCompiled, onSelect,
       viewRef.current?.finalize();
       viewRef.current = null;
     };
-  }, [spec, height, themeTick]);
+  }, [spec, tier, height, themeTick]);
 
   if (error) {
     return (
