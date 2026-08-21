@@ -383,16 +383,18 @@ function CapabilitiesBlock({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
-      {/* Title */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: "var(--r2)",
-          background: canvas.is_legacy ? "var(--bg-3)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
-          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <Icon name="canvas" size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
-        </div>
+      {/* Title — the mark sits ABOVE the name rather than beside it (Genie's arrangement),
+          so the name starts at the same left edge as the description and the capabilities
+          below it, instead of being indented by the width of an icon. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/canvas-mark.svg"
+          alt=""
+          width={44}
+          height={44}
+          style={{ borderRadius: "var(--r2)", display: "block", flexShrink: 0 }}
+        />
         <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
       </div>
 

@@ -999,8 +999,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
       {isEmpty ? (
         /* ── Empty state ── */
-        <div className="flex-1 flex flex-col items-center justify-center py-10">
-          <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] flex flex-col gap-5">
+        /* Empty state. `justify-center` alone CLIPS: once the content is taller than the
+           pane there is nowhere for it to go and the top becomes unreachable. The scroller
+           owns the overflow and the child centres itself with `my-auto`, so a short screen
+           still sits centred and a long one scrolls. */
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10">
+          <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] my-auto flex flex-col gap-5">
 
             {capabilities}
 
@@ -1028,13 +1032,17 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               <p className="text-[11px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
               {loadingStarters ? (
                 <div className="flex flex-col">
-                  {Array.from({ length: 5 }).map((_, i) => (
+                  {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="h-10 animate-pulse" style={{ borderBottom: "1px solid var(--b1)" }} />
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-col">
-                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)].map((s) => {
+                  {/* Four at most. A wall of suggestions is a menu to read rather than a
+                      prompt to answer, and the composer sits directly above them. */}
+                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)]
+                    .slice(0, 4)
+                    .map((s) => {
                     const isOverview = s.text === OVERVIEW_STARTER.text;
                     return (
                       <button
