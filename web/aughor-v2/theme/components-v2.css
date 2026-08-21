@@ -46,10 +46,12 @@
 /* ── Data table ──────────────────────────────────────────────────────────────
    Type on the scale: 11px header (the legibility floor, uppercase + tracked),
    13px cell (base UI size). The half-pixel sizes that stood here were off the
-   scale in both directions. Cell PADDING is left alone deliberately — it sets
-   row height, which is a density decision rather than a typographic one. */
-.aug-dt thead th { font-size: 11px; letter-spacing: .08em; padding: 9px 16px; }
-.aug-dt tbody td { padding: 11px 16px; font-size: 13px; }
+   scale in both directions. Padding matches the reference too: 4/8 on the
+   header, 8 on the cell. Density is the point of a console table — more rows
+   on screen is what makes it feel like an instrument. The virtualized results
+   grid is untouched; it pins its own row height. */
+.aug-dt thead th { font-size: 11px; letter-spacing: .08em; padding: 4px 8px; }
+.aug-dt tbody td { padding: 8px; font-size: 13px; }
 .aug-dt tbody tr { transition: background var(--dur-fast) var(--ease-out); }
 
 /* ── Topbar — flat, hairline-separated (no glass; chrome recedes) ─────────── */

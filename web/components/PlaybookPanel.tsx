@@ -149,7 +149,7 @@ export function PlaybookPanel() {
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className="text-[9.5px] px-2 py-0.5 rounded-[var(--r-pill)] font-mono transition-all"
+                className="text-[9.5px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-all"
                 style={{
                   background: statusFilter === s ? "var(--blue1)" : "transparent",
                   border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
@@ -293,7 +293,7 @@ function PlaybookDetail({
       {entry.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {entry.tags.map(t => (
-            <span key={t} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
+            <span key={t} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
               style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t4)" }}>
               {t}
             </span>

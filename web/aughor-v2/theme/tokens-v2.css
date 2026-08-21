@@ -91,7 +91,11 @@
   --r1: 3px;
   --r2: 4px;
   --r3: 6px;
-  --r-pill: 9999px;
+  --r-pill: 9999px;    /* only things that are ACTUALLY round: avatars, status dots */
+  --r-chip: var(--r1); /* tags, badges, filters, counts — rectangles, like every
+                          other small surface. The reference design reserves the
+                          full round for dots alone, and a pill among rectangles
+                          reads as a different system. */
   --r-composer: 8px;   /* the chat composer — a control, held to the control scale */
 
   /* Layout — app shell */

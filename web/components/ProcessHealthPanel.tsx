@@ -141,13 +141,13 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
           <p className="aug-fs-ui font-medium text-[var(--t1)]">Business Health</p>
           <div className="flex items-center gap-2">
             {redYellow.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
                 style={{ background: "var(--red1)", border: "0.5px solid var(--red2)", color: "var(--red5)" }}>
                 {redYellow.length} need attention
               </span>
             )}
             {redYellow.length === 0 && green.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
                 style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
                 all on target
               </span>

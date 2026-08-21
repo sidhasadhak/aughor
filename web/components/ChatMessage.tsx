@@ -821,7 +821,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                       {item.trigger_condition && (
                         <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
                       )}
-                      <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-pill)] border border-zinc-700 text-zinc-500">
+                      <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-chip)] border border-zinc-700 text-zinc-500">
                         {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}
                       </span>
                     </div>
@@ -952,7 +952,7 @@ function TurnActions({
           size="xs"
           onClick={onDrill}
           title="Re-run this question as a full deep analysis"
-          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
         >
           <span aria-hidden className="shrink-0 text-zinc-500">⌕</span>
           Run a deep analysis
@@ -965,7 +965,7 @@ function TurnActions({
           onClick={doPin}
           disabled={pin === "pinning"}
           title={pinMsg || "Pin this result to the dashboard (re-run through the guard battery first)"}
-          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
         >
           <span aria-hidden className="shrink-0 text-zinc-500">📌</span>
           {pin === "pinning" ? "Pinning…" : pin === "error" ? "Retry pin" : "Pin to dashboard"}
@@ -1701,7 +1701,7 @@ export function ChatMessage({
                   variant="ghost"
                   size="xs"
                   onClick={() => onFollowUp?.(q)}
-                  className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
+                  className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
                 >
                   <span className="text-zinc-500 shrink-0">
                     <ArrowRightIcon label="" size="small" />

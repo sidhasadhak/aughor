@@ -115,7 +115,7 @@ export function Workspace<L extends string>({
                 {(badges?.[l.id] ?? 0) > 0 && (
                   <span style={{
                     fontSize: 11, fontWeight: 600, lineHeight: 1,
-                    padding: "2px 5px", borderRadius: "var(--r-pill)",
+                    padding: "2px 5px", borderRadius: "var(--r-chip)",
                     background: "var(--amb1)", border: "1px solid var(--amb2)",
                     color: "var(--amb5)", fontVariantNumeric: "tabular-nums",
                   }}>

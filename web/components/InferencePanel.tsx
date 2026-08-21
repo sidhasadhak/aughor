@@ -229,7 +229,7 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
               display: "inline-flex", alignItems: "center", gap: 4,
               fontSize: 10, fontFamily: "var(--font-mono)",
               background: "var(--bg-3)", border: "1px solid var(--b2)",
-              borderRadius: "var(--r-pill)", padding: "1px 4px 1px 8px",
+              borderRadius: "var(--r-chip)", padding: "1px 4px 1px 8px",
             }}>
               {m}
               <Button

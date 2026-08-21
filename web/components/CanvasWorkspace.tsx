@@ -427,7 +427,7 @@ function CapabilitiesBlock({
                 {tables.map(t => (
                   <span key={t} style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 9px", borderRadius: 999,
+                    padding: "3px 9px", borderRadius: "var(--r-chip)",
                     background: "var(--bg-2)", border: "1px solid var(--b1)",
                     fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
                   }}>

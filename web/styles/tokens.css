@@ -70,11 +70,26 @@
   --r2: 4px;   /* default: buttons, inputs, cards      */
   --r3: 6px;   /* large: panels, modals, callouts      */
   /* max is --r3 — never exceed 6px on rectangular surfaces */
-  --r-pill: 9999px;  /* the ONE sanctioned exception: pills, avatars, status dots
-                        (fully-rounded). Use rounded-[var(--r-pill)] — never the raw
-                        rounded-full — so the design-token lint gate stays green.
+  --r-pill: 9999px;  /* the ONE sanctioned exception: things that are actually round —
+                        avatars and status dots. Use rounded-[var(--r-pill)] — never the
+                        raw rounded-full — so the design-token lint gate stays green.
                         (Tailwind v4: the bracket must wrap var(); a bare [--x] emits
                         invalid CSS that the browser drops.) */
+  --r-chip: 9999px;  /* a TEXT-BEARING chip: tag, badge, filter, count. Split from
+                        --r-pill so the two can diverge: the active theme squares chips
+                        off while avatars and dots stay round. Base value matches
+                        --r-pill so removing the theme layer changes nothing. */
+  --r-composer: 22px;  /* the chat composer input */
+
+  /* ── Tokens the theme layer re-declares ───────────────────────────────────
+     These carry PRE-THEME values so `aughor-v2/theme/tokens-v2.css` can be
+     un-imported and still leave every var() resolving — the revert contract its
+     README states. Without them a revert leaves --scrim and --blue-solid
+     undefined, and every scrim and primary button loses its colour. */
+  --scrim: rgba(0, 0, 0, .65);
+  --blue-solid: var(--blue3);
+  --blue-solid-hover: var(--blue4);
+  --vio-solid: var(--vio3);
 
   /* ── Layout ── */
   --sidebar:  224px;

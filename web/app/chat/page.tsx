@@ -44,7 +44,7 @@ function ModelChip() {
       className="aug-fs-xs"
       style={{
         color: "var(--t3)", border: "1px solid var(--b1)",
-        borderRadius: "var(--r-pill)", padding: "2px 10px",
+        borderRadius: "var(--r-chip)", padding: "2px 10px",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         maxWidth: 260,
       }}

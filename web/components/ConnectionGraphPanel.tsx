@@ -364,7 +364,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                           {tags.map((tag) => (
                             <span key={`${tag.securable}:${tag.key}`}
                                   title={`${tag.securable} — set by ${tag.set_by || tag.source}`}
-                                  style={{ fontSize: 11, padding: "1px 7px", borderRadius: "var(--r-pill)",
+                                  style={{ fontSize: 11, padding: "1px 7px", borderRadius: "var(--r-chip)",
                                            background: "var(--bg-2)", border: "1px solid var(--b2)",
                                            color: "var(--t2)" }}>
                               {tag.key}: {tag.value}

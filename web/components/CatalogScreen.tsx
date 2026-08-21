@@ -1259,7 +1259,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
               return (
                 <Button variant="ghost" key={c.id} onClick={() => setView(c.id)}
                   className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: 999, cursor: "pointer",
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: "var(--r-chip)", cursor: "pointer",
                     background: on ? "rgba(45,114,210,0.13)" : "transparent",
                     color: on ? "var(--blue5)" : "var(--t2)",
                     border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}`, transition: "all .1s" }}

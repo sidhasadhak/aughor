@@ -52,7 +52,7 @@ function FilterChip({ label, icon, active, onClick }: { label: string; icon?: st
   return (
     <button onClick={onClick} style={{
       display: "inline-flex", alignItems: "center", gap: 6,
-      padding: "5px 13px", borderRadius: 999,
+      padding: "5px 13px", borderRadius: "var(--r-chip)",
       background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
       color: active ? "var(--blue4)" : "var(--t2)",
