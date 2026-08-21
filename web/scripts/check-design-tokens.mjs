@@ -45,8 +45,11 @@ const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const ROOTS = ["components", "app"];
 const EXTS = [".tsx", ".ts"];
 
-/** Chart specs are canvas text governed by the registered ECharts theme. */
-const OUT_OF_SCOPE = ["components/charts/echarts"];
+/** Chart specs are chart-engine text governed by the engine's own theme/config, not DOM
+ *  type on the page: ECharts renders them to canvas, Vega renders them inside its SVG.
+ *  Both are sized by the chart theme the engine registers, so the page type scale does
+ *  not apply. Anything in these dirs that IS page DOM must still wear an aug-fs-* class. */
+const OUT_OF_SCOPE = ["components/charts/echarts", "components/charts/vega"];
 
 /** The steps in styles/type.css. Keep the two in lockstep. */
 const SCALE = new Set([11, 12, 13, 15, 18, 22, 28]);
