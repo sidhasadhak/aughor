@@ -118,16 +118,25 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
     },
     // Category axis keeps its domain line and no grid; value axis drops the domain line and
     // carries the horizontal split lines. A horizontal bar mirrors this per-spec.
-    axisX: { domain: true, grid: false, labelAngle: 0 },
+    // GRID ON BOTH AXES, forming a faint lattice rather than horizontal rules alone.
+    // From the reference chart (Chrome traffic / bounce rate, 2026-08-21): with a dense
+    // time axis, verticals are what let you carry a value back to its date across a wide
+    // plot. Kept recessive enough that the marks still dominate.
+    axisX: { domain: true, grid: true, gridColor: t.grid, gridWidth: 1, labelAngle: 0 },
     axisY: { domain: false, grid: true, gridColor: t.grid, gridWidth: 1 },
     // Grid lines live behind the data. Vega-Lite's default puts a gridded axis in front.
     axisBand: { zindex: 0 },
     axisQuantitative: { gridColor: t.grid, gridWidth: 1, zindex: 0 },
 
+    // Top-right, stacked, one row per series — the reference's legend, and the reason it
+    // reads: each entry sits on its own line beside the plot instead of running along the
+    // top edge where it competes with the title. Vega-Lite draws the swatch in the shape of
+    // the mark it stands for, so a bar series gets a square and a line series gets a stroke;
+    // that is the part a circle-for-everything legend throws away.
     legend: {
-      orient: "top", direction: "horizontal", title: null,
+      orient: "top-right", direction: "vertical", title: null,
       labelFont: t.font, labelFontSize: 11, labelColor: t.t1,
-      symbolType: "circle", symbolSize: 64, symbolStrokeWidth: 0,
+      symbolSize: 64, symbolStrokeWidth: 0,
       offset: 4, padding: 0, rowPadding: 4, columnPadding: 14,
     },
 

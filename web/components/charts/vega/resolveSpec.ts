@@ -46,6 +46,28 @@ export interface ResolvedSpec {
   xCategories: number;
 }
 
+/**
+ * Click-to-select, declared once and shared by every plotted form.
+ *
+ * Clicking a mark keeps it at full strength and drops everything else to a wash; clicking
+ * the background clears it. Because the selection is a PARAMETER of the spec rather than an
+ * event handler, it costs no JavaScript, it survives being persisted, and — the part that
+ * matters on a combo — a click on a bar dims the matching point on the OTHER series too,
+ * since both layers read the same param. Wiring that by hand across layers is what makes
+ * cross-highlighting expensive in an imperative chart library.
+ *
+ * `empty: true` (the default) is deliberate: with nothing selected the param matches every
+ * mark, so an untouched chart renders at full opacity exactly as before.
+ */
+const SELECT_PARAM = (field: string) => ({
+  name: "picked",
+  select: { type: "point", on: "click", fields: [field], clear: "dblclick" },
+});
+
+/** Opacity, conditioned on the selection. No colour literal: the de-emphasis is a wash, not
+ *  a second hue, so nothing about the theme is baked into a spec that may be stored. */
+const SELECT_OPACITY = { condition: { param: "picked", value: 1 }, value: 0.28 };
+
 /** Rows-as-arrays → rows-as-objects, the shape Vega-Lite consumes directly. */
 function toRecords(columns: string[], rows: unknown[][]): Record<string, unknown>[] {
   return rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
@@ -60,6 +82,9 @@ function valueFormat(format?: string | null): string {
 /** Value axis: no domain line, horizontal grid. Band axis: domain line, no grid. */
 function valueAxis(title: string | null | undefined, format?: string | null) {
   return {
+    // An axis says what it measures. The reference labels both ("Values", "Date"); an
+    // unlabelled axis makes the reader infer the measure from the title or the legend.
+    // A caller-supplied title always wins; null means "use the field name".
     title: title ?? null, format: valueFormat(format),
     grid: true, domain: false,
     // tickCount belongs HERE, not in the config's axisY: on a horizontal bar the value
@@ -72,7 +97,12 @@ function valueAxis(title: string | null | undefined, format?: string | null) {
   };
 }
 function bandAxis(title: string | null | undefined) {
-  return { title: title ?? null, grid: false, domain: true, zindex: 0 };
+  return { title: title ?? null, grid: true, domain: true, zindex: 0 };
+}
+
+/** Humanised field name for an axis or legend title, via the app's one labeller. */
+function axisTitle(explicit: string | null | undefined, field: string): string {
+  return explicit && explicit.trim() ? explicit : cleanLabel(field);
 }
 
 /**
@@ -189,9 +219,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
         type: xIsDate ? "temporal" : "ordinal",
         // A month label without its year is ambiguous the moment a series crosses a year
         // boundary. Vega-Lite's temporal default drops the year; ECharts keeps it.
-        axis: { ...bandAxis(xTitle ?? null), ...(xIsDate ? { format: "%b %Y" } : {}) },
+        axis: { ...bandAxis(axisTitle(xTitle, x)), ...(xIsDate ? { format: "%b %Y" } : {}) },
       },
-      y: { field: measure, type: "quantitative", axis: valueAxis(yTitle, format) },
+      y: { field: measure, type: "quantitative", axis: valueAxis(axisTitle(yTitle, measure), format) },
     };
     // `sort: null` keeps the series in DATA order. Vega-Lite sorts a nominal domain
     // alphabetically by default, which hands the same series a different hue than the
@@ -201,11 +231,14 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300, xCategories: 0,
       spec: {
         ...base,
+        params: [SELECT_PARAM(x)],
         // A line plus its points: the point layer is the hover target and the ≥8px marker
-        // the mark spec asks for, and it keeps a single-observation series visible.
+        // the mark spec asks for, and it keeps a single-observation series visible. Only the
+        // POINTS respond to a selection — dimming the line itself would break its continuity,
+        // which is the one thing a trend line exists to show.
         layer: [
           { mark: { type: "line" } },
-          { mark: { type: "point", tooltip: true } },
+          { mark: { type: "point", tooltip: true }, encoding: { opacity: SELECT_OPACITY } },
         ],
         encoding: enc,
       },
@@ -213,17 +246,21 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   }
 
   // ---- bar (vertical and horizontal) ----------------------------------------------------
-  const valueEnc = { field: measure, type: "quantitative", axis: valueAxis(horizontal ? xTitle : yTitle, format) };
+  const valueEnc = { field: measure, type: "quantitative",
+                     axis: valueAxis(axisTitle(horizontal ? xTitle : yTitle, measure), format) };
   const bandEnc = {
     field: band,
     type: (dateCol === band ? "temporal" : "nominal") as string,
-    axis: bandAxis(horizontal ? yTitle : xTitle),
+    axis: bandAxis(axisTitle(horizontal ? yTitle : xTitle, band)),
     // Lead with the largest — the ranking the question implies. Ties break stably.
     sort: horizontal ? { field: measure, order: "descending" } : null,
   };
+  // opacity belongs in the SHARED encoding, not on a layer: the object below is spread over
+  // the spec AFTER any layer's own encoding, so a selection declared on the layer was being
+  // silently overwritten — the param compiled, the click registered, and nothing dimmed.
   const encoding: Record<string, unknown> = horizontal
-    ? { x: valueEnc, y: bandEnc }
-    : { x: bandEnc, y: valueEnc };
+    ? { x: valueEnc, y: bandEnc, opacity: SELECT_OPACITY }
+    : { x: bandEnc, y: valueEnc, opacity: SELECT_OPACITY };
 
   const layers: Record<string, unknown>[] = [{ mark: { type: "bar", tooltip: true } }];
   if (showLabels) {
@@ -240,6 +277,11 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     xCategories: horizontal ? 0 : new Set(rows.map((r) => r[columns.indexOf(band)])).size,
     // A horizontal bar needs room per category, not a fixed canvas.
     defaultH: horizontal ? Math.max(180, Math.min(560, rows.length * 30 + 60)) : 300,
-    spec: { ...base, ...(layers.length > 1 ? { layer: layers } : layers[0]), encoding },
+    spec: {
+      ...base,
+      params: [SELECT_PARAM(band)],
+      ...(layers.length > 1 ? { layer: layers } : layers[0]),
+      encoding,
+    },
   };
 }
