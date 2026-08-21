@@ -26,7 +26,7 @@ const TRASH_ICON: IconName = "trash";
 const DB_ICON: IconName = "db";
 const PERSON_ICON: IconName = "user";
 const GRID_ICON: IconName = "builder";
-const LIST_ICON: IconName = "catalog";
+const LIST_ICON: IconName = "list";
 const CLOCK_ICON: IconName = "clock";
 const LAYERS_ICON: IconName = "layers";
 

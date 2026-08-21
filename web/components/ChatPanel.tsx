@@ -107,7 +107,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             background: "var(--blue1)", border: "1px solid var(--blue2)",
             fontSize: 11, color: "var(--blue5)", maxWidth: 320,
           }}>
-            <Icon name="link" size={11} className="shrink-0" />
+            <Icon name="attach" size={11} className="shrink-0" />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name}</span>
             <Button variant="ghost" size="icon-xs" onClick={() => onAttach?.(null)} title="Remove attachment"
               className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
@@ -246,7 +246,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
             onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
           >
-            <Icon name="link" size={15} label="Attach a file" />
+            <Icon name="attach" size={15} label="Attach a file" />
           </button>
 
           {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):

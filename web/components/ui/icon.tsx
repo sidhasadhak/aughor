@@ -43,6 +43,7 @@ import {
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
   IconBulb, IconFlask, IconScale, IconZoomIn,
   IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
+  IconList, IconPaperclip,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
 
@@ -125,7 +126,9 @@ const ICONS = {
   copy: IconCopy,
   download: IconDownload,
   external: IconExternalLink,
-  link: IconLink,
+  link: IconLink,        // a relationship between two things — a join, a hyperlink
+  attach: IconPaperclip, // a file carried alongside a message — NOT the same idea
+  list: IconList,
   eye: IconEye,
   minus: IconMinus,
   sliders: IconAdjustmentsHorizontal,

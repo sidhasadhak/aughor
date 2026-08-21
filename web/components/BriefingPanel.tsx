@@ -514,7 +514,7 @@ function GenerateBriefButton({
         </>
       ) : (
         <>
-          <Icon name="star" size={12} />
+          <Icon name="spark" size={12} />
           {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
         </>
       )}
@@ -2132,7 +2132,7 @@ function BriefingEmpty({
             </>
           ) : (
             <>
-              <Icon name="star" size={12} />
+              <Icon name="spark" size={12} />
               {cta.label}
             </>
           )}
