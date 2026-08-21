@@ -11,7 +11,7 @@ progressively as they complete.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 from aughor.agent.state import (
     AgentState,
@@ -65,13 +65,26 @@ _OPERATIONAL_DIMENSION_KEYWORDS: list[str] = [
 ]
 
 
-def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False) -> list[str]:
+def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False,
+                           pinned: Optional[Iterable[str]] = None) -> list[str]:
     """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other. When
     ``causal_first`` (an outcome / 'why is X high/low' scan) diagnostic dimensions
     (reason/condition/defect/…) float to the FRONT — for those questions the causal dimension is the
-    answer, not an afterthought, so it must survive the per-phase query cap."""
+    answer, not an afterthought, so it must survive the per-phase query cap.
+
+    ``pinned`` — dimensions the QUESTION named — outrank everything, because this
+    ranking is a heuristic about which cuts are usually interesting and the question is
+    not a guess. Live: "give me route wise number of flights" put `route_id` first in the
+    intake, and this sorter moved it to LAST (it matches none of the priority keywords)
+    where the per-phase cap dropped it. The report ranked market, origin, destination and
+    haul, and the narrator explained away the missing route breakdown.
+    """
+    _pin = {str(d).lower() for d in (pinned or ())}
+
     def _rank(dim: str) -> int:
         dl = dim.lower()
+        if dl in _pin:
+            return -2
         if causal_first and any(kw in dl for kw in _CAUSAL_DIMENSION_KEYWORDS):
             return -1
         for i, keywords in enumerate(_DIMENSION_PRIORITY_KEYWORDS):
@@ -5135,6 +5148,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             if _named:
                 intake.dimensions = _named + [d for d in (intake.dimensions or [])
                                               if d not in _named]
+                # Recorded, not just ordered: the scan re-sorts its dimensions by a
+                # priority heuristic that would otherwise sink this one to the bottom.
+                intake.named_dimensions = _named
         except Exception as _dim_exc:
             from aughor.kernel.errors import tolerate
             tolerate(_dim_exc, "question-named dimensions are best-effort; the model's "
@@ -6824,7 +6840,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # ranking isn't crowded out by the base dimensions under the phase's query cap.
     _augmented = bool(extra_dims or extra_directive)
     _dim_cap = 8 if _augmented else 6
-    prioritized = _prioritize_dimensions(dimensions, causal_first=_causal_drill)
+    prioritized = _prioritize_dimensions(dimensions, causal_first=_causal_drill,
+                                         pinned=intake_data.get("named_dimensions"))
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:_dim_cap]) if prioritized else "  (none identified)"
 
     # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)

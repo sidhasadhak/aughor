@@ -79,3 +79,53 @@ def test_the_word_and_the_column_meet_through_case_separators_and_suffix():
 def test_a_missing_schema_is_not_an_error():
     assert _question_named_dimensions("route wise flights", "", "t") == []
     assert _question_named_dimensions("", _AIRLINE, "t") == []
+
+
+# ── the pin has to survive the scan's own ranking ────────────────────────────
+# Putting the named dimension first in the intake was not enough. The cross-sectional
+# scan re-sorts by a priority heuristic — customer → channel → category → geo → other —
+# and `route_id` matches none of those keywords, so it sank to the bottom and the
+# per-phase cap dropped it. The report ranked market, origin, destination and haul, and
+# the narrator explained the missing route breakdown away as a data gap.
+
+_DIMS = ["main.flights.route_id", "main.flights.market", "main.flights.origin",
+         "main.flights.destination", "main.flights.haul"]
+
+
+def test_a_named_dimension_outranks_the_heuristic():
+    from aughor.agent.investigate import _prioritize_dimensions
+
+    got = _prioritize_dimensions(_DIMS, pinned=["main.flights.route_id"])
+
+    assert got[0] == "main.flights.route_id"
+
+
+def test_it_survives_a_cap_that_would_otherwise_cut_it():
+    """The cap is the mechanism that actually lost it — ordering only matters because
+    the list is then truncated."""
+    from aughor.agent.investigate import _prioritize_dimensions
+
+    top2 = _prioritize_dimensions(_DIMS, pinned=["main.flights.route_id"])[:2]
+
+    assert "main.flights.route_id" in top2
+
+
+def test_without_a_pin_the_heuristic_is_untouched():
+    """The ranking is right for a scan that has no stated cut to honour; the pin must
+    not become a general reordering."""
+    from aughor.agent.investigate import _prioritize_dimensions
+    assert _prioritize_dimensions(_DIMS) == _prioritize_dimensions(_DIMS, pinned=[])
+
+
+def test_a_causal_dimension_still_floats_on_a_why_scan():
+    """`causal_first` exists so the causal cut survives the same cap. A pin outranks it
+    — the question was explicit — but with no pin it must still lead."""
+    from aughor.agent.investigate import _prioritize_dimensions
+
+    dims = ["main.orders.region", "main.orders.return_reason"]
+    assert _prioritize_dimensions(dims, causal_first=True)[0] == "main.orders.return_reason"
+
+
+def test_the_spec_carries_the_named_dimensions_for_the_scan_to_read():
+    from aughor.agent.prompts_investigate import IntakeOutput
+    assert IntakeOutput.model_fields["named_dimensions"].default_factory() == []

@@ -28,7 +28,9 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
   model picks the drill-down dimensions and had simply dropped the one the question
   named; a breakdown the question states outright now leads them, matched against real
   schema columns (a table's own key is excluded, since grouping by it yields one row per
-  record). A request to see the data also keeps its descriptive framing when it routes
+  record), and it survives the scan's own priority ranking — that heuristic favours
+  customer/channel/category/geo columns, so `route_id` matched nothing, sank to last and
+  was cut by the per-phase cap while the narrator explained the gap away. A request to see the data also keeps its descriptive framing when it routes
   cross-sectionally, instead of being told to hunt for underperformance.
 - **A deep analysis shows the queries it ran.** Only the four phase tools built a
   phase, and the report draws its exhibits from phase findings — so a turn the analyst
