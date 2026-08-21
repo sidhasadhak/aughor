@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { getCatalogTree } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -27,23 +28,27 @@ const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphP
 const MemoryPanel      = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })), { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
-const ICONS: Record<string, string> = {
-  brief:   "M3 5h18M3 9h18M3 13h12M3 17h8",
-  node:    "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
-  kgraph:  "M6 5a2 2 0 100 4 2 2 0 000-4zm12 6a2 2 0 100 4 2 2 0 000-4zM6 16a2 2 0 100 4 2 2 0 000-4zM8 7l8 4M8 15l8-3",
-  layers:  "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
-  process: "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
-  spark:   "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  check:   "M9 12l2 2 4-4M12 3a9 9 0 100 18 9 9 0 000-18z",
-  memory:  "M12 3l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5",
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  brief: "brief",
+  node: "node",
+  kgraph: "kgraph",
+  layers: "layers",
+  process: "process",
+  spark: "spark",
+  check: "ok",
+  memory: "memory",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={ICONS[name]} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
   );
 }
 

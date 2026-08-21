@@ -29,6 +29,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { Icon } from "@/components/ui/icon";
 import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
 import {
@@ -70,6 +71,7 @@ export function SqlMode({
   onSavableChange,
   onSchedule,
   onShare,
+  toolbar,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -85,6 +87,9 @@ export function SqlMode({
   onSchedule?: (sql: string) => void;
   /** SE-4 I — copy a link that reopens this query. */
   onShare?: () => void;
+  /** Controls the WORKBENCH owns (connection, saved state, panel toggle) rendered
+   *  on the tab strip instead of in a bar of their own — see TabsBar's `trailing`. */
+  toolbar?: React.ReactNode;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -387,8 +392,8 @@ export function SqlMode({
 
         <div
           style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "6px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "5px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
           }}
         >
           {/* One control, two states. A separate always-visible Cancel would be dead
@@ -424,16 +429,15 @@ export function SqlMode({
             onClick={() => setSql(formatSql(sqlText, engine))}
             disabled={!sqlText.trim()}
           >
-            Format
+            <Icon name="sql" size={14} />
           </Button>
           <Button
             variant="ghost"
             size="xs"
-            className="aug-fs-ui"
             onClick={() => setShowHistory(s => !s)}
-            title="Recent queries run from this workbench"
+            title={showHistory ? "Hide recent queries" : "Recent queries run from this workbench"}
           >
-            {showHistory ? "Hide history" : "History"}
+            <Icon name="clock" size={14} />
           </Button>
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
@@ -441,6 +445,7 @@ export function SqlMode({
             </span>
           )}
           <div style={{ flex: 1, minWidth: 0 }} />
+          {toolbar}
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span

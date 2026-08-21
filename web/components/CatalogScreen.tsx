@@ -159,6 +159,7 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 // ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
 
 import { getApiBase } from "@/lib/config";
+import { Icon } from "@/components/ui/icon";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -443,10 +444,9 @@ function AboutSidebar({ title, rows }: {
 function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(v:string)=>void; placeholder?: string }) {
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-        style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none" }}>
-        <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
-      </svg>
+      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none", display: "inline-flex" }}>
+        <Icon name="search" size={11} />
+      </span>
       <input
         value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? "Filter…"}
@@ -1091,9 +1091,9 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                     </div>
                   </div>
                   <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{sc.tables.length}</span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "var(--t4)", justifySelf: "end" as const }}>
-                    <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
+                  <span style={{ color: "var(--t4)", justifySelf: "end" as const, display: "inline-flex" }}>
+                    <Icon name="chevr" size={12} />
+                  </span>
                 </div>
               );
             })}
@@ -1237,9 +1237,9 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
   if (q) items = items.filter(i => i.name.toLowerCase().includes(q) || i.path.toLowerCase().includes(q));
 
   const chips: { id: typeof view; label: string; icon: React.ReactNode }[] = [
-    { id: "suggested", label: "Suggested", icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 1.5a4.5 4.5 0 0 0-2.7 8.1c.4.3.7.8.7 1.4v.5h4v-.5c0-.6.3-1.1.7-1.4A4.5 4.5 0 0 0 8 1.5Z"/><path d="M6 14h4M6.5 15.5h3" strokeLinecap="round"/></svg> },
-    { id: "favorites", label: "Favorites", icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6 4.2 13.5l.7-4.2-3.1-3 4.3-.6z"/></svg> },
-    { id: "recents",   label: "Recents",   icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+    { id: "suggested", label: "Suggested", icon: <Icon name="idea" size={13} /> },
+    { id: "favorites", label: "Favorites", icon: <Icon name="star" size={13} /> },
+    { id: "recents",   label: "Recents",   icon: <Icon name="clock" size={13} /> },
   ];
 
   return (
@@ -1317,7 +1317,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
                   onMouseEnter={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
                   onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill={fav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6 4.2 13.5l.7-4.2-3.1-3 4.3-.6z"/></svg>
+                  <Icon name="star" size={13} className={fav ? "aug-icon-filled" : undefined} />
                 </Button>
               </div>
             </div>
@@ -1333,11 +1333,9 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
 function EmptyDetail() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "var(--t4)" }}>
-        <ellipse cx="24" cy="14" rx="18" ry="7" stroke="currentColor" strokeWidth="2" />
-        <path d="M6 14v20c0 3.9 8.1 7 18 7s18-3.1 18-7V14" stroke="currentColor" strokeWidth="2" fill="none" />
-        <path d="M6 24c0 3.9 8.1 7 18 7s18-3.1 18-7" stroke="currentColor" strokeWidth="2" opacity=".5" />
-      </svg>
+      <span style={{ color: "var(--t4)", display: "inline-flex" }}>
+        <Icon name="db" size={48} />
+      </span>
       <div style={{ textAlign: "center" }}>
         <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
         <p style={{ fontSize: 12, color: "var(--t4)", lineHeight: 1.6 }}>
@@ -1493,7 +1491,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
             >
-              <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
+              <Icon name="plus" size={11} />
               Add
             </Button>
           )}
@@ -1649,7 +1647,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--blue2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "var(--blue1)"}
           >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
+            <Icon name="plus" size={11} />
           </Button>
           <Button variant="ghost" onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
             className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
@@ -1657,19 +1655,15 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}
           >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 4.5A7 7 0 0 1 14 8" /><path d="M15 11.5A7 7 0 0 1 2 8" />
-              <polyline points="1 1 1 5 5 5" /><polyline points="15 15 15 11 11 11" />
-            </svg>
+            <Icon name="refresh" size={12} />
           </Button>
         </div>
 
         {/* Search */}
         <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, position: "relative" }}>
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-            style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none" }}>
-            <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
-          </svg>
+          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none", display: "inline-flex" }}>
+            <Icon name="search" size={11} />
+          </span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
             style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none" }} />
         </div>

@@ -17,12 +17,12 @@
  */
 
 import React, { useMemo, useRef, useState } from "react";
-import DownloadIcon from "@atlaskit/icon/core/download";
 import type { EChartsOption } from "echarts";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
 import { resolveChartOption, type ChartCustom } from "@/components/charts/resolveOption";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
+import { Icon } from "@/components/ui/icon";
 
 /** User chart styling applied as a generic post-pass over the built ECharts option —
  *  lets the Query Builder Customize tab override colours / number format / legend /
@@ -142,16 +142,14 @@ export function Chart({
             title={showLabels ? "Hide data labels" : "Show data labels"}
             className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 7V4h3" /><path d="M4 17v3h3" /><path d="M20 7V4h-3" /><path d="M20 17v3h-3" /><path d="M9 9h6v6H9z" />
-            </svg>
+            <Icon name="expand" size={14} />
           </button>
           <button
             onClick={handleDownloadPng}
             title="Download chart as PNG"
             className="w-6 h-6 flex items-center justify-center rounded bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
           >
-            <DownloadIcon label="Download chart as PNG" size="small" />
+            <Icon name="download" size={16} label="Download chart as PNG" />
           </button>
         </div>
       )}

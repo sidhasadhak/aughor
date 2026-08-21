@@ -75,6 +75,7 @@ import { GroundedNumber, withGroundedNumbers } from "@/components/brief/Grounded
 import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -513,10 +514,7 @@ function GenerateBriefButton({
         </>
       ) : (
         <>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
-          </svg>
+          <Icon name="spark" size={12} />
           {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
         </>
       )}
@@ -2101,10 +2099,7 @@ function BriefingEmpty({
             animation: "aug-spin var(--dur-breath) linear infinite",
           }} />
         ) : (
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-            stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 5h18M3 9h18M3 13h12M3 17h8" />
-          </svg>
+          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
         )}
       </div>
       <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
@@ -2137,9 +2132,7 @@ function BriefingEmpty({
             </>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
-              </svg>
+              <Icon name="spark" size={12} />
               {cta.label}
             </>
           )}

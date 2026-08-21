@@ -42,6 +42,7 @@ import { listSavedQueries, type Canvas, type Connection, type SavedQuery } from 
 import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 export type QueryMode = "visual" | "sql";
 
@@ -272,7 +273,6 @@ function WorkbenchInner({
   }, [connections, connId]);
 
   const controlStyle: React.CSSProperties = { width: "auto", cursor: "pointer", fontSize: 13 };
-  const controlLabel: React.CSSProperties = { fontSize: 13, color: "var(--t3)", flexShrink: 0 };
 
   // What a rail row DOES, per mode. The rail itself is one instance either way — only
   // the meaning of a click changes, which is the whole reason the actions are props.
@@ -290,115 +290,120 @@ function WorkbenchInner({
       onSelectColumn: (col: string) => insertAtCursor.current?.(col),
     };
 
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {/* mode toggle, then the controls BOTH modes share */}
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 12px", borderBottom: "1px solid var(--b1)", flexShrink: 0,
-        }}
-      >
-        {MODES.map(m => (
-          <Button
-            key={m.id}
-            variant={mode === m.id ? "secondary" : "ghost"}
-            size="xs"
-            className="aug-fs-ui"
-            title={m.hint}
-            onClick={() => chooseMode(m.id)}
-          >
-            {m.label}
-          </Button>
-        ))}
+  // ── The controls both modes share, built once ────────────────────────────────
+  // Versions moved into the overflow: it is a property of a SAVED query and is
+  // unreachable most of the time, so a permanent button for it was a permanently
+  // disabled button. "Hide catalog" became the panel glyph every console uses.
+  const sharedControls = (
+    <>
+      {MODES.map(m => (
+        <Button
+          key={m.id}
+          variant={mode === m.id ? "secondary" : "ghost"}
+          size="xs"
+          className="aug-fs-ui"
+          title={m.hint}
+          onClick={() => chooseMode(m.id)}
+        >
+          {m.label}
+        </Button>
+      ))}
 
-        <span style={{ width: 1, height: 16, background: "var(--b1)", margin: "0 2px" }} />
-        <label style={controlLabel}>Connection</label>
+      <span style={{ width: 1, height: 14, background: "var(--b1)", margin: "0 2px" }} />
+      <select
+        className="aug-input"
+        style={controlStyle}
+        value={connId}
+        onChange={e => setConnId(e.target.value)}
+        title="The warehouse this workbench queries, in both modes"
+      >
+        {!connId && <option value="">Select a connection…</option>}
+        {(connections ?? []).map(c => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+
+      {/* Schema stays SQL-only: it sets what completes without qualifying, and Visual
+          mode qualifies every name it generates, so the control would do nothing. */}
+      {mode === "sql" && schemas.length > 0 && (
         <select
           className="aug-input"
           style={controlStyle}
-          value={connId}
-          onChange={e => setConnId(e.target.value)}
-          title="The warehouse this workbench queries, in both modes"
+          value={defaultSchema}
+          onChange={e => setDefaultSchema(e.target.value)}
+          title="Tables in this schema complete and resolve without qualifying them"
         >
-          {!connId && <option value="">Select a connection…</option>}
-          {(connections ?? []).map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
+          <option value="">(all schemas)</option>
+          {schemas.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+      )}
 
-        {/* Schema stays SQL-only: it sets what completes without qualifying, and Visual
-            mode qualifies every name it generates, so the control would do nothing. */}
-        {mode === "sql" && schemas.length > 0 && (
-          <>
-            <label style={controlLabel}>Schema</label>
-            <select
-              className="aug-input"
-              style={controlStyle}
-              value={defaultSchema}
-              onChange={e => setDefaultSchema(e.target.value)}
-              title="Tables in this schema complete and resolve without qualifying them"
-            >
-              <option value="">(all — qualify names)</option>
-              {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </>
-        )}
+      <SavedQueryBar
+        connId={connId}
+        mode={mode}
+        binding={savedBindings[mode]}
+        savable={savable[mode]}
+        onLoaded={openSaved}
+        onActiveChange={setActiveSaved}
+      />
 
-        <div style={{ flex: 1 }} />
-
-        {/* One saved surface for both modes — the SQL editor could not save at all. */}
-        <SavedQueryBar
-          connId={connId}
-          mode={mode}
-          binding={savedBindings[mode]}
-          savable={savable[mode]}
-          onLoaded={openSaved}
-          onActiveChange={setActiveSaved}
-        />
-
-        {/* SE-4 J — the sync state, stated rather than implied. `sql-ahead` is a query
-            whose SQL is the source of truth (no builder spec); `linked` is one the
-            builder can still explain. Shown only for a SAVED query, because for an
-            unsaved draft there is nothing yet to be ahead OF. */}
-        {activeSaved && (
-          <span
-            className="aug-fs-ui"
-            title={isVisualQuery(activeSaved)
-              ? "Linked — the visual spec and this SQL describe the same query"
-              : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}
-            style={{
-              padding: "1px 6px", borderRadius: "var(--r2)",
-              border: "1px solid var(--b1)", color: "var(--t3)",
-            }}
-          >
-            {isVisualQuery(activeSaved) ? "linked" : "sql-ahead"}
-          </span>
-        )}
-
-        <Button
-          variant="ghost"
-          size="xs"
-          className="aug-fs-ui"
-          disabled={!activeSaved}
-          onClick={() => setShowVersions(v => !v)}
-          title={activeSaved
-            ? "Show this saved query's version history"
-            : "Save this query to start a version history"}
+      {/* The sync state, stated rather than implied — shown only for a SAVED query,
+          because an unsaved draft has nothing yet to be ahead OF. */}
+      {activeSaved && (
+        <span
+          className="aug-fs-xs"
+          title={isVisualQuery(activeSaved)
+            ? "Linked — the visual spec and this SQL describe the same query"
+            : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}
+          style={{
+            padding: "1px 6px", borderRadius: "var(--r-chip)",
+            border: "1px solid var(--b1)", color: "var(--t3)",
+          }}
         >
-          {showVersions ? "Hide versions" : "Versions"}
-        </Button>
+          {isVisualQuery(activeSaved) ? "linked" : "sql-ahead"}
+        </span>
+      )}
 
-        <Button
-          variant="ghost"
-          size="xs"
-          className="aug-fs-ui"
-          onClick={() => setShowCatalog(s => !s)}
-          title="Show or hide the catalog"
+      <Button
+        variant="ghost"
+        size="xs"
+        disabled={!activeSaved}
+        onClick={() => setShowVersions(v => !v)}
+        title={activeSaved
+          ? "Version history for this saved query"
+          : "Save this query to start a version history"}
+      >
+        <Icon name="history" size={14} />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => setShowCatalog(s => !s)}
+        title={showCatalog ? "Hide the catalog" : "Show the catalog"}
+      >
+        <Icon name="panel" size={14} />
+      </Button>
+    </>
+  );
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {/* The controls both modes share. In SQL mode they ride the TAB STRIP (see
+          SqlMode's `toolbar`) rather than standing in a bar of their own: the editor
+          had four stacked horizontal bars above the code and a reference console has
+          two, and three of ours each carried a handful of controls. Visual mode has no
+          tab strip to ride on, so it still gets the bar. */}
+      {mode === "visual" && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
+          }}
         >
-          {showCatalog ? "Hide catalog" : "Catalog"}
-        </Button>
-      </div>
+          {sharedControls}
+        </div>
+      )}
 
       {/* Catalog ▸ modes. ONE rail, outside both panes, so a mode switch does not
           rebuild the tree the user just navigated — and `collapsed` rather than a
@@ -456,6 +461,7 @@ function WorkbenchInner({
             <div style={{ flex: 1, minHeight: 0, display: mode === "sql" ? "flex" : "none",
                           flexDirection: "column" }}>
               <SqlMode
+                toolbar={sharedControls}
                 connId={connId}
                 engine={engine}
                 schema={schema}

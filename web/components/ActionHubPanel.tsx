@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
+import { Icon } from "@/components/ui/icon";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -220,9 +221,9 @@ export function ActionHubPanel() {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 20px", height: 44, borderBottom: "1px solid var(--b1)", background: "var(--bg-1)", flexShrink: 0 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
+        <span style={{ color: "var(--t3)", flexShrink: 0, display: "inline-flex" }}>
+          <Icon name="bolt" size={14} />
+        </span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Notifications</span>
         <div style={{ display: "flex", gap: 4, marginLeft: 12 }}>
           {(["triggers", "logs"] as const).map(v => (

@@ -23,7 +23,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Pencil } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
@@ -444,7 +444,7 @@ export function ResultChartCard({
         className="absolute -top-1 right-0 z-10 opacity-0 group-hover/viz:opacity-100 transition-opacity"
         style={editorOpen ? { color: "var(--accent)", opacity: 1 } : { color: "var(--t3)" }}
       >
-        <Pencil size={13} />
+        <Icon name="edit" size={13} />
       </Button>
 
       {/* Body — clean chart / table / pivot */}

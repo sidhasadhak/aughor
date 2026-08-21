@@ -19,6 +19,7 @@ import { useState } from "react";
 import { ChartWrapper } from "@/components/charts/ChartWrapper";
 import { inferChartType, availableTypesFor, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
 import { Chart, type ChartCustom } from "@/components/Chart";
+import { Icon } from "@/components/ui/icon";
 
 interface Props {
   columns: string[];
@@ -75,13 +76,7 @@ export function InvestigationChart({ columns, rows, title, controlled, typeOverr
           title={showLabels ? "Hide data labels" : "Show data labels"}
           className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 7V4h3" />
-            <path d="M4 17v3h3" />
-            <path d="M20 7V4h-3" />
-            <path d="M20 17v3h-3" />
-            <path d="M9 9h6v6H9z" />
-          </svg>
+          <Icon name="expand" size={14} />
         </button>
       )}
     >

@@ -14,6 +14,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { queryTabName } from "@/lib/format";
 
 export interface EditorTab {
   id: string;
@@ -64,7 +66,7 @@ export function writeTabs(connId: string, tabs: EditorTab[], activeId: string): 
   } catch { /* storage full or disabled — tabs stay in memory for this session */ }
 }
 
-export function newTab(name = "Query"): EditorTab {
+export function newTab(name = queryTabName()): EditorTab {
   return {
     // crypto.randomUUID is available in every browser this app targets; the fallback
     // keeps a non-secure context (plain http on a LAN) from throwing.
@@ -76,7 +78,7 @@ export function newTab(name = "Query"): EditorTab {
 }
 
 export function TabsBar({
-  tabs, activeId, onSelect, onNew, onClose, onRename,
+  tabs, activeId, onSelect, onNew, onClose, onRename, trailing,
 }: {
   tabs: EditorTab[];
   activeId: string;
@@ -84,6 +86,11 @@ export function TabsBar({
   onNew: () => void;
   onClose: (id: string) => void;
   onRename: (id: string, name: string) => void;
+  /** Controls that ride on the RIGHT of the tab strip rather than in a bar of their
+   *  own. The editor had four stacked horizontal bars above the code; a reference
+   *  console has two, and the difference was rows that each carried three controls.
+   *  Anything a tab does not own — the connection, the saved state — comes in here. */
+  trailing?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState("");
   const [draftName, setDraftName] = useState("");
@@ -99,7 +106,7 @@ export function TabsBar({
     <div
       style={{
         display: "flex", alignItems: "center", gap: 2, padding: "4px 6px",
-        borderBottom: "1px solid var(--b0)", flexShrink: 0, overflowX: "auto",
+        borderBottom: "1px solid var(--b0)", flexShrink: 0,
       }}
     >
       {tabs.map(t => {
@@ -161,8 +168,14 @@ export function TabsBar({
         );
       })}
       <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
-        +
+        <Icon name="plus" size={13} />
       </Button>
+      {trailing && (
+        <>
+          <div style={{ flex: 1, minWidth: 8 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>{trailing}</div>
+        </>
+      )}
     </div>
   );
 }

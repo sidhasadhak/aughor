@@ -12,6 +12,7 @@ import { getApiBase } from "@/lib/config";
 import { type RichSchema } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { Icon } from "@/components/ui/icon";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -142,9 +143,9 @@ function EmptyState({ text }: { text: string }) {
 function TabIntro({ text }: { text: string }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--blue4, #60a5fa) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--blue4, #60a5fa) 22%, transparent)" }}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--blue4, #60a5fa)" strokeWidth="1.5" style={{ marginTop: 1, flexShrink: 0 }}>
-        <circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v3.4M8 5.2h.01" strokeLinecap="round" />
-      </svg>
+      <span style={{ color: "var(--blue4, #60a5fa)", marginTop: 1, flexShrink: 0, display: "inline-flex" }}>
+        <Icon name="info" size={14} />
+      </span>
       <p style={{ fontSize: 12, color: "var(--t2, #bbb)", lineHeight: 1.55, margin: 0 }}>{text}</p>
     </div>
   );

@@ -234,6 +234,22 @@ export function displayCellValue(v: unknown): string {
  * DuckDB returns a space-separated timestamp; DATE_TRUNC('month') yields "2018-01".
  * Returns the input unchanged when it doesn't look like a timestamp.
  */
+/** The name a fresh query tab is born with: "New Query 2026-08-21 15:08:29".
+ *
+ *  A tab is a thing you come back to, and "Query", "Query 2", "Query 3" tells you
+ *  nothing about which one you were in. The stamp is local time and sortable, and it
+ *  survives being renamed — this only supplies the default.
+ *
+ *  Built from the parts rather than toLocaleString(): the gate forbids ad-hoc
+ *  Intl/toLocale date rendering in the UI precisely so the format cannot drift
+ *  between locales, and a tab label must read the same for everyone on a team. */
+export function queryTabName(now: Date = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+  const t = `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+  return `New Query ${d} ${t}`;
+}
+
 export function normDateStr(v: string): string {
   let s = (v ?? "").replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
   if (/^\d{4}-\d{2}$/.test(s)) s += "-01";

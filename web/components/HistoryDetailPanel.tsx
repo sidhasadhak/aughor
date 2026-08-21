@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import AtlasSendIcon from "@atlaskit/icon/core/send";
-import CommentIcon   from "@atlaskit/icon/core/comment";
-import AiSparkleIcon from "@atlaskit/icon/core/ai-sparkle";
 import { Separator } from "@/components/ui/separator";
 import { ReportView } from "@/components/ReportView";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -16,6 +13,7 @@ import { getApiBase } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { ExportButton } from "@/components/ExportButton";
+import { Icon } from "@/components/ui/icon";
 
 interface FullInvestigation {
   id: string;
@@ -406,7 +404,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                       boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
                     }}
                   >
-                    <CommentIcon label="Quick" size="small" />
+                    <Icon name="chat" size={16} label="Quick" />
                     Quick
                   </button>
                   <button
@@ -421,7 +419,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                       boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
                     }}
                   >
-                    <AiSparkleIcon label="Agentic" size="small" />
+                    <Icon name="spark" size={16} label="Agentic" />
                     Agentic
                   </button>
                 </div>
@@ -432,7 +430,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                   title="Send"
                   className="w-7 h-7 rounded-[var(--r3)] text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
                 >
-                  <AtlasSendIcon label="Send" size="small" />
+                  <Icon name="send" size={16} label="Send" />
                 </button>
               </div>
             </div>

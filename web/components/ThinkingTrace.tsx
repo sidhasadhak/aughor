@@ -2,17 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import CompassIcon   from "@atlaskit/icon/core/compass";
-import DataFlowIcon  from "@atlaskit/icon/core/data-flow";
-import ScalesIcon    from "@atlaskit/icon/core/scales";
-import ZoomInIcon    from "@atlaskit/icon/core/zoom-in";
-import FlaskIcon     from "@atlaskit/icon/core/flask";
-import LightbulbIcon from "@atlaskit/icon/core/lightbulb";
-import MinusIcon     from "@atlaskit/icon/core/minus";
-import DatabaseIcon  from "@atlaskit/icon/core/database";
 import type { InvestigationState } from "@/lib/types";
 import type { ChatTurn } from "@/lib/chatTurn";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { Icon } from "@/components/ui/icon";
 
 // Map a ChatTurn → InvestigationState so the trace can be rendered both inline
 // (ChatMessage) and, historically, in a side panel. `running` reflects whether
@@ -108,18 +101,18 @@ const VERDICT_COLOR: Record<Verdict, string> = {
   untested: "text-zinc-500",
 };
 
-// Sub-question purpose → leading icon (atlaskit core, 12px "small", colour
+// Sub-question purpose → leading icon (the platform set, 16px, colour
 // inherited from the step label). Real icons replace the old unicode glyphs.
 const PURPOSE_ICON: Record<string, ReactNode> = {
-  landscape:    <CompassIcon label="" size="small" />,
-  relationship: <DataFlowIcon label="" size="small" />,
-  threshold:    <ScalesIcon label="" size="small" />,
-  drill_down:   <ZoomInIcon label="" size="small" />,
-  confounder:   <FlaskIcon label="" size="small" />,
-  synthesis:    <LightbulbIcon label="" size="small" />,
+  landscape:    <Icon name="compass" size={16} />,
+  relationship: <Icon name="process" size={16} />,
+  threshold:    <Icon name="scales" size={16} />,
+  drill_down:   <Icon name="zoom" size={16} />,
+  confounder:   <Icon name="flask" size={16} />,
+  synthesis:    <Icon name="idea" size={16} />,
 };
 // Neutral fallback for purposes the map doesn't know (was "·").
-const PURPOSE_FALLBACK_ICON: ReactNode = <MinusIcon label="" size="small" />;
+const PURPOSE_FALLBACK_ICON: ReactNode = <Icon name="minus" size={16} />;
 
 // Present-tense, plain-language labels for the deep analysis phases — what the
 // agent is doing right now, not internal phase jargon. Falls back to phase_name.
@@ -326,8 +319,7 @@ function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
   if (status === "error") {
     return (
       <span className="flex h-3.5 w-3.5 items-center justify-center text-red-400/80 shrink-0">
-        <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
-          strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        <Icon name="close" size={11} stroke={3} />
       </span>
     );
   }
@@ -417,7 +409,7 @@ export function ThinkingTrace({ state, onShowSource }: Props) {
                           const title = s.title.length > 76 ? s.title.slice(0, 76) + "…" : s.title;
                           const body = (
                             <>
-                              <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><DatabaseIcon label="" size="small" /></span>
+                              <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><Icon name="db" size={16} /></span>
                               <span className="min-w-0 truncate">{title}</span>
                             </>
                           );

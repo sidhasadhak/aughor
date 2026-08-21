@@ -1,14 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import AtlasSendIcon      from "@atlaskit/icon/core/send";
-import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
-import CloseIcon          from "@atlaskit/icon/core/close";
-import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
-import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
-import CommentIcon        from "@atlaskit/icon/core/comment";
-import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
-import CompassIcon        from "@atlaskit/icon/core/compass";
 import { listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
@@ -23,6 +15,7 @@ import { WhyThisNumber } from "./WhyThisNumber";
 
 import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
+import { Icon } from "@/components/ui/icon";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -114,9 +107,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             background: "var(--blue1)", border: "1px solid var(--blue2)",
             fontSize: 11, color: "var(--blue5)", maxWidth: 320,
           }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="attach" size={11} className="shrink-0" />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name}</span>
             <Button variant="ghost" size="icon-xs" onClick={() => onAttach?.(null)} title="Remove attachment"
               className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
@@ -162,7 +153,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "auto" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Auto" size="small" />
+            <Icon name="spark" size={16} label="Auto" />
             Auto
           </button>
           <button
@@ -176,7 +167,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <CommentIcon label="Quick" size="small" />
+            <Icon name="chat" size={16} label="Quick" />
             Quick
           </button>
           <button
@@ -191,7 +182,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Deep analysis" size="small" />
+            <Icon name="spark" size={16} label="Deep analysis" />
             Deep analysis
           </button>
         </div>
@@ -255,9 +246,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
             onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="attach" size={15} label="Attach a file" />
           </button>
 
           {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):
@@ -272,9 +261,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
               style={{ width: 32, height: 32, background: "var(--t2)", color: "var(--bg-1)" }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="5" y="5" width="14" height="14" rx="2.5" />
-              </svg>
+              <Icon name="stop" size={12} className="aug-icon-filled" />
             </Button>
           ) : (
             <Button
@@ -290,10 +277,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
                 color: input.trim() ? "#fff" : "var(--t3)",
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="12" y1="19" x2="12" y2="5" />
-                <polyline points="5 12 12 5 19 12" />
-              </svg>
+              <Icon name="send" size={16} stroke={2.2} />
             </Button>
           )}
         </div>
@@ -343,10 +327,10 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   return (
     <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-[var(--r3)] shadow-2xl" style={{ width: 520, height: 380 }}>
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
-        <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
+        <span className="text-emerald-400"><Icon name="sql" size={16} label="Debug log" /></span>
         <span className="aug-fs-xs font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
         <span className="aug-fs-xs text-zinc-500 mr-2">⌘⇧L to close</span>
-        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"><CloseIcon label="Close" size="small" /></Button>
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"><Icon name="close" size={16} label="Close" /></Button>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono aug-fs-xs">
         {events.length === 0 ? (
@@ -358,8 +342,8 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
               onClick={() => setExpanded(expanded === i ? null : i)}
             >
               {expanded === i
-                ? <span className="text-zinc-500 shrink-0"><ChevronDownIcon label="" size="small" /></span>
-                : <span className="text-zinc-500 shrink-0"><ChevronRightIcon label="" size="small" /></span>}
+                ? <span className="text-zinc-500 shrink-0"><Icon name="chevd" size={16} /></span>
+                : <span className="text-zinc-500 shrink-0"><Icon name="chevr" size={16} /></span>}
               <span className="text-zinc-500 shrink-0">{new Date(ev.ts).toLocaleTimeString()}</span>
               <span className={`shrink-0 w-28 truncate ${TYPE_COLOR[ev.type] ?? "text-zinc-300"}`}>{ev.type}</span>
               <span className="text-zinc-500 truncate flex-1">{ev.summary}</span>
@@ -389,7 +373,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
       <StatusChip
         hue={deep ? "accent" : "info"}
-        icon={deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
+        icon={deep ? <Icon name="spark" size={16} /> : <Icon name="chat" size={16} />}
       >
         {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
@@ -420,7 +404,7 @@ function AgentBadge({ turn }: { turn: ChatTurn }) {
   if (!a) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <StatusChip hue="positive" icon={<AiSparkleIcon label="" size="small" />}>
+      <StatusChip hue="positive" icon={<Icon name="spark" size={16} />}>
         Answering as {a.name}
       </StatusChip>
       {a.docCount > 0 && (
@@ -448,7 +432,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
   return (
     <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--blue1)", border: "1px solid var(--blue2)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: c.reason ? 4 : 8 }}>
-        <span style={{ color: "var(--blue5)", display: "inline-flex" }}><CommentIcon label="" size="small" /></span>
+        <span style={{ color: "var(--blue5)", display: "inline-flex" }}><Icon name="chat" size={16} /></span>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)" }}>{c.question}</span>
       </div>
       {c.reason && <p style={{ fontSize: 12, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
@@ -496,7 +480,7 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 8,
                   padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--vio1)", border: "1px solid var(--vio2)" }}>
-      <span style={{ color: "var(--vio5)", display: "inline-flex" }}><AiSparkleIcon label="" size="small" /></span>
+      <span style={{ color: "var(--vio5)", display: "inline-flex" }}><Icon name="spark" size={16} /></span>
       <span style={{ fontSize: 12, color: "var(--t2)", flex: 1, minWidth: 180 }}>{e.reason}</span>
       <Button
         variant="ghost"
@@ -1099,10 +1083,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     >
                       <span className={`shrink-0 mt-0.5 aug-fs-ui${isOverview ? "" : " opacity-70"}`}>
                         {isOverview
-                          ? <CompassIcon label="" size="small" />
+                          ? <Icon name="compass" size={16} />
                           : s.mode === "investigate"
-                          ? <AiSparkleIcon label="" size="small" />
-                          : <CommentIcon label="" size="small" />}
+                          ? <Icon name="spark" size={16} />
+                          : <Icon name="chat" size={16} />}
                       </span>
                       <span className="min-w-0">
                         {isOverview && <span className="font-medium">A great starting point · </span>}
@@ -1288,7 +1272,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
                 >
-                  <ChevronDownIcon label="" size="small" />
+                  <Icon name="chevd" size={16} />
                   Jump to latest
                 </Button>
               </div>

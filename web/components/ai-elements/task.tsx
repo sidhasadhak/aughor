@@ -16,31 +16,26 @@ import { Collapsible } from "@base-ui/react/collapsible";
 
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Icon } from "@/components/ui/icon";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "error";
 
 function StatusGlyph({ status }: { status: TaskStatus }) {
   if (status === "completed") {
     return (
-      <svg viewBox="0 0 12 12" aria-hidden className="h-3 w-3 shrink-0" style={{ color: "var(--grn2)" }}>
-        <path d="M2.5 6.5l2.5 2.5 4.5-5" fill="none" stroke="currentColor" strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <span className="shrink-0 inline-flex" style={{ color: "var(--grn2)" }}><Icon name="check" size={12} /></span>
     );
   }
   if (status === "error") {
     return (
-      <svg viewBox="0 0 12 12" aria-hidden className="h-3 w-3 shrink-0" style={{ color: "var(--red2)" }}>
-        <path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
+      <span className="shrink-0 inline-flex" style={{ color: "var(--red2)" }}><Icon name="close" size={12} /></span>
     );
   }
   if (status === "in_progress") {
     return (
-      <svg viewBox="0 0 12 12" aria-hidden className="h-3 w-3 shrink-0 aug-anim-spin" style={{ color: "var(--t3)" }}>
-        <circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5"
-                strokeDasharray="20" strokeDashoffset="6" strokeLinecap="round" />
-      </svg>
+      <span className="shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
+        <Icon name="spinner" size={12} className="aug-anim-spin" />
+      </span>
     );
   }
   return (
@@ -86,15 +81,10 @@ export function TaskTrigger({
     >
       <StatusGlyph status={status} />
       {status === "in_progress" ? <Shimmer>{title}</Shimmer> : <span className="truncate">{title}</span>}
-      <svg
-        viewBox="0 0 12 12"
-        aria-hidden
-        className="ml-auto h-3 w-3 shrink-0 transition-transform group-data-[panel-open]/task:rotate-180"
-        style={{ color: "var(--t4)" }}
-      >
-        <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <span className="ml-auto shrink-0 inline-flex" style={{ color: "var(--t4)" }}>
+        <Icon name="chevd" size={12}
+          className="transition-transform group-data-[panel-open]/task:rotate-180" />
+      </span>
     </Collapsible.Trigger>
   );
 }
