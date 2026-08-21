@@ -110,6 +110,12 @@
      Analysis used the whole panel beside them. Full width by request (2026-08-21);
      the knob survives, so setting a px value restores a capped column. */
   --measure-chat: 100%;
+  /* Chat gutter — the gap between the panel edge and the conversation.
+     Measured off Databricks' Genie chat (2026-08-21): a ~1728px panel carries ~72px of
+     clear space each side, so the content covers ~92% and the gutter is ~4% — it SCALES
+     with the panel rather than sitting at a fixed padding. Clamped so a narrow split pane
+     keeps a usable 20px and an ultrawide monitor does not open a canyon. */
+  --chat-gutter: clamp(20px, 4%, 88px);
 
   /* Elevation — borders do the structural work; these are for things that
      genuinely float (menus, dialogs, tooltips) and nothing else. */

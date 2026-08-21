@@ -1000,7 +1000,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       {isEmpty ? (
         /* ── Empty state ── */
         <div className="flex-1 flex flex-col items-center justify-center py-10">
-          <div className="w-full max-w-[var(--measure-chat)] px-6 flex flex-col gap-5">
+          <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] flex flex-col gap-5">
 
             {capabilities}
 
@@ -1109,7 +1109,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {/* Scrollable messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
-              <div className="py-8 w-full max-w-[var(--measure-chat)] px-6 mx-auto">
+              <div className="py-8 w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] mx-auto">
                 {turns.map(({ turn, userMsg, assistantMsg }, i) => (
                   <div
                     key={turn.id}
@@ -1283,7 +1283,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               position: "absolute", bottom: 20, left: 0, right: 0,
               zIndex: 2, pointerEvents: "none",
             }}>
-              <div className="w-full max-w-[var(--measure-chat)] px-6 mx-auto space-y-2" style={{ pointerEvents: "all" }}>
+              <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
                 <InputBox {...inputBoxProps} />
                 <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
               </div>
