@@ -94,3 +94,41 @@ def chart_vocab_line() -> str:
         f"Specialised types, ONLY when the result matches the stated shape: {exotic} "
         f"Or 'auto' to defer to the renderer's shape inference. "
     )
+
+
+def answer_chart_payload(
+    chart_type: str | None,
+    chart_config: dict | None,
+    row_count: int,
+    tier: str | None = None,
+) -> dict:
+    """What a persisted answer records about its chart.
+
+    Phase 3 of the chart-engine migration. Until now the artifact kept ``chart_type`` and
+    dropped ``chart_config`` — measured 2026-08-21: 0 of 700 stored chat answers carried
+    one. The whole exhibit grammar (severity ramps, sign colouring, reference lines, subject
+    emphasis) is computed per answer, sent to the browser, and then thrown away at the write,
+    so the chart a reader was shown could never be reconstructed from the ledger. For a
+    product whose thesis is evidence, that is the receipt missing its most legible half.
+
+    Kept deliberately small: this records the chart's INTENT, never its data. Tier-1 charts
+    are a deterministic function of intent, so the spec re-derives from what is stored here.
+    Persisting the resolved spec (which inlines its rows) is a separate decision with a
+    storage and data-retention cost, and is only strictly required once hand-authored
+    tier-2/3 specs exist.
+
+    Empty and null members are omitted so an answer with nothing to say adds nothing to the
+    payload — the same absent-means-default discipline the frontend's VizConfig uses.
+    """
+    out: dict = {"row_count": int(row_count or 0)}
+    if chart_type:
+        out["chart_type"] = chart_type
+    if isinstance(chart_config, dict) and chart_config:
+        # Drop empty members so a config of {"exhibit": None} does not read as a real one.
+        cfg = {k: v for k, v in chart_config.items() if v not in (None, {}, [], "")}
+        if cfg:
+            out["chart_config"] = cfg
+    if tier:
+        out["complexity_tier"] = tier
+    return out
+
