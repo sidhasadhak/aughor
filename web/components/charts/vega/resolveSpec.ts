@@ -60,6 +60,12 @@ export interface ResolvedSpec {
  *
  * `empty: true` (the default) is deliberate: with nothing selected the param matches every
  * mark, so an untouched chart renders at full opacity exactly as before.
+ *
+ * ⚠ It must be declared on exactly ONE unit spec. Vega-Lite pushes a top-level param down
+ * into every layer of a layered spec, and the compiled Vega then carries two signals with
+ * the same name — "Duplicate signal name: picked_tuple" — which does not merely lose the
+ * interaction, it fails the parse and renders NOTHING. That is what a line chart (line +
+ * point layers) and a labelled bar did until this was moved onto a single layer.
  */
 const SELECT_PARAM = (field: string) => ({
   name: "picked",
@@ -234,14 +240,15 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
       tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300, xCategories: 0,
       spec: {
         ...base,
-        params: [SELECT_PARAM(x)],
+
         // A line plus its points: the point layer is the hover target and the ≥8px marker
         // the mark spec asks for, and it keeps a single-observation series visible. Only the
         // POINTS respond to a selection — dimming the line itself would break its continuity,
         // which is the one thing a trend line exists to show.
         layer: [
           { mark: { type: "line" } },
-          { mark: { type: "point", tooltip: true }, encoding: { opacity: SELECT_OPACITY } },
+          { mark: { type: "point", tooltip: true }, params: [SELECT_PARAM(x)],
+            encoding: { opacity: SELECT_OPACITY } },
         ],
         encoding: enc,
       },
@@ -265,7 +272,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     ? { x: valueEnc, y: bandEnc, opacity: SELECT_OPACITY }
     : { x: bandEnc, y: valueEnc, opacity: SELECT_OPACITY };
 
-  const layers: Record<string, unknown>[] = [{ mark: { type: "bar", tooltip: true } }];
+  const layers: Record<string, unknown>[] = [
+    { mark: { type: "bar", tooltip: true }, params: [SELECT_PARAM(band)] },
+  ];
   if (showLabels) {
     layers.push({
       mark: { type: "text", align: horizontal ? "left" : "center", baseline: "middle",
@@ -280,11 +289,6 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     xCategories: horizontal ? 0 : new Set(rows.map((r) => r[columns.indexOf(band)])).size,
     // A horizontal bar needs room per category, not a fixed canvas.
     defaultH: horizontal ? Math.max(180, Math.min(560, rows.length * 30 + 60)) : 300,
-    spec: {
-      ...base,
-      params: [SELECT_PARAM(band)],
-      ...(layers.length > 1 ? { layer: layers } : layers[0]),
-      encoding,
-    },
+    spec: { ...base, ...(layers.length > 1 ? { layer: layers } : layers[0]), encoding },
   };
 }

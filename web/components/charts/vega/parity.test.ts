@@ -15,6 +15,8 @@
  */
 
 import { describe, expect, it } from "vitest";
+import * as vl from "vega-lite";
+import { parse as vegaParse } from "vega";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { resolveChartOption } from "@/components/charts/resolveOption";
 
@@ -127,6 +129,19 @@ describe("Vega tier-1 resolver", () => {
     expect(functionPaths(v!.spec)).toEqual([]);
     // The round trip is the real test: this is what persisting a spec would do to it.
     expect(JSON.parse(JSON.stringify(v!.spec))).toEqual(v!.spec);
+  });
+
+  it.each(FIXTURES.filter((f) => !f.refuses && !f.unsupported))("$name — compiles and parses", (f) => {
+    // THE test the matrix was missing. It asserted the spec was well-formed JSON of the
+    // right shape and never that Vega could actually run it, so a selection param declared
+    // at the top of a LAYERED spec shipped: Vega-Lite pushes it into every layer, the
+    // compiled Vega carries two signals called picked_tuple, and the parse throws
+    // "Duplicate signal name" — which renders nothing at all. Every line chart and every
+    // labelled bar was blank, and a shape-only assertion passed the whole time.
+    const v = resolveVegaSpec({ columns: f.columns, rows: f.rows, chartType: f.hint, showLabels: true });
+    expect(v).not.toBeNull();
+    const compiled = vl.compile({ ...v!.spec, width: 600, height: 300 } as Parameters<typeof vl.compile>[0]).spec;
+    expect(() => vegaParse(compiled)).not.toThrow();
   });
 
   it.each(FIXTURES.filter((f) => !f.refuses && !f.unsupported))("$name — bakes no colour into the spec", (f) => {
