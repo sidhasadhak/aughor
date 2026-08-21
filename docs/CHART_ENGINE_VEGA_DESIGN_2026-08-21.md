@@ -311,14 +311,32 @@ from the same intent.
 **Harness:** replay all 703 persisted charts through both engines and diff screenshots.
 **Gate:** no visual regression on the replay set; p95 render time within 20% of ECharts.
 
-### Phase 3 — Persist the spec · 3–5 days
-Stop dropping `chart_config`. Write the resolved Vega-Lite spec onto the artifact.
-**Gate:** a chat answer from 2026-07 re-renders byte-identically to what was stored.
-*(Worth doing even if Phase 1 kills the migration — see §4.2.)*
+### Phase 3 — Persist the intent · DONE 2026-08-21
+`chart_config` — and the exhibit nested in it — now reaches the artifact, built by
+`answer_chart_payload()` in `aughor/agent/chart_vocab.py` (a pure function, so the bug's home in
+an argument list inside a 5,000-line route is now somewhere a test can reach).
 
-### Phase 4 — Earn the grammar · 1–2 weeks
-Move the hand-rolled transforms into the spec. Add selections **only if** cross-filtering is
-on the roadmap — it is the one capability that is genuinely grammar-only.
+**Scope stops at INTENT, never data — decided 2026-08-21.** The original gate ("a past answer
+re-renders byte-identically") is unreachable as stated: an artifact stores `sql` and `row_count`
+and **no rows**, so re-rendering needs the data back, which means either inlining rows into a
+stored spec (a storage *and* data-retention change) or re-running the SQL (drifts, needs a live
+connection). Neither was taken. Tier-1 charts are a deterministic function of intent, so the spec
+re-derives from what is stored; a resolved spec only becomes strictly necessary once hand-authored
+tier-2/3 specs exist.
+
+### Phase 4 — Earn the grammar · DONE 2026-08-21
+**Scope moved on measurement, as every phase's has.** This phase originally named histogram
+bucketing, Pareto cumulative % and boxplot quartiles — all three are chart types with **zero
+recorded uses**, so porting them would have broken §6's own rule. The transforms users can
+actually reach are the four in the edit panel, and those moved into the spec: period-over-period,
+share-of-total, rolling and cumulative now compute in the chart's dataflow instead of POSTing the
+whole result set to `/query/postproc`. Edge semantics are copied from `aughor/tools/postproc.py`
+and pinned by a test that RUNS each transform through Vega and compares every value against a
+port of the Python — which caught a real divergence (Vega's `count` counts rows, not non-null
+values, so a window holding a null measured as full).
+
+Click-to-select landed earlier, with the reference chart's chrome. **Cross-filtering — one chart's
+selection filtering another — is still not started, and still depends on decision 3.**
 
 ### Phase 5 — Retire ECharts · ~1 week
 One family, one runtime. Whichever of `sankey`, `treemap`, `funnel` and `gantt` survive a usage
@@ -334,7 +352,7 @@ surviving type at its declared tier.
 | Risk | Evidence it is real | Mitigation | Kill criterion |
 |---|---|---|---|
 | The look does not actually improve | The "Databricks look" is largely theme (§3) | Phase 1 spike before any spend | Phase 1 gate |
-| Performance at high row counts | Vega's dataflow + SVG is slower than ECharts canvas; **p95 rows is unmeasured** (§4.3) | Canvas renderer; measure from `session_events` first | p95 render > 1.2× ECharts |
+| ~~Performance at high row counts~~ **MEASURED 2026-08-21 — this risk was wrong** | `/chart-lab/bench`: the recompile-per-resize this doc worried about is **cheaper than ECharts' `resize()` at every size**, by ~6× at 10k rows (3.3ms vs 22.2ms p50), because Vega-Lite's compile is data-independent while ECharts re-lays-out. Resolve is ~3× faster too | — | **SVG paint is still unmeasured**: rAF is throttled in a hidden document (1 frame in 10) and Vega's `runAsync` never settles there, so paint needs a visible tab |
 | Two engines forever | `@observablehq/plot` is still a declared dependency with **zero importers**, ~3 months after Plot stopped being the engine | **Single-family mandate (decided 2026-08-21):** tier 3 replaces the ECharts fallback. Every phase deletes or dates its predecessor | `echarts` still in `package.json` after Phase 5 |
 | Palette gate rewrite | `check-chart-palette.mjs` parses `echarts/palette.ts` by name | Rewrite as part of Phase 2, not after | Gate disabled at any point |
 | Peer-dependency conflict | ECharts was installed with `--legacy-peer-deps` due to a pre-existing antd/react-19 conflict (`b275e2d`) | Check the React wrapper before Phase 2 | — |
