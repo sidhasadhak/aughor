@@ -32,6 +32,7 @@ import { classifyColumns, availableChartTypes, inferChartType, ALL_CHART_TYPES, 
 import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
 import { sameVizConfig, type VizConfig } from "@/components/charts/vizConfig";
@@ -283,17 +284,9 @@ export function ResultChartCard({
   // otherwise those controls silently do nothing on any answer that shipped a config.
   const userChoseChart = touched || typeSel !== "auto" || transformOp !== "none";
 
-  // Live ECharts instance (for the panel's Download PNG on a chromeless chart).
-  const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
-  const handleDownload = () => {
-    const inst = instRef.current;
-    if (!inst) return;
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#161A20";
-    const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
-    const fname = (title || "chart").replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
-    const a = Object.assign(document.createElement("a"), { href: url, download: fname });
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
+  // Live chart instance (for the panel's Download PNG on a chromeless chart), engine-neutral.
+  const instRef = useRef<ChartInstance | null>(null);
+  const handleDownload = () => { void downloadChartPng(instRef.current, title || "chart"); };
 
   // Customize overrides merged over the passed props (empty string = "unset" → keep the prop).
   const effCustom: ChartCustom = useMemo(() => ({

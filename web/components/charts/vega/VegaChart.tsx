@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { buildVegaConfig, readVegaTokens } from "@/components/charts/vega/config";
+import type { ChartInstance, PngOptions } from "@/lib/chartExport";
 
 type VegaModules = {
   vega: typeof import("vega");
@@ -40,13 +41,21 @@ interface Props {
   className?: string;
   /** Called with the compiled Vega spec — the tier-3 starting point. */
   onCompiled?: (vegaSpec: unknown) => void;
+  /** Click a mark to drill in — receives the datum behind it, same contract as EChart. */
+  onSelect?: (datum: Record<string, unknown>) => void;
+  /** Hand an export handle back to the parent, same contract as EChart's onReady. */
+  onReady?: (instance: ChartInstance) => void;
 }
 
-export function VegaChart({ spec, height = 300, className, onCompiled }: Props) {
+export function VegaChart({ spec, height = 300, className, onCompiled, onSelect, onReady }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<{ finalize: () => void } | null>(null);
   const onCompiledRef = useRef(onCompiled);
   onCompiledRef.current = onCompiled;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [themeTick, setThemeTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +104,36 @@ export function VegaChart({ spec, height = 300, className, onCompiled }: Props) 
             const view = new vega.View(vega.parse(compiled), { renderer: "svg", container: el, hover: true });
             view.tooltip(new tooltip.Handler().call);
             viewRef.current = view;
+
+            view.addEventListener("click", (_e: unknown, item: unknown) => {
+              const datum = (item as { datum?: unknown })?.datum;
+              if (datum && typeof datum === "object") onSelectRef.current?.(datum as Record<string, unknown>);
+            });
+
+            /**
+             * PNG export. Vega's own toImageURL() honours the spec background, which is
+             * transparent by design so the chart sits on whatever card holds it — a
+             * transparent PNG reads as broken anywhere it is pasted. So: render to a
+             * canvas, then composite it over the requested background.
+             */
+            onReadyRef.current?.({
+              getDataURL: async (o?: PngOptions) => {
+                const scale = o?.pixelRatio ?? 2;
+                const src = await view.toCanvas(scale);
+                const out = document.createElement("canvas");
+                out.width = src.width;
+                out.height = src.height;
+                const ctx = out.getContext("2d");
+                if (!ctx) return "";
+                if (o?.backgroundColor) {
+                  ctx.fillStyle = o.backgroundColor;
+                  ctx.fillRect(0, 0, out.width, out.height);
+                }
+                ctx.drawImage(src, 0, 0);
+                return out.toDataURL(o?.type === "jpeg" ? "image/jpeg" : "image/png");
+              },
+            });
+
             void view.runAsync();
             setError(null);
           } catch (e: unknown) {

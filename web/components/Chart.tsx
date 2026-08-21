@@ -16,10 +16,14 @@
  * the builders' per-field `valueFormatter`.
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { EChartsOption } from "echarts";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
+import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { chartEngine, CHART_ENGINE_DEFAULT, CHART_ENGINE_EVENT, type ChartEngine } from "@/lib/chartEngine";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
 import { resolveChartOption, type ChartCustom } from "@/components/charts/resolveOption";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { Icon } from "@/components/ui/icon";
@@ -65,9 +69,10 @@ export function Chart({
   fitHeight?: number | null;
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
-  /** Hand the live ECharts instance up to a chromeless caller (e.g. so a side-panel
-   *  "Download PNG" can export a chart rendered with chrome={false}). */
-  onInstanceReady?: (inst: { getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string }) => void;
+  /** Hand the live chart instance up to a chromeless caller (e.g. so a side-panel
+   *  "Download PNG" can export a chart rendered with chrome={false}). Engine-neutral:
+   *  Vega produces its image asynchronously, so getDataURL may return a promise. */
+  onInstanceReady?: (inst: ChartInstance) => void;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle. */
   chrome?: boolean;
   /** Externally control data-label visibility (chromeless mode). */
@@ -82,7 +87,22 @@ export function Chart({
   exhibit?: ExhibitSpec | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
-  const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
+  const instRef = useRef<ChartInstance | null>(null);
+
+  // Which engine draws this chart. Read on every render and re-read when the override
+  // changes, so flipping engines re-renders every mounted chart without a reload — the
+  // only way to compare them on the SAME screen with the SAME data.
+  // Seeded with the BUILD-TIME answer, not the stored one. The server has no localStorage,
+  // so reading the override during the first client render makes the two trees disagree —
+  // and because the engines compute different heights, React reports a hydration failure and
+  // throws the server tree away. The effect below applies any override after mount.
+  const [engine, setEngine] = useState<ChartEngine>(CHART_ENGINE_DEFAULT);
+  useEffect(() => {
+    const sync = () => setEngine(chartEngine());
+    sync();
+    window.addEventListener(CHART_ENGINE_EVENT, sync);
+    return () => window.removeEventListener(CHART_ENGINE_EVENT, sync);
+  }, []);
   // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
   const [showLabelsState, setShowLabels] = useState(false);
@@ -107,13 +127,7 @@ export function Chart({
   }
 
   function handleDownloadPng() {
-    const inst = instRef.current;
-    if (!inst) return;
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#131c27";
-    const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
-    const fname = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
-    const a = Object.assign(document.createElement("a"), { href: url, download: fname });
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    void downloadChartPng(instRef.current, title);
   }
 
   // Re-render + rebuild the option when org settings change, so the currency symbol /
@@ -123,11 +137,27 @@ export function Chart({
   // Build the option + default height. Memoized so its identity is stable across
   // renders (EChart re-inits when the option object changes) — only rebuilds when
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
-  const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(
-    () => resolveChartOption({ columns, rows, chartType, chartConfig, custom, columnUnits, exhibit, showLabels }),
+  type Built =
+    | { engine: "echarts"; option: EChartsOption; defaultH: number; xCategories: number }
+    | { engine: "vega"; spec: Record<string, unknown>; defaultH: number; xCategories: number };
+
+  const built = useMemo<Built | null>(() => {
+    if (engine === "vega") {
+      // Same intent, different target language.
+      const v = resolveVegaSpec({ columns, rows, chartType, showLabels, format: custom?.format ?? null,
+                                  xTitle: custom?.xTitle ?? null, yTitle: custom?.yTitle ?? null });
+      // null here means "tier 1 does not draw this type" — fall through to ECharts, which
+      // still draws every type. parity.test.ts pins that both engines agree about refusal.
+      if (v) return { engine: "vega", spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories };
+    }
+    const e = resolveChartOption({ columns, rows, chartType, chartConfig, custom, columnUnits, exhibit, showLabels });
+    if (!e) return null;
+    const xd = (e.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
+    return { engine: "echarts", option: e.option, defaultH: e.defaultH,
+             xCategories: Array.isArray(xd) ? xd.length : 0 };
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit, engine]);
 
   if (!built) return null;
   const fill = !!(fitHeight && fitHeight > 0);
@@ -158,13 +188,15 @@ export function Chart({
           A vertical bar chart with only a few categories no longer stretches across the full panel
           (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
       {(() => {
-        const _xd = (built.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
-        const _catN = Array.isArray(_xd) ? _xd.length : 0;
+        const _catN = built.xCategories;
         // In fill mode the chart takes the whole box (no 350px cap, no few-category width cap).
         const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
+        const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
         return (
       <div ref={outerRef} style={{ maxHeight: fill ? undefined : 350, height: fill ? chartH : undefined, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
-        <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; onInstanceReady?.(inst); }} />
+        {built.engine === "vega"
+          ? <VegaChart spec={built.spec} height={chartH} onSelect={onSelect} onReady={ready} />
+          : <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={ready} />}
       </div>
         );
       })()}

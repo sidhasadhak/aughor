@@ -40,6 +40,10 @@ export interface ResolvedSpec {
   tier: 1;
   /** The type actually rendered, after `auto` resolves. */
   resolved: string;
+  /** Distinct categories on a VERTICAL band axis, else 0. Chart.tsx caps the width of a
+   *  few-category vertical bar so three bars do not stretch across a whole panel; that cap
+   *  used to read `option.xAxis.data`, which only exists on one engine. */
+  xCategories: number;
 }
 
 /** Rows-as-arrays → rows-as-objects, the shape Vega-Lite consumes directly. */
@@ -97,7 +101,26 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   let type: string = hint;
   if (inferred) type = inferred.type as ChartType;
   else if (HINT_TO_TYPE[hint] && hint !== "bar_horizontal") type = HINT_TO_TYPE[hint];
-  const horizontal = hint === "bar_horizontal";
+  // ORIENTATION IS A SHARED RULE, not a per-engine habit. resolveOption.ts renders BOTH
+  // `bar` and `bar_horizontal` horizontally whenever x is categorical (a ranking reads
+  // down, and category labels need the room), and vertically when x is time (a trend reads
+  // across). Only `bar_vertical` forces the upright form. Encoding the same rule here is
+  // what stops the Phase 2 diff from flagging every explicit `bar` as a regression.
+  const isTimeX = (inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol)) === dateCol;
+  const horizontal = hint !== "bar_vertical" && !isTimeX;
+
+  /**
+   * Tier 1 draws SIX types and refuses everything else.
+   *
+   * This gate is the difference between a fallback and a lie. Without it the function fell
+   * through to its bar branch for any unknown type, so a `scatter` rendered as a bar chart:
+   * a well-formed, correctly-themed, entirely wrong picture that no engine-parity screenshot
+   * would flag, because both engines drew something. Refusing lets Chart.tsx fall back to
+   * ECharts, which still draws scatter, heatmap, treemap, sankey and the rest correctly.
+   */
+  const SUPPORTED = new Set(["bar", "bar_horizontal", "bar_vertical", "line", "multi-line",
+                             "multi_line", "area", "counter", "pie"]);
+  if (!SUPPORTED.has(type)) return null;
 
   const data = { values: toRecords(columns, rows) };
   const measure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0];
@@ -110,7 +133,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   if (type === "counter") {
     const v = Number(rows[0]?.[columns.indexOf(measure)] ?? 0);
     return {
-      tier: 1, resolved: "counter", defaultH: 140,
+      tier: 1, resolved: "counter", defaultH: 140, xCategories: 0,
       spec: {
         ...base,
         // The label goes through the ONE humanizer the rest of the app uses, so a counter
@@ -136,7 +159,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     // radius, so it is derived from the chart's own height rather than a percentage.
     const pieH = 300;
     return {
-      tier: 1, resolved: "pie", defaultH: pieH,
+      tier: 1, resolved: "pie", defaultH: pieH, xCategories: 0,
       spec: {
         ...base,
         mark: { type: "arc", innerRadius: Math.round(pieH * 0.28), tooltip: true },
@@ -175,7 +198,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     // ECharts path gives it — every screenshot in the Phase 2 diff would flag.
     if (seriesCol) enc.color = { field: seriesCol, type: "nominal", sort: null };
     return {
-      tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300,
+      tier: 1, resolved: seriesCol ? "multi-line" : "line", defaultH: 300, xCategories: 0,
       spec: {
         ...base,
         // A line plus its points: the point layer is the hover target and the ≥8px marker
@@ -214,6 +237,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   return {
     tier: 1,
     resolved: horizontal ? "bar_horizontal" : "bar",
+    xCategories: horizontal ? 0 : new Set(rows.map((r) => r[columns.indexOf(band)])).size,
     // A horizontal bar needs room per category, not a fixed canvas.
     defaultH: horizontal ? Math.max(180, Math.min(560, rows.length * 30 + 60)) : 300,
     spec: { ...base, ...(layers.length > 1 ? { layer: layers } : layers[0]), encoding },
