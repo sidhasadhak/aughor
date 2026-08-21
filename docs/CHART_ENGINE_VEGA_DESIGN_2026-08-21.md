@@ -346,21 +346,35 @@ tier 1 covers six. Retiring ECharts needs **16 more**, not four.
 
 | Group | Types | Count | State |
 |---|---|---:|---|
-| **Tier 3 — raw Vega** | sankey, treemap, funnel, gantt | 4 | ✅ **done** (`charts/vega/tier3.ts`) |
-| Tier 1 extension — Vega-Lite native | scatter, heatmap, histogram, boxplot, stacked-bar, grouped-bar, small-multiples, delta-bar, waterfall, pareto, line-forecast | 11 | ⬜ not started |
-| Geo — VL `geoshape` + the existing `world.json` | choropleth, point-map | 2 | ⬜ not started |
-| Print path — `chart_ssr.bundle.mjs` rebuilt on `vega` → SVG | — | — | ⬜ not started |
+| **Tier 3 — raw Vega** | sankey, treemap, funnel, gantt | 4 | ✅ done (`charts/vega/tier3.ts`) |
+| Tier 1 extension — Vega-Lite native | scatter, heatmap, histogram, boxplot, stacked-bar, grouped-bar, small-multiples, delta-bar, waterfall, pareto, line-forecast | 11 | ✅ done (`charts/vega/forms.ts`) |
+| Geo — VL `geoshape` + the existing `world.json` | choropleth, point-map | 2 | ✅ done (screen only — refused in print, as before) |
+| Print path — `chart_ssr.bundle.mjs` rebuilt on `vega` → SVG | — | — | ✅ done |
+| **Retirement** — `echarts` + `zrender` out of `package.json` | — | — | ✅ **done** |
 
 **5a — tier 3 · DONE.** The four Vega-Lite cannot express are hand-authored raw Vega. The
 sankey's layout is computed in TypeScript and emitted as DATA, so the spec stays pure JSON.
 Tier 3 skips the VL compiler, so it carries the tokens in Vega's own config shape.
 
-**5b/5c/5d remain.** Until every type has a Vega path the fallback in `Chart.tsx` is load-bearing:
-an unsupported type still renders through ECharts, which is why the app is correct today and
-why `echarts` cannot leave `package.json` yet.
+**5b/5c/5d — DONE 2026-08-22.** `echarts` and `zrender` are out of `package.json`, and the
+ECharts tree, `resolveOption.ts`, `lib/chartEngine.ts` and the ECharts chart-lab are deleted.
 
-**Gate (unchanged):** `echarts` and `zrender` gone from `web/package.json`, and `/chart-lab`
-renders every surviving type at its declared tier.
+One sequencing point worth recording: **the exhibit grammar had to reach the Vega path before
+the deletion, not after.** Retiring ECharts first would have silently dropped severity ramps,
+sign colouring, reference lines and subject emphasis from every chart — which would have made
+Phase 3, whose entire purpose is persisting that grammar, pointless.
+
+**There is no fallback any more.** A shape with no honest chart renders none and the table view
+carries it. That was always the contract; it is now the only one.
+
+**Known gaps, stated rather than discovered later:**
+- Geo is refused in the print path, exactly as under ECharts. The base map is a relative URL
+  with no base in Node, and the alternative — inlining ~1 MB of geojson — doubles the bundle to
+  serve a type the ledger has never recorded.
+- The forms ported in 5b are faithful encodings, not line-by-line ports of 1,403 lines of
+  builders. Per-field unit formatting and some label-placement heuristics from the old path are
+  not reproduced.
+- **SVG paint at high row counts is still unmeasured** (see the risk register).
 
 ---
 
