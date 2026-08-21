@@ -65,6 +65,58 @@ _OPERATIONAL_DIMENSION_KEYWORDS: list[str] = [
 ]
 
 
+def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> list:
+    """The breakdown the question named, computed in code — no planner, no discretion.
+
+    Three fixes went into making the scan honour "route wise", and each time the layer
+    below declined: the framing was patched, then the intake carried the dimension, then
+    it outranked the priority sorter — and the phase's SQL PLANNER still refused it,
+    reporting a data gap ("the dataset does not contain a unique route_id to route_name
+    mapping"). That refusal is correct for the instrument: the cross-sectional scan looks
+    for where value is WEAK, and a high-cardinality id column is a poor weakness dimension.
+    It is the wrong instrument for a question that asked to see a breakdown.
+
+    So the breakdown stops being a request to a model. One GROUP BY per named dimension,
+    built here and executed through the same guard battery every other phase query runs
+    through — which is exactly what the quick path does for this question, and it has
+    been right about it all along.
+    """
+    dims = [d for d in (intake_data.get("named_dimensions") or []) if d]
+    metric_sql = (intake_data.get("metric_sql") or "").strip()
+    table = (intake_data.get("metric_table") or "").strip()
+    if not dims or not metric_sql or not table:
+        return []
+
+    label = intake_data.get("metric_label") or "value"
+    date_col = (intake_data.get("date_column") or "").strip()
+    start = intake_data.get("observation_start") or ""
+    end = intake_data.get("observation_end") or ""
+    where = ""
+    if date_col and date_col.upper() != "NONE" and start and end:
+        _col = date_col.split(".")[-1]
+        where = (f" WHERE CAST({_col} AS DATE) >= DATE '{start}' "
+                 f"AND CAST({_col} AS DATE) <= DATE '{end}'")
+
+    out = []
+    for i, dim in enumerate(dims[:2]):          # the question rarely names more
+        col = dim.split(".")[-1]
+        sql = (f"SELECT {col}, {metric_sql} AS {_safe_alias(label)} "
+               f"FROM {table}{where} GROUP BY 1 ORDER BY 2 DESC")
+        r = _execute_safe(conn, f"named_breakdown_{i}", sql,
+                          schema=state.get("schema_context"))
+        if getattr(r, "error", None) or not getattr(r, "rows", None):
+            continue
+        out.append(InvestigationFinding(
+            finding_id=f"named_breakdown_{i}",
+            title=f"{label} by {col}",
+            sql=r.sql, columns=r.columns, rows=r.rows[:50],
+            row_count=r.row_count, error=None,
+            interpretation="", key_numbers=[], chart_type="auto",
+            stat_note=None, is_significant=False,
+        ))
+    return out
+
+
 def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False,
                            pinned: Optional[Iterable[str]] = None) -> list[str]:
     """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other. When
@@ -7075,6 +7127,21 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             for i, (q, r) in enumerate(results)
         ]
         summary = ""  # trace, not analysis — the report renders only real prose
+
+    # The cut the question NAMED leads, computed in code. The planner above declines a
+    # high-cardinality id column — correct for a weakness scan, wrong for a question that
+    # asked to see that exact breakdown — and no amount of prompting reliably overrules a
+    # judgement the instrument is right to make.
+    if intake_data.get("descriptive_only"):
+        try:
+            _named = _named_breakdown_findings(state, conn, intake_data)
+            if _named:
+                _have = {f.get("sql") for f in findings}
+                findings = _named + [f for f in findings if f.get("sql") not in _have]
+        except Exception as _nb_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_nb_exc, "the named breakdown is best-effort; the scan's own "
+                              "findings still serve", counter="deep_analysis.named_breakdown")
 
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
