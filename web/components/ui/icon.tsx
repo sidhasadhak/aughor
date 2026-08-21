@@ -22,8 +22,24 @@
  * sites. Adding one means adding a row to ICONS and nothing else.
  *
  * Sizes come from the type scale's small end: 14 default, 16 for a lone control.
- * Stroke stays at Tabler's 2 scaled to 1.6 for our smaller default — thinner reads as
- * broken at 14px, heavier competes with the text beside it.
+ *
+ * ── WHY STROKE IS COMPUTED, NOT CONSTANT ────────────────────────────────────
+ * Tabler draws on a 24-unit grid, so a FIXED stroke shrinks with the glyph: 1.6 units
+ * at 11px renders 1.6 x 11/24 = 0.73 device pixels. On a retina screen that rounds up
+ * and looks correct — which is exactly why it survives a 2x screenshot. On an ordinary
+ * 1x monitor it is sub-pixel, and the browser paints it as a soft grey smear rather
+ * than a line. Measured across the catalog screen, every size in use came in under one
+ * device pixel: 11px 0.73, 13px 0.87, 14px 0.93, 16px 1.07. The hand-drawn glyphs
+ * these replaced sat near 1.0-1.5, because each was drawn on its own small grid.
+ *
+ * So stroke is a function of size, holding the DEVICE stroke near 1.1px across the
+ * scale — optical sizing, the same reason a 9pt typeface is not the 72pt one scaled
+ * down. Clamped at both ends: 2.4 units so an 11px glyph never fills in, and 1.0 so a
+ * 48px empty-state mark stays an outline (which is also, exactly, the weight the 48px
+ * drawing it replaced was drawn at).
+ *
+ * Pass `stroke` explicitly to override; a few call sites carry a weight from the
+ * drawing they replaced.
  */
 
 import {
@@ -177,15 +193,21 @@ export type IconName = keyof typeof ICONS;
 /** Every role this set answers to — for the icon gate and for a picker. */
 export const ICON_NAMES = Object.keys(ICONS) as IconName[];
 
+/** Stroke in Tabler's 24-unit grid that renders ~1.1 device pixels at `size`. */
+function opticalStroke(size: number): number {
+  return Math.min(2.4, Math.max(1.0, Math.round((26 / size) * 100) / 100));
+}
+
 export function Icon({
-  name, size = 14, stroke = 1.6, className, label,
+  name, size = 14, stroke, className, label,
 }: { name: IconName; size?: number; stroke?: number; className?: string; label?: string }) {
   const Glyph = ICONS[name] ?? ICONS.info;
+  const weight = stroke ?? opticalStroke(size);
   // An icon is either a picture that carries meaning or decoration beside a word that
   // already carries it. Naming both is worse than naming neither: a screen reader then
   // reads "Copy, Copy" on every button. `label` marks the first case; its absence marks
   // the second and hides the glyph from the accessibility tree entirely.
   return label
-    ? <Glyph size={size} stroke={stroke} className={className} role="img" aria-label={label} />
-    : <Glyph size={size} stroke={stroke} className={className} aria-hidden />;
+    ? <Glyph size={size} stroke={weight} className={className} role="img" aria-label={label} />
+    : <Glyph size={size} stroke={weight} className={className} aria-hidden />;
 }

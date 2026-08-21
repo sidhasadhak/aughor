@@ -1334,7 +1334,7 @@ function EmptyDetail() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
       <span style={{ color: "var(--t4)", display: "inline-flex" }}>
-        <Icon name="db" size={48} stroke={1.2} />
+        <Icon name="db" size={48} />
       </span>
       <div style={{ textAlign: "center" }}>
         <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
