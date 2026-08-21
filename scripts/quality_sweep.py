@@ -190,13 +190,13 @@ def finding_flags(phase_id, f):
 
 def analyze_deep(rec):
     flags = []
-    ada = rec.get("ada_report") or {}
-    wf = ada.get("attribution_waterfall") or []
-    tcl = ada.get("total_change_label") or ""
-    conf = (ada.get("confidence") or "").upper()
-    headline = ada.get("headline") or ""
-    summary = ada.get("executive_summary") or ""
-    phases = ada.get("phases") or []
+    report = rec.get("ada_report") or {}
+    wf = report.get("attribution_waterfall") or []
+    tcl = report.get("total_change_label") or ""
+    conf = (report.get("confidence") or "").upper()
+    headline = report.get("headline") or ""
+    summary = report.get("executive_summary") or ""
+    phases = report.get("phases") or []
 
     for w in wf:
         pct = w.get("pct_of_total")
@@ -220,8 +220,8 @@ def analyze_deep(rec):
 
     q = rec.get("question", "")
     if re.search(r"losing money|profit|margin|revenue", q, re.I):
-        target = (ada.get("metric") or "") + " " + headline + " " + summary
-        if is_offtopic_metric(headline) or is_offtopic_metric(ada.get("metric") or ""):
+        target = (report.get("metric") or "") + " " + headline + " " + summary
+        if is_offtopic_metric(headline) or is_offtopic_metric(report.get("metric") or ""):
             flags.append(f"FRAME: money question → off-topic metric (headline={headline[:50]!r})")
         elif not is_money_metric(target):
             flags.append(f"FRAME: money question but no money metric (headline={headline[:50]!r})")
@@ -277,31 +277,31 @@ def run_case(conn, label, mode, question):
         else:
             evs = sse_post("/investigate", {"question": question, "connection_id": conn,
                                             "canvas_id": None, "skip_cache": True}, 700)
-            ada = None
+            report = None
             phase_count = 0
             for e in evs:
                 if e.get("type") == "ada_report":
-                    ada = e.get("ada_report")
+                    report = e.get("ada_report")
                 if e.get("type") == "phase_complete":
                     phase_count += 1
                 if e.get("type") == "mode":
                     rec["query_mode"] = e.get("query_mode")
             rec["phase_events"] = phase_count
-            if ada:
-                rec["ada_report"] = ada
-                rec["headline"] = ada.get("headline")
-                rec["confidence"] = ada.get("confidence")
-                rec["metric"] = ada.get("metric")
-                rec["total_change_label"] = ada.get("total_change_label")
-                rec["observation_period"] = ada.get("observation_period")
-                rec["n_phases"] = len(ada.get("phases") or [])
-                rec["n_waterfall"] = len(ada.get("attribution_waterfall") or [])
+            if report:
+                rec["ada_report"] = report
+                rec["headline"] = report.get("headline")
+                rec["confidence"] = report.get("confidence")
+                rec["metric"] = report.get("metric")
+                rec["total_change_label"] = report.get("total_change_label")
+                rec["observation_period"] = report.get("observation_period")
+                rec["n_phases"] = len(report.get("phases") or [])
+                rec["n_waterfall"] = len(report.get("attribution_waterfall") or [])
                 # compact per-finding capture for the report
                 rec["findings_digest"] = [
                     {"phase": p.get("phase_id"), "title": f.get("title"),
                      "columns": f.get("columns"), "chart_type": f.get("chart_type"),
                      "interp": (f.get("interpretation") or "")[:160]}
-                    for p in ada.get("phases", []) for f in (p.get("findings") or [])
+                    for p in report.get("phases", []) for f in (p.get("findings") or [])
                 ][:20]
             rec["flags"] = analyze_deep(rec)
     except (urllib.error.URLError, Exception) as e:

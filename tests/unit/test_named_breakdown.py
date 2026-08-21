@@ -101,59 +101,13 @@ def test_the_alias_comes_from_the_helper_that_already_existed():
 
 
 # ── Fix 5: the breakdown must not depend on the planner succeeding ──────────────
-# Live defect. The named breakdown was computed AFTER the scan's results were assembled,
-# so `if not _run.ok: return ...error_phase` short-circuited past it: a question whose
-# answer we can compute outright in one GROUP BY shipped a "Skipped" card because a model
-# call further up failed. The breakdown is deterministic SQL — it is now computed BEFORE
-# the run and survives its failure.
-
-def test_a_failed_scan_still_ships_the_named_breakdown(monkeypatch):
-    monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
-        sql="SELECT route_id, COUNT(*) ...", columns=["route_id", "flight_count"],
-        rows=[["ZRH-LHR", 28]], row_count=1, error=None))
-    # The planner dies — the scan can produce nothing of its own.
-    monkeypatch.setattr(I, "run_analysis_phase", lambda *a, **k: I._PhaseRun(
-        ok=False, error_phase=I._phase_result(
-            "cross_section", "Cross-Sectional Scan", "🧭", "error",
-            "Cross-sectional planning failed.",
-            [I._skipped_finding("cross_section", "planner exploded")])))
-
-    state = {
-        "question": "give me route wise number of flights",
-        "schema_context": "", "connection_id": "c", "investigation_phases": [],
-        "_ada_intake": {**_INTAKE, "descriptive_only": True,
-                        "dimensions": ["main.flights.market"]},
-    }
-    phases = I.ada_cross_section(state, None)["investigation_phases"]
-
-    assert len(phases) == 1
-    titles = [f["title"] for f in phases[0]["findings"]]
-    assert "flight count by route_id" in titles, (
-        "a planner failure buried a breakdown the code had already computed")
-    assert not any("skip" in t.lower() for t in titles)
-
-
-def test_a_clean_scan_leads_with_the_named_breakdown(monkeypatch):
-    """And on the happy path it still LEADS, ahead of the scan's own dimensions."""
-    monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
-        sql="SELECT route_id, COUNT(*) ...", columns=["route_id", "flight_count"],
-        rows=[["ZRH-LHR", 28]], row_count=1, error=None))
-    _own = SimpleNamespace(columns=["market", "flight_count"], rows=[["EU", 60]],
-                           row_count=1, error=None, sql="SELECT market, COUNT(*) ...")
-    monkeypatch.setattr(I, "run_analysis_phase", lambda *a, **k: I._PhaseRun(
-        ok=True, results=[(SimpleNamespace(title="flight count by market",
-                                           chart_type="magnitude", sql=_own.sql), _own)],
-        results_text="", interpretation=None))
-
-    state = {
-        "question": "give me route wise number of flights",
-        "schema_context": "", "connection_id": "c", "investigation_phases": [],
-        "_ada_intake": {**_INTAKE, "descriptive_only": True,
-                        "dimensions": ["main.flights.market"]},
-    }
-    phases = I.ada_cross_section(state, None)["investigation_phases"]
-    titles = [f["title"] for f in phases[0]["findings"]]
-    assert titles[0] == "flight count by route_id", titles
+# Two tests stood here asserting that the weakness scan carried the named breakdown
+# through a planner failure and led with it on the happy path. Both are gone, and
+# deliberately: with a breakdown ROUTE (Fix 6, below) a descriptive question never
+# enters the weakness scan at all, so those assertions described a path that no longer
+# exists. What they were protecting — that a model call failing upstream must not cost
+# a breakdown we can compute outright — is now
+# TestTheBreakdownPhase::test_a_dead_narrator_costs_the_prose_not_the_exhibit.
 
 
 # ── Fix 4: a date column that does not live on the metric table ────────────────
@@ -184,3 +138,118 @@ def test_a_windowed_query_that_returns_nothing_retries_unwindowed(monkeypatch):
     out = I._named_breakdown_findings({"schema_context": ""}, None, _INTAKE)
     assert len(out) == 1 and out[0]["rows"] == [["ZRH-LHR", 28]]
     assert len(calls) == 2 and "WHERE" in calls[0] and "WHERE" not in calls[1]
+
+
+# ── Fix 6: the breakdown is a ROUTE, not a patch on the weakness scan ───────────
+# Five successive fixes tried to make the weakness scan behave descriptively, and each
+# was declined by the layer beneath it — the framing, then the intake, then the priority
+# sorter, then the SQL planner. That is the signature of a missing route. A listing is
+# neither "why did X change" nor "where is X weakest", so it now has its own instrument.
+
+def _descriptive_state(**over):
+    return {
+        "question": "give me route wise number of flights",
+        "schema_context": "", "connection_id": "c", "investigation_phases": [],
+        "_ada_intake": {**_INTAKE, "descriptive_only": True,
+                        "dimensions": ["main.flights.market"], **over},
+    }
+
+
+class TestTheRoute:
+    def test_a_descriptive_question_gets_the_breakdown(self):
+        assert I.route_after_intake(_descriptive_state()) == "deep_breakdown"
+
+    def test_descriptive_outranks_cross_sectional(self):
+        """A listing is usually ALSO cross_sectional (no time axis). The descriptive
+        verdict has to win, or the question lands back in the weakness scan."""
+        st = _descriptive_state()
+        st["_ada_intake"]["cross_sectional"] = True
+        assert I.route_after_intake(st) == "deep_breakdown"
+
+    def test_a_diagnostic_question_still_scans(self):
+        st = _descriptive_state()
+        st["_ada_intake"]["descriptive_only"] = False
+        st["_ada_intake"]["cross_sectional"] = True
+        assert I.route_after_intake(st) == "ada_cross_section"
+
+    def test_a_temporal_question_still_takes_the_baseline(self):
+        st = _descriptive_state()
+        st["_ada_intake"]["descriptive_only"] = False
+        st["_ada_intake"]["cross_sectional"] = False
+        assert I.route_after_intake(st) == "ada_baseline"
+
+    def test_the_graph_can_reach_the_new_node(self):
+        """A route string with no edge in the map is a runtime error, not a test failure —
+        so assert the wiring, not just the router."""
+        import inspect
+
+        from aughor.agent import graph as G
+        src = inspect.getsource(G._compile)
+        assert '"deep_breakdown": "deep_breakdown"' in src, "route target missing from an edge map"
+        assert src.count('"deep_breakdown": "deep_breakdown"') == 2, (
+            "both the intake and the clarify gate must be able to reach it")
+        assert 'graph.add_edge("deep_breakdown", "ada_synthesize")' in src
+
+
+class TestTheBreakdownPhase:
+    def _run(self, monkeypatch, *, rows=None, narrate=True):
+        monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
+            sql="SELECT route_id, COUNT(*) ...", columns=["route_id", "flight_count"],
+            rows=rows if rows is not None else [["ZRH-LHR", 28], ["GVA-DEL", 12]],
+            row_count=2, error=None))
+        if narrate:
+            monkeypatch.setattr(I, "_provider", lambda *a, **k: SimpleNamespace(
+                complete=lambda **kw: SimpleNamespace(
+                    phase_summary="Flights by route across the window.",
+                    findings=[SimpleNamespace(
+                        title="Flights by route", interpretation="ZRH-LHR carries 28 of the 40.",
+                        key_numbers=[], chart_type="auto", stat_note=None,
+                        is_significant=False, claim=None)])))
+        else:
+            monkeypatch.setattr(I, "_provider", lambda *a, **k: SimpleNamespace(
+                complete=lambda **kw: (_ for _ in ()).throw(RuntimeError("narrator down"))))
+        return I.deep_breakdown(_descriptive_state(), None)["investigation_phases"]
+
+    def test_it_ships_the_named_cut(self, monkeypatch):
+        phases = self._run(monkeypatch)
+        assert len(phases) == 1 and phases[0]["phase_id"] == "breakdown"
+        assert phases[0]["status"] == "complete"
+        titles = [f["title"] for f in phases[0]["findings"]]
+        assert any("route" in t.lower() for t in titles), titles
+
+    def test_a_dead_narrator_costs_the_prose_not_the_exhibit(self, monkeypatch):
+        """The rows are already on the page; a failed model call must not take them."""
+        phases = self._run(monkeypatch, narrate=False)
+        assert phases[0]["status"] == "complete"
+        f = phases[0]["findings"][0]
+        assert f["rows"] == [["ZRH-LHR", 28], ["GVA-DEL", 12]]
+
+    def test_nothing_groupable_says_so(self, monkeypatch):
+        monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
+            sql="x", columns=[], rows=[], row_count=0, error="no such column"))
+        phases = I.deep_breakdown(_descriptive_state(), None)["investigation_phases"]
+        assert phases[0]["status"] == "skipped"
+        assert "breakdown" in (phases[0]["skipped_reason"] or "").lower()
+
+    def test_it_falls_back_to_the_intake_dimensions(self, monkeypatch):
+        """When the question named no cut, the phase still has to produce one."""
+        seen = {}
+        monkeypatch.setattr(I, "_execute_safe", lambda c, pid, sql, **k: seen.setdefault("sql", sql) and None
+                            or SimpleNamespace(sql=sql, columns=["market", "n"],
+                                               rows=[["EU", 60]], row_count=1, error=None))
+        monkeypatch.setattr(I, "_provider", lambda *a, **k: SimpleNamespace(
+            complete=lambda **kw: SimpleNamespace(phase_summary="", findings=[])))
+        st = _descriptive_state()
+        st["_ada_intake"]["named_dimensions"] = []
+        phases = I.deep_breakdown(st, None)["investigation_phases"]
+        assert phases[0]["status"] == "complete"
+        assert "market" in seen["sql"], seen["sql"]
+
+
+def test_the_weakness_scan_no_longer_owns_a_breakdown():
+    """One owner. The hook that used to bolt a named breakdown onto the weakness scan is
+    gone — with the route in place it was a second answer to the same question."""
+    import inspect
+    src = inspect.getsource(I.ada_cross_section)
+    assert "_named_breakdown_findings" not in src
+    assert "descriptive_only" not in src

@@ -1,0 +1,19 @@
+kind: schema
+fqn: default
+title: default
+summary: 'default: 0 tables, 0 relationships.'
+facts:
+  n_tables: 0
+  n_relationships: 0
+  schema_fingerprint: d41d8cd98f00b204
+  skipped_tables: []
+questions: []
+children: []
+content_hash: 72a7557ab339526a
+checksum: 02601c1e3e0e38d9
+child_checksums: {}
+provenance:
+  connection_id: workspace
+  schema: default
+enriched_summary: ''
+enriched_hash: ''

@@ -1,0 +1,13 @@
+connection_id: workspace
+schema_name: default
+root_checksum: eb435e09dc8f94b7
+built_at: '2026-08-21T10:52:53.752685+00:00'
+stats:
+  tables: 0
+  columns: 0
+  cache_hits: 0
+  rebuilt: 2
+  skipped_tables: []
+node_index:
+- default
+- workspace

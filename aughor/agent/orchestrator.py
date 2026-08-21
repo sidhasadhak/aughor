@@ -89,6 +89,7 @@ _PHASE_META = {
     "dimensional":   ("Dimensional Attribution", "🔬"),
     "behavioral":    ("Behavioral & Operational Diagnostics", "👥"),
     "cross_section": ("Cross-Sectional Weakness Scan", "🧭"),
+    "breakdown":     ("Breakdown", "📑"),
     "synthesis":     ("Synthesis", "📋"),
 }
 

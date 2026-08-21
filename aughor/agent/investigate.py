@@ -198,10 +198,33 @@ def _question_asks_for_dimension(question: str) -> bool:
 
 
 def route_after_intake(state: AgentState) -> str:
-    """Diagnostic / cross-sectional questions (where-which-is-weakest, or no usable
-    time axis) skip the temporal baseline and go straight to the dimensional
-    weakness scan; everything else takes the normal temporal path."""
+    """Pick the instrument the question actually asks for.
+
+    Three routes, because there are three shapes of question and for a long time there
+    were only two instruments:
+
+      descriptive  → deep_breakdown      "give me route wise number of flights"
+      diagnostic   → ada_cross_section  "which region is weakest"
+      temporal     → ada_baseline       "why did revenue fall"
+
+    The breakdown route exists because a listing is neither of the other two, and
+    routing it to the weakness scan made every layer below fight the question: the scan
+    ranks to find where value is WEAK, so it re-frames a listing as a shortfall, and its
+    planner correctly declines the high-cardinality id column a listing is usually about.
+    Five successive fixes tried to make the scan behave descriptively and each was
+    declined by the layer beneath it, which is the signature of a missing route rather
+    than a missing patch.
+
+    `descriptive_only` is a typed verdict the intake already computes in code (§6: a knob
+    is a ModelProfile field or a typed intake verdict, never a flag), so this is a read,
+    not a new judgement.
+
+    The new node takes the LIVE vocabulary rather than the prefix beside it: those two keep a
+    retired prefix because their names are frozen API, but nothing obliges fresh code to
+    inherit it, and the vocabulary ratchet counts what we add."""
     intake = state.get("_ada_intake") or {}
+    if intake.get("descriptive_only"):
+        return "deep_breakdown"
     return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
 
 
@@ -6820,6 +6843,94 @@ def _degenerate_seed_verdict(conn, metric_table: str, dimensions: list,
 
 
 @_telemetry.node_span("ada_cross_section")
+def deep_breakdown(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """DESCRIPTIVE phase — show the cut the question asked for, and say nothing about
+    whether it is good.
+
+    This is the third instrument. The temporal battery answers "why did X change" and
+    the cross-sectional scan answers "where is X weakest"; a listing — "give me route
+    wise number of flights" — is neither, and for a long time it was routed to the
+    weakness scan because that was the only non-temporal route there was. Every layer
+    then fought the question: the scan RANKS to find shortfalls, so it framed a listing
+    as one, and its SQL planner correctly declined the high-cardinality id column the
+    listing was actually about ("the dataset does not contain a unique route_id to
+    route_name mapping"). Both behaviours are right for a weakness scan. They are simply
+    the wrong instrument.
+
+    So the queries are built in code rather than requested from a planner — one GROUP BY
+    per named cut, through the same guard battery every other phase query runs — and the
+    narrator is given a prompt that forbids the vocabulary of shortfall. The only model
+    call here reads rows and describes them.
+    """
+    from types import SimpleNamespace
+
+    from aughor.agent.prompts_investigate import (
+        BREAKDOWN_INTERPRET_PROMPT, PhaseInterpretation,
+    )
+    phases = state.get("investigation_phases", [])
+    intake_data = state.get("_ada_intake") or {}
+    metric_label = intake_data.get("metric_label", "the metric")
+    _title, _emoji = "Breakdown", "📑"
+
+    # The cuts: what the question NAMED, else the intake's dimensions in priority order
+    # with the named ones pinned. Two is the cap — a listing question rarely asks for more,
+    # and a report of six near-identical bar charts answers nothing the first two did not.
+    dims = [d for d in (intake_data.get("named_dimensions") or []) if d]
+    if not dims:
+        dims = _prioritize_dimensions(
+            intake_data.get("dimensions") or [],
+            pinned=intake_data.get("named_dimensions") or [],
+        )[:2]
+
+    findings = _named_breakdown_findings(state, conn, {**intake_data, "named_dimensions": dims})
+    if not findings:
+        return {"investigation_phases": phases + [_phase_result(
+            "breakdown", _title, _emoji, "skipped", "",
+            [_skipped_finding("breakdown", "No dimension in this data could be grouped on.")],
+            skipped_reason="The question asked for a breakdown, but no groupable column "
+                           "was available on the metric's table.")]}
+
+    # One narrator pass over rows that are already on the page. A failure here costs the
+    # prose, never the exhibit — the findings stand on their own numbers.
+    summary = ""
+    try:
+        rows_text = "\n\n".join(
+            f"{f['title']}\n" + " | ".join(f.get("columns") or []) + "\n"
+            + "\n".join(" | ".join(str(c) for c in row) for row in (f.get("rows") or [])[:25])
+            + (f"\n... ({f['row_count'] - 25} more groups)" if (f.get("row_count") or 0) > 25 else "")
+            for f in findings)
+        interp = _provider("fast").complete(
+            system=("Describe a breakdown. The question asked to SEE these groups, not to be "
+                    "told which of them is a problem — there is no target, benchmark or prior "
+                    "period in this phase, so no value here can be called good or bad."),
+            user=BREAKDOWN_INTERPRET_PROMPT.format(
+                question=state["question"], metric_label=metric_label, results_text=rows_text),
+            response_model=PhaseInterpretation)
+        if interp and interp.findings:
+            _paired = [(SimpleNamespace(title=f["title"], chart_type=f.get("chart_type", "auto"),
+                                        sql=f.get("sql", "")),
+                        SimpleNamespace(columns=f.get("columns"), rows=f.get("rows"),
+                                        row_count=f.get("row_count"), error=None,
+                                        sql=f.get("sql", "")))
+                       for f in findings]
+            findings = _assemble_phase_findings(_paired, interp.findings, "breakdown",
+                                                metric_label=metric_label, conn=conn)
+            summary = interp.phase_summary or ""
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "the breakdown narrator is best-effort; the rows and charts still "
+                       "answer the question", counter="deep_analysis.breakdown_narrate")
+
+    # A breakdown RANKS a metric across a cut — the same exhibit the scan draws, without
+    # the weakness reading. Reuse the one resolver so form stays a function of job.
+    for f in findings:
+        _chart_primary_is_metric(f)
+        f["chart_type"] = _chart_type_for_finding(f, "ranking")
+
+    return {"investigation_phases": phases + [_phase_result(
+        "breakdown", _title, _emoji, "complete", summary, findings)]}
+
+
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
                       phase_meta: Optional[tuple] = None,
@@ -7102,19 +7213,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         question=question, connection_id=state.get("connection_id", ""),
         )
 
-    # The cut the question NAMED, computed in code — deterministic, and INDEPENDENT of the
-    # planner, so it is computed BEFORE the run: a planning or execution failure would
-    # otherwise return a bare "Skipped" phase for a question whose answer we can compute
-    # outright, which is exactly the case this breakdown exists to cover.
-    _named: list = []
-    if intake_data.get("descriptive_only"):
-        try:
-            _named = _named_breakdown_findings(state, conn, intake_data)
-        except Exception as _nb_exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_nb_exc, "the named breakdown is best-effort; the scan's own "
-                              "findings still serve", counter="deep_analysis.named_breakdown")
-
     _run = _do_run()
     # #2 — reattempt ONCE on a SATURATED result: every group came back pinned at ~0% or ~100% — the
     # signature of a tautology (grouped by an event-only column) or a fan-out, NOT a real finding.
@@ -7140,11 +7238,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         if _run2.ok and _run2.results and _n_saturated(_run2) < _n_saturated(_run):
             _run = _run2
     if not _run.ok:
-        # A failed scan still answers a question the breakdown already computed — ship the
-        # rows rather than a "Skipped" card.
-        if _named:
-            return {"investigation_phases": phases + [_phase_result(
-                _phase_id, _phase_title, _phase_emoji, "complete", "", _named)]}
         return {"investigation_phases": phases + [_run.error_phase]}
     results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
@@ -7166,12 +7259,6 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         ]
         summary = ""  # trace, not analysis — the report renders only real prose
 
-    # The named cut LEADS: the planner declines a high-cardinality id column — correct for a
-    # weakness scan, wrong for a question that asked to see that exact breakdown — and no
-    # amount of prompting reliably overrules a judgement the instrument is right to make.
-    if _named:
-        _have = {f.get("sql") for f in findings}
-        findings = _named + [f for f in findings if f.get("sql") not in _have]
 
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
