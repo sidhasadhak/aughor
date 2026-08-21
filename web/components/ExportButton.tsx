@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { downloadInvestigationExport } from "@/lib/api";
+import { Icon } from "@/components/ui/icon";
 
 export function ExportButton({ invId }: { invId: string }) {
   const [open, setOpen] = useState(false);
@@ -53,11 +54,7 @@ export function ExportButton({ invId }: { invId: string }) {
         onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
         onMouseLeave={e => { e.currentTarget.style.color = "var(--t2)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
+        <Icon name="download" size={13} />
         Export
         <span style={{ fontSize: 11, opacity: 0.6 }}>▾</span>
       </button>

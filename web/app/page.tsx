@@ -16,6 +16,7 @@ import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -134,49 +135,15 @@ type AskMode = "ask" | "investigate";
 
 // ── Icon primitives ────────────────────────────────────────────────────────────
 
-const ICON_PATHS: Record<string, string> = {
-  home:     "M3 12L12 3l9 9M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9",
-  chat:     "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
-  clock:    "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z",
-  db:       "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z",
-  builder:  "M3 3h7v7H3V3zm11 0h7v7h-7V3zm0 11h7v7h-7v-7zM3 14h7v7H3v-7z",
-  catalog:  "M4 6h16M4 10h16M4 14h16M4 18h16",
-  node:     "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
-  settings: "M12 15a3 3 0 100-6 3 3 0 000 6zm7.94-3c0-.32-.03-.63-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.6-.22l-2.39.96a7.07 7.07 0 00-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.58.23-1.13.54-1.62.94l-2.39-.96a.48.48 0 00-.6.22L2.07 9.47a.48.48 0 00.12.61l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.6.22l2.39-.96c.49.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.58-.27 1.13-.58 1.62-.94l2.39.96c.22.07.48 0 .6-.22l1.92-3.32a.48.48 0 00-.12-.61l-2.01-1.58c.05-.31.07-.63.07-.94z",
-  search:   "M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35",
-  plus:     "M12 5v14M5 12h14",
-  close:    "M18 6L6 18M6 6l12 12",
-  chevd:    "M6 9l6 6 6-6",
-  chevr:    "M9 6l6 6-6 6",
-  send:     "M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z",
-  spark:    "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
-  process:  "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
-  playbook: "M9 12h6M9 16h4M5 3H3a2 2 0 00-2 2v16a2 2 0 002 2h16a2 2 0 002-2V5a2 2 0 00-2-2h-2M15 3H9a1 1 0 00-1 1v2a1 1 0 001 1h6a1 1 0 001-1V4a1 1 0 00-1-1z",
-  check:    "M20 6L9 17l-5-5",
-  info:     "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-14v4m0 4v.01",
-  warning:  "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4m0 4v.01",
-  sun:      "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41",
-  moon:     "M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
-  refresh:  "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
-  trash:    "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6",
-  canvas:   "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
-  plug:     "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
-  metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
-  brief:    "M3 5h18M3 9h18M3 13h12M3 17h8",
-  layers:   "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
-  inbox:    "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
-  shield:   "M12 2l8 3v6c0 5-3.4 9.1-8 11-4.6-1.9-8-6-8-11V5l8-3zM9.5 12l1.8 1.8L15 9.8",
-};
-
+// The nav's glyphs come from the ONE icon set (components/ui/icon.tsx). Thirty
+// hand-written paths stood here — one of four such maps in this tree, each having
+// re-drawn the same glyphs slightly differently. `NavIcon` survives as a thin adapter
+// so the ~40 call sites below keep their `name`/`size`/`color` shape.
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
-  const d = ICON_PATHS[name] || ICON_PATHS.info;
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Icon name={name as IconName} size={size} />
+    </span>
   );
 }
 
@@ -1499,6 +1466,16 @@ const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
   semantic: "semantic",
 };
 
+/** The inverse, for the rail's active mark. Two ids collapse onto `query` above, so
+ *  the map cannot be inverted mechanically: `builder` is the rail item that exists.
+ *  Without this the SQL Editor was the one destination the rail never lit up — you
+ *  could be looking at it and the nav still said you were nowhere. */
+const RAIL_TAB_FOR_DATA_LAYER: Record<DataLayer, NavTab> = {
+  catalog:  "catalog",
+  query:    "builder",
+  semantic: "semantic",
+};
+
 /** Resolve a URL tab id to what should actually render: a workspace tab, plus the
  *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
 function resolveDeepLinkTab(t: NavTab): { tab: NavTab; dataLayer: DataLayer | null } {
@@ -2103,7 +2080,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? dataLayer : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
@@ -2386,6 +2363,9 @@ export default function Home() {
                 layer={dataLayer}
                 onLayerChange={setDataLayer}
                 ariaLabel="Data views"
+                // Catalog / SQL Editor / Semantic Layer are each their own rail item,
+                // so the switcher row repeated the rail. The rail is the switcher.
+                headerless
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (

@@ -4,16 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
 import { ExportButton } from "@/components/ExportButton";
-import TableIcon         from "@atlaskit/icon/core/table";
-import DownloadIcon      from "@atlaskit/icon/core/download";
-import CloseIcon         from "@atlaskit/icon/core/close";
-import CopyIcon          from "@atlaskit/icon/core/copy";
-import CheckMarkIcon     from "@atlaskit/icon/core/check-mark";
-import ChevronDownIcon   from "@atlaskit/icon/core/chevron-down";
-import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
-import InformationIcon   from "@atlaskit/icon/core/information";
-import WarningIcon       from "@atlaskit/icon/core/warning";
-import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
 import {
   Brief,
   BriefHeadline,
@@ -72,6 +62,7 @@ import {
   isIdLike,
 } from "@/components/charts/columnRoles";
 import { isAdditiveMeasure } from "@/lib/measureKind";
+import { Icon } from "@/components/ui/icon";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -402,7 +393,7 @@ function ResultFigure({
             onClick={handleSourceClick}
             className="self-end h-auto gap-1.5 px-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
           >
-            <TableIcon label="Table" size="small" />
+            <Icon name="table" size={16} label="Table" />
             Source data
           </Button>
         )}
@@ -437,8 +428,8 @@ function CopyAnswerButton({ text }: { text: string }) {
       className="h-auto gap-1.5 px-1.5 py-1 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
     >
       {copied
-        ? <><span className="text-emerald-400 aug-check-pop"><CheckMarkIcon label="Copied" size="small" /></span>Copied</>
-        : <><CopyIcon label="Copy answer" size="small" />Copy</>}
+        ? <><span className="text-emerald-400 aug-check-pop"><Icon name="check" size={16} label="Copied" /></span>Copied</>
+        : <><Icon name="copy" size={16} label="Copy answer" />Copy</>}
     </Button>
   );
 }
@@ -467,8 +458,8 @@ function SqlBlock({ sql }: { sql: string }) {
         className="absolute top-2 right-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60 opacity-0 group-hover/sql:opacity-100"
       >
         {copied
-          ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
-          : <CopyIcon label="Copy SQL" size="small" />}
+          ? <span className="text-emerald-400"><Icon name="check" size={16} label="Copied" /></span>
+          : <Icon name="copy" size={16} label="Copy SQL" />}
       </Button>
     </div>
   );
@@ -504,7 +495,7 @@ export function SourcePanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="shrink-0 text-zinc-400">
-            <TableIcon label="Table" size="small" />
+            <Icon name="table" size={16} label="Table" />
           </span>
           <span className="aug-fs-sm font-medium text-zinc-200 truncate">{title}</span>
         </div>
@@ -517,21 +508,21 @@ export function SourcePanel({
             title="Download as CSV"
             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60"
           >
-            <DownloadIcon label="Download CSV" size="small" />
+            <Icon name="download" size={16} label="Download CSV" />
           </Button>
           {/* Copy SQL */}
           {sql && (
             <Button variant="ghost" size="icon-xs" onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
               className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
               {copied
-                ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
-                : <CopyIcon label="Copy SQL" size="small" />}
+                ? <span className="text-emerald-400"><Icon name="check" size={16} label="Copied" /></span>
+                : <Icon name="copy" size={16} label="Copy SQL" />}
             </Button>
           )}
           {/* Close */}
           <Button variant="ghost" size="icon-xs" onClick={onClose} title="Close"
             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
-            <CloseIcon label="Close" size="small" />
+            <Icon name="close" size={16} label="Close" />
           </Button>
         </div>
       </div>
@@ -573,7 +564,7 @@ export function SourcePanel({
         <div className="flex-1 min-h-0 flex flex-col border-t border-zinc-700/60">
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 flex-shrink-0 border-b border-zinc-700/40">
             <span className="flex items-center gap-1.5 aug-fs-sm font-medium text-zinc-300">
-              <AngleBracketsIcon label="SQL" size="small" /> SQL
+              <Icon name="sql" size={16} label="SQL" /> SQL
             </span>
             {openInQuery && (
               <Button
@@ -584,7 +575,7 @@ export function SourcePanel({
                 className="h-auto gap-1 px-0 aug-fs-xs text-blue-400 hover:text-blue-300"
               >
                 Explore with Query Builder
-                <ArrowRightIcon label="" size="small" />
+                <Icon name="next" size={16} />
               </Button>
             )}
           </div>
@@ -744,7 +735,7 @@ function InvestigateBody({
 function Chevron({ open }: { open: boolean }) {
   return (
     <span className={`text-zinc-500 transition-transform duration-150 inline-block ${open ? "rotate-180" : ""}`}>
-      <ChevronDownIcon label="" size="small" />
+      <Icon name="chevd" size={16} />
     </span>
   );
 }
@@ -787,7 +778,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
         className="w-full h-auto justify-start gap-2 px-3 py-2 border-b border-amber-700/20 rounded-none text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
         <span className="shrink-0 text-amber-400/90">
-          <WarningIcon label="Playbook" size="small" />
+          <Icon name="warning" size={16} label="Playbook" />
         </span>
         <span className="aug-fs-xs font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
         <span className="aug-fs-xs text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
@@ -1049,7 +1040,7 @@ function NarrativeBrief({
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
-          <span className="shrink-0 mt-0.5"><WarningIcon label="Warning" size="small" /></span>
+          <span className="shrink-0 mt-0.5"><Icon name="warning" size={16} label="Warning" /></span>
           <span>
             Result may be incomplete — {inspect.issues.join("; ")}
             {inspect.suggestedFix ? `. ${inspect.suggestedFix}` : ""}
@@ -1068,7 +1059,7 @@ function NarrativeBrief({
           onClick={() => setExplained(true)}
           className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
         >
-          <InformationIcon label="" size="small" />
+          <Icon name="info" size={16} />
           Explain the data
         </Button>
       )}
@@ -1100,7 +1091,7 @@ function NarrativeBrief({
                 onClick={() => onFollowUp?.(q)}
                 className="aug-pressable h-auto items-start justify-start gap-1.5 p-0 text-left whitespace-normal aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
               >
-                <span className="shrink-0 text-zinc-500 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
+                <span className="shrink-0 text-zinc-500 mt-0.5"><Icon name="next" size={16} /></span>
                 <span>{q}</span>
               </Button>
             ))}
@@ -1283,7 +1274,7 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
         onClick={load}
         className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
       >
-        <InformationIcon label="" size="small" />
+        <Icon name="info" size={16} />
         Show grounding
       </Button>
     );
@@ -1384,7 +1375,7 @@ function InsightDetails({
           })}
           className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
-          <TableIcon label="Table" size="small" />
+          <Icon name="table" size={16} label="Table" />
           View source data &amp; SQL
         </Button>
       )}
@@ -1640,7 +1631,7 @@ export function ChatMessage({
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="aug-fs-sm text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
-            <StatusChip key={t} hue="muted" icon={<TableIcon label="Table" size="small" />} className="font-mono">
+            <StatusChip key={t} hue="muted" icon={<Icon name="table" size={16} label="Table" />} className="font-mono">
               {t}
             </StatusChip>
           ))}
@@ -1676,7 +1667,7 @@ export function ChatMessage({
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-[var(--r3)] bg-amber-950/30 border border-amber-800/40 aug-fs-xs text-amber-400 leading-snug">
               <span className="shrink-0 mt-0.5 text-amber-500">
-                <InformationIcon label="Info" size="small" />
+                <Icon name="info" size={16} label="Info" />
               </span>
               <span className="flex-1">
                 <span className="text-amber-300 font-medium">From a similar past deep analysis</span>
@@ -1711,7 +1702,7 @@ export function ChatMessage({
                   className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
                 >
                   <span className="text-zinc-500 shrink-0">
-                    <ArrowRightIcon label="" size="small" />
+                    <Icon name="next" size={16} />
                   </span>
                   {q}
                 </Button>

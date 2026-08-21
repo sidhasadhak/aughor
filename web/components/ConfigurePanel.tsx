@@ -4,10 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { Button } from "@/components/ui/button";
 import { compactNumber, formatCount } from "@/lib/format";
-import CloseIcon         from "@atlaskit/icon/core/close";
-import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
-import TableIcon         from "@atlaskit/icon/core/table";
-import InformationIcon   from "@atlaskit/icon/core/information";
 import { MetricsPanel } from "./MetricsPanel";
 import { DocumentUploader } from "./DocumentUploader";
 import { useSchema } from "@/lib/schema-context";
@@ -20,6 +16,7 @@ import {
 } from "@/lib/api";
 
 import { getApiBase } from "@/lib/config";
+import { Icon } from "@/components/ui/icon";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -202,7 +199,7 @@ function TableDetail({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--b1)] shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
-            <span className="rotate-180 inline-block"><ChevronRightIcon label="Back" size="small" /></span>
+            <span className="rotate-180 inline-block"><Icon name="chevr" size={16} label="Back" /></span>
           </button>
           <span className="aug-fs-sm font-semibold text-[var(--t1)] font-mono">{table.name}</span>
           <span className="aug-fs-xs text-[var(--t3)]">
@@ -399,13 +396,13 @@ function DataTab({
                 }}
               >
                 {on && (
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#0b1220" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>
+                  <span style={{ color: "#0b1220", display: "inline-flex" }}><Icon name="check" size={11} stroke={2.4} /></span>
                 )}
               </span>
             </button>
             {/* Open detail */}
             <button onClick={() => setSelected(t)} className="flex-1 flex items-center min-w-0 text-left">
-              <span className="text-[var(--t3)] shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
+              <span className="text-[var(--t3)] shrink-0 mr-2"><Icon name="table" size={16} label="Table" /></span>
               <span className="flex-1 font-mono text-[var(--t1)] truncate">{t.name}</span>
             </button>
             <span className="w-12 text-right text-[var(--t3)] shrink-0">{t.columns.length}</span>
@@ -413,7 +410,7 @@ function DataTab({
               {compactNumber(Number(t.row_count), 1)}
             </span>
             <button onClick={() => setSelected(t)} className="text-[var(--t4)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
-              <ChevronRightIcon label="" size="small" />
+              <Icon name="chevr" size={16} />
             </button>
           </div>
           );
@@ -539,12 +536,12 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }:
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--b1)] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[var(--t3)]"><InformationIcon label="Configure" size="small" /></span>
+            <span className="text-[var(--t3)]"><Icon name="info" size={16} label="Configure" /></span>
             <span className="aug-fs-sm font-semibold text-[var(--t1)]">Configure</span>
             <span className="aug-fs-xs text-[var(--t3)] truncate max-w-[180px]">{canvas.name}</span>
           </div>
           <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
-            <CloseIcon label="Close" size="small" />
+            <Icon name="close" size={16} label="Close" />
           </button>
         </div>
 

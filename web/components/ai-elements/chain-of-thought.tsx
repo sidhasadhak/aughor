@@ -19,6 +19,7 @@ import { Collapsible } from "@base-ui/react/collapsible";
 
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Icon } from "@/components/ui/icon";
 
 // ── Root ─────────────────────────────────────────────────────────────────────
 
@@ -68,15 +69,10 @@ export function ChainOfThoughtHeader({
       )}
       style={{ color: "var(--t3)" }}
     >
-      <svg
-        viewBox="0 0 12 12"
-        aria-hidden
-        className="h-3 w-3 shrink-0 transition-transform group-data-[panel-open]/cot:rotate-90"
-        style={{ color: "var(--t4)" }}
-      >
-        <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <span className="shrink-0 inline-flex" style={{ color: "var(--t4)" }}>
+        <Icon name="chevr" size={12}
+          className="transition-transform group-data-[panel-open]/cot:rotate-90" />
+      </span>
       <Shimmer active={streaming}>{children}</Shimmer>
     </Collapsible.Trigger>
   );

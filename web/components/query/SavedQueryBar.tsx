@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { Icon } from "@/components/ui/icon";
 
 /** What one mode can contribute to, and take from, the saved surface. */
 export interface SavedQueryBinding {
@@ -193,10 +194,7 @@ export function SavedQueryBar({
         title="Saved queries for this connection"
         onClick={() => { setOpen(v => !v); if (!open) refresh(); }}
       >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="1.8" strokeLinecap="round" style={{ flexShrink: 0 }}>
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-        </svg>
+        <Icon name="bookmark" size={11} />
         {activeName
           ? <span style={{ maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeName}</span>
           : "Saved"}

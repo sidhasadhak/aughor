@@ -87,6 +87,7 @@
      README states. Without them a revert leaves --scrim and --blue-solid
      undefined, and every scrim and primary button loses its colour. */
   --scrim: rgba(0, 0, 0, .65);
+  --bg-nav: var(--bg-1);   /* the left navigation rail — see the theme layer */
   --blue-solid: var(--blue3);
   --blue-solid-hover: var(--blue4);
   --vio-solid: var(--vio3);

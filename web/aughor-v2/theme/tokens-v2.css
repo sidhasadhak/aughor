@@ -51,6 +51,9 @@
   --bg-3: #1A232B;   /* surface-2: table headers, insets, inputs */
   --bg-4: #202B34;   /* surface-3: pressed states, gauge tracks */
   --bg-hover: #202B34;   /* one step up — the same value a pressed surface uses */
+  --bg-nav:   #1A232B;   /* the left rail sits ABOVE the page, not level with it: it is
+                            chrome you navigate from, and lifting it is what separates
+                            "where am I going" from "what am I looking at". */
   --bg-sel:   #14324C;   /* blue-tinted selection: rows, active nav, checked items */
 
   /* Borders — the hairline structure that carries the whole layout. Four steps
@@ -146,6 +149,7 @@
   --bg-3: #F4F7F9;   /* surface-2: table headers, insets, inputs */
   --bg-4: #EEF2F5;   /* surface-3: pressed states, gauge tracks */
   --bg-hover: #EEF3F7;
+  --bg-nav:   #FFFFFF;   /* already the lifted surface in light — the canvas is below it */
   --bg-sel:   #E7F1FA;
 
   --b0: #EDF1F4;

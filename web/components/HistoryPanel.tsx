@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
+import { Icon } from "@/components/ui/icon";
 
 interface Props {
   selectedId: string | null;
@@ -217,7 +217,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   isDeleting && "opacity-50 pointer-events-none"
                 )}
               >
-                <DeleteIcon label="Delete" size="small" />
+                <Icon name="trash" size={16} label="Delete" />
               </button>
             </li>
           );

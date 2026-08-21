@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { BrandLogo, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -576,7 +577,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                       >
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+                        <Icon name="trash" size={13} />
                       </Button>
                     </div>
                   ))}
@@ -666,7 +667,7 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 12 6 8l4-4" /></svg>
+            <Icon name="chevl" size={14} />
             All sources
           </Button>
         ) : (
@@ -680,7 +681,7 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px", borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "inherit" }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 4 4 12M4 4l8 8" /></svg>
+          <Icon name="close" size={13} />
           Done
         </Button>
       </div>

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // Each operational surface is a heavy data view — load on first open, then keep
@@ -18,19 +19,23 @@ const ActionHubPanel     = dynamic(() => import("@/components/ActionHubPanel").t
 const SecurityAuditPanel = dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
 
 // Icon paths mirror the sidebar's NavIcon set (activity / gear / spark / shield).
-const ICONS: Record<string, string> = {
-  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
-  gear:     "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H22a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z",
-  spark:    "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  shield:   "M12 2l8 3v6c0 5-3.4 9.1-8 11-4.6-1.9-8-6-8-11V5l8-3zM9.5 12l1.8 1.8L15 9.8",
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  activity: "activity",
+  gear: "settings",
+  spark: "spark",
+  shield: "shield",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={ICONS[name]} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
   );
 }
 

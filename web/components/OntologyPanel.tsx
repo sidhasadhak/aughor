@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import CloseIcon       from "@atlaskit/icon/core/close";
 import { Button }      from "@/components/ui/button";
-import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
-import NodeIcon        from "@atlaskit/icon/core/node";
-import SettingsIcon    from "@atlaskit/icon/core/settings";
 import {
   getOntology,
   patchQueryTemplate,
@@ -36,6 +32,7 @@ import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
 import { verbLabel, formatCount, formatTimestamp } from "@/lib/format";
+import { Icon } from "@/components/ui/icon";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
 
@@ -48,7 +45,7 @@ function SqlToggle({ sql }: { sql: string }) {
         className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-300 transition mt-1"
       >
         <span className={cn("transition-transform", open && "rotate-180")}>
-          <ChevronDownIcon label="" size="small" />
+          <Icon name="chevd" size={16} />
         </span>
         SQL
       </button>
@@ -252,7 +249,7 @@ function EntityDetailDrawer({
             onClick={onClose}
             className="text-zinc-500 hover:text-zinc-300 transition mt-0.5"
           >
-            <CloseIcon label="Close" size="small" />
+            <Icon name="close" size={16} label="Close" />
           </button>
         </div>
       </div>
@@ -681,7 +678,7 @@ function EdgeSqlPanel({
         </span>
         <span className="aug-fs-xs font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition ml-1">
-          <CloseIcon label="Close" size="small" />
+          <Icon name="close" size={16} label="Close" />
         </button>
       </div>
       <pre className="aug-fs-xs font-code text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
@@ -776,7 +773,7 @@ function OntologySettings({
       <div className="px-4 pt-4 pb-3 border-b border-zinc-700/60 flex items-center justify-between">
         <p className="text-xs font-semibold text-zinc-200">Ontology Settings</p>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition">
-          <CloseIcon label="Close" size="small" />
+          <Icon name="close" size={16} label="Close" />
         </button>
       </div>
 
@@ -895,7 +892,7 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
         <p className="text-xs font-semibold text-zinc-300">Possible duplicate entities</p>
         <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
-          <CloseIcon label="Close" size="small" />
+          <Icon name="close" size={16} label="Close" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
@@ -994,7 +991,7 @@ function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => v
           <span className="aug-fs-xs text-zinc-500">{pending.length} awaiting review</span>
         )}
         <Button variant="ghost" size="icon-xs" onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300" aria-label="Close">
-          <CloseIcon label="Close" size="small" />
+          <Icon name="close" size={16} label="Close" />
         </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
@@ -1094,7 +1091,7 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
         <p className="text-xs font-semibold text-zinc-300">Learned skills</p>
         <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
-          <CloseIcon label="Close" size="small" />
+          <Icon name="close" size={16} label="Close" />
         </button>
       </div>
       {autonomy && (
@@ -1277,7 +1274,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             )}
             title="Ontology settings"
           >
-            <SettingsIcon label="Settings" size="small" />
+            <Icon name="settings" size={16} label="Settings" />
           </button>
         </div>
       )}
@@ -1320,7 +1317,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-3 max-w-sm">
             <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto">
-              <NodeIcon label="" size="medium" color="currentColor" />
+              <Icon name="node" size={24} />
             </div>
             <p className="text-sm text-zinc-400">
               {error ?? "No ontology data available."}

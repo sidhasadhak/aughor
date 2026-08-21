@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { onUpgradeRequired, type UpgradeInfo } from "@/lib/upsell";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 // What each plan adds — shown so the upsell explains the value, not just the lock.
 const PLAN_HIGHLIGHTS: Record<string, string[]> = {
@@ -48,9 +49,9 @@ export function UpgradeModal() {
             justifyContent: "center", flexShrink: 0,
           }}>
             {/* spark / premium glyph */}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" fill="var(--blue4)" />
-            </svg>
+            <span style={{ color: "var(--blue4)", display: "inline-flex" }}>
+              <Icon name="bolt" size={16} className="aug-icon-filled" />
+            </span>
           </div>
           <div>
             <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>
@@ -73,9 +74,9 @@ export function UpgradeModal() {
           </div>
           {highlights.map((h, i) => (
             <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--t2)" }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true">
-                <path d="M20 6 9 17l-5-5" stroke="var(--grn4)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <span style={{ marginTop: 2, flexShrink: 0, color: "var(--grn4)", display: "inline-flex" }}>
+                <Icon name="check" size={13} stroke={2.5} />
+              </span>
               <span style={{ lineHeight: 1.4 }}>{h}</span>
             </div>
           ))}

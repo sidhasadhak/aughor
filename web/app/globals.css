@@ -139,7 +139,7 @@ a:hover { color: var(--blue4); }
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .aug-sidebar {
   width: 224px;
-  background: var(--bg-1);
+  background: var(--bg-nav);
   border-right: 1px solid var(--b1);
   display: flex;
   flex-direction: column;
@@ -464,3 +464,10 @@ a:hover { color: var(--blue4); }
 @media (prefers-reduced-motion: reduce) {
   .aug-disclose { transition: none; }
 }
+
+/* A stroke icon standing in for a FILLED state (a favourited star, a pinned item).
+   Tabler draws one glyph per concept, outline only; the filled variant is the same
+   drawing with its interior painted, which is exactly what a toggle's "on" needs —
+   the shape stays put and only its weight changes, so the eye reads state, not a
+   different icon. */
+.aug-icon-filled { fill: currentColor; }

@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Minus, X, Download, BarChart3, SlidersHorizontal } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -148,12 +148,12 @@ function Channel({ title, onRemove, more, children }: {
           {more && (
             <Button variant="ghost" size="icon-sm" onClick={() => setOpen((o) => !o)} title="More options"
               style={{ color: open ? "var(--accent)" : "var(--t4)" }}>
-              <SlidersHorizontal size={13} />
+              <Icon name="sliders" size={13} />
             </Button>
           )}
           {onRemove && (
             <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t4)" }}>
-              <Minus size={14} />
+              <Icon name="minus" size={14} />
             </Button>
           )}
         </div>
@@ -245,7 +245,7 @@ function AnnotationSection({ model }: { model: VizEditorModel }) {
               <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
               <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
-                <X size={13} />
+                <Icon name="close" size={13} />
               </Button>
             </div>
           ))}
@@ -321,11 +321,11 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           {model.onDownload && (
             <Button variant="ghost" size="icon-sm" onClick={model.onDownload} title="Download PNG" style={{ color: "var(--t3)" }}>
-              <Download size={15} />
+              <Icon name="download" size={15} />
             </Button>
           )}
           <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close" style={{ color: "var(--t3)" }}>
-            <X size={16} />
+            <Icon name="close" size={16} />
           </Button>
         </div>
       </div>
@@ -334,7 +334,7 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
       <div style={{ overflowY: "auto", flex: 1 }}>
         <Section title="Visualization">
           <Select value={vizValue} options={vizOptions} onChange={setViz}
-            leading={<BarChart3 size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />} />
+            leading={<span style={{ color: "var(--accent)", flexShrink: 0, display: "inline-flex" }}><Icon name="chart" size={15} /></span>} />
         </Section>
 
         {chartMode && model.dimOptions.length > 0 && (

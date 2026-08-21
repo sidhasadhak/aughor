@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // Each evals surface is a heavy data view — load on first open, then keep mounted
@@ -17,17 +18,21 @@ const EvalSuitesPanel = dynamic(() => import("@/components/EvalSuitesPanel").the
 const EvalRunPanel    = dynamic(() => import("@/components/EvalRunPanel").then(m => ({ default: m.EvalRunPanel })),       { ssr: false, loading });
 
 // Icon paths mirror the sidebar's NavIcon set (check / activity).
-const ICONS: Record<string, string> = {
-  check:    "M20 6L9 17l-5-5",
-  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  check: "check",
+  activity: "activity",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={ICONS[name]} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
   );
 }
 
