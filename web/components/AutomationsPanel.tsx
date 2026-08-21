@@ -190,7 +190,7 @@ export function AutomationsPanel({ connId }: Props) {
               }}>
               {v === "list" ? "Automations" :
                v === "runs" ? "Runs" :
-               v === "inbox" ? <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{pendingCount}</span>}</> :
+               v === "inbox" ? <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{pendingCount}</span>}</> :
                "Edit"}
             </Button>
           ))}
@@ -289,8 +289,8 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
-            {muted && <span style={{ background: "var(--chart-threshold-warn, #f59e0b)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10 }}>muted</span>}
-            {a.last_status && <span style={{ color: OUTCOME_COLOR[a.last_status] || "var(--t3)", fontSize: 10 }}>● {a.last_status}</span>}
+            {muted && <span style={{ background: "var(--chart-threshold-warn, #f59e0b)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 11 }}>muted</span>}
+            {a.last_status && <span style={{ color: OUTCOME_COLOR[a.last_status] || "var(--t3)", fontSize: 11 }}>● {a.last_status}</span>}
           </div>
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
             {a.conditions.map(describeCondition).join(a.condition_logic === "all" ? " AND " : " OR ")}
@@ -334,12 +334,12 @@ function RunsView({ automations, runsFor, runs, onPick }: {
           <div key={r.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{
-                fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase",
+                fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase",
                 background: OUTCOME_COLOR[r.outcome] || "var(--t3)", color: "#fff",
               }}>{r.outcome.replace("_", " ")}</span>
               <span style={{ fontSize: 12, color: "var(--t2)" }}>{r.reason}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 10, color: "var(--t3)" }}>{relTime(r.started_at)} · {r.duration_ms}ms</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>{relTime(r.started_at)} · {r.duration_ms}ms</span>
             </div>
             {r.effects.length > 0 && (
               <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3, paddingLeft: 4 }}>
@@ -406,7 +406,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
         <div key={p.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "12px 14px", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{p.action_id}</span>
-            <span style={{ fontSize: 10, color: "var(--t3)" }}>by {p.proposer}</span>
+            <span style={{ fontSize: 11, color: "var(--t3)" }}>by {p.proposer}</span>
           </div>
           {p.reasoning && <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 4 }}>{p.reasoning}</div>}
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4, fontFamily: "var(--font-mono, monospace)" }}>
@@ -429,7 +429,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
           {grants.map(g => (
             <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "8px 12px", marginBottom: 6 }}>
               <span style={{ fontSize: 12 }}><b>{g.action_id}</b> → {g.target_arg}=<code>{g.target_value}</code></span>
-              <span style={{ fontSize: 10, color: "var(--t3)" }}>used {g.use_count}× · by {g.created_by || g.owner_kind}</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>used {g.use_count}× · by {g.created_by || g.owner_kind}</span>
               <div style={{ flex: 1 }} />
               <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => revoke(g)} style={{ ...ghostBtn, color: "var(--red3)" }}>Revoke</Button>
             </div>
@@ -665,8 +665,8 @@ function relTime(iso: string): string {
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-      <div style={{ fontSize: 32, marginBottom: 12 }}>⚙️</div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No automations yet</div>
+      <div style={{ fontSize: 28, marginBottom: 12 }}>⚙️</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No automations yet</div>
       <div style={{ fontSize: 12, marginBottom: 20 }}>Bind a condition (a schedule, a metric, a data change) to an effect — investigate, deliver a briefing, notify, or run a governed action.</div>
       <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first automation</Button>
     </div>

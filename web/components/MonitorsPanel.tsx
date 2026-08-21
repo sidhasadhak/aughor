@@ -257,7 +257,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
               }}
             >
               {v === "list"   ? "Monitors" :
-               v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 10 }}>{unackedCount}</span>}</> :
+               v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{unackedCount}</span>}</> :
                "Configure"}
             </Button>
           ))}
@@ -393,7 +393,7 @@ function MonitorCard({
             <span style={{ fontWeight: 600, fontSize: 13, color: "var(--t1)" }}>{monitor.name}</span>
             <TypeBadge type={monitor.alert_on} />
             {unacked > 0 && (
-              <span style={{ background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 10 }}>
+              <span style={{ background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 11 }}>
                 {unacked} alert{unacked > 1 ? "s" : ""}
               </span>
             )}
@@ -439,7 +439,7 @@ function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) 
       opacity: alert.acknowledged ? 0.6 : 1,
     }}>
       <span style={{
-        fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+        fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
         background: SEVERITY_COLOR[alert.severity] ?? "var(--bg-3)", color: "#fff",
         textTransform: "uppercase", flexShrink: 0, marginTop: 1,
       }}>
@@ -462,7 +462,7 @@ function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) 
             {alert.threshold != null && <> · threshold: {alert.threshold}</>}
           </div>
         )}
-        <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 4 }}>{relTime(alert.triggered_at)}</div>
+        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{relTime(alert.triggered_at)}</div>
       </div>
       {!alert.acknowledged && (
         <Button variant="ghost" onClick={onAck} className="h-auto p-0 font-normal" style={ghostBtn}>Ack</Button>
@@ -553,7 +553,7 @@ function MonitorForm({
                 flexDirection: "column", alignItems: "flex-start", padding: "8px 10px", gap: 2,
               }}>
               <span style={{ fontWeight: 600, fontSize: 12 }}>{at.label}</span>
-              <span style={{ fontSize: 10, opacity: 0.75, textAlign: "left" }}>{at.desc}</span>
+              <span style={{ fontSize: 11, opacity: 0.75, textAlign: "left" }}>{at.desc}</span>
             </Button>
           ))}
         </div>
@@ -596,7 +596,7 @@ function MonitorForm({
                 value={form.sigma_threshold ?? 2.5}
                 onChange={e => setField("sigma_threshold", Number(e.target.value) as any)}
                 style={{ width: "100%" }} />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--t3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--t3)" }}>
                 <span>1σ (sensitive)</span><span>5σ (strict)</span>
               </div>
             </Field>
@@ -746,7 +746,7 @@ function TypeBadge({ type }: { type: AlertOn }) {
     any_change:      "Any change",
   };
   return (
-    <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: colors[type] + "22", color: colors[type], border: `1px solid ${colors[type]}44` }}>
+    <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: colors[type] + "22", color: colors[type], border: `1px solid ${colors[type]}44` }}>
       {labels[type]}
     </span>
   );
@@ -755,8 +755,8 @@ function TypeBadge({ type }: { type: AlertOn }) {
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-      <div style={{ fontSize: 32, marginBottom: 12 }}>📡</div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No monitors yet</div>
+      <div style={{ fontSize: 28, marginBottom: 12 }}>📡</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No monitors yet</div>
       <div style={{ fontSize: 12, marginBottom: 20 }}>Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.</div>
       <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first monitor</Button>
     </div>

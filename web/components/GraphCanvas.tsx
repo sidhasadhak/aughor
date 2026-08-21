@@ -321,7 +321,7 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
           id: e.id, source: e.from_id, target: e.to_id,
           label,
           style: { stroke: EDGE_COLOR[e.kind] ?? "#475569", strokeWidth: e.kind === "joins_on" ? 1.6 : 1, opacity: 0.6 },
-          labelStyle: { fill: "var(--t2, #94a3b8)", fontSize: 9 },
+          labelStyle: { fill: "var(--t2, #94a3b8)", fontSize: 11 },
           labelBgStyle: { fill: "transparent" },
           markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: EDGE_COLOR[e.kind] ?? "#475569" },
         };
@@ -397,7 +397,7 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
           {selected.length === 1 && selected[0].warrant &&
             <WarrantChip warrant={selected[0].warrant} showDetail />}
           {selected.length === 1 && selected[0].provenance &&
-            <span style={{ fontSize: 10, color: "var(--t4, #64748b)" }}
+            <span style={{ fontSize: 11, color: "var(--t4, #64748b)" }}
                   title={selected[0].provenance.note}>
               source: {selected[0].provenance.source}
             </span>}

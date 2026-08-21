@@ -331,7 +331,7 @@ function NarrativeCard({
       {collapsible && (
         <div style={{ marginTop: 8 }}>
           <Button variant="ghost" size="xs" onClick={() => setExpanded(e => !e)}
-            style={{ color: "var(--blue4)", fontSize: 12.5, fontWeight: 500, padding: "2px 8px" }}>
+            style={{ color: "var(--blue4)", fontSize: 13, fontWeight: 500, padding: "2px 8px" }}>
             {expanded ? "Show less ▴" : "Read full synthesis ▾"}
           </Button>
         </div>
@@ -1135,7 +1135,7 @@ export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
                 {g.grounded ? "✓" : "⚠"}
               </span>
             )}
-            <span style={{ fontSize: 11.5, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
+            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
               {dossier.result_cells}
             </span>
           </div>
@@ -1202,7 +1202,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
             try { setResult(await revalidateInsight(connectionId, insightId)); }
             finally { setBusy(false); }
           }}
-          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 11.5, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
+          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
         <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
       </div>
@@ -1258,7 +1258,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--t3)", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: "18px 20px", overflowY: "auto" as const, display: "flex", flexDirection: "column" as const, gap: 18 }}>
-          <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
+          <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             <Stat label="Confidence" value={`${Math.round((insight.confidence ?? 0) * 100)}%`} />
@@ -1299,7 +1299,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
-              fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)",
+              fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)",
               whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
             }}>{insight.sql || "— no query recorded —"}</pre>
           </div>
@@ -1489,7 +1489,7 @@ function VerdictHero({
 
         {/* the ONE verdict — 24px (the digest row below now shares the hero's weight) */}
         <div style={{
-          fontSize: 24, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
+          fontSize: 22, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
           letterSpacing: "-.02em", maxWidth: "32ch", textWrap: "balance" as const,
           marginBottom: lead ? 10 : 0,
         }}>{title}</div>
@@ -1757,7 +1757,7 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {fig.value}{fig.secondary && <span style={{ color: "var(--t4)", fontSize: 12 }}>{fig.secondary}</span>}
             </div>
-            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
+            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
         </div>
         {/* chevron */}
@@ -2108,7 +2108,7 @@ function BriefingEmpty({
         )}
       </div>
       <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
           {title}
         </div>
         <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>

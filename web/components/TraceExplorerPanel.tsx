@@ -117,7 +117,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         overflowY: "auto", padding: 10 }}>
         {focusInvestigationId && (
           <div style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px 8px" }}>
-            traces for deep analysis <code style={{ fontSize: 10 }}>{focusInvestigationId}</code>
+            traces for deep analysis <code style={{ fontSize: 11 }}>{focusInvestigationId}</code>
           </div>
         )}
         {traces.length === 0 ? (
@@ -208,14 +208,14 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                                 : e.kind === "llm_call" ? "var(--vio3)" : "var(--blue3)" }} />
                           )}
                           {e.kind === "tool_call" && !resultSpans.has(e.span_id || "") && (
-                            <span style={{ fontSize: 10, color: "var(--amb4)" }}>
+                            <span style={{ fontSize: 11, color: "var(--amb4)" }}>
                               no result recorded — entry-side evidence of a hang or cancel
                             </span>
                           )}
                         </span>
                         {e.ok === false && <StatusChip hue="negative" strength="soft">
                           {e.error_class || "failed"}</StatusChip>}
-                        {e.retries ? <span style={{ fontSize: 10, color: "var(--amb4)" }}>
+                        {e.retries ? <span style={{ fontSize: 11, color: "var(--amb4)" }}>
                           ×{e.retries + 1}</span> : null}
                         {e.total_tokens != null && (
                           <span style={{ fontSize: 11, color: "var(--t3)",
@@ -241,7 +241,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                           {e.payload != null && (
                             <pre style={{ margin: "6px 0 0", whiteSpace: "pre-wrap",
                               wordBreak: "break-word", maxHeight: 220, overflowY: "auto",
-                              color: "var(--t2)", fontSize: 10.5 }}>
+                              color: "var(--t2)", fontSize: 11 }}>
                               {JSON.stringify(e.payload, null, 1)}
                             </pre>
                           )}

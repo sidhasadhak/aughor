@@ -299,7 +299,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                 {graph.domains.map((d) => (
                   <div key={d.label} onClick={() => setView({ level: "tables", domain: d.label })}
                        style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 16, cursor: "pointer" }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 6 }}>{d.label}</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 6 }}>{d.label}</div>
                     <div style={{ fontSize: 12, color: "var(--t3)" }}>{formatCount(d.table_count)} tables</div>
                     {domainJoinsFor(d.label).length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -347,7 +347,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>{t.label}</span>
+                      <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>{t.label}</span>
                       {/* P3 standing sits beside P2's warrant deliberately: a table can be
                           measured (how we know it) and still unchecked (nobody confirmed
                           the answers built on it). One score would hide that gap. */}

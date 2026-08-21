@@ -374,7 +374,7 @@ function DetailHeader({
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ color: "var(--t3)", display: "flex", alignItems: "center" }}>{icon}</span>
-        <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {name}
         </span>
         {tag}
@@ -794,7 +794,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                           onClick={() => handleSave(col.name)}
                           disabled={alterBusy}
                           className="h-auto p-0 font-normal"
-                          style={{ fontSize: 9, padding: "1px 4px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", cursor: "pointer" }}
+                          style={{ fontSize: 11, padding: "1px 4px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", cursor: "pointer" }}
                         >Save</Button>
                       </div>
                     ) : (
@@ -805,7 +805,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                       >{col.type || "—"}</span>
                     )}
                     {col.is_fk
-                      ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>FK</span>
+                      ? <span style={{ fontSize: 11, padding: "2px 5px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>FK</span>
                       : <span />
                     }
                   </div>
@@ -972,7 +972,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
                     variant="ghost"
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
                     className="h-auto p-0 font-normal"
-                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
+                    style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--blue4)"; (e.currentTarget as HTMLElement).style.background = "var(--blue1)"; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >Ask →</Button>
@@ -1131,7 +1131,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                   <div onClick={() => setConfirmDel(false)} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 300 }} />
                   <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 301, width: 340,
                     background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 8, padding: 20, boxShadow: "var(--shadow-xl)" }}>
-                    <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 8 }}>Remove connection?</p>
+                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 8 }}>Remove connection?</p>
                     <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.5, marginBottom: 18 }}>
                       <span style={{ color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{entry.name}</span> will be disconnected and removed from your catalog. This cannot be undone.
                     </p>
@@ -1259,7 +1259,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
               return (
                 <Button variant="ghost" key={c.id} onClick={() => setView(c.id)}
                   className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: "var(--r-chip)", cursor: "pointer",
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, padding: "6px 14px", borderRadius: "var(--r-chip)", cursor: "pointer",
                     background: on ? "rgba(45,114,210,0.13)" : "transparent",
                     color: on ? "var(--blue5)" : "var(--t2)",
                     border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}`, transition: "all .1s" }}
@@ -1284,7 +1284,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
         </div>
 
         {items.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: "var(--t3)", padding: "28px 12px", lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: "var(--t3)", padding: "28px 12px", lineHeight: 1.6 }}>
             {view === "favorites" ? "No favorites yet. Hover a row and tap the star to pin it here."
               : view === "recents" ? "No recent items yet. Open a table to see it here."
               : "No catalog items found. Add a connection to get started."}
@@ -1306,11 +1306,11 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
                   <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{it.path}</div>
                 </div>
               </div>
-              <span style={{ fontSize: 12.5, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 13, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {view === "suggested" ? it.reason : it.path}
               </span>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ fontSize: 12.5, color: "var(--t2)" }}>{it.type}</span>
+                <span style={{ fontSize: 13, color: "var(--t2)" }}>{it.type}</span>
                 <Button variant="ghost" onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
                   className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
                   style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t4)", display: "flex" }}
@@ -1339,7 +1339,7 @@ function EmptyDetail() {
         <path d="M6 24c0 3.9 8.1 7 18 7s18-3.1 18-7" stroke="currentColor" strokeWidth="2" opacity=".5" />
       </svg>
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
+        <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
         <p style={{ fontSize: 12, color: "var(--t4)", lineHeight: 1.6 }}>
           Click a catalog, schema, or table<br />in the tree to explore it
         </p>
@@ -1397,7 +1397,7 @@ function TreeRow({
       {badge}
 
       {count != null && (
-        <span style={{ fontSize: 9, color: "var(--t4)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>
           {count}
         </span>
       )}
@@ -1482,14 +1482,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       nodes.push(
         <div key={`sec-${section.id}`} style={{ padding: "14px 12px 5px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
               {section.label}
             </span>
           </div>
           {section.id === "connections" && (
             <Button variant="ghost" onClick={() => setShowAddData(true)}
               className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
-              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}
+              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
             >

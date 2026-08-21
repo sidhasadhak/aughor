@@ -140,9 +140,9 @@ export function FleetOverviewPanel({ onOpenAgent }: {
         background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
         marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1,
+          <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1,
             fontVariantNumeric: "tabular-nums" }}>{tiles.runs_per_min}</div>
-          <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
             runs/min · last {tiles.window_minutes}m
           </div>
         </div>
@@ -157,7 +157,7 @@ export function FleetOverviewPanel({ onOpenAgent }: {
           <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
             {tiles.p95_duration_ms != null ? fmtMs(tiles.p95_duration_ms) : "—"}
           </div>
-          <div style={{ fontSize: 10.5, color: "var(--t3)" }}>p95 duration</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>p95 duration</div>
         </div>
       </div>
 
@@ -343,13 +343,13 @@ export function FleetOverviewPanel({ onOpenAgent }: {
                   <tr key={j.id}>
                     <td>
                       <div style={{ fontSize: 12, fontWeight: 500 }}>{j.agent?.agent || j.kind}</div>
-                      <div style={{ fontSize: 10, color: "var(--t3)" }}>{j.kind}</div>
+                      <div style={{ fontSize: 11, color: "var(--t3)" }}>{j.kind}</div>
                     </td>
                     <td style={{ maxWidth: 360 }}>
                       <div style={{ fontSize: 12, color: "var(--t2)", overflow: "hidden",
                         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.title}</div>
                       {j.error && (
-                        <div style={{ fontSize: 10, color: "var(--red4)", overflow: "hidden",
+                        <div style={{ fontSize: 11, color: "var(--red4)", overflow: "hidden",
                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.error}</div>
                       )}
                     </td>

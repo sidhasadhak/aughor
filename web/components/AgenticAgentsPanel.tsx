@@ -94,7 +94,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             onClick={() => setSelected({ kind: "hire" })}>+ Create</Button>
         </div>
         {personas.length === 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--t4)", padding: "0 6px 10px" }}>
+          <div style={{ fontSize: 12, color: "var(--t4)", padding: "0 6px 10px" }}>
             None yet — create one from a pack or from scratch.
           </div>
         )}
@@ -151,7 +151,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         opacity: reserved ? 0.55 : 1,
         background: active ? "var(--bg-sel)" : undefined }}>
       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden",
+        <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{name}</span>
         <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
           {kind === "persona" ? "custom" : kind}
@@ -159,7 +159,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
       </span>
       {sub && (
-        <span style={{ display: "block", fontSize: 10.5, color: "var(--t4)", marginTop: 2,
+        <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2,
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
       )}
     </Button>
@@ -410,7 +410,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Documents</span>
         {documents.length === 0 ? (
-          <span style={{ fontSize: 11.5, color: "var(--t3)" }}>
+          <span style={{ fontSize: 12, color: "var(--t3)" }}>
             No uploaded documents yet — an agent only sees the documents attached to it.
           </span>
         ) : (
@@ -467,7 +467,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
             ? "var(--grn5)" : "var(--amb5)" }}>
             {evalResult.passed}/{evalResult.total} passing
             {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
-              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 11.5 }}>
+              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
                 ✗ {p.question} — {p.error}
               </div>
             ))}
@@ -554,7 +554,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
         const sameAsHead = !isHead && r.config_rev === persona.config_rev;
         return (
           <div key={r.version} style={{
-            display: "flex", alignItems: "center", gap: 8, fontSize: 11.5,
+            display: "flex", alignItems: "center", gap: 8, fontSize: 12,
             padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
             <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
@@ -741,7 +741,7 @@ function HireDetail({ onDone, onError }: {
           <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 4 }}>
             Create from a pack
           </div>
-          <div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 10, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 10, lineHeight: 1.5 }}>
             Starts the agent with the pack&rsquo;s reasoning stance and keeps the pack
             bound. Its questions come along as suggestions — each still needs reference
             SQL for your connection before it can be measured.
@@ -752,7 +752,7 @@ function HireDetail({ onDone, onError }: {
                 display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-2)",
                 border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{t.persona}</div>
+                <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.45 }}>{t.persona}</div>
                 <div style={{ fontSize: 11, color: "var(--t4)" }}>
                   {t.domains.join(" · ")}
                   {t.suggested_goldens.length > 0
@@ -789,8 +789,8 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
     <div style={{ flex: "1 1 130px", minWidth: 130, background: "var(--bg-2)",
       border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 14px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 3 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: "var(--t4)", marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

@@ -171,8 +171,8 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
         <div key={ws.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 110px", padding: "11px 4px", borderBottom: "0.5px solid var(--b0)", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "var(--t1)" }}>{ws.name}{ws.is_default ? " (default)" : ""}</span>
           <span style={{ display: "flex", gap: 6 }}>
-            {member && <span className="aug-tag aug-tag-blue" style={{ fontSize: 10 }}>Member</span>}
-            {granted && <span className="aug-tag aug-tag-green" style={{ fontSize: 10 }}>Granted</span>}
+            {member && <span className="aug-tag aug-tag-blue" style={{ fontSize: 11 }}>Member</span>}
+            {granted && <span className="aug-tag aug-tag-green" style={{ fontSize: 11 }}>Granted</span>}
             {!member && !granted && <span style={{ fontSize: 11, color: "var(--t4)" }}>No access</span>}
           </span>
           <span style={{ justifySelf: "end" }}>

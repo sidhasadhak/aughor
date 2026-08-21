@@ -89,7 +89,7 @@ export interface VizEditorModel {
 
 // ── primitives ────────────────────────────────────────────────────────────────
 
-const SECTION_LABEL: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "var(--t2)" };
+const SECTION_LABEL: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: "var(--t2)" };
 
 /** The app's design-system dropdown (Base UI), wrapped to the panel's {value, options, onChange}
  *  API. Portals its menu to <body> — the drawer's outside-click handler guards for that. */
@@ -211,7 +211,7 @@ function SegToggle<T extends string>({ value, onChange, options }: { value: T; o
 }
 
 function Warn({ text }: { text: string }) {
-  return <div style={{ fontSize: 10.5, color: "var(--amb4)" }}>⚠ {text}</div>;
+  return <div style={{ fontSize: 11, color: "var(--amb4)" }}>⚠ {text}</div>;
 }
 
 // Annotation channel owns the "add a line" input state (the panel is otherwise stateless).
@@ -241,7 +241,7 @@ function AnnotationSection({ model }: { model: VizEditorModel }) {
       {model.refLines.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {model.refLines.map((l, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--t2)" }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--t2)" }}>
               <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
               <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
@@ -251,7 +251,7 @@ function AnnotationSection({ model }: { model: VizEditorModel }) {
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
+        <div style={{ fontSize: 12, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
       )}
     </Channel>
   );

@@ -93,8 +93,8 @@ export function EvalRunPanel({ }: Props) {
 
         {!loading && runs.length === 0 && (
           <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No runs yet</div>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>📊</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No runs yet</div>
             <div style={{ fontSize: 12 }}>Run a suite from the Suites tab — its result lands here as a replicated band.</div>
           </div>
         )}
@@ -128,8 +128,8 @@ function RunCard({ run, suiteName, onOpen }: { run: EvalRun; suiteName?: string;
       </div>
       {pr != null && (
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: pr >= 0.999 ? "var(--grn4)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{(pr * 100).toFixed(1)}%</div>
-          <div style={{ fontSize: 10, color: "var(--t3)" }}>pass rate</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: pr >= 0.999 ? "var(--grn4)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{(pr * 100).toFixed(1)}%</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>pass rate</div>
         </div>
       )}
     </div>

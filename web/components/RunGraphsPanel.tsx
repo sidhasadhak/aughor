@@ -212,8 +212,8 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                     const atGate = graph.interrupt.paused && graph.interrupt.gate === node;
                     return (
                       <span key={node} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        {i > 0 && <span style={{ color: "var(--t4)", fontSize: 10 }}>→</span>}
-                        <span style={{ fontSize: 10.5, padding: "3px 7px",
+                        {i > 0 && <span style={{ color: "var(--t4)", fontSize: 11 }}>→</span>}
+                        <span style={{ fontSize: 11, padding: "3px 7px",
                           borderRadius: "var(--r2)",
                           border: `1px solid ${atGate ? "var(--amb3)" : "var(--b1)"}`,
                           background: atGate ? "var(--amb1)" : "var(--bg-1)",

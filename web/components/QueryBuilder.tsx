@@ -1763,7 +1763,7 @@ export function QueryBuilder({
             return (
               <span style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
-                fontSize: 10.5, fontWeight: 600, padding: "2px 9px", borderRadius: "var(--r-chip)",
+                fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: "var(--r-chip)",
                 background: ok ? "var(--grn1)" : "var(--red1)",
                 border: `1px solid ${ok ? "var(--grn2)" : "var(--red2)"}`,
                 color: ok ? "var(--grn4)" : "var(--red4)",

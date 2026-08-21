@@ -48,7 +48,7 @@ function miniBarHeights(shape: string): number[] {
 
 function ShapeCell({ dist }: { dist: DistributionProfile | undefined }) {
   if (!dist || dist.shape === "unknown") {
-    return <span style={{ fontSize: 10, color: "var(--t4)" }}>—</span>;
+    return <span style={{ fontSize: 11, color: "var(--t4)" }}>—</span>;
   }
   const pill = DIST_SHAPE_PILL[dist.shape] ?? { label: dist.shape, text: "var(--t3)", bar: "var(--b3)" };
   const bars = miniBarHeights(dist.shape);
@@ -60,7 +60,7 @@ function ShapeCell({ dist }: { dist: DistributionProfile | undefined }) {
           <div key={i} style={{ width: 2.5, height: `${Math.max(2, (h / maxH) * 14)}px`, background: pill.bar, borderRadius: 1 }} />
         ))}
       </div>
-      <span style={{ fontSize: 9, color: pill.text, whiteSpace: "nowrap" }}>{pill.label}</span>
+      <span style={{ fontSize: 11, color: pill.text, whiteSpace: "nowrap" }}>{pill.label}</span>
     </div>
   );
 }
@@ -99,7 +99,7 @@ function ConceptBadge({ col }: { col: ColumnProfileData }) {
     <span
       title={`${concept} — agreed by ${layers.length} evidence layers (${layers.join(", ")}); click the row to read them`}
       style={{
-        fontSize: 9, color: tint, background: `color-mix(in srgb, ${tint} 12%, transparent)`,
+        fontSize: 11, color: tint, background: `color-mix(in srgb, ${tint} 12%, transparent)`,
         padding: "0 4px", borderRadius: 2, minWidth: 0, flexShrink: 1,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         fontFamily: "var(--font-mono)",
@@ -116,7 +116,7 @@ function ConceptEvidence({ col }: { col: ColumnProfileData }) {
   if (!concept || evidence.length === 0) return null;
   return (
     <div style={{ padding: "6px 14px 8px 26px", background: "var(--bg-2)", borderBottom: "1px solid var(--b0)" }}>
-      <div style={{ fontSize: 10, color: "var(--t3)", marginBottom: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 4 }}>
         <span style={{ color: conceptTint(concept), fontFamily: "var(--font-mono)" }}>{concept}</span>
         {" "}· agreed by {evidence.filter(e => evidenceLayer(e)).length} evidence layers
         {col.unit ? ` · unit ${col.unit}` : ""}
@@ -125,10 +125,10 @@ function ConceptEvidence({ col }: { col: ColumnProfileData }) {
         const layer = evidenceLayer(e);
         return (
           <div key={i} style={{ display: "flex", gap: 6, marginTop: 2 }}>
-            <span style={{ fontSize: 9, color: "var(--t4)", minWidth: 52, flexShrink: 0, fontFamily: "var(--font-mono)" }}>
+            <span style={{ fontSize: 11, color: "var(--t4)", minWidth: 52, flexShrink: 0, fontFamily: "var(--font-mono)" }}>
               {layer || "—"}
             </span>
-            <span style={{ fontSize: 10, color: "var(--t2)", lineHeight: 1.45 }}>
+            <span style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.45 }}>
               {layer ? e.slice(layer.length + 1).trim() : e}
             </span>
           </div>
@@ -154,18 +154,18 @@ function DerivedQuantities({ tp }: { tp: TableProfileData | undefined }) {
           background: "none", border: "none", cursor: "pointer", textAlign: "left",
         }}
       >
-        <span style={{ fontSize: 10, color: "var(--t3)" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
           {notes.length} derived {notes.length === 1 ? "quantity" : "quantities"}
         </span>
-        <span style={{ fontSize: 10, color: "var(--t4)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 11, color: "var(--t4)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           — arithmetic this table implies but does not store
         </span>
-        <span style={{ fontSize: 9, color: "var(--t4)" }}>{open ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "var(--t4)" }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div style={{ padding: "0 14px 8px" }}>
           {notes.map((n, i) => (
-            <div key={i} style={{ fontSize: 10, color: "var(--t2)", lineHeight: 1.5, marginTop: 3 }}>· {n}</div>
+            <div key={i} style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5, marginTop: 3 }}>· {n}</div>
           ))}
         </div>
       )}
@@ -181,7 +181,7 @@ function NullBar({ rate }: { rate: number }) {
       <div style={{ width: 40, height: 4, background: "var(--bg-3)", borderRadius: 2 }}>
         <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color, borderRadius: 2 }} />
       </div>
-      <span style={{ fontSize: 10, color: pct > 10 ? color : "var(--t4)", fontVariantNumeric: "tabular-nums" }}>
+      <span style={{ fontSize: 11, color: pct > 10 ? color : "var(--t4)", fontVariantNumeric: "tabular-nums" }}>
         {pct}%
       </span>
     </div>
@@ -228,22 +228,22 @@ function TableCard({
           {table}
         </span>
         {rowCount != null && (
-          <span style={{ fontSize: 10, color: "var(--t3)", background: "var(--bg-2)", padding: "1px 6px", borderRadius: 3 }}>
+          <span style={{ fontSize: 11, color: "var(--t3)", background: "var(--bg-2)", padding: "1px 6px", borderRadius: 3 }}>
             {formatCount(rowCount)} rows
           </span>
         )}
         {grain && (
-          <span style={{ fontSize: 10, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", padding: "1px 6px", borderRadius: 3 }}>
+          <span style={{ fontSize: 11, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", padding: "1px 6px", borderRadius: 3 }}>
             grain: {grain}
           </span>
         )}
-        {ts && <span style={{ fontSize: 10, color: "var(--t4)" }}>ts: {ts}</span>}
+        {ts && <span style={{ fontSize: 11, color: "var(--t4)" }}>ts: {ts}</span>}
         {dr && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>
             {String(dr[0]).slice(0, 10)} → {String(dr[1]).slice(0, 10)}
           </span>
         )}
-        <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: 4 }}>{expanded ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "var(--t4)", marginLeft: 4 }}>{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
@@ -251,7 +251,7 @@ function TableCard({
           <DerivedQuantities tp={tableProfile} />
           <div style={{
             display: "grid", gridTemplateColumns: GRID,
-            padding: "5px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+            padding: "5px 14px 4px", fontSize: 11, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.06em", color: "var(--t4)", borderBottom: "1px solid var(--b0)",
           }}>
             <span>Column</span>
@@ -282,7 +282,7 @@ function TableCard({
                   {col.column}
                 </span>
                 {col.is_fk && (
-                  <span style={{ fontSize: 9, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 12%, transparent)", padding: "0 4px", borderRadius: 2, flexShrink: 0 }}>FK</span>
+                  <span style={{ fontSize: 11, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 12%, transparent)", padding: "0 4px", borderRadius: 2, flexShrink: 0 }}>FK</span>
                 )}
                 {/* The semantic type gives way to a CONFIDENT concept rather than sitting
                     beside it. `timestamp` next to `instant` says one thing twice, and on a
@@ -290,11 +290,11 @@ function TableCard({
                     badge reads as a defect, not as information. Where no concept resolved,
                     the semantic type is still the best answer available and stays. */}
                 {col.semantic_type && col.semantic_type !== "unknown" && !conceptIfConfident(col) && (
-                  <span style={{ fontSize: 9, color: "var(--t4)", flexShrink: 0 }}>{col.semantic_type}</span>
+                  <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>{col.semantic_type}</span>
                 )}
                 <ConceptBadge col={col} />
               </div>
-              <span style={{ fontSize: 10, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
                 {col.dtype?.split("(")[0].toUpperCase().slice(0, 10)}
               </span>
               <NullBar rate={col.null_rate ?? 0} />
@@ -306,18 +306,18 @@ function TableCard({
                 {col.top_values && col.is_low_cardinality ? (
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {col.top_values.slice(0, 5).map(v => (
-                      <span key={v} style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-2)", color: "var(--t2)", whiteSpace: "nowrap" }}>{v}</span>
+                      <span key={v} style={{ fontSize: 11, padding: "1px 5px", borderRadius: 3, background: "var(--bg-2)", color: "var(--t2)", whiteSpace: "nowrap" }}>{v}</span>
                     ))}
                     {col.top_values.length > 5 && (
-                      <span style={{ fontSize: 10, color: "var(--t4)" }}>+{col.top_values.length - 5}</span>
+                      <span style={{ fontSize: 11, color: "var(--t4)" }}>+{col.top_values.length - 5}</span>
                     )}
                   </div>
                 ) : col.value_range ? (
-                  <span style={{ fontSize: 10, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
+                  <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
                     {String(col.value_range[0]).slice(0, 12)} – {String(col.value_range[1]).slice(0, 12)}
                   </span>
                 ) : (
-                  <span style={{ fontSize: 10, color: "var(--t4)" }}>—</span>
+                  <span style={{ fontSize: 11, color: "var(--t4)" }}>—</span>
                 )}
               </div>
             </div>

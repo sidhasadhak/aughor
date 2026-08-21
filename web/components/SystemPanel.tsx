@@ -415,8 +415,8 @@ function FeatureFlags() {
       {GROUPS.filter(g => byGroup.has(g.key)).map(g => (
         <details key={g.key} open={g.open || !!q} className="mb-2 last:mb-0">
           <summary className="cursor-pointer select-none list-none flex items-baseline gap-2 pt-1 pb-1.5">
-            <span className="text-[10.5px] font-medium uppercase tracking-wide" style={{ color: "var(--t3)" }}>{g.title}</span>
-            <span className="text-[9.5px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
+            <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--t3)" }}>{g.title}</span>
+            <span className="text-[11px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
             <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t4)" }}>— {g.hint}</span>
           </summary>
           {byGroup.get(g.key)!.map(([name, f]) => (
@@ -440,7 +440,7 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-200">{f.label}</span>
-          <span className="text-[9.5px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
+          <span className="text-[11px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
             {chip}
           </span>
         </div>

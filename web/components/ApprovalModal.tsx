@@ -63,10 +63,10 @@ export function ApprovalModal() {
           <div style={{
             width: 34, height: 34, borderRadius: "var(--r2)", background: "var(--amb1)",
             border: "1px solid var(--amb2)", display: "flex", alignItems: "center",
-            justifyContent: "center", flexShrink: 0, fontSize: 16,
+            justifyContent: "center", flexShrink: 0, fontSize: 15,
           }}>🔒</div>
           <div>
-            <DialogTitle style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Approval required</DialogTitle>
+            <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Approval required</DialogTitle>
             <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em" }}>
               {info.risk}-risk action
             </div>

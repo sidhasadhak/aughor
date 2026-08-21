@@ -626,13 +626,13 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
         <span>Trace · derived during exploration — instant, no re-run</span>
       </div>
       {dossier.finding && (
-        <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{dossier.finding}</div>
+        <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{dossier.finding}</div>
       )}
       <DossierTrace dossier={dossier} />
       {dossier.sql && (
         <div>
-          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
-          <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
+          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
+          <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
         </div>
       )}
       {onDeeper && (
@@ -819,7 +819,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                     <p className="aug-fs-sm text-zinc-300 leading-relaxed">{item.recommendation}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {item.trigger_condition && (
-                        <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
+                        <span className="text-[11px] text-zinc-500">when {item.trigger_condition}</span>
                       )}
                       <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-chip)] border border-zinc-700 text-zinc-500">
                         {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}

@@ -98,7 +98,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           <Icon d={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {canvas.name}
           </div>
@@ -259,7 +259,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               {canvas.name}
             </div>
             {canvas.is_legacy && (
-              <div style={{ fontSize: 10, color: "var(--t4)" }}>auto-generated</div>
+              <div style={{ fontSize: 11, color: "var(--t4)" }}>auto-generated</div>
             )}
           </div>
         </div>
@@ -302,7 +302,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           }}>
             <Icon d={DB_ICON} size={10} color="var(--t4)" />
             {connection.name}
-            <span style={{ color: "var(--t4)", fontSize: 10 }}>{label}</span>
+            <span style={{ color: "var(--t4)", fontSize: 11 }}>{label}</span>
           </span>
         );
       },
@@ -524,7 +524,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               <Icon d={CANVAS_ICON} size={22} color="var(--blue4)" />
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
                 {search ? "No matching Data Canvases" : "No Data Canvases yet"}
               </div>
               <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, maxWidth: 300 }}>
@@ -604,7 +604,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             width: 360, display: "flex", flexDirection: "column", gap: 12,
             boxShadow: "var(--shadow-xl)",
           }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
             <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>
               Are you sure you want to delete{" "}
               <strong style={{ color: "var(--t1)" }}>{pendingDelete.name}</strong>?

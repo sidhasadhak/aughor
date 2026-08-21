@@ -46,7 +46,7 @@ export function ExportButton({ invId }: { invId: string }) {
         title="Download this analysis as PDF or PowerPoint"
         style={{
           display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11.5,
+          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)",
           color: "var(--t2)", cursor: "pointer", transition: "all .1s",
         }}
@@ -59,7 +59,7 @@ export function ExportButton({ invId }: { invId: string }) {
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
         Export
-        <span style={{ fontSize: 9, opacity: 0.6 }}>▾</span>
+        <span style={{ fontSize: 11, opacity: 0.6 }}>▾</span>
       </button>
 
       {open && (
@@ -72,14 +72,14 @@ export function ExportButton({ invId }: { invId: string }) {
           <button style={item} disabled={!!busy} onClick={() => go("pdf")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 14 }}>📄</span>
+            <span style={{ fontSize: 15 }}>📄</span>
             <span style={{ flex: 1 }}>PDF document</span>
             {busy === "pdf" && <Spin />}
           </button>
           <button style={item} disabled={!!busy} onClick={() => go("pptx")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 14 }}>📊</span>
+            <span style={{ fontSize: 15 }}>📊</span>
             <span style={{ flex: 1 }}>PowerPoint (.pptx)</span>
             {busy === "pptx" && <Spin />}
           </button>

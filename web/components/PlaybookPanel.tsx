@@ -40,7 +40,7 @@ function fmtRate(r: number): string {
 function StatusChip({ status }: { status: string }) {
   const s = STATUS_CHIP[status] ?? STATUS_CHIP.draft;
   return (
-    <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded-[3px]"
+    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[3px]"
       style={{ background: s.bg, color: s.color, border: `0.5px solid color-mix(in srgb, ${s.color} 25%, transparent)` }}>
       {s.label}
     </span>
@@ -120,7 +120,7 @@ export function PlaybookPanel() {
         {/* Header */}
         <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[13.5px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
+            <h2 className="text-[13px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
             <button
               onClick={handleReseed}
               disabled={seeding}
@@ -149,7 +149,7 @@ export function PlaybookPanel() {
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className="text-[9.5px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-all"
+                className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-all"
                 style={{
                   background: statusFilter === s ? "var(--blue1)" : "transparent",
                   border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
@@ -245,12 +245,12 @@ function PlaybookDetail({
           </span>
           <StatusChip status={entry.status} />
           {entry.source_kb_id && (
-            <span className="text-[9.5px] font-mono" style={{ color: "var(--t4)" }}>
+            <span className="text-[11px] font-mono" style={{ color: "var(--t4)" }}>
               from KB: {entry.source_kb_id}
             </span>
           )}
         </div>
-        <p className="text-[11.5px] italic" style={{ color: "var(--t3)" }}>{entry.trigger_condition}</p>
+        <p className="text-[12px] italic" style={{ color: "var(--t3)" }}>{entry.trigger_condition}</p>
       </div>
 
       {/* Recommendation */}

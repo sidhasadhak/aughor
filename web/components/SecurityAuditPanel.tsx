@@ -130,7 +130,7 @@ function AgentCell({ hypothesisId }: { hypothesisId: string }) {
   return (
     <span title={hypothesisId} style={{ whiteSpace: "nowrap" }}>
       <span style={{ color: "var(--t2)", fontWeight: 500 }}>{agent}</span>
-      {detail && <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: 5 }}>{detail}</span>}
+      {detail && <span style={{ fontSize: 11, color: "var(--t4)", marginLeft: 5 }}>{detail}</span>}
     </span>
   );
 }
@@ -139,7 +139,7 @@ function VerdictBadge({ verdict }: { verdict: string }) {
   const color = VERDICT_COLOR[verdict] ?? "var(--t3)";
   return (
     <span style={{
-      fontSize: 10,
+      fontSize: 11,
       fontWeight: 600,
       color,
       border: `1px solid ${color}`,
@@ -175,7 +175,7 @@ function StatCard({
       borderRadius: 6,
       padding: "10px 14px",
     }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: warn ? "var(--red3)" : accent, lineHeight: 1 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: warn ? "var(--red3)" : accent, lineHeight: 1 }}>
         {value}
       </div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{label}</div>
@@ -446,9 +446,9 @@ function ActionApprovalsSection() {
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)" }}>Action approvals</span>
-        <span style={{ fontSize: 10, color: "var(--t4)" }}>graduated approval + audit</span>
+        <span style={{ fontSize: 11, color: "var(--t4)" }}>graduated approval + audit</span>
         <div style={{ flex: 1 }} />
-        <button onClick={load} style={{ fontSize: 10, color: "var(--t3)", background: "none",
+        <button onClick={load} style={{ fontSize: 11, color: "var(--t3)", background: "none",
           border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>
           {loading ? "…" : "Refresh"}
         </button>
@@ -461,7 +461,7 @@ function ActionApprovalsSection() {
       )}
 
       {/* Allowlist — pre-approved high-risk actions (revocable) */}
-      <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
         Allowlist ({allow.length})
       </div>
       {allow.length === 0 ? (
@@ -474,7 +474,7 @@ function ActionApprovalsSection() {
               <span style={{ color: "var(--t4)" }}>@ {e.scope || "*"}</span>
               <div style={{ flex: 1 }} />
               <button onClick={() => handleRevoke(e)}
-                style={{ fontSize: 10, color: "#fbbf24", background: "none", border: "1px solid var(--bg-3)",
+                style={{ fontSize: 11, color: "#fbbf24", background: "none", border: "1px solid var(--bg-3)",
                          borderRadius: 4, padding: "2px 7px", cursor: "pointer" }}>
                 Revoke
               </button>
@@ -484,7 +484,7 @@ function ActionApprovalsSection() {
       )}
 
       {/* Audit trail — every high-risk decision, attributed */}
-      <div style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
         Audit trail ({audit.length})
       </div>
       {audit.length === 0 ? (
@@ -501,8 +501,8 @@ function ActionApprovalsSection() {
               <code style={{ color: "var(--t2)" }}>{e.action}</code>
               {e.scope && <span style={{ color: "var(--t4)" }}>@ {e.scope}</span>}
               <div style={{ flex: 1 }} />
-              <span style={{ color: "var(--t4)", fontSize: 10 }}>{e.actor}</span>
-              {e.at && <span style={{ color: "var(--t4)", fontSize: 10 }}>{e.at.slice(0, 19).replace("T", " ")}</span>}
+              <span style={{ color: "var(--t4)", fontSize: 11 }}>{e.actor}</span>
+              {e.at && <span style={{ color: "var(--t4)", fontSize: 11 }}>{e.at.slice(0, 19).replace("T", " ")}</span>}
             </div>
           ))}
         </div>
@@ -588,7 +588,7 @@ export function SecurityAuditPanel({
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Security &amp; Audit</span>
         {connId && (
           <span style={{
-            fontSize: 10,
+            fontSize: 11,
             color: "var(--t3)",
             background: "var(--bg-2)",
             borderRadius: 3,
@@ -777,7 +777,7 @@ export function SecurityAuditPanel({
                         style={{
                           padding: "8px 12px",
                           textAlign: h.align as React.CSSProperties["textAlign"],
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: 600,
                           color: active ? "var(--blue3)" : "var(--t3)",
                           textTransform: "uppercase",
@@ -810,7 +810,7 @@ export function SecurityAuditPanel({
                     </td>
                     <td style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
                       <span style={{ fontFamily: "monospace" }}>{rec.connection_id.slice(0, 8)}</span>
-                      <span style={{ fontSize: 10, color: "var(--t3)", marginLeft: 4 }}>{connections.find(c => c.id === rec.connection_id)?.name || rec.connection_id}</span>
+                      <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>{connections.find(c => c.id === rec.connection_id)?.name || rec.connection_id}</span>
                     </td>
                     <td style={{ padding: "8px 12px" }}>
                       <AgentCell hypothesisId={rec.hypothesis_id} />
