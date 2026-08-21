@@ -98,3 +98,89 @@ def test_the_alias_comes_from_the_helper_that_already_existed():
     assert I._safe_alias("flight count") == "flight_count"
     assert I._safe_alias("Revenue (€)") == "revenue"
     assert I._safe_alias("") == "metric"
+
+
+# ── Fix 5: the breakdown must not depend on the planner succeeding ──────────────
+# Live defect. The named breakdown was computed AFTER the scan's results were assembled,
+# so `if not _run.ok: return ...error_phase` short-circuited past it: a question whose
+# answer we can compute outright in one GROUP BY shipped a "Skipped" card because a model
+# call further up failed. The breakdown is deterministic SQL — it is now computed BEFORE
+# the run and survives its failure.
+
+def test_a_failed_scan_still_ships_the_named_breakdown(monkeypatch):
+    monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
+        sql="SELECT route_id, COUNT(*) ...", columns=["route_id", "flight_count"],
+        rows=[["ZRH-LHR", 28]], row_count=1, error=None))
+    # The planner dies — the scan can produce nothing of its own.
+    monkeypatch.setattr(I, "run_analysis_phase", lambda *a, **k: I._PhaseRun(
+        ok=False, error_phase=I._phase_result(
+            "cross_section", "Cross-Sectional Scan", "🧭", "error",
+            "Cross-sectional planning failed.",
+            [I._skipped_finding("cross_section", "planner exploded")])))
+
+    state = {
+        "question": "give me route wise number of flights",
+        "schema_context": "", "connection_id": "c", "investigation_phases": [],
+        "_ada_intake": {**_INTAKE, "descriptive_only": True,
+                        "dimensions": ["main.flights.market"]},
+    }
+    phases = I.ada_cross_section(state, None)["investigation_phases"]
+
+    assert len(phases) == 1
+    titles = [f["title"] for f in phases[0]["findings"]]
+    assert "flight count by route_id" in titles, (
+        "a planner failure buried a breakdown the code had already computed")
+    assert not any("skip" in t.lower() for t in titles)
+
+
+def test_a_clean_scan_leads_with_the_named_breakdown(monkeypatch):
+    """And on the happy path it still LEADS, ahead of the scan's own dimensions."""
+    monkeypatch.setattr(I, "_execute_safe", lambda *a, **k: SimpleNamespace(
+        sql="SELECT route_id, COUNT(*) ...", columns=["route_id", "flight_count"],
+        rows=[["ZRH-LHR", 28]], row_count=1, error=None))
+    _own = SimpleNamespace(columns=["market", "flight_count"], rows=[["EU", 60]],
+                           row_count=1, error=None, sql="SELECT market, COUNT(*) ...")
+    monkeypatch.setattr(I, "run_analysis_phase", lambda *a, **k: I._PhaseRun(
+        ok=True, results=[(SimpleNamespace(title="flight count by market",
+                                           chart_type="magnitude", sql=_own.sql), _own)],
+        results_text="", interpretation=None))
+
+    state = {
+        "question": "give me route wise number of flights",
+        "schema_context": "", "connection_id": "c", "investigation_phases": [],
+        "_ada_intake": {**_INTAKE, "descriptive_only": True,
+                        "dimensions": ["main.flights.market"]},
+    }
+    phases = I.ada_cross_section(state, None)["investigation_phases"]
+    titles = [f["title"] for f in phases[0]["findings"]]
+    assert titles[0] == "flight count by route_id", titles
+
+
+# ── Fix 4: a date column that does not live on the metric table ────────────────
+# The rendered schema warned "⚠ No date/timestamp columns in flights" while the intake
+# still carried a date_column from a joined table. The WHERE named an unreachable column,
+# the query errored, and `if error: continue` dropped the breakdown in silence.
+
+def test_an_unreachable_date_column_is_not_filtered_on(executed):
+    spec = {**_INTAKE, "date_column": "main.bookings.booked_at"}
+    out = I._named_breakdown_findings({"schema_context": ""}, None, spec)
+    assert out, "the breakdown must still run when the date lives on another table"
+    assert "booked_at" not in executed["sql"]
+
+
+def test_a_windowed_query_that_returns_nothing_retries_unwindowed(monkeypatch):
+    """Belt and braces: if the window itself empties the result, fall back to the
+    unwindowed cut rather than shipping no breakdown at all."""
+    calls = []
+
+    def _fake(conn, phase_id, sql, schema=None):
+        calls.append(sql)
+        if "WHERE" in sql:
+            return SimpleNamespace(sql=sql, columns=[], rows=[], row_count=0, error=None)
+        return SimpleNamespace(sql=sql, columns=["route_id", "flight_count"],
+                               rows=[["ZRH-LHR", 28]], row_count=1, error=None)
+
+    monkeypatch.setattr(I, "_execute_safe", _fake)
+    out = I._named_breakdown_findings({"schema_context": ""}, None, _INTAKE)
+    assert len(out) == 1 and out[0]["rows"] == [["ZRH-LHR", 28]]
+    assert len(calls) == 2 and "WHERE" in calls[0] and "WHERE" not in calls[1]

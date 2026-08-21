@@ -92,7 +92,14 @@ def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> l
     start = intake_data.get("observation_start") or ""
     end = intake_data.get("observation_end") or ""
     where = ""
-    if date_col and date_col.upper() != "NONE" and start and end:
+    # ONLY when the date lives on the table being counted. The spec's date column can
+    # belong to another table entirely — the schema renderer warns "No date/timestamp
+    # columns in flights" for exactly this shape — and a WHERE naming a column this FROM
+    # cannot see fails the whole breakdown.
+    _same_table = ("." not in date_col
+                   or date_col.rsplit(".", 1)[0].lower() == table.lower()
+                   or date_col.rsplit(".", 1)[0].lower() == table.split(".")[-1].lower())
+    if date_col and date_col.upper() != "NONE" and start and end and _same_table:
         _col = date_col.split(".")[-1]
         where = (f" WHERE CAST({_col} AS DATE) >= DATE '{start}' "
                  f"AND CAST({_col} AS DATE) <= DATE '{end}'")
@@ -100,11 +107,24 @@ def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> l
     out = []
     for i, dim in enumerate(dims[:2]):          # the question rarely names more
         col = dim.split(".")[-1]
-        sql = (f"SELECT {col}, {metric_sql} AS {_safe_alias(label)} "
-               f"FROM {table}{where} GROUP BY 1 ORDER BY 2 DESC")
-        r = _execute_safe(conn, f"named_breakdown_{i}", sql,
-                          schema=state.get("schema_context"))
+
+        def _run(clause: str, attempt: str):
+            return _execute_safe(
+                conn, f"named_breakdown_{i}_{attempt}",
+                f"SELECT {col}, {metric_sql} AS {_safe_alias(label)} "
+                f"FROM {table}{clause} GROUP BY 1 ORDER BY 2 DESC",
+                schema=state.get("schema_context"))
+
+        r = _run(where, "windowed")
+        if where and (getattr(r, "error", None) or not getattr(r, "rows", None)):
+            # The window is the fragile half. A breakdown over the whole table beats no
+            # breakdown at all, and the report says which it got.
+            r = _run("", "unwindowed")
         if getattr(r, "error", None) or not getattr(r, "rows", None):
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                "named breakdown for %s produced nothing (%s)", dim,
+                getattr(r, "error", None) or "no rows")
             continue
         out.append(InvestigationFinding(
             finding_id=f"named_breakdown_{i}",
@@ -1546,7 +1566,7 @@ def _parallel_execute_safe(
         return (q, r)
 
     # P2 — per-dimension progress: emit as each query completes so a long scan reports progress
-    # DURING the node (`ada.progress_events`); no-op when no SSE sink is bound (the default).
+    # DURING the node (`deep_analysis.progress_events`); no-op when no SSE sink is bound (the default).
     total_n = len(valid)
     try:
         with _fanout_region("deep_analysis.phase_queries"), ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
@@ -4626,7 +4646,7 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
 # reading varied run-to-run. When the connection GOVERNS the same metric (curated catalog /
 # north-star / verified ontology), pin the intake's formula to the governed one so the breakdown
 # computes on a stable, decomposable definition — closing the loop between T4-1's *disclosure* of
-# the reading and actual accuracy. Deterministic, flag-gated (`ada.pin_canonical_metric`), and
+# the reading and actual accuracy. Deterministic, flag-gated (`deep_analysis.pin_canonical_metric`), and
 # conservative: the LLM's formula is only replaced when a governed metric matches the label on its
 # distinctive tokens, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over
 # the metric table — so pinning can never make a run worse (fail-open on every uncertainty).
@@ -5353,7 +5373,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # the LLM's (possibly non-decomposable / run-varying) formula, when one matches the label and
     # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one;
     # SKIPPED when the reading was already resolved (1) or a clarify is pending (2) — the user's choice
-    # binds the metric, not a silent pin. Flag-gated (`ada.pin_canonical_metric`) + fail-open.
+    # binds the metric, not a silent pin. Flag-gated (`deep_analysis.pin_canonical_metric`) + fail-open.
     if intake is not None and _clarify_pending is None and _resolved_note is None:
         _pin_note = _pin_canonical_metric(intake, _conn_id, _full_schema, conn)
         if _pin_note:
@@ -5867,7 +5887,7 @@ def run_analysis_phase(
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "fan-out guard re-plan is best-effort; the prompt rule still applies",
-                         counter="ada.fanout_guard.replan_failed")
+                         counter="deep_analysis.fanout_guard.replan_failed")
             # Fail-safe: the LLM re-plan is unreliable on a known fan-out (it often returns a
             # plausible query that still double-counts). If the metric STILL aggregates across a
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
@@ -7082,6 +7102,19 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         question=question, connection_id=state.get("connection_id", ""),
         )
 
+    # The cut the question NAMED, computed in code — deterministic, and INDEPENDENT of the
+    # planner, so it is computed BEFORE the run: a planning or execution failure would
+    # otherwise return a bare "Skipped" phase for a question whose answer we can compute
+    # outright, which is exactly the case this breakdown exists to cover.
+    _named: list = []
+    if intake_data.get("descriptive_only"):
+        try:
+            _named = _named_breakdown_findings(state, conn, intake_data)
+        except Exception as _nb_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_nb_exc, "the named breakdown is best-effort; the scan's own "
+                              "findings still serve", counter="deep_analysis.named_breakdown")
+
     _run = _do_run()
     # #2 — reattempt ONCE on a SATURATED result: every group came back pinned at ~0% or ~100% — the
     # signature of a tautology (grouped by an event-only column) or a fan-out, NOT a real finding.
@@ -7107,6 +7140,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         if _run2.ok and _run2.results and _n_saturated(_run2) < _n_saturated(_run):
             _run = _run2
     if not _run.ok:
+        # A failed scan still answers a question the breakdown already computed — ship the
+        # rows rather than a "Skipped" card.
+        if _named:
+            return {"investigation_phases": phases + [_phase_result(
+                _phase_id, _phase_title, _phase_emoji, "complete", "", _named)]}
         return {"investigation_phases": phases + [_run.error_phase]}
     results, _results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
@@ -7128,20 +7166,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         ]
         summary = ""  # trace, not analysis — the report renders only real prose
 
-    # The cut the question NAMED leads, computed in code. The planner above declines a
-    # high-cardinality id column — correct for a weakness scan, wrong for a question that
-    # asked to see that exact breakdown — and no amount of prompting reliably overrules a
-    # judgement the instrument is right to make.
-    if intake_data.get("descriptive_only"):
-        try:
-            _named = _named_breakdown_findings(state, conn, intake_data)
-            if _named:
-                _have = {f.get("sql") for f in findings}
-                findings = _named + [f for f in findings if f.get("sql") not in _have]
-        except Exception as _nb_exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_nb_exc, "the named breakdown is best-effort; the scan's own "
-                              "findings still serve", counter="deep_analysis.named_breakdown")
+    # The named cut LEADS: the planner declines a high-cardinality id column — correct for a
+    # weakness scan, wrong for a question that asked to see that exact breakdown — and no
+    # amount of prompting reliably overrules a judgement the instrument is right to make.
+    if _named:
+        _have = {f.get("sql") for f in findings}
+        findings = _named + [f for f in findings if f.get("sql") not in _have]
 
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
@@ -7364,7 +7394,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     return out
 
 
-# ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
+# ── Parallel multi-lens cross-section (flag: deep_analysis.parallel_lenses) ──────────────
 # A cross-sectional "why is X high/low" question has independent investigative angles: WHERE it
 # concentrates (segment/product dimensions) and the MECHANISM behind it (reason/condition/logistics
 # dimensions). The single bundled scan interprets all dimensions at once — shallow per-angle. This
@@ -8551,7 +8581,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
     focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
     axis resolves — then, if the WHEN lens flagged an anomalous period, forward-chains a
-    period-scoped drill, and (flags `ada.why_where_interaction` / `ada.why_deepen`) a WHY×WHERE
+    period-scoped drill, and (flags `deep_analysis.why_where_interaction` / `deep_analysis.why_deepen`) a WHY×WHERE
     interaction cross + a reason benchmark + a second-level reason drill.
     Degrades to the single scan when there's nothing to fan out. Only writes
     investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
@@ -8704,9 +8734,9 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # The forward-chained WHY lenses, gathered as (label, fn(conn), counter) specs in FIXED order.
     # Each depends ONLY on the already-computed WHERE/WHY summaries (primary_summary / _why_summary),
     # never on each other, so they can run as one concurrent wave.
-    #  • interaction (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
+    #  • interaction (flag `deep_analysis.why_where_interaction`): cross the leading reason (WHY) with the
     #    highest-impact segment (WHERE) — needs both a WHERE (rate) summary AND a WHY finding.
-    #  • benchmark + drill (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it
+    #  • benchmark + drill (flag `deep_analysis.why_deepen`): benchmark the leading reason vs peers (is it
     #    abnormal?) and drill it by product (which products drive it?) — both need only the WHY finding.
     forward_specs: list = []
     # The WHY lenses are permanent (flag endgame Wave 5, 2026-08-06): this is the
@@ -8796,7 +8826,7 @@ def _adversarial_should_run(synth) -> bool:
 
     The ``high_stakes`` parameter went with its flag (Wave 3): the caller passed a literal
     True, so the False arm was unreachable and the flag it named no longer existed. (The
-    always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
+    always-challenge full tier, ``deep_analysis.adversarial_verify``, was deleted 2026-07-31 — flag
     strategy §4G.)"""
     return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
 
@@ -9107,7 +9137,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # R6 — stream the report prose (executive_summary) to the client as the narrator
     # writes it, so a multi-minute deep run isn't silent between phase_complete and the
     # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
-    # still works inside the plain synthesis executor thread. None when ada.progress_events
+    # still works inside the plain synthesis executor thread. None when deep_analysis.progress_events
     # is off → blocking .complete(), byte-identical to before. complete_streaming self-heals
     # to .complete() on any streaming failure; the terminal answer_report stays authoritative.
     from aughor.agent.progress import report_delta_emitter
