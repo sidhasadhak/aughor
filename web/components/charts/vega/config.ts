@@ -9,16 +9,18 @@
  * property that lets a stored tier-2/tier-3 spec keep following the token layer: the
  * theme is never baked into the spec.
  *
- * Palette values come from components/charts/echarts/palette.ts on purpose. That file is
- * the CVD-validated source the `lint:palette` gate parses BY PATH; moving it would blind
- * the gate. It moves to charts/palette.ts in Phase 2, together with the gate.
+ * Palette values come from components/charts/palette.ts, the CVD-validated source the
+ * `lint:palette` gate parses by path. It moved out of the ECharts tree when that tree was
+ * deleted; the gate moved with it.
  */
 
-import { CHART_SERIES, CHART_DEEMPH, CHART_SURFACE, type ChartMode } from "@/components/charts/echarts/palette";
+import { CHART_SERIES, CHART_DEEMPH, CHART_SIGN, CHART_SURFACE, type ChartMode } from "@/components/charts/palette";
 
 export interface VegaTokens {
   palette: string[];
   deemph: string;
+  /** Sign pair — a good/bad meaning, never a series identity. */
+  sign: { pos: string; neg: string };
   axis: string;
   grid: string;
   tick: string;
@@ -41,9 +43,9 @@ function cssVar(name: string, fallback: string): string {
  *
  * `font` is read as the COMPUTED font-family of the chart's own container rather than
  * baked as a literal. ECharts cannot do this — its canvas renderer writes the font string
- * into the 2D context, which does not resolve `var(--font-ui)`, so echarts/theme.ts must
- * keep a hardcoded stack in sync by hand. Vega renders SVG, so the chart simply wears
- * whatever the UI around it wears.
+ * into the 2D context, which does not resolve `var(--font-ui)` — the retired ECharts theme
+ * had to keep a hardcoded stack in sync by hand. Vega renders SVG, so the chart simply
+ * wears whatever the UI around it wears.
  */
 export function readVegaTokens(el?: Element | null): VegaTokens {
   const mode: ChartMode = "dark";
@@ -54,6 +56,10 @@ export function readVegaTokens(el?: Element | null): VegaTokens {
   return {
     palette: CHART_SERIES[mode].map((hex, k) => cssVar(`--chart-${k + 1}`, hex)),
     deemph: cssVar("--chart-deemph", CHART_DEEMPH[mode]),
+    sign: {
+      pos: cssVar("--chart-threshold-target", CHART_SIGN[mode].pos),
+      neg: cssVar("--chart-threshold-crit", CHART_SIGN[mode].neg),
+    },
     axis: cssVar("--chart-axis", "#2F3D48"),
     grid: cssVar("--chart-grid", "#232F39"),
     tick: cssVar("--chart-tick", "#93A7B6"),
@@ -66,12 +72,13 @@ export function readVegaTokens(el?: Element | null): VegaTokens {
 
 /**
  * The LIGHT token set for headless print rendering — no document to read from, so the
- * values are the light literals. Mirrors echarts/theme.ts printChartTokens().
+ * values are the light literals — the print path has no document to read them from.
  */
 export function printVegaTokens(): VegaTokens {
   return {
     palette: [...CHART_SERIES.light],
     deemph: CHART_DEEMPH.light,
+    sign: { ...CHART_SIGN.light },
     axis: "#D3DAE0",
     grid: "#E6EBEF",
     tick: "#5F7281",
@@ -97,7 +104,15 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
     padding: 0,
     autosize: { type: "fit", contains: "padding" },
 
-    range: { category: t.palette, ordinal: t.palette },
+    range: {
+      category: t.palette,
+      ordinal: t.palette,
+      // `diverging` carries the SIGN pair (good/bad), a different job from series identity:
+      // a delta bar and a waterfall step read their colour here, so a spec can say "colour
+      // by sign" without naming a colour. `heatmap` is the single-hue ramp a magnitude gets.
+      diverging: [t.sign.neg, t.sign.pos],
+      heatmap: [t.surface, t.palette[0]],
+    },
 
     /**
      * The DEFAULT mark colour, which is a different setting from the categorical range and
@@ -149,6 +164,9 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
     line: { strokeWidth: 2, strokeCap: "round", strokeJoin: "round" },
     point: { size: 70, filled: true, stroke: t.surface, strokeWidth: 2 },
     arc: { stroke: t.surface, strokeWidth: 1 },
+    // The base map is chrome, not data: it wears the grid colour so the answer painted on
+    // top of it is the only thing carrying a hue — and so no spec has to name one.
+    geoshape: { fill: t.grid, stroke: t.axis, strokeWidth: 0.5 },
     rule: { stroke: t.t3, strokeDash: [4, 4] },
     text: { font: t.font, fontSize: 11, fontWeight: 500, fill: t.t1 },
   };
@@ -169,7 +187,15 @@ export function buildVegaRuntimeConfig(t: VegaTokens): Record<string, unknown> {
   const label = { font: t.font, fontSize: 11, fill: t.tick };
   return {
     background: "transparent",
-    range: { category: t.palette, ordinal: t.palette },
+    range: {
+      category: t.palette,
+      ordinal: t.palette,
+      // `diverging` carries the SIGN pair (good/bad), a different job from series identity:
+      // a delta bar and a waterfall step read their colour here, so a spec can say "colour
+      // by sign" without naming a colour. `heatmap` is the single-hue ramp a magnitude gets.
+      diverging: [t.sign.neg, t.sign.pos],
+      heatmap: [t.surface, t.palette[0]],
+    },
     axis: {
       labelFont: t.font, labelFontSize: 11, labelColor: t.tick, labelPadding: 6,
       titleFont: t.font, titleFontSize: 11, titleFontWeight: 500, titleColor: t.t3,

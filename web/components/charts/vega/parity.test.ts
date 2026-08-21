@@ -18,7 +18,6 @@ import { describe, expect, it } from "vitest";
 import * as vl from "vega-lite";
 import { parse as vegaParse } from "vega";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
-import { resolveChartOption } from "@/components/charts/resolveOption";
 
 interface Fixture {
   name: string;
@@ -77,17 +76,21 @@ const FIXTURES: Fixture[] = [
   { name: "no rows", hint: "bar", columns: ["category", "gmv"], rows: [], refuses: true },
   { name: "no columns", hint: "bar", columns: [], rows: [], refuses: true },
 
-  // Types tier 1 does NOT draw. Each must be refused, not approximated.
+  // Phase 5b moved these INTO tier 1 — they are ordinary fixtures now, and the fact that
+  // this list had to change is the test doing its job.
   { name: "scatter", hint: "scatter", columns: ["revenue", "profit"],
-    rows: [[9e5, 1.8e5], [1.1e6, 2.2e5], [1.3e6, 2.6e5]], unsupported: true },
+    rows: [[9e5, 1.8e5], [1.1e6, 2.2e5], [1.3e6, 2.6e5]] },
   { name: "heatmap", hint: "heatmap", columns: ["day", "hour", "orders"],
-    rows: [["Mon", "09", 12], ["Mon", "10", 18], ["Tue", "09", 7]], unsupported: true },
+    rows: [["Mon", "09", 12], ["Mon", "10", 18], ["Tue", "09", 7]] },
+  { name: "histogram", hint: "histogram", columns: ["order_value"],
+    rows: [[12], [18], [25], [31], [44], [52], [63]] },
+  { name: "waterfall", hint: "waterfall", columns: ["step", "delta"],
+    rows: [["Open", 100], ["Won", 40], ["Lost", -25]] },
+
+  // Still not tier 1: these are TIER 3, hand-authored Vega. resolveVegaSpec refuses them
+  // on purpose and the seam routes them to tier3.ts instead.
   { name: "treemap", hint: "treemap", columns: ["category", "gmv"],
     rows: [["Apparel", 4.2e6], ["Home", 2.4e6]], unsupported: true },
-  { name: "histogram", hint: "histogram", columns: ["order_value"],
-    rows: [[12], [18], [25], [31], [44], [52], [63]], unsupported: true },
-  { name: "waterfall", hint: "waterfall", columns: ["step", "delta"],
-    rows: [["Open", 100], ["Won", 40], ["Lost", -25]], unsupported: true },
   { name: "funnel", hint: "funnel", columns: ["stage", "count"],
     rows: [["Visit", 1000], ["Cart", 300], ["Buy", 90]], unsupported: true },
 ];
@@ -103,24 +106,21 @@ function functionPaths(node: unknown, path = "$"): string[] {
 }
 
 describe("Vega tier-1 resolver", () => {
-  it.each(FIXTURES)("$name — agrees with ECharts on whether a chart is honest", (f) => {
+  it.each(FIXTURES)("$name — draws a chart, or honestly refuses", (f) => {
     const vega = resolveVegaSpec({ columns: f.columns, rows: f.rows, chartType: f.hint });
-    const echarts = resolveChartOption({ columns: f.columns, rows: f.rows, chartType: f.hint });
     if (f.refuses) {
+      // No rows, no columns, or a grid with no chart in it. There is no second engine to
+      // fall back to any more, so the refusal IS the product behaviour: the surface's
+      // table view carries the answer.
       expect(vega).toBeNull();
-      expect(echarts).toBeNull();
       return;
     }
     if (f.unsupported) {
-      // Tier 1 must decline, and the outgoing engine must still draw it — that pair is
-      // what makes the fallback a fallback instead of a hole in the product.
+      // Tier 1 declines; the seam routes these to tier 3 instead (tier3.test.ts covers them).
       expect(vega).toBeNull();
-      expect(echarts).not.toBeNull();
       return;
     }
-    // A refusal on one engine and a chart on the other is the migration's worst failure
-    // mode: the answer silently loses (or gains) its chart when the engine flips.
-    expect(vega === null).toBe(echarts === null);
+    expect(vega).not.toBeNull();
   });
 
   it.each(FIXTURES.filter((f) => !f.refuses && !f.unsupported))("$name — emits pure JSON, no functions", (f) => {
@@ -181,18 +181,9 @@ describe("Vega tier-1 resolver", () => {
     expect(resolveVegaSpec({ columns: cols, rows: many, chartType: "bar", orient: "horizontal" })!.resolved)
       .toBe("bar_horizontal");
 
-    // And the ECharts path agrees: with many categories the VALUE axis is y (upright).
-    const axisType = (o: unknown, k: "xAxis" | "yAxis") => {
-      const ax = (o as Record<string, unknown>)[k];
-      return (Array.isArray(ax) ? ax[0] : ax) as { type?: string } | undefined;
-    };
-    const eMany = resolveChartOption({ columns: cols, rows: many, chartType: "bar" })!;
-    expect(axisType(eMany.option, "yAxis")?.type).toBe("value");
-    const eFew = resolveChartOption({ columns: cols, rows: few, chartType: "bar" })!;
-    expect(axisType(eFew.option, "xAxis")?.type).toBe("value");
   });
 
-  it("lets the user override orientation, on BOTH engines", () => {
+  it("lets the user override orientation", () => {
     const columns = ["category", "gmv"];
     const rows = [["Apparel", 4.2e6], ["Home", 2.4e6]];
 
@@ -206,17 +197,6 @@ describe("Vega tier-1 resolver", () => {
     expect(enc.y.field).toBe("gmv");
     expect(enc.x.field).toBe("category");
 
-    // And the same override has to reach the ECharts path, or the control lies whenever the
-    // engine flag is off — which is every surface today.
-    const axisType = (o: unknown, k: "xAxis" | "yAxis") => {
-      const ax = (o as Record<string, unknown>)[k];
-      return (Array.isArray(ax) ? ax[0] : ax) as { type?: string } | undefined;
-    };
-    const eH = resolveChartOption({ columns, rows, chartType: "bar", custom: { orient: "horizontal" } })!;
-    expect(axisType(eH.option, "xAxis")?.type).toBe("value");
-
-    const eV = resolveChartOption({ columns, rows, chartType: "bar", custom: { orient: "vertical" } })!;
-    expect(axisType(eV.option, "yAxis")?.type).toBe("value");
   });
 
   it("gives a multi-series trend one line per series, not one line through every point", () => {

@@ -3,10 +3,9 @@
 /**
  * /chart-lab/bench — the Phase 2 performance gate.
  *
- * Measures the CPU cost of each engine, split into the four phases that behave differently,
- * because the interesting number is not "which engine is faster" but "what does a RESIZE
- * cost": the Vega path compiles width/height into the spec, so a resize recompiles, where
- * ECharts calls resize() on a live instance.
+ * Measures the CPU cost of the chart path, split into the phases that behave differently.
+ * It began as a two-engine comparison; ECharts is retired, so what remains is a profile of
+ * the engine that stayed — resolve, compile, and the recompile a resize costs.
  *
  * PAINT IS DELIBERATELY NOT MEASURED. requestAnimationFrame is throttled whenever the
  * document is hidden — in the embedded preview pane only 1 frame in 10 fires — so a
@@ -18,7 +17,6 @@
  */
 
 import { useEffect, useState } from "react";
-import { resolveChartOption } from "@/components/charts/resolveOption";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { buildVegaConfig, readVegaTokens } from "@/components/charts/vega/config";
 
@@ -45,12 +43,7 @@ function makeData(n: number): { columns: string[]; rows: unknown[][] } {
 }
 
 async function runBench(): Promise<Record<string, unknown>> {
-  const [echartsCore, charts, comps, renderers, vega, vl] = await Promise.all([
-    import("echarts/core"), import("echarts/charts"), import("echarts/components"),
-    import("echarts/renderers"), import("vega"), import("vega-lite"),
-  ]);
-  echartsCore.use([charts.LineChart, charts.BarChart, comps.GridComponent, comps.TooltipComponent,
-                   comps.LegendComponent, comps.TitleComponent, renderers.CanvasRenderer]);
+  const [vega, vl] = await Promise.all([import("vega"), import("vega-lite")]);
 
   const visible = document.visibilityState === "visible";
   const host = document.createElement("div");
@@ -67,34 +60,12 @@ async function runBench(): Promise<Record<string, unknown>> {
   for (const n of ROW_COUNTS) {
     progress(`rows=${n} starting`);
     const { columns, rows } = makeData(n);
-    const e = emptyPhase();
     const v = emptyPhase();
 
     for (let r = 0; r < REPEATS; r++) {
       progress(`rows=${n} repeat ${r + 1}/${REPEATS}`);
-      // ── ECharts ───────────────────────────────────────────────────────────
-      let t = performance.now();
-      const opt = resolveChartOption({ columns, rows, chartType: "line" });
-      e.resolve.push(performance.now() - t);
-      e.compile.push(0); // no compile step: the option IS the render input
-
-      const el = document.createElement("div");
-      el.style.cssText = "width:800px;height:400px";
-      host.appendChild(el);
-      t = performance.now();
-      const inst = echartsCore.init(el, undefined, { renderer: "canvas" });
-      inst.setOption(opt!.option as Parameters<typeof inst.setOption>[0], { notMerge: true });
-      e.mount.push(performance.now() - t);
-
-      el.style.width = "600px";
-      t = performance.now();
-      inst.resize();
-      e.resize.push(performance.now() - t);
-      inst.dispose();
-      el.remove();
-
       // ── Vega-Lite ─────────────────────────────────────────────────────────
-      t = performance.now();
+      let t = performance.now();
       const spec = resolveVegaSpec({ columns, rows, chartType: "line" });
       v.resolve.push(performance.now() - t);
 
@@ -138,7 +109,7 @@ async function runBench(): Promise<Record<string, unknown>> {
       mount_p50: pct(p.mount, 0.5), mount_p95: pct(p.mount, 0.95),
       resize_p50: pct(p.resize, 0.5), resize_p95: pct(p.resize, 0.95),
     });
-    out[`rows_${n}`] = { echarts: sum(e), vega: sum(v) };
+    out[`rows_${n}`] = { vega: sum(v) };
   }
 
   host.remove();
@@ -147,8 +118,8 @@ async function runBench(): Promise<Record<string, unknown>> {
     visibility: document.visibilityState,
     paint_measured: visible,
     note: visible
-      ? "mount includes Vega's SVG render; ECharts mount is init+setOption"
-      : "document hidden — Vega mount SKIPPED (runAsync never settles); resize is compile+parse vs echarts.resize()",
+      ? "mount includes Vega's SVG render"
+      : "document hidden — mount SKIPPED (runAsync never settles); resize is compile+parse",
     ...out,
   };
 }

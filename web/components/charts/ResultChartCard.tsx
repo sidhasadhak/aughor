@@ -33,7 +33,6 @@ import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
-import { chartEngine } from "@/lib/chartEngine";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
 import { sameVizConfig, type VizConfig } from "@/components/charts/vizConfig";
@@ -261,7 +260,10 @@ export function ResultChartCard({
   // dataflow, so there is nothing to fetch: choosing "cumulative" on a 10k-row result used
   // to POST all 10k rows to /query/postproc and wait for them to come back. The ECharts
   // builders take already-transformed rows, so that path still round-trips.
-  const declarative = chartEngine() === "vega";
+  // Always declarative now: the transform is computed in the chart's own dataflow, so
+  // there is nothing to fetch. The engine switch this used to consult is gone with the
+  // second engine.
+  const declarative = true;
   useEffect(() => {
     if (declarative || transformOp === "none" || !metric) { setTransformed(null); setTErr(""); return; }
     let alive = true;

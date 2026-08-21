@@ -13,8 +13,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { EChart } from "@/components/charts/echarts";
-import { resolveChartOption } from "@/components/charts/resolveOption";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { resolveTier3Spec } from "@/components/charts/vega/tier3";
@@ -97,10 +95,6 @@ function Pane({ title, children }: { title: string; children: React.ReactNode })
 function Comparison({ c, showLabels }: { c: Case; showLabels: boolean }) {
   const [compiled, setCompiled] = useState<unknown>(null);
 
-  const echarts = useMemo(
-    () => resolveChartOption({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint, showLabels }),
-    [c, showLabels],
-  );
   const tier3 = useMemo(
     () => resolveTier3Spec({ columns: c.data.columns, rows: c.data.rows, chartType: c.hint }),
     [c],
@@ -110,7 +104,7 @@ function Comparison({ c, showLabels }: { c: Case; showLabels: boolean }) {
     [tier3, c, showLabels],
   );
 
-  const h = Math.max(echarts?.defaultH ?? 300, vega?.defaultH ?? 300);
+  const h = vega?.defaultH ?? 300;
 
   return (
     <section style={{ marginBottom: "2rem" }}>
@@ -122,9 +116,6 @@ function Comparison({ c, showLabels }: { c: Case; showLabels: boolean }) {
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "0.75rem" }}>
-        <Pane title="ECharts — today">
-          {echarts ? <EChart option={echarts.option} height={h} /> : <div className="aug-fs-ui" style={{ opacity: 0.6 }}>no chart</div>}
-        </Pane>
         <Pane title={vega?.tier === 3 ? "Vega — tier 3 (hand-authored)" : "Vega-Lite — tier 1"}>
           {vega
             ? <VegaChart spec={vega.spec} tier={vega.tier} height={h} onCompiled={setCompiled} />

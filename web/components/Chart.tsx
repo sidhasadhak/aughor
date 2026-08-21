@@ -1,31 +1,25 @@
 "use client";
 
 /**
- * Chart — the reusable chart component. Given SQL-shaped { columns, rows }
- * (+ optional backend chartConfig), it resolves the column roles, picks the
- * right chart type (the same data-shape rules as before), builds an Apache
- * ECharts `option` via the pure builders in ./charts/echarts, and renders it
- * through <EChart> with download-PNG + drag-to-resize + labels chrome.
+ * Chart — the reusable chart component, and the ONE seam every surface goes through.
+ * Given SQL-shaped { columns, rows } (+ the backend's chart hint, config and exhibit) it
+ * resolves a Vega-Lite spec — or a hand-authored Vega one for the four forms Vega-Lite
+ * cannot express — and renders it with download-PNG, drag-to-resize and label chrome.
  *
- * This is the ECharts replacement for the former Vega-Lite engine. The PUBLIC
- * PROPS are unchanged, so every surface (chat, report, exploration, query
- * builder, canvas, briefing) keeps working without edits. Chart-type selection
- * reuses scoreDualAxis (combo vs grouped vs bar); column roles via
- * ./charts/columnRoles; formatting/date logic lives inside the builders
- * (@/lib/format). The measure-additivity / percent-leak fixes are preserved by
- * the builders' per-field `valueFormatter`.
+ * The engine history is Observable Plot → Vega-Lite → ECharts → Vega-Lite (2026-08).
+ * The PUBLIC PROPS have not changed across any of it, which is why every surface (chat,
+ * report, exploration, query builder, canvas, briefing) kept working through each move.
+ * Column roles come from ./charts/columnRoles and type inference from
+ * ./charts/chartTypeInference — both engine-neutral, and both older than either engine.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { EChartsOption } from "echarts";
 import { useOrgSettings } from "@/lib/useOrgSettings";
-import { EChart } from "@/components/charts/echarts/EChart";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { resolveTier3Spec } from "@/components/charts/vega/tier3";
-import { chartEngine, CHART_ENGINE_DEFAULT, CHART_ENGINE_EVENT, type ChartEngine } from "@/lib/chartEngine";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
-import { resolveChartOption, type ChartCustom } from "@/components/charts/resolveOption";
+import type { ChartCustom } from "@/components/charts/chartCustom";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { Icon } from "@/components/ui/icon";
 
@@ -33,7 +27,7 @@ import { Icon } from "@/components/ui/icon";
  *  lets the Query Builder Customize tab override colours / number format / legend /
  *  axis titles. All fields optional; a null/empty custom is a no-op, so non-customizing
  *  callers (chat, reports, explorer) are unaffected. */
-// ChartCustom moved to resolveOption.ts with the resolver; re-exported for existing importers.
+// Re-exported for the five components that import it through this module.
 export type { ChartCustom };
 
 // ── Customize post-pass (ECharts) ────────────────────────────────────────────
@@ -90,20 +84,6 @@ export function Chart({
   const outerRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<ChartInstance | null>(null);
 
-  // Which engine draws this chart. Read on every render and re-read when the override
-  // changes, so flipping engines re-renders every mounted chart without a reload — the
-  // only way to compare them on the SAME screen with the SAME data.
-  // Seeded with the BUILD-TIME answer, not the stored one. The server has no localStorage,
-  // so reading the override during the first client render makes the two trees disagree —
-  // and because the engines compute different heights, React reports a hydration failure and
-  // throws the server tree away. The effect below applies any override after mount.
-  const [engine, setEngine] = useState<ChartEngine>(CHART_ENGINE_DEFAULT);
-  useEffect(() => {
-    const sync = () => setEngine(chartEngine());
-    sync();
-    window.addEventListener(CHART_ENGINE_EVENT, sync);
-    return () => window.removeEventListener(CHART_ENGINE_EVENT, sync);
-  }, []);
   // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
   const [showLabelsState, setShowLabels] = useState(false);
@@ -138,34 +118,27 @@ export function Chart({
   // Build the option + default height. Memoized so its identity is stable across
   // renders (EChart re-inits when the option object changes) — only rebuilds when
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
-  type Built =
-    | { engine: "echarts"; option: EChartsOption; defaultH: number; xCategories: number }
-    | { engine: "vega"; spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
+  type Built = { spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
 
   const built = useMemo<Built | null>(() => {
-    if (engine === "vega") {
-      // Same intent, different target language.
-      // Tier 3 first: the four types Vega-Lite cannot express are hand-authored Vega, and
-      // tier 1 would only refuse them anyway.
-      const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
-      if (t3) return { engine: "vega", spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
+    // Tier 3 first — the four forms Vega-Lite cannot express are hand-authored Vega.
+    const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
+    if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
 
-      const v = resolveVegaSpec({ columns, rows, chartType, showLabels, format: custom?.format ?? null,
-                                  xTitle: custom?.xTitle ?? null, yTitle: custom?.yTitle ?? null,
-                                  orient: custom?.orient ?? null,
-                                  transform: custom?.transform ?? null });
-      // null here means "tier 1 does not draw this type" — fall through to ECharts, which
-      // still draws every type. parity.test.ts pins that both engines agree about refusal.
-      if (v) return { engine: "vega", spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 };
-    }
-    const e = resolveChartOption({ columns, rows, chartType, chartConfig, custom, columnUnits, exhibit, showLabels });
-    if (!e) return null;
-    const xd = (e.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
-    return { engine: "echarts", option: e.option, defaultH: e.defaultH,
-             xCategories: Array.isArray(xd) ? xd.length : 0 };
+    const v = resolveVegaSpec({
+      columns, rows, chartType, showLabels, exhibit,
+      format: custom?.format ?? null,
+      xTitle: custom?.xTitle ?? null,
+      yTitle: custom?.yTitle ?? null,
+      orient: custom?.orient ?? null,
+      transform: custom?.transform ?? null,
+    });
+    // null is the honest-refusal verdict: data with no chart in it renders none, and the
+    // surface's table view carries it. There is no second engine to fall back to.
+    return v ? { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 } : null;
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit, engine]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
 
   if (!built) return null;
   const fill = !!(fitHeight && fitHeight > 0);
@@ -207,9 +180,7 @@ export function Chart({
            upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
         return (
       <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
-        {built.engine === "vega"
-          ? <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
-          : <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={ready} />}
+        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
       </div>
         );
       })()}

@@ -16,6 +16,8 @@
 
 import { cleanLabel } from "@/lib/format";
 import { classifyColumns, HORIZONTAL_MAX_CATS } from "@/components/charts/columnRoles";
+import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
+import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
 
 /** The four post-processing ops the edit panel offers, mirroring aughor/tools/postproc.py. */
@@ -121,6 +123,8 @@ export interface ResolveSpecArgs {
   orient?: "vertical" | "horizontal" | null;
   /** Post-processing applied IN the spec rather than to the data before it. */
   transform?: TransformSpec | null;
+  /** The backend's exhibit spec — chart SEMANTICS, never data. */
+  exhibit?: ExhibitSpec | Record<string, unknown> | null;
 }
 
 export interface ResolvedSpec {
@@ -207,7 +211,10 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
-          transform } = args;
+          transform, exhibit: exhibitRaw } = args;
+  // Fail-open on a malformed spec: a bad exhibit costs its semantics, never the chart —
+  // the same contract the ECharts resolver held.
+  const exhibit = sanitizeExhibit(exhibitRaw as Parameters<typeof sanitizeExhibit>[0]);
   if (!rows?.length || !columns?.length) return null;
 
   const hint = String(chartType ?? "auto").toLowerCase();
@@ -227,7 +234,9 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
 
   let type: string = hint;
   if (inferred) type = inferred.type as ChartType;
-  else if (HINT_TO_TYPE[hint] && hint !== "bar_horizontal") type = HINT_TO_TYPE[hint];
+  // HINT_TO_TYPE collapses `pareto` to `bar` — true of the ECharts path, where a pareto WAS
+  // a bar with a second axis bolted on. Here it is its own form, so it must survive the map.
+  else if (HINT_TO_TYPE[hint] && hint !== "bar_horizontal" && !EXTENDED_TYPES.has(hint)) type = HINT_TO_TYPE[hint];
   // ORIENTATION IS A SHARED RULE, not a per-engine habit. resolveOption.ts renders BOTH
   // `bar` and `bar_horizontal` horizontally whenever x is categorical (a ranking reads
   // down, and category labels need the room), and vertically when x is time (a trend reads
@@ -254,7 +263,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
    */
   const SUPPORTED = new Set(["bar", "bar_horizontal", "bar_vertical", "line", "multi-line",
                              "multi_line", "area", "counter", "pie"]);
-  if (!SUPPORTED.has(type)) return null;
+  if (!SUPPORTED.has(type) && !EXTENDED_TYPES.has(type)) return null;
 
   const data = { values: toRecords(columns, rows) };
 
@@ -268,6 +277,19 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
   if (tf) base.transform = tf.transform;
   if (title) base.title = title;
+
+  // ---- the forms beyond the everyday six ------------------------------------------------
+  if (EXTENDED_TYPES.has(type)) {
+    const ext = resolveExtendedForm(type, {
+      columns, rows, data, numCols, catCols, dateCol, measure, band,
+      format, xTitle, yTitle, showLabels, base,
+    });
+    // A form that cannot be built from THIS data (a scatter with one measure, a point map
+    // with no coordinates) refuses rather than approximating — the same contract as the
+    // unsupported-type gate above.
+    return ext ? { tier: 1, resolved: ext.resolved, defaultH: ext.defaultH,
+                   xCategories: ext.xCategories, spec: ext.spec } : null;
+  }
 
   // ---- counter — a single headline number, not a plot -----------------------------------
   if (type === "counter") {
@@ -373,9 +395,59 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // opacity belongs in the SHARED encoding, not on a layer: the object below is spread over
   // the spec AFTER any layer's own encoding, so a selection declared on the layer was being
   // silently overwritten — the param compiled, the click registered, and nothing dimmed.
+  const exColor = exhibitColor();
+  const exOpacity = emphasisOpacity();
   const encoding: Record<string, unknown> = horizontal
-    ? { x: valueEnc, y: bandEnc, opacity: SELECT_OPACITY }
-    : { x: bandEnc, y: valueEnc, opacity: SELECT_OPACITY };
+    ? { x: valueEnc, y: bandEnc, opacity: exOpacity ?? SELECT_OPACITY }
+    : { x: bandEnc, y: valueEnc, opacity: exOpacity ?? SELECT_OPACITY };
+  if (exColor) encoding.color = exColor;
+
+  /**
+   * The exhibit grammar, as encodings. `severity` ramps the measure through the config's
+   * single-hue `heatmap` range; `sign` reads the `diverging` pair through a threshold at
+   * zero; `categorical` colours by a named field; `emphasis` keeps the question's subjects
+   * at full strength and washes the rest. None names a colour — every one resolves through
+   * a config range, which is what keeps a stored spec following the token layer.
+   */
+  function exhibitColor(): Record<string, unknown> | null {
+    const mode = exhibit?.color?.mode;
+    if (!mode || mode === "neutral") return null;
+    if (mode === "sign") {
+      return { field: measure, type: "quantitative",
+               scale: { type: "threshold", domain: [0], range: "diverging" }, legend: null };
+    }
+    if (mode === "severity") {
+      return { field: measure, type: "quantitative", scale: { range: "heatmap" },
+               legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+    }
+    const field = exhibit?.color?.field;
+    if (!field || !columns.includes(field)) return null;
+    return { field, type: mode === "continuous" ? "quantitative" : "nominal", sort: null,
+             legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+  }
+
+  /** Reference lines — context the reader otherwise supplies from memory. */
+  function refLineLayers(horizontalForm: boolean): Record<string, unknown>[] {
+    return (exhibit?.ref_lines ?? []).filter((l) => Number.isFinite(l?.value)).map((l) => ({
+      data: { values: [{ __ref: l.value, __label: l.label ?? "" }] },
+      layer: [
+        { mark: { type: "rule", strokeDash: [4, 4] },
+          encoding: { [horizontalForm ? "x" : "y"]: { field: "__ref", type: "quantitative" } } },
+        { mark: { type: "text", align: horizontalForm ? "left" : "right",
+                  dx: horizontalForm ? 4 : -4, dy: -4, fontSize: 10 },
+          encoding: { [horizontalForm ? "x" : "y"]: { field: "__ref", type: "quantitative" },
+                      text: { field: "__label" } } },
+      ],
+    }));
+  }
+
+  /** Emphasis — the question's subjects stay, everything else recedes. */
+  function emphasisOpacity(): Record<string, unknown> | null {
+    const subjects = (exhibit?.emphasis ?? []).filter(Boolean);
+    if (!subjects.length || !band) return null;
+    return { condition: { test: `indexof(${JSON.stringify(subjects)}, datum['${band}']) >= 0`, value: 1 },
+             value: 0.32 };
+  }
 
   const layers: Record<string, unknown>[] = [
     { mark: { type: "bar", tooltip: true }, params: [SELECT_PARAM(band)] },
@@ -394,6 +466,11 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     xCategories: horizontal ? 0 : new Set(rows.map((r) => r[columns.indexOf(band)])).size,
     // A horizontal bar needs room per category, not a fixed canvas.
     defaultH: horizontal ? Math.max(180, Math.min(560, rows.length * 30 + 60)) : 300,
-    spec: { ...base, ...(layers.length > 1 ? { layer: layers } : layers[0]), encoding },
+    spec: (() => {
+      // A reference line is its own layer with its own data, so any ref line forces the
+      // layered form even where a lone bar would not have needed one.
+      const all = [...layers, ...refLineLayers(horizontal)];
+      return all.length > 1 ? { ...base, layer: all, encoding } : { ...base, ...all[0], encoding };
+    })(),
   };
 }
