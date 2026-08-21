@@ -9,7 +9,7 @@
  * and renders every toast, wherever it was raised.
  *
  * Design language: flat aug-panel surface (bg-1 lifted over content), a kind-coloured
- * left accent + glyph, DM Sans title / mono glyph, the shared type scale. Dark-only,
+ * left accent + glyph, Inter title / mono glyph, the shared type scale. Dark-only,
  * like the rest of the app. Auto-dismisses (errors linger longest); hover pauses the
  * timer; manual × dismiss. Announced via a stable aria-live region.
  */

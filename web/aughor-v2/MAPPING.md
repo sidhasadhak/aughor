@@ -3,6 +3,13 @@
 All variable **names** are unchanged from `styles/tokens.css`; only **values** move.
 `tokens-v2.css` re-declares these in `:root` (dark) and `[data-theme="light"]`.
 
+> **This file records the ORIGINAL v2 handoff and is kept for its rationale, not as
+> a current reference.** The values below stopped matching the shipped theme before
+> the console re-skin (this file lists `--bg-0: #0A0D13`; the file shipped
+> `#10161D`). **`theme/tokens-v2.css` is the only authority for current values** —
+> read it, not this table. See "Console re-skin" at the foot of this file for what
+> the latest pass changed and why.
+
 ## Backgrounds (dark)
 
 | Token | Original | v2 | Why |
@@ -102,3 +109,53 @@ spec's `config`.
 | `--acc-dim` = `color-mix(… 16%)` | `rgba(59,130,246,.16)` |
 | `--acc-soft` = `color-mix(… 26%)` | `rgba(59,130,246,.26)` |
 | `--acc-glow` = `color-mix(… 42%)` | `rgba(59,130,246,.42)` |
+
+
+---
+
+## Console re-skin
+
+A pass over `tokens-v2.css` to adopt a console visual language: cool near-neutral
+surfaces, one blue that means "interactive", flat hairline structure, tight shape.
+Values are in the file; this records the decisions a reader would otherwise have to
+reverse-engineer.
+
+| Area | Change | Why |
+|---|---|---|
+| Surfaces | Cool near-neutrals, canvas below surfaces | Panels read as planes without a shadow doing the work |
+| Shape | `--r1/2/3` → 3 / 4 / 6px | Restores the original "max 6px" ceiling the earlier pass raised to 12px. Density is a feature in a tool kept open all day |
+| Elevation | `.aug-panel` shadow removed; `--shadow-*` softened | `.aug-panel` already carries `1px solid var(--b1)`, so the shadow restated the same edge — and stacked across nested panels it is what made surfaces read as boxes |
+| Tags | `.aug-tag` pill → `--r1` | Rectangular badges. `--r-pill` stays for what is genuinely round: avatars, status dots |
+| Fonts | DM Sans → Inter, IBM Plex Mono → JetBrains Mono | Both via `next/font` (self-hosted at build; no runtime CDN request). `--font-ui`/`--font-mono` absorb the swap everywhere else |
+| Primary hover | Hardcoded `#2A82CC` → `var(--blue-solid-hover)` | **Bug fix.** The literal was a dark-mode value, so light mode hovered *lighter* instead of darker |
+
+### The ink tiers are NOT taken verbatim
+
+The reference design has three text tiers and reserves its faintest
+(`--text-placeholder`) for placeholder text. This system has four and uses `--t3`
+and `--t4` for real content — timestamps, row meta, labels. Adopting the
+placeholder grey as `--t3` measured **2.31:1** on the canvas and would have
+re-opened the defect `styles/tokens.css` already records:
+
+> *"the old --t3 (~3:1) and --t4 (~1.9 — below perceivable) made row numbers,
+> timestamps and labels 'almost invisible' (user report)."*
+
+So `--t1`/`--t2` are the reference values exactly, and `--t3`/`--t4` are stepped
+down from `--t2` in the same hue until every tier clears 3:1 on every surface.
+Measured, worst surface in each mode:
+
+| | t1 | t2 | t3 | t4 |
+|---|---|---|---|---|
+| light | 16.04 | 4.43 | 3.73 | 3.13 |
+| dark | 13.47 | 6.40 | 3.85 | 3.18 |
+
+Both tiers land **above** what shipped before this pass (light t3 2.89, t4 1.94).
+
+### The chart series are untouched, deliberately
+
+`--chart-1..6` were chosen by the `lint:palette` validator, not by eye — stepped
+into a lightness band and ordered by exhaustive search for CVD separation. They
+already sit in this accent's hue family, so retinting them would spend real CVD
+headroom for no visible gain. What moved is the chrome (`--chart-axis/grid/tick`),
+which follows the new borders and text. `--chart-tick` is `--t2`, not `--t3`:
+axis labels are text and must read as text.

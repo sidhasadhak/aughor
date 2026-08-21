@@ -18,7 +18,7 @@ import { tags as t } from "@lezer/highlight";
 
 export const aughorEditorTheme = EditorView.theme({
   "&": {
-    fontFamily: "var(--font-code, var(--font-ibm-plex-mono), monospace)",
+    fontFamily: "var(--font-code, var(--font-jetbrains-mono), monospace)",
     // Literal rather than a token: the app defines font sizes as `aug-fs-*` CLASSES,
     // and CM6's theme takes CSS values, not classes. 13px is `aug-fs-ui`, the single
     // size the whole SQL Editor now uses — the document and its chrome read as one
@@ -29,12 +29,12 @@ export const aughorEditorTheme = EditorView.theme({
     height: "100%",
   },
   ".cm-content": {
-    fontFamily: "var(--font-code, var(--font-ibm-plex-mono), monospace)",
+    fontFamily: "var(--font-code, var(--font-jetbrains-mono), monospace)",
     caretColor: "var(--t1)",
     padding: "10px 0",
   },
   ".cm-scroller": {
-    fontFamily: "var(--font-code, var(--font-ibm-plex-mono), monospace)",
+    fontFamily: "var(--font-code, var(--font-jetbrains-mono), monospace)",
     lineHeight: "1.6",
     overflow: "auto",
   },
@@ -65,7 +65,7 @@ export const aughorEditorTheme = EditorView.theme({
     color: "var(--t1)",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-    fontFamily: "var(--font-code, var(--font-ibm-plex-mono), monospace)",
+    fontFamily: "var(--font-code, var(--font-jetbrains-mono), monospace)",
     padding: "3px 8px",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {

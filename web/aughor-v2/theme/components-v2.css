@@ -23,23 +23,21 @@
   background: var(--blue-solid);
   border-color: var(--blue-solid); color: #fff;
 }
-.aug-btn-primary:hover { background: #2A82CC; border-color: #2A82CC; }
+.aug-btn-primary:hover { background: var(--blue-solid-hover); border-color: var(--blue-solid-hover); }
 .aug-btn-secondary { background: var(--bg-3); border-color: var(--b2); }
 .aug-btn-secondary:hover { background: var(--bg-4); border-color: var(--b3); }
 
 /* ── Cards / panels — real elevation + hover lift ────────────────────────── */
 .aug-panel {
   border-radius: var(--r3);
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--dur-norm) var(--ease-spring, cubic-bezier(.16,1,.3,1)),
-              box-shadow var(--dur-norm) var(--ease-spring, cubic-bezier(.16,1,.3,1)),
-              border-color var(--dur-norm) var(--ease-out);
+  box-shadow: none;
+  transition: border-color var(--dur-norm) var(--ease-out);
 }
 /* Clickable cards highlight via hairline, not a lift — borders do the work. */
 .aug-panel-interactive:hover { border-color: var(--b3); }
 
 /* ── Tags → mono pills ───────────────────────────────────────────────────── */
-.aug-tag { border-radius: 999px; padding: 2px 9px; font-weight: 500; }
+.aug-tag { border-radius: var(--r1); padding: 2px 8px; font-weight: 500; }
 
 /* ── Inputs — focus ring ─────────────────────────────────────────────────── */
 .aug-input { border-radius: var(--r2); }
