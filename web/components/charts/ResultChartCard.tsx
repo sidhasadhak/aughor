@@ -252,6 +252,8 @@ export function ResultChartCard({
   // On-demand post-processing transform (PoP / share / rolling / cumulative) — appends a
   // derived column on the chosen measure via /query/postproc. Off by default (today's view).
   const [transformOp, setTransformOp] = useState<PostprocOp | "none">(seed.transform ?? "none");
+  // "" means the chart decides: a ranking reads horizontally, a trend over time vertically.
+  const [orient, setOrient] = useState<"" | "vertical" | "horizontal">(seed.orient ?? "");
   const [transformed, setTransformed] = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
   const [tErr, setTErr] = useState("");
   useEffect(() => {
@@ -298,7 +300,8 @@ export function ResultChartCard({
     ...(xTitle ? { xTitle } : {}),
     ...(yTitle ? { yTitle } : {}),
     ...(tooltipOff ? { tooltip: "off" as const } : {}),
-  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff]);
+    ...(orient ? { orient } : {}),
+  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff, orient]);
 
   // The color binding the user built (or null): a chosen field, its scale (explicit, else
   // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.
@@ -356,9 +359,10 @@ export function ResultChartCard({
     if (tooltipOff) c.tooltipOff = true;
     if (userRefLines.length) c.refLines = userRefLines;
     if (transformOp !== "none") c.transform = transformOp;
+    if (orient) c.orient = orient;
     return c;
   }, [view, typeSel, metricSel, dimSel, aggSel, showLabels, colorField, colorScaleSel, colorName,
-      numberFormat, legendPos, xTitle, yTitle, tooltipOff, userRefLines, transformOp,
+      numberFormat, legendPos, xTitle, yTitle, tooltipOff, userRefLines, transformOp, orient,
       chartTypes.length, columns, rows, defaultShowLabels]);
 
   // Seeded with what we were GIVEN, so restoring a saved chart doesn't immediately save it back.
@@ -401,6 +405,12 @@ export function ResultChartCard({
     aggOptions: (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
     setAgg: (v) => setAggSel(v as Agg),
     rateSummed,
+    // Orientation applies to the bar forms; a line, pie or counter has no axis to swap.
+    orientValue: orient,
+    // `resolvedType` is the type the chart actually renders once "auto" has resolved, so the
+    // control appears on an auto-inferred bar too — which is most of them.
+    orientAvailable: /bar/.test(String(resolvedType)),
+    setOrient,
     transformValue: transformOp,
     transformOptions: metricCols.length >= 1 ? TRANSFORM_OPTS : [],
     setTransform: (v) => setTransformOp(v as PostprocOp | "none"),

@@ -145,7 +145,8 @@ export function Chart({
     if (engine === "vega") {
       // Same intent, different target language.
       const v = resolveVegaSpec({ columns, rows, chartType, showLabels, format: custom?.format ?? null,
-                                  xTitle: custom?.xTitle ?? null, yTitle: custom?.yTitle ?? null });
+                                  xTitle: custom?.xTitle ?? null, yTitle: custom?.yTitle ?? null,
+                                  orient: custom?.orient ?? null });
       // null here means "tier 1 does not draw this type" — fall through to ECharts, which
       // still draws every type. parity.test.ts pins that both engines agree about refusal.
       if (v) return { engine: "vega", spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories };

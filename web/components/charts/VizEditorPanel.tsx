@@ -46,6 +46,10 @@ export interface VizEditorModel {
   aggOptions: VizSelectOption[];
   setAgg: (v: string) => void;
   rateSummed: boolean;
+  // Orientation — swap which axis carries the measure. Empty string = let the chart decide.
+  orientValue: "" | "vertical" | "horizontal";
+  orientAvailable: boolean;
+  setOrient: (v: "" | "vertical" | "horizontal") => void;
   // Transform (post-processing)
   transformValue: string;
   transformOptions: VizSelectOption[];
@@ -382,6 +386,16 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
 
         {chartMode && <ToggleRow title="Labels" on={model.showLabels} onChange={model.setShowLabels} />}
         {chartMode && <ToggleRow title="Tooltip" on={model.tooltipOn} onChange={model.setTooltipOn} />}
+
+        {chartMode && model.orientAvailable && (
+          <Channel title="Orientation">
+            <SegToggle
+              value={model.orientValue}
+              onChange={model.setOrient}
+              options={[["", "Auto"], ["vertical", "Vertical"], ["horizontal", "Horizontal"]]}
+            />
+          </Channel>
+        )}
 
         {model.view !== "pivot" && model.transformOptions.length > 0 && (
           <Channel title="Transform">

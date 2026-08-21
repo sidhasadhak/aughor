@@ -148,6 +148,33 @@ describe("Vega tier-1 resolver", () => {
     expect(forced!.resolved).toBe("bar");
   });
 
+  it("lets the user override orientation, on BOTH engines", () => {
+    const columns = ["category", "gmv"];
+    const rows = [["Apparel", 4.2e6], ["Home", 2.4e6]];
+
+    // A ranking defaults to horizontal on both engines.
+    expect(resolveVegaSpec({ columns, rows, chartType: "bar" })!.resolved).toBe("bar_horizontal");
+
+    // Forcing vertical must move the measure to the y axis, not merely record a preference.
+    const vega = resolveVegaSpec({ columns, rows, chartType: "bar", orient: "vertical" })!;
+    expect(vega.resolved).toBe("bar");
+    const enc = (vega.spec as { encoding: Record<string, { field: string }> }).encoding;
+    expect(enc.y.field).toBe("gmv");
+    expect(enc.x.field).toBe("category");
+
+    // And the same override has to reach the ECharts path, or the control lies whenever the
+    // engine flag is off — which is every surface today.
+    const axisType = (o: unknown, k: "xAxis" | "yAxis") => {
+      const ax = (o as Record<string, unknown>)[k];
+      return (Array.isArray(ax) ? ax[0] : ax) as { type?: string } | undefined;
+    };
+    const eH = resolveChartOption({ columns, rows, chartType: "bar", custom: { orient: "horizontal" } })!;
+    expect(axisType(eH.option, "xAxis")?.type).toBe("value");
+
+    const eV = resolveChartOption({ columns, rows, chartType: "bar", custom: { orient: "vertical" } })!;
+    expect(axisType(eV.option, "yAxis")?.type).toBe("value");
+  });
+
   it("gives a multi-series trend one line per series, not one line through every point", () => {
     const f = FIXTURES.find((x) => x.name === "trend by series")!;
     const v = resolveVegaSpec({ columns: f.columns, rows: f.rows, chartType: f.hint });

@@ -31,6 +31,8 @@ export interface ResolveSpecArgs {
   showLabels?: boolean;
   /** Chart title. Absent → no title block. */
   title?: string | null;
+  /** Swap the axes of a bar form. Absent → the shared rule decides. */
+  orient?: "vertical" | "horizontal" | null;
 }
 
 export interface ResolvedSpec {
@@ -110,7 +112,7 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  * verdict the ECharts resolver reaches, so both engines refuse the same data.
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
-  const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title } = args;
+  const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient } = args;
   if (!rows?.length || !columns?.length) return null;
 
   const hint = String(chartType ?? "auto").toLowerCase();
@@ -137,7 +139,8 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // across). Only `bar_vertical` forces the upright form. Encoding the same rule here is
   // what stops the Phase 2 diff from flagging every explicit `bar` as a regression.
   const isTimeX = (inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol)) === dateCol;
-  const horizontal = hint !== "bar_vertical" && !isTimeX;
+  // A user override beats the rule; absent, the rule decides exactly as before.
+  const horizontal = orient ? orient === "horizontal" : (hint !== "bar_vertical" && !isTimeX);
 
   /**
    * Tier 1 draws SIX types and refuses everything else.
