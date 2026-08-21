@@ -289,7 +289,7 @@ function WorkspaceSwitcher({
       >
         <NavIcon name="layers" size={14} color="var(--blue4)" />
         <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
-          <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
+          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
             {active?.name ?? "—"}
           </span>
@@ -304,7 +304,7 @@ function WorkspaceSwitcher({
           borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
           padding: 6,
         }}>
-          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
             Workspaces
           </div>
           {workspaces.map(w => {
@@ -329,7 +329,7 @@ function WorkspaceSwitcher({
                   <span style={{ display: "block", fontSize: 12, fontWeight: on ? 500 : 400, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {w.name}
                   </span>
-                  <span style={{ display: "block", fontSize: 10, color: "var(--t4)" }}>
+                  <span style={{ display: "block", fontSize: 11, color: "var(--t4)" }}>
                     {w.connection_ids.length} connection{w.connection_ids.length === 1 ? "" : "s"}{w.is_default ? " · default" : ""}
                   </span>
                 </span>
@@ -409,7 +409,7 @@ function Topbar({
       <div style={{ display: "flex", alignItems: "center", gap: 9, width: 224, flexShrink: 0 }}>
         <AughorLogo />
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
             Aughor
           </div>
           {/* <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
@@ -434,8 +434,8 @@ function Topbar({
         <NavIcon name="search" size={13} />
         <span style={{ flex: 1, textAlign: "left" }}>Search tables, analyses, metrics…</span>
         <span style={{ display: "flex", gap: 2, alignItems: "center" }}>
-          <kbd style={{ fontSize: 9, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
-          <kbd style={{ fontSize: 9, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
+          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
+          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
         </span>
       </button>
 
@@ -563,14 +563,14 @@ function Sidebar({
         {/* Demo posture is stated, not implied. The hosted demo names a real company, so
             a visitor must be able to see at a glance that the operational figures are
             synthetic — and "Local" was simply wrong there: the backend is a recording. */}
-        <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
           {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
         </div>
         {DEMO_PACK && (
           <div
             title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
             style={{
-              fontSize: 9, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
+              fontSize: 11, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
               padding: "6px 6px 0", marginTop: 2, borderTop: "1px solid var(--b0)",
             }}
           >
@@ -622,13 +622,13 @@ function SearchOverlay({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200 }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }} />
       <div style={{
         position: "fixed", top: "16%", left: "50%", transform: "translateX(-50%)",
         zIndex: 201, width: "100%", maxWidth: 560,
         background: "var(--bg-3)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "0 24px 48px rgba(0,0,0,.6)",
+        boxShadow: "var(--shadow-xl)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--b1)" }}>
           <NavIcon name="search" size={14} color="var(--t3)" />
@@ -641,7 +641,7 @@ function SearchOverlay({
           />
           <kbd
             onClick={onClose}
-            style={{ fontSize: 9, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
+            style={{ fontSize: 11, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
           >
             ESC
           </kbd>
@@ -685,8 +685,8 @@ function SearchOverlay({
         <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 12 }}>
           {[["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]].map(([k, l]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <kbd style={{ fontSize: 9, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>{l}</span>
+              <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
             </span>
           ))}
         </div>
@@ -718,9 +718,9 @@ function StatCard({ value, label, accent, sub, onClick }: {
         transition: "background .12s, border-color .12s", minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 24, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)" }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)" }}>{value}</div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 5 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: accent, marginTop: 3, fontFamily: "var(--font-mono)" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: accent, marginTop: 3, fontFamily: "var(--font-mono)" }}>{sub}</div>}
       <div style={{ width: 20, height: 2, background: accent, borderRadius: 1, marginTop: 10 }} />
     </div>
   );
@@ -811,7 +811,7 @@ function HomeScreen({
             the question into the chat with the chosen depth. */}
         {connections.length > 0 && (
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
+            <div style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <textarea
                 value={homeQ}
@@ -855,7 +855,7 @@ function HomeScreen({
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div style={{ width: 22, height: 22, borderRadius: "50%", background: s.accent + "22", border: `1px solid ${s.accent}55`, color: s.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{s.n}</div>
                     <NavIcon name={s.icon} size={13} color={s.accent} />
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5, flex: 1, marginBottom: 12 }}>{s.desc}</div>
                   <button onClick={s.action} disabled={!!s.busy} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: s.busy ? "progress" : "pointer", opacity: s.busy ? 0.6 : 1 }}>{s.cta} →</button>
@@ -929,7 +929,7 @@ function HomeScreen({
                     <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
                       <td style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
-                        {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
+                        {inv.headline && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
                       </td>
                       <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
                       <td>
@@ -1139,7 +1139,7 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: theme === m.id ? "var(--blue5)" : "var(--t1)", marginBottom: 2 }}>{m.label}</div>
-                    <div style={{ fontSize: 10, color: "var(--t3)" }}>{m.desc}</div>
+                    <div style={{ fontSize: 11, color: "var(--t3)" }}>{m.desc}</div>
                   </div>
                   {theme === m.id && (
                     <div style={{ marginLeft: "auto", flexShrink: 0 }}>
@@ -1301,10 +1301,10 @@ function AddConnectionForm({
   ];
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
           </button>
@@ -1342,7 +1342,7 @@ function AddConnectionForm({
                     }}
                   >
                     <div style={{ fontWeight: 500 }}>{ct.label}</div>
-                    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
+                    <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
                   </button>
                 ))
               ))}
@@ -1418,7 +1418,7 @@ function DeleteConnModal({
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div style={{ width: "100%", maxWidth: 360, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -1426,13 +1426,13 @@ function DeleteConnModal({
             <NavIcon name="trash" size={14} color="var(--red4)" />
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
               This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 10, color: "var(--t3)" }}>
+        <div style={{ fontSize: 11, color: "var(--t3)" }}>
           Type <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span> to confirm
         </div>
         <input
@@ -2167,7 +2167,7 @@ export default function Home() {
                         {activeCanvas.name}
                       </span>
                       {activeCanvas.scopes[0]?.tables.length > 0 && (
-                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 10 }}>
+                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 11 }}>
                           {activeCanvas.scopes[0].tables.length} tables
                         </span>
                       )}

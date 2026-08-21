@@ -15,15 +15,29 @@
 @custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
 
 /* ── Font wiring (two families) ──────────────────────────────────────────────
-   DM Sans carries the UI; IBM Plex Mono carries every figure, id, timestamp and
+   Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
    metric. The `font-mono` Tailwind utility points at the mono family so the data
    labels (table/column names, ids, numbers, chips) render in tabular monospace —
    numbers as a precision instrument. `font-code` / `--font-code` stay mono for
    real code/SQL `<pre>` blocks (same family). */
 @theme inline {
-  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
-  --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'Consolas', monospace;
+  --font-code: var(--font-jetbrains-mono), 'Consolas', monospace;
+
+  /* ── Tailwind's size steps, pinned to OUR scale ───────────────────────────
+     Tailwind ships these in rem, and `html` below sets 1rem = 13px, so every
+     `text-xs` on the page was 0.75 × 13 = 9.75px — under the 11px legibility
+     floor type.css states, in 153 places, and invisible to a gate that looks
+     for pixels. Pinned in px they land on the scale by construction, so the
+     utility classes and the aug-fs-* classes cannot drift apart.
+     Keep in lockstep with styles/type.css. */
+  --text-xs:   11px;
+  --text-sm:   12px;
+  --text-base: 13px;
+  --text-lg:   15px;
+  --text-xl:   18px;
+  --text-2xl:  22px;
 
   /* ── shadcn semantic-variable bridge (UI Elevation Wave 1, move 5) ─────────
      The aliases themselves live in styles/tokens.css (:root, both themes) and

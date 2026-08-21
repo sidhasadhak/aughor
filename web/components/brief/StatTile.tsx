@@ -84,7 +84,7 @@ export function StatTile({
       )}
       {labelLines && labelLines > 1 ? (
         <div style={{
-          fontSize: 11.5, lineHeight: 1.35, color: "var(--t2)", minHeight: "2.7em", paddingRight: 14,
+          fontSize: 12, lineHeight: 1.35, color: "var(--t2)", minHeight: "2.7em", paddingRight: 14,
           display: "-webkit-box", WebkitLineClamp: labelLines, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
         }} title={label}>
           {label}

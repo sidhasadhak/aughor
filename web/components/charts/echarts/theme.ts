@@ -16,7 +16,7 @@
 
 import { CHART_SERIES } from "@/components/charts/echarts/palette";
 
-const FONT_STACK = "'DM Sans', system-ui, -apple-system, sans-serif";
+const FONT_STACK = "'Inter', system-ui, -apple-system, sans-serif";
 
 /** Read a CSS custom property off <html>, with a dark-mode fallback for SSR. */
 function cssVar(name: string, fallback: string): string {
@@ -146,18 +146,18 @@ export const AUGHOR_THEME_NAME = "aughor";
  * light-surface artifact) — no document to read CSS vars from, so the values
  * are the light literals: series from palette.ts (gated by lint:palette), chrome
  * from tokens-v2.css's light block. Print uses a generic sans: the SVG is
- * rasterized where DM Sans isn't installed, so naming it would lie.
+ * rasterized where Inter isn't installed, so naming it would lie.
  */
 export function printChartTokens(): ChartTokens {
   return {
     palette: [...CHART_SERIES.light],
-    axis: "rgba(20,40,80,.12)",
-    grid: "rgba(20,40,80,.06)",
-    tick: "#66738A",
-    t1: "#1C2330",
-    t3: "#8593A6",
+    axis: "#D3DAE0",
+    grid: "#E6EBEF",
+    tick: "#5F7281",
+    t1: "#11171C",
+    t3: "#6C7E8C",
     tooltipBg: "#FFFFFF",
-    tooltipBorder: "#E7ECF3",
+    tooltipBorder: "#D3DAE0",
     surface: "#FFFFFF",
   };
 }

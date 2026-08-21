@@ -43,7 +43,7 @@ const MONTHS = [
 ];
 
 const labelStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginBottom: 4, display: "block" };
-const hintStyle: React.CSSProperties = { fontSize: 10, color: "var(--t4)", marginTop: 6 };
+const hintStyle: React.CSSProperties = { fontSize: 11, color: "var(--t4)", marginTop: 6 };
 const gridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
 
 export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?: string; workspaceName?: string }) {

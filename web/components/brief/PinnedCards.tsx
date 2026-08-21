@@ -118,8 +118,8 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     return (
       <div style={{ marginBottom: 20 }}>
         <div style={{ border: "1px dashed var(--vio2)", background: "var(--vio1)", borderRadius: "var(--r3)", padding: "20px 22px" }}>
-          <h3 style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Nothing pinned yet</h3>
-          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: "var(--t2)", maxWidth: "56ch" }}>
+          <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Nothing pinned yet</h3>
+          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "var(--t2)", maxWidth: "56ch" }}>
             Pin any number or chart from a finding and it lives here permanently — refreshed every cycle,
             guarded like everything else, arranged your way. Start with this cycle&apos;s movers, or compose one above.
           </p>

@@ -166,21 +166,21 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           background: "var(--bg-1)", border: "1px solid var(--b2)",
           borderRadius: "var(--r3)", width: 560,
           display: "flex", flexDirection: "column",
-          boxShadow: "0 20px 60px rgba(0,0,0,.45)",
+          boxShadow: "var(--shadow-xl)",
           height: "76vh", maxHeight: 720,
         }}
       >
         {/* Header */}
         <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--t1)", margin: 0 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--t1)", margin: 0 }}>
               Connect your data
             </h2>
             <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 4 }}>
               <Icon d={CLOSE_ICON} size={16} />
             </button>
           </div>
-          <p style={{ fontSize: 12.5, color: "var(--t3)", lineHeight: 1.55, margin: "10px 0 16px", maxWidth: 460 }}>
+          <p style={{ fontSize: 13, color: "var(--t3)", lineHeight: 1.55, margin: "10px 0 16px", maxWidth: 460 }}>
             Canvases let you uncover meaningful insights from your data. Pick a connection,
             scope it to the tables that matter, and start asking questions — we&rsquo;ll name it for you.
           </p>
@@ -217,7 +217,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           </div>
 
           {/* Breadcrumb */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "16px 0 6px", fontSize: 13.5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "16px 0 6px", fontSize: 13 }}>
             <button
               onClick={backToCatalog}
               style={{
@@ -241,7 +241,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           {!connId ? (
             // ── Catalog: choose a connection ──
             connections.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
                 No connections available.
               </div>
             ) : (
@@ -258,14 +258,14 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
                   <Icon d={DB_ICON} size={17} color="var(--blue4)" />
-                  <span style={{ flex: 1, fontSize: 14, color: "var(--t1)" }}>{c.name}</span>
+                  <span style={{ flex: 1, fontSize: 15, color: "var(--t1)" }}>{c.name}</span>
                   <span style={{ fontSize: 11, color: "var(--t4)" }}>{connLabel(c)}</span>
                   <Icon d={CHEVR_ICON} size={14} color="var(--t4)" />
                 </button>
               ))
             )
           ) : loadingTables ? (
-            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
               Loading tables…
             </div>
           ) : (
@@ -285,12 +285,12 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               >
                 <Checkbox checked={selection?.kind === "all"} />
                 <Icon d={TABLE_ICON} size={15} color="var(--grn4)" />
-                <span style={{ flex: 1, fontSize: 14, color: "var(--t1)", fontWeight: 500 }}>All tables</span>
+                <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontWeight: 500 }}>All tables</span>
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>auto-includes new tables</span>
               </button>
 
               {filteredTables.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
                   {search ? "No matching tables" : "No tables found"}
                 </div>
               ) : (
@@ -312,7 +312,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                     >
                       <Checkbox checked={checked} />
                       <Icon d={TABLE_ICON} size={15} color="var(--blue4)" />
-                      <span style={{ flex: 1, fontSize: 14, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
+                      <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
                     </button>
                   );
                 })

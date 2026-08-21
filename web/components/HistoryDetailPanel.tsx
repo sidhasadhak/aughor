@@ -279,7 +279,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 maxWidth: "75%", background: "var(--vio2, rgba(139,92,246,0.25))",
                 border: "1px solid var(--vio3, rgba(139,92,246,0.4))",
                 borderRadius: 12, padding: "8px 14px",
-                fontSize: 14, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+                fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
               }}>
                 {localizeCurrency(inv.question)}
               </div>
@@ -378,7 +378,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
               style={{
                 background: "var(--bg-0)",
                 border: "1px solid rgba(255,255,255,0.09)",
-                boxShadow: "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+                boxShadow: "var(--shadow-lg), 0 1px 0 rgba(255,255,255,0.04) inset",
               }}
             >
               <textarea
@@ -546,7 +546,7 @@ function EvidenceClaimCard({
             onClick={() => setSqlOpen(v => !v)}
             style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 4 }}
           >
-            <span style={{ fontSize: 10, transition: "transform .15s", display: "inline-block", transform: sqlOpen ? "rotate(90deg)" : "none" }}>▶</span>
+            <span style={{ fontSize: 11, transition: "transform .15s", display: "inline-block", transform: sqlOpen ? "rotate(90deg)" : "none" }}>▶</span>
             SQL source
           </button>
           {sqlOpen && (

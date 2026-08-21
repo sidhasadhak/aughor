@@ -1017,7 +1017,7 @@ function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => v
           return (
             <div key={pr.id} className="rounded border border-zinc-700/70 bg-zinc-900/60 p-2.5 space-y-1.5" data-testid="ontology-proposal">
               <div className="flex items-center gap-2">
-                <span className={cn("aug-fs-xs border rounded-[var(--r-pill)] px-1.5 py-0.5", kind.tone)}>{kind.label}</span>
+                <span className={cn("aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5", kind.tone)}>{kind.label}</span>
                 <span className="aug-fs-xs font-mono text-zinc-300 truncate" title={pr.target_id}>
                   {pr.entity}{column ? `.${column}` : ""}
                 </span>
@@ -1219,11 +1219,11 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       {!orgMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
-            <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-pill)] px-2 py-0.5">
+            <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-chip)] px-2 py-0.5">
               semantically enriched
             </span>
           ) : (
-            <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-pill)] px-2 py-0.5">
+            <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5">
               structural only
             </span>
           )}

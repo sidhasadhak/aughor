@@ -56,7 +56,7 @@ function FindingCard({
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
       minWidth: 0,
     }}>
-      <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
+      <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
         {domain}
       </div>
       <button
@@ -64,7 +64,7 @@ function FindingCard({
         title="Pull the thread — investigate this finding in place"
         style={{
           textAlign: "left", background: "transparent", border: "none", padding: 0,
-          fontSize: 11.5, lineHeight: 1.5, color: active ? "var(--blue4)" : "var(--t1)", cursor: "pointer",
+          fontSize: 12, lineHeight: 1.5, color: active ? "var(--blue4)" : "var(--t1)", cursor: "pointer",
         }}
         onMouseEnter={e => { e.currentTarget.style.color = "var(--blue4)"; }}
         onMouseLeave={e => { e.currentTarget.style.color = active ? "var(--blue4)" : "var(--t1)"; }}
@@ -131,7 +131,7 @@ export function BriefingDashboard({
     <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
       <div className="aug-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span>Dashboard</span>
-        <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
+        <span style={{ fontSize: 11, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
           Live
         </span>
       </div>

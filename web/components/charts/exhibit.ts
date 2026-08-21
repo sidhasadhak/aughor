@@ -161,7 +161,7 @@ export function refMarkLine(
     label: {
       position: axis === "x" ? "start" : "end",
       rotate: 0,
-      fontSize: 10,
+      fontSize: 11,
       color: REF_LINE_COLOR,
       formatter: (p: { data?: { name?: string }; value?: unknown }) =>
         `${p.data?.name ?? ""} ${fmt(p.value)}`.trim(),

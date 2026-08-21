@@ -393,7 +393,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
       >
         {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
-      <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
+      <span style={{ fontSize: 12, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
@@ -424,7 +424,7 @@ function AgentBadge({ turn }: { turn: ChatTurn }) {
         Answering as {a.name}
       </StatusChip>
       {a.docCount > 0 && (
-        <span style={{ fontSize: 11.5, color: "var(--t3)" }}>
+        <span style={{ fontSize: 12, color: "var(--t3)" }}>
           {a.docCount} bound document{a.docCount === 1 ? "" : "s"}
         </span>
       )}
@@ -451,7 +451,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
         <span style={{ color: "var(--blue5)", display: "inline-flex" }}><CommentIcon label="" size="small" /></span>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)" }}>{c.question}</span>
       </div>
-      {c.reason && <p style={{ fontSize: 11.5, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
+      {c.reason && <p style={{ fontSize: 12, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
       {c.options.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {c.options.map((o, i) => (
@@ -459,7 +459,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
               className="h-auto flex-col items-start gap-px whitespace-normal text-left"
               style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", background: "var(--bg-1)", borderColor: "var(--blue2)", color: "var(--blue5)" }}>
               <span>{o}</span>
-              {c.previews?.[i] && <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
+              {c.previews?.[i] && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
             </Button>
           ))}
         </div>
@@ -479,7 +479,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
         </Button>
         <Button variant="ghost" size="xs" onClick={onAnswerAnyway} title="Answer with a best guess"
           className="h-auto font-normal hover:bg-transparent dark:hover:bg-transparent"
-          style={{ fontSize: 11.5, color: "var(--t3)", padding: "6px 4px" }}>
+          style={{ fontSize: 12, color: "var(--t3)", padding: "6px 4px" }}>
           Answer anyway →
         </Button>
       </div>
@@ -1037,7 +1037,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {/* Suggestions */}
             <div className="pt-1">
-              <p className="text-[9.5px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
+              <p className="text-[11px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
               {loadingStarters ? (
                 <div className="grid grid-cols-2 gap-1.5">
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -1058,7 +1058,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         isOverview || s.requestMode ? "auto" : s.mode,
                         s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
                       )}
-                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
+                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[12px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
                       style={isOverview ? {
                         background: "var(--acc-dim)",
                         border: "0.5px solid var(--blue2)",
@@ -1281,9 +1281,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                   className="aug-pressable aug-anim-fade gap-1.5 rounded-[var(--r-pill)] h-auto"
                   style={{
                     pointerEvents: "all", padding: "5px 12px 5px 9px",
-                    fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",
+                    fontSize: 12, fontWeight: 500, fontFamily: "var(--font-ui)",
                     color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
-                    boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                    boxShadow: "var(--shadow-lg)",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}

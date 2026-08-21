@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
-import { IBM_Plex_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -8,25 +7,21 @@ import "./globals.css";
 // cascade over the inline base rules (CSS @import can't sit below them). Revert: delete this line.
 import "../aughor-v2/theme/components-v2.css";
 
-const dmSans = localFont({
-  src: [
-    {
-      path: "../public/fonts/DMSans-VariableFont_opsz,wght.ttf",
-      style: "normal",
-    },
-    {
-      path: "../public/fonts/DMSans-Italic-VariableFont_opsz,wght.ttf",
-      style: "italic",
-    },
-  ],
-  variable: "--font-dm-sans",
+// Two families, both self-hosted by next/font at build time (no runtime request
+// to a font CDN, so nothing here depends on the network at page load).
+// Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
+// metric — a tabular face so a column of numbers lines up on the decimal.
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
   display: "swap",
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
-  variable: "--font-ibm-plex-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -51,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${dmSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>

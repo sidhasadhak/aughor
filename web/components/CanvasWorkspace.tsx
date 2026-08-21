@@ -145,7 +145,7 @@ function CanvasHistory({
           </span>
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            padding: "1px 6px", borderRadius: 3, fontSize: 11,
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
@@ -277,7 +277,7 @@ function SettingsPopover({
         background: "var(--bg-2)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", padding: "16px",
         width: 280, display: "flex", flexDirection: "column", gap: 10,
-        boxShadow: "0 8px 32px rgba(0,0,0,.4)",
+        boxShadow: "var(--shadow-lg)",
       }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -412,7 +412,7 @@ function CapabilitiesBlock({
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
         <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
           {caps.map(c => (
-            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5 }}>
+            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--t2)", lineHeight: 1.5 }}>
               <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
               {c}
             </li>
@@ -427,7 +427,7 @@ function CapabilitiesBlock({
                 {tables.map(t => (
                   <span key={t} style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 9px", borderRadius: 999,
+                    padding: "3px 9px", borderRadius: "var(--r-chip)",
                     background: "var(--bg-2)", border: "1px solid var(--b1)",
                     fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
                   }}>
@@ -512,7 +512,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
         >
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            padding: "1px 6px", borderRadius: 3, fontSize: 11,
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             {item.kind}
@@ -651,7 +651,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           Canvases
         </button>
 
-        <span style={{ color: "var(--t4)", fontSize: 16, lineHeight: 1, userSelect: "none" }}>/</span>
+        <span style={{ color: "var(--t4)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
 
         {/* Canvas icon + name */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -678,7 +678,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           border: `1px solid ${tableCount === 0
             ? "color-mix(in srgb, var(--grn3) 25%, transparent)"
             : "var(--b1)"}`,
-          fontSize: 10,
+          fontSize: 11,
           color: tableCount === 0 ? "var(--grn4)" : "var(--t3)",
         }}>
           {tableCount === 0 ? "All tables" : `${tableCount} table${tableCount !== 1 ? "s" : ""}`}
@@ -690,7 +690,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "2px 7px", borderRadius: 3,
             background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 10, color: "var(--t3)",
+            fontSize: 11, color: "var(--t3)",
           }}>
             <Icon name="db" size={10} color="var(--t4)" />
             {connection.name}
