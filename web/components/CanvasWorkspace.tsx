@@ -366,7 +366,6 @@ function CapabilitiesBlock({
   canvas: Canvas;
   connection: Connection | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const scope = canvas.scopes[0];
   const tables = scope?.tables ?? [];
   const isFull = tables.length === 0;
@@ -416,35 +415,6 @@ function CapabilitiesBlock({
           ))}
         </ul>
 
-        {/* Table chips — revealed via Show more, like Databricks */}
-        {!isFull && tables.length > 0 && (
-          <>
-            {expanded && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                {tables.map(t => (
-                  <span key={t} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 9px", borderRadius: "var(--r-chip)",
-                    background: "var(--bg-2)", border: "1px solid var(--b1)",
-                    fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
-                  }}>
-                    <Icon name="table" size={10} color="var(--t4)" />
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => setExpanded(v => !v)}
-              style={{
-                marginTop: 8, background: "none", border: "none", cursor: "pointer",
-                color: "var(--blue4)", fontSize: 12, fontWeight: 500, padding: 0,
-              }}
-            >
-              {expanded ? "Show less" : `Show ${tables.length} table${tables.length !== 1 ? "s" : ""}`}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );

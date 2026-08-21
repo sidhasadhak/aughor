@@ -1019,80 +1019,40 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
 
-            {/* Suggestions */}
+            {/* Suggestions — Databricks Genie form: a plain list, hairline-separated, one
+                colour, left aligned. The cards this replaced carried a two-column grid, a
+                border per item, an icon per item and three colour treatments (blue for the
+                overview starter, green for investigate, grey otherwise), which made a list
+                of questions read as a control panel. A question is a line of text. */}
             <div className="pt-1">
               <p className="text-[11px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
               {loadingStarters ? (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 rounded-[var(--r3)] animate-pulse" style={{ background: "var(--bg-1)" }} />
+                <div className="flex flex-col">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-10 animate-pulse" style={{ borderBottom: "1px solid var(--b1)" }} />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex flex-col">
                   {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)].map((s) => {
                     const isOverview = s.text === OVERVIEW_STARTER.text;
                     return (
-                    <button
-                      key={s.text}
-                      onClick={() => handleSend(
-                        s.text,
-                        // A starter with a declared route goes through /ask ("auto") so the
-                        // backend's deterministic mode override routes it (R13).
-                        isOverview || s.requestMode ? "auto" : s.mode,
-                        s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
-                      )}
-                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[12px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
-                      style={isOverview ? {
-                        background: "var(--acc-dim)",
-                        border: "0.5px solid var(--blue2)",
-                        color: "var(--blue4)",
-                      } : s.mode === "investigate" ? {
-                        background: "var(--bg-1)",
-                        border: "0.5px solid var(--grn1)",
-                        color: "var(--grn4)",
-                      } : {
-                        background: "var(--bg-1)",
-                        border: "0.5px solid var(--b2)",
-                        color: "var(--t3)",
-                      }}
-                      onMouseEnter={e => {
-                        if (isOverview) {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue3)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--blue5)";
-                        } else if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
-                        } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--t1)";
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        if (isOverview) {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--blue4)";
-                        } else if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn1)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
-                        } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--bg-3)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--t3)";
-                        }
-                      }}
-                    >
-                      <span className={`shrink-0 mt-0.5 aug-fs-ui${isOverview ? "" : " opacity-70"}`}>
-                        {isOverview
-                          ? <Icon name="compass" size={16} />
-                          : s.mode === "investigate"
-                          ? <Icon name="spark" size={16} />
-                          : <Icon name="chat" size={16} />}
-                      </span>
-                      <span className="min-w-0">
-                        {isOverview && <span className="font-medium">A great starting point · </span>}
+                      <button
+                        key={s.text}
+                        onClick={() => handleSend(
+                          s.text,
+                          // A starter with a declared route goes through /ask ("auto") so the
+                          // backend's deterministic mode override routes it (R13).
+                          isOverview || s.requestMode ? "auto" : s.mode,
+                          s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
+                        )}
+                        className="aug-pressable w-full text-left aug-fs-ui leading-snug py-3 transition-colors"
+                        style={{ color: "var(--t2)", borderBottom: "1px solid var(--b1)", background: "transparent" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
+                      >
                         {s.text}
-                      </span>
-                    </button>
+                      </button>
                     );
                   })}
                 </div>
