@@ -82,3 +82,65 @@ def test_one_real_row_anywhere_leaves_the_verdict_alone():
     assert not _apply_no_usable_data_floor(synth, phases, {"metric_label": "traffic"})
     assert synth.confidence == "HIGH"
     assert synth.headline.startswith("Cross-Sectional")
+
+
+# ── evidence the PHASES never captured (CA-3's analyst loop) ─────────────────
+# Live, on an airline canvas: "give me route wise number of flights" ran deep, the model
+# answered from one `run_sql` without any phase tool firing, and the report read
+#
+#   Data unavailable — flight count could not be analyzed
+#   Every diagnostic query failed or returned zero rows …
+#
+# directly above "The network operated a total of 1,981 flights" and a correct list of
+# 42-flight routes. Both halves cannot be true. The floor counts phase FINDINGS, and an
+# ad-hoc query produces none — so a successful run was published as a total failure.
+# Declaring a failure that did not happen is the same lie CA-0 exists to stop, reversed.
+
+def test_ad_hoc_evidence_is_not_a_failed_run():
+    phases = [{"phase_id": "intake", "findings": [INTAKE_SPEC]}]
+    synth = _synth("MEDIUM")
+    synth.headline = "ZRH-HAM leads with 42 flights"
+
+    fired = _apply_no_usable_data_floor(synth, phases, {"metric_label": "flight count"},
+                                        84)
+
+    assert not fired
+    assert synth.headline == "ZRH-HAM leads with 42 flights"
+    assert "zero rows" not in synth.executive_summary
+
+
+def test_but_an_unstructured_run_still_cannot_claim_confidence():
+    """Rows outside the phases keep the report honest about WHAT happened; they do not
+    make it structurally sound. The waterfall and recommendations are assembled from
+    phase findings that do not exist, so they still go."""
+    phases = [{"phase_id": "intake", "findings": [INTAKE_SPEC]}]
+    synth = _synth("HIGH")
+    synth.attribution_waterfall = [{"segment": "long-haul", "contribution": -7.0}]
+    synth.recommendations = ["Rebalance the long-haul schedule"]
+
+    _apply_no_usable_data_floor(synth, phases, {"metric_label": "flight count"}, 84)
+
+    assert synth.confidence == "LOW"
+    assert synth.attribution_waterfall == [] and synth.recommendations == []
+    assert synth.confidence_justification.startswith("No structured phase produced evidence")
+
+
+def test_a_genuinely_empty_run_still_says_so():
+    """The guard's own case must survive the fix: nothing gathered anywhere still reads
+    as a failure, exactly as CA-0 made it."""
+    phases = [
+        {"phase_id": "intake", "findings": [INTAKE_SPEC]},
+        {"phase_id": "cross_section", "findings": [_zero_row_finding("PLATFORM")]},
+    ]
+    synth = _synth("HIGH")
+
+    assert _apply_no_usable_data_floor(synth, phases, {"metric_label": "traffic"}, 0)
+    assert synth.headline.startswith("Data unavailable — traffic")
+
+
+def test_the_default_is_the_phase_script_s_behaviour():
+    """The phase script never gathers evidence outside its phases, so omitting the
+    argument must behave exactly as before this seam existed."""
+    phases = [{"phase_id": "intake", "findings": [INTAKE_SPEC]}]
+    synth = _synth("HIGH")
+    assert _apply_no_usable_data_floor(synth, phases, {"metric_label": "traffic"})

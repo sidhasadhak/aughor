@@ -451,6 +451,39 @@ CROSS_SECTION_AVG_BLOCK = """\
   5. ORDER BY metric_total ASC (weakest first) so the lowest averages surface.
   6. LIMIT 15."""
 
+BREAKDOWN_INTERPRET_PROMPT = """\
+QUESTION: "{question}"
+METRIC: {metric_label}
+PHASE: Breakdown
+
+QUERY RESULTS — the metric grouped by each cut the question asked for:
+{results_text}
+
+The question asked to SEE this breakdown. It did not ask what is wrong with it.
+Describe what the data shows and stop there.
+
+For EACH cut, write a finding:
+  - title: the cut, in the question's own words (e.g. "Flights by route", "Revenue by
+    region"). Use the SAME wording as the query so the card matches its chart.
+  - interpretation: 2-3 tight sentences of PLAIN DESCRIPTION. Say how the values are
+    spread: the largest and smallest, roughly how many groups there are, and whether the
+    distribution is concentrated in a few or spread evenly. Cite real values only.
+
+FORBIDDEN, because nothing here measures them:
+  - "weak", "underperforming", "poor", "a problem", "concerning", "needs attention"
+  - any claim that a value is BAD. The lowest value in a list is the lowest value in a
+    list; without a target, a benchmark or a prior period it is not a shortfall.
+  - "declined", "fell", "improved", or any change language. There is no comparison period
+    in this phase, so no direction exists to report.
+  - recommendations. The question asked to see the data.
+
+If a cut has many groups, name the top few and give the count of the rest rather than
+listing them all. No markdown emphasis.
+
+phase_summary: one sentence saying what the breakdown covers and at what grain.
+"""
+
+
 CROSS_SECTION_INTERPRET_PROMPT = """\
 DIAGNOSTIC QUESTION: "{question}"
 METRIC: {metric_label}
@@ -702,6 +735,8 @@ class IntakeOutput(BaseModel):
     comparison_end: str = Field(description="ISO date of prior-period end")
     comparison_label: str = Field(description="e.g. 'January 2026 (MoM)'")
     no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
+    descriptive_only: bool = Field(default=False, description="True when the question asks for a breakdown or a count rather than a change or a cause (set by code from the question; leave False).")
+    named_dimensions: list[str] = Field(default_factory=list, description="Dimensions the question named outright, matched to real columns (set by code from the question; leave empty).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")

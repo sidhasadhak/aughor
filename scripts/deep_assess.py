@@ -59,7 +59,7 @@ def main():
     evs = []
     out = open(EVENTS, "w")
     subqs, queries = [], []
-    ada = None
+    report = None
     with urllib.request.urlopen(req, timeout=900) as resp:
         for raw in resp:
             line = raw.decode("utf-8", "replace").rstrip("\r\n")
@@ -77,22 +77,22 @@ def main():
             elif t == "queries_executed":
                 queries.append(e)
             elif t == "ada_report":
-                ada = e.get("ada_report")
+                report = e.get("ada_report")
     out.close()
 
     L = [f"# Deep Assessment — {mode}", "", f"**Q:** {question}  ·  **conn:** {conn}", ""]
     L.append(f"event types: {sorted({e.get('type') for e in evs})}")
 
-    if ada:
+    if report:
         L += ["", "## Intent / framing",
-              f"- metric: **{ada.get('metric')}**",
-              f"- confidence: **{ada.get('confidence')}**",
-              f"- observation_period: {ada.get('observation_period')}",
-              f"- comparison_basis: {ada.get('comparison_basis')}",
-              f"- total_change_label: {ada.get('total_change_label')}",
-              f"- headline: {ada.get('headline')}",
-              f"- executive_summary: {(ada.get('executive_summary') or '')[:400]}"]
-        phases = ada.get("phases") or []
+              f"- metric: **{report.get('metric')}**",
+              f"- confidence: **{report.get('confidence')}**",
+              f"- observation_period: {report.get('observation_period')}",
+              f"- comparison_basis: {report.get('comparison_basis')}",
+              f"- total_change_label: {report.get('total_change_label')}",
+              f"- headline: {report.get('headline')}",
+              f"- executive_summary: {(report.get('executive_summary') or '')[:400]}"]
+        phases = report.get("phases") or []
         L += ["", f"## Phases ({len(phases)}) — decomposition & analysis"]
         for p in phases:
             L.append(f"\n### {p.get('phase_id')} · {p.get('phase_name')} · {p.get('status')}")
@@ -107,13 +107,13 @@ def main():
                 kn = f.get("key_numbers") or []
                 if kn:
                     L.append(f"    key_numbers: {[(k.get('label'), k.get('value')) for k in kn][:5]}")
-        wf = ada.get("attribution_waterfall") or []
+        wf = report.get("attribution_waterfall") or []
         if wf:
             L += ["", "## Attribution waterfall"]
             for w in wf:
                 L.append(f"- {w.get('cause')}: {w.get('amount_label')} ({w.get('pct_of_total')}%) "
                          f"controllable={w.get('controllable')} structural={w.get('structural')}")
-        recs = ada.get("recommendations") or []
+        recs = report.get("recommendations") or []
         if recs:
             L += ["", "## Recommendations"]
             for r in recs:

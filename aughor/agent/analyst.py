@@ -70,6 +70,11 @@ class AnalystTurn:
     emitted_phases: int = 0
     #: Tools that produced at least one phase — the "did any evidence land" signal.
     phase_tools_run: list[str] = field(default_factory=list)
+    #: Rows returned by tools that do NOT build a phase — `run_sql` above all. The
+    #: report's no-data floor counts phase FINDINGS, so an analyst that answered from
+    #: an ad-hoc query left it looking at nothing and the run was declared a total
+    #: failure over its own correct numbers. This is the evidence it could not see.
+    evidence_rows: int = 0
 
     @property
     def intake(self) -> dict:
@@ -90,6 +95,70 @@ class AnalystTurn:
         if fresh:
             self.phase_tools_run.append(tool)
         return fresh
+
+
+def _adhoc_title(columns: list, question: str) -> str:
+    """A name for a query the model framed itself. It supplies no title — the phase
+    tools get theirs from a plan — so it comes from the shape of what came back."""
+    cols = [str(c) for c in (columns or []) if str(c).strip()]
+    if len(cols) == 2:
+        return f"{cols[1]} by {cols[0]}"
+    if len(cols) == 1:
+        return str(cols[0])
+    return (question or "Query result").strip()[:80]
+
+
+def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
+    """Pass a tool result through, and make its rows part of the investigation.
+
+    A query the model framed itself is evidence exactly as a phase tool's query is —
+    but only phase tools built a phase, so `run_sql` rows reached the narrator's prose
+    and nothing else. A deep turn answered that way rendered as three sentences with no
+    table and no chart, while the QUICK path, which renders its rows directly, showed
+    the whole breakdown. Deep looked thinner than quick for asking the same question.
+
+    So the rows become a finding in a phase of their own, and stream as one: the report
+    draws it with the same organs it draws every other finding, and the run's own SQL is
+    on the page instead of only in the receipt. One phase per query — the loop's slices
+    ARE the story of the turn, and folding them into a single box would hide that it
+    took four cuts to get there.
+    """
+    try:
+        if isinstance(result, dict) and result.get("rows"):
+            rows = result["rows"]
+            turn.evidence_rows += len(rows)
+            cols = result.get("columns") or []
+            n = len(turn.phase_tools_run) + 1
+            turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
+                "phase_id": f"adhoc_{n}",
+                "phase_name": _adhoc_title(cols, turn.state.get("question", "")),
+                "phase_icon": "🔎",
+                "status": "complete",
+                # Empty: the narrator writes the prose from the evidence log, and a
+                # summary invented here would be a second voice on the same rows.
+                "summary": "",
+                "findings": [{
+                    "finding_id": f"adhoc_{n}_1",
+                    "title": _adhoc_title(cols, turn.state.get("question", "")),
+                    "sql": (args or {}).get("sql", ""),
+                    "columns": cols,
+                    "rows": rows[:50],
+                    "row_count": len(rows),
+                    "error": None,
+                    "interpretation": "",
+                    "key_numbers": [],
+                    "chart_type": "auto",
+                    "stat_note": None,
+                    "is_significant": False,
+                }],
+                "skipped_reason": None,
+                "caveats": [],
+            }]}, tool="run_sql")
+    except Exception as exc:                      # noqa: BLE001 — never break a tool
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "ad-hoc evidence capture is best-effort; the tool result stands",
+                 counter="analyst.evidence_capture")
+    return result
 
 
 def _spec_overrides(intake: dict, args: dict) -> dict:
@@ -575,8 +644,9 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
             parameters={"type": "object", "properties": {
                 "sql": {"type": "string", "description": "One SELECT statement."},
             }, "required": ["sql"]},
-            run=lambda a: run_sql(cid, a, emit=emit, user_question=user_question,
-                                  canvas_id=canvas_id),
+            run=lambda a: _record_evidence(
+                turn, a, run_sql(cid, a, emit=emit, user_question=user_question,
+                                 canvas_id=canvas_id)),
         ),
         ToolSpec(
             name="list_tables",
@@ -815,6 +885,9 @@ def run_analyst(
 
     answer = (result.answer or "").strip()
     state["_analyst_conclusion"] = answer
+    # What the loop gathered outside the phase tools. Absent/zero ⇒ the floor behaves
+    # exactly as it did for the phase script, which never had any.
+    state["_analyst_evidence_rows"] = turn.evidence_rows
 
     report: Optional[dict] = None
     if turn.emitted_phases > 0:

@@ -416,3 +416,56 @@ def test_parse_schema_still_reads_the_inline_form():
     from aughor.semantic.answer_resolution import _parse_schema
     _t, domains = _parse_schema("TABLE: t\n  brand  VARCHAR  -- [Nike, Adidas]\n")
     assert domains == [("t", "brand", ["Nike", "Adidas"])]
+
+
+# ── the question's SUBJECT is not a missing filter value ─────────────────────
+# Found live on an airline canvas: "Give me route wise number of flights" answered
+# `"flights" is not present in this data.` — a terminal abstention on a warehouse
+# whose first table is flights. The extractor takes the noun after "of" as a filter
+# candidate, the sweep asks every string dimension whether any ROW equals the literal
+# "flights", and an honest "absent" became a dead end. The schema already knows its
+# own nouns; a hand-maintained stopword list never could.
+
+_AIRLINE = """\
+TABLE: main.flights  (1981 rows)
+  flight_id  BIGINT
+  route  VARCHAR
+  carrier  VARCHAR
+  departure_time  TIMESTAMP
+TABLE: main.airports  (312 rows)
+  airport_code  VARCHAR
+  city  VARCHAR
+"""
+
+
+def test_a_noun_naming_a_table_is_the_subject_not_an_absent_filter():
+    db = _FakeDB(hits={})          # nothing in this warehouse equals the string "flights"
+    r = R.resolve("Give me route wise number of flights", schema=_AIRLINE, db=db)
+    assert r.not_found == []
+    assert r.feasibility == "answerable"
+    # And it never asked: probing a dimension for its own table's name is wasted work.
+    assert db.seen == []
+
+
+def test_a_noun_naming_a_column_is_a_breakdown_not_an_absent_filter():
+    r = R.resolve("number of flights for carrier", schema=_AIRLINE, db=_FakeDB(hits={}))
+    assert r.not_found == []
+    assert r.feasibility == "answerable"
+
+
+def test_the_schema_match_folds_plurals_and_separators():
+    """What a person types and what the warehouse calls it differ by a plural and an
+    underscore, and neither difference means anything."""
+    assert R._norm_name("flights") == R._norm_name("flight")
+    assert R._norm_name("Order Items") == R._norm_name("order_items")
+    names = R._relation_names({"main.flights": ["airport_code"]})
+    assert R._norm_name("flight") in names and R._norm_name("Airport Codes") in names
+
+
+def test_a_genuinely_absent_entity_still_abstains_beside_a_named_table():
+    """The guard must not swallow the case it sits next to: 'Mytheresa' names nothing
+    in this schema, so the honest abstention still fires."""
+    db = _FakeDB(hits={})
+    r = R.resolve("number of flights for Mytheresa", schema=_AIRLINE, db=db)
+    assert r.not_found == ["Mytheresa"]
+    assert r.feasibility == "not_answerable"

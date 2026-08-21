@@ -11,7 +11,7 @@ progressively as they complete.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 from aughor.agent.state import (
     AgentState,
@@ -65,13 +65,98 @@ _OPERATIONAL_DIMENSION_KEYWORDS: list[str] = [
 ]
 
 
-def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False) -> list[str]:
+def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> list:
+    """The breakdown the question named, computed in code — no planner, no discretion.
+
+    Three fixes went into making the scan honour "route wise", and each time the layer
+    below declined: the framing was patched, then the intake carried the dimension, then
+    it outranked the priority sorter — and the phase's SQL PLANNER still refused it,
+    reporting a data gap ("the dataset does not contain a unique route_id to route_name
+    mapping"). That refusal is correct for the instrument: the cross-sectional scan looks
+    for where value is WEAK, and a high-cardinality id column is a poor weakness dimension.
+    It is the wrong instrument for a question that asked to see a breakdown.
+
+    So the breakdown stops being a request to a model. One GROUP BY per named dimension,
+    built here and executed through the same guard battery every other phase query runs
+    through — which is exactly what the quick path does for this question, and it has
+    been right about it all along.
+    """
+    dims = [d for d in (intake_data.get("named_dimensions") or []) if d]
+    metric_sql = (intake_data.get("metric_sql") or "").strip()
+    table = (intake_data.get("metric_table") or "").strip()
+    if not dims or not metric_sql or not table:
+        return []
+
+    label = intake_data.get("metric_label") or "value"
+    date_col = (intake_data.get("date_column") or "").strip()
+    start = intake_data.get("observation_start") or ""
+    end = intake_data.get("observation_end") or ""
+    where = ""
+    # ONLY when the date lives on the table being counted. The spec's date column can
+    # belong to another table entirely — the schema renderer warns "No date/timestamp
+    # columns in flights" for exactly this shape — and a WHERE naming a column this FROM
+    # cannot see fails the whole breakdown.
+    _same_table = ("." not in date_col
+                   or date_col.rsplit(".", 1)[0].lower() == table.lower()
+                   or date_col.rsplit(".", 1)[0].lower() == table.split(".")[-1].lower())
+    if date_col and date_col.upper() != "NONE" and start and end and _same_table:
+        _col = date_col.split(".")[-1]
+        where = (f" WHERE CAST({_col} AS DATE) >= DATE '{start}' "
+                 f"AND CAST({_col} AS DATE) <= DATE '{end}'")
+
+    out = []
+    for i, dim in enumerate(dims[:2]):          # the question rarely names more
+        col = dim.split(".")[-1]
+
+        def _run(clause: str, attempt: str):
+            return _execute_safe(
+                conn, f"named_breakdown_{i}_{attempt}",
+                f"SELECT {col}, {metric_sql} AS {_safe_alias(label)} "
+                f"FROM {table}{clause} GROUP BY 1 ORDER BY 2 DESC",
+                schema=state.get("schema_context"))
+
+        r = _run(where, "windowed")
+        if where and (getattr(r, "error", None) or not getattr(r, "rows", None)):
+            # The window is the fragile half. A breakdown over the whole table beats no
+            # breakdown at all, and the report says which it got.
+            r = _run("", "unwindowed")
+        if getattr(r, "error", None) or not getattr(r, "rows", None):
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                "named breakdown for %s produced nothing (%s)", dim,
+                getattr(r, "error", None) or "no rows")
+            continue
+        out.append(InvestigationFinding(
+            finding_id=f"named_breakdown_{i}",
+            title=f"{label} by {col}",
+            sql=r.sql, columns=r.columns, rows=r.rows[:50],
+            row_count=r.row_count, error=None,
+            interpretation="", key_numbers=[], chart_type="auto",
+            stat_note=None, is_significant=False,
+        ))
+    return out
+
+
+def _prioritize_dimensions(dimensions: list[str], causal_first: bool = False,
+                           pinned: Optional[Iterable[str]] = None) -> list[str]:
     """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other. When
     ``causal_first`` (an outcome / 'why is X high/low' scan) diagnostic dimensions
     (reason/condition/defect/…) float to the FRONT — for those questions the causal dimension is the
-    answer, not an afterthought, so it must survive the per-phase query cap."""
+    answer, not an afterthought, so it must survive the per-phase query cap.
+
+    ``pinned`` — dimensions the QUESTION named — outrank everything, because this
+    ranking is a heuristic about which cuts are usually interesting and the question is
+    not a guess. Live: "give me route wise number of flights" put `route_id` first in the
+    intake, and this sorter moved it to LAST (it matches none of the priority keywords)
+    where the per-phase cap dropped it. The report ranked market, origin, destination and
+    haul, and the narrator explained away the missing route breakdown.
+    """
+    _pin = {str(d).lower() for d in (pinned or ())}
+
     def _rank(dim: str) -> int:
         dl = dim.lower()
+        if dl in _pin:
+            return -2
         if causal_first and any(kw in dl for kw in _CAUSAL_DIMENSION_KEYWORDS):
             return -1
         for i, keywords in enumerate(_DIMENSION_PRIORITY_KEYWORDS):
@@ -113,10 +198,33 @@ def _question_asks_for_dimension(question: str) -> bool:
 
 
 def route_after_intake(state: AgentState) -> str:
-    """Diagnostic / cross-sectional questions (where-which-is-weakest, or no usable
-    time axis) skip the temporal baseline and go straight to the dimensional
-    weakness scan; everything else takes the normal temporal path."""
+    """Pick the instrument the question actually asks for.
+
+    Three routes, because there are three shapes of question and for a long time there
+    were only two instruments:
+
+      descriptive  → deep_breakdown      "give me route wise number of flights"
+      diagnostic   → ada_cross_section  "which region is weakest"
+      temporal     → ada_baseline       "why did revenue fall"
+
+    The breakdown route exists because a listing is neither of the other two, and
+    routing it to the weakness scan made every layer below fight the question: the scan
+    ranks to find where value is WEAK, so it re-frames a listing as a shortfall, and its
+    planner correctly declines the high-cardinality id column a listing is usually about.
+    Five successive fixes tried to make the scan behave descriptively and each was
+    declined by the layer beneath it, which is the signature of a missing route rather
+    than a missing patch.
+
+    `descriptive_only` is a typed verdict the intake already computes in code (§6: a knob
+    is a ModelProfile field or a typed intake verdict, never a flag), so this is a read,
+    not a new judgement.
+
+    The new node takes the LIVE vocabulary rather than the prefix beside it: those two keep a
+    retired prefix because their names are frozen API, but nothing obliges fresh code to
+    inherit it, and the vocabulary ratchet counts what we add."""
     intake = state.get("_ada_intake") or {}
+    if intake.get("descriptive_only"):
+        return "deep_breakdown"
     return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
 
 
@@ -825,6 +933,168 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
     return out
 
 
+#: A question that asks to SEE the data — a breakdown, a count, a listing — rather than
+#: to explain a movement in it. Both halves are required: the ask ("give me", "how many",
+#: "breakdown of") and the dimension it is asked across ("by", "per", "… wise"), so a bare
+#: "show me the dashboard" is not mistaken for one.
+_DESCRIPTIVE_ASK_RE = re.compile(
+    r"\b(give me|show|list|display|what (?:is|are|was|were) the|how many|how much|"
+    r"count of|number of|total(?:s)? (?:of|by)|breakdown|break down|distribution|"
+    r"split by|group(?:ed)? by)\b", re.I)
+#: Causal and change vocabulary. A question carrying any of it asks what MOVED or WHY,
+#: whatever its opening words — "what is the reason revenue dropped" opens like a lookup
+#: and is not one. Unlike a list of the nouns a warehouse might hold, this class is small
+#: and closed, which is what makes matching on it defensible.
+_CAUSE_WORDS_RE = re.compile(
+    r"\b(why|reason|cause[sd]?|drove|driv\w+|drop\w*|fell|fall\w*|declin\w+|ros[e]?|rise|"
+    r"rising|increas\w+|decreas\w+|grew|grow\w*|shrank|shrink\w*|lost|lose|losing|chang\w+|"
+    r"mov\w+|spike[sd]?|surge[sd]?|worse|better)\b", re.I)
+
+
+#: Words that are never a dimension, however they read next to one.
+_DIM_STOPWORDS = frozenset({
+    "give", "show", "list", "display", "the", "and", "for", "with", "per", "each",
+    "wise", "number", "count", "total", "totals", "sum", "average", "avg", "many",
+    "much", "what", "which", "where", "how", "are", "was", "were", "there", "data",
+    "breakdown", "distribution", "split", "group", "grouped", "across", "top", "all",
+})
+
+
+def _norm_col(name: str) -> str:
+    """A column and the word a person uses for it, reduced to one key: case, separators,
+    a trailing plural and a trailing ``_id`` all differ without meaning anything
+    ("route" is how you ask for ``route_id``)."""
+    n = re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+    # Plural BEFORE the suffix: "route ids" has to become "route_id" before the strip
+    # can see it, or it stops at "route_id" and never meets the column "route".
+    if n.endswith("s") and len(n) > 3:
+        n = n[:-1]
+    if n.endswith("_id"):
+        n = n[:-3]
+    return n
+
+
+def _question_named_dimensions(question: str, schema: str, prefer_table: str = "") -> list:
+    """``table.column`` for every dimension the QUESTION itself names.
+
+    The intake model chooses the drill-down dimensions, and it does not reliably keep the
+    one that was asked for: a live run answering "give me route wise number of flights"
+    ranked market, origin, destination and haul — every dimension except route. The
+    question named its breakdown outright, so it is not the model's to omit.
+
+    Columns on the metric's own table come first, since that is the grain being counted.
+    """
+    if not question or not schema:
+        return []
+    from aughor.semantic.answer_resolution import schema_columns
+
+    words = {_norm_col(w) for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", question)}
+    words -= {_norm_col(w) for w in _DIM_STOPWORDS}
+    hits, seen = [], set()
+    for table, col in schema_columns(schema):
+        # A column named after its OWN table is that table's key — `flight_id` on
+        # `flights`. Grouping by it yields one row per record, so the noun "flights"
+        # naming it is the subject of the question, never its breakdown. `route_id` on
+        # the same table is a real dimension, which is why the `_id` suffix cannot be
+        # the test.
+        if _norm_col(col) == _norm_col(table.split(".")[-1]):
+            continue
+        if _norm_col(col) in words and f"{table}.{col}" not in seen:
+            seen.add(f"{table}.{col}")
+            hits.append((table.lower() == (prefer_table or "").lower(), f"{table}.{col}"))
+    hits.sort(key=lambda h: not h[0])          # metric table's own columns lead
+    return [d for _, d in hits]
+
+
+def _is_descriptive_question(question: str) -> bool:
+    """True for "give me route wise number of flights" — a request to see the data.
+
+    Yields to the two routes that already exist: a temporal-change question ("why did
+    revenue drop") and a diagnostic one ("where are we losing money") are about a
+    movement or a weakness, and both keep their own framing. Causal vocabulary
+    disqualifies on its own, because those two predicates are narrower than they look —
+    "what is the reason revenue dropped" reads as neither.
+
+    A dimension is NOT required. Requiring one was the conservative first cut, and a
+    sweep of question shapes showed what it cost: "what is the average order value" and
+    "how many flights are there" fell through to the change frame and earned a report
+    about a comparison nobody asked for. A question with no dimension is still a request
+    to see the data.
+    """
+    q = question or ""
+    if _is_temporal_change_question(q) or _is_diagnostic_question(q):
+        return False
+    if _CAUSE_WORDS_RE.search(q):
+        return False
+    return bool(_DESCRIPTIVE_ASK_RE.search(q))
+
+
+def _framing_note(intake_data: dict) -> str:
+    """How synthesis must FRAME this run, decided from the design.
+
+    Most specific first: a scan that compares dimensions rather than periods, a question
+    that asked for a breakdown, a run whose data holds no earlier period, and everything
+    else. The order matters — the first two usually ALSO have no prior period, and
+    telling them to lament one produced the apology that shipped over a correct
+    breakdown.
+    """
+    note = ""
+    if intake_data.get("descriptive_only"):
+        # FIRST, ahead of cross_sectional. A listing routes cross-sectionally whenever it
+        # names no time comparison, and checking that first swallowed this branch whole:
+        # the run kept only the weakness framing, and a report answering "give me route
+        # wise number of flights" came back ranking market, origin, destination and haul,
+        # each concluding it "does not represent a performance deficit". Nobody asked
+        # which segment was weak.
+        # The question asked to SEE the data, not to explain a movement in it. Framing
+        # such a run as a comparison produces a report that opens "Data unavailable …
+        # no prior period exists to facilitate a comparative analysis" and closes
+        # "future analysis will require a broader historical dataset" — an apology for
+        # failing at something nobody asked for, printed over the breakdown that WAS
+        # asked for. A listing has no prior period because it needs none.
+        note = (
+            "\n\nDESCRIPTIVE REQUEST: the question asks for a breakdown or a count, not for "
+            "a cause or a change. Report WHAT THE DATA SHOWS: the totals asked for, how they "
+            "are distributed across the dimension, which entries lead and trail, and any "
+            "concentration worth naming. Do NOT discuss prior periods, comparisons, "
+            "trends you did not measure, or what a longer history would allow — none of it "
+            "was asked. Do NOT frame the answer as a limitation. total_change_label should "
+            "be the metric total or 'N/A'; the attribution_waterfall stays EMPTY."
+        )
+    elif intake_data.get("cross_sectional"):
+        # A "which is weakest" scan compares dimensions, not periods, so a missing prior
+        # period is as irrelevant to it as to a listing, and its own note (assembled
+        # separately) is already this run's framing.
+        return ""
+    elif intake_data.get("no_prior_period"):
+        _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
+        note = (
+            "\n\nNO PRIOR PERIOD: the data covers only the observation window (" + _cov + "). "
+            "There is no earlier period to compare against, so this report DESCRIBES the window — "
+            "its level, its trend within the window (earlier vs later weeks/days, per-day averages), "
+            "and which segments carry the volume. It does NOT attribute a change to any segment and "
+            "does NOT call the distribution 'uniform' or 'unchanged': no comparison was made. Say in "
+            "the executive summary that no prior period exists and name what a longer history would "
+            "make answerable. total_change_label should be the metric total or 'N/A'; the "
+            "attribution_waterfall stays EMPTY."
+        )
+
+    return note
+
+
+def _comparison_basis(intake_data: dict) -> str:
+    """What this report was measured AGAINST, or "" when nothing was.
+
+    Two designs compare nothing: a cross-sectional scan (which dimension is weakest)
+    and a descriptive request (give me X by Y). Printing a comparison basis under
+    either invents a frame the run never had — live, a breakdown carried
+    "vs No prior period exists in the data", which is true and irrelevant.
+    """
+    if intake_data.get("cross_sectional") or intake_data.get("descriptive_only"):
+        return ""
+    return intake_data.get("comparison_label", "")
+
+
 def _stamp_claim_type(intake, question: str) -> str:
     """Decide what kind of claim this design licences, and record it on the intake.
 
@@ -1319,7 +1589,7 @@ def _parallel_execute_safe(
         return (q, r)
 
     # P2 — per-dimension progress: emit as each query completes so a long scan reports progress
-    # DURING the node (`ada.progress_events`); no-op when no SSE sink is bound (the default).
+    # DURING the node (`deep_analysis.progress_events`); no-op when no SSE sink is bound (the default).
     total_n = len(valid)
     try:
         with _fanout_region("deep_analysis.phase_queries"), ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
@@ -1788,15 +2058,44 @@ def _finding_has_rows(f: dict) -> bool:
     return (rc or 0) > 0
 
 
-def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict) -> bool:
+#: How a report that gathered nothing announces itself. A literal this module WRITES,
+#: so code that must recognise one later matches its own output rather than guessing at
+#: prose — the prior-answers block uses it to refuse a comparison against a failed run.
+NO_DATA_HEADLINE_PREFIX = "Data unavailable — "
+
+
+def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict,
+                                extra_evidence_rows: int = 0) -> bool:
     """Force a report with NO evidence rows to read as a failure, never as an analysis.
 
     Returns True when the floor fired. Keys on _finding_has_rows (row_count > 0 from a real
     query): before CA-0 this tested `columns`, which a zero-row query still carries and which
     the synthetic intake-spec finding always satisfied — so the floor never fired and a run
-    whose every query returned [] shipped confidence HIGH with a fabricated summary."""
+    whose every query returned [] shipped confidence HIGH with a fabricated summary.
+
+    ``extra_evidence_rows`` is evidence the PHASES never captured — the analyst loop
+    (CA-3) can answer from an ad-hoc ``run_sql`` without any phase tool running, and
+    those rows are as real as a finding's. Counting only findings, this floor read such
+    a run as a total failure and printed "Every diagnostic query failed or returned zero
+    rows" above the correct totals it had just computed. Saying a run failed when it did
+    not is the same lie CA-0 exists to prevent, pointed the other way.
+
+    Evidence outside the phases still does not make the REPORT structurally sound: the
+    waterfall and recommendations are built from phase findings that do not exist. So
+    that case keeps the suppression and the confidence floor, and drops only the claim
+    that nothing was gathered."""
     all_f = [f for p in (phases or []) for f in (p.get("findings") or [])]
     if any(_finding_has_rows(f) for f in all_f):
+        return False
+
+    if (extra_evidence_rows or 0) > 0:
+        synth.confidence = "LOW"
+        synth.confidence_justification = (
+            "No structured phase produced evidence; this rests on ad-hoc queries run "
+            "during the analysis. " + (synth.confidence_justification or "")
+        ).strip()
+        synth.attribution_waterfall = []
+        synth.recommendations = []
         return False
     synth.confidence = "LOW"
     synth.confidence_justification = (
@@ -1811,7 +2110,7 @@ def _apply_no_usable_data_floor(synth, phases: list, intake_data: dict) -> bool:
     synth.attribution_waterfall = []
     synth.recommendations = []
     _ml = (intake_data or {}).get("metric_label") or "the requested metric"
-    synth.headline = f"Data unavailable — {_ml} could not be analyzed"
+    synth.headline = f"{NO_DATA_HEADLINE_PREFIX}{_ml} could not be analyzed"
     synth.executive_summary = (
         "Every diagnostic query failed or returned zero rows, so no cause can be "
         "attributed and no recommendation can be made. " + (synth.executive_summary or "")
@@ -3072,7 +3371,7 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
         observation_period=(intake_data.get("data_coverage_label", "") if _xsec
                             else intake_data.get("observation_label", "")),
         metric_definition=_metric_definition_receipt(intake_data),
-        comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+        comparison_basis=_comparison_basis(intake_data),
         total_change_label="",
         phases=phases,
         attribution_waterfall=[],
@@ -4370,7 +4669,7 @@ def _render_origin_finding_section(origin: Optional[dict]) -> str:
 # reading varied run-to-run. When the connection GOVERNS the same metric (curated catalog /
 # north-star / verified ontology), pin the intake's formula to the governed one so the breakdown
 # computes on a stable, decomposable definition — closing the loop between T4-1's *disclosure* of
-# the reading and actual accuracy. Deterministic, flag-gated (`ada.pin_canonical_metric`), and
+# the reading and actual accuracy. Deterministic, flag-gated (`deep_analysis.pin_canonical_metric`), and
 # conservative: the LLM's formula is only replaced when a governed metric matches the label on its
 # distinctive tokens, its SQL is a bare substitutable aggregate, and a dry-run confirms it runs over
 # the metric table — so pinning can never make a run worse (fail-open on every uncertainty).
@@ -4930,6 +5229,27 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # a contrast that silently disappears is as hard to debug as one that lies.
         _drop_self_referential_segment(intake)
         _stamp_claim_type(intake, question)
+        # What the question ASKED for, decided from the question alone. A listing is not
+        # a comparison that failed, and a report that apologises for a prior period the
+        # user never asked about is answering a different question.
+        intake.descriptive_only = _is_descriptive_question(question)
+        # The breakdown the question NAMED leads the dimensions, whatever the model
+        # chose. Live: "give me route wise number of flights" came back ranking market,
+        # origin, destination and haul — every dimension except route. A question that
+        # says which cut it wants is not the model's to overrule.
+        try:
+            _named = _question_named_dimensions(
+                question, state.get("schema_context", "") or "", intake.metric_table or "")
+            if _named:
+                intake.dimensions = _named + [d for d in (intake.dimensions or [])
+                                              if d not in _named]
+                # Recorded, not just ordered: the scan re-sorts its dimensions by a
+                # priority heuristic that would otherwise sink this one to the bottom.
+                intake.named_dimensions = _named
+        except Exception as _dim_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_dim_exc, "question-named dimensions are best-effort; the model's "
+                               "own choice still serves", counter="deep_analysis.named_dims")
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
@@ -5076,7 +5396,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # the LLM's (possibly non-decomposable / run-varying) formula, when one matches the label and
     # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one;
     # SKIPPED when the reading was already resolved (1) or a clarify is pending (2) — the user's choice
-    # binds the metric, not a silent pin. Flag-gated (`ada.pin_canonical_metric`) + fail-open.
+    # binds the metric, not a silent pin. Flag-gated (`deep_analysis.pin_canonical_metric`) + fail-open.
     if intake is not None and _clarify_pending is None and _resolved_note is None:
         _pin_note = _pin_canonical_metric(intake, _conn_id, _full_schema, conn)
         if _pin_note:
@@ -5590,7 +5910,7 @@ def run_analysis_phase(
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "fan-out guard re-plan is best-effort; the prompt rule still applies",
-                         counter="ada.fanout_guard.replan_failed")
+                         counter="deep_analysis.fanout_guard.replan_failed")
             # Fail-safe: the LLM re-plan is unreliable on a known fan-out (it often returns a
             # plausible query that still double-counts). If the metric STILL aggregates across a
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
@@ -6523,6 +6843,94 @@ def _degenerate_seed_verdict(conn, metric_table: str, dimensions: list,
 
 
 @_telemetry.node_span("ada_cross_section")
+def deep_breakdown(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """DESCRIPTIVE phase — show the cut the question asked for, and say nothing about
+    whether it is good.
+
+    This is the third instrument. The temporal battery answers "why did X change" and
+    the cross-sectional scan answers "where is X weakest"; a listing — "give me route
+    wise number of flights" — is neither, and for a long time it was routed to the
+    weakness scan because that was the only non-temporal route there was. Every layer
+    then fought the question: the scan RANKS to find shortfalls, so it framed a listing
+    as one, and its SQL planner correctly declined the high-cardinality id column the
+    listing was actually about ("the dataset does not contain a unique route_id to
+    route_name mapping"). Both behaviours are right for a weakness scan. They are simply
+    the wrong instrument.
+
+    So the queries are built in code rather than requested from a planner — one GROUP BY
+    per named cut, through the same guard battery every other phase query runs — and the
+    narrator is given a prompt that forbids the vocabulary of shortfall. The only model
+    call here reads rows and describes them.
+    """
+    from types import SimpleNamespace
+
+    from aughor.agent.prompts_investigate import (
+        BREAKDOWN_INTERPRET_PROMPT, PhaseInterpretation,
+    )
+    phases = state.get("investigation_phases", [])
+    intake_data = state.get("_ada_intake") or {}
+    metric_label = intake_data.get("metric_label", "the metric")
+    _title, _emoji = "Breakdown", "📑"
+
+    # The cuts: what the question NAMED, else the intake's dimensions in priority order
+    # with the named ones pinned. Two is the cap — a listing question rarely asks for more,
+    # and a report of six near-identical bar charts answers nothing the first two did not.
+    dims = [d for d in (intake_data.get("named_dimensions") or []) if d]
+    if not dims:
+        dims = _prioritize_dimensions(
+            intake_data.get("dimensions") or [],
+            pinned=intake_data.get("named_dimensions") or [],
+        )[:2]
+
+    findings = _named_breakdown_findings(state, conn, {**intake_data, "named_dimensions": dims})
+    if not findings:
+        return {"investigation_phases": phases + [_phase_result(
+            "breakdown", _title, _emoji, "skipped", "",
+            [_skipped_finding("breakdown", "No dimension in this data could be grouped on.")],
+            skipped_reason="The question asked for a breakdown, but no groupable column "
+                           "was available on the metric's table.")]}
+
+    # One narrator pass over rows that are already on the page. A failure here costs the
+    # prose, never the exhibit — the findings stand on their own numbers.
+    summary = ""
+    try:
+        rows_text = "\n\n".join(
+            f"{f['title']}\n" + " | ".join(f.get("columns") or []) + "\n"
+            + "\n".join(" | ".join(str(c) for c in row) for row in (f.get("rows") or [])[:25])
+            + (f"\n... ({f['row_count'] - 25} more groups)" if (f.get("row_count") or 0) > 25 else "")
+            for f in findings)
+        interp = _provider("fast").complete(
+            system=("Describe a breakdown. The question asked to SEE these groups, not to be "
+                    "told which of them is a problem — there is no target, benchmark or prior "
+                    "period in this phase, so no value here can be called good or bad."),
+            user=BREAKDOWN_INTERPRET_PROMPT.format(
+                question=state["question"], metric_label=metric_label, results_text=rows_text),
+            response_model=PhaseInterpretation)
+        if interp and interp.findings:
+            _paired = [(SimpleNamespace(title=f["title"], chart_type=f.get("chart_type", "auto"),
+                                        sql=f.get("sql", "")),
+                        SimpleNamespace(columns=f.get("columns"), rows=f.get("rows"),
+                                        row_count=f.get("row_count"), error=None,
+                                        sql=f.get("sql", "")))
+                       for f in findings]
+            findings = _assemble_phase_findings(_paired, interp.findings, "breakdown",
+                                                metric_label=metric_label, conn=conn)
+            summary = interp.phase_summary or ""
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "the breakdown narrator is best-effort; the rows and charts still "
+                       "answer the question", counter="deep_analysis.breakdown_narrate")
+
+    # A breakdown RANKS a metric across a cut — the same exhibit the scan draws, without
+    # the weakness reading. Reuse the one resolver so form stays a function of job.
+    for f in findings:
+        _chart_primary_is_metric(f)
+        f["chart_type"] = _chart_type_for_finding(f, "ranking")
+
+    return {"investigation_phases": phases + [_phase_result(
+        "breakdown", _title, _emoji, "complete", summary, findings)]}
+
+
 def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
                       dims_override: Optional[list] = None,
                       phase_meta: Optional[tuple] = None,
@@ -6615,7 +7023,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # ranking isn't crowded out by the base dimensions under the phase's query cap.
     _augmented = bool(extra_dims or extra_directive)
     _dim_cap = 8 if _augmented else 6
-    prioritized = _prioritize_dimensions(dimensions, causal_first=_causal_drill)
+    prioritized = _prioritize_dimensions(dimensions, causal_first=_causal_drill,
+                                         pinned=intake_data.get("named_dimensions"))
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:_dim_cap]) if prioritized else "  (none identified)"
 
     # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)
@@ -6850,6 +7259,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
         ]
         summary = ""  # trace, not analysis — the report renders only real prose
 
+
     # A ratio metric that reads as a percentage (return rate, cost-%, conversion) — the value is
     # stored as a fraction/percent that must render "41.0%" on EVERY surface. Tag the column so the
     # chart axis, data labels, table, and key numbers all format it the one same way (approach a).
@@ -7071,7 +7481,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     return out
 
 
-# ── Parallel multi-lens cross-section (flag: ada.parallel_lenses) ──────────────
+# ── Parallel multi-lens cross-section (flag: deep_analysis.parallel_lenses) ──────────────
 # A cross-sectional "why is X high/low" question has independent investigative angles: WHERE it
 # concentrates (segment/product dimensions) and the MECHANISM behind it (reason/condition/logistics
 # dimensions). The single bundled scan interprets all dimensions at once — shallow per-angle. This
@@ -8258,7 +8668,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     """Flag-gated parallel multi-lens cross-section. Runs independent lenses CONCURRENTLY — one
     focused segment/mechanism scan per themed dimension group PLUS a temporal WHEN lens when a date
     axis resolves — then, if the WHEN lens flagged an anomalous period, forward-chains a
-    period-scoped drill, and (flags `ada.why_where_interaction` / `ada.why_deepen`) a WHY×WHERE
+    period-scoped drill, and (flags `deep_analysis.why_where_interaction` / `deep_analysis.why_deepen`) a WHY×WHERE
     interaction cross + a reason benchmark + a second-level reason drill.
     Degrades to the single scan when there's nothing to fan out. Only writes
     investigation_phases (+ the primary's _cross_section_summary), assembled single-threaded here."""
@@ -8411,9 +8821,9 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
     # The forward-chained WHY lenses, gathered as (label, fn(conn), counter) specs in FIXED order.
     # Each depends ONLY on the already-computed WHERE/WHY summaries (primary_summary / _why_summary),
     # never on each other, so they can run as one concurrent wave.
-    #  • interaction (flag `ada.why_where_interaction`): cross the leading reason (WHY) with the
+    #  • interaction (flag `deep_analysis.why_where_interaction`): cross the leading reason (WHY) with the
     #    highest-impact segment (WHERE) — needs both a WHERE (rate) summary AND a WHY finding.
-    #  • benchmark + drill (flag `ada.why_deepen`): benchmark the leading reason vs peers (is it
+    #  • benchmark + drill (flag `deep_analysis.why_deepen`): benchmark the leading reason vs peers (is it
     #    abnormal?) and drill it by product (which products drive it?) — both need only the WHY finding.
     forward_specs: list = []
     # The WHY lenses are permanent (flag endgame Wave 5, 2026-08-06): this is the
@@ -8503,7 +8913,7 @@ def _adversarial_should_run(synth) -> bool:
 
     The ``high_stakes`` parameter went with its flag (Wave 3): the caller passed a literal
     True, so the False arm was unreachable and the flag it named no longer existed. (The
-    always-challenge full tier, ``ada.adversarial_verify``, was deleted 2026-07-31 — flag
+    always-challenge full tier, ``deep_analysis.adversarial_verify``, was deleted 2026-07-31 — flag
     strategy §4G.)"""
     return (getattr(synth, "confidence", "") or "").upper() == "HIGH"
 
@@ -8642,24 +9052,13 @@ def ada_synthesize(state: AgentState) -> dict:
     # CA-0 — no prior period: the data holds a single span. The report may describe what the
     # window contains and how the level moved WITHIN it; it may not attribute a change to a
     # segment (nothing was compared), and it must say plainly that no earlier period exists.
-    no_prior_note = ""
-    if intake_data.get("no_prior_period"):
-        _cov = (f"{intake_data.get('observation_start', '')} → {intake_data.get('observation_end', '')}")
-        no_prior_note = (
-            "\n\nNO PRIOR PERIOD: the data covers only the observation window (" + _cov + "). "
-            "There is no earlier period to compare against, so this report DESCRIBES the window — "
-            "its level, its trend within the window (earlier vs later weeks/days, per-day averages), "
-            "and which segments carry the volume. It does NOT attribute a change to any segment and "
-            "does NOT call the distribution 'uniform' or 'unchanged': no comparison was made. Say in "
-            "the executive summary that no prior period exists and name what a longer history would "
-            "make answerable. total_change_label should be the metric total or 'N/A'; the "
-            "attribution_waterfall stays EMPTY."
-        )
+    no_prior_note = _framing_note(intake_data)
 
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
     cross_section_note = ""
-    if "cross_section" in phase_ids or intake_data.get("cross_sectional"):
+    if (("cross_section" in phase_ids or intake_data.get("cross_sectional"))
+            and not intake_data.get("descriptive_only")):
         cross_section_note = (
             "\n\nNOTE: This is a CROSS-SECTIONAL diagnostic (where/which is weakest), not a temporal "
             "change. Do NOT frame it as a period-over-period decline. Lead with WHERE value is lowest "
@@ -8825,7 +9224,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # R6 — stream the report prose (executive_summary) to the client as the narrator
     # writes it, so a multi-minute deep run isn't silent between phase_complete and the
     # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
-    # still works inside the plain synthesis executor thread. None when ada.progress_events
+    # still works inside the plain synthesis executor thread. None when deep_analysis.progress_events
     # is off → blocking .complete(), byte-identical to before. complete_streaming self-heals
     # to .complete() on any streaming failure; the terminal answer_report stays authoritative.
     from aughor.agent.progress import report_delta_emitter
@@ -8946,7 +9345,8 @@ def ada_synthesize(state: AgentState) -> dict:
     # regardless of what the synthesis LLM claimed. (Extracted to _apply_no_usable_data_floor
     # in CA-0 so the zero-row shape is a unit test, not a production discovery.)
     if synth:
-        _apply_no_usable_data_floor(synth, phases, intake_data)
+        _apply_no_usable_data_floor(synth, phases, intake_data,
+                                    state.get("_analyst_evidence_rows") or 0)
 
     # Trust-advisory floor (report-quality wiring gap #2) — cap HIGH → MEDIUM when an advisory fired.
     _cap_confidence_on_trust_advisory(synth, phases)
@@ -9153,7 +9553,7 @@ def ada_synthesize(state: AgentState) -> dict:
             metric=intake_data.get("metric_label", ""),
             observation_period=(intake_data.get("data_coverage_label", "") if _xsec else intake_data.get("observation_label", "")),
             metric_definition=_metric_definition_receipt(intake_data),
-            comparison_basis="" if _xsec else intake_data.get("comparison_label", ""),
+            comparison_basis=_comparison_basis(intake_data),
             total_change_label="" if _xsec else synth.total_change_label,
             phases=phases,
             attribution_waterfall=waterfall,

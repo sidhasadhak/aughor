@@ -201,7 +201,14 @@ BASELINE: dict[str, int] = {
     # 628 → 602: CA-3 reworded the uppercase-acronym prose in investigate.py and the
     # router to "deep-analysis" — the analyst module's unavoidable phase-node call
     # sites (the API names stay frozen) ride inside that paydown.
-    "ada": 602,
+    # 601 → 592: the `ada.*` flag names left in investigate.py's comments named aliases
+    # that no longer exist (the registry test asserts none survive), and one counter
+    # metered under the retired prefix while its own neighbours used the live one.
+    # 592 → 556: adding the breakdown ROUTE grew this before it shrank it — a new node
+    # briefly took the prefix beside it. It is `deep_breakdown`; the two frozen API names
+    # next to it are the only reason the term appears in that file at all. The paydown is
+    # three sweep scripts that each held a local variable literally named `ada`.
+    "ada": 556,
     "agentic_ops": 27,
     "blueprint": 0,
     "charter": 72,

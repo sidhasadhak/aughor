@@ -11,6 +11,96 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Fixed
+- **Quick answers no longer fail on their second step with Gemini.** Google signs a
+  thinking model's reasoning and returns the signature attached to the tool call it
+  made; the same signature has to come back on every replay of that call, or the API
+  refuses the request (`400 INVALID_ARGUMENT`, "Function call is missing a
+  thought_signature in functionCall parts"). The tool loop rebuilt each assistant
+  message from the call's name and arguments alone, so the signature was dropped and
+  any turn that needed more than one tool call died — reading the schema and then
+  querying it was enough to trigger it. The transport now carries a tool call's vendor
+  fields through verbatim, and the loop no longer invents a function call the model
+  never made when handing back a parse error or a nudge.
+- **A deep analysis breaks the data down the way the question asked.** "Give me route
+  wise number of flights" produced a report ranking market, origin, destination and haul
+  — every dimension except route — and framed each one as a weakness scan ("does not
+  represent a performance deficit") for a question that asked for a count. The intake
+  model picks the drill-down dimensions and had simply dropped the one the question
+  named; a breakdown the question states outright now leads them, matched against real
+  schema columns (a table's own key is excluded, since grouping by it yields one row per
+  record), and it survives the scan's own priority ranking — that heuristic favours
+  customer/channel/category/geo columns, so `route_id` matched nothing, sank to last and
+  was cut by the per-phase cap while the narrator explained the gap away. The breakdown
+  itself is now computed rather than requested: one GROUP BY per named dimension, built
+  in code and run through the same guard battery as every other phase query, because the
+  phase's SQL planner declines a high-cardinality id column — right for a weakness scan,
+  wrong for a question that asked to see exactly that cut. A request to see the data also keeps its descriptive framing when it routes
+  cross-sectionally, instead of being told to hunt for underperformance.
+- **A deep analysis shows the queries it ran.** Only the four phase tools built a
+  phase, and the report draws its exhibits from phase findings — so a turn the analyst
+  answered with its own `run_sql` rendered as a few sentences with no table and no chart,
+  while the quick path, which draws its rows directly, showed the whole breakdown. Deep
+  read as thinner than quick for the same question. A query the model frames itself now
+  becomes a finding in a phase of its own, streams as one, and is drawn by the same
+  organs as every other finding, carrying its own SQL.
+- **An answer no longer reports a change that never happened.** A quick answer opened
+  "Compared to the previous report from August 20, 2026, the picture has expanded
+  significantly. While the previous report only listed three routes… the current data
+  reflects a much broader set of 84 routes." Nothing in the data had changed: the earlier
+  turn was a run that reported it could not analyse anything and named three routes as
+  examples, and the cross-session block offered it as a baseline and asked for a
+  comparison. A run that reported no data is no longer offered as one, and the
+  instruction now says what is comparable — a differing value for the same measure, never
+  how many rows an answer happened to list.
+- **A table in a chat answer renders as a table.** The answer surface had an
+  inline-only renderer — bold, figures, currency — so a turn that tabulated its result
+  put every pipe and dash on screen: `| Route ID | Number of Flights | | :--- | :--- |
+  | ZRH-LHR | 108 |`. Answer text carrying a markdown table now renders it, and
+  paragraphs separated by blank lines stay separate paragraphs instead of collapsing
+  into one.
+- **A question that asks to see the data is no longer answered as a failed
+  comparison.** "Give me route wise number of flights" run deep came back framed around
+  a comparison nobody asked for — "no prior period exists in the current dataset to
+  facilitate a comparative analysis", a `vs No prior period exists in the data` subtitle,
+  and a closing line about needing a broader historical dataset — printed over the
+  breakdown that was actually requested. The deep path is built around "why did X
+  change", and a listing fell through it. A request for a breakdown or a count is now
+  recognised from the question and reported as what it is: the totals, how they are
+  distributed, what leads and trails — including a question with no breakdown at all
+  ("what is the average order value"), which fell through the same gap. A weakness scan
+  ("which route is weakest") no longer carries the missing-period apology either: it
+  compares dimensions, not periods. Cause questions keep their own framing, causal
+  wording is honoured wherever it appears ("what is the reason revenue dropped" opens
+  like a lookup and is not one), and a change question whose data holds no earlier period
+  still says so.
+- **A deep analysis no longer reports its own findings as a failure.** A run that
+  answered from an ad-hoc query — no phase tool firing — published the headline "Data
+  unavailable — flight count could not be analyzed" and the sentence "Every diagnostic
+  query failed or returned zero rows" directly above the correct totals it had just
+  computed. The guard that forces an evidence-free report to read as a failure counted
+  only findings belonging to a phase, and an ad-hoc query produces none. It now also
+  counts the rows the analysis gathered outside its phases: a run with real evidence
+  keeps its own headline, while still being held to LOW confidence with its attribution
+  and recommendations withheld, because no structured phase stands behind them. A run
+  that genuinely gathered nothing still says so.
+- **A quick answer can no longer cite numbers its own query did not return.** The
+  chart, the table and the receipt all came from the result set; the sentence above them
+  was whatever the model wrote, and nothing compared the two — so a question about
+  flights per route was answered with a tidy table of 108 / 96 / 84 while the chart
+  beside it, drawn from the same rows, showed 28 / 42 / 35. Every number in the closing
+  answer is now checked against the rows the turn executed: a magnitude blown out of
+  scale, and — new — a value cited next to a label the result actually contains. An
+  unsupported answer gets one chance to be rewritten from the real values, and is
+  withheld rather than shown if it still cannot be grounded. The guard appears in the
+  receipt chain, so what it caught is inspectable.
+- **A question about the data's own subject is no longer refused.** Asking "give me
+  route wise number of flights" answered `"flights" is not present in this data.` on a
+  warehouse whose first table is flights. The ground-first resolver takes the noun after
+  a preposition as a filter candidate and asks every text column whether any row equals
+  it; nothing equals "flights", and that honest "absent" became a dead end. A noun that
+  names a table or a column is now read as the question's subject or breakdown, never as
+  a missing value — decided against the schema in front of it rather than a stopword
+  list. A genuinely absent entity still abstains exactly as before.
 - **A file dropped into the chat lands in the right place, and says so.** Attachments
   all went to the document store, so a dropped CSV became text the model could read
   about rather than a table it could query; upload failures were swallowed and the

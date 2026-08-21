@@ -351,3 +351,44 @@ def test_the_passthrough_turn_is_still_metered(monkeypatch, provider):
     provider.complete_with_tools("sys", "q", _TOOLS)
 
     assert recorded == [(11, 7)], f"live tool turns metered as {recorded}, not (11, 7)"
+
+
+# ── the vendor's extras survive parsing ──────────────────────────────────────
+# Gemini signs its reasoning and hangs the signature off the tool call, then refuses
+# any later request that replays the call without it. The parser has to keep what it
+# does not understand, and `extra_content` is not in the OpenAI schema — so where it
+# lands depends on the client: a typed attribute on some versions, an unmodelled extra
+# in `model_extra` on others (the SDK's models are `extra="allow"`).
+
+_SIGNED = {"google": {"thought_signature": "Ci8BgOe...opaque"}}
+
+
+def _signed_completion(where: str):
+    """One tool call carrying `extra_content` the way `where` says the client exposes it."""
+    from types import SimpleNamespace
+    call = SimpleNamespace(id="call_1", type="function",
+                           function=SimpleNamespace(name="run_sql", arguments='{"sql": "a"}'))
+    if where == "attribute":
+        call.extra_content = _SIGNED
+    else:                                  # pydantic's bag of unmodelled fields
+        call.model_extra = {"extra_content": _SIGNED}
+    return SimpleNamespace(choices=[SimpleNamespace(
+        message=SimpleNamespace(content=None, tool_calls=[call]),
+        finish_reason="tool_calls")])
+
+
+@pytest.mark.parametrize("where", ["attribute", "model_extra"])
+def test_a_signature_survives_parsing_however_the_client_exposes_it(where):
+    turn = _parse_tool_turn(_signed_completion(where))
+
+    assert turn.tool_call is not None
+    assert turn.tool_call.extra_content == _SIGNED
+
+
+def test_a_call_without_extras_carries_none():
+    """Absent stays absent — the echo is conditional on this being falsy, so an empty
+    dict promoted to a field would put a new wire shape in front of every backend."""
+    turn = _parse_tool_turn(_fake_completion(name="run_sql", arguments='{"sql": "a"}'))
+
+    assert turn.tool_call is not None
+    assert turn.tool_call.extra_content is None

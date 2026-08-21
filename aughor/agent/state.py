@@ -589,6 +589,10 @@ class AgentState(TypedDict):
     # the narrator writes the report from; absent/empty on every phase-script run,
     # so synthesis is byte-identical there.
     _analyst_conclusion: NotRequired[Optional[str]]
+    #: Rows the analyst loop gathered through non-phase tools (`run_sql`). Read by the
+    #: report's no-data floor, which otherwise counts only phase findings and reads an
+    #: ad-hoc-evidence run as a total failure.
+    _analyst_evidence_rows: NotRequired[int]
 
     # AL-05 (Semantic plane) — the SemanticContext resolved once at seed (metrics · ontology ·
     # profile · KB), carried so every node reads one consistent context instead of re-consulting

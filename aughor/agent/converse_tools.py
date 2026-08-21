@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
+from pydantic import BaseModel
+
 from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -462,6 +464,122 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                                         session_id=session_id, canvas_id=canvas_id),
         ),
     ] + platform_tools(connection_id, session_id=session_id)
+
+
+class _Regrounded(BaseModel):
+    """The re-grounded answer. A shape, because the transport asks for shapes: the
+    provider validates a ``response_model`` and has no plain-text surface."""
+    answer: str
+
+
+#: Cells kept for grounding. A turn can run several queries; the check only needs
+#: enough real values to match against, and an unbounded accumulation would hold a
+#: whole result set in memory for the length of the turn.
+_GROUND_CELL_CAP = 5000
+
+
+def ground_answer_numbers(answer: str, rows: list, *, question: str = "",
+                          provider=None) -> tuple:
+    """Hold the turn's PROSE to the rows the turn actually executed.
+
+    The loop's final text is whatever the model typed. Every other number the user
+    sees this turn — the chart, the table, the receipt — comes from a result set, but
+    the sentence above them did not, and nothing compared the two. Observed live: a
+    question about flights per route answered with a tidy markdown table of 108 / 96 /
+    84 / 72 / 60 while the chart beside it, drawn from the same 84 rows, showed nothing
+    of the sort. A confident wrong number is worse than the error it replaced.
+
+    So: every magnitude-bearing numeral in the answer must appear in a real cell
+    (:func:`verify_finding` — the same guard the explorer已 uses on findings, with its
+    rounding window and 2% tolerance). If any does not, the model gets ONE chance to
+    rewrite using only the values it was actually given, exactly as the explorer's
+    phase 8 does. If the rewrite still cannot be grounded, the prose is replaced rather
+    than shipped: the chart and table are already on screen and they are correct, so
+    saying "I could not ground these" costs the user nothing and a fabricated table
+    costs them their trust.
+
+    Returns ``(answer, guard_receipt | None)``. Fail-open by construction: no rows, no
+    enforced numerals, or a provider that raises all leave the answer untouched — this
+    guard may only ever remove a false claim, never invent a failure.
+    """
+    from aughor.explorer.grounding import (
+        numeric_cells_block, ungrounded_label_values, verify_finding,
+    )
+
+    text = (answer or "").strip()
+    cells = list(rows or [])[:_GROUND_CELL_CAP]
+    if not text or not cells:
+        return answer, None
+
+    # Two questions, because one alone misses this failure. `verify_finding` catches a
+    # magnitude blown by orders of magnitude ("$3T") but exempts small counts by design;
+    # the pair check catches a small count attached to a row that says otherwise. The
+    # live table of 108 / 96 / 84 was invisible to the first and obvious to the second.
+    def _offenders(candidate: str) -> list:
+        return list(verify_finding(candidate, cells).ungrounded) + \
+            ungrounded_label_values(candidate, cells)
+
+    offending = _offenders(text)
+    if not offending:
+        return answer, None
+
+    bad = ", ".join(offending[:5])
+    logger.info("converse: answer carried ungrounded number(s) %s; re-grounding", bad)
+
+    try:
+        from aughor.llm.provider import get_provider
+        p = provider or get_provider("coder")
+        rewritten = (p.complete(
+            response_model=_Regrounded,
+            system=(
+                "Your previous answer contained a number that does NOT appear in the "
+                "data — a fabricated magnitude. Rewrite the answer using ONLY values "
+                "from the list you are given. Copy each value exactly; never scale it "
+                "or add a magnitude suffix (K/M/B) it does not already have. If a "
+                "number cannot be supported by the list, drop it and describe the "
+                "pattern qualitatively. Keep the answer's format and length."
+            ),
+            user=(
+                f"QUESTION: {question}\n\n"
+                f"EXACT RESULT VALUES YOU MAY CITE:\n{numeric_cells_block(cells)}\n\n"
+                f"YOUR PREVIOUS (UNGROUNDED) ANSWER:\n{text}\n\n"
+                f"Ungrounded number(s) to remove or fix: {bad}\n"
+                "Rewrite it grounded strictly in the exact values above."
+            ),
+        ).answer or "").strip()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "answer re-grounding is best-effort; the unsupported claim is "
+                      "still withheld below", counter="converse.reground")
+        rewritten = ""
+
+    if rewritten and not _offenders(rewritten):
+        return rewritten, {
+            "guard": "numeric grounding",
+            "action": "rewrote the answer",
+            "detail": f"number(s) not present in the result: {bad}",
+            "before": text[:500],
+            "after": rewritten[:500],
+        }
+
+    # Still unsupported. The result is on screen and correct; the sentence about it is
+    # not, so it does not ship.
+    # The rejected figures do NOT get repeated here. They are in the guard receipt,
+    # where they are labelled as what was thrown out; restating them in the answer puts
+    # the fabricated number back on screen in the one place a skimming reader will take
+    # for the result.
+    withheld = (
+        "I could not ground this answer in the query result — the figures the model "
+        "wrote do not appear in the rows it read. The result below is what the query "
+        "actually returned; ask again and I can read it back directly."
+    )
+    return withheld, {
+        "guard": "numeric grounding",
+        "action": "withheld the answer",
+        "detail": f"number(s) not present in the result: {bad}",
+        "before": text[:500],
+        "after": withheld[:500],
+    }
 
 
 def converse_available() -> bool:

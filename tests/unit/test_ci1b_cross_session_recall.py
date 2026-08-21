@@ -179,3 +179,51 @@ def test_resolve_is_fail_open(monkeypatch):
 
     monkeypatch.setattr("aughor.db.history.find_prior_answers", _boom)
     assert resolve_prior_answers("q", "c1", "s1") == []
+
+
+# ── what is comparable, and what only looks like it ──────────────────────────
+# Live: a quick answer opened "Compared to the previous report from August 20, 2026, the
+# picture has expanded significantly. While the previous report only listed three routes
+# … the current data reflects a much broader set of 84 routes." Nothing had changed. The
+# earlier turn was the run that reported "Data unavailable" and named three routes as
+# EXAMPLES; this block offered it as a baseline and asked for a comparison, so it got one.
+
+def test_a_run_that_reported_no_data_is_not_offered_as_a_baseline():
+    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+
+    section = build_prior_answers_section([
+        {"asked_at": "2026-08-20", "headline": f"{NO_DATA_HEADLINE_PREFIX}flight count could not be analyzed"},
+    ])
+
+    assert section == "", "a failed run was offered as something to compare against"
+
+
+def test_a_real_prior_answer_is_still_offered():
+    section = build_prior_answers_section([
+        {"asked_at": "2026-08-20", "headline": "Revenue held October's level",
+         "prior_result": "$1.2M"},
+    ])
+    assert "2026-08-20" in section and "$1.2M" in section
+
+
+def test_the_failed_run_is_dropped_without_taking_the_good_ones_with_it():
+    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+
+    section = build_prior_answers_section([
+        {"asked_at": "2026-08-19", "headline": f"{NO_DATA_HEADLINE_PREFIX}traffic could not be analyzed"},
+        {"asked_at": "2026-08-20", "headline": "Traffic rose 12%", "prior_result": "12%"},
+    ])
+
+    assert "Traffic rose 12%" in section
+    assert "could not be analyzed" not in section
+
+
+def test_the_instruction_forbids_reading_a_longer_list_as_growth():
+    """The other half of the live failure: one answer named three examples, the next
+    listed twenty, and the difference was reported as the data expanding."""
+    section = build_prior_answers_section([
+        {"asked_at": "2026-08-20", "headline": "Revenue held", "prior_result": "$1.2M"},
+    ])
+
+    assert "LIKE WITH LIKE" in section
+    assert "difference in what was" in section

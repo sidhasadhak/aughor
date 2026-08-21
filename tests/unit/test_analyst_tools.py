@@ -169,6 +169,25 @@ def test_spec_overrides_metric_latitude():
 # ── the runner: phases stream, the spec carries, the conclusion reaches synthesis ──
 
 
+def _patch_seams(monkeypatch, db, *, intake, synthesize=None, baseline=None):
+    """Fake the phase nodes the runner calls, and the context it builds.
+
+    One helper names these dotted paths so the tests do not each repeat them — the
+    node names are a persisted identity (they are what the graph registers), so the
+    place to keep them down to one mention is here."""
+    node = "aughor.agent.investigate."
+    monkeypatch.setattr(node + "ada_intake", intake)
+    if baseline is not None:
+        monkeypatch.setattr(node + "ada_baseline", baseline)
+    if synthesize is not None:
+        monkeypatch.setattr(node + "ada_synthesize", synthesize)
+    monkeypatch.setattr("aughor.agent.analyst.build_analyst_context",
+                        lambda cid, q, **kw: (db, {
+                            "connection_id": cid, "schema_context": db.get_schema(),
+                            "scope_schema": "", "canvas_id": None,
+                            "canvas_schema_context": "", "data_catalog": ""}))
+
+
 def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, faux_llm):
     """The runner's mechanics with intake and synthesis faked at the seam: the loop
     (real, faux-scripted) chooses a phase tool, the phase (faked node) streams as
@@ -217,14 +236,8 @@ def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, fau
             "recommendations": [], "data_gaps": [],
         }}
 
-    monkeypatch.setattr("aughor.agent.investigate.ada_intake", _fake_intake)
-    monkeypatch.setattr("aughor.agent.investigate.ada_baseline", _fake_baseline)
-    monkeypatch.setattr("aughor.agent.investigate.ada_synthesize", _fake_synthesize)
-    monkeypatch.setattr("aughor.agent.analyst.build_analyst_context",
-                        lambda cid, q, **kw: (traffic_db, {
-                            "connection_id": cid, "schema_context": traffic_db.get_schema(),
-                            "scope_schema": "", "canvas_id": None,
-                            "canvas_schema_context": "", "data_catalog": ""}))
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
+                 baseline=_fake_baseline, synthesize=_fake_synthesize)
 
     faux_llm.set_responses([
         FauxToolCall(payload={"observation_start": "2026-08-10"}, name="baseline"),
@@ -250,13 +263,8 @@ def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, fau
 def test_run_analyst_with_no_report_returns_the_prose(monkeypatch, traffic_db, faux_llm):
     """A loop that concludes without any phase landing is a direct answer, not a
     report-shaped shell — and not a failure."""
-    monkeypatch.setattr("aughor.agent.investigate.ada_intake",
-                        lambda state, conn=None: {"_ada_intake": {}, "investigation_phases": []})
-    monkeypatch.setattr("aughor.agent.analyst.build_analyst_context",
-                        lambda cid, q, **kw: (traffic_db, {
-                            "connection_id": cid, "schema_context": traffic_db.get_schema(),
-                            "scope_schema": "", "canvas_id": None,
-                            "canvas_schema_context": "", "data_catalog": ""}))
+    _patch_seams(monkeypatch, traffic_db, intake=lambda state, conn=None: {
+        "_ada_intake": {}, "investigation_phases": []})
     faux_llm.set_responses(["There is no prior period; the window can only be described."])
 
     result = an.run_analyst("conn-t", "why?", persist=False)
@@ -303,3 +311,97 @@ def test_converse_eligible_still_refuses_deep(monkeypatch):
     monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     assert _converse_eligible(_Req(), _Route(depth="deep")) is False
     assert _converse_eligible(_Req(), _Route(depth="quick")) is True
+
+
+def test_run_sql_evidence_reaches_the_reports_no_data_floor(monkeypatch, traffic_db,
+                                                            faux_llm):
+    """A turn answered from `run_sql` alone builds no phase — and the report's no-data
+    floor counts phase findings, so it read that run as a total failure and printed
+    "Every diagnostic query failed" above correct numbers (live, on flights per route).
+    The rows the loop actually gathered have to reach the floor."""
+    from aughor.llm.faux import FauxToolCall
+
+    seen = {}
+
+    def _fake_intake(state, conn=None):
+        return {"_ada_intake": {"metric_label": "flights", "metric_sql": "COUNT(*)",
+                                "metric_table": "traffic", "date_column": "traffic.day",
+                                "observation_start": "2026-08-01",
+                                "observation_end": "2026-08-18",
+                                "observation_label": "August 2026",
+                                "dimensions": [], "data_understanding_block": ""},
+                "investigation_phases": [{
+                    "phase_id": "intake", "phase_name": "Question Intake",
+                    "phase_icon": "🎯", "status": "complete", "summary": "spec",
+                    "findings": []}]}
+
+    def _fake_synthesize(state):
+        seen["evidence_rows"] = state.get("_analyst_evidence_rows")
+        return {}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
+                 synthesize=_fake_synthesize)
+    # The tool returns rows the way the real one does; only its plumbing is stubbed.
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+                        lambda cid, a, **kw: {"columns": ["route", "n"],
+                                              "rows": [["ZRH-LHR", 28], ["GVA-LHR", 42]]})
+
+    faux_llm.set_responses([
+        FauxToolCall(payload={"sql": "SELECT channel_lvl1, COUNT(*) FROM traffic GROUP BY 1"},
+                     name="run_sql"),
+        "ZRH-LHR ran 28 flights and GVA-LHR 42.",
+    ])
+
+    an.run_analyst("conn-t", "give me route wise number of flights", persist=False)
+
+    assert seen["evidence_rows"] == 2, (
+        "the rows run_sql returned never reached synthesis, so the floor still sees "
+        "an empty run and will declare the turn a failure")
+
+
+def test_an_ad_hoc_query_reaches_the_report_as_a_drawable_phase(monkeypatch, traffic_db,
+                                                                faux_llm):
+    """End to end through the runner: a turn answered by `run_sql` alone must arrive at
+    synthesis with a phase carrying the rows, or the report has nothing to draw and deep
+    renders thinner than quick for the same question."""
+    from aughor.llm.faux import FauxToolCall
+
+    seen = {}
+
+    def _fake_intake(state, conn=None):
+        return {"_ada_intake": {"metric_label": "flights", "metric_sql": "COUNT(*)",
+                                "metric_table": "traffic", "date_column": "traffic.day",
+                                "observation_start": "2026-08-01",
+                                "observation_end": "2026-08-18",
+                                "observation_label": "August 2026",
+                                "dimensions": [], "data_understanding_block": ""},
+                "investigation_phases": [{
+                    "phase_id": "intake", "phase_name": "Question Intake",
+                    "phase_icon": "🎯", "status": "complete", "summary": "spec",
+                    "findings": []}]}
+
+    def _fake_synthesize(state):
+        seen["phases"] = state.get("investigation_phases") or []
+        return {}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake, synthesize=_fake_synthesize)
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+                        lambda cid, a, **kw: {"columns": ["route", "n"],
+                                              "rows": [["GVA-FRA", 42], ["ZRH-BUD", 35]]})
+
+    faux_llm.set_responses([
+        FauxToolCall(payload={"sql": "SELECT route, COUNT(*) FROM traffic GROUP BY 1"},
+                     name="run_sql"),
+        "GVA-FRA leads at 42 flights.",
+    ])
+
+    frames: list[tuple] = []
+    an.run_analyst("conn-t", "give me route wise number of flights", persist=False,
+                   emit=lambda t, p: frames.append((t, p)))
+
+    # the rows arrived at synthesis as a phase with a finding, not just as prose
+    drawable = [f for p in seen["phases"] for f in (p.get("findings") or []) if f.get("rows")]
+    assert drawable, "synthesis saw no finding carrying rows — nothing to draw"
+    assert drawable[0]["rows"] == [["GVA-FRA", 42], ["ZRH-BUD", 35]]
+    # …and it streamed, so the user watches the slice land
+    assert [t for t, _ in frames].count("phase_complete") == 2   # intake + the query

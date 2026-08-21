@@ -1221,14 +1221,24 @@ def build_prior_answers_section(priors) -> str:
     Deliberately carries the headline and the date only, never the prior SQL: re-running
     an old query is the model's decision to make from today's schema, not something to
     copy."""
-    priors = list(priors or [])
+    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+
+    # A run that reported it could not analyse anything is not a baseline. Offered as
+    # one, the model dutifully compared against it — live, an answer opened "Compared to
+    # the previous report from August 20, 2026, the picture has expanded significantly"
+    # when the earlier turn had simply failed and this one had not.
+    priors = [p for p in (priors or [])
+              if not (p.get("headline") or "").startswith(NO_DATA_HEADLINE_PREFIX)]
     if not priors:
         return ""
     lines = [
         "PREVIOUSLY ASKED — this same question was answered in an earlier session. "
         "Answer from TODAY's data first, then say plainly whether the picture is "
         "unchanged or what moved. Never restate a previous answer as if it were current, "
-        "and never cite its numbers as this turn's evidence:",
+        "and never cite its numbers as this turn's evidence. Compare LIKE WITH LIKE: only "
+        "a differing VALUE for the same measure is a change. How many rows an answer "
+        "listed, or which examples it happened to name, is a difference in what was "
+        "SHOWN — never report it as the data having grown, shrunk or expanded:",
     ]
     for p in priors:
         when = str(p.get("asked_at", ""))[:10] or "an earlier session"
@@ -3177,10 +3187,14 @@ async def _stream_converse(
     The machine-readable marker rides on ``done`` instead.
     """
     def _run(emit, cancelled):
-        from aughor.agent.converse_tools import converse
+        from aughor.agent.converse_tools import converse, ground_answer_numbers
         from aughor.obs import session_log
 
-        turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False}
+        # `rows` accumulates what the turn's queries actually returned — the evidence
+        # the closing prose is held to. A turn may run several queries; all of their
+        # cells are citable, so they pool.
+        turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False,
+                      "rows": []}
 
         def _forward(_frame_type: str, _frame_payload: dict) -> None:
             """The tools' frames, minus the lifecycle. Named ``_frame_type`` on purpose:
@@ -3198,6 +3212,8 @@ async def _stream_converse(
                 return
             if _frame_type == "sql":
                 turn["sql"] = True
+            if _frame_type == "rows":
+                turn["rows"].extend(_frame_payload.get("rows") or [])
             emit(_frame_type, _frame_payload)
 
         def _on_step(step) -> None:
@@ -3263,6 +3279,15 @@ async def _stream_converse(
                     f"{'call' if steps_n == 1 else 'calls'}). What each step found is "
                     "above — asking again, or more specifically, usually gets there."
                 )
+        # Every other number this turn shows the user came from a result set; until
+        # now the sentence above them did not, and nothing compared the two. A model
+        # that writes a plausible table the rows do not contain is the one failure the
+        # user cannot catch — the chart beside it looks authoritative either way.
+        answer, _ground_receipt = ground_answer_numbers(
+            answer, turn["rows"], question=question)
+        if _ground_receipt is not None:
+            emit("guard_receipt", _ground_receipt)
+
         if not turn["sql"]:
             # No SQL this turn ⇒ the same shape the core's own no-SQL paths use, so a
             # text-only converse answer renders exactly like a definitional one does.

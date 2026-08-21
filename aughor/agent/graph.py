@@ -24,6 +24,7 @@ from aughor.agent.phase_waves import ada_phase_wave
 from aughor.agent.investigate import (
     ada_intake,
     ada_baseline,
+    deep_breakdown,
     ada_cross_section,
     ada_cross_section_multilens,
     ada_decompose,
@@ -149,6 +150,7 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("exploratory_scan", scan_node)
     graph.add_node("ada_intake",      ada.get("intake",      ada_intake))
     graph.add_node("ada_baseline",    ada.get("baseline",    lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("deep_breakdown",   ada.get("breakdown",   lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_cross_section", ada.get("cross_section", lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_decompose",   ada.get("decompose",   lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_dimensional", ada.get("dimensional", lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
@@ -183,6 +185,10 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         )
         _baseline_target = "ada_phase_wave"
 
+    # A breakdown answers in one phase — there is no tier to escalate to, because
+    # nothing here was found wanting.
+    graph.add_edge("deep_breakdown", "ada_synthesize")
+
     graph.add_edge("exploratory_scan",  "ada_intake")
     # P4 clarify_gate: a single-fire pause AFTER intake, BEFORE the scan fan-out — reached ONLY when
     # ada_intake stashed a material metric-reading ambiguity (`_clarify_pending`). A no-op passthrough
@@ -196,12 +202,13 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         "ada_intake",
         route_after_intake_clarify,
         {"clarify_gate": "clarify_gate", "ada_cross_section": _xsec_target,
-         "ada_baseline": _baseline_target},
+         "ada_baseline": _baseline_target, "deep_breakdown": "deep_breakdown"},
     )
     graph.add_conditional_edges(
         "clarify_gate",
         route_after_intake,
-        {"ada_cross_section": _xsec_target, "ada_baseline": _baseline_target},
+        {"ada_cross_section": _xsec_target, "ada_baseline": _baseline_target,
+         "deep_breakdown": "deep_breakdown"},
     )
 
     graph.add_conditional_edges(
@@ -317,6 +324,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     ada_nodes = {
         "intake":     partial(ada_intake,     conn=db),
         "baseline":   partial(ada_baseline,   conn=db),
+        "breakdown":  partial(deep_breakdown,  conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "phase_wave":  partial(ada_phase_wave, conn=db),
@@ -339,6 +347,7 @@ def build_graph_generic(db, hitl: bool = False, plan_gate: bool = False, clarify
     ada_nodes = {
         "intake":      partial(ada_intake,      conn=db),
         "baseline":    partial(ada_baseline,    conn=db),
+        "breakdown":  partial(deep_breakdown,  conn=db),
         "cross_section": partial(ada_cross_section, conn=db),
         "cross_section_multilens": partial(ada_cross_section_multilens, conn=db),
         "phase_wave":  partial(ada_phase_wave, conn=db),

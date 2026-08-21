@@ -220,19 +220,35 @@ def _history_chars(history: list[dict]) -> int:
 
 
 def _exchange(call, content: str) -> list[dict]:
-    """The assistant/tool message pair that records one step in the conversation.
+    """The messages that record one step in the conversation.
 
-    The assistant message must echo the tool call the model made: an OpenAI-compatible
-    backend rejects a `role="tool"` message that answers nothing, so a loop that sends
-    only results fails on the second turn.
+    With a tool call, that is the assistant message echoing it plus the `role="tool"`
+    result answering it: an OpenAI-compatible backend rejects a tool message that
+    answers nothing, so a loop that sends only results fails on the second turn.
+
+    WITHOUT one — the model wrote arguments that would not parse, or said nothing at
+    all — the feedback goes back as a plain USER message. The obvious alternative,
+    inventing an assistant tool call for the result to answer, writes a function call
+    into the transcript that the model never made. That is harmless on most backends
+    and fatal on Gemini, which requires every function call it is shown to carry the
+    reasoning signature it issued (see `ToolCall.extra_content`) and refuses the whole
+    request when one cannot.
     """
+    if call is None:
+        return [{"role": "user", "content": content}]
+
     call_id = getattr(call, "id", "") or "call_1"
     name = getattr(call, "name", "") or "unknown"
     arguments = json.dumps(getattr(call, "arguments", {}) or {})
+    echoed: dict = {"id": call_id, "type": "function",
+                    "function": {"name": name, "arguments": arguments}}
+    # Handed back verbatim and never read: this is the vendor's own bookkeeping, and
+    # the next request is refused without it.
+    extra = getattr(call, "extra_content", None)
+    if extra:
+        echoed["extra_content"] = extra
     return [
-        {"role": "assistant", "content": None,
-         "tool_calls": [{"id": call_id, "type": "function",
-                         "function": {"name": name, "arguments": arguments}}]},
+        {"role": "assistant", "content": None, "tool_calls": [echoed]},
         {"role": "tool", "tool_call_id": call_id, "content": content},
     ]
 
