@@ -33,6 +33,11 @@ export interface ChartCustom {
   /** Swap the axes of a bar form. Absent → the shared rule decides (category reads
    *  horizontally, time reads vertically). */
   orient?: "vertical" | "horizontal";
+  /** Post-processing to apply IN the chart rather than to the data beforehand. Only the
+   *  Vega path reads this: the ECharts builders take already-transformed rows, which is why
+   *  that path still round-trips through /query/postproc. */
+  transform?: { op: "pop" | "contribution" | "rolling" | "cumulative"; valueCol: string;
+                window?: number; agg?: "mean" | "sum" | "min" | "max" } | null;
 }
 
 type AxisLike = Record<string, unknown>;

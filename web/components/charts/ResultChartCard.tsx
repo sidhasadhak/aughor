@@ -33,6 +33,7 @@ import { isUngraphableGrid } from "@/components/charts/columnRoles";
 import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
 import { cleanLabel } from "@/lib/format";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
+import { chartEngine } from "@/lib/chartEngine";
 import { applyPostproc, type PostprocOp } from "@/lib/api";
 import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
 import { sameVizConfig, type VizConfig } from "@/components/charts/vizConfig";
@@ -256,14 +257,19 @@ export function ResultChartCard({
   const [orient, setOrient] = useState<"" | "vertical" | "horizontal">(seed.orient ?? "");
   const [transformed, setTransformed] = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
   const [tErr, setTErr] = useState("");
+  // On the Vega path the transform is DECLARED in the spec and computed in the chart's own
+  // dataflow, so there is nothing to fetch: choosing "cumulative" on a 10k-row result used
+  // to POST all 10k rows to /query/postproc and wait for them to come back. The ECharts
+  // builders take already-transformed rows, so that path still round-trips.
+  const declarative = chartEngine() === "vega";
   useEffect(() => {
-    if (transformOp === "none" || !metric) { setTransformed(null); setTErr(""); return; }
+    if (declarative || transformOp === "none" || !metric) { setTransformed(null); setTErr(""); return; }
     let alive = true;
     applyPostproc(data.columns, data.rows, transformOp, metric)
       .then(r => { if (alive) { setTransformed(r); setTErr(""); } })
       .catch(e => { if (alive) { setTransformed(null); setTErr(String((e as Error).message)); } });
     return () => { alive = false; };
-  }, [transformOp, data, metric]);
+  }, [declarative, transformOp, data, metric]);
   // A transform APPENDS a derived column (*_cumulative, *_pct_change, *_pct_of_total,
   // *_rolling_*) and keeps the original. Chart that derived column against the dimension —
   // seeing the transform is the whole point; re-plotting the original shows no change.
@@ -301,7 +307,10 @@ export function ResultChartCard({
     ...(yTitle ? { yTitle } : {}),
     ...(tooltipOff ? { tooltip: "off" as const } : {}),
     ...(orient ? { orient } : {}),
-  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff, orient]);
+    ...(declarative && transformOp !== "none" && metric
+      ? { transform: { op: transformOp, valueCol: metric } as ChartCustom["transform"] } : {}),
+  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff, orient,
+       declarative, transformOp, metric]);
 
   // The color binding the user built (or null): a chosen field, its scale (explicit, else
   // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.

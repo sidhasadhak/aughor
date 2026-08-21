@@ -18,6 +18,92 @@ import { cleanLabel } from "@/lib/format";
 import { classifyColumns } from "@/components/charts/columnRoles";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
 
+/** The four post-processing ops the edit panel offers, mirroring aughor/tools/postproc.py. */
+export type TransformOp = "pop" | "contribution" | "rolling" | "cumulative";
+
+export interface TransformSpec {
+  op: TransformOp;
+  /** The measure being transformed. */
+  valueCol: string;
+  /** Trailing window for `rolling` (default 3). */
+  window?: number;
+  /** Aggregate for `rolling` (default mean). */
+  agg?: "mean" | "sum" | "min" | "max";
+}
+
+/**
+ * Build the Vega-Lite transform for one post-processing op, plus the name of the column it
+ * derives. The names match aughor/tools/postproc.py EXACTLY, so a chart looks identical
+ * whether the numbers were computed here or by the API.
+ *
+ * Why this exists: applying a transform today POSTs the entire result set to
+ * /query/postproc and waits for transformed rows to come back, so choosing "cumulative" on
+ * a 10k-row chart ships 10k rows over the network to compute a running total. Declared in
+ * the spec, the same maths runs in the chart's own dataflow — no round trip, and the
+ * transform travels WITH the spec instead of being a mutation that happened to the data
+ * before the chart ever saw it.
+ *
+ * The edge semantics are copied deliberately, not approximated:
+ *   pop         null on the first row, and where the previous value is 0 or missing
+ *   contribution fraction of the non-null total; all null when that total is 0
+ *   rolling     null until the window FILLS, and null if any point inside it is missing
+ *   cumulative  nulls contribute 0 and the running total continues (never null)
+ */
+function transformBlocks(t: TransformSpec): { transform: Record<string, unknown>[]; derived: string } {
+  const v = t.valueCol;
+  switch (t.op) {
+    case "pop": {
+      const derived = `${v}_pct_change`;
+      return {
+        derived,
+        transform: [
+          { window: [{ op: "lag", field: v, as: "__prev" }] },
+          { calculate: `datum.__prev === null || datum.__prev === 0 || datum['${v}'] === null ? null : (datum['${v}'] - datum.__prev) / datum.__prev`,
+            as: derived },
+        ],
+      };
+    }
+    case "contribution": {
+      const derived = `${v}_pct_of_total`;
+      return {
+        derived,
+        transform: [
+          { joinaggregate: [{ op: "sum", field: v, as: "__total" }] },
+          { calculate: `datum.__total === 0 || datum['${v}'] === null ? null : datum['${v}'] / datum.__total`,
+            as: derived },
+        ],
+      };
+    }
+    case "rolling": {
+      const w = Math.max(1, t.window ?? 3);
+      const agg = t.agg ?? "mean";
+      const derived = `${v}_rolling_${agg}${w}`;
+      return {
+        derived,
+        transform: [
+          // `valid`, NOT `count`: Vega's count ignores its field and counts ROWS, so a window
+          // holding a null still counted as full and produced a mean over the points that
+          // happened to be there — 95 where the API returns null. `valid` counts non-null
+          // values, which catches both edge rules at once: at the start of the series the
+          // frame is short, and mid-series a missing point makes it short too.
+          { window: [{ op: agg, field: v, as: "__roll" }, { op: "valid", field: v, as: "__cnt" }],
+            frame: [-(w - 1), 0] },
+          { calculate: `datum.__cnt < ${w} ? null : datum.__roll`, as: derived },
+        ],
+      };
+    }
+    default: {
+      const derived = `${v}_cumulative`;
+      // Vega's sum skips nulls and returns 0 for an empty frame, which is exactly
+      // "nulls contribute 0, the running value keeps going".
+      return {
+        derived,
+        transform: [{ window: [{ op: "sum", field: v, as: derived }], frame: [null, 0] }],
+      };
+    }
+  }
+}
+
 export interface ResolveSpecArgs {
   columns: string[];
   rows: unknown[][];
@@ -33,6 +119,8 @@ export interface ResolveSpecArgs {
   title?: string | null;
   /** Swap the axes of a bar form. Absent → the shared rule decides. */
   orient?: "vertical" | "horizontal" | null;
+  /** Post-processing applied IN the spec rather than to the data before it. */
+  transform?: TransformSpec | null;
 }
 
 export interface ResolvedSpec {
@@ -118,7 +206,8 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  * verdict the ECharts resolver reaches, so both engines refuse the same data.
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
-  const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient } = args;
+  const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
+          transform } = args;
   if (!rows?.length || !columns?.length) return null;
 
   const hint = String(chartType ?? "auto").toLowerCase();
@@ -162,15 +251,25 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   if (!SUPPORTED.has(type)) return null;
 
   const data = { values: toRecords(columns, rows) };
-  const measure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0];
+
+  // A transform replaces the plotted measure with the column it derives, and rides on the
+  // spec so it persists with the chart's intent instead of being a mutation applied to the
+  // rows before the chart ever saw them.
+  const tf = transform && columns.includes(transform.valueCol) ? transformBlocks(transform) : null;
+  const measure = tf ? tf.derived : (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]);
   const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
   const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
+  if (tf) base.transform = tf.transform;
   if (title) base.title = title;
 
   // ---- counter — a single headline number, not a plot -----------------------------------
   if (type === "counter") {
-    const v = Number(rows[0]?.[columns.indexOf(measure)] ?? 0);
+    // A counter reads ONE number straight off the row, so it uses the real column — the
+    // derived name a transform introduces exists only inside the chart's dataflow, and
+    // indexOf would return -1 and quietly render 0.
+    const rawMeasure = inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0];
+    const v = Number(rows[0]?.[columns.indexOf(rawMeasure)] ?? 0);
     return {
       tier: 1, resolved: "counter", defaultH: 140, xCategories: 0,
       spec: {
@@ -179,7 +278,7 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
         // reads "Net Revenue" and not "net_revenue". The number keeps its value + format
         // rather than a pre-rendered string: `.2~s` is what the ECharts counter shows
         // (8.7M, not 8.66M), and a spec that stores the VALUE can be re-formatted later.
-        data: { values: [{ v, label: yTitle ?? cleanLabel(measure) }] },
+        data: { values: [{ v, label: yTitle ?? cleanLabel(rawMeasure) }] },
         layer: [
           { mark: { type: "text", fontSize: 38, fontWeight: 600, dy: -8, align: "center", baseline: "middle" },
             encoding: { text: { field: "v", type: "quantitative", format: format?.trim() || ".2~s" } } },
