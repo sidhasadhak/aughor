@@ -179,7 +179,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
       </span>
       {sub && (
-        <span style={{ display: "block", fontSize: 12, color: "var(--t2)", marginTop: 2,
+        <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2,
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
       )}
     </Button>
@@ -208,7 +208,7 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{persona.name}</div>
-          <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
             custom · {persona.connection_id || "any connection"}
             {persona.schema_scope ? ` · ${persona.schema_scope}` : ""}
             {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
@@ -299,7 +299,7 @@ function PersonaOverview({ persona, onOpenTrace }: {
             label: r.headline || r.question,
           }))} />
       </div>
-      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Recent runs</div>
+      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 6 }}>Recent runs</div>
       {runs.length === 0 ? (
         <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>
       ) : (
@@ -316,7 +316,7 @@ function PersonaOverview({ persona, onOpenTrace }: {
                 {r.kind === "chat" ? `quick${r.query_count > 1 ? ` ·${r.query_count}` : ""}` : "deep"}
               </StatusChip>
               <StatusChip hue={STATUS_HUE[r.status] ?? "muted"} strength="soft">{r.status}</StatusChip>
-              <span style={{ fontSize: 12, color: "var(--t3)", flexShrink: 0, width: 110,
+              <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0, width: 110,
                 textAlign: "right" }}>{formatTimestamp(r.started_at, "short")}</span>
               {onOpenTrace && r.kind !== "chat" && (
                 <Button variant="ghost" size="xs" onClick={() => onOpenTrace(r.id)}
@@ -432,7 +432,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
         <input className="aug-input" value={form.schema_scope} maxLength={120}
           placeholder="e.g. finance — leave empty for all schemas"
           onChange={e => setForm(f => ({ ...f, schema_scope: e.target.value }))} />
-        <span style={{ fontSize: 12, color: "var(--t3)" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
           When set, the agent answers within this schema; asking it about another schema is rejected.
         </span>
       </label>
@@ -481,7 +481,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
         border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="aug-label">Golden questions</span>
-          <span style={{ fontSize: 12, color: "var(--t3)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
             re-run after editing instructions or documents
           </span>
           <span style={{ marginLeft: "auto" }}>
@@ -571,7 +571,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span className="aug-label">Configuration history</span>
-      <span style={{ fontSize: 12, color: "var(--t3)" }}>
+      <span style={{ fontSize: 11, color: "var(--t3)" }}>
         Instructions, connection, schema scope and bindings. Restoring adds a new revision —
         nothing in between is erased.
       </span>
@@ -587,7 +587,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
             padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
             <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
-            <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+            <span style={{ color: "var(--t4)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
             <span style={{
               flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap", color: "var(--t3)",
@@ -686,7 +686,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{charter.name}</div>
-          <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
             charter · {charter.lane} · {charter.role}
           </div>
         </div>
@@ -740,7 +740,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
             <span style={{ width: 110, color: "var(--t3)" }}>Model pin</span>
             <select className="aug-input" value={gov.model ?? ""} disabled={busy}
               onChange={e => pinModel(e.target.value)}
-              style={{ fontSize: 12, padding: "3px 6px", maxWidth: 260 }}>
+              style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260 }}>
               <option value="">Role default</option>
               {models.map(m => <option key={m} value={m}>{m}</option>)}
               {gov.model && !models.includes(gov.model) && (
@@ -752,7 +752,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
               model id per agent, and those were removed with every other model list
               (2026-08-15). An agent runs on the operator's pin, or inherits the role
               binding — there is nothing left for this product to recommend. */}
-          <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
             These are the charter&rsquo;s REAL knobs. There is no per-agent temperature,
             topP or tool toggle here: the transport pins temperature platform-wide
             (13% run-to-run flip measured at default temp), and capability changes are
@@ -770,8 +770,8 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
     <div style={{ flex: "1 1 130px", minWidth: 130, background: "var(--bg-2)",
       border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 14px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 3 }}>{label}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

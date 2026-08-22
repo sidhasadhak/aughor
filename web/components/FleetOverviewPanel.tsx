@@ -273,7 +273,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                       {waitedFor(row.waiting_ms, tick)}
                       {row.since_basis === "started_at" && " *"}
                     </span>
-                  </div>
+        </div>
                   <div className="aug-text-ui" style={{ fontWeight: 600 }}>{row.title}</div>
                   <div style={{ display: "flex", gap: 6 }}>
                     {row.source === "kinetic_inbox" ? (
@@ -293,7 +293,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                         {row.source === "paused_run" ? "Open & resume" : "Open automation"}
                       </Button>
                     )}
-                  </div>
+        </div>
                 </div>
               ))}
             </div>
@@ -441,7 +441,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 onChange={e => setShowRunners(e.target.checked)} />
               include background runners
             </label>
-          </div>
+      </div>
           {chart ? (
             <div style={{ marginTop: 8 }}>
               <ActivityChart window={chart.window} edges={chart.edges}
@@ -471,26 +471,26 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
           <SectionHead title="All agents"
             sub="built-in and custom agents in one grammar · runners below, never summed in"
             action={{ label: noc ? "Calm" : "NOC", onClick: () => setDensity(noc ? "calm" : "noc") }} />
-          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
+      <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
                         borderRadius: "var(--r3)", overflow: "hidden" }}>
-            <table className="aug-dt" style={{ width: "100%" }}>
-              <thead>
-                <tr>
+        <table className="aug-dt" style={{ width: "100%" }}>
+          <thead>
+            <tr>
                   <th style={{ width: 22 }} />
-                  <th>Agent</th>
-                  <th>Status</th>
-                  <th>Live</th>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Live</th>
                   <th>Activity</th>
-                  <th>Runs</th>
+              <th>Runs</th>
                   <th>Failures</th>
-                  {noc && <th>Tokens</th>}
-                  {noc && <th>Queries</th>}
-                  {noc && <th>Unmetered</th>}
-                  <th>Last run</th>
+              {noc && <th>Tokens</th>}
+              {noc && <th>Queries</th>}
+              {noc && <th>Unmetered</th>}
+              <th>Last run</th>
                   <th />
-                </tr>
-              </thead>
-              <tbody>
+            </tr>
+          </thead>
+          <tbody>
                 <LaneHead cols={noc ? 12 : 9} title="Agents"
                   note={`${charters.length} built-in · ${personas.length} custom`} />
                 {[...charters, ...personas].map(row => (
@@ -501,24 +501,24 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                     onToggle={() => setExpanded(expanded === row.id ? null : row.id)}
                     onPause={() => togglePause(row)} busy={busy === row.id}
                     onOpen={onOpenAgent} />
-                ))}
+            ))}
                 {runners.length > 0 && (
                   <>
                     <LaneHead cols={noc ? 12 : 9} title="Background runners"
                       note="counted separately — never in the agents' totals" />
                     {runners.map(r => <RunnerRow key={r.id} row={r} noc={noc} />)}
                   </>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+          </tbody>
+        </table>
+      </div>
         </section>
 
         {/* ── 6 · jobs ────────────────────────────────────────────────────────── */}
         <section aria-label="Jobs">
           <SectionHead title="Jobs" sub="the runs behind the figures above" />
           <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            {JOB_FILTERS.map(f => (
+        {JOB_FILTERS.map(f => (
               <Button key={f.id} variant="ghost" size="xs"
                 onClick={() => setJobFilter(f.id)}
                 aria-pressed={jobFilter === f.id}
@@ -526,7 +526,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                   background: jobFilter === f.id ? "var(--bg-4)" : "transparent",
                   color: jobFilter === f.id ? "var(--t1)" : "var(--t2)",
                 }}>{f.label}</Button>
-            ))}
+        ))}
           </div>
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
                         borderRadius: "var(--r3)", overflow: "hidden" }}>
@@ -534,41 +534,41 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               <p className="aug-fs-sm" style={{ color: "var(--t2)", padding: "12px 14px", margin: 0 }}>
                 {jobFilter === "active" ? "Nothing running right now." : "No jobs match this filter."}
               </p>
-            ) : (
-              <table className="aug-dt" style={{ width: "100%" }}>
-                <thead>
+        ) : (
+          <table className="aug-dt" style={{ width: "100%" }}>
+            <thead>
                   <tr><th>Job</th><th>Agent</th><th>State</th><th>Started</th><th>Duration</th><th /></tr>
-                </thead>
-                <tbody>
+            </thead>
+            <tbody>
                   {filteredJobs.slice(0, 60).map(j => (
-                    <tr key={j.id}>
+                  <tr key={j.id}>
                       <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
                                    whiteSpace: "nowrap" }} title={j.title || j.kind}>
                         {j.title || j.kind}
-                      </td>
+                    </td>
                       <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>
                         {j.agent?.agent || j.kind}
-                      </td>
-                      <td>
+                    </td>
+                    <td>
                         <StatusChip hue={JOB_STATE_HUE[j.state] ?? "muted"} strength="soft">
                           {j.state.toLowerCase()}
                         </StatusChip>
-                      </td>
+                    </td>
                       <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(j.created_at)}</td>
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>
                         {j.duration_ms ? fmtMs(j.duration_ms) : "—"}
                       </td>
-                      <td>
+                    <td>
                         {["RUNNING", "PENDING", "PAUSED"].includes(j.state) && (
-                          <Button variant="ghost" size="xs"
+                        <Button variant="ghost" size="xs"
                             onClick={() => cancelJob(j.id).then(load).catch(() => {})}>Kill</Button>
-                        )}
-                      </td>
-                    </tr>
+                      )}
+                    </td>
+                  </tr>
                   ))}
-                </tbody>
-              </table>
-            )}
+            </tbody>
+          </table>
+        )}
           </div>
         </section>
       </div>

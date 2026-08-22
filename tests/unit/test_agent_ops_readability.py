@@ -1,32 +1,35 @@
-"""W4 — the Agent Ops surface stays readable, as a ratchet rather than a style note.
+"""The Agent Ops surface obeys the platform's design system, and draws in tokens.
 
-Measured on the tokens this product actually ships (WCAG 2.1 contrast, dark ground
-`--bg-0` #0D1117):
+**This file used to enforce a local type and colour rule, and that was a mistake.** W4
+measured the palette and concluded that `--t2` should be the floor for text and 12px the
+floor for prose, then pinned it on thirteen Agent Ops files. The platform re-skin (#365,
+#367) subsequently made a different, deliberate choice, and it is the one that governs:
+across `components/` and `app/`, `--t4` is used as a text colour 357 times in 64 files, a
+ramp's `3` step 35 times, and `fontSize: 11` 653 times in 60 files. A rule that binds
+thirteen files against the house style of sixty does not make those thirteen more
+readable — it makes them look like a different product.
 
-    --t1  14.88:1   values
-    --t2   6.68:1   labels, captions          ← the floor for text
-    --t3   4.23:1   FAILS AA normal (4.5)
-    --t4   2.76:1   FAILS AA large (3.0)
+The contrast measurement itself still stands and is not thrown away:
 
-The old surface put labels on `--t3` and captions on `--t4`, so the two things a reader
-needs in order to know what a number MEANS were the two least legible things on the page.
-Nothing was wrong with the palette — every ramp's `4`/`5` step and `--t1`/`--t2` clear AA
-comfortably — the panels simply reached for the faint ones.
+    --t1  14.88:1   --t2  6.68:1   --t3  4.23:1 (fails AA normal)   --t4  2.76:1 (fails AA large)
 
-Guards key on the file, not on a word: this counts colour assignments and font sizes in the
-Agent Ops components, which is a structural fact. Every vocabulary-keyed guard in this
-repo's history false-positived within two runs.
+If those tones are genuinely too faint for text, the fix belongs in the token layer, where
+lifting `--t3`/`--t4` repairs all 392 sites at once and the whole product stays coherent.
+It does not belong in a per-surface ratchet that quietly forks the design. That question is
+open and deliberately not decided here.
+
+What survives is the rule that is about correctness rather than taste: a chart that
+hardcodes hexes is theme-blind, and no amount of design direction makes it flip in light
+mode.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-import pytest
-
 WEB = Path(__file__).resolve().parents[2] / "web"
 
-#: The surface. A file added here is a file that must obey the rule.
+#: The surface. Kept so the guard below cannot silently start reading nothing.
 SURFACE = [
     "components/FleetOverviewPanel.tsx",
     "components/NeedsHumanPanel.tsx",
@@ -44,56 +47,19 @@ SURFACE = [
 ]
 
 
-def _sources() -> list[tuple[str, str]]:
-    out = []
-    for rel in SURFACE:
-        p = WEB / rel
-        if p.exists():
-            out.append((rel, p.read_text()))
-    return out
-
-
 def test_the_surface_files_all_exist():
     """A guard whose files moved is a guard reading nothing — the failure mode this repo
     has shipped twice (a matching key that stopped matching, silently)."""
     missing = [rel for rel in SURFACE if not (WEB / rel).exists()]
-    assert not missing, f"the readability ratchet is scanning files that no longer exist: {missing}"
-
-
-@pytest.mark.parametrize("rel,src", _sources(), ids=[r for r, _ in _sources()])
-def test_t4_is_never_a_text_colour(rel: str, src: str):
-    """`--t4` is 2.76:1 — below AA even for large text. It is a BORDER/disabled tone."""
-    hits = re.findall(r'color:\s*"var\(--t4\)"', src)
-    assert not hits, (
-        f"{rel} sets text to --t4 ({len(hits)}×), which is 2.76:1 on --bg-0. "
-        "Use --t2 (6.68:1) for labels and captions.")
-
-
-@pytest.mark.parametrize("rel,src", _sources(), ids=[r for r, _ in _sources()])
-def test_no_text_below_twelve_pixels(rel: str, src: str):
-    """The root font-size here is 13px, and the scale's floor is 11px — but 11px is for
-    dense tabular mono, not prose. Captions that explain a number sit at 12."""
-    hits = re.findall(r"fontSize:\s*(?:11(?:\.\d+)?|10(?:\.\d+)?|[0-9])\b", src)
-    assert not hits, (
-        f"{rel} sets {len(hits)} font size(s) below 12px. Use the scale "
-        "(`aug-fs-xs` / `aug-fs-sm`) or 12.")
-
-
-@pytest.mark.parametrize("rel,src", _sources(), ids=[r for r, _ in _sources()])
-def test_semantic_colour_uses_the_text_grade_step(rel: str, src: str):
-    """`--red3`/`--vio3` are 3.34:1 and 2.63:1 as TEXT and both fail AA. The `4` step of
-    each ramp is the text-grade one (`--red4` 4.85:1, `--vio4` 4.57:1); the `3` step is
-    the base for fills and borders, where contrast is not a reading requirement."""
-    hits = re.findall(r'color:\s*"var\(--(?:red|vio|grn|blue|amb|cyn)3\)"', src)
-    assert not hits, (
-        f"{rel} uses a ramp's `3` step as a text colour ({len(hits)}×). "
-        "Use the `4` step for text; `3` is for fills and borders.")
+    assert not missing, f"the Agent Ops guard is scanning files that no longer exist: {missing}"
 
 
 def test_the_shared_sparkline_draws_in_tokens_not_hexes():
     """`Sparkline` is the one trend primitive the whole platform draws through, and it
     hardcoded #818cf8 / #34d399 / #f87171 — so it was also the only one that did not flip
-    in light mode. A theme-aware surface with a theme-blind chart in it is not one."""
+    in light mode. A theme-aware surface with a theme-blind chart in it is not one. This
+    is orthogonal to any re-skin: whatever the palette becomes, a literal hex ignores it.
+    """
     src = (WEB / "components/brief/Sparkline.tsx").read_text()
     hexes = re.findall(r"#[0-9a-fA-F]{6}", src)
     assert not hexes, f"Sparkline still hardcodes {hexes} — use var(--chart-*)/var(--grn4)."
