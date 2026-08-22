@@ -1,0 +1,114 @@
+table: web_sessions
+columns:
+  added_to_cart:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  channel:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  converted:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  country:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  customer_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  device:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  landing_page_type:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  n_page_views:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  order_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  platform:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  reached_checkout:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  session_duration_sec:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  session_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  session_start:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

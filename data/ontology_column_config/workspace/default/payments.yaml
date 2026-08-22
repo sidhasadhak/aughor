@@ -1,0 +1,74 @@
+table: payments
+columns:
+  amount_eur:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  fraud_flag:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  fraud_score:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  installments:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  order_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  payment_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  payment_method:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  psp:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  status:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

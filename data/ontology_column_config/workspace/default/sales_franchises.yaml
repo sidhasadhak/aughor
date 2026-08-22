@@ -1,0 +1,82 @@
+table: sales_franchises
+columns:
+  city:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  country:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  district:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  franchiseID:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  latitude:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  longitude:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  name:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  size:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  supplierID:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  zipcode:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

@@ -1,0 +1,122 @@
+table: financial_summary
+columns:
+  active_customers:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  adj_ebitda_eur_m:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  adj_ebitda_margin_pct:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  aov_eur:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  fiscal_year:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  fiscal_year_end:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  gmv_eur_m:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  gross_margin_pct:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  gross_profit_eur_m:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  net_sales_eur_m:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  orders_full:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  owner_during_fy:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  platform:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  reporting_basis:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  segment:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

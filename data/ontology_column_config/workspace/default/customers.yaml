@@ -1,0 +1,58 @@
+table: customers
+columns:
+  country:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  customer_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  is_top_customer:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  platform:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  region:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  signup_fy:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  tier:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

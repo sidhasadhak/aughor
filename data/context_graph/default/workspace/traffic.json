@@ -1,0 +1,3456 @@
+{
+  "connection_id": "workspace",
+  "edges": {
+    "finding:2930ada30e52--grounded_in-->table:AllDimesnsions2": {
+      "from_id": "finding:2930ada30e52",
+      "id": "finding:2930ada30e52--grounded_in-->table:AllDimesnsions2",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:AllDimesnsions2"
+    },
+    "finding:7dccd04780a1--grounded_in-->table:AllDimesnsions2": {
+      "from_id": "finding:7dccd04780a1",
+      "id": "finding:7dccd04780a1--grounded_in-->table:AllDimesnsions2",
+      "kind": "grounded_in",
+      "label": "grounded in",
+      "provenance": {
+        "measured": null,
+        "note": "finding SQL reads table",
+        "source": "evidence_ledger"
+      },
+      "to_id": "table:AllDimesnsions2"
+    }
+  },
+  "generated_at": "2026-08-19T16:53:11.021936+00:00",
+  "nodes": {
+    "domain:marketing": {
+      "data": {
+        "members": [
+          "table:AllDimesnsions2"
+        ]
+      },
+      "id": "domain:marketing",
+      "kind": "domain",
+      "label": "Marketing",
+      "provenance": {
+        "measured": null,
+        "note": "1 member tables",
+        "source": "ontology.domain"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "finding:010f869c001a": {
+      "data": {
+        "generated_at": "2026-08-15T20:57:06.128888+00:00",
+        "investigation_id": "e438fef4",
+        "sql": "SELECT \"aircraft_type\", \"booking_class\", COUNT(*) AS n_records, COUNT(*) AS ticket_count\nFROM tickets JOIN flights ON tickets.\"flight_id\" = flights.\"flight_id\"\nGROUP BY 1, 2\nORDER BY 1, 2",
+        "stale": true,
+        "stale_reason": "grounding vanished: flights, routes, tickets",
+        "superseded_ids": [
+          "03164ba0f386"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "flights",
+          "routes",
+          "tickets"
+        ]
+      },
+      "id": "finding:010f869c001a",
+      "kind": "finding",
+      "label": "Fare class and aircraft type are statistically dependent with high economy cabin\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Fare class and aircraft type are statistically dependent with high economy cabin volume concentration",
+      "tags": []
+    },
+    "finding:06d5a92187fa": {
+      "data": {
+        "generated_at": "2026-07-27T23:15:17.103528+00:00",
+        "investigation_id": "607ab9bf",
+        "sql": "WITH country_freight AS (\n  SELECT\n    o.ship_country AS country,\n    SUM(s.shipping_cost_eur) AS total_freight_cost_eur,\n    SUM(o.gmv_eur) AS total_order_value_eur,\n    ROUND(SUM(s.shipping_cost_eur) / NULLIF(SUM(o.gmv_eur), 0), 2) AS freight_to_order_ratio\n  FROM luxexperience.orders o\n  JOIN luxexperience.shipments s ON o.order_id = s.order_id\n  WHERE o.ship_country IS NOT NULL\n  GROUP BY o.ship_country\n)\nSELECT country, total_freight_cost_eur, total_order_value_eur, freight_to_order_ratio\nFROM country_freight\nORDER BY freight_to_order_ratio DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders, shipments",
+        "superseded_ids": [
+          "fd6b6beb9b7b"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders",
+          "shipments"
+        ]
+      },
+      "id": "finding:06d5a92187fa",
+      "kind": "finding",
+      "label": "Country freight cost efficiency ratio (shipping cost / GMV) ranked worst to best",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Country freight cost efficiency ratio (shipping cost / GMV) ranked worst to best",
+      "tags": []
+    },
+    "finding:083aca1d4210": {
+      "data": {
+        "generated_at": "2026-07-27T23:18:20.288430+00:00",
+        "investigation_id": "7c911e2c",
+        "sql": "SELECT category, ROUND(SUM(unit_price_eur * quantity), 2) AS total_sales_eur FROM luxexperience.order_items GROUP BY category ORDER BY total_sales_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "2f65ce203807",
+          "96fb0bf64775",
+          "b6ae81c8b2f2"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:083aca1d4210",
+      "kind": "finding",
+      "label": "Total sales by product category",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total sales by product category",
+      "tags": []
+    },
+    "finding:0942653ed0c9": {
+      "data": {
+        "generated_at": "2026-07-27T22:38:53.770044+00:00",
+        "investigation_id": "1f2c32ba",
+        "sql": "SELECT ROUND(SUM(EXTRACT(EPOCH FROM (scheduled_arrival - scheduled_departure))) / NULLIF(SUM(60.0), 0), 2) AS avg_flight_duration_minutes FROM main.flights WHERE scheduled_departure IS NOT NULL AND scheduled_arrival IS NOT NULL",
+        "stale": true,
+        "stale_reason": "grounding vanished: flights",
+        "superseded_ids": [
+          "f9e295ebec90",
+          "722863d7fd15"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "flights"
+        ]
+      },
+      "id": "finding:0942653ed0c9",
+      "kind": "finding",
+      "label": "Avg Flight Duration Minutes: 177.21%",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Avg Flight Duration Minutes: 177.21%",
+      "tags": []
+    },
+    "finding:096863452aca": {
+      "data": {
+        "generated_at": "2026-07-27T23:12:45.167015+00:00",
+        "investigation_id": "3832b658",
+        "sql": "SELECT platform, ROUND(AVG(delivery_days)::numeric, 2) AS avg_delivery_days FROM luxexperience.shipments GROUP BY platform ORDER BY avg_delivery_days DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: shipments",
+        "superseded_ids": [
+          "5e7cf03a309f",
+          "0755c07e224c"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "shipments"
+        ]
+      },
+      "id": "finding:096863452aca",
+      "kind": "finding",
+      "label": "Average shipping days by platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Average shipping days by platform",
+      "tags": []
+    },
+    "finding:09c16a18b9c0": {
+      "data": {
+        "generated_at": "2026-06-27T20:10:25.330827+00:00",
+        "investigation_id": "41d10514",
+        "sql": "",
+        "tables": []
+      },
+      "id": "finding:09c16a18b9c0",
+      "kind": "finding",
+      "label": "Repeat buyer rate rose from 0.37% to 2.92% but no dimensional breakdown data was\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Repeat buyer rate rose from 0.37% to 2.92% but no dimensional breakdown data was returned to identify where concentration lies.",
+      "tags": []
+    },
+    "finding:137b501dff71": {
+      "data": {
+        "generated_at": "2026-07-27T22:25:46.471547+00:00",
+        "investigation_id": "6442152f",
+        "sql": "SELECT o.platform, COUNT(DISTINCT o.order_id) AS total_orders, COUNT(DISTINCT r.order_id) AS orders_with_returns, ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_rate_pct, COUNT(r.return_id) AS total_return_items, ROUND(SUM(r.refund_eur), 2) AS total_refund_eur FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON o.order_id = r.order_id GROUP BY o.platform ORDER BY return_rate_pct DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders, returns",
+        "superseded_ids": [
+          "e6ba2c3d98bd",
+          "99ce3bd3ba4a",
+          "9c036b4a7571",
+          "ea6a528a5feb",
+          "ae8ee6aba98b",
+          "9ec36a9b3ce8",
+          "f8ef76b8d3e6",
+          "3e35e106b34a",
+          "e041454ba3d4",
+          "5c2911e17495",
+          "e7b3a8d746fd"
+        ],
+        "supersedes": 11,
+        "tables": [
+          "orders",
+          "returns"
+        ]
+      },
+      "id": "finding:137b501dff71",
+      "kind": "finding",
+      "label": "Order-return relationship by platform showing return rates and refund amounts",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Order-return relationship by platform showing return rates and refund amounts",
+      "tags": []
+    },
+    "finding:15fddcbec668": {
+      "data": {
+        "generated_at": "2026-07-29T19:24:36.356536+00:00",
+        "investigation_id": "8d1d0e97",
+        "sql": "SELECT MAX(CAST(REPLACE(discount_percentage, '%', '') AS FLOAT)) AS highest_discount_percentage FROM amazon.amazon WHERE discount_percentage IS NOT NULL",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:15fddcbec668",
+      "kind": "finding",
+      "label": "Highest discount percentage across all products",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Highest discount percentage across all products",
+      "tags": []
+    },
+    "finding:1795b162acd6": {
+      "data": {
+        "generated_at": "2026-07-27T22:45:15.243575+00:00",
+        "investigation_id": "e0f1ae8b",
+        "sql": "SELECT DATE_TRUNC('month', t.dateTime) AS month, SUM(t.totalPrice) AS sales FROM sales_transactions t JOIN sales_franchises f ON t.franchiseID = f.franchiseID WHERE LOWER(f.name) = 'mytheresa' GROUP BY DATE_TRUNC('month', t.dateTime) ORDER BY month",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_franchises, sales_transactions",
+        "superseded_ids": [
+          "2d855c99685c",
+          "f028e0050349"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "sales_franchises",
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:1795b162acd6",
+      "kind": "finding",
+      "label": "Monthly sales trend for Mytheresa",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly sales trend for Mytheresa",
+      "tags": []
+    },
+    "finding:18b0ee9850db": {
+      "data": {
+        "generated_at": "2026-08-12T12:20:30.502351+00:00",
+        "investigation_id": "9841243d",
+        "sql": "SELECT status, SUM(gmv_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(gmv_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(gmv_eur) / NULLIF(SUM(SUM(gmv_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.orders GROUP BY status ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:18b0ee9850db",
+      "kind": "finding",
+      "label": "\u26a0 This finding's scan touched ~112,439 rows but the metric's table (rearm_single\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "\u26a0 This finding's scan touched ~112,439 rows but the metric's table (rearm_single.orders) has only ~2 \u2014 a join multiplied the rows, so its magnitude is inflated\u2026",
+      "tags": []
+    },
+    "finding:1a451e87cda2": {
+      "data": {
+        "generated_at": "2026-07-27T22:42:09.691485+00:00",
+        "investigation_id": "9068fb4b",
+        "sql": "WITH monthly_inventory AS (\n    SELECT \n        d.calendar_year,\n        d.month,\n        ROUND(AVG(i.units_on_hand)::numeric, 2) AS avg_units_on_hand,\n        ROUND(AVG(i.units_reserved)::numeric, 2) AS avg_units_reserved,\n        ROUND(AVG(i.weeks_of_cover)::numeric, 2) AS avg_weeks_of_cover,\n        COUNT(DISTINCT i.product_id) AS product_count\n    FROM luxexperience.inventory_snapshots i\n    JOIN luxexperience.dim_date d\n        ON i.snapshot_date = d.date\n    GROUP BY d.calendar_year, d.month\n)\nSELECT \n    calendar_year,\n    month,\n    avg_units_on_hand,\n    avg_units_reserved,\n    avg_weeks_of_cover,\n    product_count\nFROM monthly_inventory\nORDER BY calendar_year, month;",
+        "stale": true,
+        "stale_reason": "grounding vanished: dim_date, inventory_snapshots",
+        "superseded_ids": [
+          "c5be187d3cae"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "dim_date",
+          "inventory_snapshots"
+        ]
+      },
+      "id": "finding:1a451e87cda2",
+      "kind": "finding",
+      "label": "Monthly average inventory levels from quarterly snapshots (COGS unavailable for \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly average inventory levels from quarterly snapshots (COGS unavailable for true turnover)",
+      "tags": []
+    },
+    "finding:1dd62243300e": {
+      "data": {
+        "generated_at": "2026-07-27T22:28:48.648399+00:00",
+        "investigation_id": "7ba1cad1",
+        "sql": "WITH first_orders AS (\n  SELECT \n    customer_id,\n    channel AS acquisition_channel,\n    ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date ASC) AS rn\n  FROM luxexperience.orders\n  WHERE status NOT IN ('cancelled', 'test', 'fraud')\n    AND channel IS NOT NULL\n),\nacquisition_channels AS (\n  SELECT customer_id, acquisition_channel\n  FROM first_orders\n  WHERE rn = 1\n),\ncustomer_order_counts AS (\n  SELECT \n    o.customer_id,\n    ac.acquisition_channel,\n    COUNT(DISTINCT o.order_id) AS order_count\n  FROM luxexperience.orders o\n  JOIN acquisition_channels ac ON o.customer_id = ac.customer_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY o.customer_id, ac.acquisition_channel\n)\nSELECT \n  acquisition_channel,\n  ROUND(COUNT(DISTINCT CASE WHEN order_count >= 2 THEN customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS repeat_rate_pct,\n  COUNT(DISTINCT customer_id) AS total_customers,\n  COUNT(DISTINCT CASE WHEN order_count >= 2 THEN customer_id END) AS repeat_customers\nFROM customer_order_counts\nGROUP BY acquisition_channel\nORDER BY repeat_rate_pct ASC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "93bd2e401635"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:1dd62243300e",
+      "kind": "finding",
+      "label": "Acquisition channels ranked by repeat purchase rate with customer counts",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Acquisition channels ranked by repeat purchase rate with customer counts",
+      "tags": []
+    },
+    "finding:221e7170abfc": {
+      "data": {
+        "generated_at": "2026-07-27T22:40:49.731602+00:00",
+        "investigation_id": "91043b4c",
+        "sql": "SELECT channel, SUM(attributed_gmv_eur) AS sum_attributed_gmv_eur FROM marketing_campaigns GROUP BY 1 ORDER BY 2 DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: marketing_campaigns",
+        "superseded_ids": [
+          "a32bdc1e6587",
+          "cf4427c1bb12",
+          "0a1c67b5409b",
+          "f4931369e681",
+          "221732343c96",
+          "b791a2295835",
+          "6084c0e0324d",
+          "fe38a42b5080",
+          "99e70820e47d",
+          "027ace8d214d",
+          "a23fc7c651d1",
+          "de9b4f7a4d6c",
+          "e9f2a3652a82"
+        ],
+        "supersedes": 13,
+        "tables": [
+          "marketing_campaigns"
+        ]
+      },
+      "id": "finding:221e7170abfc",
+      "kind": "finding",
+      "label": "Total attributed GMV by marketing channel",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total attributed GMV by marketing channel",
+      "tags": []
+    },
+    "finding:259e69349314": {
+      "data": {
+        "generated_at": "2026-07-27T22:51:58.218860+00:00",
+        "investigation_id": "fc708323",
+        "sql": "SELECT c.customer_id AS customer_id, ROUND(SUM(o.gmv_eur), 2) AS delivered_revenue_eur FROM luxexperience.orders o JOIN luxexperience.customers c ON o.customer_id = c.customer_id WHERE o.status = 'shipped' GROUP BY c.customer_id ORDER BY delivered_revenue_eur DESC LIMIT 10",
+        "stale": true,
+        "stale_reason": "grounding vanished: customers, orders",
+        "superseded_ids": [
+          "887d6451c1f7"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "customers",
+          "orders"
+        ]
+      },
+      "id": "finding:259e69349314",
+      "kind": "finding",
+      "label": "Top 10 customer countries by delivered GMV (EUR)",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top 10 customer countries by delivered GMV (EUR)",
+      "tags": []
+    },
+    "finding:27d2c5410e3d": {
+      "data": {
+        "generated_at": "2026-07-27T22:58:35.540337+00:00",
+        "investigation_id": "c82f4ca2",
+        "sql": "SELECT platform, SUM(gmv_eur) AS total_gmv_eur FROM luxexperience.orders GROUP BY platform ORDER BY total_gmv_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "5885a3b79efe",
+          "3d02c9e61ec5"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:27d2c5410e3d",
+      "kind": "finding",
+      "label": "Total GMV in EUR by platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total GMV in EUR by platform",
+      "tags": []
+    },
+    "finding:2930ada30e52": {
+      "data": {
+        "generated_at": "2026-08-19T15:21:51.607172+00:00",
+        "investigation_id": "cb37be54",
+        "sql": "SELECT \n    DATE_TRUNC('month', CALENDAR_DATE) AS period,\n    SUM(TRAFFIC) AS total_traffic\nFROM traffic.all_dimesnsions_2\nWHERE (CHANNEL_LVL_0 = 'Direkteingabe' OR CHANNEL_LVL_1 = 'Direkteingabe' OR CHANNEL_LVL_2 = 'Direkteingabe')\n  AND CALENDAR_DATE >= DATE '2025-06-01'\n  AND CALENDAR_DATE < DATE '2026-09-01'\nGROUP BY 1\nORDER BY 1 ASC",
+        "tables": [
+          "all_dimesnsions_2"
+        ]
+      },
+      "id": "finding:2930ada30e52",
+      "kind": "finding",
+      "label": "Investigation into July 2026 Traffic Peak in Direkteingabe Channel",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Investigation into July 2026 Traffic Peak in Direkteingabe Channel",
+      "tags": []
+    },
+    "finding:2a85d49adb60": {
+      "data": {
+        "contested": true,
+        "contested_variants": [
+          {
+            "generated_at": "2026-07-27T21:49:32.152876+00:00",
+            "id": "6376da15dd25",
+            "sql": "SELECT channel, ROUND(SUM(attributed_gmv_eur) / NULLIF(SUM(spend_eur), 0), 2) AS roas FROM luxexperience.marketing_campaigns GROUP BY channel ORDER BY roas DESC LIMIT 1",
+            "text": "Roas: 13.99"
+          }
+        ],
+        "generated_at": "2026-07-27T23:03:22.343938+00:00",
+        "investigation_id": "51beef1b",
+        "sql": "WITH channel_roas AS (\n    SELECT\n        channel,\n        SUM(attributed_gmv_eur) AS total_attributed_revenue_eur,\n        SUM(spend_eur) AS total_spend_eur,\n        ROUND(SUM(attributed_gmv_eur) / NULLIF(SUM(spend_eur), 0), 2) AS roas\n    FROM luxexperience.marketing_campaigns\n    WHERE channel IS NOT NULL\n    GROUP BY channel\n),\nranked AS (\n    SELECT\n        channel,\n        total_attributed_revenue_eur,\n        total_spend_eur,\n        roas,\n        RANK() OVER (ORDER BY roas DESC) AS rnk\n    FROM channel_roas\n)\nSELECT\n    channel,\n    total_attributed_revenue_eur,\n    total_spend_eur,\n    roas\nFROM ranked\nWHERE rnk = 1\nORDER BY roas DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: marketing_campaigns",
+        "tables": [
+          "marketing_campaigns"
+        ]
+      },
+      "id": "finding:2a85d49adb60",
+      "kind": "finding",
+      "label": "Total Attributed Revenue Eur: \u20ac2.80B",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total Attributed Revenue Eur: \u20ac2.80B",
+      "tags": []
+    },
+    "finding:2af6321a324d": {
+      "data": {
+        "generated_at": "2026-07-27T22:37:30.750489+00:00",
+        "investigation_id": "ecdf5dea",
+        "sql": "SELECT region, COUNT(*) AS count FROM luxexperience.customers GROUP BY 1 ORDER BY 2 DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: customers",
+        "superseded_ids": [
+          "112226f0d907",
+          "7224dbbb4013"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "customers"
+        ]
+      },
+      "id": "finding:2af6321a324d",
+      "kind": "finding",
+      "label": "Customer count by region",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Customer count by region",
+      "tags": []
+    },
+    "finding:2b4d3468ba27": {
+      "data": {
+        "generated_at": "2026-08-01T09:44:17.685551+00:00",
+        "investigation_id": "a6d32595",
+        "sql": "SELECT is_top_customer AS segment, SUM(gmv_eur) AS metric_total, COUNT(*) AS n, ROUND(SUM(gmv_eur) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(gmv_eur) / NULLIF(SUM(SUM(gmv_eur)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.orders GROUP BY 1 ORDER BY 1",
+        "stale": true,
+        "stale_reason": "grounding vanished: clienteling_interactions, marketing_attribution, orders",
+        "tables": [
+          "clienteling_interactions",
+          "marketing_attribution",
+          "orders"
+        ]
+      },
+      "id": "finding:2b4d3468ba27",
+      "kind": "finding",
+      "label": "Scale clienteling reach and test high-value top-customer activation to grow GMV.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Scale clienteling reach and test high-value top-customer activation to grow GMV.",
+      "tags": []
+    },
+    "finding:2d25c4824e7b": {
+      "data": {
+        "generated_at": "2026-07-27T23:02:36.367159+00:00",
+        "investigation_id": "7f3f14e1",
+        "sql": "SELECT COUNT(*) AS total_orders FROM luxexperience.orders",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "c4e8bd45f94c",
+          "c84acf784c4e",
+          "6a11daf13b63",
+          "256fa146191b",
+          "a001c6fc92f7",
+          "e5941809ea1c",
+          "c8708e9012c3",
+          "c1834394297b",
+          "6bee2d5dce2a",
+          "c265dbf612f1",
+          "5f8de67de36a",
+          "821d46d97a5a",
+          "5c50f9d5dc6c",
+          "370400a8801d"
+        ],
+        "supersedes": 14,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:2d25c4824e7b",
+      "kind": "finding",
+      "label": "Total orders count",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total orders count",
+      "tags": []
+    },
+    "finding:2e66f944615d": {
+      "data": {
+        "contested": true,
+        "contested_variants": [
+          {
+            "generated_at": "2026-07-27T09:57:53.268215+00:00",
+            "id": "d9186e254844",
+            "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Count: 30,949"
+          },
+          {
+            "generated_at": "2026-07-27T09:24:26.461443+00:00",
+            "id": "6208cf56de3b",
+            "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Count: 30,949"
+          },
+          {
+            "generated_at": "2026-07-27T07:17:29.022001+00:00",
+            "id": "27fc7deed7a4",
+            "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Count: 30,949"
+          },
+          {
+            "generated_at": "2026-07-27T06:57:29.831019+00:00",
+            "id": "626a1ee3b262",
+            "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Count: 30,949"
+          },
+          {
+            "generated_at": "2026-07-26T23:28:58.674197+00:00",
+            "id": "b2da6ffc81cd",
+            "sql": "SELECT COUNT(*) AS material_returns_count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Material Returns Count: 30,949"
+          },
+          {
+            "generated_at": "2026-07-25T08:23:34.660171+00:00",
+            "id": "8375ed74f792",
+            "sql": "SELECT COUNT(*) AS material_return_count FROM luxexperience.returns WHERE refund_eur >= 100",
+            "text": "Material Return Count: 30,949"
+          }
+        ],
+        "generated_at": "2026-07-27T22:36:45.329871+00:00",
+        "investigation_id": "2f63054f",
+        "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns",
+        "stale": true,
+        "stale_reason": "grounding vanished: returns",
+        "superseded_ids": [
+          "e221369378b8",
+          "8099d7d1291f",
+          "aee81b7c9d88",
+          "78ec8033f9ea",
+          "b16d1c7f31ab"
+        ],
+        "supersedes": 5,
+        "tables": [
+          "returns"
+        ]
+      },
+      "id": "finding:2e66f944615d",
+      "kind": "finding",
+      "label": "Count: 50,048",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Count: 50,048",
+      "tags": []
+    },
+    "finding:30f7a7ab2136": {
+      "data": {
+        "generated_at": "2026-08-17T08:46:45.725614+00:00",
+        "investigation_id": "fce12fa9",
+        "sql": "SELECT \"Customer City\" AS customer_city,\n       AVG(TRY_CAST(\"Days for shipping (real)\" - \"Days for shipment (scheduled)\" AS DOUBLE)) AS mean_value,\n       STDDEV_SAMP(TRY_CAST(\"Days for shipping (real)\" - \"Days for shipment (scheduled)\" AS DOUBLE)) AS sd_value,\n       COUNT(*) AS n_records\nFROM data_co.data_co_supplychain\nWHERE TRY_CAST(\"Days for shipping (real)\" - \"Days for shipment (scheduled)\" AS DOUBLE) IS NOT NULL AND \"Customer City\" IS NOT NULL\nGROUP BY 1\nORDER BY n_records DESC\nLIMIT 1000",
+        "stale": true,
+        "stale_reason": "grounding vanished: data_co_supplychain",
+        "superseded_ids": [
+          "6e851eab325f",
+          "9371de562ec2",
+          "66f39e6971cb",
+          "d409d6f34a31",
+          "f4f4e3e9ea1b",
+          "f62e6523bdd8",
+          "1bacad6725db",
+          "81d81b3d7985"
+        ],
+        "supersedes": 8,
+        "tables": [
+          "data_co_supplychain"
+        ]
+      },
+      "id": "finding:30f7a7ab2136",
+      "kind": "finding",
+      "label": "Shipping delays are not meaningfully correlated with customer location across ge\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Shipping delays are not meaningfully correlated with customer location across geographic dimensions",
+      "tags": []
+    },
+    "finding:321c1ac80f69": {
+      "data": {
+        "generated_at": "2026-08-15T11:28:53.700956+00:00",
+        "investigation_id": "0164d12c",
+        "sql": "SELECT \n    c.is_business_traveller AS segment, \n    SUM(t.fare_chf + t.taxes_chf) AS metric_total, \n    COUNT(*) AS n,\n    ROUND(SUM(t.fare_chf + t.taxes_chf) / NULLIF(COUNT(*), 0), 2) AS avg_per_record\nFROM tickets t\nJOIN customers c ON t.customer_id = c.customer_id\nGROUP BY 1 \nORDER BY metric_total DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: bookings, customers, loyalty_members, loyalty_transactions, media_customer_reviews, sales_customers, tickets",
+        "tables": [
+          "bookings",
+          "customers",
+          "loyalty_members",
+          "loyalty_transactions",
+          "media_customer_reviews",
+          "sales_customers",
+          "tickets"
+        ]
+      },
+      "id": "finding:321c1ac80f69",
+      "kind": "finding",
+      "label": "Cross-domain customer activity is currently uncaptured, with spend concentrated \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cross-domain customer activity is currently uncaptured, with spend concentrated in business and economy segments.",
+      "tags": []
+    },
+    "finding:385e94ca6421": {
+      "data": {
+        "generated_at": "2026-07-27T22:46:00.258330+00:00",
+        "investigation_id": "83e3adf3",
+        "sql": "SELECT (SELECT COUNT(DISTINCT brand) FROM luxexperience.order_items) AS brand_count, (SELECT SUM(gmv_eur) FROM luxexperience.orders) AS total_order_value_eur",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, orders",
+        "tables": [
+          "order_items",
+          "orders"
+        ]
+      },
+      "id": "finding:385e94ca6421",
+      "kind": "finding",
+      "label": "Distinct brands in catalog and total GMV across all orders",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Distinct brands in catalog and total GMV across all orders",
+      "tags": []
+    },
+    "finding:392a4318598f": {
+      "data": {
+        "generated_at": "2026-07-27T23:09:03.685022+00:00",
+        "investigation_id": "1d253a48",
+        "sql": "SELECT 'No review score column exists in schema' AS limitation, 'Cannot join orders to reviews (no common key)' AS join_issue",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "350b5c99edb8"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:392a4318598f",
+      "kind": "finding",
+      "label": "Schema lacks review scores and join path to orders",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Schema lacks review scores and join path to orders",
+      "tags": []
+    },
+    "finding:437ea601203c": {
+      "data": {
+        "generated_at": "2026-08-09T23:18:31.757054+00:00",
+        "investigation_id": "65bccc07",
+        "sql": "WITH base AS (\n  SELECT\n    oi.brand,\n    o.order_date,\n    oi.unit_price_eur * oi.quantity AS line_revenue_eur\n  FROM luxexperience.order_items oi\n  JOIN luxexperience.orders o ON o.order_id = oi.order_id\n  WHERE oi.returned = FALSE\n)\nSELECT\n  brand,\n  SUM(CASE WHEN order_date >= DATE '2024-06-29' AND order_date < DATE '2025-06-30' THEN line_revenue_eur ELSE 0 END) AS obs_revenue_eur,\n  SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END) AS comp_revenue_eur,\n  SUM(CASE WHEN order_date >= DATE '2024-06-29' AND order_date < DATE '2025-06-30' THEN line_revenue_eur ELSE 0 END)\n    - SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END) AS abs_change_eur,\n  CASE WHEN SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END) = 0 THEN NULL\n       ELSE (SUM(CASE WHEN order_date >= DATE '2024-06-29' AND order_date < DATE '2025-06-30' THEN line_revenue_eur ELSE 0 END)\n            - SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END))\n            / SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END) * 100.0\n  END AS pct_change,\n  (SUM(CASE WHEN order_date >= DATE '2024-06-29' AND order_date < DATE '2025-06-30' THEN line_revenue_eur ELSE 0 END)\n    - SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END))\n    / NULLIF(SUM(SUM(CASE WHEN order_date >= DATE '2024-06-29' AND order_date < DATE '2025-06-30' THEN line_revenue_eur ELSE 0 END)\n                - SUM(CASE WHEN order_date >= DATE '2023-06-29' AND order_date < DATE '2024-06-29' THEN line_revenue_eur ELSE 0 END)) OVER (), 0) * 100.0 AS pct_contribution_to_total_change\nFROM base\nGROUP BY brand\nORDER BY abs_change_eur ASC",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, orders",
+        "tables": [
+          "order_items",
+          "orders"
+        ]
+      },
+      "id": "finding:437ea601203c",
+      "kind": "finding",
+      "label": "Revenue decline driven by fewer orders across all brands, led by Womenswear",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Revenue decline driven by fewer orders across all brands, led by Womenswear",
+      "tags": []
+    },
+    "finding:44cd191e61c7": {
+      "data": {
+        "generated_at": "2026-07-18T06:14:04.265194+00:00",
+        "investigation_id": "62c47286",
+        "sql": "",
+        "superseded_ids": [
+          "ca486afe203c",
+          "07d1016cc0f7"
+        ],
+        "supersedes": 2,
+        "tables": []
+      },
+      "id": "finding:44cd191e61c7",
+      "kind": "finding",
+      "label": "Refund leakage cannot be localized \u2014 investigation stopped at intake with no dim\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Refund leakage cannot be localized \u2014 investigation stopped at intake with no dimensional data returned.",
+      "tags": []
+    },
+    "finding:4596768f2eef": {
+      "data": {
+        "generated_at": "2026-07-31T10:38:25.169388+00:00",
+        "investigation_id": "aee6585e",
+        "sql": "SELECT category, COUNT(*) AS metric_total, COUNT(*) AS n, ROUND(COUNT(*) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.returns GROUP BY category ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, platforms, returns",
+        "tables": [
+          "order_items",
+          "platforms",
+          "returns"
+        ]
+      },
+      "id": "finding:4596768f2eef",
+      "kind": "finding",
+      "label": "The returns table contains 49,331 records, with womenswear representing the larg\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "The returns table contains 49,331 records, with womenswear representing the largest volume.",
+      "tags": []
+    },
+    "finding:46a8416ee307": {
+      "data": {
+        "generated_at": "2026-07-31T23:16:03.521143+00:00",
+        "investigation_id": "a42117fe",
+        "sql": "SELECT order_items.category AS category, SUM(CASE WHEN order_items.returned THEN order_items.unit_price_eur * order_items.quantity ELSE 0 END) * 100.0 / NULLIF(SUM(order_items.unit_price_eur * order_items.quantity), 0) AS metric_total, COUNT(*) AS n, SUM(CASE WHEN order_items.returned THEN order_items.unit_price_eur * order_items.quantity ELSE 0 END) AS numerator_total, SUM(order_items.unit_price_eur * order_items.quantity) AS denominator_total FROM luxexperience.order_items GROUP BY order_items.category ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, payments, platforms",
+        "tables": [
+          "order_items",
+          "payments",
+          "platforms"
+        ]
+      },
+      "id": "finding:46a8416ee307",
+      "kind": "finding",
+      "label": "Realized return leakage is highest in womenswear at 35.77% and lowest in jewelry\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Realized return leakage is highest in womenswear at 35.77% and lowest in jewelry_watches at 12.77%; the wide spread across categories and platforms (Mytheresa\u2026",
+      "tags": []
+    },
+    "finding:4b867c43bab9": {
+      "data": {
+        "contested": true,
+        "contested_variants": [
+          {
+            "generated_at": "2026-07-18T06:18:12.915689+00:00",
+            "id": "e83ff063599d",
+            "sql": "WITH capacity AS (\n    SELECT haul, SUM(total_seats) AS total_capacity\n    FROM flights\n    WHERE status = 'scheduled'\n    GROUP BY haul\n),\nsold AS (\n    SELECT f.haul, COUNT(*) AS tickets_sold\n    FROM tickets t\n    JOIN flights f ON t.flight_id = f.flight_id\n    WHERE f.status = 'scheduled'\n      AND t.segment_status = 'flown'\n    GROUP BY f.haul\n)\nSELECT c.haul AS group_name,\n       100.0 * s.tickets_sold / NULLIF(c.total_capacity, 0) AS metric_total,\n       c.total_capacity AS n\nFROM capacity c\nJOIN sold s ON c.haul = s.haul\nORDER BY metric_total ASC",
+            "text": "Refund leakage at 2.8% overall concentrates in Economy fares; First cabin and corporate channel leak fastest"
+          },
+          {
+            "generated_at": "2026-07-18T05:11:09.431011+00:00",
+            "id": "29f752f7ec48",
+            "sql": "WITH flight_capacity AS (\n    SELECT flight_id, haul, total_seats\n    FROM flights\n    WHERE flights.status = 'scheduled'\n),\nticket_units AS (\n    SELECT flight_id, COUNT(*) AS units_sold\n    FROM tickets\n    WHERE segment_status = 'flown'\n    GROUP BY flight_id\n)\nSELECT\n    fc.haul AS group_name,\n    100.0 * SUM(COALESCE(tu.units_sold, 0)) / NULLIF(SUM(fc.total_seats), 0) AS metric_total,\n    SUM(fc.total_seats) AS n\nFROM flight_capacity fc\nLEFT JOIN ticket_units tu ON fc.flight_id = tu.flight_id\nGROUP BY fc.haul\nORDER BY metric_total ASC",
+            "text": "Utilization scan reveals the weakest capacity fill at the route level, with GVA-DEL at 65.2% \u2014 roughly 12 percentage points below the best-performing segment\u2026"
+          },
+          {
+            "generated_at": "2026-07-17T21:35:21.432332+00:00",
+            "id": "90b71e798593",
+            "sql": "WITH capacity AS (\n  SELECT haul, SUM(total_seats) AS total_capacity\n  FROM flights\n  WHERE status = 'scheduled'\n  GROUP BY haul\n),\nsold AS (\n  SELECT f.haul, COUNT(*) AS tickets_sold\n  FROM tickets t\n  JOIN flights f ON t.flight_id = f.flight_id\n  WHERE t.segment_status = 'flown'\n    AND f.status = 'scheduled'\n  GROUP BY f.haul\n)\nSELECT\n  c.haul AS group_name,\n  100.0 * COALESCE(s.tickets_sold, 0) / NULLIF(c.total_capacity, 0) AS metric_total,\n  c.total_capacity AS n\nFROM capacity c\nLEFT JOIN sold s ON c.haul = s.haul\nORDER BY metric_total ASC",
+            "text": "Long-haul flights lag short-haul by 2.77 percentage points in capacity utilization (74.46% vs 77.23%)."
+          },
+          {
+            "generated_at": "2026-07-17T18:27:58.907926+00:00",
+            "id": "2ae5aa2d65a7",
+            "sql": "WITH booking_refunds AS (\n    SELECT booking_id, SUM(refund_chf) AS refund_chf\n    FROM refunds\n    GROUP BY booking_id\n)\nSELECT\n    bookings.channel AS channel,\n    COALESCE(SUM(booking_refunds.refund_chf), 0) / NULLIF(SUM(bookings.total_fare_chf), 0) * 100 AS metric_total,\n    COUNT(*) AS n,\n    COALESCE(SUM(booking_refunds.refund_chf), 0) AS numerator_total,\n    SUM(bookings.total_fare_chf) AS denominator_total\nFROM bookings\nLEFT JOIN booking_refunds ON bookings.booking_id = booking_refunds.booking_id\nGROUP BY bookings.channel\nORDER BY metric_total ASC\nLIMIT 15",
+            "text": "Premium cabins and corporate channel drive refund leakage, with first class at 3.56% vs economy's 2.22%."
+          },
+          {
+            "generated_at": "2026-07-17T16:02:48.733946+00:00",
+            "id": "2a6b090bcfae",
+            "sql": "WITH refunds AS (\n    SELECT booking_id, SUM(COALESCE(refund_chf, 0)) AS refund_chf\n    FROM refunds\n    GROUP BY booking_id\n)\nSELECT\n    bookings.channel AS channel,\n    SUM(COALESCE(refunds.refund_chf, 0)) / NULLIF(SUM(bookings.total_fare_chf), 0) * 100 AS metric_total,\n    COUNT(*) AS n,\n    SUM(COALESCE(refunds.refund_chf, 0)) AS numerator_total,\n    SUM(bookings.total_fare_chf) AS denominator_total\nFROM bookings\nLEFT JOIN refunds ON bookings.booking_id = refunds.booking_id\nGROUP BY bookings.channel\nORDER BY metric_total ASC\nLIMIT 15",
+            "text": "Refund leakage rate is highest in first class at 3.56% and corporate channel at 3.41%, while economy and app bookings sit lowest at ~2.2\u20132.6% \u2014 the cabin\u2026"
+          },
+          {
+            "generated_at": "2026-07-17T15:55:51.052774+00:00",
+            "id": "a2a11b9ae03e",
+            "sql": "SELECT b.channel, SUM(r.refund_chf) / NULLIF(SUM(b.total_fare_chf), 0) * 100 AS metric_total, COUNT(*) AS n, SUM(r.refund_chf) AS numerator_total, SUM(b.total_fare_chf) AS denominator_total FROM bookings b LEFT JOIN (SELECT booking_id, SUM(refund_chf) AS refund_chf FROM refunds GROUP BY booking_id) r ON b.booking_id = r.booking_id GROUP BY b.channel ORDER BY metric_total ASC LIMIT 15",
+            "text": "Refund leakage is highest in first class at 3.56% and the WEEKEND15 promo at 3.85%, while economy and STUDENT10 bookings are the tightest at ~2.2% \u2014 the\u2026"
+          }
+        ],
+        "generated_at": "2026-07-30T06:18:44.797758+00:00",
+        "investigation_id": "a29fd70a",
+        "sql": "WITH flown_tickets AS (\n  SELECT f.flight_id, f.haul, COUNT(DISTINCT t.ticket_id) AS flown_units\n  FROM tickets t\n  JOIN flights f ON t.flight_id = f.flight_id\n  WHERE t.segment_status = 'flown'\n    AND f.status = 'scheduled'\n  GROUP BY f.flight_id, f.haul\n),\nflight_capacity AS (\n  SELECT flight_id, haul, total_seats\n  FROM flights\n  WHERE status = 'scheduled'\n),\nhaul_agg AS (\n  SELECT \n    fc.haul,\n    COALESCE(SUM(ft.flown_units), 0) AS total_flown,\n    SUM(fc.total_seats) AS total_capacity\n  FROM flight_capacity fc\n  LEFT JOIN flown_tickets ft ON fc.flight_id = ft.flight_id\n  GROUP BY fc.haul\n)\nSELECT \n  haul AS \"group\",\n  100.0 * total_flown / NULLIF(total_capacity, 0) AS metric_total,\n  total_capacity AS n\nFROM haul_agg\nORDER BY metric_total ASC",
+        "stale": true,
+        "stale_reason": "grounding vanished: bookings, flights, refunds, tickets",
+        "superseded_ids": [
+          "ee2f141323c5",
+          "aa63291aaf9e",
+          "3ecfd720dd05",
+          "4d7296201807",
+          "403ac8c237ea",
+          "260aa245499a",
+          "2141a64fecfd"
+        ],
+        "supersedes": 7,
+        "tables": [
+          "bookings",
+          "flights",
+          "refunds",
+          "tickets"
+        ]
+      },
+      "id": "finding:4b867c43bab9",
+      "kind": "finding",
+      "label": "Refund leakage is concentrated in premium cabins and corporate channels, peaking\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Refund leakage is concentrated in premium cabins and corporate channels, peaking at 3.56%.",
+      "tags": []
+    },
+    "finding:4c3883d947dc": {
+      "data": {
+        "generated_at": "2026-08-09T22:50:48.641297+00:00",
+        "investigation_id": "0087cc8f",
+        "sql": "SELECT status, COUNT(*) AS metric_total, COUNT(*) AS n, ROUND(COUNT(*) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0), 1) AS pct_of_total FROM luxexperience.orders GROUP BY status ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:4c3883d947dc",
+      "kind": "finding",
+      "label": "Total order volume is 112,439 across all dimensions",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total order volume is 112,439 across all dimensions",
+      "tags": []
+    },
+    "finding:4f92fcf222cb": {
+      "data": {
+        "generated_at": "2026-07-27T22:56:22.096848+00:00",
+        "investigation_id": "9ff12bbd",
+        "sql": "SELECT oi.category, ROUND(SUM(CASE WHEN oi.returned THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items oi WHERE oi.category IS NOT NULL GROUP BY oi.category ORDER BY return_rate_pct DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "cc2095dfb497",
+          "155ce8bff6be"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:4f92fcf222cb",
+      "kind": "finding",
+      "label": "Item return rate by product category",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Item return rate by product category",
+      "tags": []
+    },
+    "finding:524c0886a619": {
+      "data": {
+        "generated_at": "2026-07-29T17:14:46.782825+00:00",
+        "investigation_id": "71e0da7e",
+        "sql": "",
+        "tables": []
+      },
+      "id": "finding:524c0886a619",
+      "kind": "finding",
+      "label": "Investigation into customer churn cohorts failed due to data extraction errors.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Investigation into customer churn cohorts failed due to data extraction errors.",
+      "tags": []
+    },
+    "finding:56c646f5bd19": {
+      "data": {
+        "generated_at": "2026-07-29T18:35:42.374357+00:00",
+        "investigation_id": "af18997d",
+        "sql": "SELECT COUNT(*) AS count FROM amazon.amazon",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:56c646f5bd19",
+      "kind": "finding",
+      "label": "Count: 1,465",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Count: 1,465",
+      "tags": []
+    },
+    "finding:5b0214f24fa8": {
+      "data": {
+        "generated_at": "2026-07-27T22:52:29.864455+00:00",
+        "investigation_id": "62939908",
+        "sql": "SELECT segment, platform, SUM(gmv_eur_m) AS total_gmv_eur_m FROM luxexperience.financial_summary WHERE fiscal_year = (SELECT MAX(fiscal_year) FROM luxexperience.financial_summary) GROUP BY segment, platform ORDER BY segment, total_gmv_eur_m DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: financial_summary",
+        "superseded_ids": [
+          "fb29ad66dc7f"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "financial_summary"
+        ]
+      },
+      "id": "finding:5b0214f24fa8",
+      "kind": "finding",
+      "label": "GMV by segment and platform for latest fiscal year",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "GMV by segment and platform for latest fiscal year",
+      "tags": []
+    },
+    "finding:5d20a942625e": {
+      "data": {
+        "generated_at": "2026-07-12T19:00:15.547017+00:00",
+        "investigation_id": "9ace4485",
+        "sql": "SELECT 'No inventory_snapshots table available in this canvas' AS message, NULL AS warehouse, NULL AS markdown_snapshot_count",
+        "tables": []
+      },
+      "id": "finding:5d20a942625e",
+      "kind": "finding",
+      "label": "Cannot answer \u2014 inventory_snapshots table is not in the allowed schema for this \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cannot answer \u2014 inventory_snapshots table is not in the allowed schema for this canvas.",
+      "tags": []
+    },
+    "finding:5d9c33a67df4": {
+      "data": {
+        "generated_at": "2026-08-01T10:11:55.978851+00:00",
+        "investigation_id": "1c96d46a",
+        "sql": "SELECT amazon.amazon.category AS category, AVG(CAST(REPLACE(discount_percentage, '%', '') AS FLOAT)) AS metric_total, COUNT(*) AS n\nFROM amazon.amazon\nGROUP BY amazon.amazon.category\nORDER BY metric_total ASC\nLIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "superseded_ids": [
+          "3af93c5e5b5f",
+          "c21eb92e2a6c",
+          "d0492b943908"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:5d9c33a67df4",
+      "kind": "finding",
+      "label": "Discount leakage cannot be located; the lowest observed category rates are **0.0\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Discount leakage cannot be located; the lowest observed category rates are **0.0%**.",
+      "tags": []
+    },
+    "finding:61d14c0a33c7": {
+      "data": {
+        "generated_at": "2026-08-06T11:42:24.813048+00:00",
+        "investigation_id": "2a364991",
+        "sql": "SELECT \n    channel,\n    SUM(total_fare_chf) AS metric_total,\n    COUNT(*) AS n,\n    ROUND(SUM(total_fare_chf) / NULLIF(COUNT(*), 0), 2) AS avg_per_record,\n    ROUND(100.0 * SUM(total_fare_chf) / NULLIF(SUM(SUM(total_fare_chf)) OVER (), 0), 1) AS pct_of_total\nFROM bookings\nGROUP BY channel\nORDER BY metric_total ASC\nLIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: bookings, flights, routes, tickets",
+        "tables": [
+          "bookings",
+          "flights",
+          "routes",
+          "tickets"
+        ]
+      },
+      "id": "finding:61d14c0a33c7",
+      "kind": "finding",
+      "label": "Revenue is most concentrated in the web channel and intercontinental flights, wh\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Revenue is most concentrated in the web channel and intercontinental flights, while the lowest total contributions come from specific destinations, with DUS\u2026",
+      "tags": []
+    },
+    "finding:652005a4c2a1": {
+      "data": {
+        "generated_at": "2026-07-27T23:11:37.890469+00:00",
+        "investigation_id": "3fa0c00f",
+        "sql": "SELECT p.category, ROUND(SUM(oi.quantity * oi.unit_price_eur), 2) AS revenue_eur FROM luxexperience.order_items oi JOIN luxexperience.products p ON oi.product_id = p.product_id GROUP BY p.category ORDER BY revenue_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, products",
+        "superseded_ids": [
+          "3adac8ee16c6",
+          "9ab44eda1768",
+          "78efcd29094d",
+          "f85388d2fac9",
+          "245d0a2e6e57",
+          "ec876bc329bb",
+          "e0ad7e3cafd1",
+          "d6360c3d1d68",
+          "5002ae997d8e",
+          "2c1be55f91e4",
+          "a8d90fe8e862",
+          "013a1648214f"
+        ],
+        "supersedes": 12,
+        "tables": [
+          "order_items",
+          "products"
+        ]
+      },
+      "id": "finding:652005a4c2a1",
+      "kind": "finding",
+      "label": "Top product categories by total revenue",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top product categories by total revenue",
+      "tags": []
+    },
+    "finding:669320f26d2b": {
+      "data": {
+        "generated_at": "2026-07-28T05:19:43.152497+00:00",
+        "investigation_id": "d7620c66",
+        "sql": "",
+        "superseded_ids": [
+          "6133794bad99"
+        ],
+        "supersedes": 1,
+        "tables": []
+      },
+      "id": "finding:669320f26d2b",
+      "kind": "finding",
+      "label": "Investigation complete \u2014 see the phase findings below.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Investigation complete \u2014 see the phase findings below.",
+      "tags": []
+    },
+    "finding:6b49af5ec10d": {
+      "data": {
+        "generated_at": "2026-07-27T23:06:06.073384+00:00",
+        "investigation_id": "9d3371ad",
+        "sql": "SELECT collab_id, brand, platform, type, est_gmv_eur FROM luxexperience.brand_collaborations WHERE est_gmv_eur IS NOT NULL ORDER BY est_gmv_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: brand_collaborations",
+        "superseded_ids": [
+          "73b6cd9a5fff",
+          "d931a1481c9b",
+          "5a6c8d784402",
+          "8c924b12d19e",
+          "f671747af893",
+          "d06c1915ab2e",
+          "862091751e0d",
+          "ec3dbc3d14a7",
+          "0d5438faee8a",
+          "29f6cfe8a4fa",
+          "dc3c0d55d7fd",
+          "da3a1e180f0c",
+          "fa5088c399ee"
+        ],
+        "supersedes": 13,
+        "tables": [
+          "brand_collaborations"
+        ]
+      },
+      "id": "finding:6b49af5ec10d",
+      "kind": "finding",
+      "label": "Brand collaborations ranked by estimated GMV in EUR",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Brand collaborations ranked by estimated GMV in EUR",
+      "tags": []
+    },
+    "finding:6ba6fe8d05e5": {
+      "data": {
+        "generated_at": "2026-07-29T18:38:26.851975+00:00",
+        "investigation_id": "c944991d",
+        "sql": "SELECT COUNT(DISTINCT category) AS distinct_categories FROM amazon.amazon",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:6ba6fe8d05e5",
+      "kind": "finding",
+      "label": "Count of distinct product categories in the dataset",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Count of distinct product categories in the dataset",
+      "tags": []
+    },
+    "finding:6bbdc302ef34": {
+      "data": {
+        "generated_at": "2026-07-27T22:57:01.438110+00:00",
+        "investigation_id": "cf0339e3",
+        "sql": "WITH customer_orders AS (\n  SELECT customer_id, COUNT(DISTINCT order_id) AS order_count\n  FROM luxexperience.orders\n  WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n)\nSELECT COUNT(*) AS repeat_customers\nFROM customer_orders\nWHERE order_count >= 2;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "7dd7f5b185ed",
+          "0d27b7fad8a7"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:6bbdc302ef34",
+      "kind": "finding",
+      "label": "Total number of repeat customers across all time",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total number of repeat customers across all time",
+      "tags": []
+    },
+    "finding:6f490fb70b4a": {
+      "data": {
+        "generated_at": "2026-07-27T22:59:15.135827+00:00",
+        "investigation_id": "cc74e281",
+        "sql": "SELECT platform, SUM(net_sales_eur_m) AS total_net_sales_eur_m FROM luxexperience.financial_summary GROUP BY platform ORDER BY total_net_sales_eur_m DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: financial_summary",
+        "superseded_ids": [
+          "1b42023d21ad",
+          "a0f8090953f5"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "financial_summary"
+        ]
+      },
+      "id": "finding:6f490fb70b4a",
+      "kind": "finding",
+      "label": "Total net sales by platform across all fiscal years (in EUR millions)",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total net sales by platform across all fiscal years (in EUR millions)",
+      "tags": []
+    },
+    "finding:73e955f50e78": {
+      "data": {
+        "generated_at": "2026-07-27T23:00:04.077273+00:00",
+        "investigation_id": "947a5c81",
+        "sql": "SELECT oi.category, COUNT(*) AS order_item_count, ROUND(SUM(oi.unit_price_eur * oi.quantity), 2) AS revenue_eur, ROUND(SUM(CASE WHEN oi.returned THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items oi GROUP BY oi.category ORDER BY return_rate_pct DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "b1836a1be330",
+          "4d536740993d"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:73e955f50e78",
+      "kind": "finding",
+      "label": "Stockout data not available in schema; showing category return rates as closest \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Stockout data not available in schema; showing category return rates as closest proxy for fulfillment issues",
+      "tags": []
+    },
+    "finding:73ecb595cb00": {
+      "data": {
+        "generated_at": "2026-07-27T23:05:36.135452+00:00",
+        "investigation_id": "86fe3418",
+        "sql": "WITH product_contribution AS (\n    SELECT \n        oi.product_id,\n        p.brand,\n        p.category,\n        p.brand_tier,\n        oi.platform,\n        SUM(oi.unit_price_eur * oi.quantity) AS revenue_eur,\n        SUM(oi.cost_eur * oi.quantity) AS cost_eur,\n        SUM(oi.unit_price_eur * oi.quantity) - SUM(oi.cost_eur * oi.quantity) AS contribution_eur,\n        CASE \n            WHEN SUM(oi.unit_price_eur * oi.quantity) = 0 THEN NULL\n            ELSE ROUND((SUM(oi.unit_price_eur * oi.quantity) - SUM(oi.cost_eur * oi.quantity)) * 100.0 / NULLIF(SUM(oi.unit_price_eur * oi.quantity), 0), 2)\n        END AS contribution_margin_pct\n    FROM luxexperience.order_items oi\n    JOIN luxexperience.products p ON oi.product_id = p.product_id\n    WHERE oi.unit_price_eur IS NOT NULL\n      AND oi.cost_eur IS NOT NULL\n      AND oi.quantity IS NOT NULL\n    GROUP BY oi.product_id, p.brand, p.category, p.brand_tier, oi.platform\n),\nbenchmark AS (\n    SELECT \n        ROUND(AVG(contribution_margin_pct), 2) AS avg_contribution_margin_pct\n    FROM product_contribution\n    WHERE contribution_margin_pct IS NOT NULL\n),\nflagged AS (\n    SELECT \n        pc.*,\n        b.avg_contribution_margin_pct,\n        ROUND(pc.contribution_margin_pct - b.avg_contribution_margin_pct, 2) AS margin_gap_pct,\n        ROUND((pc.contribution_margin_pct - b.avg_contribution_margin_pct) * pc.revenue_eur / 100.0, 2) AS contribution_gap_eur\n    FROM product_contribution pc\n    CROSS JOIN benchmark b\n    WHERE pc.contribution_margin_pct IS NOT NULL\n      AND (pc.contribution_margin_pct < 0 OR pc.contribution_margin_pct < b.avg_contribution_margin_pct)\n)\nSELECT \n    'product' AS level,\n    product_id AS entity_id,\n    brand,\n    category,\n    brand_tier,\n    platform,\n    ROUND(revenue_eur, 2) AS revenue_eur,\n    ROUND(cost_eur, 2) AS cost_eur,\n    ROUND(contribution_eur, 2) AS contribution_eur,\n    contribution_margin_pct,\n    avg_contribution_margin_pct AS benchmark_margin_pct,\n    margin_gap_pct,\n    contribution_gap_eur\nFROM flagged\nUNION ALL\nSELECT \n    'brand' AS level,\n    brand AS entity_id,\n    brand,\n    NULL AS category,\n    NULL AS brand_tier,\n    platform,\n    ROUND(SUM(revenue_eur), 2) AS revenue_eur,\n    ROUND(SUM(cost_eur), 2) AS cost_eur,\n    ROUND(SUM(contribution_eur), 2) AS contribution_eur,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END, 2) AS contribution_margin_pct,\n    b.avg_contribution_margin_pct AS benchmark_margin_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE (SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct END, 2) AS margin_gap_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE ((SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct) * SUM(revenue_eur) / 100.0 END, 2) AS contribution_gap_eur\nFROM product_contribution pc\nCROSS JOIN benchmark b\nWHERE pc.contribution_margin_pct IS NOT NULL\nGROUP BY brand, platform, b.avg_contribution_margin_pct\nHAVING CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < 0\n    OR CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < b.avg_contribution_margin_pct\nUNION ALL\nSELECT \n    'category' AS level,\n    category AS entity_id,\n    NULL AS brand,\n    category,\n    NULL AS brand_tier,\n    platform,\n    ROUND(SUM(revenue_eur), 2) AS revenue_eur,\n    ROUND(SUM(cost_eur), 2) AS cost_eur,\n    ROUND(SUM(contribution_eur), 2) AS contribution_eur,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END, 2) AS contribution_margin_pct,\n    b.avg_contribution_margin_pct AS benchmark_margin_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE (SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct END, 2) AS margin_gap_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE ((SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct) * SUM(revenue_eur) / 100.0 END, 2) AS contribution_gap_eur\nFROM product_contribution pc\nCROSS JOIN benchmark b\nWHERE pc.contribution_margin_pct IS NOT NULL\nGROUP BY category, platform, b.avg_contribution_margin_pct\nHAVING CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < 0\n    OR CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < b.avg_contribution_margin_pct\nUNION ALL\nSELECT \n    'platform' AS level,\n    platform AS entity_id,\n    NULL AS brand,\n    NULL AS category,\n    NULL AS brand_tier,\n    platform,\n    ROUND(SUM(revenue_eur), 2) AS revenue_eur,\n    ROUND(SUM(cost_eur), 2) AS cost_eur,\n    ROUND(SUM(contribution_eur), 2) AS contribution_eur,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END, 2) AS contribution_margin_pct,\n    b.avg_contribution_margin_pct AS benchmark_margin_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE (SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct END, 2) AS margin_gap_pct,\n    ROUND(CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE ((SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0)) - b.avg_contribution_margin_pct) * SUM(revenue_eur) / 100.0 END, 2) AS contribution_gap_eur\nFROM product_contribution pc\nCROSS JOIN benchmark b\nWHERE pc.contribution_margin_pct IS NOT NULL\nGROUP BY platform, b.avg_contribution_margin_pct\nHAVING CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < 0\n    OR CASE WHEN SUM(revenue_eur) = 0 THEN NULL ELSE SUM(contribution_eur) * 100.0 / NULLIF(SUM(revenue_eur), 0) END < b.avg_contribution_margin_pct\nORDER BY level, contribution_gap_eur ASC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, products",
+        "superseded_ids": [
+          "5ea93c3fadd7",
+          "1b69b71398c3"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "order_items",
+          "products"
+        ]
+      },
+      "id": "finding:73ecb595cb00",
+      "kind": "finding",
+      "label": "Products, brands, categories, and platforms with negative or below-average contr\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Products, brands, categories, and platforms with negative or below-average contribution margin and quantified gap",
+      "tags": []
+    },
+    "finding:743084ccbd91": {
+      "data": {
+        "generated_at": "2026-07-31T23:15:25.546460+00:00",
+        "investigation_id": "a9b13565",
+        "sql": "WITH data AS (\n  SELECT\n    bookings.cabin,\n    SUM(CASE WHEN flights.flight_date >= DATE '2024-06-01' AND flights.flight_date < DATE '2024-07-01' THEN bookings.total_fare_chf ELSE 0 END) AS obs,\n    SUM(CASE WHEN flights.flight_date >= DATE '2024-05-01' AND flights.flight_date < DATE '2024-06-01' THEN bookings.total_fare_chf ELSE 0 END) AS comp\n  FROM bookings\n  JOIN tickets ON bookings.booking_id = tickets.booking_id\n  JOIN flights ON tickets.flight_id = flights.flight_id\n  GROUP BY 1\n)\nSELECT\n  cabin,\n  obs,\n  comp,\n  (obs - comp) AS absolute_change,\n  ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct\nFROM data\nORDER BY absolute_change ASC\nLIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: airports, bookings, flights, tickets",
+        "tables": [
+          "airports",
+          "bookings",
+          "flights",
+          "tickets"
+        ]
+      },
+      "id": "finding:743084ccbd91",
+      "kind": "finding",
+      "label": "Revenue is concentrated in Economy and Business cabins, representing 89.5% of to\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Revenue is concentrated in Economy and Business cabins, representing 89.5% of total intake.",
+      "tags": []
+    },
+    "finding:78f16c1bd152": {
+      "data": {
+        "generated_at": "2026-07-27T22:43:09.417006+00:00",
+        "investigation_id": "8e70a467",
+        "sql": "SELECT 'No review score column exists in schema' AS note, 'Reviews are text-only in main.media_customer_reviews.review and main.media_gold_reviews_chunked.chunked_text' AS detail, 'No join path between products and reviews' AS join_issue",
+        "stale": true,
+        "stale_reason": "grounding vanished: path",
+        "tables": [
+          "path"
+        ]
+      },
+      "id": "finding:78f16c1bd152",
+      "kind": "finding",
+      "label": "Cannot compute average review score by product category \u2014 no numeric rating colu\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cannot compute average review score by product category \u2014 no numeric rating column exists and no join between products and reviews",
+      "tags": []
+    },
+    "finding:7a51bba12923": {
+      "data": {
+        "generated_at": "2026-07-27T22:32:57.756073+00:00",
+        "investigation_id": "18aa8e22",
+        "sql": "WITH latest_inventory AS (\n    SELECT i.product_id, SUM(i.units_on_hand) AS total_on_hand\n    FROM luxexperience.inventory_snapshots i\n    JOIN (\n        SELECT product_id, MAX(snapshot_date) AS max_date\n        FROM luxexperience.inventory_snapshots\n        GROUP BY product_id\n    ) latest ON i.product_id = latest.product_id AND i.snapshot_date = latest.max_date\n    GROUP BY i.product_id\n),\ncategory_inventory AS (\n    SELECT p.category, COALESCE(SUM(li.total_on_hand), 0) AS total_on_hand\n    FROM luxexperience.products p\n    LEFT JOIN latest_inventory li ON p.product_id = li.product_id\n    GROUP BY p.category\n),\ncategory_sales AS (\n    SELECT p.category, COALESCE(SUM(oi.quantity), 0) AS total_sold\n    FROM luxexperience.products p\n    LEFT JOIN luxexperience.order_items oi ON p.product_id = oi.product_id\n    GROUP BY p.category\n)\nSELECT \n    ci.category,\n    ci.total_on_hand,\n    cs.total_sold,\n    ROUND(ci.total_on_hand * 1.0 / NULLIF(cs.total_sold, 0), 2) AS stock_to_sales_ratio\nFROM category_inventory ci\nJOIN category_sales cs ON ci.category = cs.category\nORDER BY stock_to_sales_ratio DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: inventory_snapshots, order_items, products",
+        "superseded_ids": [
+          "a33dbd32c1ac"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "inventory_snapshots",
+          "order_items",
+          "products"
+        ]
+      },
+      "id": "finding:7a51bba12923",
+      "kind": "finding",
+      "label": "Stock-to-sales ratio by product category (units on hand \u00f7 units sold)",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Stock-to-sales ratio by product category (units on hand \u00f7 units sold)",
+      "tags": []
+    },
+    "finding:7cb9fd4dd33c": {
+      "data": {
+        "generated_at": "2026-08-09T22:36:09.323311+00:00",
+        "investigation_id": "93afc418",
+        "sql": "WITH avg_discount AS (SELECT category, ROUND(AVG(CAST(REPLACE(discount_percentage, '%', '') AS FLOAT)), 2) AS avg_discount FROM amazon.amazon GROUP BY category) SELECT category, avg_discount, RANK() OVER (ORDER BY avg_discount DESC) AS discount_rank FROM avg_discount;",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:7cb9fd4dd33c",
+      "kind": "finding",
+      "label": "Average discount percentage by product category with ranking",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Average discount percentage by product category with ranking",
+      "tags": []
+    },
+    "finding:7dccd04780a1": {
+      "data": {
+        "generated_at": "2026-08-19T16:44:08.126068+00:00",
+        "investigation_id": "7774b792",
+        "sql": "SELECT \n    CHANNEL_LVL_1, \n    SUM(ORDERS) AS metric_total, \n    COUNT(*) AS n,\n    ROUND(SUM(ORDERS) * 1.0 / NULLIF(COUNT(*), 0), 2) AS avg_per_record,\n    ROUND(100.0 * SUM(ORDERS) / NULLIF(SUM(SUM(ORDERS)) OVER (), 0), 1) AS pct_of_total\nFROM traffic.all_dimesnsions_2\nWHERE CHANNEL_LVL_0 = 'Direkteingabe' AND BROWSER_NAME = 'Chrome'\nGROUP BY 1\nORDER BY metric_total ASC\nLIMIT 15",
+        "tables": [
+          "all_dimesnsions_2"
+        ]
+      },
+      "id": "finding:7dccd04780a1",
+      "kind": "finding",
+      "label": "Cross-Sectional Analysis of Direkteingabe Orders on Chrome Browser",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cross-Sectional Analysis of Direkteingabe Orders on Chrome Browser",
+      "tags": []
+    },
+    "finding:7e968c44ed2a": {
+      "data": {
+        "generated_at": "2026-07-31T13:30:40.922676+00:00",
+        "investigation_id": "bb3c9a6a",
+        "sql": "SELECT COUNT(*) AS count FROM luxexperience.returns",
+        "stale": true,
+        "stale_reason": "grounding vanished: returns",
+        "superseded_ids": [
+          "c7dfe25b8346",
+          "e5e7dd18eac2",
+          "57aed7a2de48",
+          "6d6e18c5f1af",
+          "6d63cf6bddc8",
+          "ebb86fbc3ed9",
+          "57c5a1b4c56c",
+          "ee8bbf4ed7fc",
+          "20b25e975fd3",
+          "d13ba2c345b3",
+          "ec0ecc509cb4",
+          "f06994a55f64",
+          "5c8a1aa827af",
+          "d0063663a74c",
+          "3141f6796b0c",
+          "15664032593e",
+          "3be3d68f5da2",
+          "c40821f4ecff",
+          "61cd1d6574f9",
+          "567b5d86b3f1",
+          "2cc132774a89",
+          "2e63c075a3e0",
+          "ec47cf244620",
+          "ff8cd54affb3",
+          "b92c50682eb4"
+        ],
+        "supersedes": 25,
+        "tables": [
+          "returns"
+        ]
+      },
+      "id": "finding:7e968c44ed2a",
+      "kind": "finding",
+      "label": "Returns table row count",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Returns table row count",
+      "tags": []
+    },
+    "finding:806a20bb63e6": {
+      "data": {
+        "generated_at": "2026-07-27T23:17:11.679468+00:00",
+        "investigation_id": "0e5af1af",
+        "sql": "SELECT DATE_TRUNC('month', order_date)::date AS month, platform, COUNT(*) AS order_count FROM luxexperience.orders WHERE order_date IS NOT NULL GROUP BY DATE_TRUNC('month', order_date), platform ORDER BY month, platform;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "f6eb47641a17",
+          "be32e32abade"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:806a20bb63e6",
+      "kind": "finding",
+      "label": "Monthly order counts by platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly order counts by platform",
+      "tags": []
+    },
+    "finding:8244b3550e01": {
+      "data": {
+        "generated_at": "2026-07-27T23:10:19.331652+00:00",
+        "investigation_id": "cadc3591",
+        "sql": "WITH category_metrics AS (\n    SELECT \n        oi.category,\n        SUM(oi.quantity * oi.unit_price_eur) AS revenue_eur,\n        COUNT(DISTINCT o.order_id) AS order_count,\n        SUM(oi.quantity) AS units_sold,\n        ROUND(SUM(oi.quantity * oi.unit_price_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS aov_eur,\n        ROUND(SUM(oi.quantity * oi.unit_price_eur) / NULLIF(SUM(oi.quantity), 0), 2) AS avg_unit_price_eur,\n        ROUND(COUNT(CASE WHEN oi.returned THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct,\n        ROUND(SUM(CASE WHEN oi.returned THEN oi.quantity * oi.unit_price_eur ELSE 0 END) * 100.0 / NULLIF(SUM(oi.quantity * oi.unit_price_eur), 0), 2) AS return_revenue_rate_pct\n    FROM luxexperience.order_items oi\n    JOIN luxexperience.orders o ON oi.order_id = o.order_id\n    WHERE o.status NOT IN ('cancelled', 'test', 'fraud', 'returned')\n      AND oi.returned = FALSE\n    GROUP BY oi.category\n)\nSELECT \n    category,\n    revenue_eur,\n    order_count,\n    units_sold,\n    aov_eur,\n    avg_unit_price_eur,\n    return_rate_pct,\n    return_revenue_rate_pct\nFROM category_metrics\nORDER BY revenue_eur ASC\nLIMIT 1",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, orders",
+        "superseded_ids": [
+          "8144be565aaf"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "order_items",
+          "orders"
+        ]
+      },
+      "id": "finding:8244b3550e01",
+      "kind": "finding",
+      "label": "Weakest revenue category identified with diagnostic metrics",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Weakest revenue category identified with diagnostic metrics",
+      "tags": []
+    },
+    "finding:836f637627e8": {
+      "data": {
+        "generated_at": "2026-07-27T22:53:44.741168+00:00",
+        "investigation_id": "33c2adba",
+        "sql": "WITH yearly_gmv AS (\n  SELECT platform, fiscal_year::int AS fy, SUM(gmv_eur) AS gmv\n  FROM luxexperience.orders\n  GROUP BY platform, fiscal_year\n),\nyoy AS (\n  SELECT\n    platform,\n    fy,\n    gmv,\n    LAG(gmv) OVER (PARTITION BY platform ORDER BY fy) AS prev_gmv\n  FROM yearly_gmv\n)\nSELECT\n  fy AS fiscal_year,\n  platform,\n  ROUND((gmv - prev_gmv) * 100.0 / NULLIF(prev_gmv, 0), 2) AS yoy_growth_pct\nFROM yoy\nWHERE prev_gmv IS NOT NULL\nORDER BY platform, fy;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:836f637627e8",
+      "kind": "finding",
+      "label": "Year-over-year GMV growth percentage by platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Year-over-year GMV growth percentage by platform",
+      "tags": []
+    },
+    "finding:888a03a3cf5f": {
+      "data": {
+        "generated_at": "2026-07-31T08:23:35.192652+00:00",
+        "investigation_id": "31c4769d",
+        "sql": "SELECT COUNT(*) AS brand_count FROM luxexperience.brands",
+        "stale": true,
+        "stale_reason": "grounding vanished: brands",
+        "tables": [
+          "brands"
+        ]
+      },
+      "id": "finding:888a03a3cf5f",
+      "kind": "finding",
+      "label": "Brand Count: 70",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Brand Count: 70",
+      "tags": []
+    },
+    "finding:8a7241e31ae1": {
+      "data": {
+        "generated_at": "2026-08-16T06:36:45.248535+00:00",
+        "investigation_id": "5679dada",
+        "sql": "SELECT condition, AVG(price) AS metric_total, COUNT(*) AS n FROM housing.house_prices GROUP BY condition ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: house_prices",
+        "tables": [
+          "house_prices"
+        ]
+      },
+      "id": "finding:8a7241e31ae1",
+      "kind": "finding",
+      "label": "Cross-Sectional Analysis of Housing Price Drivers and Regional Market Segmentati\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cross-Sectional Analysis of Housing Price Drivers and Regional Market Segmentation",
+      "tags": []
+    },
+    "finding:8fec12f75d43": {
+      "data": {
+        "generated_at": "2026-07-27T23:03:51.814356+00:00",
+        "investigation_id": "f3c4e552",
+        "sql": "SELECT COUNT(*) AS total_brands FROM luxexperience.brands",
+        "stale": true,
+        "stale_reason": "grounding vanished: brands",
+        "superseded_ids": [
+          "08fb183c57ad",
+          "c45f5f35e891"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "brands"
+        ]
+      },
+      "id": "finding:8fec12f75d43",
+      "kind": "finding",
+      "label": "Total Brands: 70",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total Brands: 70",
+      "tags": []
+    },
+    "finding:94b9522c10d6": {
+      "data": {
+        "generated_at": "2026-07-27T23:11:06.816468+00:00",
+        "investigation_id": "8ca9a05c",
+        "sql": "SELECT platform, COUNT(*) AS total_orders FROM luxexperience.orders GROUP BY platform ORDER BY total_orders DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "e8d12b6c1024",
+          "b59990397e2c"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:94b9522c10d6",
+      "kind": "finding",
+      "label": "Total orders by platform, ranked descending",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total orders by platform, ranked descending",
+      "tags": []
+    },
+    "finding:98b239188171": {
+      "data": {
+        "generated_at": "2026-07-27T22:40:24.999047+00:00",
+        "investigation_id": "592d8028",
+        "sql": "SELECT franchiseID, COUNT(*) AS review_count FROM main.media_customer_reviews GROUP BY franchiseID ORDER BY review_count DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: media_customer_reviews",
+        "tables": [
+          "media_customer_reviews"
+        ]
+      },
+      "id": "finding:98b239188171",
+      "kind": "finding",
+      "label": "Cannot analyze delivery time vs review scores \u2014 no delivery timestamps or numeri\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cannot analyze delivery time vs review scores \u2014 no delivery timestamps or numeric ratings exist in schema",
+      "tags": []
+    },
+    "finding:9a30f9da7cfe": {
+      "data": {
+        "generated_at": "2026-07-27T22:38:01.902250+00:00",
+        "investigation_id": "ceeeb44e",
+        "sql": "SELECT platform, gmv_eur_m, net_sales_eur_m, aov_eur, orders_full, active_customers, gross_margin_pct, gross_profit_eur_m, adj_ebitda_margin_pct, adj_ebitda_eur_m FROM luxexperience.financial_summary WHERE fiscal_year = (SELECT MAX(fiscal_year) FROM luxexperience.financial_summary) ORDER BY gmv_eur_m DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: financial_summary",
+        "superseded_ids": [
+          "c6a7282b686e"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "financial_summary"
+        ]
+      },
+      "id": "finding:9a30f9da7cfe",
+      "kind": "finding",
+      "label": "Key financial metrics by platform for FY2025",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Key financial metrics by platform for FY2025",
+      "tags": []
+    },
+    "finding:General__fixed__fix1": {
+      "data": {
+        "generated_at": "2026-08-10T23:12:03.564044+00:00",
+        "sql": "WITH category_engagement AS (\n    SELECT \n        category, \n        SUM(CAST(REPLACE(rating_count, ',', '') AS BIGINT)) AS total_rating_counts \n    FROM amazon.amazon \n    GROUP BY category\n), \ntotal_engagement AS (\n    SELECT \n        SUM(CAST(REPLACE(rating_count, ',', '') AS BIGINT)) AS grand_total_rating_counts \n    FROM amazon.amazon\n) \nSELECT \n    (ce.total_rating_counts * 100.0) / te.grand_total_rating_counts AS percentage_of_total_rating_counts \nFROM category_engagement ce \nCROSS JOIN total_engagement te \nWHERE ce.category = 'In-Ear Headphones'",
+        "tables": [
+          "amazon.amazon"
+        ]
+      },
+      "id": "finding:General__fixed__fix1",
+      "kind": "finding",
+      "label": "The query did not return a numeric value for the percentage of total rating coun\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from exploration",
+        "source": "exploration"
+      },
+      "summary": "The query did not return a numeric value for the percentage of total rating counts for In-Ear Headphones, indicating that the category may not have any associated rating counts in the dataset.",
+      "tags": []
+    },
+    "finding:a337dbd6bc81": {
+      "data": {
+        "generated_at": "2026-07-27T23:12:09.736338+00:00",
+        "investigation_id": "35b88056",
+        "sql": "SELECT status, COUNT(*) AS order_count FROM luxexperience.orders GROUP BY status ORDER BY order_count DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "6da513383c69"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:a337dbd6bc81",
+      "kind": "finding",
+      "label": "Order status distribution shows shipped and returned only",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Order status distribution shows shipped and returned only",
+      "tags": []
+    },
+    "finding:a4b2f8ab3879": {
+      "data": {
+        "generated_at": "2026-07-27T22:39:58.312738+00:00",
+        "investigation_id": "88fb35f2",
+        "sql": "SELECT DATE_TRUNC('month', t.dateTime) AS month, SUM(t.totalPrice) AS sales FROM main.sales_transactions t JOIN main.sales_franchises f ON t.franchiseID = f.franchiseID WHERE LOWER(f.name) = 'mytheresa' GROUP BY DATE_TRUNC('month', t.dateTime) ORDER BY month",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_franchises, sales_transactions",
+        "superseded_ids": [
+          "0ae3f56f8dab",
+          "e9403aaf76bb"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "sales_franchises",
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:a4b2f8ab3879",
+      "kind": "finding",
+      "label": "Monthly sales trend for Mytheresa",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly sales trend for Mytheresa",
+      "tags": []
+    },
+    "finding:a57aa0853352": {
+      "data": {
+        "generated_at": "2026-08-15T20:24:29.713272+00:00",
+        "investigation_id": "54e842ba",
+        "sql": "SELECT \n    CASE WHEN \"Lead time\" > (SELECT AVG(\"Lead time\") FROM scm.supply_chain_data) THEN 'High Lead Time' ELSE 'Low Lead Time' END AS segment, \n    SUM(Costs) AS metric_total, \n    COUNT(*) AS n,\n    ROUND(SUM(Costs) / NULLIF(COUNT(*), 0), 2) AS avg_per_record\nFROM scm.supply_chain_data\nGROUP BY 1\nORDER BY metric_total DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: supply_chain_data",
+        "tables": [
+          "supply_chain_data"
+        ]
+      },
+      "id": "finding:a57aa0853352",
+      "kind": "finding",
+      "label": "High Lead Time segments drive higher average costs per record across the supply \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "High Lead Time segments drive higher average costs per record across the supply chain",
+      "tags": []
+    },
+    "finding:a6cc70c6a110": {
+      "data": {
+        "generated_at": "2026-08-11T09:51:48.571282+00:00",
+        "investigation_id": "fc8b8302",
+        "sql": "WITH booking_primary_customer AS (\n  SELECT t.booking_id, t.customer_id\n  FROM tickets t\n  JOIN (\n    SELECT booking_id, MIN(ticket_id) AS first_ticket_id\n    FROM tickets\n    GROUP BY booking_id\n  ) ft ON t.booking_id = ft.booking_id AND t.ticket_id = ft.first_ticket_id\n)\nSELECT \n  c.is_business_traveller AS is_business_traveller,\n  SUM(b.total_fare_chf) AS metric_total,\n  COUNT(*) AS n,\n  ROUND(SUM(b.total_fare_chf) / NULLIF(COUNT(*), 0), 2) AS avg_per_record,\n  ROUND(100.0 * SUM(b.total_fare_chf) / NULLIF(SUM(SUM(b.total_fare_chf)) OVER (), 0), 1) AS pct_of_total\nFROM bookings b\nJOIN booking_primary_customer bpc ON b.booking_id = bpc.booking_id\nJOIN customers c ON bpc.customer_id = c.customer_id\nGROUP BY c.is_business_traveller\nORDER BY metric_total ASC\nLIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: bookings, customers, loyalty_members, tickets",
+        "tables": [
+          "bookings",
+          "customers",
+          "loyalty_members",
+          "tickets"
+        ]
+      },
+      "id": "finding:a6cc70c6a110",
+      "kind": "finding",
+      "label": "Performance variance is most pronounced in the is_business_traveller dimension, \u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Performance variance is most pronounced in the is_business_traveller dimension, where non-business travellers generate significantly lower total and average\u2026",
+      "tags": []
+    },
+    "finding:a9a4be6c3653": {
+      "data": {
+        "generated_at": "2026-07-27T22:49:13.833393+00:00",
+        "investigation_id": "c9235dfc",
+        "sql": "SELECT SUM(gmv_eur) AS total_gmv_eur FROM luxexperience.orders",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "092ef8eb90c2",
+          "2952bb1b6ae1",
+          "ab5e82831542"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:a9a4be6c3653",
+      "kind": "finding",
+      "label": "Total Gmv Eur: \u20ac45.44M",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total Gmv Eur: \u20ac45.44M",
+      "tags": []
+    },
+    "finding:af4327df18d6": {
+      "data": {
+        "generated_at": "2026-07-27T23:01:09.266662+00:00",
+        "investigation_id": "8e963ba4",
+        "sql": "SELECT platform, SUM(gmv_eur) AS total_gmv_eur FROM luxexperience.orders GROUP BY platform ORDER BY total_gmv_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "bf906d5a6ab9",
+          "6b01591c8050",
+          "561d789f7119",
+          "01f7479f4872",
+          "755f346b8c45",
+          "4113171fe07e",
+          "f1308d9bd6ea",
+          "8da051b157f6",
+          "f79715a3a0ca",
+          "2b237d83ea58",
+          "990751f7f1da",
+          "108f4d236965",
+          "fc5c087fa1c1",
+          "443850cdfc58",
+          "2887f7bfdddb",
+          "6f59848b9d31"
+        ],
+        "supersedes": 16,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:af4327df18d6",
+      "kind": "finding",
+      "label": "Total GMV in EUR by platform across all orders",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total GMV in EUR by platform across all orders",
+      "tags": []
+    },
+    "finding:b032bf79165d": {
+      "data": {
+        "generated_at": "2026-07-27T22:48:32.858352+00:00",
+        "investigation_id": "38885278",
+        "sql": "WITH order_base AS (\n  SELECT \n    oi.order_id,\n    oi.category,\n    oi.brand_tier,\n    oi.platform,\n    MAX(oi.returned)::int AS has_return\n  FROM luxexperience.order_items oi\n  GROUP BY oi.order_id, oi.category, oi.brand_tier, oi.platform\n),\nreturn_reasons AS (\n  SELECT \n    r.order_id,\n    r.category,\n    r.reason,\n    COUNT(DISTINCT r.return_id) AS return_count\n  FROM luxexperience.returns r\n  GROUP BY r.order_id, r.category, r.reason\n),\nbase_metrics AS (\n  SELECT\n    ob.category,\n    ob.brand_tier,\n    ob.platform,\n    COUNT(DISTINCT ob.order_id) AS total_orders,\n    SUM(ob.has_return) AS returned_orders,\n    ROUND(SUM(ob.has_return) * 100.0 / NULLIF(COUNT(DISTINCT ob.order_id), 0), 2) AS return_rate_pct\n  FROM order_base ob\n  GROUP BY ob.category, ob.brand_tier, ob.platform\n),\nreason_metrics AS (\n  SELECT\n    ob.category,\n    ob.brand_tier,\n    ob.platform,\n    rr.reason,\n    COUNT(rr.return_count) AS reason_return_count\n  FROM order_base ob\n  LEFT JOIN return_reasons rr ON ob.order_id = rr.order_id AND ob.category = rr.category\n  GROUP BY ob.category, ob.brand_tier, ob.platform, rr.reason\n)\nSELECT\n  bm.category,\n  bm.brand_tier,\n  bm.platform,\n  bm.total_orders,\n  bm.returned_orders,\n  bm.return_rate_pct,\n  rm.reason,\n  rm.reason_return_count\nFROM base_metrics bm\nLEFT JOIN reason_metrics rm\n  ON bm.category = rm.category\n  AND bm.brand_tier = rm.brand_tier\n  AND bm.platform = rm.platform\nORDER BY bm.return_rate_pct DESC, bm.total_orders DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, returns",
+        "superseded_ids": [
+          "1d0c754b07f2",
+          "2c193bef16eb",
+          "12c5f5a4db6c",
+          "e02ce8827902",
+          "b362c0a0e4d8",
+          "2d60b17d3c6d",
+          "bef0d369d7e6",
+          "584dc3aaafa4",
+          "48d5dbd2d2a2",
+          "0b62f38cbfaa",
+          "9f6bc237ef61",
+          "b65149b6ed52",
+          "3f966ad750ba"
+        ],
+        "supersedes": 13,
+        "tables": [
+          "order_items",
+          "returns"
+        ]
+      },
+      "id": "finding:b032bf79165d",
+      "kind": "finding",
+      "label": "Return rate by category, brand tier, platform, and reason to prioritize improvem\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Return rate by category, brand tier, platform, and reason to prioritize improvement actions",
+      "tags": []
+    },
+    "finding:b1dca77120cc": {
+      "data": {
+        "generated_at": "2026-08-01T09:12:55.578310+00:00",
+        "investigation_id": "794bdb8a",
+        "sql": "WITH ranked AS (SELECT product_name, CAST(REPLACE(rating_count, ',', '') AS INTEGER) AS review_count, RANK() OVER (ORDER BY CAST(REPLACE(rating_count, ',', '') AS INTEGER) DESC) AS rnk FROM amazon.amazon) SELECT product_name FROM ranked WHERE rnk = 1;",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:b1dca77120cc",
+      "kind": "finding",
+      "label": "Top selling product by review count",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top selling product by review count",
+      "tags": []
+    },
+    "finding:b1feb44bf211": {
+      "data": {
+        "generated_at": "2026-07-27T22:26:28.467894+00:00",
+        "investigation_id": "13ab3a6e",
+        "sql": "WITH europe_orders AS (\n  SELECT o.order_id, o.fiscal_year\n  FROM luxexperience.orders o\n  JOIN luxexperience.countries c ON o.ship_country = c.country\n  WHERE c.region = 'Europe'\n)\nSELECT \n  fiscal_year AS year,\n  COUNT(*) AS order_count\nFROM europe_orders\nGROUP BY fiscal_year\nORDER BY fiscal_year;",
+        "stale": true,
+        "stale_reason": "grounding vanished: countries, orders",
+        "tables": [
+          "countries",
+          "orders"
+        ]
+      },
+      "id": "finding:b1feb44bf211",
+      "kind": "finding",
+      "label": "Yearly order counts for Europe region (monthly breakdown unavailable per data gr\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Yearly order counts for Europe region (monthly breakdown unavailable per data grain).",
+      "tags": []
+    },
+    "finding:b478bff61750": {
+      "data": {
+        "generated_at": "2026-08-14T16:34:05.370417+00:00",
+        "investigation_id": "227e1b82",
+        "sql": "WITH product_revenue AS (\n    SELECT \n        oi.product_id,\n        SUM(oi.quantity * oi.unit_price_eur) AS revenue_eur\n    FROM luxexperience.order_items oi\n    GROUP BY oi.product_id\n),\nranked AS (\n    SELECT \n        pr.product_id,\n        p.brand,\n        p.category,\n        p.brand_tier,\n        pr.revenue_eur,\n        RANK() OVER (ORDER BY pr.revenue_eur DESC) AS rnk\n    FROM product_revenue pr\n    JOIN luxexperience.products p ON pr.product_id = p.product_id\n)\nSELECT \n    product_id,\n    brand,\n    category,\n    brand_tier,\n    ROUND(revenue_eur, 2) AS revenue_eur\nFROM ranked\nWHERE rnk <= 5\nORDER BY revenue_eur DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, products",
+        "tables": [
+          "order_items",
+          "products"
+        ]
+      },
+      "id": "finding:b478bff61750",
+      "kind": "finding",
+      "label": "Top 5 products by total revenue in EUR",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top 5 products by total revenue in EUR",
+      "tags": []
+    },
+    "finding:b6c107ecd30a": {
+      "data": {
+        "generated_at": "2026-07-28T13:50:10.049075+00:00",
+        "investigation_id": "2dc644e3",
+        "sql": "SELECT COUNT(*) AS total_orders FROM luxexperience.orders",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:b6c107ecd30a",
+      "kind": "finding",
+      "label": "Total number of orders in the orders table",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total number of orders in the orders table",
+      "tags": []
+    },
+    "finding:b6d786e5004a": {
+      "data": {
+        "generated_at": "2026-07-27T23:07:43.110705+00:00",
+        "investigation_id": "3915df37",
+        "sql": "WITH category_margin AS (\n  SELECT\n    oi.category,\n    SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END) AS revenue_eur,\n    SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END) AS cogs_eur,\n    ROUND(\n      (SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END)\n       - SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END))\n      * 100.0 / NULLIF(SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END), 0),\n      2\n    ) AS gross_margin_pct\n  FROM luxexperience.order_items oi\n  WHERE oi.category IS NOT NULL\n  GROUP BY oi.category\n),\nranked AS (\n  SELECT\n    category,\n    gross_margin_pct,\n    RANK() OVER (ORDER BY gross_margin_pct ASC) AS rnk\n  FROM category_margin\n)\nSELECT category, gross_margin_pct\nFROM ranked\nWHERE rnk = 1\nORDER BY gross_margin_pct ASC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "a4fbaa7d0f87",
+          "b7fd6315e832",
+          "4a956bedf0b0"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:b6d786e5004a",
+      "kind": "finding",
+      "label": "Product category with the lowest gross margin across all orders",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Product category with the lowest gross margin across all orders",
+      "tags": []
+    },
+    "finding:b9a40d6eb002": {
+      "data": {
+        "generated_at": "2026-07-27T22:25:13.254965+00:00",
+        "investigation_id": "79bd87f6",
+        "sql": "SELECT ROUND(AVG(delivery_days)::numeric, 2) AS avg_delivery_days, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY delivery_days)::numeric, 2) AS median_delivery_days, COUNT(*) AS shipment_count FROM luxexperience.shipments WHERE delivery_days IS NOT NULL",
+        "stale": true,
+        "stale_reason": "grounding vanished: shipments",
+        "tables": [
+          "shipments"
+        ]
+      },
+      "id": "finding:b9a40d6eb002",
+      "kind": "finding",
+      "label": "Cannot link delivery time to review scores \u2014 no join key exists between shipment\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cannot link delivery time to review scores \u2014 no join key exists between shipments and review tables",
+      "tags": []
+    },
+    "finding:bf06ce743498": {
+      "data": {
+        "generated_at": "2026-07-28T05:36:43.002936+00:00",
+        "investigation_id": "937fa6fd",
+        "sql": "",
+        "tables": []
+      },
+      "id": "finding:bf06ce743498",
+      "kind": "finding",
+      "label": "Investigation complete \u2014 see the phase findings below.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Investigation complete \u2014 see the phase findings below.",
+      "tags": []
+    },
+    "finding:c39e7b643a18": {
+      "data": {
+        "generated_at": "2026-07-27T22:27:11.607617+00:00",
+        "investigation_id": "1d6d4845",
+        "sql": "SELECT DATE_TRUNC('month', order_date) AS month, platform, ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders GROUP BY DATE_TRUNC('month', order_date), platform ORDER BY month, platform",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "9a4c13d1a417",
+          "85b45d2d2324",
+          "cbd083f5567d"
+        ],
+        "supersedes": 3,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:c39e7b643a18",
+      "kind": "finding",
+      "label": "Monthly GMV by platform over time",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly GMV by platform over time",
+      "tags": []
+    },
+    "finding:c7addb18f5fd": {
+      "data": {
+        "generated_at": "2026-07-27T22:54:18.584498+00:00",
+        "investigation_id": "77c3924a",
+        "sql": "SELECT\n  oi.brand_tier,\n  COUNT(DISTINCT oi.order_id) AS order_count,\n  SUM(oi.quantity) AS total_units,\n  SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END) AS revenue_eur,\n  SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END) AS cogs_eur,\n  ROUND(\n    (SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END)\n     - SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END))\n    / NULLIF(SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END), 0) * 100.0, 2\n  ) AS gross_margin_pct\nFROM luxexperience.order_items oi\nWHERE oi.brand_tier IS NOT NULL\nGROUP BY oi.brand_tier\nORDER BY gross_margin_pct ASC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "9029bf1d46db"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:c7addb18f5fd",
+      "kind": "finding",
+      "label": "Brand tier gross margin comparison with order volumes to assess underperformance\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Brand tier gross margin comparison with order volumes to assess underperformance significance",
+      "tags": []
+    },
+    "finding:cd2babb4e6ac": {
+      "data": {
+        "generated_at": "2026-07-28T21:28:04.199772+00:00",
+        "investigation_id": "b0c085f3",
+        "sql": "SELECT category, AVG(CAST(REPLACE(discount_percentage, '%', '') AS FLOAT) / 100) AS avg_discount_percentage FROM amazon.amazon GROUP BY category ORDER BY avg_discount_percentage DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:cd2babb4e6ac",
+      "kind": "finding",
+      "label": "High average discount percentage of 79.3% is a systemic pricing characteristic a\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "High average discount percentage of 79.3% is a systemic pricing characteristic across all categories.",
+      "tags": []
+    },
+    "finding:ce5de96d253c": {
+      "data": {
+        "generated_at": "2026-08-10T07:32:58.533885+00:00",
+        "investigation_id": "8a7c6927",
+        "sql": "SELECT COUNT(*) AS product_count FROM amazon.amazon;",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:ce5de96d253c",
+      "kind": "finding",
+      "label": "Number of products in the amazon table",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Number of products in the amazon table",
+      "tags": []
+    },
+    "finding:cf4bc8372bba": {
+      "data": {
+        "generated_at": "2026-07-27T22:34:50.635259+00:00",
+        "investigation_id": "c47bbafa",
+        "sql": "WITH category_margins AS (\n  SELECT\n    oi.category,\n    SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END) AS revenue_eur,\n    SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END) AS cogs_eur,\n    ROUND(\n      (SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END)\n       - SUM(CASE WHEN oi.returned = FALSE THEN oi.cost_eur * oi.quantity ELSE 0 END))\n      / NULLIF(SUM(CASE WHEN oi.returned = FALSE THEN oi.unit_price_eur * oi.quantity ELSE 0 END), 0) * 100.0, 2\n    ) AS gross_margin_pct\n  FROM luxexperience.order_items oi\n  WHERE oi.category IS NOT NULL\n  GROUP BY oi.category\n),\nweakest AS (\n  SELECT category, gross_margin_pct\n  FROM category_margins\n  ORDER BY gross_margin_pct ASC\n  LIMIT 1\n),\nothers_avg AS (\n  SELECT AVG(gross_margin_pct) AS avg_margin_pct\n  FROM category_margins\n  WHERE category NOT IN (SELECT category FROM weakest)\n)\nSELECT\n  w.category AS weakest_category,\n  w.gross_margin_pct AS weakest_margin_pct,\n  o.avg_margin_pct AS others_avg_margin_pct,\n  ROUND(o.avg_margin_pct - w.gross_margin_pct, 2) AS lag_pct\nFROM weakest w\nCROSS JOIN others_avg o;",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items",
+        "superseded_ids": [
+          "76e13b053277"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "order_items"
+        ]
+      },
+      "id": "finding:cf4bc8372bba",
+      "kind": "finding",
+      "label": "Weakest Margin Pct: -40.08%",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Weakest Margin Pct: -40.08%",
+      "tags": []
+    },
+    "finding:d06e7388c2c2": {
+      "data": {
+        "generated_at": "2026-07-29T22:56:42.695647+00:00",
+        "investigation_id": "8f1743bd",
+        "sql": "SELECT category, AVG(CAST(REPLACE(discount_percentage, '%', '') AS DECIMAL(5,2))) AS metric_total, COUNT(*) AS n FROM amazon.amazon GROUP BY category ORDER BY metric_total ASC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:d06e7388c2c2",
+      "kind": "finding",
+      "label": "Discounting patterns are structurally defined by category and rating, with niche\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Discounting patterns are structurally defined by category and rating, with niche items often excluded from promotions.",
+      "tags": []
+    },
+    "finding:d0b7fa219d3d": {
+      "data": {
+        "generated_at": "2026-07-27T23:19:00.280253+00:00",
+        "investigation_id": "ff0509a2",
+        "sql": "SELECT platform, fiscal_year, SUM(gmv_eur_m) AS total_gmv_eur_m FROM luxexperience.financial_summary GROUP BY platform, fiscal_year ORDER BY platform, fiscal_year",
+        "stale": true,
+        "stale_reason": "grounding vanished: financial_summary",
+        "superseded_ids": [
+          "fd0ca8c5bdd0",
+          "281d6a116ee0",
+          "55884b226b0c",
+          "f26bd153a275",
+          "1bcd96b9a93b",
+          "ade90f34e30b",
+          "bbeeeb3a0194",
+          "df74226049b9"
+        ],
+        "supersedes": 8,
+        "tables": [
+          "financial_summary"
+        ]
+      },
+      "id": "finding:d0b7fa219d3d",
+      "kind": "finding",
+      "label": "Total GMV (EUR millions) by platform and fiscal year",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total GMV (EUR millions) by platform and fiscal year",
+      "tags": []
+    },
+    "finding:d2d65a583cf9": {
+      "data": {
+        "generated_at": "2026-07-27T23:01:41.371010+00:00",
+        "investigation_id": "c51d4a6c",
+        "sql": "SELECT ship_region, COUNT(*) AS order_count FROM luxexperience.orders GROUP BY ship_region ORDER BY order_count DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "superseded_ids": [
+          "6372e4cd446b",
+          "8196367926e9"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:d2d65a583cf9",
+      "kind": "finding",
+      "label": "Order count by shipping region",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Order count by shipping region",
+      "tags": []
+    },
+    "finding:d34788eac179": {
+      "data": {
+        "generated_at": "2026-07-27T23:06:55.833345+00:00",
+        "investigation_id": "f0208741",
+        "sql": "SELECT product, SUM(totalPrice) AS sum_totalprice FROM main.sales_transactions GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_transactions",
+        "superseded_ids": [
+          "c0241eeb4b9e"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:d34788eac179",
+      "kind": "finding",
+      "label": "Top 10 products by total revenue",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Top 10 products by total revenue",
+      "tags": []
+    },
+    "finding:d7c1cec3978f": {
+      "data": {
+        "generated_at": "2026-07-27T22:44:11.531144+00:00",
+        "investigation_id": "d6dbbe03",
+        "sql": "SELECT type, SUM(est_gmv_eur) AS total_est_gmv_eur FROM luxexperience.brand_collaborations GROUP BY type ORDER BY total_est_gmv_eur DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: brand_collaborations",
+        "superseded_ids": [
+          "2243662a4bb9",
+          "2912837eb8a5",
+          "26076587ac34",
+          "14f318092546",
+          "8d1936e49874",
+          "dc91e607941e",
+          "fa897a2a591b",
+          "dce3f5f92933",
+          "44833c8bbbc9",
+          "99ee8c6b04eb",
+          "65290c5bd2ae"
+        ],
+        "supersedes": 11,
+        "tables": [
+          "brand_collaborations"
+        ]
+      },
+      "id": "finding:d7c1cec3978f",
+      "kind": "finding",
+      "label": "Total estimated GMV by collaboration type",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total estimated GMV by collaboration type",
+      "tags": []
+    },
+    "finding:da4d3d9b2d59": {
+      "data": {
+        "generated_at": "2026-07-12T21:38:07.739037+00:00",
+        "investigation_id": "f0dda04d",
+        "sql": "SELECT 'Hello! I can help you analyze the LuxExperience and airline operations data. Ask me about sales, orders, returns, marketing, inventory, flights, or any other topic in the schema.' AS greeting",
+        "tables": []
+      },
+      "id": "finding:da4d3d9b2d59",
+      "kind": "finding",
+      "label": "Greeting \u2014 ready to answer your data questions",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Greeting \u2014 ready to answer your data questions",
+      "tags": []
+    },
+    "finding:daa5a85ddaaf": {
+      "data": {
+        "generated_at": "2026-08-15T19:40:06.964406+00:00",
+        "investigation_id": "4c6cbe39",
+        "sql": "SELECT \"aircraft_type\", \"booking_class\", COUNT(*) AS n_records, COUNT(tickets.ticket_id) AS ticket_count\nFROM tickets JOIN flights ON tickets.\"flight_id\" = flights.\"flight_id\"\nGROUP BY 1, 2\nORDER BY 1, 2",
+        "stale": true,
+        "stale_reason": "grounding vanished: flights, tickets",
+        "tables": [
+          "flights",
+          "tickets"
+        ]
+      },
+      "id": "finding:daa5a85ddaaf",
+      "kind": "finding",
+      "label": "Fare class and aircraft type are statistically linked but show no performance-ba\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Fare class and aircraft type are statistically linked but show no performance-based volume weakness",
+      "tags": []
+    },
+    "finding:dadc127404ab": {
+      "data": {
+        "generated_at": "2026-07-27T22:54:56.974159+00:00",
+        "investigation_id": "86c9c15e",
+        "sql": "SELECT\n  flight_id,\n  flight_number,\n  flight_date,\n  origin,\n  destination,\n  ROUND(EXTRACT(EPOCH FROM (scheduled_arrival - scheduled_departure)) / 60.0, 2) AS scheduled_duration_min,\n  ROUND(EXTRACT(EPOCH FROM ((scheduled_arrival + (delay_minutes || ' minutes')::INTERVAL) - actual_departure)) / 60.0, 2) AS actual_duration_min,\n  ROUND(EXTRACT(EPOCH FROM ((scheduled_arrival + (delay_minutes || ' minutes')::INTERVAL) - actual_departure)) / 60.0 - EXTRACT(EPOCH FROM (scheduled_arrival - scheduled_departure)) / 60.0, 2) AS duration_diff_min\nFROM main.flights\nWHERE actual_departure IS NOT NULL\n  AND scheduled_departure IS NOT NULL\n  AND scheduled_arrival IS NOT NULL\n  AND delay_minutes IS NOT NULL\nORDER BY flight_date, flight_number;",
+        "stale": true,
+        "stale_reason": "grounding vanished: flights",
+        "superseded_ids": [
+          "6510044289e6",
+          "e76c2d278ece"
+        ],
+        "supersedes": 2,
+        "tables": [
+          "flights"
+        ]
+      },
+      "id": "finding:dadc127404ab",
+      "kind": "finding",
+      "label": "Actual vs scheduled flight duration per flight with difference in minutes \u2014 caut\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Actual vs scheduled flight duration per flight with difference in minutes \u2014 caution: 'flight_number' is a text column; ORDER BY sorts it lexicographically ('10' < '2'). CAST to a numeric type if it stores numbers.",
+      "tags": []
+    },
+    "finding:dbe489ac39c0": {
+      "data": {
+        "generated_at": "2026-07-27T22:22:55.164400+00:00",
+        "investigation_id": "c9212a6b",
+        "sql": "WITH mid_year_sales AS (\n    SELECT \n        EXTRACT(YEAR FROM dateTime) AS year,\n        product,\n        SUM(totalPrice) AS mid_year_sales,\n        SUM(quantity) AS mid_year_quantity,\n        COUNT(*) AS mid_year_transactions,\n        AVG(totalPrice) AS avg_transaction_value\n    FROM main.sales_transactions\n    WHERE EXTRACT(MONTH FROM dateTime) IN (6, 7)\n    GROUP BY EXTRACT(YEAR FROM dateTime), product\n),\nyoy_changes AS (\n    SELECT \n        product,\n        year,\n        mid_year_sales,\n        mid_year_quantity,\n        mid_year_transactions,\n        avg_transaction_value,\n        LAG(mid_year_sales) OVER (PARTITION BY product ORDER BY year) AS prev_sales,\n        LAG(mid_year_quantity) OVER (PARTITION BY product ORDER BY year) AS prev_quantity,\n        LAG(mid_year_transactions) OVER (PARTITION BY product ORDER BY year) AS prev_transactions,\n        LAG(avg_transaction_value) OVER (PARTITION BY product ORDER BY year) AS prev_avg_value\n    FROM mid_year_sales\n)\nSELECT \n    product,\n    year,\n    mid_year_sales,\n    mid_year_quantity,\n    mid_year_transactions,\n    ROUND(avg_transaction_value, 2) AS avg_transaction_value,\n    ROUND((mid_year_sales - prev_sales) * 100.0 / NULLIF(prev_sales, 0), 2) AS sales_yoy_change_pct,\n    ROUND((mid_year_quantity - prev_quantity) * 100.0 / NULLIF(prev_quantity, 0), 2) AS quantity_yoy_change_pct,\n    ROUND((mid_year_transactions - prev_transactions) * 100.0 / NULLIF(prev_transactions, 0), 2) AS transactions_yoy_change_pct,\n    ROUND((avg_transaction_value - prev_avg_value) * 100.0 / NULLIF(prev_avg_value, 0), 2) AS avg_value_yoy_change_pct\nFROM yoy_changes\nWHERE prev_sales IS NOT NULL\nORDER BY sales_yoy_change_pct ASC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_transactions",
+        "tables": [
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:dbe489ac39c0",
+      "kind": "finding",
+      "label": "Mid-year sales decline drivers by product (year-over-year) \u2014 womenswear category\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Mid-year sales decline drivers by product (year-over-year) \u2014 womenswear category not identifiable in schema",
+      "tags": []
+    },
+    "finding:de93d85a4437": {
+      "data": {
+        "generated_at": "2026-08-09T22:40:16.491514+00:00",
+        "investigation_id": "06e85236",
+        "sql": "SELECT COUNT(*) AS row_count FROM amazon.amazon",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:de93d85a4437",
+      "kind": "finding",
+      "label": "The amazon.amazon table contains 1,465 rows.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "The amazon.amazon table contains 1,465 rows.",
+      "tags": []
+    },
+    "finding:e12dafe05ccf": {
+      "data": {
+        "generated_at": "2026-07-27T22:35:46.457848+00:00",
+        "investigation_id": "cda42b18",
+        "sql": "SELECT SUM(oi.unit_price_eur * oi.quantity) AS total_delivered_revenue_eur FROM luxexperience.order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id WHERE o.status = 'shipped' AND oi.returned = false",
+        "stale": true,
+        "stale_reason": "grounding vanished: order_items, orders",
+        "tables": [
+          "order_items",
+          "orders"
+        ]
+      },
+      "id": "finding:e12dafe05ccf",
+      "kind": "finding",
+      "label": "Total delivered revenue from shipped, non-returned order items.",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Total delivered revenue from shipped, non-returned order items.",
+      "tags": []
+    },
+    "finding:e4add5eb638c": {
+      "data": {
+        "generated_at": "2026-07-27T23:04:34.636059+00:00",
+        "investigation_id": "ad681e35",
+        "sql": "SELECT DATE_TRUNC('month', t.dateTime) AS month, SUM(t.totalPrice) AS sales FROM main.sales_transactions t JOIN main.sales_franchises f ON t.franchiseID = f.franchiseID WHERE LOWER(f.name) = 'mytheresa' GROUP BY DATE_TRUNC('month', t.dateTime) ORDER BY month",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_franchises, sales_transactions",
+        "superseded_ids": [
+          "c7488b1f1720"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "sales_franchises",
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:e4add5eb638c",
+      "kind": "finding",
+      "label": "Monthly sales for Mytheresa platform",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Monthly sales for Mytheresa platform",
+      "tags": []
+    },
+    "finding:e6204317d45c": {
+      "data": {
+        "generated_at": "2026-07-27T22:24:07.651663+00:00",
+        "investigation_id": "cb630166",
+        "sql": "WITH recent_snapshots AS (\n  SELECT \n    i.warehouse,\n    AVG(i.weeks_of_cover) AS avg_weeks_of_cover,\n    AVG(i.units_on_hand) AS avg_units_on_hand,\n    COUNT(*) AS snapshot_count\n  FROM luxexperience.inventory_snapshots i\n  WHERE i.snapshot_date >= (SELECT MAX(snapshot_date) FROM luxexperience.inventory_snapshots) - INTERVAL '12 months'\n  GROUP BY i.warehouse\n),\nwarehouse_info AS (\n  SELECT \n    w.name AS warehouse_name,\n    w.country,\n    w.region_served,\n    w.platforms_served\n  FROM luxexperience.warehouses w\n)\nSELECT \n  wi.warehouse_name,\n  wi.region_served,\n  wi.country,\n  ROUND(rs.avg_weeks_of_cover, 2) AS avg_weeks_of_cover,\n  ROUND(rs.avg_units_on_hand, 0) AS avg_units_on_hand,\n  rs.snapshot_count,\n  CASE \n    WHEN rs.avg_weeks_of_cover > 12 THEN 'Slow turnover (overstock risk)'\n    WHEN rs.avg_weeks_of_cover < 2 THEN 'Fast turnover (stockout risk)'\n    ELSE 'Normal'\n  END AS turnover_status\nFROM recent_snapshots rs\nJOIN warehouse_info wi ON rs.warehouse = wi.warehouse_name\nORDER BY rs.avg_weeks_of_cover DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: inventory_snapshots, warehouses",
+        "superseded_ids": [
+          "85aa6127615d"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "inventory_snapshots",
+          "warehouses"
+        ]
+      },
+      "id": "finding:e6204317d45c",
+      "kind": "finding",
+      "label": "Warehouse inventory turnover status by weeks of cover (last 12 months)",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Warehouse inventory turnover status by weeks of cover (last 12 months)",
+      "tags": []
+    },
+    "finding:ec02440f6d3e": {
+      "data": {
+        "generated_at": "2026-07-27T22:50:49.531377+00:00",
+        "investigation_id": "cadf9543",
+        "sql": "WITH shipment_costs AS (\n  SELECT order_id, SUM(shipping_cost_eur) AS total_shipping_cost_eur\n  FROM luxexperience.shipments\n  WHERE shipping_cost_eur IS NOT NULL\n  GROUP BY order_id\n)\nSELECT\n  o.ship_country AS country,\n  ROUND(SUM(sc.total_shipping_cost_eur) / NULLIF(SUM(o.gmv_eur), 0), 4) AS freight_cost_ratio\nFROM luxexperience.orders o\nJOIN shipment_costs sc ON o.order_id = sc.order_id\nWHERE o.gmv_eur IS NOT NULL\n  AND o.ship_country IS NOT NULL\nGROUP BY o.ship_country\nORDER BY freight_cost_ratio DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders, shipments",
+        "superseded_ids": [
+          "45874fb0a422"
+        ],
+        "supersedes": 1,
+        "tables": [
+          "orders",
+          "shipments"
+        ]
+      },
+      "id": "finding:ec02440f6d3e",
+      "kind": "finding",
+      "label": "Worst freight cost efficiency by country: highest shipping cost to GMV ratio",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Worst freight cost efficiency by country: highest shipping cost to GMV ratio",
+      "tags": []
+    },
+    "finding:f125c107e052": {
+      "data": {
+        "generated_at": "2026-07-27T22:43:40.209639+00:00",
+        "investigation_id": "40a0342e",
+        "sql": "WITH cancelled AS (\n  SELECT \n    platform,\n    segment,\n    channel,\n    ship_country,\n    ship_region,\n    COUNT(*) AS cancelled_count\n  FROM luxexperience.orders\n  WHERE status = 'cancelled'\n  GROUP BY platform, segment, channel, ship_country, ship_region\n),\ndelivered AS (\n  SELECT \n    platform,\n    segment,\n    channel,\n    ship_country,\n    ship_region,\n    COUNT(*) AS delivered_count\n  FROM luxexperience.orders\n  WHERE status = 'shipped'\n  GROUP BY platform, segment, channel, ship_country, ship_region\n)\nSELECT \n  COALESCE(c.platform, d.platform) AS platform,\n  COALESCE(c.segment, d.segment) AS segment,\n  COALESCE(c.channel, d.channel) AS channel,\n  COALESCE(c.ship_country, d.ship_country) AS ship_country,\n  COALESCE(c.ship_region, d.ship_region) AS ship_region,\n  COALESCE(c.cancelled_count, 0) AS cancelled_orders,\n  COALESCE(d.delivered_count, 0) AS delivered_orders,\n  ROUND(COALESCE(c.cancelled_count, 0) * 100.0 / NULLIF(COALESCE(c.cancelled_count, 0) + COALESCE(d.delivered_count, 0), 0), 2) AS cancellation_rate_pct\nFROM cancelled c\nFULL JOIN delivered d\n  ON c.platform = d.platform\n  AND c.segment = d.segment\n  AND c.channel = d.channel\n  AND c.ship_country = d.ship_country\n  AND c.ship_region = d.ship_region\nORDER BY cancellation_rate_pct DESC;",
+        "stale": true,
+        "stale_reason": "grounding vanished: orders",
+        "tables": [
+          "orders"
+        ]
+      },
+      "id": "finding:f125c107e052",
+      "kind": "finding",
+      "label": "Cancellation patterns by platform, channel, and region show where orders fail in\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Cancellation patterns by platform, channel, and region show where orders fail instead of shipping",
+      "tags": []
+    },
+    "finding:f2c6a55b525e": {
+      "data": {
+        "generated_at": "2026-08-09T22:32:44.300497+00:00",
+        "investigation_id": "cbea766b",
+        "sql": "WITH monthly_route_revenue AS (\n  SELECT\n    r.route_id,\n    r.origin,\n    r.destination,\n    DATE_TRUNC('month', f.flight_date) AS month,\n    SUM(t.fare_chf + t.taxes_chf) AS revenue\n  FROM main.tickets t\n  JOIN main.flights f ON t.flight_id = f.flight_id\n  JOIN main.routes r ON f.route_id = r.route_id\n  GROUP BY r.route_id, r.origin, r.destination, DATE_TRUNC('month', f.flight_date)\n),\nranked_routes AS (\n  SELECT\n    route_id,\n    origin,\n    destination,\n    month,\n    revenue,\n    RANK() OVER (PARTITION BY month ORDER BY revenue DESC) AS rnk\n  FROM monthly_route_revenue\n)\nSELECT\n  route_id,\n  origin,\n  destination,\n  ROUND(revenue, 2) AS profit\nFROM ranked_routes\nWHERE rnk = 1\n  AND month = (SELECT MAX(month) FROM monthly_route_revenue);",
+        "stale": true,
+        "stale_reason": "grounding vanished: flights, routes, tickets",
+        "tables": [
+          "flights",
+          "routes",
+          "tickets"
+        ]
+      },
+      "id": "finding:f2c6a55b525e",
+      "kind": "finding",
+      "label": "Most profitable route in latest month by revenue",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Most profitable route in latest month by revenue",
+      "tags": []
+    },
+    "finding:f3ccdd05ad2b": {
+      "data": {
+        "generated_at": "2026-07-27T23:13:30.479583+00:00",
+        "investigation_id": "3f4601b3",
+        "sql": "WITH cohorts AS (\n    SELECT \n        c.customer_id,\n        c.signup_fy AS cohort_year\n    FROM luxexperience.customers c\n    WHERE c.signup_fy IS NOT NULL\n),\nactivity AS (\n    SELECT \n        o.customer_id,\n        o.fiscal_year AS activity_year\n    FROM luxexperience.orders o\n    WHERE o.status NOT IN ('cancelled', 'returned')\n      AND o.fiscal_year IS NOT NULL\n),\ncohort_sizes AS (\n    SELECT \n        cohort_year,\n        COUNT(DISTINCT customer_id) AS cohort_size\n    FROM cohorts\n    GROUP BY cohort_year\n),\nretention AS (\n    SELECT \n        c.cohort_year,\n        a.activity_year,\n        COUNT(DISTINCT c.customer_id) AS retained_customers\n    FROM cohorts c\n    JOIN activity a ON c.customer_id = a.customer_id\n    WHERE a.activity_year >= c.cohort_year\n    GROUP BY c.cohort_year, a.activity_year\n)\nSELECT \n    r.cohort_year,\n    r.activity_year,\n    cs.cohort_size,\n    r.retained_customers,\n    ROUND(r.retained_customers * 100.0 / NULLIF(cs.cohort_size, 0), 2) AS retention_rate_pct\nFROM retention r\nJOIN cohort_sizes cs ON r.cohort_year = cs.cohort_year\nORDER BY r.cohort_year, r.activity_year;",
+        "stale": true,
+        "stale_reason": "grounding vanished: customers, orders",
+        "tables": [
+          "customers",
+          "orders"
+        ]
+      },
+      "id": "finding:f3ccdd05ad2b",
+      "kind": "finding",
+      "label": "Customer signup cohort retention rates by fiscal year",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Customer signup cohort retention rates by fiscal year",
+      "tags": []
+    },
+    "finding:fa44407cd128": {
+      "data": {
+        "generated_at": "2026-08-15T11:59:02.065354+00:00",
+        "investigation_id": "622c24e7",
+        "sql": "SELECT sc.country AS country, SUM(st.totalPrice) AS metric_total, COUNT(*) AS n, ROUND(SUM(st.totalPrice) / NULLIF(COUNT(*), 0), 2) AS avg_per_record, ROUND(100.0 * SUM(st.totalPrice) / NULLIF(SUM(SUM(st.totalPrice)) OVER (), 0), 1) AS pct_of_total FROM sales_transactions st JOIN sales_customers sc ON st.customerID = sc.customerID GROUP BY sc.country ORDER BY metric_total DESC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: sales_customers, sales_franchises, sales_transactions",
+        "tables": [
+          "sales_customers",
+          "sales_franchises",
+          "sales_transactions"
+        ]
+      },
+      "id": "finding:fa44407cd128",
+      "kind": "finding",
+      "label": "Revenue is concentrated in Oceania and high-value European franchise cities like\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Revenue is concentrated in Oceania and high-value European franchise cities like Rome and Stockholm.",
+      "tags": []
+    },
+    "finding:fba9826365be": {
+      "data": {
+        "generated_at": "2026-08-15T20:21:15.581748+00:00",
+        "investigation_id": "4481e916",
+        "sql": "SELECT \n    CASE WHEN \"Lead time\" > (SELECT AVG(\"Lead time\") FROM scm.supply_chain_data) THEN 'High Lead Time' ELSE 'Low Lead Time' END AS segment, \n    SUM(Costs) AS metric_total, \n    COUNT(*) AS n,\n    ROUND(SUM(Costs) / NULLIF(COUNT(*), 0), 2) AS avg_per_record\nFROM scm.supply_chain_data\nGROUP BY 1\nORDER BY metric_total DESC",
+        "stale": true,
+        "stale_reason": "grounding vanished: supply_chain_data",
+        "tables": [
+          "supply_chain_data"
+        ]
+      },
+      "id": "finding:fba9826365be",
+      "kind": "finding",
+      "label": "High Lead Time Shipments Drive Higher Average Costs Across Supply Chain Operatio\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "High Lead Time Shipments Drive Higher Average Costs Across Supply Chain Operations",
+      "tags": []
+    },
+    "finding:fcc8dc8b433c": {
+      "data": {
+        "generated_at": "2026-08-09T22:40:16.573335+00:00",
+        "investigation_id": "8853e6e8",
+        "sql": "SELECT category, AVG(CAST(REPLACE(discount_percentage, '%', '') AS FLOAT)) AS metric_total, COUNT(*) AS n FROM amazon.amazon GROUP BY category ORDER BY metric_total DESC LIMIT 15",
+        "stale": true,
+        "stale_reason": "grounding vanished: amazon",
+        "tables": [
+          "amazon"
+        ]
+      },
+      "id": "finding:fcc8dc8b433c",
+      "kind": "finding",
+      "label": "Deepest discounts concentrate in niche electronics accessories and low-rated pro\u2026",
+      "provenance": {
+        "measured": null,
+        "note": "finding from evidence_ledger",
+        "source": "evidence_ledger"
+      },
+      "summary": "Deepest discounts concentrate in niche electronics accessories and low-rated products",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.bounce_sessions": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "BOUNCE_SESSIONS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.bounce_sessions",
+      "kind": "glossary_term",
+      "label": "BOUNCE_SESSIONS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of sessions that resulted in a bounce.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.browser_name": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "BROWSER_NAME",
+        "table": "all_dimesnsions_2",
+        "values": "UNKNOWN, DuckDuckGo for iOS, Chrome"
+      },
+      "id": "glossary_term:all_dimesnsions_2.browser_name",
+      "kind": "glossary_term",
+      "label": "BROWSER_NAME",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The name of the browser used by the visitor.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.browser_version": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "BROWSER_VERSION",
+        "table": "all_dimesnsions_2",
+        "values": "UNKNOWN, Unknown, 147"
+      },
+      "id": "glossary_term:all_dimesnsions_2.browser_version",
+      "kind": "glossary_term",
+      "label": "BROWSER_VERSION",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The version number of the browser used.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.calendar_date": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "CALENDAR_DATE",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.calendar_date",
+      "kind": "glossary_term",
+      "label": "CALENDAR_DATE",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The date on which the traffic activity occurred.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.channel_lvl_0": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "CHANNEL_LVL_0",
+        "table": "all_dimesnsions_2",
+        "values": "Performance, Organic & Brand, CRM, Reach & Awareness, UNKNOWN"
+      },
+      "id": "glossary_term:all_dimesnsions_2.channel_lvl_0",
+      "kind": "glossary_term",
+      "label": "CHANNEL_LVL_0",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The top-level marketing channel category.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.channel_lvl_1": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "CHANNEL_LVL_1",
+        "table": "all_dimesnsions_2",
+        "values": "Price Comparison, Direkteingabe, SMP (Social Media Paid), Shopping, System Mails, Referrer, SEO, Lifecycle, Newsletter, SEM Brand, Affiliate, Partners, UNKNOWN, SMO (Organic Social), Push Notification"
+      },
+      "id": "glossary_term:all_dimesnsions_2.channel_lvl_1",
+      "kind": "glossary_term",
+      "label": "CHANNEL_LVL_1",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The secondary marketing channel category.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.channel_lvl_2": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "CHANNEL_LVL_2",
+        "table": "all_dimesnsions_2",
+        "values": "Others, Prisjakt, Meta, Google|SE|Shopping, Pricerunner, SEO Non-Brand, Shipping, Account, Google|SE|TM, Welcome, Vergelijk, Order, Hintaopas, Gorilla, GAME, EXC, Sub Network, Content, Package insert, Abandoned cart, SAL, Crossselling, Reactivation, NPS, Trigger 2nd purchase, sovendus, UNKNOWN, Bing|SE|Shopping, Comparison, Facebook, RECO, CON, Birthday, Name Day, Instagram, Trigger next purchase, Customer anniversary, Trigger 3rd purchase, External review, Retoure/After Sales, Storno, SEO Brand, Bing|SE|TM, Billiger, Ledenicheur"
+      },
+      "id": "glossary_term:all_dimesnsions_2.channel_lvl_2",
+      "kind": "glossary_term",
+      "label": "CHANNEL_LVL_2",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The tertiary marketing channel category.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.converting_sessions": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "CONVERTING_SESSIONS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.converting_sessions",
+      "kind": "glossary_term",
+      "label": "CONVERTING_SESSIONS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of sessions that resulted in a conversion.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.device_class": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "DEVICE_CLASS",
+        "table": "all_dimesnsions_2",
+        "values": "SmartPhone, Desktop, Tablet, unknown, UNKNOWN, TV, other"
+      },
+      "id": "glossary_term:all_dimesnsions_2.device_class",
+      "kind": "glossary_term",
+      "label": "DEVICE_CLASS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The category of the device used by the visitor.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.isp": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ISP",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.isp",
+      "kind": "glossary_term",
+      "label": "ISP",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The internet service provider of the visitor.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.orders": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "ORDERS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.orders",
+      "kind": "glossary_term",
+      "label": "ORDERS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total number of orders placed.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.os_name": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "OS_NAME",
+        "table": "all_dimesnsions_2",
+        "values": "iOS, Android, Windows, macOS, iPadOS, Linux, ChromeOS, Unknown, Ubuntu, UNKNOWN, Mac OS X, Unknown Crawler, Tizen"
+      },
+      "id": "glossary_term:all_dimesnsions_2.os_name",
+      "kind": "glossary_term",
+      "label": "OS_NAME",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The operating system of the visitor's device.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.overlap_instances": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "OVERLAP_INSTANCES",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.overlap_instances",
+      "kind": "glossary_term",
+      "label": "OVERLAP_INSTANCES",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of overlapping instances detected.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.overlap_sessions": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "OVERLAP_SESSIONS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.overlap_sessions",
+      "kind": "glossary_term",
+      "label": "OVERLAP_SESSIONS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of sessions identified as overlapping.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.phantom_out": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "PHANTOM_OUT",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.phantom_out",
+      "kind": "glossary_term",
+      "label": "PHANTOM_OUT",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "A metric representing phantom or non-attributable traffic outflow.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.platform": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "PLATFORM",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.platform",
+      "kind": "glossary_term",
+      "label": "PLATFORM",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The platform type where the traffic originated.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.realloc_in": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "REALLOC_IN",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.realloc_in",
+      "kind": "glossary_term",
+      "label": "REALLOC_IN",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "A metric representing reallocated traffic inflow.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sessions_dur_pos": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SESSIONS_DUR_POS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sessions_dur_pos",
+      "kind": "glossary_term",
+      "label": "SESSIONS_DUR_POS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of sessions with positive duration.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sessions_with_visit": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SESSIONS_WITH_VISIT",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sessions_with_visit",
+      "kind": "glossary_term",
+      "label": "SESSIONS_WITH_VISIT",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of sessions associated with a valid visit.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.site_domain": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SITE_DOMAIN",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.site_domain",
+      "kind": "glossary_term",
+      "label": "SITE_DOMAIN",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The regional domain or site identifier.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sum_dur_pos_sec": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SUM_DUR_POS_SEC",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sum_dur_pos_sec",
+      "kind": "glossary_term",
+      "label": "SUM_DUR_POS_SEC",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total duration in seconds for sessions with positive duration.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sum_duration_sec": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SUM_DURATION_SEC",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sum_duration_sec",
+      "kind": "glossary_term",
+      "label": "SUM_DURATION_SEC",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total duration of sessions in seconds.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sum_page_views": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SUM_PAGE_VIEWS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sum_page_views",
+      "kind": "glossary_term",
+      "label": "SUM_PAGE_VIEWS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total number of page views.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.sum_pv_dur_pos": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "SUM_PV_DUR_POS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.sum_pv_dur_pos",
+      "kind": "glossary_term",
+      "label": "SUM_PV_DUR_POS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total number of page views with positive duration.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.traffic": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "TRAFFIC",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.traffic",
+      "kind": "glossary_term",
+      "label": "TRAFFIC",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The total count of traffic events.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.visit_rows": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "VISIT_ROWS",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.visit_rows",
+      "kind": "glossary_term",
+      "label": "VISIT_ROWS",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The number of raw visit records aggregated into this row.",
+      "tags": []
+    },
+    "glossary_term:all_dimesnsions_2.visits_official": {
+      "data": {
+        "auto_generated": true,
+        "caveats": "",
+        "column": "VISITS_OFFICIAL",
+        "table": "all_dimesnsions_2",
+        "values": ""
+      },
+      "id": "glossary_term:all_dimesnsions_2.visits_official",
+      "kind": "glossary_term",
+      "label": "VISITS_OFFICIAL",
+      "provenance": {
+        "measured": null,
+        "note": "defined on all_dimesnsions_2",
+        "source": "glossary"
+      },
+      "summary": "The official calculated visit count, often fractional due to attribution models.",
+      "tags": []
+    },
+    "metric:aov": {
+      "data": {
+        "formula_sql": "SUM(ORDERS) / NULLIF(SUM(CONVERTING_SESSIONS), 0)",
+        "grain": "status, order_date, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:aov",
+      "kind": "metric",
+      "label": "aov",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "metric:revenue": {
+      "data": {
+        "formula_sql": "SUM(ORDERS)",
+        "grain": "status, order_date, customer_id, payment_method",
+        "tables": [
+          "orders"
+        ],
+        "unit": "$",
+        "verified": false
+      },
+      "id": "metric:revenue",
+      "kind": "metric",
+      "label": "revenue",
+      "provenance": {
+        "measured": null,
+        "note": "verified=False",
+        "source": "ontology.metric"
+      },
+      "summary": "",
+      "tags": []
+    },
+    "resolution:271c6d5c588bf2156560": {
+      "data": {
+        "evidence": "the user chose this reading when asked to clarify",
+        "resolution_source": "user",
+        "subject": "total est_gmv_eur by brand"
+      },
+      "id": "resolution:271c6d5c588bf2156560",
+      "kind": "glossary_term",
+      "label": "total est_gmv_eur by brand",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "sum of est_gmv_eur grouped by brand_collaborations type",
+      "tags": []
+    },
+    "resolution:3fccdf1601e885157d4f": {
+      "data": {
+        "evidence": "the user chose this reading when asked to clarify",
+        "resolution_source": "user",
+        "subject": "which flights had the worst delays?"
+      },
+      "id": "resolution:3fccdf1601e885157d4f",
+      "kind": "glossary_term",
+      "label": "which flights had the worst delays?",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "last 30 days",
+      "tags": []
+    },
+    "resolution:4bed9f46a7abbbad9c98": {
+      "data": {
+        "evidence": "seeded for the Wave C live demo",
+        "resolution_source": "user",
+        "subject": "material return"
+      },
+      "id": "resolution:4bed9f46a7abbbad9c98",
+      "kind": "glossary_term",
+      "label": "material return",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=user",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "a return whose refund_eur is at least 100 EUR",
+      "tags": []
+    },
+    "resolution:6d95de4cb5600725fd45": {
+      "data": {
+        "evidence": "Totally wrong calls.",
+        "resolution_source": "verdict",
+        "subject": "No extreme outliers could be profiled because the investigative chain failed to execute the outlier detection queries \u2014 only a trivial aircraft_types row count (8) was returned instead of the expected entity-level outlier analysis."
+      },
+      "id": "resolution:6d95de4cb5600725fd45",
+      "kind": "glossary_term",
+      "label": "No extreme outliers could be profiled because the investigative chain failed to execute the outlier detection queries \u2014 only a trivial aircraft_types row count (8) was returned instead of the expected entity-level outlier analysis.",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=verdict",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "Totally wrong calls.",
+      "tags": []
+    },
+    "resolution:88bad7da371ac3918a73": {
+      "data": {
+        "evidence": "a reviewer corrected an earlier answer",
+        "resolution_source": "verdict",
+        "subject": "GMV by marketing channel"
+      },
+      "id": "resolution:88bad7da371ac3918a73",
+      "kind": "glossary_term",
+      "label": "GMV by marketing channel",
+      "provenance": {
+        "measured": null,
+        "note": "resolution_source=verdict",
+        "source": "ambiguity_ledger"
+      },
+      "summary": "reviewer-corrected reading",
+      "tags": []
+    },
+    "table:AllDimesnsions2": {
+      "data": {
+        "column_count": 27,
+        "columns": [
+          "BOUNCE_SESSIONS",
+          "BROWSER_NAME",
+          "BROWSER_VERSION",
+          "CALENDAR_DATE",
+          "CHANNEL_LVL_0",
+          "CHANNEL_LVL_1",
+          "CHANNEL_LVL_2",
+          "CONVERTING_SESSIONS",
+          "DEVICE_CLASS",
+          "ISP",
+          "ORDERS",
+          "OS_NAME",
+          "OVERLAP_INSTANCES",
+          "OVERLAP_SESSIONS",
+          "PHANTOM_OUT",
+          "PLATFORM",
+          "REALLOC_IN",
+          "SESSIONS_DUR_POS",
+          "SESSIONS_WITH_VISIT",
+          "SITE_DOMAIN",
+          "SUM_DURATION_SEC",
+          "SUM_DUR_POS_SEC",
+          "SUM_PAGE_VIEWS",
+          "SUM_PV_DUR_POS",
+          "TRAFFIC",
+          "VISITS_OFFICIAL",
+          "VISIT_ROWS"
+        ],
+        "domain": "Marketing",
+        "exploration_insights": [],
+        "has_lifecycle": false,
+        "identity_key": "CALENDAR_DATE",
+        "source_tables": [
+          "traffic.all_dimesnsions_2"
+        ]
+      },
+      "id": "table:AllDimesnsions2",
+      "kind": "table",
+      "label": "Web Traffic Daily",
+      "provenance": {
+        "measured": null,
+        "note": "entity_type=event grain_verified=False",
+        "source": "ontology.entity"
+      },
+      "summary": "",
+      "tags": []
+    }
+  },
+  "org_id": "default",
+  "schema_fingerprint": "dd8279ff9ce12207",
+  "schema_name": "traffic",
+  "structural_fingerprint": "71f11d721f135218",
+  "table_fingerprints": {
+    "AllDimesnsions2": "c22c98cf4970fccc"
+  },
+  "version": 2
+}

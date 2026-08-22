@@ -1,0 +1,66 @@
+table: airports
+columns:
+  city:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  country:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  haul_pref:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  iata:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  is_hub:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  lat:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  lng:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  region:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
