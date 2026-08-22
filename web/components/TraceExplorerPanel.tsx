@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
+import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
 import {
   getTrace, getTraces, getVerdicts, recordVerdict,
   type FindingVerdict, type SessionEvent, type TraceDetail, type TraceSpan,
@@ -43,7 +44,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
-  const [tab, setTab] = useState<"waterfall" | "feedback">("waterfall");
+  const [tab, setTab] = useState<"timeline" | "events" | "feedback">("timeline");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
@@ -172,13 +173,24 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                   {detail.ok ? "ok" : "failed"}
                 </StatusChip>
               )}
-              <Button variant={tab === "waterfall" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("waterfall")}>Waterfall</Button>
+              <Button variant={tab === "timeline" ? "secondary" : "ghost"} size="xs"
+                onClick={() => setTab("timeline")}>Waterfall</Button>
+              <Button variant={tab === "events" ? "secondary" : "ghost"} size="xs"
+                onClick={() => setTab("events")}>Events</Button>
               <Button variant={tab === "feedback" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("feedback")}>Feedback</Button>
             </div>
 
-            {tab === "waterfall" ? (
+            {tab === "timeline" ? (
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+                {detail.timeline
+                  ? <TraceWaterfall timeline={detail.timeline} />
+                  : <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                      This run predates the laid-out timeline, or the API did not return
+                      one. The Events tab reads the same run from its raw log.
+                    </div>}
+              </div>
+            ) : tab === "events" ? (
               <div style={{ flex: 1, overflowY: "auto", padding: "10px 20px" }}>
                 {detail.events.map(e => {
                   if (e.kind === "tool_call" && e.span_id && resultSpans.has(e.span_id)) return null;
