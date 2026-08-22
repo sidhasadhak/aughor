@@ -13,6 +13,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["catalog"])
 
 
+def _as_count(value) -> int | None:
+    """A row estimate as a number, or ``None`` when it is genuinely unknown.
+
+    The connector layer stringifies every cell and renders SQL NULL as the literal
+    string ``"NULL"``, so an unmeasured count reaches us as text, not as ``None``.
+    Unknown has to stay unknown: a table nobody counted reads "—" in the UI, never
+    "0 rows". Zero is a measurement and must be reserved for tables that really are
+    empty.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.upper() == "NULL":
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+
 @router.get("/catalog/tree")
 async def get_catalog_tree(workspace_id: str | None = None):
     """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table.
@@ -38,12 +58,21 @@ async def get_catalog_tree(workspace_id: str | None = None):
                 from aughor.connectors.file.local_upload import uploaded_tables
                 by_schema = uploaded_tables(conn_id, meta)
                 if by_schema is not None:      # None → seeded/unreadable, query instead
+                    # row_count is None, NOT 0. This path deliberately never opens the
+                    # connection (that is the 9.56s it exists to avoid), so the count is
+                    # not unavailable-and-therefore-zero — it is simply not measured. The
+                    # UI renders None as "—"; a 0 here claimed every uploaded table was
+                    # empty.
                     return [
-                        {"name": s, "tables": [{"name": t, "row_count": 0} for t in sorted(ts)]}
+                        {"name": s, "tables": [{"name": t, "row_count": None} for t in sorted(ts)]}
                         for s, ts in sorted(by_schema.items())
                         if not schema_filter or s == schema_filter
                     ]
             db = open_connection_for(conn_id)
+            # (schema, table) → measured row estimate. Populated only by the DuckDB
+            # branch; empty everywhere else, which leaves those branches' own numbers
+            # exactly as they were.
+            sizes: dict[tuple[str, str], int | None] = {}
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
@@ -64,7 +93,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                     rows = db.execute(
                         "__catalog__",
                         f"""
-                        SELECT table_schema, table_name, 0
+                        SELECT table_schema, table_name, NULL
                         FROM information_schema.tables
                         WHERE table_type = 'BASE TABLE'
                           AND table_schema NOT IN ('information_schema','temp','pg_catalog')
@@ -72,6 +101,33 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         ORDER BY table_schema, table_name
                         """,
                     ).rows
+                    # information_schema knows the NAMES but carries no row estimate, so
+                    # the count comes from duckdb_tables() as a SECOND, best-effort query
+                    # rather than a join. Two reasons it is not merged into the query
+                    # above: this must never be able to cost us the listing (an engine
+                    # without duckdb_tables() still gets its table names), and scoping by
+                    # `database_name` is what keeps MotherDuck's cross-database leak out —
+                    # the same scope the table_catalog filter applies.
+                    #
+                    # estimated_size is an estimate by name, but on a checkpointed DuckDB
+                    # file it matched COUNT(*) exactly where we measured it
+                    # (superstore.orders 9,994). An estimate is the honest number here;
+                    # counting 79 tables per catalog request is not affordable.
+                    try:
+                        for _schema, _table, _size in db.execute(
+                            "__catalog__",
+                            f"""
+                            SELECT schema_name, table_name, estimated_size
+                            FROM duckdb_tables()
+                            WHERE internal = false
+                              AND database_name = '{safe_db}'
+                            """,
+                        ).rows:
+                            sizes[(str(_schema), str(_table))] = _as_count(_size)
+                    except Exception as exc:
+                        logger.debug(
+                            "catalog tree: row estimates unavailable for %s: %s", conn_id, exc
+                        )
                 # Fallback to duckdb_tables() for local DuckDB files when information_schema
                 # is somehow unavailable.
                 if not rows:
@@ -92,7 +148,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                     SELECT
                         t.table_schema,
                         t.table_name,
-                        COALESCE(s.n_live_tup, 0)
+                        s.n_live_tup
                     FROM information_schema.tables t
                     LEFT JOIN pg_stat_user_tables s
                         ON s.schemaname = t.table_schema
@@ -117,7 +173,11 @@ async def get_catalog_tree(workspace_id: str | None = None):
 
         schema_map: dict[str, list] = {}
         for schema, table_name, row_est in rows:
-            schema_map.setdefault(schema, []).append({"name": table_name, "row_count": row_est})
+            # The measured estimate wins where we have one; otherwise whatever the
+            # branch's own query returned, normalized. Both arrive as strings from the
+            # connector, and both may be honestly unknown.
+            count = sizes.get((str(schema), str(table_name)), _as_count(row_est))
+            schema_map.setdefault(schema, []).append({"name": table_name, "row_count": count})
         return [{"name": s, "tables": t} for s, t in schema_map.items()]
 
     def _build_tree() -> dict:
