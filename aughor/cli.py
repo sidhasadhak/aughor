@@ -772,5 +772,131 @@ def graph_export(connection_id: str, out_dir: str, schema: str):
     console.print("[dim]Or point any agent at the pack — it reads graph.json directly.[/dim]\n")
 
 
+
+# ── VA-1 · skills ─────────────────────────────────────────────────────────────
+# The ingester without a door is a library nobody can reach; the linter without an
+# importer was a gate on a door that did not exist. This is where both become usable.
+
+PACKS_DIR = Path(__file__).parent.parent / "packs"
+
+
+def _skill_files(target: Path) -> list[Path]:
+    """Every SKILL.md under `target`, or the file itself.
+
+    A directory walk rather than one file at a time because the seed import is a
+    LIBRARY — decision ② imports every data/analytics skill — and "run this command
+    forty times" is the version of this feature that never gets run.
+    """
+    if target.is_file():
+        return [target]
+    return sorted(target.rglob("SKILL.md"))
+
+
+def _render(plan, path: Optional[Path], *, verbose: bool) -> None:
+    """One line per skill, plus its findings. BLOCK is red, WARN is yellow — the two
+    mean different things and a single colour would flatten a refusal into a note."""
+    if plan.blocked:
+        console.print(f"  [red]✗ blocked[/red]  {plan.name}")
+    elif path is not None:
+        console.print(f"  [green]✓ wrote[/green]   {plan.pack_id}  [dim]{path}[/dim]")
+    else:
+        console.print(f"  [cyan]· planned[/cyan] {plan.pack_id}")
+    for f in plan.findings:
+        if f.severity.value == "block":
+            console.print(f"      [red]{f.rule}[/red] line {f.line}: {f.why}")
+        elif verbose:
+            console.print(f"      [yellow]{f.rule}[/yellow] line {f.line}: {f.why}")
+
+
+@cli.group()
+def skills():
+    """Import third-party agent skills (SKILL.md) as packs."""
+
+
+@skills.command("lint")
+@click.argument("target", type=click.Path(exists=True, path_type=Path))
+def skills_lint(target: Path):
+    """Report what the import gate would say about TARGET. Writes nothing."""
+    from aughor.skills.ingest import SkillIngestError, plan_pack
+
+    files = _skill_files(target)
+    if not files:
+        console.print(f"[yellow]no SKILL.md under {target}[/yellow]")
+        return
+    blocked = 0
+    for f in files:
+        try:
+            plan = plan_pack(f.read_text(), source_url=str(f))
+        except SkillIngestError as exc:
+            console.print(f"  [red]✗ unreadable[/red] {f}: {exc}")
+            blocked += 1
+            continue
+        blocked += bool(plan.blocked)
+        _render(plan, None, verbose=True)
+    console.print(f"\n{len(files)} skill(s) · [red]{blocked} blocked[/red]")
+    if blocked:
+        sys.exit(1)
+
+
+@skills.command("import")
+@click.argument("target", type=click.Path(exists=True, path_type=Path))
+@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--namespace", default="",
+              help="Prefix every pack id. Skill names in the wild are generic — a real "
+                   "library here produced 'access' three times from three plugins.")
+@click.option("--licence", default="",
+              help="Licence of the source library. Recorded on every pack; a missing "
+                   "one is a warning, because redistributed prose needs its terms known.")
+@click.option("--source", default="", help="Name of the source library.")
+@click.option("--dry-run", is_flag=True, help="Show what would be created; write nothing.")
+@click.option("--overwrite", is_flag=True, help="Replace packs that already exist.")
+def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
+                  source: str, dry_run: bool, overwrite: bool):
+    """Import SKILL.md files under TARGET as packs.
+
+    TARGET is a path — a file or a directory. A URL is NOT accepted: fetching untrusted
+    prose over the network is a materially different risk surface from reading a file
+    the user already chose to put on their disk, and it wants its own allowlist and
+    review path. `git clone` then point this at the checkout.
+
+    Every pack lands `status: draft` and `partial: true`. Nothing imported reaches a
+    prompt until someone promotes it.
+    """
+    from aughor.skills.ingest import DEFAULT_SOURCE, SkillIngestError, ingest_skill, plan_pack
+
+    files = _skill_files(target)
+    if not files:
+        console.print(f"[yellow]no SKILL.md under {target}[/yellow]")
+        return
+
+    wrote = blocked = failed = 0
+    for f in files:
+        kwargs = dict(source=source or DEFAULT_SOURCE, source_url=str(f),
+                      licence=licence, namespace=namespace)
+        try:
+            if dry_run:
+                _render(plan_pack(f.read_text(), **kwargs), None, verbose=True)
+                continue
+            path, plan = ingest_skill(f.read_text(), packs_dir,
+                                      overwrite=overwrite, **kwargs)
+        except SkillIngestError as exc:
+            # A collision lands here, and it is the common case on a real library.
+            console.print(f"  [red]✗ {f.parent.name}[/red]: {exc}")
+            failed += 1
+            continue
+        blocked += bool(plan.blocked)
+        wrote += path is not None
+        _render(plan, path, verbose=False)
+
+    if dry_run:
+        console.print(f"\n[dim]dry run — nothing written.[/dim] {len(files)} skill(s) read.")
+        return
+    console.print(f"\n{len(files)} skill(s) · [green]{wrote} written[/green] · "
+                  f"[red]{blocked} blocked[/red] · {failed} could not be written")
+    if wrote:
+        console.print("[dim]All imported packs are status=draft — promote one to make "
+                      "it active.[/dim]")
+
+
 if __name__ == "__main__":
     cli()

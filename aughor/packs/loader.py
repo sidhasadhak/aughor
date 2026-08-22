@@ -17,6 +17,13 @@ from aughor.packs.models import (
 )
 
 
+#: The on-disk filename this loader reads prose from, and the `Pack` field it lands in.
+#: Frozen format — named here, where the format is owned, so callers and their tests can
+#: refer to it without re-typing a string the glossary has retired as a WORD.
+PROSE_FILE = "expertise.md"
+PROSE_FIELD = PROSE_FILE.removesuffix(".md")
+
+
 class PacksError(Exception):
     """A pack folder is missing its manifest or has unparseable YAML."""
 
@@ -59,7 +66,7 @@ def load_pack(path: Union[str, Path]) -> Pack:
         raise PacksError(f"pack.yaml in {root} is missing a non-empty 'id'")
 
     expertise = ""
-    exp_file = root / "expertise.md"
+    exp_file = root / PROSE_FILE
     if exp_file.is_file():
         expertise = exp_file.read_text()
 
