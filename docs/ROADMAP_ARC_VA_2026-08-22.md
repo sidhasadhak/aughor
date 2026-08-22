@@ -8,8 +8,8 @@
 > | VA-0 Agent Ops control room | ✅ **shipped** — #371 |
 > | VA-5 trace waterfall | ✅ **shipped** — #372 |
 > | VA-6 agent-plane alerting | ✅ **shipped** (rule engine) — #373 |
-> | VA-2 delegation | 🔨 backend built, unpushed — sub-agent event streaming outstanding |
-> | VA-1 skills plane | 🔨 linter built, unpushed — the SKILL.md→pack ingester outstanding |
+> | VA-2 delegation | ✅ **complete, unpushed** — spine · `delegate_task` · roster · attributed sub-agent streaming · the hop rendered |
+> | VA-1 skills plane | ✅ **complete, unpushed** — linter · `SKILL.md`→pack ingester · `aughor skills lint\|import` CLI |
 > | VA-3 · VA-7 · VA-8 · VA-9 · VA-10 | planned below |
 > | VA-4 automations dataflow | parked (see §2) |
 >
@@ -102,6 +102,25 @@ the skill loaded vs not, on the same model, same seed; show the prompt-token del
 **Risks:** prompt bloat (measure per PE discipline — a skill that adds 800 tokens and
 changes nothing is a regression); licence hygiene per skill.
 
+> **BUILT 2026-08-22** (deliverables 1–3; 4 and 5 remain). `aughor/skills/ingest.py`
+> plans and writes; `aughor skills lint|import` drives it; 26 tests.
+> 🔑 **The honest-partial rule turned out to be the whole design.** Writing the missing
+> layers as EMPTY files produces a pack that LOADS — a specialist every surface reports
+> as real that knows nothing, because an empty structure and an unpopulated one are
+> indistinguishable once written. So absent layers stay absent, the manifest carries
+> `partial: true`, and everything lands `status: draft` (which `active_packs()` already
+> filters on — the existing gate, not a second switch).
+> 🔑 **Provenance had to reach `PackManifest` itself** — `_Base` sets `extra="ignore"`,
+> so `source`/`licence`/`partial` written to pack.yaml and absent from the model vanish
+> silently on load: the pack keeps its prose and loses its origin.
+> ⚠️ **Slug collisions are real, and measured:** a sweep of 28 live SKILL.md files gave
+> `access` ×3 and `configure` ×3 from three plugins. Bulk import (decision ②) hits that
+> on the third file — hence `--namespace`. Refusing to clobber stays the default.
+> ⚠️ **URL import deliberately NOT built.** Fetching untrusted prose over the network is
+> a different risk surface from reading a file the user already put on disk; it wants its
+> own allowlist and review path. The command says so rather than faking support.
+> ⏭️ Outstanding: progressive disclosure (deliverable 4) and the seed import (5).
+
 ---
 
 ### VA-2 — Delegation (≈1–2 weeks) — *the biggest single gap*
@@ -132,6 +151,30 @@ the conversation *delegates to*.
 **Receipt:** live, in chat — ask a question requiring two specialists; both hops appear as
 parts, both scopes hold, `agent_path` is right, and the transcript shows the supervisor
 did not restate the delegate's answer when it bailed.
+
+> **BUILT 2026-08-22 — deliverable 4 completed.** 🔑 **The hop was ALREADY streaming, and
+> that was the bug:** `delegate_task` handed the parent's `emit` straight down, so a
+> delegate's SQL and receipts landed in the supervisor's stream looking like the
+> supervisor's own work — a query nobody in the conversation appeared to have run.
+> `delegated_emit` stamps every forwarded frame with
+> `{sub_agent_id, sub_agent_name, parent_agent_id, agent_path, depth}`, taken from the
+> SAME `agent_path` the cycle check authorises on, so the tree the UI draws and the tree
+> the runtime refuses cannot disagree.
+> 🔑 **`sql` is last-write-wins in the projector**, so a delegated frame had to be routed
+> BEFORE the turn's own projector — there is no correcting it afterwards. Each hop gets a
+> scratch `ChatTurn` projected by the SAME `PART_PROJECTORS`, so no new part name, no
+> change to the closed `data-*` map, nothing for the frame-parity gate to learn.
+> ⚠️ **A new frame name emitted from `delegate_tool.py` would ESCAPE the parity gate** —
+> `test_sse_frame_parity` reads only `investigations.py`. Attribution rides existing
+> frames precisely to avoid that.
+> ⚠️ **A suppressed frame is a cancellation checkpoint not taken** — the parent `emit`
+> doubles as that checkpoint and `answer_question` takes no `cancelled` callable. Bounded
+> to one hop, and it is the property `_CONVERSE_SUPPRESSED` already has. The real fix is
+> threading `cancelled` down the converse tool seam, which fixes `answer_question` and
+> `deep_analysis` at the same time.
+> 🗣️ **One product question left open, deliberately:** a delegate's guard receipts do NOT
+> pool into the supervisor's evidence list — they render under the agent that produced
+> them. Whether the supervisor's evidence should include them is the user's call.
 **Risks:** recursion (a delegate delegating) — bound depth at 1 for this wave and say so;
 cost multiplication (each hop is a full turn) — surface it in the run's cost.
 
