@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
+import { TraceFlow } from "@/components/agentops/TraceFlow";
 import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
 import {
   getTrace, getTraces, getVerdicts, recordVerdict,
@@ -44,7 +45,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
-  const [tab, setTab] = useState<"timeline" | "events" | "feedback">("timeline");
+  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "feedback">("timeline");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
@@ -175,6 +176,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               )}
               <Button variant={tab === "timeline" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("timeline")}>Waterfall</Button>
+              <Button variant={tab === "flow" ? "secondary" : "ghost"} size="xs"
+                onClick={() => setTab("flow")}>Flow</Button>
               <Button variant={tab === "events" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("events")}>Events</Button>
               <Button variant={tab === "feedback" ? "secondary" : "ghost"} size="xs"
@@ -188,6 +191,15 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                   : <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                       This run predates the laid-out timeline, or the API did not return
                       one. The Events tab reads the same run from its raw log.
+                    </div>}
+              </div>
+            ) : tab === "flow" ? (
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+                {detail.timeline
+                  ? <TraceFlow timeline={detail.timeline} edges={detail.flow_edges ?? []} />
+                  : <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                      This run predates the laid-out timeline, so there is no graph to
+                      draw. The Events tab reads the same run from its raw log.
                     </div>}
               </div>
             ) : tab === "events" ? (
