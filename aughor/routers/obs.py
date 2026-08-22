@@ -33,7 +33,7 @@ from pydantic import BaseModel
 
 from aughor.kernel.ledger import Ledger
 from aughor.obs import prompt_window, session_log
-from aughor.obs.timeseries import resolve_window
+from aughor.obs.timeseries import JOB_READ_LIMIT, resolve_window
 from aughor.org.context import current_org_id
 
 logger = logging.getLogger(__name__)
@@ -255,7 +255,7 @@ def model_usage(scan: int = 5000):
 def obs_timeseries(group: str = "model", measure: str = "calls", kind: Optional[str] = None,
                    source: str = "events",
                    range: str = "24h", since: str = "", until: str = "",
-                   limit: int = 20000):
+                   limit: int = JOB_READ_LIMIT):
     """Session events bucketed on the SHARED time axis, one series per group value.
 
     Every other fold in this router is row-windowed (`scan=N` = "the last N rows"), which

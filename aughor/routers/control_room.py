@@ -137,7 +137,8 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
     from aughor.kernel.agents import is_enabled as charter_enabled
     from aughor.kernel.agents import charter_for_kind, list_charters
     from aughor.kernel.jobs import concurrency_policy
-    from aughor.obs.timeseries import RUNNER_CHARTER_ID, bucket_edges, resolve_window
+    from aughor.obs.timeseries import (JOB_READ_LIMIT, bucket_edges, job_rows,
+                                       resolve_window)
     from aughor.obs.usage import usage_report
     from aughor.custom_agents.store import list_agents as list_personas
 
@@ -152,19 +153,27 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
     window_minutes = max(1, int((win.until_dt - win.since_dt).total_seconds() // 60))
     spark_start = window_start
 
-    # One read, bounded by the window, for both the tiles and the sparks. `active` is
+    # ONE bounded read, shared with the chart, split BY KIND in the query. `active` is
     # deliberately unbounded by time — a job running since yesterday is running NOW.
-    jobs = ledger.jobs_where(since=win.since, until=win.until, limit=5000)
+    #
+    # This used to be a single capped read that was classified afterwards, and the cap
+    # was the bug: the tick outnumbers agent work ~45:1, so the newest 5,000 rows were
+    # almost all tick and the agent runs fell off the end. Measured on a real store over
+    # seven days it reported 143 agent runs where there were 250 — a 43% undercount, with
+    # the chart beside it drawing the true number, because it read with a larger cap.
+    # `job_rows` now issues one read per side, so neither can starve the other, and says
+    # when a cap was actually reached.
+    agent_rows, runner_rows, truncated = job_rows(win, limit=JOB_READ_LIMIT)
     active = ledger.jobs_where(states=_ACTIVE_STATES, limit=500)
 
     # ── tiles, from the jobs table ────────────────────────────────────────────
-    # Every job is tagged with its charter once, here, so "is this an agent or a runner"
-    # is decided in ONE place and the tiles, the sparks and the table cannot disagree.
+    # Every job carries its charter from the read, so "is this an agent or a runner" is
+    # decided in ONE place and the tiles, the sparks and the table cannot disagree.
+    jobs = agent_rows + runner_rows
     for j in jobs:
-        j["_charter"] = charter_for_kind(j.get("kind")).id
-    runner_jobs = [j for j in jobs if j["_charter"] == RUNNER_CHARTER_ID]
-    agent_jobs = jobs if include_runners else [j for j in jobs
-                                               if j["_charter"] != RUNNER_CHARTER_ID]
+        j["_charter"] = j.get("charter_id") or charter_for_kind(j.get("kind")).id
+    runner_jobs = runner_rows
+    agent_jobs = jobs if include_runners else agent_rows
 
     in_window: list[dict] = []
     durations_ms: list[float] = []
@@ -225,6 +234,8 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
         # who sees "24 runs" while the machine did 1,315 things is owed the difference.
         "runner_runs": len(runner_jobs),
         "include_runners": bool(include_runners),
+        # True when a read filled its cap: every count here is then a floor, not a total.
+        "truncated": bool(truncated),
         "window": win.as_dict(),
     }
     tiles["cost"] = _window_cost(win)

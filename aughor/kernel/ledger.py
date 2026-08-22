@@ -697,6 +697,25 @@ class Ledger:
                     pass
         return out
 
+    def job_kinds_in(self, *, since: Optional[str] = None,
+                     until: Optional[str] = None) -> list[str]:
+        """Distinct job kinds created inside the window, same half-open bounds as
+        :meth:`jobs_where`.
+
+        Exists so a caller can split a capped read BY KIND instead of reading one page
+        and classifying it afterwards. When one kind outnumbers the others by orders of
+        magnitude — the automation tick does — a single page is all tick, and everything
+        else falls off the end without a word.
+        """
+        q, args = "SELECT DISTINCT kind FROM jobs WHERE 1=1", []
+        if since:
+            q += " AND created_at>=?"; args.append(since)
+        if until:
+            q += " AND created_at<?"; args.append(until)
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        return [r[0] for r in rows if r[0]]
+
     def jobs_where(self, *, states: Optional[list[str]] = None,
                    conn_id: Optional[str] = None, canvas_id: Optional[str] = None,
                    idempotency_key: Optional[str] = None,

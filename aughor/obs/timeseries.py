@@ -199,15 +199,45 @@ def fold(rows: Iterable[dict], window: Window, *,
 #: twenty-four hours, so folding it in makes every agent metric a rounding error on a cron.
 RUNNER_CHARTER_ID = "worker"
 
+#: How many job rows one fold may read per side. ONE constant, because the tile and the
+#: chart must be computed from the same population or they contradict each other on the
+#: same screen — which is exactly what happened while the fleet endpoint hardcoded 5,000
+#: and `/obs/timeseries` defaulted to 20,000: 143 runs against 250, side by side.
+JOB_READ_LIMIT = 20000
 
-def job_rows(window: Window, *, limit: int = 5000) -> list[dict]:
-    """Jobs created inside the window, newest first, with their charter resolved."""
+
+def job_rows(window: Window, *, limit: int = JOB_READ_LIMIT) -> tuple[list[dict], list[dict], bool]:
+    """Agent jobs and runner jobs in the window, read SEPARATELY, newest first, each with
+    its charter resolved. Returns ``(agents, runners, truncated)``.
+
+    Two reads rather than one, because a single capped read is not safe here: the
+    automation tick outnumbers agent work by roughly 45:1, so the newest N rows are very
+    nearly all tick and the agent runs fall off the end of the page. Measured on a real
+    store over seven days, one 5,000-row read returned 143 of 250 agent runs — the tile
+    said 143 while the chart beside it, reading with a larger cap, drew all 250. Splitting
+    in the QUERY is the same remedy this repo already applied to `/jobs?kind=`, where the
+    filter ran after the limit for the same reason.
+
+    ``truncated`` is True when either read filled its cap, so a caller can present its
+    number as a floor instead of passing a truncated count off as a total.
+    """
     from aughor.kernel.agents import charter_for_kind
     from aughor.kernel.ledger import Ledger
-    rows = Ledger.default().jobs_where(since=window.since, until=window.until, limit=limit)
-    for r in rows:
-        r["charter_id"] = charter_for_kind(r.get("kind")).id
-    return rows
+    led = Ledger.default()
+    kinds = led.job_kinds_in(since=window.since, until=window.until)
+    agent_kinds = [k for k in kinds if not is_runner(charter_for_kind(k).id)]
+    runner_kinds = [k for k in kinds if is_runner(charter_for_kind(k).id)]
+
+    def _read(ks: list[str]) -> list[dict]:
+        if not ks:
+            return []
+        rows = led.jobs_where(since=window.since, until=window.until, kinds=ks, limit=limit)
+        for r in rows:
+            r["charter_id"] = charter_for_kind(r.get("kind")).id
+        return rows
+
+    agents, runners = _read(agent_kinds), _read(runner_kinds)
+    return agents, runners, (len(agents) >= limit or len(runners) >= limit)
 
 
 def is_runner(charter_id: str) -> bool:
@@ -215,16 +245,15 @@ def is_runner(charter_id: str) -> bool:
 
 
 def job_series(window: Window, *, include_runners: bool = False,
-               limit: int = 5000) -> dict:
+               limit: int = JOB_READ_LIMIT) -> dict:
     """Runs per bucket, one series per charter — the Overview's activity chart.
 
     Returns the runner series separately rather than mixed in, so the caller decides
     whether to draw it and the agent totals never quietly include a cron tick.
     """
     from aughor.kernel.agents import get_charter
-    rows = job_rows(window, limit=limit)
-    agents = [r for r in rows if not is_runner(r.get("charter_id", ""))]
-    runners = [r for r in rows if is_runner(r.get("charter_id", ""))]
+    agents, runners, truncated = job_rows(window, limit=limit)
+    rows = agents + runners
     labels = {}
     for r in rows:
         cid = r.get("charter_id") or ""
@@ -243,6 +272,9 @@ def job_series(window: Window, *, include_runners: bool = False,
         "agent_runs": sum(int(s.total) for s in series),
         "runner_runs": sum(int(s.total) for s in runner_series),
         "include_runners": bool(include_runners),
+        # A cap that is hit is a number that is a floor. Say so rather than letting a
+        # truncated count be read as a total.
+        "truncated": bool(truncated),
     }
 
 

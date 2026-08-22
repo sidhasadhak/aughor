@@ -312,16 +312,21 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 definition: "Jobs created in the window whose kind belongs to an agent charter. "
                   + "Automation ticks and eval experiments are runners and are excluded unless toggled in.",
                 denominator: `${formatCount(tiles.runs_started)} agent runs · ${formatCount(tiles.runner_runs)} runner runs excluded`,
-                coverage: "100% — every job carries a kind",
+                coverage: tiles.truncated
+                  ? "capped — this window holds more jobs than one read returns, so the "
+                    + "figure is a floor"
+                  : "100% — every job carries a kind",
                 open: { label: "Open the jobs list", hint: "the runs whose count equals this figure",
                         onOpen: () => { setJobFilter("all"); setProv(null); } },
                 note: tiles.runner_runs > 0
                   ? `The ${formatCount(tiles.runner_runs)} runner runs are the automation engine's evaluation tick — one job per minute, no model calls. Counted apart so this figure means agent work.`
                   : undefined,
               })}
-              caption={tiles.runner_runs > 0
-                ? `+${formatCount(tiles.runner_runs)} background runs excluded`
-                : "no background runs in window"}
+              caption={tiles.truncated
+                ? `a floor — the window holds more jobs than one read returns`
+                : tiles.runner_runs > 0
+                  ? `+${formatCount(tiles.runner_runs)} background runs excluded`
+                  : "no background runs in window"}
               title="Agent runs started in the window" />
 
             <StatTile label="Failures" value={formatCount(tiles.failed_runs)}

@@ -5362,6 +5362,9 @@ export interface FleetTiles {
   /** What every figure above LEFT OUT — the automation engine's tick, counted apart. */
   runner_runs: number;
   include_runners: boolean;
+  /** True when a read filled its cap: every count in this object is then a floor, not a
+   *  total. The tile says so rather than presenting a truncated number as complete. */
+  truncated?: boolean;
   window: TimeWindow;
   /** Priced from the provider's own catalogue; `unpriced_calls` is why a small total is
    *  not the same as a cheap day. */

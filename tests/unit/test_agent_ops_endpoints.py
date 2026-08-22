@@ -103,6 +103,11 @@ def test_the_runs_chart_plots_the_same_runs_the_runs_tile_counts(client):
     is stamped at write time and no historical call carries it. Runs are attributed by
     the charter that owns each job KIND, derived at read time, so they are complete for
     all history. A chart that contradicts the tile above it is worse than no chart.
+
+    Scope: this pins WHAT the chart counts, on a population of fifteen. It cannot see the
+    two panels drift apart because of how MUCH each one reads —
+    `test_the_tile_and_the_chart_count_the_same_runs` is the guard for that, and the bug
+    it was written for sailed straight through this one.
     """
     _seed(n_profile=4, n_automation=11)
     tiles = client.get("/control-room/fleet?range=1h").json()["tiles"]
@@ -239,6 +244,79 @@ def test_runs_tile_equals_the_agent_jobs_it_links_to(client):
     # and the table agrees with the tile
     assert sum(r.get("runs", 0) for r in body["rows"] if r["kind"] == "charter") == 3
     assert sum(r["runs"] for r in body["runners"]) == 40
+
+
+def _seed_ticks_newer(n_agent: int, n_tick: int):
+    """Agent runs first, then a continuous tick — the real arrival pattern.
+
+    `_seed` stamps every row at one instant, so a newest-first cap slices an arbitrary
+    mix and the starvation never reproduces. The tick is a cron: it keeps arriving, so it
+    owns the newest rows, which is precisely why it displaces agent work off the page.
+    """
+    import sqlite3
+
+    from aughor.kernel.ledger import Ledger
+
+    led = Ledger.default()
+    now = datetime.now(timezone.utc)
+    c = sqlite3.connect(led.path)
+    c.execute("DELETE FROM jobs")
+    i = 0
+    # agent runs: the older half of the window
+    for _ in range(n_agent):
+        at = _iso(now - timedelta(minutes=50) + timedelta(seconds=i))
+        c.execute("INSERT INTO jobs (id, kind, state, created_at, started_at, finished_at)"
+                  " VALUES (?,?,?,?,?,?)", (f"a-{i}", "profile", "SUCCEEDED", at, at, at))
+        i += 1
+    # the tick: everything since, so it holds every newest row
+    for k in range(n_tick):
+        at = _iso(now - timedelta(minutes=30) + timedelta(seconds=k))
+        c.execute("INSERT INTO jobs (id, kind, state, created_at, started_at, finished_at)"
+                  " VALUES (?,?,?,?,?,?)", (f"t-{k}", "automation", "SUCCEEDED", at, at, at))
+    c.commit()
+    c.close()
+
+
+def test_a_page_of_ticks_cannot_starve_the_agent_runs():
+    """The cap must not be spent on the loud kind.
+
+    A single capped read over this table is nearly all tick, so the agent runs fall off
+    the end of the page and the count that reaches the tile is silently short. Measured on
+    a real store over seven days: a 5,000-row read returned 143 of 250 agent runs, a 43%
+    undercount, while the chart beside it — reading with a larger cap — drew all 250. The
+    read is split by kind now, so a flood of one kind cannot displace the other.
+    """
+    from aughor.obs.timeseries import job_rows, resolve_window
+
+    _seed_ticks_newer(n_agent=30, n_tick=300)
+    agents, runners, truncated = job_rows(resolve_window("1h"), limit=100)
+
+    assert len(agents) == 30, (
+        f"{len(agents)} of 30 agent runs survived a 100-row cap shared with 300 ticks — "
+        "the read is being classified after the limit instead of split in the query")
+    assert len(runners) == 100, "the runner side should fill its own cap, not the agents'"
+    assert truncated is True, "a read that filled its cap must say so"
+
+
+def test_the_tile_and_the_chart_count_the_same_runs(client, monkeypatch):
+    """THE parity that was missing. The existing ratchet compares the tile to the roster
+    table — both computed from the same list, so it can never see the two panels disagree.
+    The chart is a SECOND read, and while the two carried different caps (5,000 in the
+    fleet route, 20,000 in `/obs/timeseries`) they contradicted each other on one screen.
+    Pinned at a small cap so the population does not have to be enormous to exercise it.
+    """
+    import aughor.obs.timeseries as ts_mod
+
+    monkeypatch.setattr(ts_mod, "JOB_READ_LIMIT", 100)
+    _seed_ticks_newer(n_agent=30, n_tick=300)
+
+    tiles = client.get("/control-room/fleet?range=1h").json()["tiles"]
+    chart = client.get("/obs/timeseries?source=jobs&range=1h").json()
+    chart_runs = int(sum(sum(s["values"]) for s in chart["series"]))
+
+    assert tiles["runs_started"] == chart_runs == 30, (
+        f"tile says {tiles['runs_started']}, chart says {chart_runs} — the two panels are "
+        "reading different populations")
 
 
 def test_jobs_kind_filter_survives_a_page_full_of_runner_ticks(client):
