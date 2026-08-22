@@ -183,3 +183,76 @@ def test_the_hop_streams_under_the_delegate_s_identity_not_the_caller_s():
         f"expected the work frame only, got {[n for n, _ in seen]}")
     assert seen[0][1]["delegate"]["sub_agent_name"] == "Analyst"
     assert row["response"] == "42"
+
+
+# ── the hop is a span, or the node view has nothing to draw ─────────────────────
+#
+# `DelegationContext.span_attributes()` was written so "VA-5's node view can draw the
+# tree and VA-6 can alert on runaway depth" — and for one release it was called from
+# nowhere. These drive the real emission path and read the real store, because the only
+# way that gap was ever going to show is by looking at what a run actually wrote.
+
+def _hop_spans(trace_id: str) -> list[dict]:
+    from aughor.obs import session_log
+    return [e for e in session_log.recover_session(trace_id)
+            if (e.get("payload") or {}).get("span_kind") == "delegation"]
+
+
+def _drive_one_hop(trace_id: str, ctx=None, target=None):
+    from aughor.agent.delegate_tool import _run_one
+    from aughor import telemetry
+
+    def _answer(conn, args, *, emit=None, session_id=""):
+        return {"answer": "42", "usage": {}}
+
+    with telemetry.bind_trace(trace_id):
+        return _run_one(target or {"id": "analyst", "name": "Analyst", "connection_id": "c1"},
+                        "count things", ctx or DelegationContext(), answer=_answer)
+
+
+def test_a_hop_writes_its_own_span():
+    """Without this the whole delegation is ONE `delegate_task` tool call: two
+    delegates' work collapsed into a single node, with no parentage to draw and no
+    per-hop duration to read."""
+    _drive_one_hop("trace-hop-1")
+
+    spans = _hop_spans("trace-hop-1")
+    assert spans, "the hop wrote no span — the node view has nothing to draw"
+    assert {e["kind"] for e in spans} == {"tool_call", "tool_call_result"}, (
+        "a hop must open AND close, or work that never returns looks like work that "
+        "never started")
+
+
+def test_the_span_carries_the_delegation_identity_into_the_payload():
+    """The payload specifically: a span's ordinary attributes are written to
+    `task_history`, and the trace reader never opens that table."""
+    _drive_one_hop("trace-hop-2", DelegationContext(agent_path=("supervisor",)))
+
+    payload = _hop_spans("trace-hop-2")[0]["payload"]
+    assert payload["aughor.delegation.path"] == "supervisor/analyst"
+    assert payload["aughor.delegation.depth"] == 2
+    assert payload["delegate_agent_id"] == "analyst"
+    assert payload["delegate_agent_name"] == "Analyst"
+
+
+def test_the_span_identity_matches_what_the_runtime_refuses_cycles_on():
+    """One identity, or the tree drawn and the tree refused are different trees."""
+    ctx = DelegationContext(agent_path=("a", "b"))
+    _drive_one_hop("trace-hop-3", ctx,
+                   {"id": "c", "name": "C", "connection_id": "x"})
+
+    payload = _hop_spans("trace-hop-3")[0]["payload"]
+    assert payload["aughor.delegation.path"] == "/".join(ctx.child("c").agent_path)
+
+
+def test_the_timeline_reads_the_hop_back_as_a_delegation_node():
+    """End to end: emission → store → the layout the node view renders."""
+    from aughor.obs import session_log
+    from aughor.obs.trace_tree import build_timeline
+
+    _drive_one_hop("trace-hop-4")
+    tl = build_timeline(session_log.recover_session("trace-hop-4"))
+
+    hops = [n for n in tl["nodes"] if n["kind"] == "delegation"]
+    assert len(hops) == 1, f"expected one hop node, got {[n['kind'] for n in tl['nodes']]}"
+    assert hops[0]["delegation"]["agent_name"] == "Analyst"

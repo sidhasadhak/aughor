@@ -171,3 +171,115 @@ def test_a_space_separated_timestamp_is_parsed_not_compared():
         _ev(2, "llm_call", "2026-08-22T10:00:02.000000+00:00", duration_ms=10),
     ])
     assert tl["nodes"][1]["offset_ms"] == 2000
+
+
+# ── the node view: a run is a graph, not a list ───────────────────────────────────
+#
+# Before delegation there was almost no real parentage in a trace, so `flow_edges` was
+# `zip(nodes, nodes[1:])` — adjacency standing in for structure because structure did
+# not exist yet. It does now, and drawing two delegates working under one supervisor
+# as three things that happened in a row is the failure these guard.
+
+def _span(seq, at, sid, *, parent=None, kind="tool_call", **kw):
+    payload = kw.pop("payload", {"span_kind": "tool"})
+    return _ev(seq, kind, at, span_id=sid, parent_span_id=parent, payload=payload, **kw)
+
+
+def test_a_nested_span_is_drawn_from_its_parent_not_from_its_predecessor():
+    tl = build_timeline([
+        _span(1, T.format(0), "sup", duration_ms=3000),
+        _span(2, T.format(1), "hop", parent="sup", duration_ms=500),
+    ])
+    edges = flow_edges(tl)
+
+    assert {"from": "sup", "to": "hop", "latency_ms": None, "kind": "child"} in edges
+    assert not [e for e in edges if e["kind"] == "next"], (
+        "a child was also chained to its predecessor — that pairing means nothing")
+
+
+def test_a_child_edge_reports_no_latency():
+    """The child runs INSIDE the parent. A number here would be a duration dressed up
+    as a wait."""
+    tl = build_timeline([
+        _span(1, T.format(0), "sup", duration_ms=3000),
+        _span(2, T.format(2), "hop", parent="sup", duration_ms=500),
+    ])
+    child = [e for e in flow_edges(tl) if e["kind"] == "child"][0]
+    assert child["latency_ms"] is None
+
+
+def test_root_level_flow_still_chains_and_still_carries_the_gap():
+    """The top-level reading — where the run's dead time went — must survive."""
+    tl = build_timeline([
+        _ev(1, "llm_call", T.format(0), duration_ms=1000),
+        _ev(2, "llm_call", T.format(3), duration_ms=500),
+    ])
+    nxt = [e for e in flow_edges(tl) if e["kind"] == "next"]
+    assert len(nxt) == 1 and nxt[0]["latency_ms"] == 2000
+
+
+def test_two_hops_under_one_supervisor_both_hang_off_it():
+    tl = build_timeline([
+        _span(1, T.format(0), "sup", duration_ms=5000),
+        _span(2, T.format(1), "a", parent="sup", duration_ms=500),
+        _span(3, T.format(2), "b", parent="sup", duration_ms=500),
+    ])
+    children = {(e["from"], e["to"]) for e in flow_edges(tl) if e["kind"] == "child"}
+    assert children == {("sup", "a"), ("sup", "b")}
+
+
+def test_a_span_naming_itself_as_parent_draws_no_self_loop():
+    """Malformed, but a self-edge is a layout the renderer cannot resolve."""
+    tl = build_timeline([_span(1, T.format(0), "x", parent="x", duration_ms=10)])
+    assert not [e for e in flow_edges(tl) if e["from"] == e["to"]]
+
+
+def test_an_orphan_parent_reference_leaves_the_node_at_the_root():
+    """A parent id we never saw is not a parent. The node stays in the top-level flow
+    rather than being attached to something that is not in this trace."""
+    tl = build_timeline([
+        _ev(1, "llm_call", T.format(0), duration_ms=100),
+        _span(2, T.format(2), "orphan", parent="never-emitted", duration_ms=100),
+    ])
+    edges = flow_edges(tl)
+    assert not [e for e in edges if e["kind"] == "child"]
+    assert [e["kind"] for e in edges] == ["next"]
+
+
+# ── delegation identity reaches the reader ────────────────────────────────────────
+
+def test_a_delegation_hop_carries_who_ran_it():
+    """`span_attributes()` exists so the node view can draw the tree, and its values
+    only reach a trace reader through the PAYLOAD — a span's other attributes are
+    written to `task_history`, a table this module never opens."""
+    tl = build_timeline([_span(
+        1, T.format(0), "hop", duration_ms=500,
+        payload={"span_kind": "delegation",
+                 "aughor.delegation.path": "analyst",
+                 "aughor.delegation.depth": 1,
+                 "delegate_agent_id": "analyst",
+                 "delegate_agent_name": "Analyst"})])
+    node = tl["nodes"][0]
+
+    assert node["kind"] == "delegation", "a hop rendered as an ordinary tool call"
+    assert node["delegation"] == {"path": "analyst", "depth": 1,
+                                  "agent_id": "analyst", "agent_name": "Analyst"}
+
+
+def test_ordinary_work_carries_no_delegation_claim():
+    tl = build_timeline([_span(1, T.format(0), "s", duration_ms=10)])
+    assert tl["nodes"][0]["delegation"] is None
+
+
+def test_a_hop_whose_identity_only_arrived_on_the_result_still_gets_it():
+    """The result row CLOSES the call's node rather than adding one, so an identity
+    present on only one of the pair must still survive."""
+    tl = build_timeline([
+        _span(1, T.format(0), "hop", payload={"span_kind": "delegation"}),
+        _span(2, T.format(1), "hop", kind="tool_call_result", duration_ms=400, ok=True,
+              payload={"span_kind": "delegation",
+                       "aughor.delegation.path": "a/b",
+                       "aughor.delegation.depth": 2,
+                       "delegate_agent_id": "b", "delegate_agent_name": "B"}),
+    ])
+    assert tl["nodes"][0]["delegation"]["path"] == "a/b"
