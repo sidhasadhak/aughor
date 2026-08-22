@@ -30,6 +30,16 @@ class PackManifest(_Base):
     extends: list[str] = Field(default_factory=list)
     scope: dict = Field(default_factory=lambda: {"connections": ["*"]})
     status: str = "draft"                          # draft | active | deprecated
+    # VA-1 — provenance for a pack that came from somewhere else. Declared HERE because
+    # `_Base` ignores unknown fields: written to pack.yaml and absent from the model,
+    # these would vanish on load and the pack would silently lose its origin.
+    source: str = ""                               # e.g. "awesome-agent-skills"
+    source_url: str = ""
+    licence: str = ""
+    #: Prose only — no entities, metrics or goldens. An imported skill supplies
+    #: one layer of a pack, and a surface must be able to say so rather than presenting a
+    #: specialist that silently knows nothing about your data.
+    partial: bool = False
 
 
 class MetricBinds(_Base):
