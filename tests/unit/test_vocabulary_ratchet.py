@@ -99,7 +99,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
-        r"(?i)persona", CODE_ROOTS, (),
+        # `AgentTemplate.persona` is a frozen API field: the create flow renders its text
+        # under the template's name. It matches the field, never the reader — nothing on
+        # that screen says the word.
+        r"(?i)persona", CODE_ROOTS,
+        ("web/components/agentops/CreateAgentFlow.tsx",),
         "one of five words for a user-created agent; it is a 'custom agent'",
     ),
     "hire": (
@@ -250,7 +254,7 @@ BASELINE: dict[str, int] = {
     "fleet": 28,
     "foundry": 0,
     "genie": 23,
-    "hire": 27,
+    "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
     # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
     # saying "finding" there (the glossary word) paid for the API names they must import.
     "insight": 1959,

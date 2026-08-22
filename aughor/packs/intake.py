@@ -20,6 +20,16 @@ from aughor.packs.inject import build_injection, PackInjection
 _PACKS_DIR = Path(__file__).resolve().parents[2] / "packs"
 
 
+def known_pack_ids(packs_dir=None) -> list[str]:
+    """Ids of every pack on disk, active or not — the set a binding may legally name.
+
+    Public because a caller validating a binding must not reach for `_PACKS_DIR`, and
+    `active_packs()` is the wrong gate here: a pack that is on disk but not yet active is
+    an inert binding, not a typo, and refusing it would contradict the write-time contract.
+    """
+    return list_packs(Path(packs_dir or _PACKS_DIR))
+
+
 def active_packs(packs_dir=None) -> list[Pack]:
     """Loadable, status==active packs under the packs dir (best-effort)."""
     base = Path(packs_dir or _PACKS_DIR)

@@ -8,7 +8,7 @@
  * database, which schema, which documents — was on a different tab they had to find.
  *
  * **Scope before prose.** Step 2 is the one this product was missing, and the one every
- * data-agent builder leads with (Databricks Genie opens on a table picker, Snowflake Cortex
+ * data-agent builder leads with (the incumbents open on a table picker; Snowflake Cortex
  * recommends fewer than ten tables): an agent that has not been told where to look cannot
  * be judged on what it says. It is also a defect fix — `schema_scope` was free text with no
  * validation and hard consequences: a typo produced an agent that 409s on every ask,
@@ -142,7 +142,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
     setBusy(true); setError(null);
     try {
       // The template path takes the SAME bindings as the scratch path. It always accepted
-      // them; the previous UI sent only `pack_id`, so a pack-hired agent could not even be
+      // them; the previous UI sent only `pack_id`, so an agent created from a pack could not be
       // named — and its suggested goldens, returned so the creator could supply SQL "while
       // they still have the domain in mind", were discarded.
       const agent = template

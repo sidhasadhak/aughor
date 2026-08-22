@@ -159,8 +159,8 @@ def _validate_agent_packs(pack_ids: Optional[list]) -> None:
     if not pack_ids:
         return
     try:
-        from aughor.packs.intake import _PACKS_DIR, list_packs
-        known = set(list_packs(_PACKS_DIR))
+        from aughor.packs.intake import known_pack_ids
+        known = set(known_pack_ids())
     except Exception:
         known = set()
     missing = [p for p in pack_ids if p not in known]

@@ -28,21 +28,21 @@ def test_hiring_from_a_pack_produces_an_agent_its_editor_can_save(client):
     """
     templates = client.get("/agents/templates").json()["templates"]
     if not templates:
-        pytest.skip("no packs on disk to hire from")
+        pytest.skip("no packs on disk to create from")
     made = client.post("/agents/custom/from-template",
                        json={"pack_id": templates[0]["pack_id"]})
     assert made.status_code == 201, made.text
     agent = made.json()["agent"]
     try:
-        # Exactly what PersonaConfigure.save() sends: the whole form, including the
-        # pack_ids the hire bound for us.
+        # Exactly what the configure step's save sends: the whole form, including the
+        # pack_ids that creating from a pack bound for us.
         saved = client.patch(f"/agents/custom/{agent['id']}", json={
             "name": agent["name"], "instructions": agent["instructions"],
             "connection_id": agent["connection_id"], "schema_scope": agent["schema_scope"],
             "doc_ids": agent["doc_ids"], "pack_ids": agent["pack_ids"],
         })
         assert saved.status_code == 200, (
-            f"the editor refused a binding the hire created: {saved.text}")
+            f"the editor refused a binding that creation made: {saved.text}")
     finally:
         client.delete(f"/agents/custom/{agent['id']}")
 
