@@ -40,8 +40,15 @@ const CASES: Record<string, { columns: string[]; rows: unknown[][] }> = {
   pareto: { columns: ["category", "gmv"], rows: [["A", 500], ["B", 300], ["C", 120], ["D", 80]] },
   "line-forecast": { columns: ["month", "revenue", "lower", "upper"],
                      rows: months(6).map((m, i) => [m, 100 + i * 10, 90 + i * 10, 115 + i * 10]) },
+  // Six cities, not two. The resolver refuses a grid too small to carry an honest chart
+  // (`isUngraphableGrid`, and `rows.length < 2` in inference) — a rule that has nothing to
+  // do with maps: `scatter` nulls on this same two-row grid too. This case was the only
+  // one seeded under that floor, so all three point-map assertions failed against a chart
+  // engine that was working correctly.
   "point-map": { columns: ["city", "lat", "lon", "orders"],
-                 rows: [["Zurich", 47.37, 8.54, 120], ["Berlin", 52.52, 13.4, 300]] },
+                 rows: [["Zurich", 47.37, 8.54, 120], ["Berlin", 52.52, 13.40, 300],
+                        ["Madrid", 40.42, -3.70, 210], ["Oslo", 59.91, 10.75, 90],
+                        ["Dublin", 53.35, -6.26, 140], ["Athens", 37.98, 23.73, 60]] },
 };
 
 async function render(type: string) {
