@@ -80,6 +80,76 @@ def roster_block(targets: list[dict]) -> str:
               "cannot. Do not delegate work you can already do.")
 
 
+#: Frames a delegate does NOT relay into the parent turn.
+#:
+#: The rule is `_CONVERSE_SUPPRESSED`'s, one level further in: **forward what describes
+#: the WORK, suppress what describes the DELEGATE'S OWN TURN.**
+#:
+#: * The **prose** frames go because the delegate's answer is already coming back as the
+#:   tool result. Relaying its token stream as well puts every one of those tokens on the
+#:   SSE twice — once as `*_delta`, once inside the result the supervisor then reads —
+#:   which is why the plan says to forward tool activity only.
+#: * The **lifecycle** frames go for the reason the converse wrapper gives for its own
+#:   list: only the OUTER turn knows when it is over. A delegate's `done` would render
+#:   the conversation finished while the supervisor is still deciding what to do with the
+#:   answer, and its `error` would paint a red terminal state on a turn that recovers —
+#:   `_run_one` already turns a delegate's failure into a RESULT the model can read.
+_DELEGATE_SUPPRESSED = frozenset({
+    # the delegate's prose — returned as the tool result, never streamed twice
+    "headline", "narrative", "narrative_delta", "insight", "insight_delta",
+    "report", "report_delta", "answer",
+    # the delegate's lifecycle — the outer turn owns it
+    "done", "error", "clarify", "followups", "mode", "start",
+})
+
+
+def delegated_emit(emit, *, ctx: DelegationContext, agent_id: str, agent_name: str):
+    """Wrap the parent's emit so a delegate's frames arrive ATTRIBUTED, or not at all.
+
+    An untagged relay is worse than no relay. The delegate's SQL, its row counts and its
+    guard receipts already reach the parent stream today, and they arrive looking exactly
+    like the supervisor's own work — so the user is shown a query that nobody in the
+    conversation appears to have run, against a connection the supervisor may not even be
+    bound to. Attribution is what makes a forwarded frame readable rather than confusing.
+
+    The stamp is the same identity `DelegationContext` uses for its cycle check, so what
+    the UI draws and what the runtime refuses can never disagree: `agent_path` is one
+    value with one meaning.
+
+    ⚠️ **Cancellation.** The parent `emit` doubles as this pipeline's cancellation
+    checkpoint — it raises once the client disconnects — and `answer_question` takes no
+    separate `cancelled` callable, so a suppressed frame is also a checkpoint not taken.
+    The exposure is bounded to a single hop (the tool loop re-checks between steps, and
+    the run carries a deadline), and it is the property `_CONVERSE_SUPPRESSED` already
+    has rather than a new one. Threading a real `cancelled` down the converse tool seam
+    would fix it for `answer_question` and `deep_analysis` at the same time, which is
+    where that change belongs.
+    """
+    if emit is None:
+        return None
+
+    # The path ends with THIS agent, so the caller is the element before it. An empty
+    # parent means the top-level conversation delegated directly.
+    parent_id = ctx.agent_path[-2] if len(ctx.agent_path) >= 2 else ""
+    stamp = {
+        "sub_agent_id": agent_id,
+        "sub_agent_name": agent_name,
+        "parent_agent_id": parent_id,
+        "agent_path": "/".join(ctx.agent_path),
+        "depth": ctx.depth,
+    }
+
+    def _relay(name: str, payload: dict) -> None:
+        if name in _DELEGATE_SUPPRESSED:
+            return
+        # A COPY, always. The answer pipeline reuses payload dicts across frames, and a
+        # stamp written into one in place would follow it onto frames this delegate never
+        # produced — attribution that lies is worse than none.
+        emit(name, {**(payload or {}), "delegate": dict(stamp)})
+
+    return _relay
+
+
 def _run_one(target: dict, task: str, ctx: DelegationContext, *,
              answer: Callable[..., dict], emit=None, session_id: str = "",
              caller_connection_id: str = "") -> dict:
@@ -95,8 +165,11 @@ def _run_one(target: dict, task: str, ctx: DelegationContext, *,
     framed = task if not target.get("schema_scope") else (
         f"{task}\n\n(Answer within schema '{target['schema_scope']}'.)")
 
+    # The delegate streams under its OWN identity, not the caller's.
+    hop_emit = delegated_emit(emit, ctx=child, agent_id=agent_id, agent_name=name)
+
     try:
-        result = answer(conn, {"question": framed}, emit=emit, session_id=session_id)
+        result = answer(conn, {"question": framed}, emit=hop_emit, session_id=session_id)
     except Exception as exc:                      # a delegate failing is a RESULT
         logger.warning("delegate %s failed: %s", agent_id, exc, exc_info=True)
         return {"agent_name": name, "response": f"{name} could not answer: {exc}",
