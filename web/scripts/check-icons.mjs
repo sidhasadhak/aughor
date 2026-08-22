@@ -45,6 +45,8 @@ const DRAWINGS = {
   "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
   "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",
   "components/DomainIntelPanel.tsx":"an empty-state illustration of a linked network",
+  "components/agentops/ActivityChart.tsx":
+    "stacked run bars, the hatch pattern and the brush overlay — chart marks with\n     pointer semantics (drag-to-brush over discrete buckets), not a glyph",
 };
 
 /** Icon packages that must not reappear. */

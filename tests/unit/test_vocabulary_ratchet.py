@@ -91,11 +91,19 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "named after the SOMA-SQL paper; it is an 'ambiguity probe'",
     ),
     "kinetic": (
-        r"(?i)kinetic", CODE_ROOTS, (),
+        # The Overview's attention strip switches on `NeedsHumanRow.source`, whose wire
+        # value is `kinetic_inbox`. It matches the field, never the reader: the chip that
+        # renders from it says "proposal".
+        r"(?i)kinetic", CODE_ROOTS,
+        ("web/components/FleetOverviewPanel.tsx",),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
-        r"(?i)persona", CODE_ROOTS, (),
+        # `AgentTemplate.persona` is a frozen API field: the create flow renders its text
+        # under the template's name. It matches the field, never the reader — nothing on
+        # that screen says the word.
+        r"(?i)persona", CODE_ROOTS,
+        ("web/components/agentops/CreateAgentFlow.tsx",),
         "one of five words for a user-created agent; it is a 'custom agent'",
     ),
     "hire": (
@@ -120,22 +128,42 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         "one of three names for the agents workspace; it is 'Agents'",
     ),
     "control_room": (
-        r"(?i)control[\s_-]room", CODE_ROOTS, (),
+        # The module that SERVES the frozen routes, and the tests that call them, must
+        # spell the path. The reason string already grants the routes their freeze; this
+        # exempts the two places that cannot avoid naming them, and nothing else.
+        r"(?i)control[\s_-]room", CODE_ROOTS,
+        ("aughor/routers/control_room.py", "tests/unit/test_agent_ops_endpoints.py",
+         "tests/unit/test_agent_ops_data_plane.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),
     "fleet": (
-        r"(?i)\bfleet", ("web",), (),
+        # `FleetOverviewPanel` is the Overview layer's component and `getFleetOverview`
+        # calls `/control-room/fleet`, both frozen alongside the route below. The word
+        # reaches no reader: the layer is labelled "Overview" and the table "All agents".
+        r"(?i)\bfleet", ("web",),
+        ("web/components/FleetOverviewPanel.tsx", "web/lib/api.ts"),
         "retired from the UI; the layer is 'Overview'",
     ),
     "charter": (
-        r"(?i)charter", ("web",), (),
+        # The API's row discriminant IS `kind: "charter"` (see FleetCharterRow), so these
+        # files spell it to match the wire. Exempted as TYPE vocabulary, never as prose —
+        # the visible strings say "built-in", "custom" and "Agents", and a charter's own
+        # page is reached from a layer called Roster.
+        r"(?i)charter", ("web",),
+        ("web/lib/api.ts", "web/components/FleetOverviewPanel.tsx",
+         "web/components/AgenticAgentsPanel.tsx"),
         "not a user-facing word; the roster lists 'agents'",
     ),
     "investigation_in_web": (
         r"(?i)investigat", ("web",),
         ("web/lib/api.ts", "web/lib/uiMessageAdapter", "web/lib/sseFrames",
          "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/",
+         # The Overview receives the shell's `onOpenInvestigation` prop (shared with three
+         # other panels) and reads `resolve.investigation_id` off a needs-human row — a
+         # wire field. Its own prose says "deep analysis"; renaming either would break the
+         # contract without changing a word any reader sees.
+         "web/components/FleetOverviewPanel.tsx",
          # The parts renderer's single occurrence is an IMPORT PATH: the payload
          # shape types (GuardReceipt, ConverseStep, ContextManifest) live in
          # `investigationStream.ts`, so naming them means naming that module.
@@ -211,7 +239,9 @@ BASELINE: dict[str, int] = {
     "ada": 556,
     "agentic_ops": 27,
     "blueprint": 0,
-    "charter": 72,
+    # 72 → 4: the wire-discriminant files were exempted with their reason (the API row
+    # kind IS "charter"), and the two places it reached prose now say "built-in".
+    "charter": 4,
     "control_room": 27,
     "copilotkit": 5,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
@@ -219,10 +249,12 @@ BASELINE: dict[str, int] = {
     "databricks": 49,
     "digest": 166,
     "expertise": 43,
-    "fleet": 58,
+    # 58 → 28: FleetOverviewPanel and the api.ts client are exempt — they name the
+    # frozen /control-room/fleet route and its component. No reader sees the word.
+    "fleet": 28,
     "foundry": 0,
     "genie": 23,
-    "hire": 27,
+    "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
     # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
     # saying "finding" there (the glossary word) paid for the API names they must import.
     "insight": 1959,

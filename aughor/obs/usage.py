@@ -48,6 +48,7 @@ Deterministic, read-only, no LLM.
 """
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional, Sequence
 
@@ -101,11 +102,77 @@ PRICES: dict[tuple[str, str], Price] = {
 }
 
 
-def price_for(provider: str, model: str) -> Optional[Price]:
-    """The declared price for a model, or ``None`` when nothing declares one.
+def _as_rate(value: Any) -> Optional[float]:
+    """A price as a float, or None when the catalogue gave something that is not one.
 
-    ``:free`` is matched as a SUFFIX because that is how OpenRouter spells the free tier
-    (``nvidia/nemotron-3-ultra-550b-a55b:free``); everything else matches by prefix.
+    A predicate rather than a try/except around the assignment: an unparseable rate is an
+    ordinary, expected shape in a third-party payload, not an exceptional one, and
+    swallowing it silently is the pattern this repo ratchets against.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+#: Prices read from a provider's own ``/models`` catalogue, keyed ``(provider, model)``.
+#: Populated by :func:`refresh_catalogue_prices`, consulted only after :data:`PRICES` —
+#: a declared rate is a deliberate claim and outranks a fetched one.
+_CATALOGUE_PRICES: dict[tuple[str, str], Price] = {}
+
+
+def refresh_catalogue_prices(*, backends: Sequence[str] = ("openrouter",),
+                             refresh: bool = False) -> int:
+    """Load per-model rates from each backend's published catalogue. Returns rows loaded.
+
+    The prices this platform runs on move, are published by the provider, and are already
+    being fetched for the model picker — so the honest source for "what did that call
+    cost" is the same catalogue, not a table in this file that somebody has to remember to
+    edit. A backend that is unreachable simply contributes nothing; its models stay
+    unpriced and say so, which is the pre-existing behaviour and a survivable one.
+
+    Never raises: a cost figure is worth less than the page it sits on.
+    """
+    loaded = 0
+    for backend in backends:
+        try:
+            from aughor.llm.models import list_models
+            payload = list_models(backend, refresh=refresh)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"catalogue prices for {backend}; its models stay unpriced",
+                     counter="usage.catalogue_prices")
+            continue
+        from datetime import datetime, timezone
+        as_of = datetime.now(timezone.utc).date().isoformat()
+        for entry in (payload.get("models") or []):
+            if not isinstance(entry, dict):
+                continue
+            mid = str(entry.get("id") or "").strip().lower()
+            pin = _as_rate(entry.get("price_in"))
+            if not mid or pin is None:
+                continue
+            pout = _as_rate(entry.get("price_out"))
+            _CATALOGUE_PRICES[(backend, mid)] = Price(
+                pin, pout if pout is not None else pin, as_of)
+            loaded += 1
+    price_for.cache_clear()
+    return loaded
+
+
+@functools.lru_cache(maxsize=4096)
+def price_for(provider: str, model: str) -> Optional[Price]:
+    """The price for a model, or ``None`` when nothing declares or publishes one.
+
+    Order: an explicitly DECLARED price wins (a human wrote it down on a date), then the
+    provider's own catalogue, then nothing. ``:free`` is matched as a SUFFIX because that
+    is how OpenRouter spells the free tier (``nvidia/nemotron-3-ultra-550b-a55b:free``);
+    everything else matches by prefix.
+
+    Cached because ``rollup`` calls this once per event and the answer only changes when
+    the catalogue is refreshed, which clears the cache itself.
     """
     p = (provider or "").strip().lower()
     m = (model or "").strip().lower()
@@ -116,7 +183,9 @@ def price_for(provider: str, model: str) -> Optional[Price]:
         if pp == p and prefix != ":free" and m.startswith(prefix):
             if best is None or len(prefix) > best[0]:
                 best = (len(prefix), price)
-    return best[1] if best else None
+    if best is not None:
+        return best[1]
+    return _CATALOGUE_PRICES.get((p, m))
 
 
 @dataclass

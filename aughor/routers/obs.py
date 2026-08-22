@@ -33,6 +33,7 @@ from pydantic import BaseModel
 
 from aughor.kernel.ledger import Ledger
 from aughor.obs import prompt_window, session_log
+from aughor.obs.timeseries import JOB_READ_LIMIT, resolve_window
 from aughor.org.context import current_org_id
 
 logger = logging.getLogger(__name__)
@@ -250,6 +251,116 @@ def model_usage(scan: int = 5000):
                                               scan=max(1, min(int(scan), 20000)))}
 
 
+@router.get("/obs/timeseries")
+def obs_timeseries(group: str = "model", measure: str = "calls", kind: Optional[str] = None,
+                   source: str = "events",
+                   range: str = "24h", since: str = "", until: str = "",
+                   limit: int = JOB_READ_LIMIT):
+    """Session events bucketed on the SHARED time axis, one series per group value.
+
+    Every other fold in this router is row-windowed (`scan=N` = "the last N rows"), which
+    means a quiet week and a busy hour draw the same width and no two panels can be read
+    against each other. This is the time-windowed one, and `window` ships with the answer
+    so a reader always knows what span the bars cover.
+
+    Two SOURCES, and picking the wrong one draws a chart that contradicts the tile above
+    it. `source=jobs` counts RUNS, attributed by the charter that owns each job kind —
+    complete for every row, including history, because the attribution is derived at read
+    time. `source=events` counts model CALLS, attributed by the `charter_id` stamped at
+    write time — which is empty for every call made before that column existed, and for
+    every call answered inline rather than inside a run. A panel headed "runs by agent"
+    must ask for jobs; one headed "tokens by model" must ask for events.
+    """
+    from aughor.obs.timeseries import event_series, job_series
+    win = resolve_window(range, since=since, until=until)
+    if source == "jobs":
+        payload = job_series(win, limit=max(100, min(int(limit), 50000)))
+        return {"measured": True, "group": "charter", "measure": "runs",
+                "scanned": payload["agent_runs"] + payload["runner_runs"],
+                "attributed": payload["agent_runs"] + payload["runner_runs"],
+                "coverage": 1.0 if (payload["agent_runs"] or payload["runner_runs"]) else None,
+                **payload}
+    try:
+        return {"measured": True,
+                **event_series(win, group=group, measure=measure, kind=kind,
+                               org_id=current_org_id() or None,
+                               limit=max(100, min(int(limit), 50000)))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/obs/usage-summary")
+def usage_summary(range: str = "24h", since: str = "", until: str = "",
+                  scan: int = 20000):
+    """The Usage page's tiles and ranked lists over one window — calls, tokens, cost,
+    fallback rate, and coverage, plus top models and top call sites.
+
+    Coverage is a first-class number here, not a footnote: `calls_without_usage` and
+    `unpriced_calls` are what stop a low total reading as a cheap week. The fallback rate
+    is served from the Migration 10 column — it has been written since the failover work
+    and read by nothing, so this is its first reader.
+    """
+    from aughor.obs.usage import price_for, rollup
+    win = resolve_window(range, since=since, until=until)
+    rows = Ledger.default().session_events(
+        kind=session_log.LLM_CALL, org_id=current_org_id() or None,
+        since=win.since, until=win.until, limit=max(100, min(int(scan), 50000)))
+    report = rollup(rows, axes=("provider", "model"))
+    by_site: dict[str, dict] = {}
+    by_role: dict[str, dict] = {}
+    fell_back = attributed_fallback = 0
+    cost = 0.0
+    unpriced = 0
+    for e in rows:
+        if e.get("fallback") is not None:
+            attributed_fallback += 1
+            if e.get("fallback"):
+                fell_back += 1
+        site = (e.get("payload") or {}).get("caller") or "(unattributed)"
+        s = by_site.setdefault(site, {"caller": site, "calls": 0, "prompt_tokens": 0,
+                                      "total_tokens": 0, "calls_without_usage": 0})
+        s["calls"] += 1
+        if e.get("total_tokens") is None:
+            s["calls_without_usage"] += 1
+        else:
+            s["prompt_tokens"] += int(e.get("prompt_tokens") or 0)
+            s["total_tokens"] += int(e.get("total_tokens") or 0)
+        role = e.get("role") or "(unattributed)"
+        r = by_role.setdefault(role, {"role": role, "calls": 0, "total_tokens": 0})
+        r["calls"] += 1
+        r["total_tokens"] += int(e.get("total_tokens") or 0)
+        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
+        if price is None:
+            unpriced += 1
+        else:
+            cost += (int(e.get("prompt_tokens") or 0) / 1e6) * price.input_per_1m
+            cost += (int(e.get("completion_tokens") or 0) / 1e6) * price.output_per_1m
+    tokens = sum(int(e.get("total_tokens") or 0) for e in rows)
+    no_usage = sum(1 for e in rows if e.get("total_tokens") is None)
+    return {
+        "measured": True,
+        "window": win.as_dict(),
+        "calls": len(rows),
+        "tokens": tokens,
+        "cost_usd": round(cost, 4),
+        "unpriced_calls": unpriced,
+        "cost_is_complete": unpriced == 0,
+        "calls_without_usage": no_usage,
+        "usage_coverage": round(1 - no_usage / len(rows), 3) if rows else None,
+        # A rate whose denominator is invisible gets read as "right now". Both halves ship.
+        "fallback": {"fell_back": fell_back, "of_attributed": attributed_fallback,
+                     "rate": (round(fell_back / attributed_fallback, 3)
+                              if attributed_fallback else None)},
+        # `to_dict` already derives mean_ms and failure_rate from the counters, guarding
+        # the divide-by-zero. Reaching past it for attributes that do not exist is how
+        # this endpoint 500'd on its first live call — the seam was already there.
+        "models": [r.to_dict() for r in report.rows[:12]],
+        "sites": sorted(by_site.values(), key=lambda s: s["prompt_tokens"],
+                        reverse=True)[:12],
+        "roles": sorted(by_role.values(), key=lambda r: r["calls"], reverse=True)[:12],
+    }
+
+
 @router.get("/obs/prompt-capture")
 def prompt_capture_status():
     """Is anything being recorded right now, and for how much longer?"""
@@ -276,25 +387,41 @@ def prompt_capture_close():
 @router.get("/activity")
 def activity(kind: Optional[str] = None, agent_id: Optional[str] = None,
              conn_id: Optional[str] = None, errors_only: bool = False,
-             since_seq: Optional[int] = None, limit: int = 100):
+             since_seq: Optional[int] = None,
+             model: Optional[str] = None, provider: Optional[str] = None,
+             charter: Optional[str] = None, job_id: Optional[str] = None,
+             role: Optional[str] = None, trace_id: Optional[str] = None,
+             range: str = "", since: str = "", until: str = "",
+             limit: int = 100):
     """A paged tail over the session log, newest first.
 
     `kinds` reports what the store actually contains (unfiltered), so a filter
     UI offers only vocabularies something emitted — a stream that pads its
     kind list reads as coverage that doesn't exist.
+
+    The `model` / `provider` / `charter` / `job_id` / `role` filters are what make every
+    ranked list on the usage surface a DOOR: clicking a model row has to be able to ask
+    for exactly that model's calls. Before them the top-N was a dead end — the columns
+    were indexed and unreachable. `range` (or explicit `since`/`until`) scopes the same
+    window every other panel uses.
     """
     org_id = current_org_id() or None
     ledger = Ledger.default()
+    win = resolve_window(range, since=since, until=until) if (range or since or until) else None
     rows = ledger.session_events(
         kind=kind, agent_id=agent_id, conn_id=conn_id, errors_only=errors_only,
-        org_id=org_id, since_seq=since_seq, limit=max(1, min(int(limit), 500)))
+        org_id=org_id, since_seq=since_seq, model=model, provider=provider,
+        charter_id=charter, job_id=job_id, role=role, trace_id=trace_id,
+        since=(win.since if win else None), until=(win.until if win else None),
+        limit=max(1, min(int(limit), 500)))
     all_recent = ledger.session_events(org_id=org_id, limit=2000)
     kinds: dict[str, int] = {}
     for r in all_recent:
         kinds[r["kind"]] = kinds.get(r["kind"], 0) + 1
 
     return {"measured": True, "recording": True,
-            "events": [_mark_content(e) for e in rows], "kinds": kinds}
+            "events": [_mark_content(e) for e in rows], "kinds": kinds,
+            "window": win.as_dict() if win else None}
 
 
 @router.get("/activity/stream")

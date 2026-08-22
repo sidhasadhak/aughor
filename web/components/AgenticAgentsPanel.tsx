@@ -19,12 +19,15 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
+import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
+import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
   createAgentGolden, createUserAgent,
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
-  evaluateUserAgent, getAgentObservability, getAgents, getConnections,
+  evaluateUserAgent, getAgentObservability, getAgents, getConnections, getJobs,
   getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision,
@@ -50,13 +53,19 @@ function fmtBudget(n: number | null): string {
   return n == null ? "role default" : compactNumber(n);
 }
 
-export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent }: {
+export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent,
+  range, createSignal }: {
   workspaceId?: string;
   workspaceName?: string;
   /** CR1 drill-in: open a run's trace in the Activity layer's runs mode. */
   onOpenTrace?: (investigationId: string) => void;
-  /** An agent opened from the Fleet table — selected on arrival. */
+  /** An agent opened from the Overview table — selected on arrival. */
   focusAgent?: { id: string; kind: "charter" | "persona" } | null;
+  /** The surface's shared window — the agent page's own figures scope to it. */
+  range?: TimeRange;
+  /** Bumped by the workspace's "+ Create agent" control, from any layer. A counter, not a
+   *  flag: pressing Create while already here must re-open the flow. */
+  createSignal?: number;
 }) {
   const [charters, setCharters] = useState<AgentRosterEntry[]>([]);
   const [personas, setPersonas] = useState<UserAgent[]>([]);
@@ -76,6 +85,9 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   useEffect(() => {
     if (focusAgent) setSelected({ kind: focusAgent.kind, id: focusAgent.id });
   }, [focusAgent]);
+  useEffect(() => {
+    if (createSignal) setSelected({ kind: "hire" });
+  }, [createSignal]);
 
   const charter = selected?.kind === "charter"
     ? charters.find(c => c.id === selected.id) : undefined;
@@ -88,14 +100,19 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
       <div style={{ width: 268, flexShrink: 0, borderRight: "1px solid var(--b1)",
         overflowY: "auto", padding: 10 }}>
         <div style={{ display: "flex", alignItems: "center", padding: "2px 6px 8px" }}>
-          <span className="aug-label" style={{ color: "var(--t3)" }}>Custom agents</span>
+          <span className="aug-label" style={{ color: "var(--t2)" }}>Custom agents</span>
           <span style={{ flex: 1 }} />
-          <Button variant="outline" size="xs"
-            onClick={() => setSelected({ kind: "hire" })}>+ Create</Button>
+          <Button variant="secondary" size="xs"
+            onClick={() => setSelected({ kind: "hire" })}>+ Create agent</Button>
         </div>
         {personas.length === 0 && (
-          <div style={{ fontSize: 12, color: "var(--t4)", padding: "0 6px 10px" }}>
-            None yet — create one from a pack or from scratch.
+          <div style={{ padding: "0 6px 10px" }}>
+            <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
+              No custom agents yet. An agent is a scope and a stance — where it may look,
+              and how it should think.
+            </p>
+            <Button variant="secondary" size="xs"
+              onClick={() => setSelected({ kind: "hire" })}>Create your first agent</Button>
           </div>
         )}
         {personas.map(p => (
@@ -104,7 +121,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             active={selected?.kind === "persona" && selected.id === p.id}
             onClick={() => setSelected({ kind: "persona", id: p.id })} />
         ))}
-        <div className="aug-label" style={{ color: "var(--t3)", padding: "12px 6px 8px" }}>
+        <div className="aug-label" style={{ color: "var(--t2)", padding: "12px 6px 8px" }}>
           Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
         </div>
         {charters.map(c => (
@@ -123,14 +140,17 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             border: "1px solid var(--red2)", color: "var(--red5)" }}>{error}</div>
         )}
         {selected?.kind === "hire" ? (
-          <HireDetail onDone={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
-            onError={setError} />
+          <CreateAgentFlow
+            onCreated={a => { reload(); setSelected({ kind: "persona", id: a.id }); }}
+            onCancel={() => setSelected(personas[0]
+              ? { kind: "persona", id: personas[0].id }
+              : charters[0] ? { kind: "charter", id: charters[0].id } : null)} />
         ) : persona ? (
           <PersonaDetail key={persona.id} persona={persona} onChanged={reload}
             onDeleted={() => { setSelected(null); reload(); }}
             onError={setError} onOpenTrace={onOpenTrace} />
         ) : charter ? (
-          <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId}
+          <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
             onChanged={reload} onError={setError} />
         ) : (
           <div style={{ padding: 24, fontSize: 12, color: "var(--t3)" }}>Select an agent.</div>
@@ -159,7 +179,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
       </span>
       {sub && (
-        <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2,
+        <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2,
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
       )}
     </Button>
@@ -188,7 +208,7 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{persona.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
             custom · {persona.connection_id || "any connection"}
             {persona.schema_scope ? ` · ${persona.schema_scope}` : ""}
             {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
@@ -270,9 +290,18 @@ function PersonaOverview({ persona, onOpenTrace }: {
           <Tile label="p90 latency" value={`${(obs.trace_stats.latency_p90_ms / 1000).toFixed(1)}s`} />
         )}
       </div>
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 6 }}>Recent runs</div>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
+      <div style={{ marginBottom: 16 }}>
+        <RunTimeline emptyNote="No runs yet for this agent."
+          onOpen={onOpenTrace}
+          runs={runs.slice(0, 20).map(r => ({
+            id: r.id, state: r.status, at: r.started_at, durationMs: null,
+            label: r.headline || r.question,
+          }))} />
+      </div>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Recent runs</div>
       {runs.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--t3)" }}>No runs yet for this agent.</div>
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {runs.map(r => (
@@ -558,7 +587,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
             padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
             <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
-            <span style={{ color: "var(--t4)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+            <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
             <span style={{
               flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap", color: "var(--t3)",
@@ -591,13 +620,15 @@ function PersonaHistory({ persona, onChanged, onError }: {
  *  budgets, model pin. Temperature/topP/tool toggles are deliberately absent —
  *  the transport pins temperature platform-wide and capabilities are
  *  governance, not UI switches. */
-function CharterDetail({ charter, workspaceId, onChanged, onError }: {
+function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
   charter: AgentRosterEntry; workspaceId?: string;
   onChanged: () => void; onError: (e: string | null) => void;
+  range?: TimeRange;
 }) {
   const [models, setModels] = useState<string[]>([]);
   const [catalogBackend, setCatalogBackend] = useState("");
   const [busy, setBusy] = useState(false);
+  const [charterRuns, setCharterRuns] = useState<TimelineRun[]>([]);
 
   useEffect(() => {
     getLlmModels()
@@ -608,6 +639,27 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
           .catch(() => setModels([]));
       });
   }, []);
+
+  // A charter's runs are the JOBS of the kinds it owns — one fetch per kind, because
+  // /jobs filters on a single kind. A charter that owns none skips the fetch entirely
+  // rather than asking for everything and rendering somebody else's work.
+  useEffect(() => {
+    let alive = true;
+    if (charter.job_kinds.length === 0) { setCharterRuns([]); return; }
+    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20 }).catch(() => [])))
+      .then(lists => {
+        if (!alive) return;
+        const rows = lists.flat()
+          .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+          .slice(0, 20)
+          .map(j => ({
+            id: j.id, state: j.state, at: j.created_at,
+            durationMs: j.duration_ms, label: j.title || j.kind,
+          }));
+        setCharterRuns(rows);
+      });
+    return () => { alive = false; };
+  }, [charter.id, charter.job_kinds, range]);
 
   const patch = async (body: Parameters<typeof patchAgent>[1]) => {
     setBusy(true);
@@ -634,7 +686,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{charter.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
             charter · {charter.lane} · {charter.role}
           </div>
         </div>
@@ -669,6 +721,15 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
           sub="enforced live — an over-budget run is cancelled" />
       </div>
 
+      {/* The run history a charter page never had. A charter's work is JOBS, so this reads
+          the jobs of its own kinds — the same rows the Overview counts, at one-agent zoom. */}
+      <div style={{ marginBottom: 18 }}>
+        <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
+        <RunTimeline runs={charterRuns} emptyNote={charter.job_kinds.length === 0
+          ? "This charter owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
+          : "No runs in this window."} />
+      </div>
+
       {!charter.reserved && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px",
           border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
@@ -691,7 +752,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
               model id per agent, and those were removed with every other model list
               (2026-08-15). An agent runs on the operator's pin, or inherits the role
               binding — there is nothing left for this product to recommend. */}
-          <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
             These are the charter&rsquo;s REAL knobs. There is no per-agent temperature,
             topP or tool toggle here: the transport pins temperature platform-wide
             (13% run-to-run flip measured at default temp), and capability changes are
@@ -703,86 +764,6 @@ function CharterDetail({ charter, workspaceId, onChanged, onError }: {
   );
 }
 
-// ── hire / create ────────────────────────────────────────────────────────────────
-
-function HireDetail({ onDone, onError }: {
-  onDone: (a: UserAgent) => void; onError: (e: string | null) => void;
-}) {
-  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
-  const [name, setName] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => { listAgentTemplates().then(setTemplates).catch(() => setTemplates([])); }, []);
-
-  const hire = async (tpl: AgentTemplate) => {
-    setSaving(true);
-    onError(null);
-    try { onDone((await createUserAgentFromTemplate({ pack_id: tpl.pack_id })).agent); }
-    catch (e) { onError(e instanceof Error ? e.message : String(e)); }
-    finally { setSaving(false); }
-  };
-
-  const create = async () => {
-    if (!name.trim()) { onError("Name is required."); return; }
-    setSaving(true);
-    onError(null);
-    try {
-      onDone(await createUserAgent({ name, instructions, connection_id: "",
-        schema_scope: "", doc_ids: [], pack_ids: [] }));
-    } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div style={{ padding: 20, maxWidth: 720 }}>
-      {templates.length > 0 && (
-        <>
-          <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 4 }}>
-            Create from a pack
-          </div>
-          <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 10, lineHeight: 1.5 }}>
-            Starts the agent with the pack&rsquo;s reasoning stance and keeps the pack
-            bound. Its questions come along as suggestions — each still needs reference
-            SQL for your connection before it can be measured.
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
-            {templates.map(t => (
-              <div key={t.pack_id} style={{ flex: "1 1 240px", maxWidth: 330, padding: 14,
-                display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-2)",
-                border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.45 }}>{t.persona}</div>
-                <div style={{ fontSize: 11, color: "var(--t4)" }}>
-                  {t.domains.join(" · ")}
-                  {t.suggested_goldens.length > 0
-                    ? ` — ${t.suggested_goldens.length} suggested questions` : ""}
-                </div>
-                <Button size="sm" variant="outline" disabled={saving}
-                  onClick={() => hire(t)} className="self-start">Create {t.name}</Button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 8 }}>
-        Or create from scratch
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 560 }}>
-        <input className="aug-input" placeholder="Name — e.g. Churn Analyst" value={name}
-          maxLength={120} onChange={e => setName(e.target.value)} />
-        <textarea className="aug-input" rows={4} maxLength={8000} value={instructions}
-          placeholder="Standing instructions (bind connection, documents and packs after creating)"
-          onChange={e => setInstructions(e.target.value)} />
-        <span>
-          <Button onClick={create} disabled={saving}>
-            {saving ? "Creating…" : "Create agent"}
-          </Button>
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -790,7 +771,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
       border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 14px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

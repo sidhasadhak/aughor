@@ -217,6 +217,15 @@ def emit(
         if not tid:
             return
         session_id, user_id, agent_id = _tel.trace_identity()
+        # Which RUN and which CHARTER — the join Migration 10 exists for. Outside a job
+        # (an /ask turn answered inline) both are empty, which is the honest answer:
+        # the call belongs to a request, not to a background run.
+        try:
+            from aughor.kernel.jobs import run_attribution
+            job_id, charter_id = run_attribution()
+        except Exception:
+            job_id, charter_id = "", ""
+        _payload = payload or {}
         from aughor.kernel.ledger import Ledger
         from aughor.org.context import current_org_id
         Ledger.default().session_event_insert({
@@ -244,8 +253,13 @@ def emit(
                              else (prompt_tokens or 0) + (completion_tokens or 0)),
             "row_count": row_count,
             "retries": retries,
+            "job_id": job_id or None,
+            "charter_id": charter_id or None,
+            # `role` and `fallback` are NOT passed: the ledger derives both from the
+            # payload, which every llm_call already carries. Migration 10 promoted them to
+            # columns without a single emitter changing.
             "payload": {k: (v if k in _LONGFORM_KEYS else _clip(v))
-                        for k, v in (payload or {}).items()} or None,
+                        for k, v in _payload.items()} or None,
         })
     except Exception as exc:
         from aughor.kernel.errors import tolerate

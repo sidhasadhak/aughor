@@ -197,7 +197,8 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
     { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
     { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
-    { id: "nav-agentic-ops", label: "Agents",               sublabel: "Overview, agents, attention, activity, run graphs", type: "action", icon: "process", accent: "var(--vio3)" },
+    { id: "nav-agentic-ops", label: "Agent Ops",            sublabel: "Overview, roster, attention, activity, runs", type: "action", icon: "process", accent: "var(--vio3)" },
+    { id: "create-agent",    label: "Create agent",          sublabel: "Define a custom agent: its scope, its stance, and how you'll know it works", type: "action", icon: "spark",   accent: "var(--grn3)" },
     { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
     { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
@@ -215,6 +216,17 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     "nav-ontology":    () => onNavigate("ontology"),
     "nav-health":      () => onNavigate("health"),
     "nav-agentic-ops": () => onNavigate("agentic-ops"),
+    // Deep-links into the creation flow. `onNavigate` only carries a tab, so the intent
+    // rides the URL — which also makes "create an agent" a linkable place, not just a
+    // button somebody has to already be standing next to.
+    "create-agent":    () => {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set("create", "agent");
+        window.history.replaceState(null, "", u);
+      } catch { /* a URL we cannot parse still navigates; it just lands on the workspace */ }
+      onNavigate("agentic-ops");
+    },
     "nav-playbook":    () => onNavigate("playbook"),
     "nav-catalog":     () => onNavigate("catalog"),
     "nav-builder":     () => onNavigate("builder"),

@@ -115,6 +115,12 @@ export interface paths {
          *     `kinds` reports what the store actually contains (unfiltered), so a filter
          *     UI offers only vocabularies something emitted — a stream that pads its
          *     kind list reads as coverage that doesn't exist.
+         *
+         *     The `model` / `provider` / `charter` / `job_id` / `role` filters are what make every
+         *     ranked list on the usage surface a DOOR: clicking a model row has to be able to ask
+         *     for exactly that model's calls. Before them the top-N was a dead end — the columns
+         *     were indexed and unreachable. `range` (or explicit `since`/`until`) scopes the same
+         *     window every other panel uses.
          */
         get: operations["activity_activity_get"];
         put?: never;
@@ -2492,10 +2498,23 @@ export interface paths {
         };
         /**
          * Fleet Overview
-         * @description KPI tiles + one labelled fleet table (charters and personas).
+         * @description KPI tiles + the fleet table, over ONE window shared with every other panel.
          *
-         *     Dollar cost is deliberately NOT here — it stays on `GET /usage`, which
-         *     carries its own RBAC (billing) and its own `cost_is_complete` caveat.
+         *     `range` (or explicit `since`/`until`) is the shared time axis; `window_minutes` /
+         *     `spark_hours` remain for callers that predate it. The tiles and the row sparklines
+         *     now bucket through the SAME window — they used to disagree by construction, the
+         *     tiles counting a 60-minute window while the sparks drew 24 hourly buckets.
+         *
+         *     **Runners are not agents.** Job kinds no charter claims — the automation engine's
+         *     every-minute evaluation tick, eval experiments — come back in `runners`, never in
+         *     `rows`, and never inside the tile counts unless `include_runners` is set. Measured
+         *     2026-08-17 that tick was 1,291 of 1,316 jobs in twenty-four hours, so folding it in
+         *     turns every agent metric into a rounding error on a cron and makes runs/min a
+         *     heartbeat reading.
+         *
+         *     Cost IS here now (roadmap decision 2, 2026-08-17), priced from the provider's own
+         *     catalogue and always carrying its unpriced share; `GET /usage` keeps the full ledger
+         *     behind billing RBAC.
          */
         get: operations["fleet_overview_control_room_fleet_get"];
         put?: never;
@@ -5485,6 +5504,65 @@ export interface paths {
          *     is hidden by narrowing it.
          */
         get: operations["route_mix_obs_route_mix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/timeseries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Obs Timeseries
+         * @description Session events bucketed on the SHARED time axis, one series per group value.
+         *
+         *     Every other fold in this router is row-windowed (`scan=N` = "the last N rows"), which
+         *     means a quiet week and a busy hour draw the same width and no two panels can be read
+         *     against each other. This is the time-windowed one, and `window` ships with the answer
+         *     so a reader always knows what span the bars cover.
+         *
+         *     Two SOURCES, and picking the wrong one draws a chart that contradicts the tile above
+         *     it. `source=jobs` counts RUNS, attributed by the charter that owns each job kind —
+         *     complete for every row, including history, because the attribution is derived at read
+         *     time. `source=events` counts model CALLS, attributed by the `charter_id` stamped at
+         *     write time — which is empty for every call made before that column existed, and for
+         *     every call answered inline rather than inside a run. A panel headed "runs by agent"
+         *     must ask for jobs; one headed "tokens by model" must ask for events.
+         */
+        get: operations["obs_timeseries_obs_timeseries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/usage-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Usage Summary
+         * @description The Usage page's tiles and ranked lists over one window — calls, tokens, cost,
+         *     fallback rate, and coverage, plus top models and top call sites.
+         *
+         *     Coverage is a first-class number here, not a footnote: `calls_without_usage` and
+         *     `unpriced_calls` are what stop a low total reading as a cheap week. The fallback rate
+         *     is served from the Migration 10 column — it has been written since the failover work
+         *     and read by nothing, so this is its first reader.
+         */
+        get: operations["usage_summary_obs_usage_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10993,6 +11071,15 @@ export interface operations {
                 conn_id?: string | null;
                 errors_only?: boolean;
                 since_seq?: number | null;
+                model?: string | null;
+                provider?: string | null;
+                charter?: string | null;
+                job_id?: string | null;
+                role?: string | null;
+                trace_id?: string | null;
+                range?: string;
+                since?: string;
+                until?: string;
                 limit?: number;
             };
             header?: never;
@@ -15487,6 +15574,10 @@ export interface operations {
             query?: {
                 window_minutes?: number;
                 spark_hours?: number;
+                range?: string;
+                since?: string;
+                until?: string;
+                include_runners?: boolean;
             };
             header?: never;
             path?: never;
@@ -20728,6 +20819,78 @@ export interface operations {
             query?: {
                 scan?: number;
                 since_seq?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obs_timeseries_obs_timeseries_get: {
+        parameters: {
+            query?: {
+                group?: string;
+                measure?: string;
+                kind?: string | null;
+                source?: string;
+                range?: string;
+                since?: string;
+                until?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_summary_obs_usage_summary_get: {
+        parameters: {
+            query?: {
+                range?: string;
+                since?: string;
+                until?: string;
+                scan?: number;
             };
             header?: never;
             path?: never;

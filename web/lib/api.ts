@@ -5255,6 +5255,13 @@ export interface SessionEvent {
   total_tokens: number | null;
   row_count: number | null;
   retries: number | null;
+  /** Migration 10 — which run, which agent charter, what the call was FOR, and whether the
+   *  primary backend refused. `fallback` is a TRI-state: a tool_call is not a call that
+   *  "did not fall back", so unknown stays null rather than arriving as a confident false. */
+  job_id: string | null;
+  charter_id: string | null;
+  role: string | null;
+  fallback: boolean | null;
   payload: Record<string, unknown> | null;
   /** Set only when the row carries prompt CONTENT (obs.prompt_capture was on). */
   content_captured?: boolean;
@@ -5352,6 +5359,25 @@ export interface FleetTiles {
     per_hour: number | null;
   };
   concurrency: { max_concurrent_jobs: number; unbounded_kinds: string[] };
+  /** What every figure above LEFT OUT — the automation engine's tick, counted apart. */
+  runner_runs: number;
+  include_runners: boolean;
+  /** True when a read filled its cap: every count in this object is then a floor, not a
+   *  total. The tile says so rather than presenting a truncated number as complete. */
+  truncated?: boolean;
+  window: TimeWindow;
+  /** Priced from the provider's own catalogue; `unpriced_calls` is why a small total is
+   *  not the same as a cheap day. */
+  cost: { usd: number | null; unpriced_calls: number | null; is_complete: boolean; calls: number };
+}
+
+/** A resolved window — the one time axis every panel on this surface buckets through. */
+export interface TimeWindow {
+  since: string;
+  until: string;
+  bucket_seconds: number;
+  buckets: number;
+  range: string;
 }
 
 /** A charter row (job-metering spend) — `kind` is the label the table must show. */
@@ -5376,7 +5402,9 @@ export interface FleetCharterRow {
   spark: number[];
 }
 
-/** A persona row (H2 session-log spend). Same table, different kind and axis. */
+/** A custom-agent row (session-log spend). Same table, same columns, different source —
+ *  its work is CALLS in the session log rather than jobs in the kernel, which is why the
+ *  row carries `spend_source` rather than pretending the two populations are one. */
 export interface FleetPersonaRow {
   kind: "persona";
   id: string;
@@ -5387,6 +5415,38 @@ export interface FleetPersonaRow {
   eval_basis: EvalBasis;
   spend_source: "session_log";
   spend: { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
+  runs: number;
+  failed: number;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  spark: number[];
+  last_run_at: string | null;
+}
+
+/** A background runner — the automation tick, eval experiments. Reported, never summed
+ *  into the agents: measured 2026-08-17 the tick was 98% of all jobs. */
+export interface FleetRunnerRow {
+  kind: "runner";
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  lane: string;
+  enabled: boolean;
+  job_kinds: string[];
+  spend_source: "job_metering";
+  runs: number;
+  failed: number;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  last_run_at: string | null;
+  spark: number[];
 }
 
 export type FleetRow = FleetCharterRow | FleetPersonaRow;
@@ -5394,15 +5454,23 @@ export type FleetRow = FleetCharterRow | FleetPersonaRow;
 export interface FleetOverview {
   tiles: FleetTiles;
   rows: FleetRow[];
+  runners: FleetRunnerRow[];
+  window: TimeWindow;
+  edges: string[];
   session_log_recording: boolean;
 }
 
 export async function getFleetOverview(params?: {
   window_minutes?: number; spark_hours?: number;
+  range?: string; since?: string; until?: string; include_runners?: boolean;
 }): Promise<FleetOverview> {
   const qs = new URLSearchParams();
   if (params?.window_minutes) qs.set("window_minutes", String(params.window_minutes));
   if (params?.spark_hours) qs.set("spark_hours", String(params.spark_hours));
+  if (params?.range) qs.set("range", params.range);
+  if (params?.since) qs.set("since", params.since);
+  if (params?.until) qs.set("until", params.until);
+  if (params?.include_runners) qs.set("include_runners", "true");
   const res = await fetch(`${getApiBase()}/control-room/fleet?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch fleet overview (${res.status})`);
   return res.json();
@@ -5428,6 +5496,95 @@ export interface NeedsHuman {
 export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
   const res = await fetch(`${getApiBase()}/control-room/needs-human?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch needs-human (${res.status})`);
+  return res.json();
+}
+
+// ── The shared time axis (W0) ────────────────────────────────────────────────────
+
+/** One stack/line of a timeseries: a key, one value per bucket, and its total. */
+export interface TimeSeries {
+  key: string;
+  label: string;
+  values: number[];
+  total: number;
+}
+
+export interface TimeSeriesResponse {
+  measured: boolean;
+  window: TimeWindow;
+  edges: string[];
+  group: string;
+  measure: string;
+  series: TimeSeries[];
+  scanned: number;
+  attributed: number;
+  /** Share of scanned rows that carried the grouping key. A top-N built from 3% of the
+   *  traffic is not a top-N, so this ships with every answer rather than on request. */
+  coverage: number | null;
+}
+
+export async function getObsTimeseries(params: {
+  group?: string; measure?: string; kind?: string;
+  /** `jobs` counts RUNS by the charter that owns each kind (complete, derived at read
+   *  time); `events` counts model CALLS by the charter stamped when they were written. */
+  source?: "jobs" | "events";
+  range?: string; since?: string; until?: string;
+}): Promise<TimeSeriesResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) qs.set(k, String(v));
+  const res = await fetch(`${getApiBase()}/obs/timeseries?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch timeseries (${res.status})`);
+  return res.json();
+}
+
+export interface UsageSummary {
+  measured: boolean;
+  window: TimeWindow;
+  calls: number;
+  tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  cost_is_complete: boolean;
+  calls_without_usage: number;
+  usage_coverage: number | null;
+  /** Both halves of the rate: a denominator that is invisible gets read as "right now". */
+  fallback: { fell_back: number; of_attributed: number; rate: number | null };
+  models: Array<{
+    provider: string; model: string; calls: number; total_tokens: number;
+    failures: number; failure_rate: number; mean_ms: number;
+    cost_usd: number; cost_is_complete: boolean; calls_without_usage: number;
+  }>;
+  sites: Array<{
+    caller: string; calls: number; prompt_tokens: number; total_tokens: number;
+    calls_without_usage: number;
+  }>;
+  roles: Array<{ role: string; calls: number; total_tokens: number }>;
+}
+
+export async function getUsageSummary(params?: {
+  range?: string; since?: string; until?: string;
+}): Promise<UsageSummary> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) if (v) qs.set(k, String(v));
+  const res = await fetch(`${getApiBase()}/obs/usage-summary?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch usage summary (${res.status})`);
+  return res.json();
+}
+
+/** The drill: every ranked list on the usage surface opens exactly its own rows. */
+export async function getActivityEvents(params?: {
+  kind?: string; agent_id?: string; conn_id?: string; model?: string; provider?: string;
+  charter?: string; job_id?: string; role?: string; trace_id?: string;
+  range?: string; since?: string; until?: string; errors_only?: boolean; limit?: number;
+}): Promise<{ measured: boolean; events: SessionEvent[]; kinds: Record<string, number>;
+              window: TimeWindow | null }> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v === undefined || v === null || v === "" || v === false) continue;
+    qs.set(k, String(v));
+  }
+  const res = await fetch(`${getApiBase()}/activity?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
   return res.json();
 }
 

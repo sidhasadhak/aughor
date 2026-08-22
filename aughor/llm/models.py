@@ -98,6 +98,21 @@ def remove_custom_model(backend: str, model: str) -> list[str]:
 
 # ── live fetch ────────────────────────────────────────────────────────────────
 
+def _as_float(value: Any) -> Optional[float]:
+    """A catalogue number as a float, or None when the provider sent something else.
+
+    A predicate, not a try/except around the assignment: a missing or malformed price is
+    an ordinary shape in a third-party payload, and a silently swallowed exception is the
+    pattern this repo ratchets against.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dict]:
     """``GET {base}/models`` — the OpenAI-compatible shape most backends serve."""
     import httpx
@@ -126,12 +141,18 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
         if name and name != mid:
             entry["label"] = str(name)
         pricing = m.get("pricing") or {}
-        prompt_price = pricing.get("prompt")
+        prompt_price = _as_float(pricing.get("prompt"))
         if prompt_price is not None:
-            try:
-                entry["free"] = float(prompt_price) == 0.0
-            except (TypeError, ValueError):
-                pass
+            entry["free"] = prompt_price == 0.0
+        # The RATE, not just whether it is zero. OpenRouter quotes USD per TOKEN as a
+        # string; every cost surface in this repo works in USD per 1M, so convert once
+        # here at the edge. This is what lets `obs.usage` price a call from the
+        # provider's own catalogue instead of a table somebody has to hand-maintain —
+        # the same reason no model id is hardcoded in this product.
+        for _src, _dst in (("prompt", "price_in"), ("completion", "price_out")):
+            _rate = _as_float(pricing.get(_src))
+            if _rate is not None:
+                entry[_dst] = _rate * 1_000_000.0
         out.append(entry)
     return out
 

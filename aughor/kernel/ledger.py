@@ -230,6 +230,73 @@ def _add_session_event_measures(c: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS session_events_model ON session_events(model, seq);")
 
 
+def _as_bool_int(value: Any) -> Optional[int]:
+    """Coerce to 1/0 for SQLite, keeping ``None`` as ``None``.
+
+    The tri-state is the whole point. ``fallback`` is unknown on every non-``llm_call``
+    row — a ``tool_call`` is not a call that "did not fall back" — and collapsing unknown
+    to False would understate the fallback rate, an error in exactly the direction that
+    hides a problem. Same rule as a ratio's denominator: it may contain only things that
+    could have had the property.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return 1 if value.strip().lower() in ("1", "true", "yes", "y", "on") else 0
+    return int(bool(value))
+
+
+def _add_session_event_attribution(c: sqlite3.Connection) -> None:
+    """Which RUN produced this call, and which agent charter owned that run.
+
+    ``agent_id`` answers "whose custom agent asked" and is written only when a custom
+    agent is active on the /ask door — measured 2026-08-17 at **0 of 7,365 rows**, because
+    platform work (explorations, profiles, briefs, monitors) never activates one. That is
+    a semantic, not a bug: there was no column that could say a call belonged to the
+    Explorer or the Curator, so charter identity and model spend lived in two stores with
+    no join between them. ``charter_id`` is that join, and ``job_id`` is the run beneath it.
+
+    ``role`` and ``fallback`` come out of ``payload`` for the same reason Migration 7 moved
+    the token counts: they are the two facts the usage surface groups by, and a JSON
+    extraction per row is not a GROUP BY. ``fallback`` in particular has been WRITTEN by
+    the provider since the failover work and read by nothing — no fold, no endpoint.
+
+    ``at`` gets an index because every panel on the Agent Ops surface is about to ask for
+    a time window, and until now the only time-ordered access path was ``seq``.
+
+    NOTE: ``c.execute`` per statement, never ``executescript`` — the latter issues an
+    implicit COMMIT that tears the migration out of ``run_migrations``' transaction, so
+    the ALTERs land while ``user_version`` stays behind and the migration re-runs forever.
+    That failure corrupted this exact store on 2026-08-14.
+    """
+    for col, decl in (
+        ("job_id", "TEXT"),
+        ("charter_id", "TEXT"),
+        ("role", "TEXT"),
+        ("fallback", "INTEGER"),
+    ):
+        add_column_if_missing(c, "session_events", col, decl)
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_charter "
+              "ON session_events(charter_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_job ON session_events(job_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_role ON session_events(role, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_at ON session_events(at)")
+    # Back-fill from the payload, so a window spanning the migration does not read as
+    # "role coverage collapsed today". A migration that only helps FUTURE rows leaves the
+    # operator with an empty view on the day it ships.
+    #
+    # `json_valid` is load-bearing: `json_extract` RAISES on a malformed payload, and this
+    # table holds some (a clipped string, a pre-JSON row). One bad row must not abort a
+    # migration — the failure would leave user_version behind and re-run forever.
+    c.execute("UPDATE session_events SET role = json_extract(payload, '$.role') "
+              "WHERE role IS NULL AND payload IS NOT NULL AND json_valid(payload)")
+    c.execute("UPDATE session_events SET fallback = "
+              "CASE lower(CAST(json_extract(payload, '$.fallback') AS TEXT)) "
+              "     WHEN '1' THEN 1 WHEN 'true' THEN 1 WHEN 'yes' THEN 1 "
+              "     WHEN '0' THEN 0 WHEN 'false' THEN 0 WHEN 'no' THEN 0 ELSE NULL END "
+              "WHERE fallback IS NULL AND payload IS NOT NULL AND json_valid(payload)")
+
+
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
 _MIGRATIONS = [
     Migration(2, "per-run compute metering (jobs.metrics)",
@@ -255,6 +322,21 @@ _MIGRATIONS = [
     Migration(8, "tenant key: org_id on events",
               lambda c: add_column_if_missing(c, "events", "org_id",
                                               "TEXT NOT NULL DEFAULT 'default'")),
+    # W0 of the Agent Ops control room: the join that lets charter identity meet model
+    # spend, plus the two payload facts the usage surface groups by and a time index.
+    #
+    # ⚠️ VERSION 10, NOT 9, AND THE REASON MATTERS. A version-9 migration adding `role` and
+    # `fallback` was already applied to the live store by a parallel session whose CODE was
+    # then lost (a tree-wide revert). The store is at user_version=9 with those two columns;
+    # this file's history has no migration 9 at all. Numbering this one 9 would make
+    # `run_migrations` skip it forever on every existing database — `job_id`/`charter_id`
+    # would never be added, and since `_SESSION_EVENT_COLS` selects them, EVERY read and
+    # write of the session log would fail on exactly the machines that already have data.
+    # Hermetic tests cannot see this: they build a fresh database, which gets everything.
+    # The body is idempotent (add_column_if_missing / CREATE INDEX IF NOT EXISTS), so it is
+    # a no-op for the columns v9 already added and additive for the rest.
+    Migration(10, "session_events: run attribution (job/charter), role, fallback, at index",
+              _add_session_event_attribution),
 ]
 
 
@@ -615,9 +697,38 @@ class Ledger:
                     pass
         return out
 
+    def job_kinds_in(self, *, since: Optional[str] = None,
+                     until: Optional[str] = None) -> list[str]:
+        """Distinct job kinds created inside the window, same half-open bounds as
+        :meth:`jobs_where`.
+
+        Exists so a caller can split a capped read BY KIND instead of reading one page
+        and classifying it afterwards. When one kind outnumbers the others by orders of
+        magnitude — the automation tick does — a single page is all tick, and everything
+        else falls off the end without a word.
+        """
+        q, args = "SELECT DISTINCT kind FROM jobs WHERE 1=1", []
+        if since:
+            q += " AND created_at>=?"; args.append(since)
+        if until:
+            q += " AND created_at<?"; args.append(until)
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        return [r[0] for r in rows if r[0]]
+
     def jobs_where(self, *, states: Optional[list[str]] = None,
                    conn_id: Optional[str] = None, canvas_id: Optional[str] = None,
-                   idempotency_key: Optional[str] = None, limit: int = 500) -> list[dict]:
+                   idempotency_key: Optional[str] = None,
+                   kinds: Optional[list[str]] = None,
+                   since: Optional[str] = None, until: Optional[str] = None,
+                   limit: int = 500) -> list[dict]:
+        """``since``/``until`` bound ``created_at`` (half-open) as ISO-8601 UTC strings.
+
+        Compare only against strings produced the same way ``_now`` produces them —
+        ``2026-08-17T21:52:03.116+00:00``. SQLite's own ``datetime('now')`` renders a
+        SPACE where this format has a ``T``, and ``'2026-08-17 21:00' < '2026-08-17T21:00'``
+        lexically, so mixing the two silently widens the window instead of erroring.
+        """
         q, args = "SELECT * FROM jobs WHERE 1=1", []
         if states:
             q += f" AND state IN ({','.join('?' * len(states))})"; args.extend(states)
@@ -627,6 +738,12 @@ class Ledger:
             q += " AND canvas_id=?"; args.append(canvas_id)
         if idempotency_key is not None:
             q += " AND idempotency_key=?"; args.append(idempotency_key)
+        if kinds:
+            q += f" AND kind IN ({','.join('?' * len(kinds))})"; args.extend(kinds)
+        if since:
+            q += " AND created_at>=?"; args.append(since)
+        if until:
+            q += " AND created_at<?"; args.append(until)
         q += " ORDER BY created_at DESC LIMIT ?"; args.append(int(limit))
         with self._lock:
             cur = self._conn.execute(q, args)
@@ -869,6 +986,8 @@ class Ledger:
         # Migration 7 — measurable facts as columns, not payload JSON.
         "provider", "model", "prompt_tokens", "completion_tokens", "total_tokens",
         "row_count", "retries",
+        # Migration 10 — which run, which charter, which prompt role, did it fail over.
+        "job_id", "charter_id", "role", "fallback",
         "payload",
     )
 
@@ -885,6 +1004,14 @@ class Ledger:
         `events`/`task_history` both have today.
         """
         payload = row.get("payload")
+        # `role` and `fallback` are derived from the payload here rather than at every
+        # call site: `_record_llm_call` has been putting both in the payload since the
+        # failover work, so promoting them to columns costs no emitter a single line.
+        # An explicitly passed column still wins — a caller that knows better is not
+        # overruled by a stale payload copy.
+        _pay = payload if isinstance(payload, dict) else {}
+        _role = row.get("role") if "role" in row else _pay.get("role")
+        _fallback = row.get("fallback") if "fallback" in row else _pay.get("fallback")
         from aughor.db.backend import insert_returning_id
         with self._lock, self._conn:
             seq = insert_returning_id(
@@ -893,8 +1020,8 @@ class Ledger:
                 "(at, trace_id, kind, name, span_id, parent_span_id, ok, duration_ms, "
                 " error_class, investigation_id, session_id, user_id, agent_id, conn_id, "
                 " org_id, provider, model, prompt_tokens, completion_tokens, total_tokens, "
-                " row_count, retries, payload) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " row_count, retries, job_id, charter_id, role, fallback, payload) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     row.get("at") or _now(), row["trace_id"], row["kind"], row.get("name"),
                     row.get("span_id"), row.get("parent_span_id"),
@@ -906,6 +1033,8 @@ class Ledger:
                     row.get("provider"), row.get("model"),
                     row.get("prompt_tokens"), row.get("completion_tokens"),
                     row.get("total_tokens"), row.get("row_count"), row.get("retries"),
+                    row.get("job_id"), row.get("charter_id"), _role,
+                    _as_bool_int(_fallback),
                     json.dumps(payload, default=str) if payload is not None else None,
                 ),
                 pk="seq",
@@ -925,13 +1054,28 @@ class Ledger:
         errors_only: bool = False,
         org_id: Optional[str] = None,
         since_seq: Optional[int] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        charter_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        role: Optional[str] = None,
+        fallback_only: bool = False,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
         limit: int = 500,
         ascending: bool = False,
     ) -> list[dict]:
         """Read session events. Defaults to newest-first (the feed shape); pass
         ``ascending=True`` for replay order, which is what reconstructing a single
         run wants. ``errors_only`` keeps rows that RECORDED a failure (``ok=0``) —
-        rows with no verdict yet (entry-side ``tool_call``) are not failures."""
+        rows with no verdict yet (entry-side ``tool_call``) are not failures.
+
+        ``since``/``until`` are ISO-8601 UTC bounds on ``at`` (half-open: ``since`` is
+        inclusive, ``until`` exclusive), which is what every windowed panel needs and
+        what ``since_seq`` — a cursor, not a clock — cannot express. The remaining
+        filters exist so a ranked list can DRILL: clicking a model or a call site has to
+        be able to ask for exactly those rows rather than re-scanning client-side.
+        """
         q = f"SELECT {', '.join(self._SESSION_EVENT_COLS)} FROM session_events WHERE 1=1"
         args: list[Any] = []
         if trace_id:
@@ -946,6 +1090,24 @@ class Ledger:
             q += " AND agent_id=?"; args.append(agent_id)
         if conn_id:
             q += " AND conn_id=?"; args.append(conn_id)
+        if model:
+            q += " AND model=?"; args.append(model)
+        if provider:
+            q += " AND provider=?"; args.append(provider)
+        if charter_id:
+            q += " AND charter_id=?"; args.append(charter_id)
+        if job_id:
+            q += " AND job_id=?"; args.append(job_id)
+        if role:
+            q += " AND role=?"; args.append(role)
+        if fallback_only:
+            # `=1`, never `IS NOT 0` — the latter sweeps in every unknown, which is most
+            # of the table (no non-llm_call row ever carried the fact).
+            q += " AND fallback=1"
+        if since:
+            q += " AND at>=?"; args.append(since)
+        if until:
+            q += " AND at<?"; args.append(until)
         if errors_only:
             q += " AND ok=0"
         if org_id:
@@ -961,6 +1123,9 @@ class Ledger:
             d = dict(zip(self._SESSION_EVENT_COLS, r))
             if d.get("ok") is not None:
                 d["ok"] = bool(d["ok"])
+            # Unknown must survive the trip out, not arrive as a confident False.
+            if d.get("fallback") is not None:
+                d["fallback"] = bool(d["fallback"])
             if d.get("payload"):
                 try:
                     d["payload"] = json.loads(d["payload"])

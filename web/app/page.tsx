@@ -463,7 +463,7 @@ const NAV_SECTIONS = [
   {
     label: "Operations", // monitor, act, govern
     items: [
-      { id: "agentic-ops", icon: "process", label: "Agents" },
+      { id: "agentic-ops", icon: "process", label: "Agent Ops" },
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Notifications" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
