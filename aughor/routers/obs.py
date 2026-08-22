@@ -155,6 +155,13 @@ def get_trace(trace_id: str):
                           "waterfall renders without the feedback link",
                      counter="obs.trace.inv_resolve")
 
+    # VA-5 — the laid-out timeline beside the raw tree. `spans` stays exactly as it was
+    # (it answers "what nested inside what" and callers depend on it); `timeline` answers
+    # "where did the time go", which the tree structurally cannot: it requires a span_id,
+    # and every llm_call row in this store has none.
+    from aughor.obs.trace_tree import build_timeline, flow_edges
+    timeline = build_timeline(events)
+
     return {
         "measured": True,
         "recording": True,
@@ -167,6 +174,8 @@ def get_trace(trace_id: str):
         "duration_ms": final.get("duration_ms") if final else None,
         "events": events,
         "spans": roots,
+        "timeline": timeline,
+        "flow_edges": flow_edges(timeline),
     }
 
 
