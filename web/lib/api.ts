@@ -5299,11 +5299,66 @@ export interface TraceSpan {
 
 export type TraceList = { measured: true; recording: boolean; traces: TraceSummary[] };
 
+/** VA-5 — one laid-out node on the waterfall. Assembled at READ time from every event
+ *  the run recorded, not only from rows that happen to carry a span id: `llm_call` never
+ *  carries one, so a span-keyed view omits the model entirely. */
+export interface TimelineNode {
+  id: string;
+  seq: number;
+  span_id: string | null;
+  parent_span_id: string | null;
+  name: string;
+  /** The stored event kind. */
+  event_kind: string;
+  /** What to draw it as: "model" | "tool" | "frame" | "error" | "event". */
+  kind: string;
+  at: string | null;
+  ended_at: string | null;
+  /** Milliseconds from the run's first event — the bar's x position. */
+  offset_ms: number | null;
+  duration_ms: number | null;
+  ok: boolean | null;
+  error_class: string | null;
+  row_count: number | null;
+  model: string | null;
+  provider: string | null;
+  role: string | null;
+  fallback: boolean | null;
+  usage: { prompt_tokens: number | null; completion_tokens: number | null;
+           total_tokens: number | null } | null;
+  depth: number;
+  /** Dead time since the PREVIOUS node ended — a sequential reading, for the label drawn
+   *  between two bars. Never sum these: see `idle_ms`. */
+  gap_ms: number | null;
+  critical: boolean;
+}
+
+export interface TraceTimeline {
+  nodes: TimelineNode[];
+  started_at: string | null;
+  total_ms: number | null;
+  span_count: number;
+  model_calls: number;
+  usage: Record<string, number>;
+  /** Work time, over the UNION of node intervals. */
+  busy_ms: number;
+  /** Wall time minus busy. NOT a sum of `gap_ms` — that over-counts the moment a run
+   *  does anything in parallel. */
+  idle_ms: number;
+  wall_ms: number;
+  /** Nodes starting before the previous one ended. Non-zero means any sequential
+   *  reading of this run is wrong. */
+  concurrent_nodes: number;
+}
+
+export interface TraceFlowEdge { from: string; to: string; latency_ms: number | null }
+
 export type TraceDetail = {
       measured: true; recording: boolean; trace_id: string; question: string;
       investigation_id: string | null; conn_id: string | null; agent_id: string | null;
       ok: boolean | null; duration_ms: number | null;
       events: SessionEvent[]; spans: TraceSpan[];
+      timeline?: TraceTimeline; flow_edges?: TraceFlowEdge[];
     };
 
 export async function getTraces(params?: {
