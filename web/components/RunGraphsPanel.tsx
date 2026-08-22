@@ -187,7 +187,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                 {run.outcome === "not_fired" ? "evaluated — did not fire" : run.outcome}
               </StatusChip>
               <span style={{ fontSize: 12, fontWeight: 500 }}>{run.automation_name || run.automation_id}</span>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+              <span style={{ fontSize: 11, color: "var(--t2)" }}>
                 {relTime(run.started_at)} · {fmtMs(run.duration_ms)}
               </span>
               {run.reason && (
@@ -227,7 +227,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
       </div>
 
       {/* ── (b) deep-run phase view ── */}
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 8 }}>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 8 }}>
         Deep-run phases — the fixed deep analysis topology
       </div>
       <div style={{ display: "flex", gap: 12 }}>
@@ -244,7 +244,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                 background: selectedInv === inv.id ? "var(--bg-sel)" : undefined }}>
               <span style={{ display: "block", fontSize: 12, overflow: "hidden",
                 textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.question}</span>
-              <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+              <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
                 {inv.status}{inv.status === "paused" ? " — waiting on you" : ""} · {relTime(inv.started_at)}
               </span>
             </Button>
@@ -257,7 +257,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
           ) : (
             <>
               <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>{graph.question}</div>
-              <div style={{ fontSize: 11, color: "var(--t4)", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "var(--t2)", marginBottom: 12 }}>
                 status {graph.status} · branch {graph.branch}
                 {graph.checkpoint.exists
                   ? ` · checkpoint step ${graph.checkpoint.step ?? "?"}${
@@ -273,7 +273,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                     const atGate = graph.interrupt.paused && graph.interrupt.gate === node;
                     return (
                       <span key={node} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        {i > 0 && <span style={{ color: "var(--t4)", fontSize: 11 }}>→</span>}
+                        {i > 0 && <span style={{ color: "var(--t2)", fontSize: 11 }}>→</span>}
                         <span style={{ fontSize: 11, padding: "3px 7px",
                           borderRadius: "var(--r2)",
                           border: `1px solid ${atGate ? "var(--amb3)" : "var(--b1)"}`,

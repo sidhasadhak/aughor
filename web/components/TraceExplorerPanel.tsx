@@ -136,7 +136,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {t.question || t.trace_id}
             </span>
-            <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+            <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
               {relTime(t.started)} · {t.llm_calls} llm · {t.tool_calls} tools
               {t.errors > 0 && <span style={{ color: "var(--red4)" }}> · {t.errors} err</span>}
               {t.ok === false && <span style={{ color: "var(--red4)" }}> · failed</span>}
@@ -160,7 +160,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail.question || detail.trace_id}</div>
-                <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
                   {detail.events.length} events
                   {totalMs > 0 && ` · ${fmtMs(totalMs)}`}
                   {detail.agent_id && ` · agent ${detail.agent_id}`}
@@ -193,7 +193,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                         style={{ display: "flex", width: "100%", height: "auto",
                           alignItems: "center", gap: 8, padding: "4px 6px",
                           marginLeft: depth * 18, textAlign: "left" }}>
-                        <span style={{ fontSize: 11, color: "var(--t4)", width: 110,
+                        <span style={{ fontSize: 11, color: "var(--t2)", width: 110,
                           flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis",
                           whiteSpace: "nowrap" }}>{e.kind}</span>
                         <span style={{ fontSize: 12, minWidth: 90, flexShrink: 0,
@@ -276,11 +276,11 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                       <Button variant="destructive" size="sm" disabled={verdictBusy}
                         onClick={() => submitVerdict("reject")}>Reject</Button>
                     </div>
-                    <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 6 }}>
+                    <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>
                       Verdicts on record{connId ? ` · ${connId}` : ""}
                     </div>
                     {verdicts.length === 0 ? (
-                      <div style={{ fontSize: 12, color: "var(--t4)" }}>None yet.</div>
+                      <div style={{ fontSize: 12, color: "var(--t2)" }}>None yet.</div>
                     ) : verdicts.map(v => (
                       <div key={v.id} style={{ display: "flex", gap: 8, alignItems: "center",
                         padding: "6px 0", borderBottom: "1px solid var(--b0)", fontSize: 12 }}>
@@ -296,7 +296,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                         {v.investigation_id === invId && (
                           <StatusChip hue="info" strength="soft">this run</StatusChip>
                         )}
-                        <span style={{ color: "var(--t4)", fontSize: 11 }}>{relTime(v.created_at)}</span>
+                        <span style={{ color: "var(--t2)", fontSize: 11 }}>{relTime(v.created_at)}</span>
                       </div>
                     ))}
                   </>
@@ -331,7 +331,7 @@ function DetailGrid({ e }: { e: SessionEvent }) {
     <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 14px" }}>
       {rows.map(([k, v]) => (
         <span key={k} style={{ display: "contents" }}>
-          <span style={{ color: "var(--t4)" }}>{k}</span>
+          <span style={{ color: "var(--t2)" }}>{k}</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>
         </span>
       ))}

@@ -100,7 +100,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
       <div style={{ width: 268, flexShrink: 0, borderRight: "1px solid var(--b1)",
         overflowY: "auto", padding: 10 }}>
         <div style={{ display: "flex", alignItems: "center", padding: "2px 6px 8px" }}>
-          <span className="aug-label" style={{ color: "var(--t3)" }}>Custom agents</span>
+          <span className="aug-label" style={{ color: "var(--t2)" }}>Custom agents</span>
           <span style={{ flex: 1 }} />
           <Button variant="secondary" size="xs"
             onClick={() => setSelected({ kind: "hire" })}>+ Create agent</Button>
@@ -121,7 +121,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             active={selected?.kind === "persona" && selected.id === p.id}
             onClick={() => setSelected({ kind: "persona", id: p.id })} />
         ))}
-        <div className="aug-label" style={{ color: "var(--t3)", padding: "12px 6px 8px" }}>
+        <div className="aug-label" style={{ color: "var(--t2)", padding: "12px 6px 8px" }}>
           Charters {workspaceName ? `· ${workspaceName}` : "· Org"}
         </div>
         {charters.map(c => (
@@ -179,7 +179,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
       </span>
       {sub && (
-        <span style={{ display: "block", fontSize: 11, color: "var(--t4)", marginTop: 2,
+        <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2,
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
       )}
     </Button>
@@ -208,7 +208,7 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{persona.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
             custom · {persona.connection_id || "any connection"}
             {persona.schema_scope ? ` · ${persona.schema_scope}` : ""}
             {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
@@ -299,7 +299,7 @@ function PersonaOverview({ persona, onOpenTrace }: {
             label: r.headline || r.question,
           }))} />
       </div>
-      <div className="aug-label" style={{ color: "var(--t3)", marginBottom: 6 }}>Recent runs</div>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Recent runs</div>
       {runs.length === 0 ? (
         <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs yet for this agent.</div>
       ) : (
@@ -587,7 +587,7 @@ function PersonaHistory({ persona, onChanged, onError }: {
             padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
             <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
-            <span style={{ color: "var(--t4)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+            <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
             <span style={{
               flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap", color: "var(--t3)",
@@ -686,7 +686,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{charter.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
             charter · {charter.lane} · {charter.role}
           </div>
         </div>
@@ -752,7 +752,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
               model id per agent, and those were removed with every other model list
               (2026-08-15). An agent runs on the operator's pin, or inherits the role
               binding — there is nothing left for this product to recommend. */}
-          <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
             These are the charter&rsquo;s REAL knobs. There is no per-agent temperature,
             topP or tool toggle here: the transport pins temperature platform-wide
             (13% run-to-run flip measured at default temp), and capability changes are
@@ -771,7 +771,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
       border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 14px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

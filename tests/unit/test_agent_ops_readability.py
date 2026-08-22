@@ -54,6 +54,27 @@ def test_the_surface_files_all_exist():
     assert not missing, f"the Agent Ops guard is scanning files that no longer exist: {missing}"
 
 
+def test_t4_is_never_a_text_colour_on_this_surface():
+    """The ONE type rule this surface keeps, chosen by the user 2026-08-22: content off the
+    faint end, everything else follows the platform.
+
+    `--t4` is **2.76:1** on `--bg-0` — below AA for large text, let alone body. A `color:`
+    is by definition text, so there is no legitimate use of it here; borders and fills name
+    their own properties and are untouched. This is deliberately NARROWER than the rule that
+    used to live in this file: font sizes, spacing and every other token follow the re-skin
+    exactly, and `--t3` (4.23:1, which clears AA-large) is left alone outside `aug-label`.
+
+    The platform-wide question — whether `--t3`/`--t4` should be lifted in the token layer,
+    repairing all ~392 sites at once — is open and NOT decided by this test.
+    """
+    offenders = {rel: src.count('color: "var(--t4)"')
+                 for rel, src in ((r, (WEB / r).read_text()) for r in SURFACE if (WEB / r).exists())}
+    offenders = {k: v for k, v in offenders.items() if v}
+    assert not offenders, (
+        f"--t4 is 2.76:1 and is used as a text colour in {offenders}. "
+        "Use --t2 (6.68:1) for content; keep the re-skin's sizes and every other token.")
+
+
 def test_the_shared_sparkline_draws_in_tokens_not_hexes():
     """`Sparkline` is the one trend primitive the whole platform draws through, and it
     hardcoded #818cf8 / #34d399 / #f87171 — so it was also the only one that did not flip
