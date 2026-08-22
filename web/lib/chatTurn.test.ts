@@ -262,3 +262,93 @@ describe("the escape hatch stays an escape hatch", () => {
     expect(t.status).toBe("done");
   });
 });
+
+/**
+ * VA-2 — a delegated hop is the delegate's work, not the turn's.
+ *
+ * The frames arrive on the same wire as everything else, carrying a `delegate` stamp.
+ * Without routing they land on the turn itself, and because `sql` REPLACES rather than
+ * accumulates, the delegate's query silently becomes "the query behind this answer" —
+ * a question the supervisor never asked, attributed to the supervisor.
+ */
+describe("delegated hops", () => {
+  const stamp = (over: Record<string, unknown> = {}) => ({
+    sub_agent_id: "analyst",
+    sub_agent_name: "Analyst",
+    parent_agent_id: "",
+    agent_path: "analyst",
+    depth: 1,
+    ...over,
+  });
+
+  it("keeps a delegate's SQL off the supervisor's turn", async () => {
+    const msg = await messageFrom([
+      { event: "sql", data: { sql: "SELECT supervisor" } },
+      { event: "sql", data: { sql: "SELECT delegate", delegate: stamp() } },
+    ]);
+    const t = projectTurn("q", msg);
+
+    expect(t.sql).toBe("SELECT supervisor");
+    expect(t.delegations).toHaveLength(1);
+    expect(t.delegations[0].work.sql).toBe("SELECT delegate");
+  });
+
+  it("carries who ran it", async () => {
+    const msg = await messageFrom([
+      { event: "sql", data: { sql: "SELECT 1", delegate: stamp() } },
+    ]);
+    const [hop] = projectTurn("q", msg).delegations;
+
+    expect(hop.agentId).toBe("analyst");
+    expect(hop.agentName).toBe("Analyst");
+    expect(hop.agentPath).toBe("analyst");
+    expect(hop.depth).toBe(1);
+    expect(hop.frames).toEqual(["sql"]);
+  });
+
+  it("gives each agent its own hop and keeps them in arrival order", async () => {
+    const msg = await messageFrom([
+      { event: "sql", data: { sql: "A", delegate: stamp() } },
+      { event: "sql", data: { sql: "B", delegate: stamp({
+        sub_agent_id: "auditor", sub_agent_name: "Auditor",
+        parent_agent_id: "analyst", agent_path: "analyst/auditor", depth: 2 }) } },
+      { event: "guard_receipt", data: { guard: "grounding", delegate: stamp() } },
+    ]);
+    const hops = projectTurn("q", msg).delegations;
+
+    expect(hops.map(h => h.agentId)).toEqual(["analyst", "auditor"]);
+    expect(hops[0].work.sql).toBe("A");
+    expect(hops[0].work.guardReceipts).toHaveLength(1);
+    expect(hops[1].work.sql).toBe("B");
+    expect(hops[1].parentAgentId).toBe("analyst");
+    expect(hops[1].depth).toBe(2);
+  });
+
+  it("does not pool a delegate's receipts into the supervisor's evidence", async () => {
+    const msg = await messageFrom([
+      { event: "guard_receipt", data: { guard: "own" } },
+      { event: "guard_receipt", data: { guard: "theirs", delegate: stamp() } },
+    ]);
+    const t = projectTurn("q", msg);
+
+    expect(t.guardReceipts.map(r => r.guard)).toEqual(["own"]);
+    expect(t.delegations[0].work.guardReceipts.map(r => r.guard)).toEqual(["theirs"]);
+  });
+
+  it("an undelegated turn has no hops at all", async () => {
+    const msg = await messageFrom([{ event: "sql", data: { sql: "SELECT 1" } }]);
+    expect(projectTurn("q", msg).delegations).toEqual([]);
+  });
+
+  it("ignores a stamp with no agent id rather than drawing an anonymous agent", async () => {
+    // Half a stamp is worse than none: a nameless hop reads as the product not knowing
+    // who ran the query.
+    const msg = await messageFrom([
+      { event: "sql", data: { sql: "SELECT 1", delegate: { depth: 1 } } },
+    ]);
+    const t = projectTurn("q", msg);
+
+    expect(t.delegations).toEqual([]);
+    expect(t.sql).toBe("SELECT 1");   // and it stays the turn's own work
+  });
+});
