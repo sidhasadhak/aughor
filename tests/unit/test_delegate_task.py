@@ -146,3 +146,41 @@ def test_a_cycle_is_refused_mid_list_without_stopping_the_others(monkeypatch):
                             ctx=ctx, answer=_answer_spy([]))
     assert rows[0]["code"] == "DELEGATION_CYCLE"
     assert rows[1]["refused"] is False, "one refusal must not cancel the rest of the fan-out"
+
+
+# ── wiring: one roster, and no cost when there is nobody to delegate to ───────────
+
+def test_delegate_task_joins_the_one_roster_the_model_routes_over(monkeypatch):
+    from aughor.agent.converse_tools import converse_tools
+    _roster(monkeypatch, [_Agent("ua_1", "Churn", purpose="Churn questions.")])
+    names = [t.name for t in converse_tools("c1")]
+    assert "delegate_task" in names
+    assert "answer_question" in names, "delegation must not displace the core roster"
+
+
+def test_an_empty_workspace_pays_NOTHING_for_delegation(monkeypatch):
+    """A workspace with no agents must see neither the tool nor a line of prompt about
+    it. Describing a capability the model cannot use is how a turn gets spent on a
+    refusal."""
+    from aughor.agent.converse_tools import converse_system_prompt, converse_tools
+    _roster(monkeypatch, [])
+    assert "delegate_task" not in [t.name for t in converse_tools("c1")]
+    assert "delegate_task" not in converse_system_prompt("c1")
+
+
+def test_the_prompt_lists_agents_by_purpose_only(monkeypatch):
+    from aughor.agent.converse_tools import converse_system_prompt
+    _roster(monkeypatch, [_Agent("ua_1", "Churn", purpose="Churn and retention.",
+                                 instructions="SECRET-INSTRUCTION-TEXT " * 100)])
+    prompt = converse_system_prompt("c1")
+    assert "Churn and retention." in prompt
+    assert "SECRET-INSTRUCTION-TEXT" not in prompt
+
+
+def test_a_broken_roster_never_breaks_the_prompt(monkeypatch):
+    """The prompt is the product's voice; a store hiccup must not silence it."""
+    from aughor.agent import converse_tools as ct
+    monkeypatch.setattr("aughor.agent.delegate_tool.delegation_targets",
+                        lambda: (_ for _ in ()).throw(RuntimeError("store down")))
+    prompt = ct.converse_system_prompt("c1")
+    assert "Aughor's analyst" in prompt

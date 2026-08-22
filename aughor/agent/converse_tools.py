@@ -395,6 +395,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     graph, monitors, packs, the platform itself — as reads with the same binding
     rule. One list, because the model routes over one list.
     """
+    from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
 
     return [
@@ -463,7 +464,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             run=lambda a: deep_analysis(connection_id, a, emit=emit,
                                         session_id=session_id, canvas_id=canvas_id),
         ),
-    ] + platform_tools(connection_id, session_id=session_id)
+    ] + platform_tools(connection_id, session_id=session_id) + delegation_tools(
+        connection_id, emit=emit, session_id=session_id)
 
 
 class _Regrounded(BaseModel):
@@ -682,6 +684,17 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> s
         "plain prose is a complete and welcome turn — better than answering a question "
         "the user did not ask.",
     ]
+    # VA-2 — the delegation roster. Appended as STATE ("these agents exist, here is what
+    # each is for"), like everything else in this prompt, and omitted entirely when the
+    # workspace has no agents: a roster of nobody is not a capability, and describing a
+    # tool the model cannot usefully call is how a turn gets wasted on a refusal.
+    try:
+        from aughor.agent.delegate_tool import delegation_targets, roster_block
+        block = roster_block(delegation_targets())
+        if block:
+            lines += ["", block]
+    except Exception:                       # never let the roster break the prompt
+        logger.debug("delegation roster unavailable", exc_info=True)
     if extra:
         lines += ["", extra]
     return "\n".join(lines)
