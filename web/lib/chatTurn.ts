@@ -96,6 +96,34 @@ export interface GuardReceipt {
   after?: string;
 }
 
+/**
+ * VA-2 — one delegated hop: work a NAMED agent did inside this turn.
+ *
+ * A delegate's frames reach the stream carrying `delegate` provenance, and without
+ * this they would land on the turn itself: `sql` is last-write-wins, so a delegate's
+ * query would quietly become "the query behind this answer" — a question the
+ * supervisor never asked, attributed to the supervisor. So a delegated frame is
+ * projected into the HOP instead of the turn.
+ *
+ * `work` is a full `ChatTurn` on purpose. The hop's sql / rows / receipts are produced
+ * by the SAME `PART_PROJECTORS` the turn's are, so they mean the same thing by
+ * construction; projecting them a second way here would be the second authority this
+ * module exists to avoid.
+ */
+export interface DelegatedHop {
+  agentId: string;
+  agentName: string;
+  /** The agent that delegated THIS hop — "" when the conversation itself did. */
+  parentAgentId: string;
+  /** Root-to-here agent ids. The same value the runtime refuses cycles on. */
+  agentPath: string;
+  depth: number;
+  /** Frame names this hop produced, in arrival order. */
+  frames: string[];
+  /** What the delegate actually did, projected exactly as a turn is. */
+  work: ChatTurn;
+}
+
 /** CI-6a — one converse tool step: the model chose a tool, and this is the record. */
 export interface ConverseStep {
   index: number;
@@ -136,6 +164,8 @@ export interface ChatTurn {
   mode: "ask" | "investigate";
   status: "loading" | "done" | "error";
   guardReceipts: GuardReceipt[];
+  /** VA-2 — delegated hops, in first-seen order. Empty for an undelegated turn. */
+  delegations: DelegatedHop[];
   converseSteps: ConverseStep[];
   scanItems: string[];
   scanProgress: { done: number; total: number } | null;
@@ -250,6 +280,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   clarify: null,
   escalate: null,
   guardReceipts: [],
+  delegations: [],
   converseSteps: [],
   scanItems: [], scanProgress: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
@@ -604,6 +635,40 @@ export function projectThread(
  * flight and no assistant message exists yet) — that projects as a loading turn,
  * which is what it is.
  */
+/**
+ * The `delegate` stamp a sub-agent's frames carry, or null for the turn's own work.
+ *
+ * Read defensively: this crosses the wire, and a half-formed stamp that produced a hop
+ * with no name would render an anonymous agent — worse than not rendering the hop,
+ * because it looks like the product does not know who ran the query. No id, no hop.
+ */
+function delegationOf(d: Payload): Omit<DelegatedHop, "frames" | "work"> | null {
+  const raw = d?.delegate as Record<string, unknown> | undefined;
+  const agentId = typeof raw?.sub_agent_id === "string" ? raw.sub_agent_id : "";
+  if (!agentId) return null;
+  const path = typeof raw?.agent_path === "string" && raw.agent_path ? raw.agent_path : agentId;
+  return {
+    agentId,
+    agentName: (typeof raw?.sub_agent_name === "string" && raw.sub_agent_name) || agentId,
+    parentAgentId: typeof raw?.parent_agent_id === "string" ? raw.parent_agent_id : "",
+    agentPath: path,
+    depth: Number(raw?.depth ?? path.split("/").length) || 1,
+  };
+}
+
+function seedHop(hops: Map<string, DelegatedHop>,
+                 info: Omit<DelegatedHop, "frames" | "work">): DelegatedHop {
+  const hop: DelegatedHop = {
+    ...info,
+    frames: [],
+    // A real turn shape, so the hop's work is readable by every organ that already
+    // speaks `ChatTurn` — the SQL panel, the receipt list, the table.
+    work: { ...EMPTY_TURN, id: `${info.agentPath}`, question: "", mode: "ask" },
+  };
+  hops.set(info.agentPath, hop);
+  return hop;
+}
+
 export function projectTurn(
   question: string,
   message: AughorUIMessage | undefined,
@@ -623,6 +688,11 @@ export function projectTurn(
   // whole text — the replace semantics the `*_delta` frames had on the wire.
   const channelText = new Map<string, string>();
 
+  // VA-2 — one scratch turn per delegated hop, keyed by `agent_path` (the same value
+  // the runtime refuses cycles on, so the tree drawn here and the tree refused there
+  // cannot disagree). Insertion order is first-seen order, which is hop order.
+  const hops = new Map<string, DelegatedHop>();
+
   for (const part of message?.parts ?? []) {
     if (part.type === "text") {
       channelText.set(textChannel(part), part.text);
@@ -631,8 +701,24 @@ export function projectTurn(
     if (!part.type.startsWith("data-")) continue; // SDK parts render as fallbacks
     const name = part.type.slice("data-".length);
     const project = PART_PROJECTORS[name];
-    if (project) project(t, (part as { data: unknown }).data as Payload);
+    const data = (part as { data: unknown }).data as Payload;
+
+    // A frame a DELEGATE produced belongs to that delegate, not to this turn. Routed
+    // before the turn's projector runs rather than after: `sql` and friends replace
+    // rather than accumulate, so letting one through and correcting it afterwards
+    // would still have overwritten the supervisor's own value.
+    const hop = delegationOf(data);
+    if (hop) {
+      const into = hops.get(hop.agentPath) ?? seedHop(hops, hop);
+      into.frames.push(name);
+      if (project) project(into.work, data);
+      continue;
+    }
+
+    if (project) project(t, data);
   }
+
+  t.delegations = [...hops.values()];
 
   const headlineText = channelText.get("headline") ?? "";
   const narrativeText = channelText.get("narrative") ?? "";

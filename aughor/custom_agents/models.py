@@ -30,6 +30,11 @@ class UserAgent(BaseModel):
     id: str
     name: str
     instructions: str = ""
+    #: VA-2 — the SHORT routing line a supervisor reads when choosing a delegate.
+    #: Deliberately separate from `instructions`: the roster block lists every
+    #: candidate agent, so putting full instructions there is how a supervisor
+    #: prompt silently becomes mostly other agents' prose (measured once at 65%).
+    purpose: str = ""
     connection_id: str = ""          # "" = unbound (answers on the ask's connection)
     schema_scope: str = ""           # "" = all schemas; else the agent answers in this schema
     doc_ids: list[str] = Field(default_factory=list)  # bound documents (knowledge registry ids)

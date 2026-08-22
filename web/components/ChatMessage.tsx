@@ -29,6 +29,7 @@ import { OverviewReportView } from "@/components/OverviewReport";
 import { DossierTrace } from "@/components/BriefingPanel";
 import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { DelegationTrail } from "@/components/DelegationTrail";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
@@ -1533,6 +1534,11 @@ export function ChatMessage({
       {/* ── CI-6a: the converse body's tool trail — which tools the model chose this
              turn; renders nothing on quick/deep turns (no steps) ── */}
       <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />
+
+      {/* ── VA-2: work this turn handed to a named specialist. Sits under the tool
+             trail because a delegation IS a tool call — this says who answered it.
+             Renders nothing when nothing was delegated (most turns) ── */}
+      <DelegationTrail hops={turn.delegations} streaming={turn.status === "loading"} />
 
       {/* ── B2: guard interventions as a Chain of Thought — both modes; renders
              nothing when no guard fired (most turns) ── */}
