@@ -1,0 +1,42 @@
+table: brands
+columns:
+  brand:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  brand_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  country:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  focus_category:
+    visible: true
+    sample: true
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  tier:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''

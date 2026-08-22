@@ -1,0 +1,130 @@
+table: amazon
+columns:
+  about_product:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  actual_price:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  category:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  discount_percentage:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  discounted_price:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  img_link:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  product_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  product_link:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  product_name:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  rating:
+    visible: true
+    sample: true
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  rating_count:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  review_content:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  review_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  review_title:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  user_id:
+    visible: true
+    sample: false
+    index: false
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
+  user_name:
+    visible: true
+    sample: false
+    index: true
+    concept: ''
+    source: default
+    edited_at: ''
+    note: ''
