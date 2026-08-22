@@ -61,6 +61,12 @@ _MIGRATIONS = [
     Migration(4, "last_eval (latest golden-suite result JSON)",
               lambda c: add_column_if_missing(c, "user_agents", "last_eval",
                                               "TEXT NOT NULL DEFAULT ''")),
+    # VA-2. Verified against the live store before numbering (user_version was 4, and
+    # this file's list ended at 4) — the check that a skipped-forever migration taught us
+    # to run every time.
+    Migration(5, "purpose (short routing line for delegation rosters)",
+              lambda c: add_column_if_missing(c, "user_agents", "purpose",
+                                              "TEXT NOT NULL DEFAULT ''")),
 ]
 
 _legacy_checked = False
@@ -114,6 +120,7 @@ def _connect() -> sqlite3.Connection:
 def _row_to_agent(row: sqlite3.Row) -> UserAgent:
     return UserAgent(
         id=row["id"], name=row["name"], instructions=row["instructions"],
+        purpose=(row["purpose"] if "purpose" in row.keys() else ""),
         connection_id=row["connection_id"], schema_scope=row["schema_scope"],
         doc_ids=json.loads(row["doc_ids"] or "[]"),
         pack_ids=json.loads(row["pack_ids"] or "[]"),
@@ -127,23 +134,25 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_agent(name: str, *, instructions: str = "", connection_id: str = "",
+def create_agent(name: str, *, instructions: str = "", purpose: str = "",
+                 connection_id: str = "",
                  schema_scope: str = "", doc_ids: Optional[list[str]] = None,
                  pack_ids: Optional[list[str]] = None, owner: str = "") -> UserAgent:
     agent = UserAgent(
         id=f"ua_{uuid.uuid4().hex[:12]}", name=name.strip(),
-        instructions=instructions, connection_id=connection_id,
+        instructions=instructions, purpose=purpose, connection_id=connection_id,
         schema_scope=schema_scope, doc_ids=list(doc_ids or []),
         pack_ids=list(pack_ids or []), owner=owner,
         enabled=True, created_at=_now(), updated_at=_now(),
     )
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO user_agents (id, name, instructions, connection_id, schema_scope,"
-            " doc_ids, pack_ids, owner, enabled, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (agent.id, agent.name, agent.instructions, agent.connection_id,
-             agent.schema_scope, json.dumps(agent.doc_ids), json.dumps(agent.pack_ids),
+            "INSERT INTO user_agents (id, name, instructions, purpose, connection_id,"
+            " schema_scope, doc_ids, pack_ids, owner, enabled, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (agent.id, agent.name, agent.instructions, agent.purpose,
+             agent.connection_id, agent.schema_scope, json.dumps(agent.doc_ids),
+             json.dumps(agent.pack_ids),
              agent.owner, int(agent.enabled), agent.created_at, agent.updated_at),
         )
     from aughor.custom_agents.revisions import record_revision
@@ -163,7 +172,7 @@ def list_agents() -> list[UserAgent]:
     return [_row_to_agent(r) for r in rows]
 
 
-_PATCHABLE = ("name", "instructions", "connection_id", "schema_scope",
+_PATCHABLE = ("name", "instructions", "purpose", "connection_id", "schema_scope",
               "doc_ids", "pack_ids", "enabled")
 
 
