@@ -1,6 +1,6 @@
 """VA-2 — `delegate_task`: the tool that turns configured agents into usable specialists.
 
-Before this, a custom agent could only be IMPERSONATED: `/ask` took an `agent_id` and the
+Before this, a custom agent could only be WORN: `/ask` took an `agent_id` and the
 whole turn ran as that agent. It was configuration you could put on, not a colleague you
 could ask. This is the other half — the conversation hands a task to a named agent and
 gets its answer back, mid-turn, without the user leaving the thread.
