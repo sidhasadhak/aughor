@@ -44,6 +44,10 @@ export interface VizConfig {
   refLines?:    ExhibitRefLine[];
   /** Post-processing transform (PoP / share / rolling / cumulative). */
   transform?:   PostprocOp | "none";
+  /** Axis orientation for a bar form — swap the measure and the category between the two
+   *  axes. Absent means "let the chart decide": a ranking reads horizontally, a trend over
+   *  time reads vertically. Set only when the user has overridden that. */
+  orient?:      "vertical" | "horizontal";
 }
 
 /** True when the config carries no user intent — nothing to persist, nothing to restore.
@@ -58,7 +62,7 @@ export function isEmptyVizConfig(c: VizConfig | null | undefined): boolean {
     !c.showLabels &&
     !c.colorField && !c.colorScale && !c.colorName &&
     !c.numberFormat && !c.legend && !c.xTitle && !c.yTitle &&
-    !c.tooltipOff &&
+    !c.tooltipOff && !c.orient &&
     !(c.refLines && c.refLines.length) &&
     (c.transform === undefined || c.transform === "none")
   );

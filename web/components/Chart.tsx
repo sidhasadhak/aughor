@@ -1,26 +1,25 @@
 "use client";
 
 /**
- * Chart — the reusable chart component. Given SQL-shaped { columns, rows }
- * (+ optional backend chartConfig), it resolves the column roles, picks the
- * right chart type (the same data-shape rules as before), builds an Apache
- * ECharts `option` via the pure builders in ./charts/echarts, and renders it
- * through <EChart> with download-PNG + drag-to-resize + labels chrome.
+ * Chart — the reusable chart component, and the ONE seam every surface goes through.
+ * Given SQL-shaped { columns, rows } (+ the backend's chart hint, config and exhibit) it
+ * resolves a Vega-Lite spec — or a hand-authored Vega one for the four forms Vega-Lite
+ * cannot express — and renders it with download-PNG, drag-to-resize and label chrome.
  *
- * This is the ECharts replacement for the former Vega-Lite engine. The PUBLIC
- * PROPS are unchanged, so every surface (chat, report, exploration, query
- * builder, canvas, briefing) keeps working without edits. Chart-type selection
- * reuses scoreDualAxis (combo vs grouped vs bar); column roles via
- * ./charts/columnRoles; formatting/date logic lives inside the builders
- * (@/lib/format). The measure-additivity / percent-leak fixes are preserved by
- * the builders' per-field `valueFormatter`.
+ * The engine history is Observable Plot → Vega-Lite → ECharts → Vega-Lite (2026-08).
+ * The PUBLIC PROPS have not changed across any of it, which is why every surface (chat,
+ * report, exploration, query builder, canvas, briefing) kept working through each move.
+ * Column roles come from ./charts/columnRoles and type inference from
+ * ./charts/chartTypeInference — both engine-neutral, and both older than either engine.
  */
 
-import React, { useMemo, useRef, useState } from "react";
-import type { EChartsOption } from "echarts";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgSettings } from "@/lib/useOrgSettings";
-import { EChart } from "@/components/charts/echarts/EChart";
-import { resolveChartOption, type ChartCustom } from "@/components/charts/resolveOption";
+import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { resolveTier3Spec } from "@/components/charts/vega/tier3";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
+import type { ChartCustom } from "@/components/charts/chartCustom";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
 import { Icon } from "@/components/ui/icon";
 
@@ -28,7 +27,7 @@ import { Icon } from "@/components/ui/icon";
  *  lets the Query Builder Customize tab override colours / number format / legend /
  *  axis titles. All fields optional; a null/empty custom is a no-op, so non-customizing
  *  callers (chat, reports, explorer) are unaffected. */
-// ChartCustom moved to resolveOption.ts with the resolver; re-exported for existing importers.
+// Re-exported for the five components that import it through this module.
 export type { ChartCustom };
 
 // ── Customize post-pass (ECharts) ────────────────────────────────────────────
@@ -65,9 +64,10 @@ export function Chart({
   fitHeight?: number | null;
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
-  /** Hand the live ECharts instance up to a chromeless caller (e.g. so a side-panel
-   *  "Download PNG" can export a chart rendered with chrome={false}). */
-  onInstanceReady?: (inst: { getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string }) => void;
+  /** Hand the live chart instance up to a chromeless caller (e.g. so a side-panel
+   *  "Download PNG" can export a chart rendered with chrome={false}). Engine-neutral:
+   *  Vega produces its image asynchronously, so getDataURL may return a promise. */
+  onInstanceReady?: (inst: ChartInstance) => void;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle. */
   chrome?: boolean;
   /** Externally control data-label visibility (chromeless mode). */
@@ -82,7 +82,8 @@ export function Chart({
   exhibit?: ExhibitSpec | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
-  const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
+  const instRef = useRef<ChartInstance | null>(null);
+
   // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
   const [showLabelsState, setShowLabels] = useState(false);
@@ -107,13 +108,7 @@ export function Chart({
   }
 
   function handleDownloadPng() {
-    const inst = instRef.current;
-    if (!inst) return;
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#131c27";
-    const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
-    const fname = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
-    const a = Object.assign(document.createElement("a"), { href: url, download: fname });
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    void downloadChartPng(instRef.current, title);
   }
 
   // Re-render + rebuild the option when org settings change, so the currency symbol /
@@ -123,11 +118,27 @@ export function Chart({
   // Build the option + default height. Memoized so its identity is stable across
   // renders (EChart re-inits when the option object changes) — only rebuilds when
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
-  const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(
-    () => resolveChartOption({ columns, rows, chartType, chartConfig, custom, columnUnits, exhibit, showLabels }),
+  type Built = { spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
+
+  const built = useMemo<Built | null>(() => {
+    // Tier 3 first — the four forms Vega-Lite cannot express are hand-authored Vega.
+    const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
+    if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
+
+    const v = resolveVegaSpec({
+      columns, rows, chartType, showLabels, exhibit,
+      format: custom?.format ?? null,
+      xTitle: custom?.xTitle ?? null,
+      yTitle: custom?.yTitle ?? null,
+      orient: custom?.orient ?? null,
+      transform: custom?.transform ?? null,
+    });
+    // null is the honest-refusal verdict: data with no chart in it renders none, and the
+    // surface's table view carries it. There is no second engine to fall back to.
+    return v ? { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 } : null;
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
 
   if (!built) return null;
   const fill = !!(fitHeight && fitHeight > 0);
@@ -158,13 +169,18 @@ export function Chart({
           A vertical bar chart with only a few categories no longer stretches across the full panel
           (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
       {(() => {
-        const _xd = (built.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
-        const _catN = Array.isArray(_xd) ? _xd.length : 0;
-        // In fill mode the chart takes the whole box (no 350px cap, no few-category width cap).
+        const _catN = built.xCategories;
+        // In fill mode the chart takes the whole box (no few-category width cap).
         const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
+        const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
+        /* A chart is a picture, not a viewport. It used to cap at 350px and scroll inside
+           that box, so a ranking with many categories became a thing you scrolled through
+           instead of a shape you read — and the axis scrolled out of sight with it. The
+           chart now renders at its natural height and the card grows; orientation flips to
+           upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
         return (
-      <div ref={outerRef} style={{ maxHeight: fill ? undefined : 350, height: fill ? chartH : undefined, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
-        <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; onInstanceReady?.(inst); }} />
+      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
+        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
       </div>
         );
       })()}

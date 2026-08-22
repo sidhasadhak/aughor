@@ -104,9 +104,18 @@
   /* Layout — app shell */
   --sidebar: 248px;
   --topbar:  48px;
-  /* Chat reading measure — wider than the Brief's 760px prose measure so charts
-     and tables breathe, but never edge-to-edge on a wide monitor. */
-  --measure-chat: 880px;
+  /* Chat measure. Was 880px, on the reasoning that a reading column should never run
+     edge-to-edge on a wide monitor — true of prose, but a chat turn here is mostly
+     charts, tables and SQL, and those were being squeezed into a column while Deep
+     Analysis used the whole panel beside them. Full width by request (2026-08-21);
+     the knob survives, so setting a px value restores a capped column. */
+  --measure-chat: 100%;
+  /* Chat gutter — the gap between the panel edge and the conversation.
+     Measured off the Databricks reference (2026-08-21): a ~1728px panel carries ~72px of
+     clear space each side, so the content covers ~92% and the gutter is ~4% — it SCALES
+     with the panel rather than sitting at a fixed padding. Clamped so a narrow split pane
+     keeps a usable 20px and an ultrawide monitor does not open a canyon. */
+  --chat-gutter: clamp(20px, 4%, 88px);
 
   /* Elevation — borders do the structural work; these are for things that
      genuinely float (menus, dialogs, tooltips) and nothing else. */

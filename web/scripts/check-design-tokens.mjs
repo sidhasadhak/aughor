@@ -31,8 +31,8 @@
  *               so converting them to `aug-fs-*` classes is tidying rather than
  *               repair; it happens as files are touched, and this number only falls.
  *
- * `components/charts/echarts/` is out of scope: those numbers are ECharts spec values
- * rendered to canvas by the chart theme, not DOM type on the page.
+ * `components/charts/vega/` is out of scope: those numbers are chart-spec values rendered
+ * inside the chart's own SVG by its config, not DOM type on the page.
  *
  * No dependencies — walks the tree and regex-scans className-bearing source. Run via
  * `npm run lint:tokens`; wired into CI as a blocking job.
@@ -45,15 +45,17 @@ const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const ROOTS = ["components", "app"];
 const EXTS = [".tsx", ".ts"];
 
-/** Chart specs are canvas text governed by the registered ECharts theme. */
-const OUT_OF_SCOPE = ["components/charts/echarts"];
+/** Chart specs are chart-engine text governed by the engine's own config, not DOM type on
+ *  the page: Vega renders them inside its SVG, sized by the chart theme rather than the page
+ *  type scale. Anything in this dir that IS page DOM must still wear an aug-fs-* class. */
+const OUT_OF_SCOPE = ["components/charts/vega"];
 
 /** The steps in styles/type.css. Keep the two in lockstep. */
 const SCALE = new Set([11, 12, 13, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
  *  LOWER this as they are converted; never raise it. */
-const FONT_SIZE_BASELINE = 1245;
+const FONT_SIZE_BASELINE = 1222;
 
 const RADIUS_RULES = [
   {

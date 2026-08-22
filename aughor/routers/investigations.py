@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from aughor.agent.chart_vocab import answer_chart_payload
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
 from aughor.kernel.concurrency import ContextThreadPoolExecutor
@@ -2710,8 +2711,8 @@ def _answer_core(
                 question=question, sqls=[final_sql], headline=_grounded_headline or question,
                 schema=schema, connection_id=connection_id, canvas_id=canvas_id,
                 guard_edges=_guards,
-                payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows),
-                               "complexity_tier": _cx.tier},
+                payload_extra=answer_chart_payload(
+                    answer.chart_type, answer.chart_config, len(result.rows), _cx.tier),
             )
             # Surface the per-run receipts live (Wave 1·E4 learning · E3 activations); each is flag-gated.
             for _evt in ("learning", "activations"):

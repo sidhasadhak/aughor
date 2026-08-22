@@ -366,7 +366,6 @@ function CapabilitiesBlock({
   canvas: Canvas;
   connection: Connection | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const scope = canvas.scopes[0];
   const tables = scope?.tables ?? [];
   const isFull = tables.length === 0;
@@ -384,16 +383,18 @@ function CapabilitiesBlock({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
-      {/* Title */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: "var(--r2)",
-          background: canvas.is_legacy ? "var(--bg-3)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
-          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <Icon name="canvas" size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
-        </div>
+      {/* Title — the mark sits ABOVE the name rather than beside it (the reference's arrangement),
+          so the name starts at the same left edge as the description and the capabilities
+          below it, instead of being indented by the width of an icon. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/canvas-mark.svg"
+          alt=""
+          width={44}
+          height={44}
+          style={{ borderRadius: "var(--r2)", display: "block", flexShrink: 0 }}
+        />
         <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
       </div>
 
@@ -416,35 +417,6 @@ function CapabilitiesBlock({
           ))}
         </ul>
 
-        {/* Table chips — revealed via Show more, like Databricks */}
-        {!isFull && tables.length > 0 && (
-          <>
-            {expanded && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                {tables.map(t => (
-                  <span key={t} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 9px", borderRadius: "var(--r-chip)",
-                    background: "var(--bg-2)", border: "1px solid var(--b1)",
-                    fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
-                  }}>
-                    <Icon name="table" size={10} color="var(--t4)" />
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => setExpanded(v => !v)}
-              style={{
-                marginTop: 8, background: "none", border: "none", cursor: "pointer",
-                color: "var(--blue4)", fontSize: 12, fontWeight: 500, padding: 0,
-              }}
-            >
-              {expanded ? "Show less" : `Show ${tables.length} table${tables.length !== 1 ? "s" : ""}`}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );

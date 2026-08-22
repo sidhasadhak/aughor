@@ -24,7 +24,26 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+/**
+ * Absolute base for the relative URLs in `metadata` below. The OG image is `/aughor-logo.jpeg`
+ * — a relative path a crawler cannot fetch — so Next resolves it against this. Left unset, Next
+ * warns at build time and falls back to `http://localhost:3000`, which would ship a localhost
+ * image URL in the OG tags of every real deployment.
+ *
+ * Precedence, most specific first:
+ *   1. NEXT_PUBLIC_SITE_URL — an explicit public origin, for any deployment that has one
+ *   2. Vercel's own production domain — the stable one; VERCEL_URL is per-deployment, so a
+ *      preview build would otherwise stamp its throwaway hostname into the tags
+ *   3. http://localhost:3000 — the local development default, same value Next was guessing
+ */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Aughor — Autonomous Intelligence Platform",
   description: "Aughor is an Autonomous Intelligence Platform — continuously explores your data, builds a living business ontology, and answers complex analytical questions with evidence.",
   icons: {
