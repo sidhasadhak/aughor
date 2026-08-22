@@ -1,12 +1,11 @@
 /* ════════════════════════════════════════════════════════════════════════════
    AUGHOR v2 — TOKEN OVERRIDE LAYER
    ────────────────────────────────────────────────────────────────────────────
-   Drop-in elevation of the existing design tokens. Re-declares ONLY the
-   primitive tokens (backgrounds, borders, text, intent ramps, accent, radius,
-   shadow, motion, chart palette) with elevated v2 values. Every Tailwind /
-   shadcn bridge and accent-palette bridge in the original tokens.css references
-   these primitives via var(), so they cascade automatically — no other file
-   needs editing for the core re-skin.
+   Drop-in re-skin of the existing design tokens. Re-declares ONLY the primitive
+   tokens (backgrounds, borders, text, intent ramps, accent, radius, shadow,
+   layout, chart chrome) — every Tailwind / shadcn bridge and accent-palette
+   bridge in the original tokens.css reads these through var(), so they cascade
+   automatically and no component file needs editing for the re-skin.
 
    ── HOW TO USE ──────────────────────────────────────────────────────────────
    Import AFTER the original tokens.css so these win the cascade:
@@ -18,122 +17,191 @@
 
    Variable NAMES are identical to styles/tokens.css — only VALUES differ.
    See MAPPING.md for the old→new table and rationale.
+
+   ── THE SYSTEM ──────────────────────────────────────────────────────────────
+   A console language: cool near-neutral surfaces, ONE blue that means
+   "interactive", flat hairline structure, and shape that stays out of the way.
+
+     Structure is borders, not shadows.  A 1px hairline separates surfaces at
+     every level; shadow is reserved for things that genuinely float above the
+     page (menus, dialogs, tooltips). Panels that "lift" compete with the data.
+
+     Shape is tight.  3 / 4 / 6px — a badge, a control, a panel. Nothing on a
+     rectangular surface exceeds 6px. Density is a feature in a tool people
+     keep open all day; a soft corner reads as a consumer app.
+
+     One accent.  Blue is reserved for interaction — links, focus, selection,
+     the active tab, the primary button. It never decorates. Status colour
+     (green/amber/red) means an OUTCOME and never an affordance, so a green
+     button and a blue button never sit side by side meaning the same thing.
+
+     Both modes are first-class.  Every token below is defined in both blocks;
+     nothing resolves in one theme and falls through in the other. The light
+     block is the reference design; the dark block is its counterpart in the
+     same hue family, so a colour keeps its meaning across the toggle.
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* ── DARK (default) ──────────────────────────────────────────────────────── */
 :root {
-  /* Backgrounds — Du Bois-lifted soft-dark canvas (blue-tinted), hairline layers.
-     Off pure-black so surfaces read as surfaces and text contrast is gentler. */
-  --bg-0: #10161D;   /* canvas — Du Bois-level soft-dark, cool tint (calm, not a void) */
-  --bg-1: #131A22;   /* sidebar / topbar — one step off the canvas */
-  --bg-2: #19212B;   /* surface: cards, panels, tables */
-  --bg-3: #222C37;   /* surface-2: table headers, insets, inputs, hover fills */
-  --bg-4: #2C3744;   /* surface-3: pressed / gauge tracks */
-  --bg-hover: rgba(255, 255, 255, 0.045);
-  --bg-sel:   rgba(90, 159, 214, 0.14);   /* blue-tint — selected rows / active nav wash */
+  /* Backgrounds — a cool, deep near-neutral. The canvas sits BELOW the
+     surfaces so panels read as raised planes without a shadow doing the work. */
+  --bg-0: #0D1318;   /* canvas — the page behind everything */
+  --bg-1: #12191F;   /* chrome: sidebar, topbar */
+  --bg-2: #12191F;   /* surface: cards, panels, table bodies */
+  --bg-3: #1A232B;   /* surface-2: table headers, insets, inputs */
+  --bg-4: #202B34;   /* surface-3: pressed states, gauge tracks */
+  --bg-hover: #202B34;   /* one step up — the same value a pressed surface uses */
+  --bg-nav:   #1A232B;   /* the left rail sits ABOVE the page, not level with it: it is
+                            chrome you navigate from, and lifting it is what separates
+                            "where am I going" from "what am I looking at". */
+  --bg-sel:   #14324C;   /* blue-tinted selection: rows, active nav, checked items */
 
-  /* Borders — hairline structure carries the layout (not shadows) */
-  --b0: #29323E;   /* line-faint: internal table-row separators */
-  --b1: #333D4A;   /* line: default border / divider */
-  --b2: #414C5B;   /* line-strong: inputs, pills, emphasised borders */
-  --b3: #4E5A6A;   /* stronger emphasis / hover borders */
-  --bfocus: #5A9FD6;
+  /* Borders — the hairline structure that carries the whole layout. Four steps
+     so a table's internal rules can sit visibly under its outer frame. */
+  --b0: #1B252E;   /* line-faint: internal table-row separators */
+  --b1: #232F39;   /* line: default border / divider */
+  --b2: #2F3D48;   /* line-strong: inputs, pills, emphasised borders */
+  --b3: #3C4B58;   /* hover / focus-adjacent borders */
+  --bfocus: #62AEEF;
 
-  /* Text — ink. Primary is a SOFT off-white (Du Bois), not pure white: gentler
-     contrast on the lifted canvas, easier on the eyes over long sessions. */
-  --t1: #E8ECF0;
-  --t2: #93A1B2;
-  --t3: #686B77;
-  --t4: #525B69;
+  /* Text — four tiers, all of them legible. --t4 is the floor: it is still a
+     readable grey, not a decorative one. A tier nobody can read is not a tier. */
+  --t1: #E6EDF3;
+  --t2: #93A7B6;
+  --t3: #69808F;
+  --t4: #5D7283;
 
-  /* Accent — a two-blue system. --blue3 is THE interaction accent
-     (accent, ring, sidebar, nav, links, tabs). --blue-solid is the darker
-     primary-button fill (white text); --primary is repointed to it here. */
-  --blue1: #10233B; --blue2: #1A4E82; --blue3: #5A9FD6; --blue4: #7DB6E8; --blue5: #BFDBFF;
-  --blue-solid: #2272B4;          /* primary-button fill; hover #2A82CC */
-  --blue-solid-hover: #2A82CC;    /* primary-button hover fill (was a literal in .aug-btn-primary:hover) */
-  --vio-solid:  #633D96;          /* deep-analysis solid fill (user bubble, white text) */
-  --primary:    var(--blue-solid);
-  --grn1:  #14251C; --grn2:  #1E4230; --grn3:  #4FA96D; --grn4:  #5FBE82; --grn5:  #8FD9A8;
-  --amb1:  #2A1E08; --amb2:  #5A430F; --amb3:  #C68A2E; --amb4:  #E0A54D; --amb5:  #EEC57A;
-  --red1:  #2A1114; --red2:  #59232A; --red3:  #C85C5C; --red4:  #E07070; --red5:  #EF9A9A;
-  --vio1:  #1B1340; --vio2:  #312069; --vio3:  #7E62BE; --vio4:  #9B7BD4; --vio5:  #C3AEE8;
-  --cyn1:  #06222E; --cyn2:  #0B4658; --cyn3:  #38A5A5; --cyn4:  #4FC4C4; --cyn5:  #9BE4E4;
+  /* Accent — one blue. --blue3 is THE interaction accent (links, focus, active
+     tab, selection). --blue-solid is the primary-button FILL: deliberately a
+     darker step than --blue3 so it carries white text at full contrast, which
+     is what `--primary-foreground: #fff` in tokens.css already promises. */
+  --blue1: #16324B; --blue2: #1E4C74; --blue3: #62AEEF; --blue4: #8CC5F6; --blue5: #BFDCFA;
+  --blue-solid:       #1F6CB0;   /* primary-button fill (white text) */
+  --blue-solid-hover: #2A82CC;   /* primary-button hover fill */
+  --vio-solid:        #6A4FB5;   /* deep-analysis solid fill (white text) */
+  --primary:          var(--blue-solid);
 
-  /* Radius — tight controls, softer cards. buttons 6 · pills/inputs 8 · cards 12 */
-  --r1: 6px;
-  --r2: 8px;
-  --r3: 12px;
-  --r-pill: 9999px;  /* pills/avatars/dots — the one full-round exception (REC-U1). */
-  --r-composer: 22px; /* the chat composer pill — a soft, generous corner (UI Wave 2). */
+  /* Status ramps — outcome colour. 1 is the soft wash a badge sits on, 3 is the
+     colour itself, 5 is the brightest emphasis. Same three anchors as light. */
+  --grn1:  #133528; --grn2:  #1C543F; --grn3:  #57C79A; --grn4:  #7AD7B2; --grn5:  #A8E7CC;
+  --amb1:  #3A2A14; --amb2:  #5C441F; --amb3:  #E0A45C; --amb4:  #EBBC85; --amb5:  #F4D4AE;
+  --red1:  #3A1720; --red2:  #5E2532; --red3:  #F08A9C; --red4:  #F6A8B6; --red5:  #FBC8D1;
+  --vio1:  #221A3E; --vio2:  #362A5E; --vio3:  #9E86D8; --vio4:  #B7A4E5; --vio5:  #D2C6F0;
+  --cyn1:  #0C2E33; --cyn2:  #144A52; --cyn3:  #4FBECB; --cyn4:  #7AD3DD; --cyn5:  #A9E5EC;
+
+  /* Radius — badge · control · panel. 6px is the ceiling on any rectangular
+     surface; the pill is the one sanctioned exception (REC-U1). */
+  --r1: 3px;
+  --r2: 4px;
+  --r3: 6px;
+  --r-pill: 9999px;    /* only things that are ACTUALLY round: avatars, status dots */
+  --r-chip: var(--r1); /* tags, badges, filters, counts — rectangles, like every
+                          other small surface. The reference design reserves the
+                          full round for dots alone, and a pill among rectangles
+                          reads as a different system. */
+  --r-composer: 8px;   /* the chat composer — a control, held to the control scale */
 
   /* Layout — app shell */
-  --sidebar: 264px;
-  --topbar:  54px;
-  /* Chat reading measure — wider than the Brief's 760px prose measure so charts
-     and tables breathe, but never edge-to-edge on a wide monitor. */
-  --measure-chat: 880px;
+  --sidebar: 248px;
+  --topbar:  48px;
+  /* Chat measure. Was 880px, on the reasoning that a reading column should never run
+     edge-to-edge on a wide monitor — true of prose, but a chat turn here is mostly
+     charts, tables and SQL, and those were being squeezed into a column while Deep
+     Analysis used the whole panel beside them. Full width by request (2026-08-21);
+     the knob survives, so setting a px value restores a capped column. */
+  --measure-chat: 100%;
+  /* Chat gutter — the gap between the panel edge and the conversation.
+     Measured off the Databricks reference (2026-08-21): a ~1728px panel carries ~72px of
+     clear space each side, so the content covers ~92% and the gutter is ~4% — it SCALES
+     with the panel rather than sitting at a fixed padding. Clamped so a narrow split pane
+     keeps a usable 20px and an ultrawide monitor does not open a canyon. */
+  --chat-gutter: clamp(20px, 4%, 88px);
 
-  /* Elevation — borders do the work; shadows only for true overlays (menus, dialogs) */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
-  --shadow-md: 0 8px 30px rgba(0,0,0,.50);
+  /* Elevation — borders do the structural work; these are for things that
+     genuinely float (menus, dialogs, tooltips) and nothing else. */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.50);
+  --shadow-md: 0 1px 2px rgba(0,0,0,.50), 0 6px 16px rgba(0,0,0,.40);
 
-  /* Chart palette — calm sky-blue lead, muted categoricals (charts never shout) */
-  --chart-1: #5A9FD6; --chart-2: #5FBE82; --chart-3: #E0A54D;
-  --chart-4: #9B7BD4; --chart-5: #E07070; --chart-6: #4FC4C4;
-  --chart-threshold-warn:   #E0A54D;
-  --chart-threshold-crit:   #E07070;
-  --chart-threshold-target: #5FBE82;
-  --chart-axis: #333D4A;
-  --chart-grid: #262F3A;
-  --chart-tick: #686B77;
+  /* The modal scrim. ONE value, because a system has one scrim — the seven
+     hand-tuned blacks this replaces ranged .32–.70 with no rule behind the
+     spread. Deep here, because the dialog above it is barely lighter than the
+     page and needs the separation. */
+  --scrim: rgba(0, 0, 0, .65);
 
-  --code-bg: #0C1219;   /* recessed code well, one step under the lifted canvas */
+  /* Chart palette — unchanged by this re-skin, and deliberately so. The six
+     series were CHOSEN by the validator, not by eye: re-stepped into the dark
+     lightness band (OKLCH L 0.48–0.67) and ordered by exhaustive search for
+     CVD separation. They already sit in this accent's hue family, so retinting
+     them would spend real CVD headroom for no visible gain. What DOES move is
+     the chrome below, which follows the new borders and text.
+     Mirrored in charts/echarts/palette.ts; `lint:palette` validates both and
+     fails on drift. Six slots is the ceiling — past six the chart folds to
+     "Other" (--chart-deemph), never a seventh hue. */
+  --chart-1: #569BD2; --chart-2: #4BAB70; --chart-3: #9B7BD4;
+  --chart-4: #C1882B; --chart-5: #2BA8A9; --chart-6: #DD6E6E;
+  --chart-deemph: #4E5A6A;
+  --chart-threshold-warn:   #E0A45C;
+  --chart-threshold-crit:   #F08A9C;
+  --chart-threshold-target: #57C79A;
+  --chart-axis: #2F3D48;
+  --chart-grid: #232F39;
+  --chart-tick: #93A7B6;
+
+  --code-bg: #0D1318;   /* recessed code well — the canvas, one step under the card */
 }
 
 /* ── LIGHT ───────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg-0: #F4F6FA;
-  --bg-1: #FFFFFF;
-  --bg-2: #FFFFFF;
-  --bg-3: #F7F9FC;
-  --bg-4: #EDF1F7;
-  --bg-hover: rgba(15, 30, 60, 0.04);
-  --bg-sel:   rgba(31, 119, 180, 0.10);
+  --bg-0: #EEF2F5;   /* canvas */
+  --bg-1: #FFFFFF;   /* chrome: sidebar, topbar */
+  --bg-2: #FFFFFF;   /* surface: cards, panels, table bodies */
+  --bg-3: #F4F7F9;   /* surface-2: table headers, insets, inputs */
+  --bg-4: #EEF2F5;   /* surface-3: pressed states, gauge tracks */
+  --bg-hover: #EEF3F7;
+  --bg-nav:   #FFFFFF;   /* already the lifted surface in light — the canvas is below it */
+  --bg-sel:   #E7F1FA;
 
-  --b0: #EEF1F6;
-  --b1: #E7ECF3;
-  --b2: #D8E0EB;
-  --b3: #C2CCDA;
-  --bfocus: #1F77B4;
+  --b0: #EDF1F4;
+  --b1: #E6EBEF;
+  --b2: #D3DAE0;
+  --b3: #BAC4CD;
+  --bfocus: #1F6CB0;
 
-  --t1: #1C2330;
-  --t2: #5A6678;
-  --t3: #8593A6;
-  --t4: #A9B4C4;
+  --t1: #11171C;
+  --t2: #5F7281;
+  --t3: #6C7E8C;
+  --t4: #798B98;
 
-  --blue1: #EAF3FA; --blue2: #C3DDF0; --blue3: #1F77B4; --blue4: #175A88; --blue5: #103E5E;
-  --blue-solid: #1F77B4;   /* primary-button fill in light mode */
-  --blue-solid-hover: #2A82CC; /* primary-button hover fill (light) */
-  --vio-solid:  #7C5CE0;   /* deep-analysis solid fill (white text) in light mode */
-  --grn1:  #E7F6EE; --grn2:  #BEE6CF; --grn3:  #1FA968; --grn4:  #168A52; --grn5:  #0E5C36;
-  --amb1:  #FCF1DA; --amb2:  #F2D89B; --amb3:  #B97D08; --amb4:  #9A6505; --amb5:  #6E4703;
-  --red1:  #FBE9EB; --red2:  #F2C3C7; --red3:  #D62839; --red4:  #B11D2C; --red5:  #7E1320;
-  --vio1:  #F0EBFA; --vio2:  #D6C7F0; --vio3:  #7C5CE0; --vio4:  #5E3FB8; --vio5:  #3F2A80;
-  --cyn1:  #E3F4F8; --cyn2:  #B6E1EB; --cyn3:  #0F8C9A; --cyn4:  #0B6B77; --cyn5:  #06474F;
+  --blue1: #E7F1FA; --blue2: #BFD9F0; --blue3: #1F6CB0; --blue4: #17558B; --blue5: #0F3D64;
+  --blue-solid:       #1F6CB0;
+  --blue-solid-hover: #17558B;   /* light mode darkens on hover; dark mode lightens */
+  --vio-solid:        #6A4FB5;
 
-  --shadow-sm: 0 1px 2px rgba(20,40,80,.06);
-  --shadow-md: 0 4px 16px rgba(20,40,80,.10), 0 1px 3px rgba(20,40,80,.06);
+  --grn1:  #E3F3EC; --grn2:  #B9E0CE; --grn3:  #177A56; --grn4:  #106044; --grn5:  #0A4530;
+  --amb1:  #FBEFDF; --amb2:  #F0D6AE; --amb3:  #A35B00; --amb4:  #834900; --amb5:  #5E3400;
+  --red1:  #FBE9EC; --red2:  #F2C2CA; --red3:  #B8283F; --red4:  #931F32; --red5:  #6B1624;
+  --vio1:  #EFEBFA; --vio2:  #D3C8F0; --vio3:  #6A4FB5; --vio4:  #543C93; --vio5:  #3B2A69;
+  --cyn1:  #E2F3F6; --cyn2:  #B4E0E8; --cyn3:  #0F7C8A; --cyn4:  #0B616C; --cyn5:  #07444C;
 
-  /* Categorical chart palette + light axes */
-  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #FF7F0E;
-  --chart-4: #9467BD; --chart-5: #D62728; --chart-6: #17BECF;
-  --chart-threshold-warn:   #B25D00;
-  --chart-threshold-crit:   #D62728;
-  --chart-threshold-target: #2CA02C;
-  --chart-axis: rgba(20,40,80,.12);
-  --chart-grid: rgba(20,40,80,.06);
-  --chart-tick: #66738A;
+  --shadow-sm: 0 1px 2px rgba(17,23,28,.08);
+  --shadow-md: 0 1px 2px rgba(17,23,28,.08), 0 4px 12px rgba(17,23,28,.06);
 
-  --code-bg: #F0F2F6;
+  /* Lighter than dark's, and deliberately so: a white dialog on a light page
+     already separates by shadow and hairline, so the scrim only has to dim.
+     The dark-mode 65% black rendered the whole page muddy grey here. */
+  --scrim: rgba(17, 23, 28, .32);
+
+  /* Categorical series — see the note in the dark block: chosen by the
+     validator, left alone by the re-skin. Chrome follows the new tokens. */
+  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #9467BD;
+  --chart-4: #FF7F0E; --chart-5: #17BECF; --chart-6: #D62728;
+  --chart-deemph: #B9C2CE;
+  --chart-threshold-warn:   #A35B00;
+  --chart-threshold-crit:   #B8283F;
+  --chart-threshold-target: #177A56;
+  --chart-axis: #D3DAE0;
+  --chart-grid: #E6EBEF;
+  --chart-tick: #5F7281;
+
+  --code-bg: #EEF2F5;
 }

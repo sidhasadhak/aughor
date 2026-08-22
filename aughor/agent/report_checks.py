@@ -49,6 +49,49 @@ def pitfall(number: int) -> str:
     return f"#{number} ({name}):" if name else f"#{number}:"
 
 
+class Violation(str):
+    """A violation is TWO sentences for TWO readers, and only one of them is this string.
+
+    The string value is the REPAIR INSTRUCTION — second-person, imperative, the shape a
+    one-shot model retry can act on ("replace each with the evidence's own value"). The
+    `.disclosure` attribute is the READER sentence — third-person, past tense, what a person
+    holding the PDF should be told ("One figure in the summary is derived, not quoted").
+
+    Before CA-0 there was only the string, and when the retry could not clear it the
+    instruction itself was concatenated into the customer-facing `confidence_justification`
+    and rendered into the PDF. A str subclass keeps every existing caller (`" ".join`,
+    `"\n- ".join`, logging) byte-identical while carrying the second sentence alongside.
+    """
+
+    disclosure: str
+
+    def __new__(cls, repair: str, disclosure: str = ""):
+        obj = super().__new__(cls, repair)
+        obj.disclosure = disclosure or ""
+        return obj
+
+
+def reader_disclosure(violations: list) -> str:
+    """The one sentence the REPORT carries when checks still fail after the repair attempt.
+
+    Built from each violation's `.disclosure`; a plain string (a check that predates the
+    Violation type, or a caller that passed its own) falls back to a neutral clause naming
+    only the pitfall number, never the instruction text. Empty input → empty string."""
+    parts: list[str] = []
+    for v in violations or []:
+        d = getattr(v, "disclosure", "") or ""
+        if not d:
+            m = re.match(r"#(\d+)", str(v))
+            d = f"a deterministic check flagged the summary (#{m.group(1)})" if m else \
+                "a deterministic check flagged the summary"
+        d = d.strip().rstrip(".")
+        if d and d not in parts:
+            parts.append(d)
+    if not parts:
+        return ""
+    return "Deterministic checks after the repair attempt: " + "; ".join(parts) + "."
+
+
 def _float_or_none(s: str) -> Optional[float]:
     """A regex-matched token as a float, or None for the residue the pattern admits
     but float() does not ('.', ''). Expected-case parsing, not a swallowed failure."""
@@ -84,10 +127,11 @@ def check_signs(waterfall: list[dict]) -> list[str]:
         if ls is None or not isinstance(pct, (int, float)) or pct == 0:
             continue
         if ls != _sign(float(pct)):
-            out.append(
+            out.append(Violation(
                 f"attribution_waterfall entry '{w.get('cause', '?')}' contradicts itself: "
                 f"amount_label '{w.get('amount_label')}' and pct_of_total {pct} carry "
-                "opposite signs — a cause pushed the metric one way, give both fields that sign.")
+                "opposite signs — a cause pushed the metric one way, give both fields that sign.",
+                f"the attribution entry '{w.get('cause', '?')}' carries contradictory signs"))
     return out
 
 
@@ -100,10 +144,11 @@ def check_waterfall_sums(waterfall: list[dict]) -> list[str]:
     total = sum(pcts)
     if 60.0 <= abs(total) <= 140.0:
         return []
-    return [
+    return [Violation(
         f"attribution_waterfall pct_of_total values sum to {total:.0f} — they should "
         "account for approximately ±100% of the change; add an 'Unexplained / residual' "
-        "entry for the missing share instead of leaving it unaccounted."]
+        "entry for the missing share instead of leaving it unaccounted.",
+        f"the attribution entries account for {total:.0f}% of the change, not ~100%")]
 
 
 def _question_numbers(question: str) -> list[str]:
@@ -130,10 +175,12 @@ def check_question_addressed(question: str, report_texts: str) -> list[str]:
     missing = [n for n in q_nums if n.replace(",", "") not in text_norm]
     if len(missing) < len(q_nums):
         return []          # it engaged at least one claimed figure — addressed
-    return [
-        f"{pitfall(36)} the question makes a specific numeric claim ({', '.join(q_nums[:3])}) and the "
+    figs = ", ".join(q_nums[:3])
+    return [Violation(
+        f"{pitfall(36)} the question makes a specific numeric claim ({figs}) and the "
         "report never mentions it — confirm the figure, correct it with the measured "
-        "value, or state plainly that the premise does not hold."]
+        "value, or state plainly that the premise does not hold.",
+        f"the question's own figure ({figs}) was not addressed by the report (#36)")]
 
 
 def _evidence_number_set(evidence: str) -> set[str]:
@@ -173,8 +220,57 @@ def _evidence_number_set(evidence: str) -> set[str]:
     return out
 
 
+#: Derivation scan bound — the O(n²) pair scan over distinct evidence values. Mirrors
+#: aughor/explorer/verify.py; 48 distinct values cover any evidence log this module sees.
+_DERIVE_CAP = 48
+
+
+def _evidence_values(evidence: str, cap: int = _DERIVE_CAP) -> list[float]:
+    """Distinct numeric values in the evidence, in order of appearance, bounded."""
+    out: list[float] = []
+    seen: set[float] = set()
+    for n in _NUM_RE.findall(evidence or ""):
+        clean = n.replace(",", "").strip("+-")
+        f = _float_or_none(clean) if clean and clean != "." else None
+        if f is None:
+            continue
+        k = round(f, 6)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(f)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _close(a: float, b: float, rel: float = 0.01) -> bool:
+    return b != 0 and abs(a - b) <= abs(b) * rel + 1e-6
+
+
+def _derived_from_evidence(v: float, vals: list[float]) -> bool:
+    """True when `v` is arithmetic the evidence licenses: a percent change ((b−a)/a·100, either
+    sign), a share (b/a·100) or a raw delta (b−a) of two evidence values, within 1%.
+
+    This is the credit the explorer's claim-grounding has carried since its first live run
+    (`aughor/explorer/verify.py`) and the deep path's check did not: the Direkteingabe
+    specimen's "+26.8%" — (37,925 − 29,903) / 29,903 — was the ONLY figure #36 flagged, and
+    the message then presented the two correct quoted figures beside it as fabrications. A
+    model that does correct arithmetic over the evidence is not inventing; refusing the
+    arithmetic is the "restriction" half of the Track-A rule, not the "verification" half."""
+    for a in vals:
+        if a == 0:
+            continue
+        for b in vals:
+            if _close(v, (b - a) / a * 100.0) or _close(v, abs(b - a) / abs(a) * 100.0) \
+                    or _close(v, b / a * 100.0) or _close(v, b - a):
+                return True
+    return False
+
+
 def check_grounding(prose: str, evidence: str) -> list[str]:
-    """Every substantial number in the report's headline prose must exist in the evidence.
+    """Every substantial number in the report's headline prose must exist in the evidence —
+    quoted, or DERIVED from it by the arithmetic an analyst is allowed to do.
 
     This used to scan only `**bold**` spans, because the narrator was told to bold the
     decisive figure and bold was therefore the report's own claim of decisiveness. The
@@ -185,14 +281,20 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
 
     Sentences replace bold spans. The SCOPE is unchanged: the caller passes headline +
     executive summary + closing summary, the three fields where a fabricated figure does
-    the most damage. If anything this catches more, since a number the model chose NOT to
-    bold was never checked before. Compact forms ($2.1M) and tiny integers (list ranks,
-    "3 sub-categories") are still skipped — unverifiable or trivially coincidental, and a
-    false violation costs a real retry."""
+    the most damage. Compact forms ($2.1M) and tiny integers (list ranks, "3 sub-categories")
+    are still skipped — unverifiable or trivially coincidental, and a false violation costs a
+    real retry.
+
+    CA-0: (1) a figure that is a percent change / share / delta of two evidence values is
+    grounded (see _derived_from_evidence); (2) the violation names the FIGURES that failed,
+    not the sentences that contain them — the old message quoted whole sentences, so a reader
+    saw every correct number in the sentence accused alongside the one that was not."""
     if not prose or not evidence:
         return []
     have = _evidence_number_set(evidence)
-    missing: list[str] = []
+    vals = _evidence_values(evidence)
+    bad_figs: list[str] = []
+    contexts: list[str] = []
     for segment in _SENTENCE_RE.split(prose):
         if _COMPACT_SUFFIX.search(segment):
             continue
@@ -201,15 +303,22 @@ def check_grounding(prose: str, evidence: str) -> list[str]:
             f = _float_or_none(clean) if clean else None
             if f is None or abs(f) < 10:
                 continue
-            if clean not in have:
-                missing.append(segment.strip())
-                break
-    if not missing:
+            if clean in have or _derived_from_evidence(f, vals):
+                continue
+            if clean not in bad_figs:
+                bad_figs.append(n.strip("+-"))
+            ctx = segment.strip()
+            if ctx and ctx not in contexts:
+                contexts.append(ctx)
+    if not bad_figs:
         return []
-    return [
-        f"{pitfall(36)} these figures do not appear anywhere in FULL EVIDENCE: "
-        + ", ".join(dict.fromkeys(missing[:4]))
-        + " — replace each with the evidence's own value or describe it qualitatively."]
+    figs = ", ".join(bad_figs[:6])
+    where = "; ".join(f'"{c[:110]}"' for c in contexts[:2])
+    return [Violation(
+        f"{pitfall(36)} these figures are neither quoted from nor derived from the evidence: "
+        f"{figs} (in {where}) — replace each with the evidence's own value or describe it "
+        "qualitatively.",
+        f"figures in the summary could not be traced to the evidence, quoted or derived: {figs} (#36)")]
 
 
 #: Claim words a noise-level ranking cannot support. Tight on purpose: each asserts that a
@@ -252,7 +361,7 @@ _NOISE_VERDICT_RE = re.compile(
 _MIN_LABEL_LEN = 4
 
 
-def check_noise_findings_not_cited(phases: Any, prose: str) -> list[str]:
+def check_noise_findings_not_cited(phases: Any, prose: str, headline: str = "") -> list[str]:
     """A standout named in the headline must not come from a ranking the statistics call noise.
 
     The live specimen: every geographic ranking carried "this ordering is not evidence of a
@@ -269,10 +378,18 @@ def check_noise_findings_not_cited(phases: Any, prose: str) -> list[str]:
     flagged Central Asia because the name appeared. A correct sentence cannot be retried into
     a different one, so the violation shipped and knocked a right report from HIGH to MEDIUM.
     A label is a word; this check is about claims.
+
+    The HEADLINE is the exception to the sentence rule: a standout claim in the title scopes
+    the whole report ("driven by localized state-level bottlenecks" over a summary that then
+    names Ilam), so when the headline itself makes an unnegated standout claim, a noise-level
+    label anywhere in the prose is cited under it. Before CA-0 this held by accident — the
+    headline had no terminal period and fused with the first summary sentence; now that each
+    field is its own sentence, the scope is stated instead of inherited.
     """
     if not prose:
         return []
     sentences = [s for s in _SENTENCE_RE.split(prose) if s.strip()]
+    headline_claims = bool(headline) and makes_unnegated_standout_claim(headline)
     hits: list[str] = []
     for p in (phases or []):
         if not isinstance(p, dict) or p.get("_hidden"):
@@ -287,15 +404,18 @@ def check_noise_findings_not_cited(phases: Any, prose: str) -> list[str]:
                 if len(label) < _MIN_LABEL_LEN or _float_or_none(label) is not None:
                     continue
                 pat = re.compile(rf"\b{re.escape(label)}\b", re.I)
-                if any(pat.search(s) and makes_unnegated_standout_claim(s) for s in sentences):
+                if any(pat.search(s) and (headline_claims or makes_unnegated_standout_claim(s))
+                       for s in sentences):
                     hits.append(label)
     if not hits:
         return []
-    return [
-        f"{pitfall(11)} the report names " + ", ".join(list(dict.fromkeys(hits))[:4])
+    named = ", ".join(list(dict.fromkeys(hits))[:4])
+    return [Violation(
+        f"{pitfall(11)} the report names {named}"
         + " as standing out, but the finding each comes from carries a statistical verdict that its "
           "ordering is not evidence of a difference — say what the data supports (no group is "
-          "distinguishable) or drop the claim; do not present a noise-level ranking as a driver."]
+          "distinguishable) or drop the claim; do not present a noise-level ranking as a driver.",
+        f"{named} is cited as standing out from a ranking whose order is within noise (#11)")]
 
 
 #: A p-value as the deterministic verdicts write it: "p = 2.376e-155", "p = 0.07168", "p = 1".
@@ -332,12 +452,13 @@ def check_significance_claims(phases: Any, prose: str) -> list[str]:
                     smallest = val
     if smallest is None or smallest >= 0.05:
         return []
-    return [
+    return [Violation(
         f"{pitfall(3)} the report says the differences are not statistically significant, but this run's "
         f"own test reports p = {smallest:.3g} — the difference IS statistically significant "
         f"and too small to act on, which is a different claim. Say that the effect is real "
         f"but immaterial (name the share of variation it explains); do not call it "
-        f"insignificant or cite p > 0.05."]
+        f"insignificant or cite p > 0.05.",
+        f"the summary calls a difference not significant that this run's own test found significant (p = {smallest:.3g}) (#3)")]
 
 
 def check_claim_type(claim_type: str, prose: str) -> list[str]:
@@ -357,10 +478,20 @@ def check_claim_type(claim_type: str, prose: str) -> list[str]:
     if not hits:
         return []
     quoted = "; ".join(f'"{s[:90]}" ({v})' for s, v in hits[:3])
-    return [
+    short = "; ".join(f'"{s[:70]}…"' if len(s) > 70 else f'"{s}"' for s, _ in hits[:2])
+    return [Violation(
         f"{pitfall(15)} this analysis licences {claim_type} claims only, but these sentences "
         f"assert more than that: {quoted}. Restate them as what was measured — a relationship "
-        f"and its size — or say plainly that the design cannot establish a cause."]
+        f"and its size — or say plainly that the design cannot establish a cause.",
+        f"the design supports {claim_type} claims only; these sentences assert more: {short} (#15)")]
+
+
+def _closed(text: str) -> str:
+    """A field as its own sentence: stripped, and ending in terminal punctuation."""
+    t = (text or "").strip()
+    if t and t[-1] not in ".!?":
+        t += "."
+    return t
 
 
 def run_report_checks(synth: Any, question: str, evidence: str, phases: Any = None,
@@ -374,7 +505,11 @@ def run_report_checks(synth: Any, question: str, evidence: str, phases: Any = No
 
     waterfall = [w.model_dump() if hasattr(w, "model_dump") else dict(w)
                  for w in (_get("attribution_waterfall", []) or [])]
-    prose = " ".join(str(_get(f)) for f in
+    # Each field is closed with terminal punctuation before joining. The headline never ends
+    # in a period, so the old plain join fused it with the first summary sentence into one
+    # "sentence" — and check #15 then quoted the report's TITLE as an over-claiming sentence
+    # (the Direkteingabe specimen: "Investigation into July 2026 Traffic Peak … (increase)").
+    prose = " ".join(_closed(str(_get(f))) for f in
                      ("headline", "executive_summary", "closing_summary"))
     violations: list[str] = []
     violations += check_signs(waterfall)
@@ -382,7 +517,7 @@ def run_report_checks(synth: Any, question: str, evidence: str, phases: Any = No
     violations += check_question_addressed(question, prose + " " + " ".join(
         str(g) for g in (_get("data_gaps", []) or [])))
     violations += check_grounding(prose, evidence)
-    violations += check_noise_findings_not_cited(phases, prose)
+    violations += check_noise_findings_not_cited(phases, prose, headline=str(_get("headline")))
     violations += check_significance_claims(phases, prose)
     violations += check_claim_type(claim_type, prose)
     return violations

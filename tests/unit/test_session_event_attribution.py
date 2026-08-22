@@ -1,4 +1,4 @@
-"""Migration 9 — `role` and `fallback` as columns, and the tri-state that makes them honest.
+"""Migration 10 — `role` and `fallback` as columns, and the tri-state that makes them honest.
 
 Migration 7 promoted the *measures* (provider, model, tokens) out of the JSON payload and stopped.
 The two facts it left behind are the two an activity view is actually about:

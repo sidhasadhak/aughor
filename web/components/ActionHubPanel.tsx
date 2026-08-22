@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
+import { Icon } from "@/components/ui/icon";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -86,11 +87,11 @@ function TriggerForm({
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Name</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Name</div>
         <input value={name} onChange={e => setName(e.target.value)} required placeholder="My Slack Webhook" className="aug-input" />
       </div>
       <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
         <select value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
           <option value="webhook">Webhook (generic)</option>
           <option value="slack">Slack incoming webhook</option>
@@ -98,7 +99,7 @@ function TriggerForm({
         </select>
       </div>
       <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>
           {type === "jira" ? "Jira base URL" : "Webhook URL"}
         </div>
         <input value={url} onChange={e => setUrl(e.target.value)} required
@@ -108,18 +109,18 @@ function TriggerForm({
       </div>
       {type === "slack" && (
         <div>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Channel (optional)</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Channel (optional)</div>
           <input value={channel} onChange={e => setChannel(e.target.value)} placeholder="#general" className="aug-input" />
         </div>
       )}
       {type === "jira" && (
         <>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Project key</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Project key</div>
             <input value={project} onChange={e => setProject(e.target.value)} placeholder="OPS" className="aug-input" />
           </div>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Issue type</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Issue type</div>
             <input value={issueType} onChange={e => setIssue(e.target.value)} placeholder="Task" className="aug-input" />
           </div>
         </>
@@ -220,9 +221,9 @@ export function ActionHubPanel() {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 20px", height: 44, borderBottom: "1px solid var(--b1)", background: "var(--bg-1)", flexShrink: 0 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
+        <span style={{ color: "var(--t3)", flexShrink: 0, display: "inline-flex" }}>
+          <Icon name="bolt" size={14} />
+        </span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Notifications</span>
         <div style={{ display: "flex", gap: 4, marginLeft: 12 }}>
           {(["triggers", "logs"] as const).map(v => (
@@ -234,10 +235,10 @@ export function ActionHubPanel() {
             }}>
               {v.charAt(0).toUpperCase() + v.slice(1)}
               {v === "triggers" && triggers.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 9, color: "var(--t4)" }}>{triggers.length}</span>
+                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t4)" }}>{triggers.length}</span>
               )}
               {v === "logs" && logs.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 9, color: "var(--t4)" }}>{logs.length}</span>
+                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t4)" }}>{logs.length}</span>
               )}
             </button>
           ))}
@@ -290,7 +291,7 @@ export function ActionHubPanel() {
                 }}>
                   {/* Type badge */}
                   <span style={{
-                    padding: "2px 7px", borderRadius: 2, fontSize: 10, fontWeight: 600,
+                    padding: "2px 7px", borderRadius: 2, fontSize: 11, fontWeight: 600,
                     background: t.type === "slack" ? "var(--grn1)" : t.type === "jira" ? "var(--blue1)" : "var(--bg-3)",
                     border: `1px solid ${t.type === "slack" ? "var(--grn2)" : t.type === "jira" ? "var(--blue2)" : "var(--b2)"}`,
                     color: t.type === "slack" ? "var(--grn5)" : t.type === "jira" ? "var(--blue5)" : "var(--t2)",
@@ -300,13 +301,13 @@ export function ActionHubPanel() {
                   {/* Name + URL */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>{t.name}</div>
-                    <div style={{ fontSize: 10, color: "var(--t4)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {t.url.slice(0, 60)}{t.url.length > 60 ? "…" : ""}
                     </div>
                   </div>
                   {/* Test result */}
                   {testResult[t.id] && (
-                    <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: testResult[t.id].startsWith("✓") ? "var(--grn4)" : "var(--red4)" }}>
+                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: testResult[t.id].startsWith("✓") ? "var(--grn4)" : "var(--red4)" }}>
                       {testResult[t.id]}
                     </span>
                   )}

@@ -136,6 +136,11 @@ class FauxToolCall:
     payload: Any
     name: str = "structured_output"
     id: str = "call_faux_1"
+    #: Vendor extras to hang on the call, as a real binding would — Gemini's
+    #: `{"google": {"thought_signature": ...}}` is the case that matters. Scripting it
+    #: is what lets a test prove the loop hands the signature back, which no amount of
+    #: offline reasoning about the OpenAI schema could show.
+    extra_content: Optional[dict] = None
 
 
 @dataclass(frozen=True)
@@ -167,7 +172,11 @@ class FauxQuotaExhausted:
 
 @dataclass(frozen=True)
 class FauxCall:
-    """One recorded completion request — what the code under test actually asked."""
+    """One recorded completion request — what the code under test actually asked.
+
+    ``served`` is False when the request found the script queue empty and was refused
+    with :class:`FauxResponsesExhausted`. ``index`` counts requests in arrival order,
+    refused ones included, so the factory form's ``call_index`` stays stable."""
 
     index: int
     role: str
@@ -176,6 +185,7 @@ class FauxCall:
     user: str
     response_model: Optional[type]
     kwargs: dict = field(repr=False, default_factory=dict)
+    served: bool = True
 
 
 _LOCK = threading.Lock()          # provider calls arrive from worker threads
@@ -196,9 +206,23 @@ def push_responses(*items: Any) -> None:
 
 
 def calls() -> tuple[FauxCall, ...]:
-    """Every completion request served (or refused) so far, in order."""
+    """Every completion request SERVED so far, in order — refused ones excluded.
+
+    Refused calls used to be returned too, and that made `(call,) = faux_llm.calls()`
+    flaky suite-wide: a background thread left over from an earlier test (a scheduler
+    heartbeat, a kernel task) occasionally fires an unscripted completion mid-test.
+    That stray is refused loudly to ITS caller, which is right — but it also landed
+    in this log, and an unrelated test's unpack saw two calls. A stray is by
+    definition unscripted, so returning served calls only makes that pollution
+    structurally impossible. Assert on refusals via :func:`refusals`."""
     with _LOCK:
-        return tuple(_CALLS)
+        return tuple(c for c in _CALLS if c.served)
+
+
+def refusals() -> tuple[FauxCall, ...]:
+    """Every completion request refused for want of a scripted response, in order."""
+    with _LOCK:
+        return tuple(c for c in _CALLS if not c.served)
 
 
 def pending() -> int:
@@ -270,10 +294,15 @@ def _completion(text: str, *, system: str, user: str,
     """
     _tool_calls = None
     if tool_call is not None:
-        _tool_calls = [SimpleNamespace(
+        _fields: dict[str, Any] = dict(
             id=tool_call.id, type="function",
             function=SimpleNamespace(name=tool_call.name, arguments=text),
-        )]
+        )
+        # Only when scripted. The real SDK leaves the attribute ABSENT unless the vendor
+        # sent one, so a faux that always defined it would hide a reader that never looks.
+        if tool_call.extra_content is not None:
+            _fields["extra_content"] = tool_call.extra_content
+        _tool_calls = [SimpleNamespace(**_fields)]
     return SimpleNamespace(
         choices=[SimpleNamespace(
             message=SimpleNamespace(content=None if tool_call else text,
@@ -295,7 +324,7 @@ def _serve(role: str, kwargs: dict):
         index = len(_CALLS)
         _CALLS.append(FauxCall(index=index, role=role, model=model, system=system,
                                user=user, response_model=response_model,
-                               kwargs=dict(kwargs)))
+                               kwargs=dict(kwargs), served=bool(_QUEUE)))
         if not _QUEUE:
             raise FauxResponsesExhausted(
                 f"faux backend: no scripted response left for call #{index} "
@@ -368,6 +397,6 @@ def _realize(item: Any, response_model: Optional[type], *, system: str, user: st
 __all__ = [
     "FauxResponsesExhausted", "FauxTruncation", "FauxRateLimit",
     "FauxQuotaExhausted", "FauxCall", "FauxClient", "FauxToolCall", "CAPABLE_MODEL",
-    "set_responses", "push_responses", "calls", "pending",
+    "set_responses", "push_responses", "calls", "refusals", "pending",
     "reset", "build_client",
 ]

@@ -277,7 +277,7 @@ function DefineKpiCta() {
   return (
     <div>
       <div className="aug-label" style={{ marginBottom: 8 }}>Key Metrics</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px dashed var(--b2)", borderRadius: "var(--r2)", padding: "12px 16px", fontSize: 12.5, color: "var(--t3)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px dashed var(--b2)", borderRadius: "var(--r2)", padding: "12px 16px", fontSize: 13, color: "var(--t3)" }}>
         <span aria-hidden style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--b3)", flex: "none" }} />
         <span><b style={{ color: "var(--t2)", fontWeight: 500 }}>No north-star metrics defined</b> — define KPIs to add a standing scorecard row.</span>
         <Button variant="ghost" size="xs"

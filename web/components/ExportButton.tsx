@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { downloadInvestigationExport } from "@/lib/api";
+import { Icon } from "@/components/ui/icon";
 
 export function ExportButton({ invId }: { invId: string }) {
   const [open, setOpen] = useState(false);
@@ -46,20 +47,16 @@ export function ExportButton({ invId }: { invId: string }) {
         title="Download this analysis as PDF or PowerPoint"
         style={{
           display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11.5,
+          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)",
           color: "var(--t2)", cursor: "pointer", transition: "all .1s",
         }}
         onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
         onMouseLeave={e => { e.currentTarget.style.color = "var(--t2)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
+        <Icon name="download" size={13} />
         Export
-        <span style={{ fontSize: 9, opacity: 0.6 }}>▾</span>
+        <span style={{ fontSize: 11, opacity: 0.6 }}>▾</span>
       </button>
 
       {open && (
@@ -67,19 +64,19 @@ export function ExportButton({ invId }: { invId: string }) {
           position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50,
           width: 210, padding: 6, borderRadius: "var(--r2)",
           background: "var(--bg-1)", border: "1px solid var(--b2)",
-          boxShadow: "0 8px 28px rgba(0,0,0,.24)",
+          boxShadow: "var(--shadow-lg)",
         }}>
           <button style={item} disabled={!!busy} onClick={() => go("pdf")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 14 }}>📄</span>
+            <span style={{ fontSize: 15 }}>📄</span>
             <span style={{ flex: 1 }}>PDF document</span>
             {busy === "pdf" && <Spin />}
           </button>
           <button style={item} disabled={!!busy} onClick={() => go("pptx")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 14 }}>📊</span>
+            <span style={{ fontSize: 15 }}>📊</span>
             <span style={{ flex: 1 }}>PowerPoint (.pptx)</span>
             {busy === "pptx" && <Spin />}
           </button>

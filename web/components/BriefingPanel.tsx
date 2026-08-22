@@ -75,6 +75,7 @@ import { GroundedNumber, withGroundedNumbers } from "@/components/brief/Grounded
 import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ function CitationChip({
           transform: "translateX(-50%)",
           width: 240, padding: "8px 10px",
           background: "var(--bg-3)", border: "1px solid var(--b2)",
-          borderRadius: "var(--r2)", boxShadow: "0 4px 16px rgba(0,0,0,.4)",
+          borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
           zIndex: 50, pointerEvents: "none" as const,
         }}>
           <div className="aug-label" style={{ marginBottom: 4 }}>
@@ -331,7 +332,7 @@ function NarrativeCard({
       {collapsible && (
         <div style={{ marginTop: 8 }}>
           <Button variant="ghost" size="xs" onClick={() => setExpanded(e => !e)}
-            style={{ color: "var(--blue4)", fontSize: 12.5, fontWeight: 500, padding: "2px 8px" }}>
+            style={{ color: "var(--blue4)", fontSize: 13, fontWeight: 500, padding: "2px 8px" }}>
             {expanded ? "Show less ▴" : "Read full synthesis ▾"}
           </Button>
         </div>
@@ -417,7 +418,7 @@ function CitationActionsPopover({
         style={{
           position: "fixed", left, top, zIndex: 100, width: 320,
           background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
-          boxShadow: "0 8px 28px rgba(0,0,0,.45)", padding: 12,
+          boxShadow: "var(--shadow-lg)", padding: 12,
           display: "flex", flexDirection: "column", gap: 10,
         }}
       >
@@ -513,10 +514,7 @@ function GenerateBriefButton({
         </>
       ) : (
         <>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
-          </svg>
+          <Icon name="spark" size={12} />
           {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
         </>
       )}
@@ -969,7 +967,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
         <div style={{ position: "relative" }}>
           <ActionButton label="⋯" title="More actions" status="idle" color={btnColor} onClick={() => setMoreOpen(v => !v)} />
           {moreOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "0 6px 20px rgba(0,0,0,.28)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
               <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                 onClick={() => { setMoreOpen(false); handlePromote(); }}
                 style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t4)" : "var(--t2)" }}>
@@ -982,7 +980,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                   Share
                 </Button>
                 {shareOpen && triggers.length > 0 && (
-                  <div style={{ position: "absolute", top: 0, right: "calc(100% + 4px)", zIndex: 40, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "0 6px 20px rgba(0,0,0,.28)", minWidth: 160, overflow: "hidden" }}>
+                  <div style={{ position: "absolute", top: 0, right: "calc(100% + 4px)", zIndex: 40, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 160, overflow: "hidden" }}>
                     {triggers.map(t => (
                       <Button key={t.id} variant="ghost" size="xs" className="w-full justify-start h-auto"
                         onClick={() => { handleShareTo(t); setMoreOpen(false); }}
@@ -1035,7 +1033,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
           <div style={{
             position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 20,
             background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)",
-            boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 160, overflow: "hidden",
+            boxShadow: "var(--shadow-lg)", minWidth: 160, overflow: "hidden",
           }}>
             <div className="aug-label" style={{ padding: "6px 10px", borderBottom: "1px solid var(--b1)" }}>
               Send to channel
@@ -1135,7 +1133,7 @@ export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
                 {g.grounded ? "✓" : "⚠"}
               </span>
             )}
-            <span style={{ fontSize: 11.5, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
+            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
               {dossier.result_cells}
             </span>
           </div>
@@ -1202,7 +1200,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
             try { setResult(await revalidateInsight(connectionId, insightId)); }
             finally { setBusy(false); }
           }}
-          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 11.5, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
+          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
         <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
       </div>
@@ -1242,7 +1240,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   );
   return (
     <div onClick={onClose} style={{
-      position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.32)",
+      position: "fixed", inset: 0, zIndex: 60, background: "var(--scrim)",
       display: "flex", justifyContent: "flex-end",
     }}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -1258,7 +1256,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--t3)", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: "18px 20px", overflowY: "auto" as const, display: "flex", flexDirection: "column" as const, gap: 18 }}>
-          <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
+          <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             <Stat label="Confidence" value={`${Math.round((insight.confidence ?? 0) * 100)}%`} />
@@ -1299,7 +1297,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
-              fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)",
+              fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)",
               whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
             }}>{insight.sql || "— no query recorded —"}</pre>
           </div>
@@ -1489,7 +1487,7 @@ function VerdictHero({
 
         {/* the ONE verdict — 24px (the digest row below now shares the hero's weight) */}
         <div style={{
-          fontSize: 24, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
+          fontSize: 22, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
           letterSpacing: "-.02em", maxWidth: "32ch", textWrap: "balance" as const,
           marginBottom: lead ? 10 : 0,
         }}>{title}</div>
@@ -1757,7 +1755,7 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {fig.value}{fig.secondary && <span style={{ color: "var(--t4)", fontSize: 12 }}>{fig.secondary}</span>}
             </div>
-            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
+            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
         </div>
         {/* chevron */}
@@ -1863,7 +1861,7 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
               jump to domain ▾
             </Button>
             {jumpOpen && (
-              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "0 6px 20px rgba(0,0,0,.28)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
                 {domainsInList.map(d => (
                   <Button key={d} variant="ghost" size="xs" onClick={() => jumpTo(d)}
                     className="w-full justify-start h-auto"
@@ -2101,14 +2099,11 @@ function BriefingEmpty({
             animation: "aug-spin var(--dur-breath) linear infinite",
           }} />
         ) : (
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-            stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 5h18M3 9h18M3 13h12M3 17h8" />
-          </svg>
+          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
         )}
       </div>
       <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
           {title}
         </div>
         <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
@@ -2137,9 +2132,7 @@ function BriefingEmpty({
             </>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
-              </svg>
+              <Icon name="spark" size={12} />
               {cta.label}
             </>
           )}

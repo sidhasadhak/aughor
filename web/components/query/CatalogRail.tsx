@@ -59,7 +59,7 @@ export function CatalogRail({
     <div
       style={{
         flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-        borderRight: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden",
+        borderRight: "1px solid var(--b1)", background: "var(--bg-0)", overflow: "hidden",
       }}
     >
       {hint && (

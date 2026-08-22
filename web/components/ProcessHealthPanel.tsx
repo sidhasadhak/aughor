@@ -124,7 +124,7 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
 
   if (items.length === 0) return (
     <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--t3)" }}>
-      <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>No health metrics configured</p>
+      <p style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No health metrics configured</p>
       <p style={{ fontSize: 12, opacity: 0.7 }}>Define metrics with targets in the Semantic Layer to see a health scorecard here.</p>
     </div>
   );
@@ -141,13 +141,13 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
           <p className="aug-fs-ui font-medium text-[var(--t1)]">Business Health</p>
           <div className="flex items-center gap-2">
             {redYellow.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
                 style={{ background: "var(--red1)", border: "0.5px solid var(--red2)", color: "var(--red5)" }}>
                 {redYellow.length} need attention
               </span>
             )}
             {redYellow.length === 0 && green.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-pill)] font-mono"
+              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
                 style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
                 all on target
               </span>

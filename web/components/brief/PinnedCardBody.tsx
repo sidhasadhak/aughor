@@ -220,7 +220,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
           {onEvidence && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => onEvidence(card.provenance.insight_id)}
               title="See the evidence behind this finding"
-              style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-pill)" }}>Evidence</Button>
+              style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-chip)" }}>Evidence</Button>
           )}
           {onOpenSource && card.provenance.insight_id && (
             <Button variant="ghost" size="xs" onClick={() => onOpenSource(card.provenance.insight_id)}

@@ -1,107 +1,39 @@
 "use client";
 
 /**
- * Chart — the reusable chart component. Given SQL-shaped { columns, rows }
- * (+ optional backend chartConfig), it resolves the column roles, picks the
- * right chart type (the same data-shape rules as before), builds an Apache
- * ECharts `option` via the pure builders in ./charts/echarts, and renders it
- * through <EChart> with download-PNG + drag-to-resize + labels chrome.
+ * Chart — the reusable chart component, and the ONE seam every surface goes through.
+ * Given SQL-shaped { columns, rows } (+ the backend's chart hint, config and exhibit) it
+ * resolves a Vega-Lite spec — or a hand-authored Vega one for the four forms Vega-Lite
+ * cannot express — and renders it with download-PNG, drag-to-resize and label chrome.
  *
- * This is the ECharts replacement for the former Vega-Lite engine. The PUBLIC
- * PROPS are unchanged, so every surface (chat, report, exploration, query
- * builder, canvas, briefing) keeps working without edits. Chart-type selection
- * reuses scoreDualAxis (combo vs grouped vs bar); column roles via
- * ./charts/columnRoles; formatting/date logic lives inside the builders
- * (@/lib/format). The measure-additivity / percent-leak fixes are preserved by
- * the builders' per-field `valueFormatter`.
+ * The engine history is Observable Plot → Vega-Lite → ECharts → Vega-Lite (2026-08).
+ * The PUBLIC PROPS have not changed across any of it, which is why every surface (chat,
+ * report, exploration, query builder, canvas, briefing) kept working through each move.
+ * Column roles come from ./charts/columnRoles and type inference from
+ * ./charts/chartTypeInference — both engine-neutral, and both older than either engine.
  */
 
-import React, { useMemo, useRef, useState } from "react";
-import DownloadIcon from "@atlaskit/icon/core/download";
-import type { EChartsOption } from "echarts";
-import { format as d3format } from "d3-format";
-import { SCHEME_PALETTES } from "@/lib/chartPalettes";
-import { effectiveChartPalette } from "@/lib/orgSettings";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgSettings } from "@/lib/useOrgSettings";
-import { EChart } from "@/components/charts/echarts/EChart";
-import {
-  lineOption, multiLineOption, smallMultiplesOption, barOption, groupedBarOption, stackedBarOption,
-  pieOption, scatterOption, comboOption, heatmapOption, treemapOption, paretoOption,
-  counterOption, funnelOption, histogramOption, boxplotOption, sankeyOption, waterfallOption,
-  lineForecastOption, ganttOption, choroplethOption, pointMapOption,
-} from "@/components/charts/echarts/builders";
-import {
-  SHARE_COL, CHANGE_METRIC_COL, TIME_LABEL_COL, INSTRUMENTATION_COL, PREFER_COL, classifyColumns,
-  isIdLike, isUngraphableGrid, GEO_NAME_COL, LAT_COL, LON_COL,
-} from "@/components/charts/columnRoles";
-import { scoreDualAxis } from "@/components/charts/chartTypeInference";
+import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { resolveTier3Spec } from "@/components/charts/vega/tier3";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
+import type { ChartCustom } from "@/components/charts/chartCustom";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
+import { Icon } from "@/components/ui/icon";
 
 /** User chart styling applied as a generic post-pass over the built ECharts option —
  *  lets the Query Builder Customize tab override colours / number format / legend /
  *  axis titles. All fields optional; a null/empty custom is a no-op, so non-customizing
  *  callers (chat, reports, explorer) are unaffected. */
-export interface ChartCustom {
-  format?: string;        // d3 number format for the quantitative axis (e.g. ",.0f", "$,.2f", "~s")
-  colorScheme?: string;   // categorical palette name (e.g. "tableau10", "set2")
-  xTitle?: string;
-  yTitle?: string;
-  legend?: "right" | "bottom" | "top" | "left" | "none";
-  tooltip?: "on" | "off"; // hover tooltip visibility (default on); "off" for a clean tile
-}
+// Re-exported for the five components that import it through this module.
+export type { ChartCustom };
 
 // ── Customize post-pass (ECharts) ────────────────────────────────────────────
 
 // SCHEME_PALETTES (named categorical palettes) now live in @/lib/chartPalettes.
 
-type AxisLike = Record<string, unknown>;
-function mapAxes(ax: unknown, fn: (a: AxisLike) => AxisLike): unknown {
-  if (Array.isArray(ax)) return ax.map((a) => fn(a as AxisLike));
-  if (ax && typeof ax === "object") return fn(ax as AxisLike);
-  return ax;
-}
-
-function applyCustom(option: EChartsOption, custom?: ChartCustom | null): EChartsOption {
-  if (!custom || !(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend || custom.tooltip)) return option;
-  const o: EChartsOption = { ...option };
-
-  // Hover tooltip visibility — "off" makes a clean, static tile (Databricks "Tooltip" section).
-  if (custom.tooltip === "off") {
-    o.tooltip = { ...(o.tooltip as object || {}), show: false } as EChartsOption["tooltip"];
-  }
-
-  if (custom.format) {
-    let f: ((n: number) => string) | null = null;
-    try { f = d3format(custom.format); } catch { f = null; }
-    if (f) {
-      const fmt = f;
-      // Apply to whichever axis carries the quantitative measure (type:"value").
-      const setFmt = (a: AxisLike) => a.type === "value"
-        ? { ...a, axisLabel: { ...(a.axisLabel as object || {}), formatter: (v: number) => fmt(v) } }
-        : a;
-      o.xAxis = mapAxes(o.xAxis, setFmt) as EChartsOption["xAxis"];
-      o.yAxis = mapAxes(o.yAxis, setFmt) as EChartsOption["yAxis"];
-    }
-  }
-  if (custom.xTitle) o.xAxis = mapAxes(o.xAxis, (a) => ({ ...a, name: custom.xTitle })) as EChartsOption["xAxis"];
-  if (custom.yTitle) o.yAxis = mapAxes(o.yAxis, (a) => ({ ...a, name: custom.yTitle })) as EChartsOption["yAxis"];
-  if (custom.colorScheme && SCHEME_PALETTES[custom.colorScheme]) o.color = SCHEME_PALETTES[custom.colorScheme];
-  if (custom.legend) {
-    if (custom.legend === "none") {
-      o.legend = { show: false };
-    } else {
-      const vert = custom.legend === "left" || custom.legend === "right";
-      o.legend = {
-        ...(o.legend as object || {}), show: true, orient: vert ? "vertical" : "horizontal",
-        top: custom.legend === "top" ? 0 : vert ? "middle" : undefined,
-        bottom: custom.legend === "bottom" ? 0 : undefined,
-        left: custom.legend === "left" ? 0 : undefined,
-        right: custom.legend === "right" ? 0 : undefined,
-      } as EChartsOption["legend"];
-    }
-  }
-  return o;
-}
 
 export function Chart({
   columns,
@@ -132,9 +64,10 @@ export function Chart({
   fitHeight?: number | null;
   /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
   onSelect?: (datum: Record<string, unknown>) => void;
-  /** Hand the live ECharts instance up to a chromeless caller (e.g. so a side-panel
-   *  "Download PNG" can export a chart rendered with chrome={false}). */
-  onInstanceReady?: (inst: { getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string }) => void;
+  /** Hand the live chart instance up to a chromeless caller (e.g. so a side-panel
+   *  "Download PNG" can export a chart rendered with chrome={false}). Engine-neutral:
+   *  Vega produces its image asynchronously, so getDataURL may return a promise. */
+  onInstanceReady?: (inst: ChartInstance) => void;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle. */
   chrome?: boolean;
   /** Externally control data-label visibility (chromeless mode). */
@@ -149,7 +82,8 @@ export function Chart({
   exhibit?: ExhibitSpec | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
-  const instRef = useRef<{ getDataURL: (o?: { type?: string; pixelRatio?: number; backgroundColor?: string }) => string } | null>(null);
+  const instRef = useRef<ChartInstance | null>(null);
+
   // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
   const [showLabelsState, setShowLabels] = useState(false);
@@ -174,13 +108,7 @@ export function Chart({
   }
 
   function handleDownloadPng() {
-    const inst = instRef.current;
-    if (!inst) return;
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#131c27";
-    const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
-    const fname = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
-    const a = Object.assign(document.createElement("a"), { href: url, download: fname });
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    void downloadChartPng(instRef.current, title);
   }
 
   // Re-render + rebuild the option when org settings change, so the currency symbol /
@@ -190,273 +118,26 @@ export function Chart({
   // Build the option + default height. Memoized so its identity is stable across
   // renders (EChart re-inits when the option object changes) — only rebuilds when
   // data / type / labels / custom / org settings change. userH & heightScale affect height only.
-  const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(() => {
-    if (!rows.length || !columns.length) return null;
-    // Chart-grammar gate: a stats/entity-profile grid has no honest chart — render
-    // nothing and let the surface's table view carry it (mirrors the export).
-    if (isUngraphableGrid(columns, rows)) return null;
+  type Built = { spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
 
-    const data: Record<string, unknown>[] = rows.map((r) =>
-      Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
-    );
+  const built = useMemo<Built | null>(() => {
+    // Tier 3 first — the four forms Vega-Lite cannot express are hand-authored Vega.
+    const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
+    if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
 
-    // Column roles from the ONE shared classifier (columnRoles.classifyColumns) — date / numeric /
-    // category — so this renderer and chartTypeInference can never disagree on what a column is.
-    const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
-    const dateCol = dateIdxs.length ? columns[dateIdxs[0]] : undefined;
-    const catCols = catIdxs.map((i) => columns[i]);
-    const numericCols = numericIdxs.map((i) => columns[i]);
-    // Instrumentation columns exist only to make a metric auditable — the numerator/denominator a
-    // ratio is built from, or a bare row-count `n`/`event_count`. They are never the answer, so they
-    // must not be picked as a chart measure (charting `numerator_total` is what made an AOV finding
-    // render as a giant SUM bar with the actual ratio hidden). `INSTRUMENTATION_COL` is the shared
-    // pattern from columnRoles. Exclude them; fall back to the full set only if that leaves nothing.
-    const _filteredNum = numericCols.filter((c) => !INSTRUMENTATION_COL.test(c));
-    const chartNumericCols = _filteredNum.length ? _filteredNum : numericCols;
-    const _isChangeMetric = numericCols.some((c) => CHANGE_METRIC_COL.test(c));
-    const ID_COL = { test: (c: string) => /(^|_)(id|key|sk|pk|code|uuid|guid|hash)$/i.test(c) || isIdLike(c) };
-    const NAME_COL = /(name|title|label|desc|description|channel|category|region|country|city|state|store|product|customer|item|page|segment|brand|merchant|franchise|email|url)/i;
-    const catCol = catCols.find((c) => NAME_COL.test(c) && !ID_COL.test(c)) ?? catCols.find((c) => !ID_COL.test(c)) ?? catCols[0];
-    const catCol2 = catCols.find((c) => c !== catCol) ?? catCols[1];
-    const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
-    const baseNumCol = chartNumericCols.find((c) => PREFER_COL.test(c)) ?? chartNumericCols.find((c) => !CHANGE_METRIC_COL.test(c)) ?? chartNumericCols[0];
-    const changeNumCol = chartNumericCols.find((c) => CHANGE_PREFER_COL.test(c)) ?? chartNumericCols.find((c) => PREFER_COL.test(c)) ?? chartNumericCols[0];
-    const numCol = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
-    const hint = (chartType ?? "auto").toLowerCase();
-
-    // Measure-less Tier-2 types render BEFORE the numeric-measure guard below, since they key
-    // off dates (gantt) / coordinates (point map), not a measure.
-    if (hint === "gantt" && dateIdxs.length >= 2) {
-      const dcols = dateIdxs.map((k) => columns[k]);
-      const START = /(start|begin|from|open)/i, END = /(end|finish|due|close|^to$|_to$)/i;
-      const startF = dcols.find((c) => START.test(c)) ?? dcols[0];
-      const endF = dcols.find((c) => END.test(c) && c !== startF) ?? dcols.find((c) => c !== startF) ?? dcols[1];
-      const labelCol = catCol ?? columns.find((c) => c !== startF && c !== endF) ?? columns[0];
-      const gopt = ganttOption({ rows: data, units: columnUnits ?? undefined, x: labelCol, ys: [], gantt: { start: startF, end: endF }, color: catCol2 });
-      return { option: applyCustom(gopt, custom), defaultH: Math.max(200, new Set(data.map((d) => d[labelCol])).size * 32 + 60) };
-    }
-    if (hint === "point_map") {
-      const latF = columns.find((c) => LAT_COL.test(c));
-      const lonF = columns.find((c) => LON_COL.test(c));
-      if (latF && lonF) {
-        const sizeMeasure = numericCols.find((c) => !LAT_COL.test(c) && !LON_COL.test(c) && !isIdLike(c));
-        const label = catCol ?? columns.find((c) => c !== latF && c !== lonF && !numericCols.includes(c));
-        const popt = pointMapOption({ rows: data, units: columnUnits ?? undefined, x: latF, ys: sizeMeasure ? [sizeMeasure] : [], pointLabel: label }, latF, lonF);
-        return { option: applyCustom(popt, custom), defaultH: 380 };
-      }
-    }
-
-    if (!numCol) return null;
-
-    const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
-    const _stackUnique = catCol ? new Set(data.map((d) => d[catCol])).size : 0;
-    const nCats = catCol ? new Set(data.map((d) => d[catCol])).size : 0;
-
-    // Pareto renders ONLY on an explicit backend hint. The old silent "upgrade" promoted any
-    // plain bar carrying a share-like column into a dual-axis bars+cumulative combo — and its
-    // measure picker EXCLUDED the share column, so a finding titled "share of refunds by
-    // channel" charted raw COUNTS under a share title (the flags-on soak, inv 721d68aa). Both
-    // defects die together: no upgrade, and a share ranking stays a ranked bar of the share.
-    const PARETO_SHARE = /(share|cumulative|cum_pct|pct_of_total|of_total|contribution)/i;
-    const paretoShareCol = columns.find((c) => PARETO_SHARE.test(c));
-    const paretoCat: string | null = catCol ?? columns.find((c) => c !== paretoShareCol && ID_COL.test(c)) ?? null;
-    const paretoMeasure: string | null =
-      numericCols.find((c) => c !== paretoShareCol && !PARETO_SHARE.test(c) && !SHARE_COL.test(c) && !ID_COL.test(c))
-      ?? (hint === "pareto" ? numCol : null);
-    const wantPareto =
-      hint === "pareto" && !!paretoCat && !!paretoMeasure && paretoCat !== paretoMeasure;
-
-    // Backend-provided chart config (LLM-generated alongside SQL). TRUST IT ONLY WHEN ITS
-    // FIELD ROLES ARE COHERENT WITH THE DATA — the LLM sometimes mis-maps the axes (e.g.
-    // puts the MEASURE on x_field), which renders a broken chart (values on the category
-    // axis, blank bars). When the config is incoherent we fall through to the data-shape
-    // inference below, which is robust. (The config is dropped on history restore, so a
-    // validated-or-inferred chart also makes a live answer match what History shows.)
-    const cc = chartConfig;
-    // The quick path's exhibit spec rides INSIDE chart_config (no separate event); an explicit
-    // `exhibit` prop (deep report) wins over it.
-    const exhibitEff = exhibit ?? ((cc?.exhibit as ExhibitSpec | undefined) || null);
-    const ccType = cc?.type as string | undefined;
-    const ccX = cc?.x_field as string | undefined;
-    const ccY = cc?.y_field as string | undefined;
-    const ccY2 = cc?.y_field_2 as string | undefined;
-    const ccColor = cc?.color_field as string | undefined;
-    const _colSet = new Set(columns);
-    const _xReal = !!ccX && _colSet.has(ccX);
-    const _xNum = !!ccX && numericCols.includes(ccX);
-    const _yNum = !!ccY && numericCols.includes(ccY);  // the measure MUST be numeric
-    const _ccType = (ccType ?? "").toLowerCase();
-    const _rolesOk =
-      !!ccType && _xReal && _yNum && ccX !== ccY
-      && (!ccColor || _colSet.has(ccColor))
-      && (!ccY2 || numericCols.includes(ccY2))
-      // scatter plots a measure on BOTH axes; every other type needs a dimension/date on x.
-      && (_ccType === "scatter" ? _xNum : !_xNum);
-    const hasBackendConfig = _rolesOk;
-    const backendHint = hasBackendConfig ? ccType!.toLowerCase() : null;
-
-    const lbls = showLabels;
-    let option: EChartsOption | null = null;
-    let defaultH = 300;
-
-    // 1. Backend chart config
-    if (hasBackendConfig && backendHint) {
-      const xF = ccX!, yF = ccY!;
-      if (backendHint === "combo" && ccY2) { option = comboOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF, ccY2] }); defaultH = 350; }
-      else if (backendHint === "line" || backendHint === "multi_line") {
-        option = ccColor
-          ? multiLineOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], color: ccColor, xKind: "time" })
-          : lineOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], xKind: "time" });
-        defaultH = 350;
-      }
-      else if (backendHint === "bar" || backendHint === "bar_horizontal") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], labels: lbls, exhibit: exhibitEff }); defaultH = 350; }
-      else if (backendHint === "scatter") {
-        option = scatterOption({
-          rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF], exhibit: exhibitEff,
-          color: ccColor, pointLabel: catCols.find((c) => c !== ccColor) ?? catCol,
-        });
-        defaultH = 350;
-      }
-      else if (backendHint === "pie") { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: xF, ys: [yF] }); defaultH = 350; }
-    }
-
-    // 1b. Native-fit explicit types (2026-07 viz wave) — user-selected from the viz editor.
-    //     Each renders only when the shape provides the fields it needs; otherwise it falls
-    //     through to the inference cascade below, so a bad pick degrades, never blanks.
-    if (!option && hint === "counter" && numCol) { option = counterOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? dateCol ?? numCol, ys: [numCol] }); defaultH = 200; }
-    if (!option && hint === "funnel" && catCol && numCol) { option = funnelOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 320; }
-    if (!option && hint === "histogram" && numCol) { option = histogramOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? numCol, ys: [numCol], labels: lbls }); defaultH = 300; }
-    if (!option && hint === "boxplot" && numCol) { option = boxplotOption({ rows: data, units: columnUnits ?? undefined, x: catCol ?? numCol, ys: [numCol] }); defaultH = 320; }
-    if (!option && hint === "sankey" && catCol && catCol2 && numCol) { option = sankeyOption({ rows: data, units: columnUnits ?? undefined, x: catCol, color: catCol2, ys: [numCol] }); defaultH = 360; }
-    if (!option && hint === "waterfall" && (catCol || dateCol) && numCol) { option = waterfallOption({ rows: data, units: columnUnits ?? undefined, x: (catCol ?? dateCol)!, ys: [numCol], xKind: dateCol && !catCol ? "time" : "category" }); defaultH = 320; }
-    if (!option && hint === "line_forecast" && dateCol && numCol) { option = lineForecastOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time" }); defaultH = 320; }
-    if (!option && hint === "choropleth" && numCol) {
-      const geoCol = catCols.find((c) => GEO_NAME_COL.test(c)) ?? catCol;
-      if (geoCol) { option = choroplethOption({ rows: data, units: columnUnits ?? undefined, x: geoCol, ys: [numCol] }); defaultH = 380; }
-    }
-
-    // 1c. Colour binding on a LINE → one line per value of the chosen DIMENSION (multi-line).
-    //     A continuous colour on a trend line isn't a standard encoding, so only the categorical
-    //     case routes here (the picked dimension overrides the auto series column); otherwise the
-    //     line renders plain. Bar/scatter honour the binding inside their own builders.
-    const _cb = exhibitEff?.color;
-    const _cbField = _cb?.field && _colSet.has(_cb.field) ? _cb.field : null;
-    const _cbCategorical = !!_cbField && (_cb?.mode === "categorical" || !numericCols.includes(_cbField));
-    if (!option && _cbCategorical && dateCol && _cbField !== dateCol
-        && (hint === "line" || hint === "area" || hint === "multi_line" || hint === "auto")) {
-      option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: _cbField!, xKind: "time" });
-      defaultH = 320;
-    }
-    // 1d. Colour binding on a CATEGORICAL result → a single-measure BAR carrying the binding
-    //     (dimension → stacked split; measure → per-bar gradient), overriding the default bar
-    //     variant (combo / grouped / auto). This makes "Color by" always visibly split or shade
-    //     the bars — the fix for a colour picked on a multi-measure card (else combo ignored it).
-    if (!option && _cbField && catCol && !dateCol
-        && (hint === "bar" || hint === "bar_horizontal" || hint === "bar_vertical" || hint === "combo" || hint === "grouped_bar" || hint === "auto")) {
-      option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
-                         { horizontal: hint !== "bar_vertical" });
-      defaultH = Math.max(180, new Set(data.map((d) => d[catCol])).size * 42 + 60);
-    }
-
-    // 2. Pie (explicit)
-    if (!option && hint === "pie" && catCol) { option = pieOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls }); defaultH = 240; }
-    // 3. Pareto (explicit or concentration-upgrade)
-    if (!option && wantPareto && paretoCat && paretoMeasure) { option = paretoOption({ rows: data, units: columnUnits ?? undefined, x: paretoCat, ys: [paretoMeasure] }); defaultH = 320; }
-    // 4. Heatmap (explicit hint only; never for change metrics)
-    if (!option && hint === "heatmap" && !_isChangeMetric && catCol) {
-      const xSrc = dateCol ?? catCol2;
-      if (xSrc) { option = heatmapOption({ rows: data, units: columnUnits ?? undefined, x: xSrc, color: catCol, ys: [numCol], xKind: dateCol ? "time" : "category" }); defaultH = Math.max(220, Math.min(_stackUnique * 18 + 80, 600)); }
-    }
-    // 5. Multi-line (explicit)
-    if (!option && hint === "multi_line" && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
-    // 6. Treemap (explicit)
-    if (!option && hint === "treemap" && catCol) { option = treemapOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol] }); defaultH = 340; }
-    // 7. Change metric over time (auto) → multi-line of the delta
-    if (!option && hint === "auto" && _isChangeMetric && catCol && dateCol) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
-    // 8. Stacked bar (explicit, or auto date/cat with ≤6 series). A SHARE measure → 100%-stacked
-    //    (composition shift over time); an absolute measure stacks by volume.
-    //    A stack needs ≥2 x positions: one stacked column is a single lying bar (the
-    //    "loyalty_members at 100%" exhibit), so a degenerate x falls through to the
-    //    categorical branch below. 100%-stacked additionally demands share-like VALUES —
-    //    the name test alone let `award_miles_fraction` (values to 309) normalise
-    //    incomparable measures into a fake composition.
-    if (!option && (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6))) {
-      const x = dateCol ?? catCol;
-      const color = dateCol ? catCol : catCol2;
-      const xUnique = x ? new Set(data.map((d) => d[x])).size : 0;
-      if (x && color && xUnique >= 2) {
-        const shareVals = data.map((d) => Number(d[numCol])).filter((v) => !isNaN(v));
-        const asPercent = SHARE_COL.test(numCol) && shareVals.length > 0 && shareVals.every((v) => Math.abs(v) <= 1.0001);
-        option = stackedBarOption({ rows: data, units: columnUnits ?? undefined, x, ys: [numCol], color, xKind: dateCol ? "time" : "category" }, asPercent);
-        defaultH = 280;
-      }
-    }
-    // 8b. Small multiples — a many-group trend (auto date/cat with >6 series, or explicit): a grid of
-    //     mini lines beats a spaghetti multi-line. Explicit hint always; auto only past the stack cap.
-    if (!option && (hint === "small_multiples" || (hint === "auto" && dateCol && catCol && !_isChangeMetric && _stackUnique > 6))
-        && dateCol && catCol) {
-      option = smallMultiplesOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" });
-      defaultH = Math.max(260, Math.min(Math.ceil(Math.min(_stackUnique, 9) / (_stackUnique <= 4 ? 2 : 3)) * 140 + 20, 560));
-    }
-    // 9. Temporal multi-line (auto, ≤6 series)
-    if (!option && hint === "auto" && dateCol && catCol && !_isChangeMetric) { option = multiLineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], color: catCol, xKind: "time" }); defaultH = 320; }
-    // 10. Date bar (date + measure, no category)
-    if (!option && dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) { option = barOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: true, exhibit: exhibitEff }, { order: "time" }); defaultH = 220; }
-    // 11. Line / area (timeseries)
-    if (!option && dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls, exhibit: exhibitEff }, hint === "area"); defaultH = 220; }
-    // 12. Vertical bar (explicit)
-    if (!option && catCol && hint === "bar_vertical") { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { order: isTimeLabel ? "keep" : "value" }); defaultH = 260; }
-    // 13. Scatter (explicit) — an ENTITY scatter names each point with the id-like column and, when a
-    //     second low-cardinality category exists, colors the points by it (hue = third dimension).
-    if (!option && hint === "scatter" && numericCols.length >= 2) {
-      const scatterLabel = catCols.find((c) => ID_COL.test(c)) ?? catCol;
-      const scatterColor = catCols.find((c) =>
-        c !== scatterLabel && !ID_COL.test(c) && new Set(data.map((d) => d[c])).size <= 12);
-      option = scatterOption({
-        rows: data, units: columnUnits ?? undefined, x: numericCols[0], ys: [numericCols[1]],
-        exhibit: exhibitEff, pointLabel: scatterLabel, color: scatterColor,
-      });
-      defaultH = 300;
-    }
-    // 14a. Explicit RANKING hint (bar / bar_horizontal) on a categorical result — the backend's
-    //      intent-driven chart_type is authoritative: plot the PRIMARY measure as one sorted
-    //      horizontal bar. Without this branch the hint fell through to the data-shape gate
-    //      below, which turned a [dim, metric, n, avg] ranking finding into a dual-axis COMBO
-    //      of metric vs row-count — second-guessing the backend and discarding exhibit.order.
-    if (!option && catCol && (hint === "bar" || hint === "bar_horizontal")) {
-      option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff },
-                         { horizontal: true, diverging: _isChangeMetric });
-      defaultH = Math.max(110, nCats * 46 + 44);
-    }
-    // 14. Categorical default → combo / grouped / change-bar / horizontal bar
-    if (!option && catCol) {
-      if (chartNumericCols.length >= 2 && catCols.length === 1) {
-        const numericIdxs = chartNumericCols.map((n) => columns.indexOf(n)).filter((i) => i >= 0);
-        const d = scoreDualAxis(columns, rows, numericIdxs);
-        const primary = columns[d.barIdx] ?? chartNumericCols[0];
-        if (d.combo && d.lineIdx != null) { option = comboOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary, columns[d.lineIdx]] }); defaultH = 350; }
-        else if (d.groupIdxs.length >= 2) { option = groupedBarOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: d.groupIdxs.map((i) => columns[i]) }); defaultH = 300; }
-        else { option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [primary], labels: lbls, exhibit: exhibitEff }, { horizontal: true }); defaultH = Math.max(110, nCats * 46 + 44); }
-      } else if (_isChangeMetric) {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: true, diverging: true });
-        defaultH = Math.max(110, nCats * 46 + 44);
-      } else {
-        option = barOption({ rows: data, units: columnUnits ?? undefined, x: catCol, ys: [numCol], labels: lbls, exhibit: exhibitEff }, { horizontal: true });
-        defaultH = Math.max(110, nCats * 46 + 44);
-      }
-    }
-    // 15. Final fallback — line on date + measure
-    if (!option && dateCol && numCol) { option = lineOption({ rows: data, units: columnUnits ?? undefined, x: dateCol, ys: [numCol], xKind: "time", labels: lbls, exhibit: exhibitEff }); defaultH = 350; }
-
-    if (!option) return null;
-    // Org-level chart palette (Settings ▸ Appearance) applies when the chart hasn't set
-    // its own colorScheme; a per-chart Customize colour still wins.
-    const built = applyCustom(option, custom);
-    if (!custom?.colorScheme) {
-      const pal = effectiveChartPalette();
-      if (pal && SCHEME_PALETTES[pal]) built.color = SCHEME_PALETTES[pal];
-    }
-    return { option: built, defaultH };
+    const v = resolveVegaSpec({
+      columns, rows, chartType, showLabels, exhibit,
+      format: custom?.format ?? null,
+      xTitle: custom?.xTitle ?? null,
+      yTitle: custom?.yTitle ?? null,
+      orient: custom?.orient ?? null,
+      transform: custom?.transform ?? null,
+    });
+    // null is the honest-refusal verdict: data with no chart in it renders none, and the
+    // surface's table view carries it. There is no second engine to fall back to.
+    return v ? { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 } : null;
+    // orgV: currency / palette / relabel settings feed the resolver via module reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
 
   if (!built) return null;
@@ -472,16 +153,14 @@ export function Chart({
             title={showLabels ? "Hide data labels" : "Show data labels"}
             className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 7V4h3" /><path d="M4 17v3h3" /><path d="M20 7V4h-3" /><path d="M20 17v3h-3" /><path d="M9 9h6v6H9z" />
-            </svg>
+            <Icon name="expand" size={14} />
           </button>
           <button
             onClick={handleDownloadPng}
             title="Download chart as PNG"
             className="w-6 h-6 flex items-center justify-center rounded bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
           >
-            <DownloadIcon label="Download chart as PNG" size="small" />
+            <Icon name="download" size={16} label="Download chart as PNG" />
           </button>
         </div>
       )}
@@ -490,13 +169,18 @@ export function Chart({
           A vertical bar chart with only a few categories no longer stretches across the full panel
           (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
       {(() => {
-        const _xd = (built.option as { xAxis?: { data?: unknown[] } })?.xAxis?.data;
-        const _catN = Array.isArray(_xd) ? _xd.length : 0;
-        // In fill mode the chart takes the whole box (no 350px cap, no few-category width cap).
+        const _catN = built.xCategories;
+        // In fill mode the chart takes the whole box (no few-category width cap).
         const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
+        const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
+        /* A chart is a picture, not a viewport. It used to cap at 350px and scroll inside
+           that box, so a ranking with many categories became a thing you scrolled through
+           instead of a shape you read — and the axis scrolled out of sight with it. The
+           chart now renders at its natural height and the card grows; orientation flips to
+           upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
         return (
-      <div ref={outerRef} style={{ maxHeight: fill ? undefined : 350, height: fill ? chartH : undefined, overflowY: "auto", overflowX: "hidden", width: "100%", maxWidth: _maxW }}>
-        <EChart option={built.option} height={chartH} onSelect={onSelect} onReady={(inst) => { instRef.current = inst; onInstanceReady?.(inst); }} />
+      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
+        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
       </div>
         );
       })()}

@@ -18,6 +18,7 @@ import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
 import { getApiBase } from "@/lib/config";
 import { useRichSchema } from "@/lib/schema-context";
 import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
+import { Icon, type IconName } from "@/components/ui/icon";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,33 +48,31 @@ const SECTION_LABELS: Record<ItemType, string> = {
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
 
-const ICONS: Record<string, string> = {
-  spark:       "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  clock:       "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z",
-  db:          "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11zm0-5c0 .5-2.13 2-6 2S6 6.5 6 6s2.13-2 6-2 6 1.5 6 2z",
-  node:        "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
-  process:     "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
-  catalog:     "M4 6h16M4 10h16M4 14h16M4 18h16",
-  builder:     "M3 3h7v7H3V3zm11 0h7v7h-7V3zm0 11h7v7h-7v-7zM3 14h7v7H3v-7z",
-  plug:        "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
-  playbook:    "M9 12h6M9 16h4M5 3H3a2 2 0 00-2 2v16a2 2 0 002 2h16a2 2 0 002-2V5a2 2 0 00-2-2h-2M15 3H9a1 1 0 00-1 1v2a1 1 0 001 1h6a1 1 0 001-1V4a1 1 0 00-1-1z",
-  settings:    "M12 15a3 3 0 100-6 3 3 0 000 6zm7.94-3c0-.32-.03-.63-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.6-.22l-2.39.96a7.07 7.07 0 00-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.58.23-1.13.54-1.62.94l-2.39-.96a.48.48 0 00-.6.22L2.07 9.47a.48.48 0 00.12.61l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.6.22l2.39-.96c.49.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.58-.27 1.13-.58 1.62-.94l2.39.96c.22.07.48 0 .6-.22l1.92-3.32a.48.48 0 00-.12-.61l-2.01-1.58c.05-.31.07-.63.07-.94z",
-  activity:    "M22 12h-4l-3 9L9 3l-3 9H2",
-  metric:      "M3 3v18h18M7 16l4-4 4 4 4-4",
-  canvas:      "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
-  inbox:       "M22 8.01V18a2 2 0 01-2 2H4a2 2 0 01-2-2V8.01M22 8l-10 7L2 8m20 0a2 2 0 00-2-2H4a2 2 0 00-2 2",
-  health:      "M22 12h-4l-2.5 5-5-16L8 12H2",
-  table:       "M3 3h18v4H3zm0 7h18v4H3zm0 7h18v4H3z",
+/** Palette glyphs, by role — drawings come from the platform set. */
+const ROLE: Record<string, IconName> = {
+  spark: "spark",
+  clock: "clock",
+  db: "db",
+  node: "node",
+  process: "process",
+  catalog: "catalog",
+  builder: "builder",
+  plug: "plug",
+  playbook: "playbook",
+  settings: "settings",
+  activity: "activity",
+  metric: "chart",
+  canvas: "canvas",
+  inbox: "inbox",
+  health: "health",
+  table: "table",
 };
 
 function PIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
-  const d = ICONS[name] ?? ICONS.spark;
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Icon name={ROLE[name] ?? "spark"} size={size} />
+    </span>
   );
 }
 
@@ -353,7 +352,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       <div
         onClick={onClose}
         className="aug-anim-fade"
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200 }}
+        style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }}
       />
 
       {/* Palette */}
@@ -362,7 +361,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         zIndex: 201, width: "100%", maxWidth: 580,
         background: "var(--bg-2)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "0 24px 64px rgba(0,0,0,.65)",
+        boxShadow: "var(--shadow-xl)",
       }}>
         {/* Input row */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>

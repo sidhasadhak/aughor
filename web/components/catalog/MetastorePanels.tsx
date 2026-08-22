@@ -19,6 +19,7 @@ import {
   type MetastoreVolume, type MetastoreVolumeObject, type Workspace,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -171,8 +172,8 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
         <div key={ws.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 110px", padding: "11px 4px", borderBottom: "0.5px solid var(--b0)", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "var(--t1)" }}>{ws.name}{ws.is_default ? " (default)" : ""}</span>
           <span style={{ display: "flex", gap: 6 }}>
-            {member && <span className="aug-tag aug-tag-blue" style={{ fontSize: 10 }}>Member</span>}
-            {granted && <span className="aug-tag aug-tag-green" style={{ fontSize: 10 }}>Granted</span>}
+            {member && <span className="aug-tag aug-tag-blue" style={{ fontSize: 11 }}>Member</span>}
+            {granted && <span className="aug-tag aug-tag-green" style={{ fontSize: 11 }}>Granted</span>}
             {!member && !granted && <span style={{ fontSize: 11, color: "var(--t4)" }}>No access</span>}
           </span>
           <span style={{ justifySelf: "end" }}>
@@ -191,9 +192,8 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
 
 function IcoVolume() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ color: "var(--vio4)", flexShrink: 0 }}>
-      <path d="M2 4.5C2 3.7 2.7 3 3.5 3h9c.8 0 1.5.7 1.5 1.5v7c0 .8-.7 1.5-1.5 1.5h-9C2.7 13 2 12.3 2 11.5v-7Z" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M2 6h12" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
+    <span style={{ color: "var(--vio4)", flexShrink: 0, display: "inline-flex" }}>
+      <Icon name="table" size={14} />
+    </span>
   );
 }

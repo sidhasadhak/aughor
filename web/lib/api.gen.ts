@@ -157,7 +157,7 @@ export interface paths {
          * Get Ada Receipt
          * @deprecated
          * @description @deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
-         *     for the `ADA`→answer rename (REC-U9).
+         *     for the acronym→answer rename (REC-U9).
          */
         get: operations["get_ada_receipt_ada__connection_id___inv_id__receipt_get"];
         put?: never;
@@ -1543,6 +1543,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chat Session Route
+         * @description Delete a thread and every turn's full footprint — history rows, evidence
+         *     claims, vector entries, the title override (CA-5).
+         *
+         *     A real delete, not a hidden flag: the History panel's per-run delete already
+         *     removes runs outright, and a thread the user asked to be gone that still steered
+         *     future analysis from the RAG index would be the same lie CA-0 went after.
+         */
+        delete: operations["delete_chat_session_route_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Chat Session Route
+         * @description Rename a thread (CA-5). The rail's titles were derived from the opening
+         *     question — a good default, a bad permanent name. Org-scoped in the store, like
+         *     every other read and write keyed by a session id.
+         */
+        patch: operations["rename_chat_session_route_chat_sessions__session_id__patch"];
+        trace?: never;
+    };
+    "/chat-sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chat Session Messages
+         * @description The thread as AI-SDK ``UIMessage[]`` (CA-1) — thread selection on the web
+         *     is ``setMessages`` over this, the same shape the live stream accumulates.
+         *     Org-scoped in the store, like the turns read.
+         */
+        get: operations["get_chat_session_messages_chat_sessions__session_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-sessions/{session_id}/turns": {
         parameters: {
             query?: never;
@@ -1623,6 +1676,35 @@ export interface paths {
         put?: never;
         /** Create Connection */
         post: operations["create_connection_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seed Demo Connection
+         * @description Provision the bundled demo dataset and return its connection.
+         *
+         *     Nothing is seeded at boot — a data platform should not fabricate 72,000 rows of
+         *     synthetic revenue on a fresh install nobody asked. That left `aughor seed` as the
+         *     only way in, which a user who never opens a terminal cannot find, so this is the
+         *     same opt-in over HTTP: the first-run funnel's "Explore the demo" calls it.
+         *
+         *     Idempotent by construction — `ensure_fixture_db` only writes when the file is
+         *     absent, so a second call returns the existing connection and never touches data
+         *     the user may have changed. `seeded` says which happened.
+         */
+        post: operations["seed_demo_connection_connections_demo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9027,6 +9109,11 @@ export interface components {
             /** Seed Sql */
             seed_sql?: string | null;
             /**
+             * Session Id
+             * @default
+             */
+            session_id: string;
+            /**
              * Skip Cache
              * @default false
              */
@@ -9135,6 +9222,12 @@ export interface components {
              * @default
              */
             chart_palette: string;
+            /**
+             * Chat First Home
+             * @description Land on the conversation instead of the workbench (CA-5 / CI-6b). Off by default: an org that navigates by the workbench should not have its entry point moved out from under it by an upgrade.
+             * @default false
+             */
+            chat_first_home: boolean;
             /**
              * Company Name
              * @description Display name of the company/organization
@@ -9460,6 +9553,18 @@ export interface components {
              * @default
              */
             actor: string;
+        };
+        /**
+         * RenameChatSessionRequest
+         * @description A thread's user-chosen name. Empty clears it back to the opening question.
+         */
+        RenameChatSessionRequest: {
+            /**
+             * Title
+             * @description The thread's display name; empty restores the derived title.
+             * @default
+             */
+            title: string;
         };
         /** RescopeRequest */
         RescopeRequest: {
@@ -13720,6 +13825,101 @@ export interface operations {
             };
         };
     };
+    delete_chat_session_route_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_chat_session_route_chat_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameChatSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_messages_chat_sessions__session_id__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_chat_session_turns_chat_sessions__session_id__turns_get: {
         parameters: {
             query?: never;
@@ -13867,6 +14067,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seed_demo_connection_connections_demo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

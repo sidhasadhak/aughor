@@ -1,8 +1,10 @@
-"""The builtin 'fixture' demo connection must have an openable DB on any checkout.
+"""The builtin 'fixture' demo connection: seeded on request, and never advertised
+before it is.
 
-`data/aughor.duckdb` is gitignored and nothing seeded it, so a fresh install / CI
-run had a broken builtin connection (opening a missing file read-only raises).
-`ensure_fixture_db` guarantees it exists.
+`data/aughor.duckdb` is gitignored, so a fresh install / CI run has no file behind the
+builtin connection and opening a missing file read-only raises. That used to be papered
+over by seeding on boot; the demo is now opt-in (`aughor seed` / `ensure_fixture_db`)
+and the registry only offers the connection once the file exists.
 """
 from __future__ import annotations
 
@@ -110,3 +112,123 @@ def test_seed_scenario_db_overwrite_contract(tmp_path):
     # With overwrite, it reseeds cleanly and deterministically.
     summary2 = seed_scenario_db(target, overwrite=True)
     assert summary2 == summary
+
+
+# ── D1: no dataset ships by default ───────────────────────────────────────────
+
+def test_boot_does_not_create_a_demo_dataset(monkeypatch, tmp_path):
+    """A data platform must not fabricate data on startup.
+
+    Booting used to call `ensure_fixture_db()`, writing 72,000 rows of synthetic
+    revenue into a fresh install nobody asked for — and doing it inside the lifespan,
+    so `Application startup complete` waited ~98s. The startup step now REPORTS what is
+    present and creates nothing.
+    """
+    import asyncio
+
+    from aughor import api
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+
+    asyncio.run(api._report_demo_data())
+
+    assert not fake.exists(), (
+        "startup created a demo dataset — nothing may seed on boot; `aughor seed` is the "
+        "opt-in path")
+
+
+def test_the_demo_connection_is_not_advertised_until_it_is_seeded(monkeypatch, tmp_path):
+    """W4b. The registry listed the demo connection unconditionally, which auto-seeding
+    made true by accident. Without a file behind it, opening it read-only raises — so an
+    unseeded fixture must not appear in the connection list at all."""
+    from aughor.db import registry
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+
+    listed = {c["id"] for c in registry.list_connections()}
+    assert registry.BUILTIN_ID not in listed, (
+        "an unseeded demo connection was offered to the user; it raises IOException on open")
+
+    setup.ensure_fixture_db()          # the opt-in path
+    listed = {c["id"] for c in registry.list_connections()}
+    assert registry.BUILTIN_ID in listed, "once seeded, the demo connection must appear"
+
+
+def test_seeding_the_demo_is_fast_enough_to_be_opt_in(monkeypatch, tmp_path):
+    """W4c. `daily_revenue` was inserted row-by-row with `executemany`, costing ~98s for
+    2 MB — the whole first-boot delay. Batched multi-row VALUES measured ~2s. Opt-in only
+    works if opting in is quick, so hold the line well inside the old cost."""
+    import time
+
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+
+    started = time.monotonic()
+    setup.ensure_fixture_db()
+    elapsed = time.monotonic() - started
+
+    assert fake.exists()
+    assert elapsed < 30, (
+        f"seeding took {elapsed:.1f}s; it was ~98s with executemany and ~2s batched — "
+        "a row-by-row INSERT has probably come back")
+
+
+# ── The demo dataset is reachable without a terminal ──────────────────────────
+
+def test_demo_endpoint_seeds_and_then_offers_the_connection(client, monkeypatch, tmp_path):
+    """`aughor seed` is the opt-in, but a user who never opens a terminal cannot find
+    it — so the first-run funnel needs the same act over HTTP."""
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+    assert "fixture" not in {c["id"] for c in client.get("/connections").json()}
+
+    resp = client.post("/connections/demo")
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["id"] == "fixture" and body["seeded"] is True, body
+    assert fake.exists()
+
+    listed = {c["id"] for c in client.get("/connections").json()}
+    assert "fixture" in listed, "seeding must make the connection appear"
+
+    # …and it must actually open — an advertised-but-broken connection is the bug
+    # auto-seeding used to hide.
+    sample = client.get("/connections/fixture/tables/customers/sample", params={"limit": 2})
+    assert sample.status_code == 200, sample.text
+    assert sample.json()["rows"], "the seeded demo connection returned no rows"
+
+
+def test_demo_endpoint_is_idempotent_and_never_clobbers(client, monkeypatch, tmp_path):
+    """A second click must not re-seed. `ensure_fixture_db` only writes when the file is
+    absent, so a user who has edited the demo keeps their edits."""
+    from aughor.demo import setup
+
+    fake = tmp_path / "aughor.duckdb"
+    monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
+
+    assert client.post("/connections/demo").json()["seeded"] is True
+    stamp = fake.stat().st_mtime_ns
+
+    second = client.post("/connections/demo")
+    assert second.status_code == 201, second.text
+    assert second.json()["seeded"] is False, "a second call re-seeded"
+    assert fake.stat().st_mtime_ns == stamp, "the existing demo file was rewritten"
+
+
+def test_seeding_the_demo_requires_the_permission_that_adding_a_connection_does():
+    """It writes a file and makes a connection appear — the same act as POST
+    /connections, so it must not fall to the write floor a viewer clears."""
+    from aughor.rbac.permissions import Permission
+    from aughor.rbac.policy import required_permission
+
+    assert required_permission("POST", "/connections/demo") == Permission.CONNECTION_CREATE
+    assert (required_permission("POST", "/connections/demo")
+            == required_permission("POST", "/connections"))

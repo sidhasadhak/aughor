@@ -11,10 +11,11 @@ Contributions are accepted under the [Apache License 2.0](LICENSE).
 |---|---|---|
 | [uv](https://docs.astral.sh/uv/) | latest | Python dependency + venv manager. The lockfile is `uv.lock`. |
 | Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**. |
-| Node.js | 20 | CI pins **20**. The frontend uses npm and `web/package-lock.json`. |
+| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The frontend uses npm and `web/package-lock.json`. |
 
 An LLM backend is only needed to *run* Aughor, not to develop against it — the
-test suite is fully offline and hermetic.
+test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
+(see **Running the checks**).
 
 ## Setup
 
@@ -32,7 +33,7 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 `./start.sh` also accepts `--api-only`, `--web-only`, and `--stop`.
 
 > **Use `--all-extras` for development.** A bare `uv sync` installs the serving core only
-> (225 MB rather than 622 MB, for size-limited deployments) and omits report export,
+> (a ~350 MB venv rather than ~1.2 GB, for size-limited deployments) and omits report export,
 > semantic search and the fast bulk reader. Nothing crashes without them — each degrades
 > with a message naming the extra — but tests that exercise those paths will skip, and you
 > will wonder why a PDF export returns 501. See **Optional extras** in the README.
@@ -43,8 +44,10 @@ cp .env.example .env          # then edit: pick an LLM backend and set its key
 > `:8000`/`:3000` is already taken it reports who holds the port and exits, so
 > free it yourself or pick another with `--api-port` / `--web-port`.
 
-On first boot Aughor provisions a synthetic DuckDB fixture (`data/aughor.duckdb`)
-so you have something to query immediately. No real data required.
+Nothing is seeded on boot. Run `uv run aughor seed` to write the synthetic DuckDB
+fixture (`data/aughor.duckdb`) when you want something to query without connecting
+real data — it takes a couple of seconds and then shows up as a connection. The test
+suite seeds its own copy in a temp dir, so it never needs this.
 
 > **Most of `data/` is gitignored, but four paths are deliberately not:**
 > `data/context_graph/` (the Wave-C connection knowledge graph),
@@ -78,7 +81,7 @@ so you have something to query immediately. No real data required.
 CI runs exactly these four jobs. Run them locally before opening a PR:
 
 ```bash
-# 1. Backend tests — hermetic, no network, no LLM. ~3 min.
+# 1. Backend tests — hermetic, no LLM. 10-12 min (serial; xdist is not configured).
 uv run pytest -q -m "not e2e and not eval"
 
 # 2. Backend lint — the baseline is zero.
@@ -94,6 +97,23 @@ npm run lint:elements   # one-way ratchet: raw <button> count may only shrink
 # 4. Generated API client must not drift
 npm run gen:api && git diff --exit-code -- lib/api.gen.ts
 ```
+
+Two tests are not offline: `test_xlsx_reads` and `test_listed_and_queryable_when_flag_on`
+need DuckDB's `excel` and `sqlite_scanner` extensions, which DuckDB downloads from
+`extensions.duckdb.org` on first use. They run normally once the extension is fetched or
+cached, and **skip with the reason named** when it cannot be — so a green run on a locked-down
+machine shows two skips rather than two failures. The `duckdb_extension` fixture in
+`tests/conftest.py` is how; use it for any new test that needs one.
+
+### The project pins npm 10
+
+`web/package.json` declares `"packageManager": "npm@10.9.7"` — the npm that Node 20
+bundles and that CI runs — and the committed lockfile is in npm-10 form. Run
+`corepack enable` once (corepack ships with Node) and you get exactly that npm
+automatically. Without corepack you are fine on any npm 10.x; an npm 11 `npm install`
+rewrites the lockfile into 11-format (it re-adds `libc` fields on optional deps) — if
+you see ~30 insertions you didn't make, that's why: enable corepack, or don't commit
+the diff. `npm ci` is format-tolerant, so CI is unaffected either way.
 
 ### Test markers
 

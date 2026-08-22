@@ -10,26 +10,25 @@ import {
   type Canvas,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
-function Icon({ d, size = 14, color = "currentColor" }: { d: string; size?: number; color?: string }) {
+function Icon({ name, size = 14, color = "currentColor" }: { name: IconName; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={name} size={size} />
+    </span>
   );
 }
 
-const CLOSE_ICON  = "M18 6L6 18M6 6l12 12";
-const CHECK_ICON  = "M20 6L9 17l-5-5";
-const CHEVR_ICON  = "M9 6l6 6-6 6";
-const DB_ICON     = "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z";
-const TABLE_ICON  = "M3 5h18M3 5v14M3 5h0M21 5v14M3 12h18M9 5v14M3 19h18";
-const SEARCH_ICON = "M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35";
-const REFRESH_ICON = "M21 12a9 9 0 11-2.64-6.36M21 3v6h-6";
+const CLOSE_ICON: IconName = "close";
+const CHECK_ICON: IconName = "check";
+const CHEVR_ICON: IconName = "chevr";
+const DB_ICON: IconName = "db";
+const TABLE_ICON: IconName = "table";
+const SEARCH_ICON: IconName = "search";
+const REFRESH_ICON: IconName = "refresh";
 
 // ── CanvasCreator ─────────────────────────────────────────────────────────────
 
@@ -166,21 +165,21 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           background: "var(--bg-1)", border: "1px solid var(--b2)",
           borderRadius: "var(--r3)", width: 560,
           display: "flex", flexDirection: "column",
-          boxShadow: "0 20px 60px rgba(0,0,0,.45)",
+          boxShadow: "var(--shadow-xl)",
           height: "76vh", maxHeight: 720,
         }}
       >
         {/* Header */}
         <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--t1)", margin: 0 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--t1)", margin: 0 }}>
               Connect your data
             </h2>
             <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 4 }}>
-              <Icon d={CLOSE_ICON} size={16} />
+              <Icon name={CLOSE_ICON} size={16} />
             </button>
           </div>
-          <p style={{ fontSize: 12.5, color: "var(--t3)", lineHeight: 1.55, margin: "10px 0 16px", maxWidth: 460 }}>
+          <p style={{ fontSize: 13, color: "var(--t3)", lineHeight: 1.55, margin: "10px 0 16px", maxWidth: 460 }}>
             Canvases let you uncover meaningful insights from your data. Pick a connection,
             scope it to the tables that matter, and start asking questions — we&rsquo;ll name it for you.
           </p>
@@ -192,7 +191,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               border: "1px solid var(--b2)", borderRadius: "var(--r2)",
               padding: "0 12px", height: 40, background: "var(--bg-0)",
             }}>
-              <Icon d={SEARCH_ICON} size={14} color="var(--t4)" />
+              <Icon name={SEARCH_ICON} size={14} color="var(--t4)" />
               <input
                 placeholder="Search"
                 value={search}
@@ -212,12 +211,12 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}
             >
-              <Icon d={REFRESH_ICON} size={15} />
+              <Icon name={REFRESH_ICON} size={15} />
             </button>
           </div>
 
           {/* Breadcrumb */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "16px 0 6px", fontSize: 13.5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "16px 0 6px", fontSize: 13 }}>
             <button
               onClick={backToCatalog}
               style={{
@@ -241,7 +240,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           {!connId ? (
             // ── Catalog: choose a connection ──
             connections.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
                 No connections available.
               </div>
             ) : (
@@ -257,15 +256,15 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <Icon d={DB_ICON} size={17} color="var(--blue4)" />
-                  <span style={{ flex: 1, fontSize: 14, color: "var(--t1)" }}>{c.name}</span>
+                  <Icon name={DB_ICON} size={17} color="var(--blue4)" />
+                  <span style={{ flex: 1, fontSize: 15, color: "var(--t1)" }}>{c.name}</span>
                   <span style={{ fontSize: 11, color: "var(--t4)" }}>{connLabel(c)}</span>
-                  <Icon d={CHEVR_ICON} size={14} color="var(--t4)" />
+                  <Icon name={CHEVR_ICON} size={14} color="var(--t4)" />
                 </button>
               ))
             )
           ) : loadingTables ? (
-            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
               Loading tables…
             </div>
           ) : (
@@ -284,13 +283,13 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
                 <Checkbox checked={selection?.kind === "all"} />
-                <Icon d={TABLE_ICON} size={15} color="var(--grn4)" />
-                <span style={{ flex: 1, fontSize: 14, color: "var(--t1)", fontWeight: 500 }}>All tables</span>
+                <Icon name={TABLE_ICON} size={15} color="var(--grn4)" />
+                <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontWeight: 500 }}>All tables</span>
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>auto-includes new tables</span>
               </button>
 
               {filteredTables.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 12.5, color: "var(--t4)" }}>
+                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
                   {search ? "No matching tables" : "No tables found"}
                 </div>
               ) : (
@@ -311,8 +310,8 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <Checkbox checked={checked} />
-                      <Icon d={TABLE_ICON} size={15} color="var(--blue4)" />
-                      <span style={{ flex: 1, fontSize: 14, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
+                      <Icon name={TABLE_ICON} size={15} color="var(--blue4)" />
+                      <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
                     </button>
                   );
                 })
@@ -369,7 +368,7 @@ function Checkbox({ checked }: { checked: boolean }) {
       border: `1.5px solid ${checked ? "var(--blue4)" : "var(--b2)"}`,
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      {checked && <Icon d={CHECK_ICON} size={9} color="var(--bg-0)" />}
+      {checked && <Icon name={CHECK_ICON} size={9} color="var(--bg-0)" />}
     </div>
   );
 }
@@ -388,7 +387,7 @@ function Chip({ label, onRemove, mono }: { label: string; onRemove: () => void; 
         onClick={e => { e.stopPropagation(); onRemove(); }}
         style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, display: "flex" }}
       >
-        <Icon d={CLOSE_ICON} size={11} />
+        <Icon name={CLOSE_ICON} size={11} />
       </button>
     </span>
   );

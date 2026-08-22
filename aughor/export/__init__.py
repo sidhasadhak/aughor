@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import re
 
-from .document import ExportDoc, build_export_doc
-
 # The renderers carry the heavy end of the dependency tree — reportlab, python-pptx and
 # matplotlib — and none of it is on the request path until someone actually asks for a
 # file. They ship as the `export` extra so a serving deployment need not carry them
@@ -21,12 +19,19 @@ from .document import ExportDoc, build_export_doc
 # Imported here rather than inside export_report so the cost is paid once, and the
 # absence is reported as a MISSING FEATURE with the command that fixes it — an
 # ImportError traceback out of a router tells the operator nothing actionable.
+#
+# `.document` belongs INSIDE this guard, not above it: it imports `.charts`, which
+# imports matplotlib at module scope. Sitting above, it raised ModuleNotFoundError
+# before the guard could run, so a serving install answered the export route with 500
+# and a traceback — the exact outcome the guard exists to prevent.
 try:
+    from .document import ExportDoc, build_export_doc
     from .pdf import render_pdf
     from .slides import render_pptx
     EXPORT_AVAILABLE = True
     _EXPORT_IMPORT_ERROR = ""
 except ImportError as _exc:                       # pragma: no cover — depends on install
+    ExportDoc = build_export_doc = None           # type: ignore[assignment,misc]
     render_pdf = render_pptx = None               # type: ignore[assignment]
     EXPORT_AVAILABLE = False
     _EXPORT_IMPORT_ERROR = str(_exc)
@@ -63,7 +68,7 @@ def export_report(inv: dict, fmt: str = "pdf", *, narrate: bool = False,
     if not EXPORT_AVAILABLE:
         raise ExportUnavailable(
             "Report export needs the 'export' extra (reportlab, python-pptx, "
-            "matplotlib). Install it with:  uv pip install -e '.[export]'   —  "
+            "matplotlib). Install it with:  uv sync --extra export   —  "
             f"underlying import error: {_EXPORT_IMPORT_ERROR}")
     doc = build_export_doc(inv, narrate=narrate, money_symbol=money_symbol)
     data = render_pdf(doc) if fmt == "pdf" else render_pptx(doc)

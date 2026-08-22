@@ -42,7 +42,7 @@ const CACHE_NOTE: Record<string, string> = {
 function CapChip({ text, title }: { text: string; title?: string }) {
   return (
     <span title={title} style={{
-      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+      fontSize: 11, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
       background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
       fontFamily: "var(--font-mono)",
     }}>{text}</span>
@@ -89,7 +89,7 @@ function CapabilityRow({ cap, typed = "", saved = "", catalog = null }: {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4, alignItems: "center" }}>
       <span title={p.note} style={{
-        fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+        fontSize: 11, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
         background: p.bg, color: p.fg, fontWeight: 500,
       }}>{p.label}</span>
       <CapChip text={ctxK} title={entry?.context
@@ -187,7 +187,7 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
         ))}
       </datalist>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--t4)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t4)" }}>
         <span>
           {catalog.live
             ? `${catalog.live_count} models from ${BACKEND_LABEL[catalog.backend] ?? catalog.backend}`
@@ -201,12 +201,12 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
                   title={showPaid
                     ? "Suggest only :free models (the default posture)"
                     : "Also suggest paid models — binding one still needs an explicit ack"}
-                  style={{ fontSize: 10, height: "auto", padding: "1px 6px" }}>
+                  style={{ fontSize: 11, height: "auto", padding: "1px 6px" }}>
             {showPaid ? `all ${catalog.models.length} — hide paid` : `${listed.length} free — show paid`}
           </Button>
         )}
         <Button variant="ghost" size="sm" disabled={busy} onClick={onRefresh}
-                style={{ fontSize: 10, height: "auto", padding: "1px 6px" }}>
+                style={{ fontSize: 11, height: "auto", padding: "1px 6px" }}>
           {busy ? "…" : "Refresh"}
         </Button>
       </div>
@@ -216,7 +216,7 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
           so a failure means an empty picker, and saying so beats a silent blank. The
           field is free text either way: a known id can still be typed straight in. */}
       {!catalog.live && (error || catalog.error) && (
-        <div style={{ fontSize: 10, color: "var(--amb4)" }}>
+        <div style={{ fontSize: 11, color: "var(--amb4)" }}>
           Couldn’t reach {BACKEND_LABEL[catalog.backend] ?? catalog.backend} for its model
           list ({error || catalog.error}). Type a model id directly, or Refresh to retry.
         </div>
@@ -227,9 +227,9 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
           {custom.map((m) => (
             <span key={m} style={{
               display: "inline-flex", alignItems: "center", gap: 4,
-              fontSize: 10, fontFamily: "var(--font-mono)",
+              fontSize: 11, fontFamily: "var(--font-mono)",
               background: "var(--bg-3)", border: "1px solid var(--b2)",
-              borderRadius: "var(--r-pill)", padding: "1px 4px 1px 8px",
+              borderRadius: "var(--r-chip)", padding: "1px 4px 1px 8px",
             }}>
               {m}
               <Button
@@ -424,7 +424,7 @@ export function InferencePanel() {
             placeholder={keySet ? "•••••••••• (leave blank to keep)" : "paste API key"}
             style={inputStyle}
           />
-          <div style={{ fontSize: 10, color: "var(--t4)", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>
             Stored encrypted on the server (secretvault). Save before testing a new key.
           </div>
         </div>
@@ -476,7 +476,7 @@ export function InferencePanel() {
           onRemove={removeModel}
         />
 
-        <div style={{ fontSize: 10, color: "var(--t4)" }}>
+        <div style={{ fontSize: 11, color: "var(--t4)" }}>
           Every role needs a model — nothing is assumed, and a blank role fails its calls
           with a message saying so. Any model id works: the list is what this provider
           reports serving, not a restriction.
@@ -489,9 +489,9 @@ export function InferencePanel() {
           }}>
             <span>
               {paidBindings.length === 1
-                ? <><code style={{ fontSize: 10.5 }}>{paidBindings[0]}</code> is a paid model</>
+                ? <><code style={{ fontSize: 11 }}>{paidBindings[0]}</code> is a paid model</>
                 : `${paidBindings.length} of these are paid models`}
-              {" "}— free (<code style={{ fontSize: 10.5 }}>:free</code>) models are the
+              {" "}— free (<code style={{ fontSize: 11 }}>:free</code>) models are the
               default here, and every paid call bills your OpenRouter credit.
             </span>
             <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
@@ -507,7 +507,7 @@ export function InferencePanel() {
           if (classes.has("public_api")) {
             return (
               <div style={{
-                fontSize: 10.5, lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
+                fontSize: 11, lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
                 background: "var(--amb1)", color: "var(--amb5)", border: "1px solid var(--amb2)",
               }}>
                 A bound model sends prompts to a third-party API. Schema, sample rows and findings

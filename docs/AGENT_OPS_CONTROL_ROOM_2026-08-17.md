@@ -53,7 +53,7 @@ and there is **no shared time axis anywhere in the stack** — every fold is row
 `web/components/ActivityUsagePanel.tsx` — untracked, imported by nothing, its wiring lost in
 the N8-3 reset — is a sketch of the Activity/Usage panel this plan calls for. Its
 `/obs/model-usage` and `/obs/prompt-weight` halves work; its `roles`/`window`/`fallback` half
-expects a Migration 9 that does not exist. Fold it in; do not rebuild it.
+expects a Migration 10 that does not exist. Fold it in; do not rebuild it.
 
 ---
 
@@ -200,7 +200,7 @@ with conditions → effects verbatim as now. Deep-run phase view unchanged.
 Every wave in this repo's history that built a surface before its store existed shipped a
 panel that rendered empty (Top Agents would, today). So the backend wave is **first**.
 
-### 4.1 · Attribution — Migration 9 (`aughor/kernel/ledger.py`, currently stops at 8)
+### 4.1 · Attribution — Migration 10 (`aughor/kernel/ledger.py`, currently stops at 8)
 
 Add to `session_events`: `job_id`, `charter_id` (from a job contextvar set in
 `kernel/jobs.py` at run start and read in `trace_identity()` beside `agent_id`), and lift

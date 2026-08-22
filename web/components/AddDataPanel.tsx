@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { BrandLogo, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -110,7 +111,7 @@ function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => v
     >
       <LogoBox type={info.type} size={34} />
       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{m.label}</span>
-      <span style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.45 }}>{off ? missingNote(info) : m.blurb}</span>
+      <span style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.45 }}>{off ? missingNote(info) : m.blurb}</span>
     </Button>
   );
 }
@@ -130,10 +131,10 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
       <LogoBox type={info.type} size={34} />
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label}</span>
           {off
-            ? <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--t3) 16%, transparent)", color: "var(--t3)", whiteSpace: "nowrap" }}>NOT INSTALLED</span>
-            : m.badge && <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
+            ? <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--t3) 16%, transparent)", color: "var(--t3)", whiteSpace: "nowrap" }}>NOT INSTALLED</span>
+            : m.badge && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
         </span>
         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{off ? missingNote(info) : m.blurb}</span>
       </span>
@@ -300,7 +301,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <LogoBox type="local_upload" size={42} />
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Configure import</p>
-            <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 1 }}>
+            <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 1 }}>
               <strong style={{ color: "var(--t2)" }}>{staged.file.name}</strong> · {formatCount(a.row_count)} rows · {a.columns.length} columns
               {queue.length > 0 && <> · {queue.length} more queued</>}
             </p>
@@ -334,7 +335,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         </div>
 
         {conflict && (
-          <div style={{ fontSize: 11.5, color: "var(--amb4)", padding: "9px 12px", borderRadius: 6, background: "color-mix(in srgb, var(--amb4) 10%, var(--bg-1))", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
+          <div style={{ fontSize: 12, color: "var(--amb4)", padding: "9px 12px", borderRadius: 6, background: "color-mix(in srgb, var(--amb4) 10%, var(--bg-1))", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
             A table <strong style={{ fontFamily: "var(--font-mono)" }}>{schema}.{conflict.table_name}</strong> already exists — importing will <strong>replace</strong> it. Rename above to keep both.
           </div>
         )}
@@ -343,7 +344,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div>
           <p style={sectionLabel}>
             Columns · {a.columns.length}
-            {mismatches > 0 && <span style={{ fontSize: 9.5, fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "color-mix(in srgb, var(--amb4) 16%, transparent)", color: "var(--amb4)", textTransform: "none", letterSpacing: 0 }}>{mismatches} type suggestion{mismatches > 1 ? "s" : ""}</span>}
+            {mismatches > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "color-mix(in srgb, var(--amb4) 16%, transparent)", color: "var(--amb4)", textTransform: "none", letterSpacing: 0 }}>{mismatches} type suggestion{mismatches > 1 ? "s" : ""}</span>}
           </p>
           <div style={{ border: "1px solid var(--b1)", borderRadius: 8, overflow: "hidden" }}>
             {a.columns.map((c, i) => {
@@ -354,9 +355,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
               return (
                 <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: i % 2 ? "var(--bg-1)" : "var(--bg-0)", borderTop: i ? "1px solid var(--b0)" : "none" }}>
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ fontSize: 10.5, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
-                    style={{ fontSize: 11.5, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
+                    style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                   {suggest && (
@@ -365,7 +366,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                         ? `Values are ${c.detected_format.kind.replace(/_/g, " ")}-formatted${c.detected_format.example ? ` (e.g. ${c.detected_format.example})` : ""} — stored as text, read as ${suggest}`
                         : `DuckDB read this as text but the values look like ${suggest}`}
                       className="h-auto p-0"
-                      style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                      style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
                         background: chosen[c.name] === suggest ? "transparent" : "color-mix(in srgb, var(--amb4) 16%, transparent)",
                         color: "var(--amb4)", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
                       {chosen[c.name] === suggest ? "✓ " : "→ "}{suggest}
@@ -375,7 +376,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
               );
             })}
           </div>
-          <p style={{ fontSize: 10.5, color: "var(--t4)", marginTop: 6 }}>
+          <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>
             Overridden types use <span style={{ fontFamily: "var(--font-mono)" }}>TRY_CAST</span> — values that don&apos;t fit become NULL rather than failing the import.
           </p>
         </div>
@@ -436,7 +437,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <LogoBox type="local_upload" size={42} />
         <div>
           <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Create or modify table</p>
-          <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 1 }}>
+          <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 1 }}>
             Upload files into your <strong style={{ color: "var(--t2)" }}>Workspace</strong> — a DuckDB-backed
             space. {mode === "review"
               ? "Review column types and pick a schema before each table is created."
@@ -479,7 +480,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginTop: 10 }}>
           {analyzing ? "Analyzing…" : "Drop files here or click to browse"}
         </p>
-        <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 4 }}>
+        <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 4 }}>
           CSV · TSV · Parquet · Excel (xlsx/xls) · JSON
         </p>
       </div>
@@ -524,7 +525,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginTop: 10 }}>
             {bulkBusy ? "Importing…" : <>Drop files to add to <span style={{ fontFamily: "var(--font-mono)" }}>{bulkSchema}</span></>}
           </p>
-          <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 4 }}>
+          <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 4 }}>
             Each file becomes a table named after its filename · types inferred automatically
           </p>
         </div>
@@ -559,15 +560,15 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {grouped.filter(g => g.items.length > 0).map(g => (
               <div key={g.schema}>
-                <p style={{ fontSize: 10.5, fontWeight: 700, color: "var(--t4)", fontFamily: "var(--font-mono)", marginBottom: 7 }}>{g.schema}</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--t4)", fontFamily: "var(--font-mono)", marginBottom: 7 }}>{g.schema}</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {g.items.map(f => (
                     <div key={`${f.schema}.${f.filename}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 13px", borderRadius: 8, background: "var(--bg-1)", border: "1px solid var(--b1)" }}>
-                      <span style={{ width: 30, height: 30, borderRadius: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 9, fontWeight: 700, color: "var(--t3)", textTransform: "uppercase" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 11, fontWeight: 700, color: "var(--t3)", textTransform: "uppercase" }}>
                         {f.extension.replace(".", "")}
                       </span>
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{f.table_name}</span>
+                        <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{f.table_name}</span>
                         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{f.filename} · {fmtBytes(f.size_bytes)}{f.column_types && Object.keys(f.column_types).length > 0 ? ` · ${Object.keys(f.column_types).length} typed` : ""}</span>
                       </span>
                       <Button variant="ghost" onClick={() => remove(f)} title="Remove table"
@@ -576,7 +577,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                       >
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+                        <Icon name="trash" size={13} />
                       </Button>
                     </div>
                   ))}
@@ -663,16 +664,16 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
         {picked ? (
           <Button variant="ghost" onClick={() => setPicked(null)}
             className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
-            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 12 6 8l4-4" /></svg>
+            <Icon name="chevl" size={14} />
             All sources
           </Button>
         ) : (
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--t1)" }}>Add data</h1>
-            <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 2 }}>Connect to a data source, upload local files, or read from an application.</p>
+            <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>Connect to a data source, upload local files, or read from an application.</p>
           </div>
         )}
         <Button variant="ghost" onClick={onClose} title="Close (Esc)"
@@ -680,7 +681,7 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px", borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "inherit" }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 4 4 12M4 4l8 8" /></svg>
+          <Icon name="close" size={13} />
           Done
         </Button>
       </div>
@@ -724,7 +725,7 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
               <LogoBox type={picked.type} size={42} />
               <div>
                 <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Connect {meta(picked.type).label}</p>
-                <p style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 1 }}>{meta(picked.type).blurb}</p>
+                <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 1 }}>{meta(picked.type).blurb}</p>
               </div>
             </div>
 

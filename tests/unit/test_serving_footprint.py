@@ -1,10 +1,15 @@
 """The serving footprint is a RATCHET, not a one-off cleanup.
 
-The development environment is ~1.1 GB and that was believed to rule out any
+The development environment is ~1.2 GB and that was believed to rule out any
 250 MB-limited deployment target. Measuring what the API actually loads — import
-`aughor.api`, diff `sys.modules` — gave a boot closure of 121 MB and a clean serving
-install of 102 MB. The weight was never on the request path; it was in dependencies
-nothing at boot imports (`docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md` §1).
+`aughor.api`, diff `sys.modules` — gives a boot closure of ~106 MB. The weight was never
+on the request path; it was in dependencies nothing at boot imports
+(`docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md` §1).
+
+Note which size is which: the venv on disk (~1.2 GB dev, ~350 MB serving core) and the
+import closure (~106 MB) are different measurements, and conflating them is how the
+README carried 225 MB / 622 MB long after both were wrong. `scripts/measure_footprint.py`
+prints all three so a doc number can be re-derived instead of remembered.
 
 Splitting those into extras is easy to undo by accident: one convenience import at
 module scope in a router or a `db/` module silently drags 312 MB back onto the serving
@@ -117,8 +122,98 @@ def test_the_unavailable_path_names_the_install_command(monkeypatch):
     with pytest.raises(E.ExportUnavailable) as exc:
         E.export_report({"report": {}}, "pdf")
     msg = str(exc.value)
-    assert "[export]" in msg and "install" in msg.lower()
+    assert "--extra export" in msg and "install" in msg.lower()
     assert "reportlab" in msg      # the underlying cause survives into the message
+
+
+def test_the_export_package_imports_cleanly_without_its_extra():
+    """The ratchet above measures the API's BOOT closure, and matplotlib is imported at
+    HANDLER time — so it stayed green while a serving install answered the export route
+    with 500 and a ModuleNotFoundError traceback.
+
+    `aughor.export` must import on a machine that has none of the extra's packages,
+    leaving EXPORT_AVAILABLE False. Everything downstream — export_report's actionable
+    message, the router's 501 — is unreachable if this import raises. Run in a SUBPROCESS
+    with the packages blocked, because the test session already imported them."""
+    code = textwrap.dedent("""
+        import json, sys
+        from importlib.abc import MetaPathFinder
+
+        BLOCKED = {"matplotlib", "reportlab", "pptx"}
+
+        class Blocker(MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname.split(".")[0] in BLOCKED:
+                    raise ImportError(f"blocked for test: {fullname}")
+                return None
+
+        sys.meta_path.insert(0, Blocker())
+        import aughor.export as E
+        print(json.dumps({
+            "available": E.EXPORT_AVAILABLE,
+            "cause": E._EXPORT_IMPORT_ERROR,
+            "raises": type(E.ExportUnavailable("x")).__name__,
+        }))
+    """)
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          timeout=300)
+    assert proc.returncode == 0, (
+        "importing aughor.export without the extra must not raise — a serving install "
+        f"answers /investigations/{{id}}/export with 500 when it does:\n{proc.stderr[-800:]}")
+
+    import json
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert out["available"] is False, "EXPORT_AVAILABLE must be False when the extra is absent"
+    assert out["cause"], "the underlying ImportError must be kept for the operator's message"
+    assert out["raises"] == "ExportUnavailable"
+
+
+def test_the_export_route_answers_501_and_not_500_without_the_extra(client, monkeypatch):
+    """The documented contract, end to end at the route.
+
+    README ("Optional extras"): "/investigations/{id}/export answers 501 naming the
+    extra" and "Nothing here fails hard". A serving install answered 500 with an
+    internal_error body, because the missing dependency surfaced as an ImportError the
+    handler's `except ExportUnavailable` could never see."""
+    import aughor.export as E
+    from aughor.db import history
+
+    inv_id = history.create_investigation("why did revenue drop", "fixture")
+    monkeypatch.setattr(E, "EXPORT_AVAILABLE", False)
+    monkeypatch.setattr(E, "_EXPORT_IMPORT_ERROR", "No module named 'matplotlib'")
+
+    resp = client.get(f"/investigations/{inv_id}/export", params={"format": "pdf"})
+    assert resp.status_code == 501, f"expected 501, got {resp.status_code}: {resp.text}"
+    body = resp.text
+    assert "--extra export" in body, f"the 501 must name the install command: {body}"
+    assert "matplotlib" in body, f"the underlying cause must survive to the operator: {body}"
+
+
+def test_the_export_route_answers_501_when_the_package_itself_cannot_import(client, monkeypatch):
+    """The second layer. The route imports `aughor.export` inside the handler, so the
+    import ITSELF can fail on a serving install — and an ImportError raised there is the
+    same configuration state as ExportUnavailable, not a fault. Guarded only around
+    export_report(), it escaped as a 500."""
+    import sys
+    from importlib.abc import MetaPathFinder
+
+    from aughor.db import history
+
+    class BlockExport(MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname == "aughor.export" or fullname.startswith("aughor.export."):
+                raise ImportError("blocked for test: no module named 'matplotlib'")
+            return None
+
+    inv_id = history.create_investigation("why did revenue drop", "fixture")
+    # Drop the cached module so the handler's import statement re-runs the finders.
+    for name in [n for n in list(sys.modules) if n.split(".")[:2] == ["aughor", "export"]]:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setattr(sys, "meta_path", [BlockExport(), *sys.meta_path])
+
+    resp = client.get(f"/investigations/{inv_id}/export", params={"format": "pdf"})
+    assert resp.status_code == 501, f"expected 501, got {resp.status_code}: {resp.text}"
+    assert "--extra export" in resp.text
 
 
 def test_an_unsupported_format_still_fails_before_the_availability_check():

@@ -151,6 +151,51 @@ def order_from_sql(sql: str, measure: str) -> Optional[str]:
     return None
 
 
+_EQ_VALUE_RE = re.compile(r"=\s*'([^']+)'")
+
+
+def emphasis_from_intake(intake: Optional[dict]) -> list[str]:
+    """The subject entity values a chart should emphasize — extracted from the
+    intake's segment filter (``comparison_segment_sql`` equality literals, the
+    condition the question is ABOUT: ``channel = 'Direkteingabe'`` →
+    ``["Direkteingabe"]``). Deterministic; ``[]`` when the intake names no
+    equality subject. The lifecycle ``active_filter`` is deliberately NOT read —
+    its values scope the population, they are not the question's subject."""
+    if not intake:
+        return []
+    vals: list[str] = []
+    for v in _EQ_VALUE_RE.findall(str(intake.get("comparison_segment_sql") or "")):
+        v = v.strip()
+        if v and len(v) <= 80 and v not in vals:
+            vals.append(v)
+    return vals
+
+
+def stamp_emphasis(finding: dict, emphasis: list[str]) -> None:
+    """Attach ``exhibit.emphasis`` when a subject value actually appears in one
+    of the finding's dimension cells — the renderer paints the subject in the
+    accent hue and the rest in the de-emphasis gray (CA-4's emphasis form).
+    Emphasis that can't land on this grid is not stamped, so an unrelated
+    finding stays byte-identical."""
+    if not emphasis:
+        return
+    cols = [str(c) for c in (finding.get("columns") or [])]
+    rows = finding.get("rows") or []
+    if not cols or not rows:
+        return
+    lows = {v.strip().lower() for v in emphasis}
+    mi = _metric_index(finding)
+    for ci in range(len(cols)):
+        if ci == mi:
+            continue
+        for r in rows:
+            if ci < len(r) and str(r[ci]).strip().lower() in lows:
+                spec = dict(finding.get("exhibit") or {})
+                spec["emphasis"] = list(emphasis)
+                finding["exhibit"] = spec
+                return
+
+
 def attach_exhibit(finding: dict, *, severity: bool = False,
                    ref_lines: Optional[list[dict]] = None,
                    label_points: Optional[bool] = None,

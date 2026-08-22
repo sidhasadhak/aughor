@@ -9,8 +9,9 @@
  * multi-minute research job and still couldn't see the previous answer.
  *
  * What this is instead:
- *   - ONE conversation. Turns accumulate; the last three completed turns ride along as history,
- *     so "break that down by platform" resolves against the answer above it.
+ *   - ONE conversation. Turns accumulate, and the transport's own messages ARE the
+ *     history the backend composes on — "break that down by platform" resolves
+ *     against the answer above it.
  *   - INSIGHTS MODE ONLY, pinned deterministically with `depth: "quick"` — which the router
  *     honours with no model call and which also skips every `auto`-gated pre-router branch
  *     (overview tour, clarify gate, federation, plan-as-program). Deep analysis is deliberately
@@ -21,15 +22,20 @@
  *     Briefing rendered. Nothing about the brief is sent from here, so the panel can't drift
  *     from what the user is reading.
  *
+ * CA-1: crossed the seam. The reducer hook is retired; this panel drives
+ * `useAughorChat` (the AI-SDK transport) and renders each turn through the same
+ * `projectTurn` → `PartsMessage` path the chat surfaces use.
+ *
  * Layout follows ChatPanel's split: a fixed-width flex sibling that PUSHES the brief left
  * rather than overlaying it — a reader comparing an answer against the brief needs both.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ChatMessage } from "@/components/ChatMessage";
-import { useChat } from "@/lib/useChat";
+import { PartsMessage } from "@/components/chat/PartsMessage";
+import { projectThread, newSessionId } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
 
 export const BRIEF_ASK_PANEL_WIDTH = 420;
 
@@ -44,27 +50,34 @@ export function BriefAskPanel({
   /** Escalate to the full Ask surface (where deep analysis lives). */
   onOpenInAsk: (q: string) => void;
 }) {
-  const chat = useChat();
+  const [sessionId] = useState(() => newSessionId());
+  const { messages, sendMessage, status, error } = useAughorChat({
+    connectionId,
+    sessionId,
+    // depth:"quick" is the whole contract. `mode` stays "auto" so the unified /ask
+    // door is used (and still emits its route receipt); the explicit depth wins
+    // inside the router.
+    body: { depth: "quick", schema: schema ?? null, canvas_id: canvasId ?? null },
+  });
+  const streaming = status === "submitted" || status === "streaming";
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const turns = useMemo(() => projectThread(messages, {
+    streaming,
+    transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
+  }), [messages, streaming, status, error]);
+
   const send = useCallback(() => {
     const q = draft.trim();
-    if (!q || chat.state.streaming) return;
+    if (!q || streaming) return;
     setDraft("");
-    // depth:"quick" is the whole contract. `mode` stays "auto" so the unified /ask door is
-    // used (and still emits its route receipt); the explicit depth wins inside the router.
-    void chat.ask(q, connectionId, "auto", {
-      depth: "quick",
-      schema: schema ?? null,
-      canvasId: canvasId ?? undefined,
-    });
-  }, [draft, chat, connectionId, schema, canvasId]);
+    void sendMessage({ text: q, metadata: { mode: "ask" } });
+  }, [draft, streaming, sendMessage]);
 
   // Follow the stream. Only auto-scrolls when the reader is already near the bottom, so
   // scrolling up to re-read an earlier answer isn't yanked away mid-stream.
-  const turnCount = chat.state.turns.length;
-  const streaming = chat.state.streaming;
+  const turnCount = turns.length;
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -94,7 +107,7 @@ export function BriefAskPanel({
       </div>
 
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 14px" }}>
-        {chat.state.turns.length === 0 ? (
+        {turns.length === 0 ? (
           <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.6 }}>
             Ask a follow-up about this briefing — it already knows the verdict, the findings
             behind it, and which schema they came from.
@@ -104,15 +117,15 @@ export function BriefAskPanel({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {chat.state.turns.map(turn => (
-              <ChatMessage
+            {turns.map(({ turn, assistantMsg }) => (
+              <PartsMessage
                 key={turn.id}
                 turn={turn}
+                message={assistantMsg}
                 connectionId={connectionId}
                 onFollowUp={(q: string) => {
-                  void chat.ask(q, connectionId, "auto", {
-                    depth: "quick", schema: schema ?? null, canvasId: canvasId ?? undefined,
-                  });
+                  if (streaming) return;
+                  void sendMessage({ text: q, metadata: { mode: "ask" } });
                 }}
                 // "Investigate deeper" hands the question to the full Ask surface rather than
                 // running deep here — this panel is deliberately insights-only for now.
@@ -131,11 +144,11 @@ export function BriefAskPanel({
           placeholder="Ask a follow-up…"
           className="aug-input"
           style={{ flex: 1, padding: "8px 11px" }}
-          disabled={chat.state.streaming}
+          disabled={streaming}
         />
-        <Button variant="default" onClick={send} disabled={!draft.trim() || chat.state.streaming}
+        <Button variant="default" onClick={send} disabled={!draft.trim() || streaming}
           style={{ padding: "8px 14px", height: "auto" }}>
-          {chat.state.streaming ? "…" : "Ask →"}
+          {streaming ? "…" : "Ask →"}
         </Button>
       </div>
     </aside>

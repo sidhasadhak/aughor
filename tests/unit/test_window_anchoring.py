@@ -75,11 +75,15 @@ class TestNoChangeWhenAlreadyCorrect:
         assert it.observation_start == "2023-01-01"
 
     def test_single_year_data_no_phantom_comparison(self):
-        # data is ONE year — re-anchor must not invent a prior period; comparison collapses.
+        # data is ONE year — re-anchor must not invent a prior period. CA-0: the comparison is
+        # CLEARED and the typed verdict set; it is never collapsed onto the observation (a
+        # window compared against itself returned abs_change 0 on every row and the narrator
+        # reported "no significant variation" — the Direkteingabe specimen).
         it = FakeIntake("2023-01-01", "2023-12-31", "2022-01-01", "2022-12-31")
         _clamp_intake_to_coverage(it, "2023-01-01", "2023-12-31", question="last 12 months")
         assert it.observation_start == "2023-01-01" and it.observation_end == "2023-12-31"  # gap 0
-        assert it.comparison_start == it.observation_start  # collapsed: no prior period
+        assert (it.comparison_start, it.comparison_end) == ("", "")
+        assert it.no_prior_period is True
         assert "no prior period" in (it.comparison_label or "").lower()
 
 

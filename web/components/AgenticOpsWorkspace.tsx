@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { getNeedsHuman } from "@/lib/api";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
 // so the activity tail, a selected trace and an agent detail survive switches.
@@ -23,20 +24,24 @@ const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const RunGraphsPanel     = dynamic(() => import("@/components/RunGraphsPanel").then(m => ({ default: m.RunGraphsPanel })),         { ssr: false, loading });
 
-const ICONS: Record<string, string> = {
-  gauge:    "M12 15a3 3 0 100-6 3 3 0 000 6zm0-13C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM12 9l3.5-3.5",
-  spark:    "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  hand:     "M18 11V6a2 2 0 00-4 0v5m0-3.5V4a2 2 0 00-4 0v7m0-4.5V5a2 2 0 00-4 0v9a7 7 0 0014 0v-3a2 2 0 00-4 0",
-  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
-  flow:     "M6 3v12a3 3 0 003 3h9m0 0l-3-3m3 3l-3 3M6 3a2 2 0 100 4 2 2 0 000-4z",
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  gauge: "gauge",
+  spark: "spark",
+  hand: "hand",
+  activity: "activity",
+  flow: "flow",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={ICONS[name]} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
   );
 }
 

@@ -54,6 +54,14 @@ class OrgSettings(BaseModel):
     chart_palette: str = Field(
         default="", description="Named chart palette (e.g. 'tableau', 'colorblind'); empty = theme default"
     )
+    chat_first_home: bool = Field(
+        default=False,
+        description=(
+            "Land on the conversation instead of the workbench (CA-5 / CI-6b). Off by "
+            "default: an org that navigates by the workbench should not have its entry "
+            "point moved out from under it by an upgrade."
+        ),
+    )
 
     @field_validator("currency_code")
     @classmethod

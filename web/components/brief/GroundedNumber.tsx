@@ -149,7 +149,7 @@ function ReceiptPopover({
         style={{
           position: "fixed", left, top, zIndex: 200, width: 380,
           background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
-          boxShadow: "0 8px 28px rgba(0,0,0,.45)", padding: 13,
+          boxShadow: "var(--shadow-lg)", padding: 13,
           display: "flex", flexDirection: "column", gap: 9,
         }}
       >
@@ -173,7 +173,7 @@ function ReceiptPopover({
             {receipt.note && <div style={{ fontSize: 11, color: "var(--t3)" }}>{receipt.note}</div>}
             {receipt.sql && (
               <pre style={{
-                margin: 0, fontFamily: "var(--font-code)", fontSize: 10.5, lineHeight: 1.5,
+                margin: 0, fontFamily: "var(--font-code)", fontSize: 11, lineHeight: 1.5,
                 color: "var(--t2)", background: "var(--bg-1)", border: "1px solid var(--b1)",
                 borderRadius: "var(--r2)", padding: "8px 10px", maxHeight: 180, overflow: "auto",
                 whiteSpace: "pre-wrap", wordBreak: "break-word",

@@ -30,7 +30,11 @@ def _emit_a_run():
 
 # ── flag OFF: hidden + not openable ───────────────────────────────────────────
 
-def test_listed_and_queryable_when_flag_on(monkeypatch):
+def test_listed_and_queryable_when_flag_on(monkeypatch, duckdb_extension):
+    # The live-SQLite ATTACH needs this extension, and the app TOLERATES its absence by
+    # materialising an empty schema — so offline this failed on "aughor_ops.task_history
+    # not in schema" rather than naming the download. Check it up front.
+    duckdb_extension("sqlite_scanner")
     _emit_a_run()
 
     listed = {c["id"]: c for c in registry.list_connections()}

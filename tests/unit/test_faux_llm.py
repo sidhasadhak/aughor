@@ -202,3 +202,36 @@ def test_faux_backend_is_not_operator_selectable():
     assert P.FAUX_BACKEND in P._FAUX_MODELS
     prov = P.LLMProvider(P.FAUX_BACKEND, "coder")
     assert isinstance(prov._client, faux.FauxClient)
+
+
+def test_a_stray_unscripted_call_cannot_pollute_calls(faux_llm):
+    """The suite-wide flake this guards: a background thread left over from an earlier
+    test (a scheduler heartbeat, a kernel task) fires an unscripted completion
+    mid-test. It is refused loudly to its own caller — correct — but it was also
+    RECORDED, so an unrelated test's ``(call,) = faux_llm.calls()`` unpacked two
+    calls and failed on timing luck. A stray is by definition unscripted, so
+    ``calls()`` must show served requests only; the refusal stays visible via
+    ``refusals()``."""
+    import threading
+
+    stray_outcome: list[BaseException] = []
+
+    def stray():
+        try:
+            get_provider("coder").complete("stray-system", "stray-user", Verdict)
+        except FauxResponsesExhausted as e:
+            stray_outcome.append(e)
+
+    t = threading.Thread(target=stray)
+    t.start()
+    t.join()
+    assert stray_outcome, "the stray call must still be refused loudly to its caller"
+
+    faux_llm.set_responses(['{"answer": "ok"}'])
+    get_provider("narrator").complete("s", "u", Verdict)
+
+    (call,) = faux_llm.calls()          # exactly the flaky assertion, now safe
+    assert call.role == "narrator" and call.served
+
+    (refused,) = faux_llm.refusals()    # the stray is not lost, just not in calls()
+    assert refused.role == "coder" and not refused.served

@@ -51,7 +51,7 @@ export function PacksManager() {
 
 function Badge({ children, color }: { children: React.ReactNode; color: string }) {
   return (
-    <span className="text-[9.5px] font-mono px-1 py-0.5 rounded"
+    <span className="text-[11px] font-mono px-1 py-0.5 rounded"
       style={{ background: "var(--bg-1)", color }}>{children}</span>
   );
 }

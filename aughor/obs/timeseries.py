@@ -247,7 +247,7 @@ def job_series(window: Window, *, include_runners: bool = False,
 
 
 #: How a session-log row yields its value on each groupable axis. `charter` and `job`
-#: exist only because Migration 9 added the columns; before it, model spend could not be
+#: exist only because Migration 10 added the columns; before it, model spend could not be
 #: attributed to the agent that spent it.
 EVENT_GROUPS: dict[str, Callable[[dict], str]] = {
     "model": lambda e: e.get("model") or "",

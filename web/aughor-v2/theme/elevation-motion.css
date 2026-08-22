@@ -15,8 +15,8 @@
 
 :root {
   /* Extended elevation scale (--shadow-sm/md already set in tokens-v2) */
-  --shadow-lg: 0 8px 28px rgba(0,0,0,.50), 0 2px 8px rgba(0,0,0,.40);
-  --shadow-xl: 0 20px 60px rgba(0,0,0,.60), 0 6px 18px rgba(0,0,0,.45);
+  --shadow-lg: 0 1px 2px rgba(0,0,0,.50), 0 8px 24px rgba(0,0,0,.45);
+  --shadow-xl: 0 1px 3px rgba(0,0,0,.55), 0 16px 40px rgba(0,0,0,.50);
 
   /* Accent-tinted helpers, derived from the canonical accent (--blue3) */
   --acc-dim:  color-mix(in srgb, var(--blue3) 16%, transparent);
@@ -32,8 +32,8 @@
 }
 
 [data-theme="light"] {
-  --shadow-lg: 0 10px 30px rgba(20,40,80,.12), 0 2px 8px rgba(20,40,80,.06);
-  --shadow-xl: 0 24px 64px rgba(20,40,80,.16), 0 6px 18px rgba(20,40,80,.08);
+  --shadow-lg: 0 1px 2px rgba(17,23,28,.08), 0 6px 18px rgba(17,23,28,.10);
+  --shadow-xl: 0 2px 4px rgba(17,23,28,.10), 0 14px 36px rgba(17,23,28,.14);
   --shadow-acc: 0 4px 20px color-mix(in srgb, var(--blue3) 28%, transparent);
 }
 
@@ -49,9 +49,7 @@
               border-color var(--dur-norm) var(--ease-spring);
 }
 .av2-hover-lift:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--b2);
+  border-color: var(--b3);
 }
 /* Smooth theme cross-fade for surface-level elements (opt-in via class) */
 .av2-theme-fade {

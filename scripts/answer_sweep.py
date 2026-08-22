@@ -69,13 +69,13 @@ def is_offtopic_metric(text: str) -> bool:
 
 def analyze_deep(rec: dict) -> list[str]:
     flags = []
-    ada = rec.get("ada_report") or {}
-    wf = ada.get("attribution_waterfall") or []
-    tcl = ada.get("total_change_label") or ""
-    conf = (ada.get("confidence") or "").upper()
-    headline = ada.get("headline") or ""
-    summary = ada.get("executive_summary") or ""
-    phases = ada.get("phases") or []
+    report = rec.get("ada_report") or {}
+    wf = report.get("attribution_waterfall") or []
+    tcl = report.get("total_change_label") or ""
+    conf = (report.get("confidence") or "").upper()
+    headline = report.get("headline") or ""
+    summary = report.get("executive_summary") or ""
+    phases = report.get("phases") or []
 
     # SIGN: amount_label sign disagreeing with pct_of_total sign
     for w in wf:
@@ -103,8 +103,8 @@ def analyze_deep(rec: dict) -> list[str]:
     # FRAME: money question that resolved off-topic
     q = rec.get("question", "")
     if re.search(r"losing money|profit|margin|revenue", q, re.I):
-        target = (ada.get("metric") or "") + " " + headline + " " + summary
-        if is_offtopic_metric(headline) or is_offtopic_metric(ada.get("metric") or ""):
+        target = (report.get("metric") or "") + " " + headline + " " + summary
+        if is_offtopic_metric(headline) or is_offtopic_metric(report.get("metric") or ""):
             flags.append(f"FRAME: money question → off-topic metric (headline='{headline[:60]}')")
         elif not is_money_metric(target):
             flags.append(f"FRAME: money question but no money metric surfaced (headline='{headline[:60]}')")
@@ -131,26 +131,26 @@ def run_case(conn, label, mode, question):
         else:
             evs = sse_post("/investigate", {"question": question, "connection_id": conn,
                                             "canvas_id": None, "skip_cache": True}, timeout=240)
-            ada = None
+            report = None
             phase_count = 0
             for e in evs:
                 if e.get("type") == "ada_report":
-                    ada = e.get("ada_report")
+                    report = e.get("ada_report")
                 if e.get("type") == "phase_complete":
                     phase_count += 1
                 if e.get("type") == "mode":
                     rec["query_mode"] = e.get("query_mode")
             rec["phase_events"] = phase_count
-            if ada:
-                rec["ada_report"] = ada
-                rec["headline"] = ada.get("headline")
-                rec["confidence"] = ada.get("confidence")
-                rec["total_change_label"] = ada.get("total_change_label")
-                rec["metric"] = ada.get("metric")
-                rec["observation_period"] = ada.get("observation_period")
-                rec["comparison_basis"] = ada.get("comparison_basis")
-                rec["n_phases"] = len(ada.get("phases") or [])
-                rec["n_waterfall"] = len(ada.get("attribution_waterfall") or [])
+            if report:
+                rec["ada_report"] = report
+                rec["headline"] = report.get("headline")
+                rec["confidence"] = report.get("confidence")
+                rec["total_change_label"] = report.get("total_change_label")
+                rec["metric"] = report.get("metric")
+                rec["observation_period"] = report.get("observation_period")
+                rec["comparison_basis"] = report.get("comparison_basis")
+                rec["n_phases"] = len(report.get("phases") or [])
+                rec["n_waterfall"] = len(report.get("attribution_waterfall") or [])
             rec["flags"] = analyze_deep(rec)
     except urllib.error.URLError as e:
         rec["error"] = f"{type(e).__name__}: {e}"

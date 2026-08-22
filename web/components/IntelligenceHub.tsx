@@ -76,7 +76,7 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <span style={{
-          flexShrink: 0, marginTop: 1, fontSize: 10, fontWeight: 700,
+          flexShrink: 0, marginTop: 1, fontSize: 11, fontWeight: 700,
           padding: "1px 6px", borderRadius: 3,
           background: `color-mix(in srgb, ${nov.color} 14%, transparent)`,
           color: nov.color, letterSpacing: "0.04em",
@@ -92,14 +92,14 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
           {expanded && (
             <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
               {insight.angle && (
-                <span style={{ fontSize: 10, color: "var(--t3)", background: "var(--bg-2)", borderRadius: 3, padding: "1px 6px" }}>
+                <span style={{ fontSize: 11, color: "var(--t3)", background: "var(--bg-2)", borderRadius: 3, padding: "1px 6px" }}>
                   {insight.angle}
                 </span>
               )}
               {insight.entities_involved?.map(e => (
-                <span key={e} style={{ fontSize: 10, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", borderRadius: 3, padding: "1px 6px" }}>{e}</span>
+                <span key={e} style={{ fontSize: 11, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", borderRadius: 3, padding: "1px 6px" }}>{e}</span>
               ))}
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>
                 confidence {Math.round((insight.confidence ?? 0) * 100)}% · {fmtDate(insight.generated_at)}
               </span>
             </div>
@@ -113,7 +113,7 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
             </div>
           )}
         </div>
-        <span style={{ fontSize: 10, color: "var(--t4)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>
           {expanded ? "▲" : "▼"}
         </span>
       </div>
@@ -155,7 +155,7 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
       >
         {/* Type badge */}
         <span style={{
-          flexShrink: 0, marginTop: 1, fontSize: 9, fontWeight: 700,
+          flexShrink: 0, marginTop: 1, fontSize: 11, fontWeight: 700,
           textTransform: "uppercase", letterSpacing: "0.07em",
           padding: "2px 6px", borderRadius: 3,
           background: `color-mix(in srgb, ${meta.color} 14%, transparent)`,
@@ -176,21 +176,21 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
           <span style={{ fontSize: 11, color: "var(--t2)", fontWeight: 600 }}>
             {pattern.evidence_count} findings
           </span>
-          <span style={{ fontSize: 10, color: `color-mix(in srgb, var(--grn3) ${Math.min(100, pattern.novelty * 12)}%, var(--amb3))`, fontWeight: 600 }}>
+          <span style={{ fontSize: 11, color: `color-mix(in srgb, var(--grn3) ${Math.min(100, pattern.novelty * 12)}%, var(--amb3))`, fontWeight: 600 }}>
             novelty {pattern.novelty}
           </span>
         </div>
-        <span style={{ fontSize: 10, color: "var(--t4)", flexShrink: 0, marginTop: 1 }}>{expanded ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0, marginTop: 1 }}>{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
         <div style={{ borderTop: "1px solid var(--b0)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {/* Domains */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-            <span style={{ fontSize: 10, color: "var(--t4)" }}>Domains:</span>
+            <span style={{ fontSize: 11, color: "var(--t4)" }}>Domains:</span>
             {pattern.domains.map(d => (
               <span key={d} style={{
-                fontSize: 10, padding: "1px 7px", borderRadius: 3,
+                fontSize: 11, padding: "1px 7px", borderRadius: 3,
                 background: relevantDomains.includes(d)
                   ? `color-mix(in srgb, ${meta.color} 16%, transparent)`
                   : "var(--bg-2)",
@@ -203,10 +203,10 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
           {/* Entities */}
           {pattern.entities.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>Entities:</span>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>Entities:</span>
               {pattern.entities.slice(0, 8).map(e => (
                 <span key={e} style={{
-                  fontSize: 10, padding: "1px 6px", borderRadius: 3,
+                  fontSize: 11, padding: "1px 6px", borderRadius: 3,
                   background: "var(--bg-2)", color: "var(--t3)",
                   fontFamily: "var(--font-mono)",
                 }}>{e}</span>
@@ -217,16 +217,16 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
           {/* Angles (for entity patterns) */}
           {pattern.angles && pattern.angles.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>Angles:</span>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>Angles:</span>
               {pattern.angles.map(a => (
-                <span key={a} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "color-mix(in srgb, var(--blue3) 10%, transparent)", color: "var(--blue4)" }}>{a}</span>
+                <span key={a} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 3, background: "color-mix(in srgb, var(--blue3) 10%, transparent)", color: "var(--blue4)" }}>{a}</span>
               ))}
             </div>
           )}
 
           {/* Example findings */}
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 10, color: "var(--t4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Example findings</span>
+            <span style={{ fontSize: 11, color: "var(--t4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Example findings</span>
             {pattern.example_findings.filter(Boolean).map((f, i) => (
               <div key={i} style={{
                 fontSize: 11, color: "var(--t2)", lineHeight: 1.55,
@@ -424,7 +424,7 @@ function DomainProfile({
           </Button>
           <span style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", textTransform: "capitalize" }}>{domain}</span>
           <span style={{
-            fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
+            fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
             padding: "2px 7px", borderRadius: 3,
             background: "color-mix(in srgb, var(--blue3) 14%, transparent)",
             color: "var(--blue4)",
@@ -517,11 +517,11 @@ function DomainProfile({
                   borderRadius: 6, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6,
                 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    {o.angle && <span style={{ fontSize: 10, color: "var(--t3)" }}>{o.angle}</span>}
-                    <span style={{ marginLeft: "auto", fontSize: 10, color: nov.color, fontWeight: 600 }}>{nov.label} novelty</span>
+                    {o.angle && <span style={{ fontSize: 11, color: "var(--t3)" }}>{o.angle}</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>{nov.label} novelty</span>
                   </div>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
-                  <span style={{ fontSize: 10, color: "var(--t4)" }}>Promoted {fmtDate(o.promoted_at)}</span>
+                  <span style={{ fontSize: 11, color: "var(--t4)" }}>Promoted {fmtDate(o.promoted_at)}</span>
                 </div>
               );
             })}
@@ -565,7 +565,7 @@ function DomainCard({
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: "var(--t1)", textTransform: "capitalize", lineHeight: 1.3 }}>{domain}</span>
         <span style={{
-          fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
+          fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
           padding: "2px 6px", borderRadius: 3, flexShrink: 0,
           background: `color-mix(in srgb, ${nov.color} 14%, transparent)`,
           color: nov.color,
@@ -576,16 +576,16 @@ function DomainCard({
       <div style={{ display: "flex", gap: 14 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{data.insights.length}</div>
-          <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>findings</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>findings</div>
         </div>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{data.angles_covered.length}</div>
-          <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>angles</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>angles</div>
         </div>
         {orgCount > 0 && (
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--vio3)", lineHeight: 1 }}>{orgCount}</div>
-            <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>org intel</div>
+            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>org intel</div>
           </div>
         )}
       </div>
@@ -609,7 +609,7 @@ function DomainCard({
             background: pct > 70 ? "var(--grn3)" : pct > 40 ? "var(--amb3)" : "var(--b3)",
           }} />
         </div>
-        <span style={{ fontSize: 10, color: "var(--t3)", whiteSpace: "nowrap" }}>{pct}% explored</span>
+        <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>{pct}% explored</span>
       </div>
     </button>
   );
@@ -647,23 +647,23 @@ function HeadlineFinding({ insight, onOpen }: { insight: ExplorationInsight; onO
       onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-1)"; }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--blue4)", textTransform: "capitalize" }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", textTransform: "capitalize" }}>
           {insight.domain}
         </span>
-        <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: `color-mix(in srgb, ${nov.color} 14%, transparent)`, color: nov.color, letterSpacing: "0.04em" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: `color-mix(in srgb, ${nov.color} 14%, transparent)`, color: nov.color, letterSpacing: "0.04em" }}>
           {nov.label}
         </span>
         {insight.promoted_to_org && (
-          <span title="Promoted to org knowledge" style={{ fontSize: 10, color: "var(--vio3)" }}>◈</span>
+          <span title="Promoted to org knowledge" style={{ fontSize: 11, color: "var(--vio3)" }}>◈</span>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>{fmtDate(insight.generated_at)}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{fmtDate(insight.generated_at)}</span>
       </div>
       <p style={{
         margin: 0, fontSize: 12, color: "var(--t1)", lineHeight: 1.55,
         display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
       }}>{insight.finding}</p>
       {insight.angle && (
-        <span style={{ fontSize: 10, color: "var(--t3)" }}>{insight.angle}</span>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>{insight.angle}</span>
       )}
     </button>
   );
@@ -715,7 +715,7 @@ function SynthesisHome({
   if (domains.length === 0) {
     return (
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--t3)", gap: 8 }}>
-        <div style={{ fontSize: 32, opacity: 0.2 }}>◈</div>
+        <div style={{ fontSize: 28, opacity: 0.2 }}>◈</div>
         <div style={{ fontSize: 13, color: "var(--t2)", fontWeight: 500 }}>No intelligence built yet</div>
         <div style={{ fontSize: 11, maxWidth: 320, textAlign: "center", lineHeight: 1.6 }}>
           Run the background explorer on a connection to begin building domain knowledge, patterns, and org intelligence.
@@ -740,7 +740,7 @@ function SynthesisHome({
         {KPIS.map(s => (
           <div key={s.label} style={{ padding: "12px 14px", background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6 }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{s.label}</div>
             <div style={{ height: 2, background: s.accent, borderRadius: 1, marginTop: 9, width: 22 }} />
           </div>
         ))}
@@ -769,7 +769,7 @@ function SynthesisHome({
         <SectionHead title="Cross-Domain Patterns" count={`${crossDomain.length} spanning multiple domains`} />
         {topPatterns.length === 0 ? (
           <div style={{ padding: "20px 0", textAlign: "center", color: "var(--t3)", fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 24, opacity: 0.2 }}>◎</span>
+            <span style={{ fontSize: 22, opacity: 0.2 }}>◎</span>
             <span>No patterns detected yet — they emerge as coverage deepens across domains.</span>
           </div>
         ) : (
@@ -793,9 +793,9 @@ function SynthesisHome({
                   borderRadius: 6, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 7,
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {o.domain && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--vio3)", textTransform: "capitalize" }}>{o.domain}</span>}
-                    {o.angle && <span style={{ fontSize: 10, color: "var(--t4)" }}>· {o.angle}</span>}
-                    <span style={{ marginLeft: "auto", fontSize: 10, color: nov.color, fontWeight: 600 }}>{nov.label}</span>
+                    {o.domain && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--vio3)", textTransform: "capitalize" }}>{o.domain}</span>}
+                    {o.angle && <span style={{ fontSize: 11, color: "var(--t4)" }}>· {o.angle}</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>{nov.label}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
                 </div>
@@ -811,7 +811,7 @@ function SynthesisHome({
           title="Domains"
           count={`${domains.length} mapped`}
           action={gaps.length > 0 ? (
-            <span style={{ fontSize: 10, color: "var(--amb3)" }}>
+            <span style={{ fontSize: 11, color: "var(--amb3)" }}>
               {gaps.length} need{gaps.length === 1 ? "s" : ""} exploration: {gaps.map(g => g.d).join(", ")}
             </span>
           ) : undefined}
@@ -911,7 +911,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
           position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
           padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
           background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
-          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
+          boxShadow: "var(--shadow-lg)", maxWidth: 420,
         }}>{hint}</div>
       )}
       {/* Left sidebar — domain list */}
@@ -953,7 +953,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
           >
             <span style={{ fontSize: 11 }}>◈</span>
             <span>Hub Home</span>
-            <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>{Object.keys(domainData).length}</span>
+            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{Object.keys(domainData).length}</span>
           </button>
           ); })()}
 
@@ -1002,7 +1002,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
                 onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
               >
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: "capitalize" }}>{domain}</span>
-                <span style={{ fontSize: 10, color: "var(--t4)", flexShrink: 0 }}>{d.insights.length}</span>
+                <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>{d.insights.length}</span>
                 {orgCount > 0 && (
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--vio3)", flexShrink: 0 }} />
                 )}

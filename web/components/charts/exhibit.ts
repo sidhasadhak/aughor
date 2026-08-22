@@ -49,6 +49,46 @@ export interface ExhibitSpec {
    *  LIMIT N), so lead with the row it led with instead of burying it at the far
    *  end. Absent → the largest-first default. */
   order?: "asc" | "desc" | null;
+  /** CA-4 emphasis form: the question's subject entities. Marks matching one of
+   *  these values wear the accent hue; everything else recedes to the
+   *  de-emphasis gray — "one series is the point, the rest are context". */
+  emphasis?: string[] | null;
+}
+
+/** Fail-open boundary for a backend-authored spec: drop any field that doesn't
+ *  conform (a malformed exhibit must never cost the reader the chart itself —
+ *  browser and print alike run through this). */
+export function sanitizeExhibit(spec: unknown): ExhibitSpec | null {
+  if (!spec || typeof spec !== "object") return null;
+  const s = spec as Record<string, unknown>;
+  const out: ExhibitSpec = {};
+  if (s.color && typeof s.color === "object") out.color = s.color as ExhibitColor;
+  if (Array.isArray(s.ref_lines)) {
+    const lines = (s.ref_lines as unknown[]).filter(
+      (l): l is ExhibitRefLine => !!l && typeof l === "object" && isFinite(Number((l as ExhibitRefLine).value)));
+    if (lines.length) out.ref_lines = lines;
+  }
+  if (typeof s.label_points === "boolean") out.label_points = s.label_points;
+  if (s.quadrant && typeof s.quadrant === "object") {
+    const q = s.quadrant as { x?: unknown; y?: unknown };
+    const x = isFinite(Number(q.x)) && q.x != null ? Number(q.x) : null;
+    const y = isFinite(Number(q.y)) && q.y != null ? Number(q.y) : null;
+    if (x != null || y != null) out.quadrant = { x, y };
+  }
+  if (s.order === "asc" || s.order === "desc") out.order = s.order;
+  if (Array.isArray(s.emphasis)) {
+    const em = (s.emphasis as unknown[]).filter((e): e is string => typeof e === "string" && !!e.trim());
+    if (em.length) out.emphasis = em;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** Case-insensitive membership test against the exhibit's emphasis list. */
+export function isEmphasized(spec: ExhibitSpec | null | undefined, value: unknown): boolean {
+  const list = spec?.emphasis;
+  if (!list?.length) return false;
+  const v = String(value).trim().toLowerCase();
+  return list.some((e) => String(e).trim().toLowerCase() === v);
 }
 
 // ── severity ramp ────────────────────────────────────────────────────────────
@@ -121,7 +161,7 @@ export function refMarkLine(
     label: {
       position: axis === "x" ? "start" : "end",
       rotate: 0,
-      fontSize: 10,
+      fontSize: 11,
       color: REF_LINE_COLOR,
       formatter: (p: { data?: { name?: string }; value?: unknown }) =>
         `${p.data?.name ?? ""} ${fmt(p.value)}`.trim(),

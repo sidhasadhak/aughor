@@ -297,7 +297,7 @@ def usage_summary(range: str = "24h", since: str = "", until: str = "",
 
     Coverage is a first-class number here, not a footnote: `calls_without_usage` and
     `unpriced_calls` are what stop a low total reading as a cheap week. The fallback rate
-    is served from the Migration 9 column — it has been written since the failover work
+    is served from the Migration 10 column — it has been written since the failover work
     and read by nothing, so this is its first reader.
     """
     from aughor.obs.usage import price_for, rollup

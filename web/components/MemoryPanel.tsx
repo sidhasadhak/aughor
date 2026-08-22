@@ -34,7 +34,7 @@ const rowStyle: React.CSSProperties = {
   background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
 };
 const kindTag: React.CSSProperties = {
-  fontSize: 10, color: "var(--t3)", textTransform: "uppercase", letterSpacing: 0.4, width: 58, flexShrink: 0,
+  fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: 0.4, width: 58, flexShrink: 0,
 };
 const ellipsize: React.CSSProperties = {
   flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -83,7 +83,7 @@ export function MemoryPanel() {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Memory</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Memory</span>
         <span style={{ fontSize: 12, color: "var(--t3)" }}>what the closed loop has learned</span>
       </div>
       <div style={{ fontSize: 12, color: "var(--t2)", marginBottom: 16, maxWidth: 640, lineHeight: 1.5 }}>

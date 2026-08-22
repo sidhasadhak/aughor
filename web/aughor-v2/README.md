@@ -52,11 +52,21 @@ then proceed. **See INTEGRATION.md before applying.**
 
 ## Notable deviations from the original system (deliberate)
 
-- **Radius ceiling raised** 6px → 10px on panels/cards (`--r3`); controls stay tight.
-  The original "max 6px" rule was intentional — if you must keep it, comment out
-  the three `--r*` lines in `tokens-v2.css` (everything else still applies).
-- **Accent brightened** `#2D72D2` → `#3B82F6` (dark) for contrast on the deeper
-  canvas. Light stays the muted blue `#1F77B4`.
-- **Two flat shadows → a 4-step tinted elevation scale** (`--shadow-sm/md/lg/xl`).
+> The three bullets that stood here described the first handoff and no longer
+> describe the shipped theme — the console re-skin reversed two of them. Current
+> state:
 
-All reference values and rationale are in `MAPPING.md`.
+- **Radius ceiling restored** to 6px (`--r1/2/3` = 3 / 4 / 6px). The first pass
+  raised it to 12px; the re-skin put it back, because the original "max 6px" rule
+  was right for a dense tool.
+- **One accent, both modes.** `--blue3` is the interaction accent (`#1F6CB0` light,
+  `#62AEEF` dark). `--blue-solid` is a darker step used as the primary-button fill
+  so it carries white text, which is what `--primary-foreground: #fff` promises.
+- **Structure is borders, not shadows.** `--shadow-sm/md/lg/xl` still exist but are
+  soft and reserved for real overlays (menus, dialogs, tooltips); `.aug-panel`
+  carries none.
+- **Inter + JetBrains Mono**, via `next/font` — self-hosted at build time.
+
+`theme/tokens-v2.css` is the authority for values. `MAPPING.md` carries the
+rationale, including why the ink tiers are not taken verbatim from the reference
+design and why the chart series are untouched.

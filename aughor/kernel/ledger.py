@@ -967,7 +967,7 @@ class Ledger:
         # Migration 7 — measurable facts as columns, not payload JSON.
         "provider", "model", "prompt_tokens", "completion_tokens", "total_tokens",
         "row_count", "retries",
-        # Migration 9 — which run, which charter, which prompt role, did it fail over.
+        # Migration 10 — which run, which charter, which prompt role, did it fail over.
         "job_id", "charter_id", "role", "fallback",
         "payload",
     )

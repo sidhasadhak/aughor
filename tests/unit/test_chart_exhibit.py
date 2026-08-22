@@ -6,8 +6,11 @@ Covers the four legs of the grammar wave:
   W2 — the semantic color policy (severity ramp only for rate/percent rankings);
   W3 — reference lines (segment-weighted average, R15 benchmark, peer median),
        range-clipped so an out-of-range line can't distort the axis;
-  W4 — the PRINT renderer speaks the same grammar: aughor/export/charts.py must
-       honour the same exhibit + column_units, and stay byte-identical without them.
+  W4 — the PRINT renderer speaks the same grammar. It no longer speaks it by
+       MIRRORING: CA-4 made print run the web's own resolver (ECharts SSR via
+       aughor/export/echarts.py), so "same grammar" is now identity rather than a
+       promise two renderers keep. These tests assert the exhibit + column_units
+       reach that shared renderer, and that an absent spec changes nothing.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from aughor.agent.exhibit import (
 )
 from aughor.agent.opportunity import compute_opportunity, segment_rates
 from aughor.agent.prompts import CHAT_SQL_SYSTEM, chat_sql_system
-from aughor.export.charts import _fmt_for, _severity_ramp, render_chart
+from aughor.export.echarts import render_chart_svg
 
 
 # ── W1: prompt variants ──────────────────────────────────────────────────────
@@ -241,106 +244,97 @@ _RANKING = (["route", "load_factor_pct"],
             [["GVA-DEL", 65.2], ["ZRH-EZE", 67.4], ["ZRH-BOS", 67.7], ["ZRH-BKK", 68.9]])
 
 
-def test_export_severity_ramp_mirrors_the_web_ramp():
-    # Same contract as web/components/charts/exhibit.ts severityRamp(): 3 stops,
-    # ends anchored, degenerate range → the middle stop.
-    ramp = _severity_ramp(0.0, 10.0, "load_factor")
-    assert ramp(0.0) != ramp(10.0)
-    assert ramp(5.0) == ramp(5.0)
-    assert _severity_ramp(5.0, 5.0, "x")(5.0) == _severity_ramp(0.0, 10.0, "x")(5.0)
+import pytest
+import shutil as _shutil
+from pathlib import Path as _Path
+
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
+                          reason="chart SSR needs node + chart_ssr.bundle.mjs")
 
 
-def test_export_cost_metric_ramps_red_others_blue():
-    # A cost-like name (delay) ramps in the red family; a neutral one in blue.
-    hot_cost = _severity_ramp(0.0, 10.0, "avg_delay_min")(10.0)
-    hot_neutral = _severity_ramp(0.0, 10.0, "load_factor_pct")(10.0)
-    assert hot_cost[0] > hot_cost[2]      # red channel dominates blue
-    assert hot_neutral[2] > hot_neutral[0]
-
-
-def test_export_percent_units_are_honoured_and_scale_aware():
-    # The one contract that made the PDF contradict the app: a typed percent.
-    pct = _fmt_for("metric_total", {"metric_total": "percent"})
-    assert pct(0.745) == "74.5%"          # fraction → ×100
-    assert pct(74.5) == "74.5%"           # already scaled → left alone
-    assert _fmt_for("revenue", None)(1500) == "1.5K"        # no hint → legacy compact
-    assert _fmt_for("revenue", {"other": "percent"})(1500) == "1.5K"
-
-
+@_ssr
 def test_export_without_exhibit_is_byte_identical():
     # The flag needs no check in the export: an absent payload IS the gate.
     cols, rows = _RANKING
-    assert render_chart(cols, rows, "bar", "t") == render_chart(cols, rows, "bar", "t",
-                                                                units=None, exhibit=None)
+    assert render_chart_svg(cols, rows, "bar", "t") == render_chart_svg(
+        cols, rows, "bar", "t", units=None, exhibit=None)
 
 
+@_ssr
 def test_export_exhibit_actually_reaches_the_canvas():
-    # A ramp/ref-line that silently no-ops would still return a valid PNG — so assert
-    # the PIXELS differ from the plain render, not merely that it didn't raise.
+    # A ramp/ref-line that silently no-ops would still return a valid SVG — so assert
+    # the MARKUP differs from the plain render, not merely that it didn't raise.
     cols, rows = _RANKING
-    plain = render_chart(cols, rows, "bar", "t")
-    ramped = render_chart(cols, rows, "bar", "t", exhibit={"color": {"mode": "severity"}})
-    reffed = render_chart(cols, rows, "bar", "t",
+    plain = render_chart_svg(cols, rows, "bar", "t")
+    ramped = render_chart_svg(cols, rows, "bar", "t", exhibit={"color": {"mode": "severity"}})
+    reffed = render_chart_svg(cols, rows, "bar", "t",
                           exhibit={"ref_lines": [{"value": 67.0, "label": "Peer median"}]})
-    signed = render_chart(cols, rows, "bar", "t", exhibit={"color": {"mode": "sign"}})
+    signed = render_chart_svg(cols, rows, "bar", "t", exhibit={"color": {"mode": "sign"}})
     assert plain and ramped and reffed and signed
     assert ramped != plain and reffed != plain and signed != plain
 
 
+@_ssr
 def test_export_order_asc_leads_with_the_worst():
     cols, rows = _RANKING
-    assert render_chart(cols, rows, "bar", "t", exhibit={"order": "asc"}) != render_chart(cols, rows, "bar", "t")
+    assert render_chart_svg(cols, rows, "bar", "t", exhibit={"order": "asc"}) != render_chart_svg(cols, rows, "bar", "t")
 
 
+@_ssr
 def test_export_percent_units_change_the_render():
     cols, rows = _RANKING
-    assert render_chart(cols, rows, "bar", "t",
-                        units={"load_factor_pct": "percent"}) != render_chart(cols, rows, "bar", "t")
+    assert render_chart_svg(cols, rows, "bar", "t",
+                        units={"load_factor_pct": "percent"}) != render_chart_svg(cols, rows, "bar", "t")
 
 
+@_ssr
 def test_export_scatter_labels_and_quadrant_render():
     cols = ["aircraft_id", "aircraft_type", "flight_count", "avg_delay_min"]
     rows = [["HB-JBF", "A320", 22, 16.9], ["HB-JAT", "A220", 10, 16.1],
             ["HB-JCE", "B777", 46, 13.6], ["HB-JBJ", "A320", 17, 13.5]]
-    plain = render_chart(cols, rows, "scatter", "t")
-    rich = render_chart(cols, rows, "scatter", "t",
+    plain = render_chart_svg(cols, rows, "scatter", "t")
+    rich = render_chart_svg(cols, rows, "scatter", "t",
                         exhibit={"label_points": True, "quadrant": {"x": 20, "y": 14.5}})
     assert plain and rich and rich != plain
 
 
+@_ssr
 def test_export_stats_grid_is_a_table_not_a_chart():
     # A summary-statistics profile grid must fall back to the table — grouped
     # micro-bars over min/max/mean/std say nothing (caught by the W5 A/B).
     cols = ["tbl", "col", "min_val", "max_val", "mean_val", "std_val", "p1", "p99"]
     rows = [["flights", "delay_minutes", 0, 98, 10.2, 11.7, 0, 49.2],
             ["tickets", "fare_chf", 6, 19719, 312.7, 741.5, 18, 3851.2]]
-    assert render_chart(cols, rows, "auto", "t") is None
+    assert render_chart_svg(cols, rows, "auto", "t") is None
     # …but a 2-measure comparison grid still charts (the gate is stats-specific).
-    assert render_chart(["region", "revenue", "profit"],
+    assert render_chart_svg(["region", "revenue", "profit"],
                         [["N", 10, 2], ["S", 20, 3], ["E", 30, 4]], "auto", "t") is not None
 
 
+@_ssr
 def test_export_entity_profile_grid_is_a_table_not_a_chart():
     # An ID-labelled record grid with 3+ heterogeneous measures is a PROFILE —
     # the reference reports render these as tables ("… — Profile Analysis").
     cols = ["member_id", "award_miles_balance", "lifetime_miles", "join_year_num"]
     rows = [[f"MM{i:07d}", 1000 + i, 50000 + i, 2000 + i] for i in range(6)]
-    assert render_chart(cols, rows, "auto", "t") is None
+    assert render_chart_svg(cols, rows, "auto", "t") is None
     # …but an ID-labelled RANKING (one measure) still charts — Genie's top-15 bar.
-    assert render_chart(["member_id", "ticket_count"],
+    assert render_chart_svg(["member_id", "ticket_count"],
                         [[f"MM{i:07d}", 100 - i] for i in range(6)], "auto", "t") is not None
 
 
+@_ssr
 def test_export_wide_profile_and_degenerate_x_are_tables():
     # ≥4 measures — a chart can't say four things about one row (the flagged-thresholds grid).
     wide = (["source_table", "derived_measure", "threshold_value", "flagged_count", "max_ratio", "min_ratio"],
             [["loyalty_members", "award_miles_fraction", 1.0, 1136, 309.46, 1.0],
              ["loyalty_members", "lifetime_miles_per_year", 2378896.9, 256, 2997198.0, 2379332.0]])
-    assert render_chart(*wide, "auto", "t") is None
+    assert render_chart_svg(*wide, "auto", "t") is None
     # Degenerate x: >1 rows, every category column constant → one lying bar.
     degen = (["source_table", "flagged_count"],
              [["loyalty_members", 1136], ["loyalty_members", 256], ["loyalty_members", 269]])
-    assert render_chart(*degen, "bar", "t") is None
+    assert render_chart_svg(*degen, "bar", "t") is None
 
 
 def test_export_strips_planner_notes_from_explore_prose():
@@ -355,12 +349,13 @@ def test_export_strips_planner_notes_from_explore_prose():
     assert _strip_planner_notes("→ only a directive") == ""
 
 
+@_ssr
 def test_export_survives_a_malformed_exhibit():
     # Fail-open: a spec this renderer can't read must never break the document.
     cols, rows = _RANKING
     for bad in ({"ref_lines": [{"value": "abc", "label": None}]}, {"color": None},
                 {"quadrant": {"x": "nope"}}, {"ref_lines": "not-a-list"}):
-        assert render_chart(cols, rows, "bar", "t", exhibit=bad) is not None
+        assert render_chart_svg(cols, rows, "bar", "t", exhibit=bad) is not None
 
 
 # ── the explore-wave report exports its evidence ─────────────────────────────
@@ -418,20 +413,21 @@ def test_composition_is_a_ranked_bar_under_the_grammar():
     assert _chart_type_for_finding(f, "composition") == "bar_horizontal"
 
 
+@_ssr
 def test_percent_axis_scale_is_decided_once_from_the_data():
     """The broken axis: ticks span from 0, so a per-tick fraction test renders
     "0.0% 50.0% 100.0% 1.5% 2.0%…" over percent-scaled data (2.6…3.4). The column's
-    values pin the scale ONCE: percent-scaled data leaves every tick as-is."""
-    fmt = _fmt_for("leakage_rate", {"leakage_rate": "percent"}, values=[2.6, 3.4, 2.8])
-    assert fmt(0.5) == "0.5%"           # was "50.0%" — the defect
-    assert fmt(1.0) == "1.0%"           # was "100.0%"
-    assert fmt(3.0) == "3.0%"
-    # Fraction-scaled data still reads as percent on every tick.
-    fmt2 = _fmt_for("share", {"share": "percent"}, values=[0.61, 0.39])
-    assert fmt2(0.5) == "50.0%"
-    # No values (legacy callers): the old per-value heuristic is the honest fallback.
-    fmt3 = _fmt_for("share", {"share": "percent"})
-    assert fmt3(0.5) == "50.0%" and fmt3(74.5) == "74.5%"
+    values pin the scale ONCE (builders.valueFormatter — the one formatter both
+    surfaces run since the print renderer became the web resolver)."""
+    scaled = render_chart_svg(["seg", "leakage_rate"],
+                              [["a", 2.6], ["b", 3.4], ["c", 2.8]], "bar", "t",
+                              units={"leakage_rate": "percent"})
+    assert scaled and "2.6%" in scaled       # already-scaled values stay as-is
+    assert "260" not in scaled               # never ×100'd again
+    fraction = render_chart_svg(["seg", "share"],
+                                [["a", 0.61], ["b", 0.39]], "bar", "t",
+                                units={"share": "percent"})
+    assert fraction and "61.0%" in fraction  # fractions read as percent
 
 
 def test_verdict_prefix_is_stripped_and_unshouted():

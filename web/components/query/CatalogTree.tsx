@@ -39,6 +39,7 @@ import Fuse from "fuse.js";
 import { compactNumber } from "@/lib/format";
 import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 export interface CatalogColumn {
   name: string;
@@ -94,11 +95,9 @@ function placeOf(t: CatalogTable): { schema: string; bare: string } {
 /** The drag-handle dots, shown only on a column the caller made draggable — an
  *  affordance with no drag behind it is a promise the surface cannot keep. */
 const GrabDots = () => (
-  <svg width="8" height="11" viewBox="0 0 8 14" style={{ flexShrink: 0, color: "var(--t4)" }}>
-    {[1, 5, 9, 13].map(y => [1, 5].map(x => (
-      <circle key={`${x}-${y}`} cx={x} cy={y} r="1.2" fill="currentColor" />
-    ))).flat()}
-  </svg>
+  <span style={{ flexShrink: 0, color: "var(--t4)", display: "inline-flex" }}>
+    <Icon name="grip" size={12} />
+  </span>
 );
 
 export function CatalogTree({
@@ -210,9 +209,7 @@ export function CatalogTree({
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
         <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="search" size={12} /></span>
           <input
             placeholder="Search tables &amp; columns…"
             value={search}

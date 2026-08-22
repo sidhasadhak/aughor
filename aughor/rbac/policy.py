@@ -62,6 +62,9 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
 
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
+    # Seeding the demo writes a DuckDB file and makes a new connection appear, which is
+    # the same act as adding one — not the write floor a viewer clears.
+    ("POST", "/connections/demo"): P.CONNECTION_CREATE,
     ("DELETE", "/connections/{conn_id}"): P.CONNECTION_DELETE,
 
     # ── Analysis runs (a viewer consumes existing answers; it doesn't run new ones) ──

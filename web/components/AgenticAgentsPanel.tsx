@@ -171,7 +171,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
         opacity: reserved ? 0.55 : 1,
         background: active ? "var(--bg-sel)" : undefined }}>
       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden",
+        <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{name}</span>
         <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
           {kind === "persona" ? "custom" : kind}

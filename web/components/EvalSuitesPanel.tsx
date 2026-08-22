@@ -457,8 +457,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-      <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No eval suites yet</div>
+      <div style={{ fontSize: 28, marginBottom: 12 }}>✓</div>
+      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No eval suites yet</div>
       <div style={{ fontSize: 12, marginBottom: 20 }}>A suite runs the same cases under a target and reports a measurement as a band — replicated, never a single-run point.</div>
       <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first suite</Button>
     </div>

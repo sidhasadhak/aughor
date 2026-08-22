@@ -23,6 +23,11 @@ data/checkpoints.db-wal
 data/connection_settings.json
 data/exploration_*.json
 data/episodes_*.jsonl
+# Ontology docs are REBUILT per run (the yaml carries a `built_at` stamp and a
+# per-run checksum), so a dev server writing them is not a change anyone wants to
+# review. The governed ontology artifacts a reviewer SHOULD see are
+# data/ontology_overrides/ and data/context_graph/, which stay tracked.
+data/ontology_docs/
 data/ontology_cache.json
 data/schema_cache.json
 data/schema_profiles.json

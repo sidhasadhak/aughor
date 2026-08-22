@@ -31,6 +31,26 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+export interface DemoSeedResult {
+  /** The demo connection's id — present whether or not this call created it. */
+  id: string;
+  /** True when this call wrote the dataset; false when it already existed. */
+  seeded: boolean;
+  message: string;
+}
+
+/** Provision the bundled demo dataset and return its connection.
+ *
+ *  Nothing is seeded on boot, so a fresh install has no data at all — this is the
+ *  in-app half of `aughor seed`, for the user who never opens a terminal. Idempotent:
+ *  calling it when the demo already exists returns the connection with `seeded: false`
+ *  and leaves the data alone. */
+export async function seedDemoConnection(): Promise<DemoSeedResult> {
+  const res = await fetch(`${getApiBase()}/connections/demo`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to load the demo dataset");
+  return res.json();
+}
+
 // ── Capabilities (commercial tier gating) ──────────────────────────────────
 export interface Capabilities {
   tier: "free" | "pro" | "enterprise" | string;
@@ -125,6 +145,8 @@ export interface OrgSettings {
   date_format: string;
   fiscal_year_start_month: number;
   chart_palette: string;
+  /** CA-5 — land on the conversation instead of the workbench. */
+  chat_first_home: boolean;
 }
 
 export async function getOrgSettings(): Promise<OrgSettings> {
@@ -5233,7 +5255,7 @@ export interface SessionEvent {
   total_tokens: number | null;
   row_count: number | null;
   retries: number | null;
-  /** Migration 9 — which run, which agent charter, what the call was FOR, and whether the
+  /** Migration 10 — which run, which agent charter, what the call was FOR, and whether the
    *  primary backend refused. `fallback` is a TRI-state: a tool_call is not a call that
    *  "did not fall back", so unknown stays null rather than arriving as a confident false. */
   job_id: string | null;

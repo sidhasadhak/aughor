@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { Icon } from "@/components/ui/icon";
 
 /** What one mode can contribute to, and take from, the saved surface. */
 export interface SavedQueryBinding {
@@ -193,10 +194,7 @@ export function SavedQueryBar({
         title="Saved queries for this connection"
         onClick={() => { setOpen(v => !v); if (!open) refresh(); }}
       >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="1.8" strokeLinecap="round" style={{ flexShrink: 0 }}>
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-        </svg>
+        <Icon name="bookmark" size={11} />
         {activeName
           ? <span style={{ maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeName}</span>
           : "Saved"}
@@ -224,7 +222,7 @@ export function SavedQueryBar({
             style={{
               position: "absolute", right: 0, top: "100%", marginTop: 8, zIndex: 40, width: 300,
               borderRadius: "var(--r2)", border: "1px solid var(--b1)", background: "var(--bg-1)",
-              boxShadow: "0 12px 32px rgba(0,0,0,.45)", overflow: "hidden",
+              boxShadow: "var(--shadow-lg)", overflow: "hidden",
             }}
           >
             <div
@@ -294,7 +292,7 @@ export function SavedQueryBar({
             style={{
               position: "absolute", right: 0, top: "100%", marginTop: 8, zIndex: 50, width: 300,
               borderRadius: "var(--r2)", border: "1px solid var(--b1)", background: "var(--bg-1)",
-              boxShadow: "0 12px 32px rgba(0,0,0,.45)", padding: 12,
+              boxShadow: "var(--shadow-lg)", padding: 12,
             }}
           >
             <p className="aug-fs-ui" style={{ color: "var(--t3)", fontWeight: 600, marginBottom: 8 }}>

@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Minus, X, Download, BarChart3, SlidersHorizontal } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,6 +46,10 @@ export interface VizEditorModel {
   aggOptions: VizSelectOption[];
   setAgg: (v: string) => void;
   rateSummed: boolean;
+  // Orientation — swap which axis carries the measure. Empty string = let the chart decide.
+  orientValue: "" | "vertical" | "horizontal";
+  orientAvailable: boolean;
+  setOrient: (v: "" | "vertical" | "horizontal") => void;
   // Transform (post-processing)
   transformValue: string;
   transformOptions: VizSelectOption[];
@@ -89,7 +93,7 @@ export interface VizEditorModel {
 
 // ── primitives ────────────────────────────────────────────────────────────────
 
-const SECTION_LABEL: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "var(--t2)" };
+const SECTION_LABEL: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: "var(--t2)" };
 
 /** The app's design-system dropdown (Base UI), wrapped to the panel's {value, options, onChange}
  *  API. Portals its menu to <body> — the drawer's outside-click handler guards for that. */
@@ -148,12 +152,12 @@ function Channel({ title, onRemove, more, children }: {
           {more && (
             <Button variant="ghost" size="icon-sm" onClick={() => setOpen((o) => !o)} title="More options"
               style={{ color: open ? "var(--accent)" : "var(--t4)" }}>
-              <SlidersHorizontal size={13} />
+              <Icon name="sliders" size={13} />
             </Button>
           )}
           {onRemove && (
             <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t4)" }}>
-              <Minus size={14} />
+              <Icon name="minus" size={14} />
             </Button>
           )}
         </div>
@@ -211,7 +215,7 @@ function SegToggle<T extends string>({ value, onChange, options }: { value: T; o
 }
 
 function Warn({ text }: { text: string }) {
-  return <div style={{ fontSize: 10.5, color: "var(--amb4)" }}>⚠ {text}</div>;
+  return <div style={{ fontSize: 11, color: "var(--amb4)" }}>⚠ {text}</div>;
 }
 
 // Annotation channel owns the "add a line" input state (the panel is otherwise stateless).
@@ -241,17 +245,17 @@ function AnnotationSection({ model }: { model: VizEditorModel }) {
       {model.refLines.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {model.refLines.map((l, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--t2)" }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--t2)" }}>
               <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
               <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
-                <X size={13} />
+                <Icon name="close" size={13} />
               </Button>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
+        <div style={{ fontSize: 12, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
       )}
     </Channel>
   );
@@ -321,11 +325,11 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           {model.onDownload && (
             <Button variant="ghost" size="icon-sm" onClick={model.onDownload} title="Download PNG" style={{ color: "var(--t3)" }}>
-              <Download size={15} />
+              <Icon name="download" size={15} />
             </Button>
           )}
           <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close" style={{ color: "var(--t3)" }}>
-            <X size={16} />
+            <Icon name="close" size={16} />
           </Button>
         </div>
       </div>
@@ -334,7 +338,7 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
       <div style={{ overflowY: "auto", flex: 1 }}>
         <Section title="Visualization">
           <Select value={vizValue} options={vizOptions} onChange={setViz}
-            leading={<BarChart3 size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />} />
+            leading={<span style={{ color: "var(--accent)", flexShrink: 0, display: "inline-flex" }}><Icon name="chart" size={15} /></span>} />
         </Section>
 
         {chartMode && model.dimOptions.length > 0 && (
@@ -382,6 +386,16 @@ export function VizEditorPanel({ model, onClose }: { model: VizEditorModel; onCl
 
         {chartMode && <ToggleRow title="Labels" on={model.showLabels} onChange={model.setShowLabels} />}
         {chartMode && <ToggleRow title="Tooltip" on={model.tooltipOn} onChange={model.setTooltipOn} />}
+
+        {chartMode && model.orientAvailable && (
+          <Channel title="Orientation">
+            <SegToggle
+              value={model.orientValue}
+              onChange={model.setOrient}
+              options={[["", "Auto"], ["vertical", "Vertical"], ["horizontal", "Horizontal"]]}
+            />
+          </Channel>
+        )}
 
         {model.view !== "pivot" && model.transformOptions.length > 0 && (
           <Channel title="Transform">

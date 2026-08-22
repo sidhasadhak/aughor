@@ -161,12 +161,43 @@ def test_boot_summary_points_at_settings_when_llm_not_ready(capsys):
         "status": "ok",
         "fixture_db": True,
         "llm": {"backend": "groq", "model": "llama-3.3-70b-versatile",
-                "key_present": False, "ready": False},
+                "key_present": False, "ready": False, "reason": "no_key"},
     }
     cli_mod._print_boot_summary(health, 8000, 3000)
     out = capsys.readouterr().out
-    assert "Settings → Inference in the web UI, or set AUGHOR_BACKEND/key envs in .env" in out
+    assert "API key missing" in out
+    assert "Settings → Inference" in out
     assert "groq" in out
+
+
+def test_boot_summary_names_a_missing_model_rather_than_blaming_the_key(capsys):
+    """The shipped default. Ollama needs no key and no model ships, so the summary used
+    to say "ready"; once it stopped, the hardcoded reason blamed a key that was never
+    required. Name the half that is actually missing, and say where to set it."""
+    health = {
+        "status": "ok",
+        "fixture_db": False,
+        "llm": {"backend": "ollama", "model": "", "key_present": True,
+                "ready": False, "reason": "no_model"},
+    }
+    cli_mod._print_boot_summary(health, 8000, 3000)
+    out = capsys.readouterr().out
+    assert "no model configured" in out
+    assert "API key missing" not in out, "ollama needs no key — do not blame one"
+    assert "AUGHOR_CODER_MODEL" in out
+
+
+def test_boot_summary_treats_absent_demo_data_as_normal(capsys):
+    """Nothing seeds on boot, so no demo data is the default state — the summary must
+    report it plainly and name the opt-in, not warn about a failure."""
+    health = {"status": "ok", "fixture_db": False,
+              "llm": {"backend": "ollama", "model": "m", "key_present": True,
+                      "ready": True, "reason": None}}
+    cli_mod._print_boot_summary(health, 8000, 3000)
+    out = capsys.readouterr().out
+    assert "no demo data" in out
+    assert "aughor seed" in out
+    assert "not seeded yet" not in out, "absence is the default, not a problem to flag"
 
 
 def test_boot_summary_reports_ready_llm(capsys):

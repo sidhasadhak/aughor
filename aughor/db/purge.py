@@ -172,6 +172,36 @@ def purge_investigation_artifacts(inv_id: str) -> dict[str, int]:
     return counts
 
 
+def purge_chat_session_artifacts(session_id: str) -> dict[str, int]:
+    """Delete a whole CHAT THREAD and everything its turns derived.
+
+    Not the same call as :func:`purge_investigation_artifacts` with a session id: the
+    history delete does key on ``id OR session_id`` and would take every row, but the
+    evidence/vector hooks are keyed per TURN. Passing the session id to them would
+    purge the artifacts of one id that does not exist and silently orphan the rest —
+    so the turn ids are collected first and the hooks run over all of them.
+    """
+    from aughor.db import history
+
+    counts: dict[str, int] = {}
+    turn_ids = history.chat_session_turn_ids(session_id)
+    if not turn_ids:
+        return counts  # nothing owned by this caller — the route turns this into a 404
+    from aughor.kernel.registries.purge_hooks import run_investigations_purge_hooks
+    for k, v in run_investigations_purge_hooks(turn_ids).items():
+        counts[k] = counts.get(k, 0) + v
+    try:
+        counts["investigations"] = 1 if history.delete_investigation(session_id) else 0
+    except Exception as e:
+        tolerate(e, "purge-thread: history rows", counter="chat.purge.history")
+    history.forget_chat_session_meta(session_id)
+    removed = {k: v for k, v in counts.items() if v}
+    if removed:
+        logger.info("Purged artifacts for deleted chat thread %s (%d turn(s)): %s",
+                    session_id, len(turn_ids), removed)
+    return counts
+
+
 def purge_investigations_bulk(connection_ids: list[str] | None = None) -> dict[str, int]:
     """Clear investigations in bulk — platform-wide (``connection_ids=None``) or only
     those belonging to a set of connections (workspace-scoped clear) — cascading

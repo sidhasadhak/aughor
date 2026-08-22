@@ -133,10 +133,13 @@ def list_connections(org_id: str | None = None) -> list[dict]:
             "builtin": True,
         })
 
-    # Include built-in fixture unless user has removed it
-    if BUILTIN_ID not in hidden:
-        from aughor.demo.setup import fixture_db_path
-        fixture_path = fixture_db_path()
+    # Include the built-in demo fixture unless the user has removed it — and only once
+    # it has actually been seeded. Nothing creates it at boot any more (the demo is
+    # opt-in via `aughor seed`), and advertising a connection whose file is missing
+    # hands the user one that raises IOException the moment it is opened.
+    from aughor.demo.setup import fixture_db_path
+    fixture_path = fixture_db_path()
+    if BUILTIN_ID not in hidden and fixture_path.exists():
         rows.append({
             "id": BUILTIN_ID,
             "name": "Fixture DB (demo)",

@@ -167,7 +167,7 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
                   {fmtMs(e.duration_ms)}
                 </span>
               )}
-              {/* Migration 9's attribution, shown where it is useful: which agent ran this
+              {/* Migration 10's attribution, shown where it is useful: which agent ran this
                   call, what it was for, and whether the primary backend refused. */}
               {e.charter_id && (
                 <span className="aug-fs-xs" style={{ color: "var(--cyn4)" }}

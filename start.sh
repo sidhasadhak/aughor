@@ -19,8 +19,16 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 
 if [ "${1:-}" = "--stop" ]; then
-  pkill -f "uvicorn aughor.api" 2>/dev/null && echo "API stopped" || echo "API was not running"
-  pkill -f "next dev"           2>/dev/null && echo "Web stopped" || echo "Web was not running"
+  # `pkill -f` matches ANY process whose command line contains the pattern. "next dev"
+  # alone also matched the shell running this script, an editor with that text in its
+  # arguments, and a grep for it — a --stop that kills the terminal you typed it in.
+  # The bracket form stops the pkill from matching itself, but nothing else; anchoring on
+  # this checkout's path is what makes the match specific, and it also stops one clone's
+  # --stop from killing a sibling clone's servers. -u confines the sweep to this user.
+  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}.*[u]vicorn aughor\.api" 2>/dev/null \
+    && echo "API stopped" || echo "API was not running"
+  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}/web.*[n]ext dev" 2>/dev/null \
+    && echo "Web stopped" || echo "Web was not running"
   exit 0
 fi
 

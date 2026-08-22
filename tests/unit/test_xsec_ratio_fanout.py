@@ -47,7 +47,7 @@ def test_preplanned_reuses_grain_correct_query_and_skips_the_coder(tmp_path, mon
     conn = _ro_conn(tmp_path)
     plan = PhasePlan(queries=[PhaseQueryPlan(
         title="Marketing ROAS by Channel (established finding)", sql=_GRAIN_CORRECT,
-        chart_type="bar_horizontal", rationale="reuse the drilled finding's grain-correct query")])
+        chart_type="magnitude", rationale="reuse the drilled finding's grain-correct query")])
 
     run = I.run_analysis_phase(
         conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭",

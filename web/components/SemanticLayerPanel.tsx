@@ -12,6 +12,7 @@ import { getApiBase } from "@/lib/config";
 import { type RichSchema } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { Icon } from "@/components/ui/icon";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       {label && <label style={{ fontSize: 11, color: "var(--t3, #888)", fontWeight: 500 }}>{label}</label>}
       {field}
-      {hint && <span style={{ fontSize: 10, color: "var(--t4, #666)", lineHeight: 1.4 }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 11, color: "var(--t4, #666)", lineHeight: 1.4 }}>{hint}</span>}
     </div>
   );
 }
@@ -142,10 +143,10 @@ function EmptyState({ text }: { text: string }) {
 function TabIntro({ text }: { text: string }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--blue4, #60a5fa) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--blue4, #60a5fa) 22%, transparent)" }}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--blue4, #60a5fa)" strokeWidth="1.5" style={{ marginTop: 1, flexShrink: 0 }}>
-        <circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v3.4M8 5.2h.01" strokeLinecap="round" />
-      </svg>
-      <p style={{ fontSize: 11.5, color: "var(--t2, #bbb)", lineHeight: 1.55, margin: 0 }}>{text}</p>
+      <span style={{ color: "var(--blue4, #60a5fa)", marginTop: 1, flexShrink: 0, display: "inline-flex" }}>
+        <Icon name="info" size={14} />
+      </span>
+      <p style={{ fontSize: 12, color: "var(--t2, #bbb)", lineHeight: 1.55, margin: 0 }}>{text}</p>
     </div>
   );
 }
@@ -437,14 +438,14 @@ function KnowledgeTab({ connId }: { connId: string }) {
         {entries.map(e => (
           <div key={e.id} style={{ border: "1px solid var(--b0)", borderRadius: 8, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: KIND_BADGE[e.kind] ?? "#6b7280", color: "#fff", fontWeight: 600, marginTop: 1, whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10, background: KIND_BADGE[e.kind] ?? "#6b7280", color: "#fff", fontWeight: 600, marginTop: 1, whiteSpace: "nowrap" }}>
                 {e.kind}
               </span>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", margin: 0 }}>{e.title}</p>
                 <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0", lineHeight: 1.5 }}>{e.body}</p>
                 {e.tags.length > 0 && (
-                  <p style={{ fontSize: 10, color: "var(--t4)", marginTop: 4 }}>{e.tags.map(t => `#${t}`).join(" ")}</p>
+                  <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>{e.tags.map(t => `#${t}`).join(" ")}</p>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -474,7 +475,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   <label style={{ fontSize: 11, color: "var(--t3, #888)", fontWeight: 500 }}>Kind</label>
                   <Select value={form.kind} onChange={v => setForm(f => ({ ...f, kind: v }))} options={KNOWLEDGE_KINDS} />
-                  <span style={{ fontSize: 10, color: "var(--t4, #666)" }}>What sort of knowledge this is</span>
+                  <span style={{ fontSize: 11, color: "var(--t4, #666)" }}>What sort of knowledge this is</span>
                 </div>
                 <Input value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} label="Tags"
                   placeholder="e.g. revenue, finance, north-star" hint="Comma-separated — helps grouping & retrieval" />
@@ -639,7 +640,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
             }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                 {res && (
-                  <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: res.passed ? "#10b981" : "#ef4444", color: "#fff", fontWeight: 600, marginTop: 2, whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10, background: res.passed ? "#10b981" : "#ef4444", color: "#fff", fontWeight: 600, marginTop: 2, whiteSpace: "nowrap" }}>
                     {res.passed ? "PASS" : "FAIL"}
                   </span>
                 )}
@@ -654,13 +655,13 @@ function BenchmarksTab({ connId }: { connId: string }) {
                       ))}
                       {res.error && <p style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>Error: {res.error}</p>}
                       <button
-                        style={{ fontSize: 10, color: "var(--t4)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
+                        style={{ fontSize: 11, color: "var(--t4)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
                         onClick={() => setExpandedResult(expandedResult === c.id ? null : c.id)}
                       >
                         {expandedResult === c.id ? "▲ hide SQL" : "▼ show generated SQL"}
                       </button>
                       {expandedResult === c.id && (
-                        <pre style={{ fontSize: 10, color: "var(--t3)", marginTop: 6, background: "var(--bg-1)", padding: "8px", borderRadius: 5, overflow: "auto", maxHeight: 200 }}>
+                        <pre style={{ fontSize: 11, color: "var(--t3)", marginTop: 6, background: "var(--bg-1)", padding: "8px", borderRadius: 5, overflow: "auto", maxHeight: 200 }}>
                           {res.generated_sql}
                         </pre>
                       )}
@@ -675,13 +676,13 @@ function BenchmarksTab({ connId }: { connId: string }) {
               {/* Constraints badges */}
               <div style={{ marginTop: 6, paddingLeft: res ? 0 : 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {c.expected_cols.map(col => (
-                  <span key={col} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "#3b82f620", color: "#60a5fa" }}>col:{col}</span>
+                  <span key={col} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#3b82f620", color: "#60a5fa" }}>col:{col}</span>
                 ))}
                 {c.must_contain.map(s => (
-                  <span key={s} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "#10b98120", color: "#6ee7b7" }}>✓ {s}</span>
+                  <span key={s} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#10b98120", color: "#6ee7b7" }}>✓ {s}</span>
                 ))}
                 {c.must_not_contain.map(s => (
-                  <span key={s} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "#ef444420", color: "#fca5a5" }}>✗ {s}</span>
+                  <span key={s} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#ef444420", color: "#fca5a5" }}>✗ {s}</span>
                 ))}
               </div>
             </div>
@@ -750,7 +751,7 @@ function ScopeBar({
   const arrow = <span style={{ color: "var(--t4, #666)", fontSize: 11 }}>›</span>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 10, color: "var(--t4, #666)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Scope</span>
+      <span style={{ fontSize: 11, color: "var(--t4, #666)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Scope</span>
       <Select value={activeConn} onChange={onConn}
         options={connections.length
           ? connections.map(c => ({ value: c.id, label: c.name }))

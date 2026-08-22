@@ -1,26 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import AtlasSendIcon      from "@atlaskit/icon/core/send";
-import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
-import CloseIcon          from "@atlaskit/icon/core/close";
-import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
-import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
-import CommentIcon        from "@atlaskit/icon/core/comment";
-import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
-import CompassIcon        from "@atlaskit/icon/core/compass";
-import { uploadDocument, listUserAgents, recordOverviewDrill, type UserAgent } from "@/lib/api";
-import { useChat, UNCERTAIN_RESULT, type DebugEvent, type ChatTurn } from "@/lib/useChat";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
+import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
+import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
 import { useStickToBottom } from "@/lib/useStickToBottom";
-import type { OverviewReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
-import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { PartsMessage } from "./chat/PartsMessage";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { WhyThisNumber } from "./WhyThisNumber";
 
 import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
+import { Icon } from "@/components/ui/icon";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -112,9 +107,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             background: "var(--blue1)", border: "1px solid var(--blue2)",
             fontSize: 11, color: "var(--blue5)", maxWidth: 320,
           }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="attach" size={11} className="shrink-0" />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name}</span>
             <Button variant="ghost" size="icon-xs" onClick={() => onAttach?.(null)} title="Remove attachment"
               className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
@@ -160,7 +153,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "auto" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Auto" size="small" />
+            <Icon name="spark" size={16} label="Auto" />
             Auto
           </button>
           <button
@@ -174,7 +167,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <CommentIcon label="Quick" size="small" />
+            <Icon name="chat" size={16} label="Quick" />
             Quick
           </button>
           <button
@@ -189,7 +182,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Deep analysis" size="small" />
+            <Icon name="spark" size={16} label="Deep analysis" />
             Deep analysis
           </button>
         </div>
@@ -253,9 +246,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
             onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="attach" size={15} label="Attach a file" />
           </button>
 
           {/* Send ⇄ Stop — one solid circular button that morphs in place (CK-grade):
@@ -270,9 +261,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               className="aug-pressable rounded-[var(--r-pill)] hover:bg-transparent dark:hover:bg-transparent"
               style={{ width: 32, height: 32, background: "var(--t2)", color: "var(--bg-1)" }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="5" y="5" width="14" height="14" rx="2.5" />
-              </svg>
+              <Icon name="stop" size={12} className="aug-icon-filled" />
             </Button>
           ) : (
             <Button
@@ -288,10 +277,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
                 color: input.trim() ? "#fff" : "var(--t3)",
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="12" y1="19" x2="12" y2="5" />
-                <polyline points="5 12 12 5 19 12" />
-              </svg>
+              <Icon name="send" size={16} stroke={2.2} />
             </Button>
           )}
         </div>
@@ -301,6 +287,18 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 }
 
 // ── Debug log drawer ──────────────────────────────────────────────────────────
+// CA-1: fed from the SDK's onData callback (every typed data part as it arrives)
+// rather than the retired reducer's SSE tap. Text deltas don't appear — the
+// drawer's job is "which frames arrived", and every frame that isn't pure text
+// is a data part now.
+
+export interface DebugEvent {
+  ts: number;            // Date.now()
+  type: string;          // data part name (the wire frame's type)
+  summary: string;       // brief human-readable summary
+  payload: unknown;      // full payload (shown on expand)
+}
+const MAX_LOG = 300;
 
 function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject<DebugEvent[]>; onClose: () => void }) {
   const [events, setEvents] = useState<DebugEvent[]>([]);
@@ -329,10 +327,10 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   return (
     <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-[var(--r3)] shadow-2xl" style={{ width: 520, height: 380 }}>
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
-        <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
+        <span className="text-emerald-400"><Icon name="sql" size={16} label="Debug log" /></span>
         <span className="aug-fs-xs font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
         <span className="aug-fs-xs text-zinc-500 mr-2">⌘⇧L to close</span>
-        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"><CloseIcon label="Close" size="small" /></Button>
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"><Icon name="close" size={16} label="Close" /></Button>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono aug-fs-xs">
         {events.length === 0 ? (
@@ -344,8 +342,8 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
               onClick={() => setExpanded(expanded === i ? null : i)}
             >
               {expanded === i
-                ? <span className="text-zinc-500 shrink-0"><ChevronDownIcon label="" size="small" /></span>
-                : <span className="text-zinc-500 shrink-0"><ChevronRightIcon label="" size="small" /></span>}
+                ? <span className="text-zinc-500 shrink-0"><Icon name="chevd" size={16} /></span>
+                : <span className="text-zinc-500 shrink-0"><Icon name="chevr" size={16} /></span>}
               <span className="text-zinc-500 shrink-0">{new Date(ev.ts).toLocaleTimeString()}</span>
               <span className={`shrink-0 w-28 truncate ${TYPE_COLOR[ev.type] ?? "text-zinc-300"}`}>{ev.type}</span>
               <span className="text-zinc-500 truncate flex-1">{ev.summary}</span>
@@ -375,11 +373,11 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
       <StatusChip
         hue={deep ? "accent" : "info"}
-        icon={deep ? <AiSparkleIcon label="" size="small" /> : <CommentIcon label="" size="small" />}
+        icon={deep ? <Icon name="spark" size={16} /> : <Icon name="chat" size={16} />}
       >
         {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
-      <span style={{ fontSize: 11.5, color: "var(--t3)" }}>{r.why}</span>
+      <span style={{ fontSize: 12, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
@@ -406,11 +404,11 @@ function AgentBadge({ turn }: { turn: ChatTurn }) {
   if (!a) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <StatusChip hue="positive" icon={<AiSparkleIcon label="" size="small" />}>
+      <StatusChip hue="positive" icon={<Icon name="spark" size={16} />}>
         Answering as {a.name}
       </StatusChip>
       {a.docCount > 0 && (
-        <span style={{ fontSize: 11.5, color: "var(--t3)" }}>
+        <span style={{ fontSize: 12, color: "var(--t3)" }}>
           {a.docCount} bound document{a.docCount === 1 ? "" : "s"}
         </span>
       )}
@@ -434,10 +432,10 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
   return (
     <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--blue1)", border: "1px solid var(--blue2)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: c.reason ? 4 : 8 }}>
-        <span style={{ color: "var(--blue5)", display: "inline-flex" }}><CommentIcon label="" size="small" /></span>
+        <span style={{ color: "var(--blue5)", display: "inline-flex" }}><Icon name="chat" size={16} /></span>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)" }}>{c.question}</span>
       </div>
-      {c.reason && <p style={{ fontSize: 11.5, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
+      {c.reason && <p style={{ fontSize: 12, color: "var(--t3)", margin: "0 0 8px 23px" }}>{c.reason}</p>}
       {c.options.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
           {c.options.map((o, i) => (
@@ -445,7 +443,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
               className="h-auto flex-col items-start gap-px whitespace-normal text-left"
               style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", background: "var(--bg-1)", borderColor: "var(--blue2)", color: "var(--blue5)" }}>
               <span>{o}</span>
-              {c.previews?.[i] && <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
+              {c.previews?.[i] && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--t3)" }}>{c.previews[i]}</span>}
             </Button>
           ))}
         </div>
@@ -465,7 +463,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
         </Button>
         <Button variant="ghost" size="xs" onClick={onAnswerAnyway} title="Answer with a best guess"
           className="h-auto font-normal hover:bg-transparent dark:hover:bg-transparent"
-          style={{ fontSize: 11.5, color: "var(--t3)", padding: "6px 4px" }}>
+          style={{ fontSize: 12, color: "var(--t3)", padding: "6px 4px" }}>
           Answer anyway →
         </Button>
       </div>
@@ -482,7 +480,7 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 8,
                   padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--vio1)", border: "1px solid var(--vio2)" }}>
-      <span style={{ color: "var(--vio5)", display: "inline-flex" }}><AiSparkleIcon label="" size="small" /></span>
+      <span style={{ color: "var(--vio5)", display: "inline-flex" }}><Icon name="spark" size={16} /></span>
       <span style={{ fontSize: 12, color: "var(--t2)", flex: 1, minWidth: 180 }}>{e.reason}</span>
       <Button
         variant="ghost"
@@ -507,8 +505,6 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
 let _urlSessionUnclaimed = true;
 
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
-  const { state, ask, stop, clear, restore, resumePlan, rejectPlan, resumeClarify, sessionId, eventLogRef } = useChat();
-
   // Read during the first render, into a ref, because both this component and page.tsx's
   // URL-sync effect rewrite the query string — whichever ran first would erase the id
   // before the restore below could read it. A ref initializer is safe here specifically
@@ -524,6 +520,63 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     resumeIdRef.current = restoreSessionId || fromUrl || "";
   }
   const resumeId = resumeIdRef.current || null;
+
+  // The conversation's identity. A resumed thread adopts its own id (reading a
+  // session back and continuing it are the same act); "Clear" mints a fresh one,
+  // which rebuilds the Chat instance and with it an empty message list.
+  const [sessionId, setSessionId] = useState<string>(() => resumeId || newSessionId());
+
+  // Debug event log — ring buffer, never triggers re-render; read on demand.
+  const eventLogRef = useRef<DebugEvent[]>([]);
+
+  // Wall-clock per turn, keyed by the turn's USER message id. The SDK message
+  // carries no clock, so the surface that watches the stream measures it — the
+  // "Completed in …" line and the arrival-fade both read from here. STATE, not a
+  // ref: the projection reads it during render, and a ref written after the
+  // stream settles would leave "Completed in" invisible until an unrelated
+  // re-render. Restored turns are absent (inert), as the old restore left them.
+  const [timings, setTimings] = useState<Map<string, { startedAt: number; elapsedMs: number | null }>>(new Map());
+
+  const {
+    messages, sendMessage, setMessages, regenerate, stop: sdkStop, status, error, clearError,
+  } = useAughorChat({
+    connectionId,
+    sessionId,
+    body: canvasId ? { canvas_id: canvasId } : undefined,
+    onData: (part) => {
+      const payload = (part as { data: unknown }).data;
+      eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), {
+        ts: Date.now(),
+        type: part.type.slice("data-".length),
+        summary: JSON.stringify(payload ?? {}).slice(0, 80),
+        payload,
+      }];
+    },
+  });
+
+  const busy = status === "submitted" || status === "streaming";
+
+  // ── messages → turns: the projection that replaced the reducer ─────────────
+  // `projectThread` is pure, so this is a derivation, not a second store.
+  const turns = useMemo(() => projectThread(messages, {
+    streaming: busy,
+    transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
+    timingFor: (id) => timings.get(id),
+  }), [messages, busy, status, error, timings]);
+
+  // Wall-clock bookkeeping: stamp a turn when its stream opens, freeze it when
+  // the stream settles. Mirrors the reducer's ASK / finish() pair.
+  useEffect(() => {
+    const last = turns[turns.length - 1];
+    if (!last) return;
+    const t = timings.get(last.userMsg.id);
+    if (busy && !t) {
+      setTimings((prev) => new Map(prev).set(last.userMsg.id, { startedAt: Date.now(), elapsedMs: null }));
+    } else if (!busy && t && t.elapsedMs == null) {
+      setTimings((prev) => new Map(prev).set(last.userMsg.id, { ...t, elapsedMs: Date.now() - t.startedAt }));
+    }
+  }, [busy, turns, timings]);
+
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
   // User-defined agents: the roster + the picked persona.
@@ -538,6 +591,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [thumbsDone, setThumbsDone] = useState<Map<string, "helpful" | "unhelpful">>(new Map());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  // CA-5 — attachments land NOW, not at send: a file whose upload is deferred to the
+  // next question can fail silently after the question has already gone. `pending` is
+  // the in-flight name; `results` are the outcomes, each of which must be rendered.
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<AttachmentResult[]>([]);
+  const [dragging, setDragging] = useState(false);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const wasStreamingRef         = useRef(false);
@@ -563,7 +622,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // empty for as long as its fetch is in flight, so that version deleted the id a beat
     // before the turns arrived — and the id is the only handle the conversation has.
     if (!resumeId) {
-      clear();
+      setSessionId(newSessionId()); // a fresh Chat instance — the conversation resets with it
       const params = new URLSearchParams(window.location.search);
       if (params.has("chat")) {
         params.delete("chat");
@@ -630,82 +689,21 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // Bounded and silent. It gives up after ~12s rather than polling forever, and an
     // empty session (a stale or shared link) simply stays empty — the same outcome as
     // before, reached a few seconds later.
+    //
+    // CA-1: the endpoint returns `UIMessage[]` — the same shape the stream
+    // accumulates — so restoring a thread IS `setMessages`. The 40-field manual
+    // turn literal this used to build is gone; `projectTurn` derives the turn
+    // from the same parts either way.
     const attempt = (tries: number) => {
-      fetch(`${getApiBase()}/chat-sessions/${resumeId}/turns`)
-        .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; status?: string; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null; overview_report: OverviewReport | null }[]) => {
+      fetch(`${getApiBase()}/chat-sessions/${encodeURIComponent(resumeId)}/messages`)
+        .then(r => (r.ok ? r.json() : []))
+        .then((msgs: AughorUIMessage[]) => {
           if (cancelled) return;
-          if (!turns.length) {
+          if (!Array.isArray(msgs) || !msgs.length) {
             if (tries > 0) setTimeout(() => { if (!cancelled) attempt(tries - 1); }, 1500);
             return;
           }
-          restore(turns.map(t => ({
-          id: t.id,
-          question: t.question,
-          mode: "ask" as const,
-          // A turn the user stopped is restored as an ERROR, not as `done`. It carries
-          // whatever it had produced, and `done` would present that partial as the whole
-          // answer — a turn that looks finished and is simply missing its tail is a worse
-          // lie than not restoring it. `error` is the only terminal state the renderer has
-          // that shows the body AND says the tail is missing; the message is the shared
-          // interrupted sentence, so this reads the same as a mid-session interrupt.
-          status: (t.status === "interrupted" ? "error" : "done") as "error" | "done",
-          guardReceipts: [],   // A4: receipts are live-stream evidence, not persisted history
-          converseSteps: [],   // CI-6a: the tool trail is live-stream evidence too
-          scanItems: [], scanProgress: null,
-          route: null,
-          agent: null,
-          clarify: null,
-          escalate: null,
-          // Restored turns: the turn id IS the receipt key; the component 404-noops
-          // gracefully if this turn predates receipts.
-          receiptId: t.sql ? t.id : null,
-          publicReceiptId: null,   // restored turns use the per-mode receipt route (receiptId)
-          sql: t.sql || null,
-          columns: t.columns || [],
-          rows: t.rows || [],
-          headline: t.headline || null,
-          headlineStream: null,   // restored turns never carry deltas (inert, startedAt 0)
-          chartType: t.chart_type || null,
-          statusText: null,
-          phases: [],
-          deepReport: null,
-          report: null,
-          queryMode: null,
-          subQuestions: [],
-          subqAnswers: [],
-          exploreReport: null,
-          dossierReport: null,
-          dossierInsightId: null,
-          overviewReport: t.overview_report || null,
-          queriesExecuted: [],
-          latestScore: null,
-          hypotheses: [],
-          investigationId: null,
-          tablesUsed: t.tables_used || [],
-          contextManifest: null,
-          planPending: null,
-          clarifyPending: null,
-          analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
-          followups: [],
-          error: t.status === "interrupted"
-            ? `This answer was interrupted — ${UNCERTAIN_RESULT}.`
-            : null,
-          errorDetail: null,   // no live error to classify; an interrupt is not a failure
-          startedAt: 0,
-          elapsedMs: null,
-          fromCache: false,
-          cachedQuestion: null,
-          inspectWarning: null,
-          playbookRefs: [],
-          // WIRE-NAME BOUNDARY — the stored key is `insight` (report_json["insight"], a
-          // persisted identity); the turn field is `narrative`.
-          narrative: t.insight || null,
-          narrativeStream: null,   // deltas are live-only; history restores the final narrative
-          reportStream: null,
-          clarifyingQuestions: [],
-          clarifyingContext: "",
-          })), resumeId);
+          setMessages(msgs);
         })
         .catch(() => {});
     };
@@ -713,6 +711,79 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── The actions (the reducer hook's verbs, on the SDK's transport) ──────────
+
+  /** Per-turn options, exactly the reducer path's `ask` opts. */
+  interface AskOpts {
+    skipCache?: boolean; schema?: string | null; insightId?: string;
+    seedSql?: string | null; seedContext?: string; deep?: boolean;
+    depth?: "quick" | "deep"; skipClarify?: boolean; clarifyReading?: string;
+    clarifySubject?: string; clarifySource?: string;
+    requestMode?: "investigate" | "explore"; purpose?: string;
+  }
+
+  const sendQuestion = useCallback((question: string, m: "auto" | "ask" | "investigate" = "auto", opts: AskOpts = {}) => {
+    // An interrupt — the user sent this while a turn was still streaming. The SDK
+    // abort settles the outgoing turn with whatever it produced (the projection
+    // reads a non-streaming message as done), and the new send is its own turn.
+    if (busy) sdkStop();
+    if (status === "error") clearError();
+    // The turn's initial mode drives the loading UI until the router's `route`
+    // receipt corrects it; a starter's requestMode always routes deep.
+    const initialMode: "ask" | "investigate" = m === "investigate" || opts.requestMode ? "investigate" : "ask";
+    void sendMessage(
+      { text: question, metadata: { mode: initialMode } },
+      { body: {
+        mode: m,
+        depth: opts.depth ?? "auto",
+        schema: opts.schema ?? null,
+        agent_id: agentId || null,
+        skip_clarify: opts.skipClarify ?? false,
+        clarify_reading: opts.clarifyReading ?? "",
+        clarify_subject: opts.clarifySubject ?? "",
+        clarify_source: opts.clarifySource ?? "",
+        insight_id: opts.insightId ?? null,
+        deep: opts.deep ?? false,
+        seed_sql: opts.seedSql ?? null,
+        seed_context: opts.seedContext ?? "",
+        skip_cache: opts.skipCache ?? false,
+        request_mode: opts.requestMode ?? null,
+        purpose: opts.purpose ?? "",
+      } },
+    );
+  }, [busy, status, sdkStop, clearError, sendMessage, agentId]);
+
+  const stop = useCallback(() => { sdkStop(); }, [sdkStop]);
+
+  const clear = useCallback(() => {
+    sdkStop();
+    setTimings(new Map());
+    eventLogRef.current = [];
+    setSessionId(newSessionId()); // a fresh Chat instance — empty conversation, new session row
+  }, [sdkStop]);
+
+  // P3/P4 gate approvals — still side POSTs keyed by investigation id (the route
+  // maps `resume` onto the feedback endpoint); the user's decision is a visible
+  // turn, and the resumed run streams back as its answer.
+  const resumePlan = useCallback((invId: string, keep: number[]) => {
+    void sendMessage(
+      { text: `Proceed with ${keep.length || "all"} sub-question${keep.length === 1 ? "" : "s"}.`,
+        metadata: { mode: "investigate" } },
+      { body: { resume: { kind: "plan", investigation_id: invId, keep_subquestions: keep } } },
+    );
+  }, [sendMessage]);
+
+  const rejectPlan = useCallback((invId: string) => {
+    void cancelInvestigation(invId).catch(() => { /* best-effort */ });
+  }, []);
+
+  const resumeClarify = useCallback((invId: string, choice: string) => {
+    void sendMessage(
+      { text: choice, metadata: { mode: "investigate" } },
+      { body: { resume: { kind: "clarify", investigation_id: invId, choice } } },
+    );
+  }, [sendMessage]);
 
   // ── The conversation's id lives in the URL, so a reload resumes it ──────────
   // Written once the conversation has something worth coming back to, and removed when it
@@ -726,33 +797,33 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   // erasing the other's keys.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!state.turns.length) return;   // see below: emptiness is not a reason to forget
+    if (!messages.length) return;   // see below: emptiness is not a reason to forget
     const params = new URLSearchParams(window.location.search);
     if (params.get("chat") === sessionId) return;
     params.set("chat", sessionId);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
-  }, [state.turns.length, sessionId]);
+  }, [messages.length, sessionId]);
 
   // ── Scroll: follow the newest content while pinned to the bottom, release
   //    the moment the user scrolls up to read, snap back on completion. ───────
-  const streamingKey = state.turns.map(t => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
-  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: state.streaming });
+  const streamingKey = turns.map(({ turn: t }) => `${t.id}:${t.phases.length}:${t.statusText}`).join("|");
+  const { scrollRef, pinned, scrollToBottom } = useStickToBottom(streamingKey, { active: busy });
 
   useEffect(() => {
-    if (wasStreamingRef.current && !state.streaming && state.turns.length > 0) {
-      const lastTurn = state.turns[state.turns.length - 1];
+    if (wasStreamingRef.current && !busy && turns.length > 0) {
+      const lastTurn = turns[turns.length - 1].turn;
       setTimeout(() => {
         const el = turnTopRefs.current.get(lastTurn.id);
         el?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 150);
     }
-    wasStreamingRef.current = state.streaming;
-  }, [state.streaming]); // eslint-disable-line
+    wasStreamingRef.current = busy;
+  }, [busy]); // eslint-disable-line
 
   // Auto-submit a question injected from outside (e.g. "Investigate" from the Ontology canvas)
   const initialFiredRef = useRef(false);
   useEffect(() => {
-    if (!initialQuestion || initialFiredRef.current || state.streaming) return;
+    if (!initialQuestion || initialFiredRef.current || busy) return;
     if (initialMode) setMode(initialMode);
     // Small delay so the component is fully mounted and mode is set.
     // The fired-latch is set INSIDE the timer: StrictMode's dev double-invoke
@@ -760,35 +831,49 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // would make the second setup bail — auto-submit would never fire in dev.
     const t = setTimeout(() => {
       initialFiredRef.current = true;
-      ask(initialQuestion, connectionId, initialMode ?? "investigate", { canvasId: canvasId ?? undefined, insightId: initialInsightId });
+      sendQuestion(initialQuestion, initialMode ?? "investigate", { insightId: initialInsightId });
     }, 80);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
 
+  /** Upload one attachment through the door its kind names, and SHOW the outcome. */
+  const takeFile = useCallback(async (file: File) => {
+    setAttachedFile(null);
+    setUploading(file.name);
+    const res = await uploadAttachment(file, connectionId);
+    setUploading(null);
+    setUploads((prev) => [...prev, res]);
+  }, [connectionId]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    for (const f of files) void takeFile(f);
+  }, [takeFile]);
+
   const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
     // Only an EMPTY question is refused. Sending while a turn streams is not an error —
-    // it is the interrupt: `ask` aborts the in-flight request before starting, and the
-    // backend's core stops at its next cancellation checkpoint rather than running on for
-    // a client that has moved on. Refusing here (as this did) made an enabled input worse
-    // than a disabled one: it accepted the text and silently dropped it.
+    // it is the interrupt: `sendQuestion` aborts the in-flight request before starting,
+    // and the backend's core stops at its next cancellation checkpoint rather than
+    // running on for a client that has moved on. Refusing here (as this did) made an
+    // enabled input worse than a disabled one: it accepted the text and silently
+    // dropped it.
     if (!question) return;
     setInput("");
-    // Upload attached file first, then send the question
-    if (attachedFile) {
-      try {
-        await uploadDocument(attachedFile);
-      } catch {
-        // Non-fatal: still send the question even if upload fails
-      }
-      setAttachedFile(null);
-    }
-    ask(question, connectionId, m ?? mode, { ...opts, canvasId: canvasId ?? undefined, agentId: agentId || undefined });
+    // A file still sitting in the composer goes through the SAME door a dropped one
+    // does — and its outcome is rendered rather than swallowed. The old path caught
+    // and discarded upload errors, then asked the question anyway: the answer that
+    // came back was about whatever else was in scope, with nothing on screen saying
+    // the file never arrived.
+    if (attachedFile) await takeFile(attachedFile);
+    sendQuestion(question, m ?? mode, opts ?? {});
     textareaRef.current?.focus();
-  }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile, agentId]);
+  }, [input, sendQuestion, mode, attachedFile, takeFile]);
 
-  const isEmpty = state.turns.length === 0;
+  const isEmpty = messages.length === 0;
 
   // R10 — THUMBS→priors: a helpful verdict teaches the learned table prior
   // (the same counter overview drills + query popularity feed). Fire-and-forget.
@@ -817,7 +902,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     textareaRef,
     input,
     setInput,
-    streaming: state.streaming,
+    streaming: busy,
     mode,
     setMode,
     onSend: handleSend,
@@ -831,12 +916,95 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "var(--bg-1)" }}>
+    <div
+      className="flex-1 flex flex-col min-w-0 overflow-hidden"
+      style={{ background: "var(--bg-1)", position: "relative" }}
+      onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+      onDragLeave={(e) => {
+        // Only the drag leaving the PANEL counts — crossing a child's edge fires
+        // dragleave too, and clearing on those makes the overlay strobe.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={onDrop}
+    >
+      {/* CA-5 — drop a file straight into the conversation. A data file becomes a
+          queryable table on this connection; anything else becomes retrieval context. */}
+      {dragging && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "var(--bg-0)", opacity: .94,
+            border: "2px dashed var(--blue3)", borderRadius: "var(--r3)",
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div className="aug-fs-md" style={{ color: "var(--t1)", fontWeight: 600 }}>
+              Drop to add to this conversation
+            </div>
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 4 }}>
+              A CSV or spreadsheet becomes a table you can ask about · other files become context
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* What actually happened to each attachment — including the failures the old
+          path swallowed. */}
+      {(uploading || uploads.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 16px 0" }}>
+          {uploading && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              Importing {uploading}…
+            </span>
+          )}
+          {uploads.map((u, i) => (
+            <span
+              key={`${u.filename}-${i}`}
+              className="aug-fs-xs"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "2px 8px", borderRadius: "var(--r2)",
+                background: u.error ? "var(--red1)" : "var(--bg-2)",
+                border: `1px solid ${u.error ? "var(--red3)" : "var(--b1)"}`,
+                color: u.error ? "var(--red5)" : "var(--t2)",
+                maxWidth: 460,
+              }}
+              title={u.error || (u.table ? `Imported as ${u.table}` : "Added as context")}
+            >
+              <span aria-hidden>{u.error ? "⚠" : u.table ? "▦" : "📄"}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {u.error
+                  ? `${u.filename} — ${u.error}`
+                  : u.table
+                    ? `${u.filename} → ${u.table}`
+                    : `${u.filename} added as context`}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                title="Dismiss"
+                aria-label="Dismiss"
+                onClick={() => setUploads((prev) => prev.filter((_, j) => j !== i))}
+                className="h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+                style={{ marginLeft: 2, opacity: .6, lineHeight: 1, color: "inherit" }}
+              >
+                ×
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {isEmpty ? (
         /* ── Empty state ── */
-        <div className="flex-1 flex flex-col items-center justify-center py-10">
-          <div className="w-[90%] max-w-[var(--measure-chat)] flex flex-col gap-5">
+        /* Empty state. `justify-center` alone CLIPS: once the content is taller than the
+           pane there is nowhere for it to go and the top becomes unreachable. The scroller
+           owns the overflow and the child centres itself with `my-auto`, so a short screen
+           still sits centred and a long one scrolls. */
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-10">
+          <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] my-auto flex flex-col gap-5">
 
             {capabilities}
 
@@ -855,80 +1023,44 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
 
-            {/* Suggestions */}
+            {/* Suggestions — the reference form: a plain list, hairline-separated, one
+                colour, left aligned. The cards this replaced carried a two-column grid, a
+                border per item, an icon per item and three colour treatments (blue for the
+                overview starter, green for investigate, grey otherwise), which made a list
+                of questions read as a control panel. A question is a line of text. */}
             <div className="pt-1">
-              <p className="text-[9.5px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
+              <p className="text-[11px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
               {loadingStarters ? (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 rounded-[var(--r3)] animate-pulse" style={{ background: "var(--bg-1)" }} />
+                <div className="flex flex-col">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-10 animate-pulse" style={{ borderBottom: "1px solid var(--b1)" }} />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)].map((s) => {
+                <div className="flex flex-col">
+                  {/* Four at most. A wall of suggestions is a menu to read rather than a
+                      prompt to answer, and the composer sits directly above them. */}
+                  {[OVERVIEW_STARTER, ...starters.filter(s => s.text !== OVERVIEW_STARTER.text)]
+                    .slice(0, 4)
+                    .map((s) => {
                     const isOverview = s.text === OVERVIEW_STARTER.text;
                     return (
-                    <button
-                      key={s.text}
-                      onClick={() => handleSend(
-                        s.text,
-                        // A starter with a declared route goes through /ask ("auto") so the
-                        // backend's deterministic mode override routes it (R13).
-                        isOverview || s.requestMode ? "auto" : s.mode,
-                        s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
-                      )}
-                      className={`aug-pressable flex items-start gap-1.5 px-3 py-2 rounded-[var(--r3)] text-[11.5px] text-left leading-snug transition-all${isOverview ? " col-span-2" : ""}`}
-                      style={isOverview ? {
-                        background: "var(--acc-dim)",
-                        border: "0.5px solid var(--blue2)",
-                        color: "var(--blue4)",
-                      } : s.mode === "investigate" ? {
-                        background: "var(--bg-1)",
-                        border: "0.5px solid var(--grn1)",
-                        color: "var(--grn4)",
-                      } : {
-                        background: "var(--bg-1)",
-                        border: "0.5px solid var(--b2)",
-                        color: "var(--t3)",
-                      }}
-                      onMouseEnter={e => {
-                        if (isOverview) {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue3)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--blue5)";
-                        } else if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
-                        } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--t1)";
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        if (isOverview) {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--blue2)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--blue4)";
-                        } else if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn1)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
-                        } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--bg-3)";
-                          (e.currentTarget as HTMLElement).style.color = "var(--t3)";
-                        }
-                      }}
-                    >
-                      <span className={`shrink-0 mt-0.5 aug-fs-ui${isOverview ? "" : " opacity-70"}`}>
-                        {isOverview
-                          ? <CompassIcon label="" size="small" />
-                          : s.mode === "investigate"
-                          ? <AiSparkleIcon label="" size="small" />
-                          : <CommentIcon label="" size="small" />}
-                      </span>
-                      <span className="min-w-0">
-                        {isOverview && <span className="font-medium">A great starting point · </span>}
+                      <button
+                        key={s.text}
+                        onClick={() => handleSend(
+                          s.text,
+                          // A starter with a declared route goes through /ask ("auto") so the
+                          // backend's deterministic mode override routes it (R13).
+                          isOverview || s.requestMode ? "auto" : s.mode,
+                          s.requestMode ? { requestMode: s.requestMode, purpose: s.purpose } : undefined,
+                        )}
+                        className="aug-pressable w-full text-left aug-fs-ui leading-snug py-3 transition-colors"
+                        style={{ color: "var(--t2)", borderBottom: "1px solid var(--b1)", background: "transparent" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
+                      >
                         {s.text}
-                      </span>
-                    </button>
+                      </button>
                     );
                   })}
                 </div>
@@ -945,8 +1077,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {/* Scrollable messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
-              <div className="py-8 w-[90%] max-w-[var(--measure-chat)] mx-auto">
-                {state.turns.map((turn, i) => (
+              <div className="py-8 w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] mx-auto">
+                {turns.map(({ turn, userMsg, assistantMsg }, i) => (
                   <div
                     key={turn.id}
                     className="aug-anim-up"
@@ -958,15 +1090,16 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {i > 0 && <div className="border-t border-zinc-800 my-8" />}
                     <DepthBanner
                       turn={turn}
-                      onRerun={(depth) => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth })}
+                      onRerun={(depth) => sendQuestion(turn.question, "auto", { depth })}
                     />
                     <AgentBadge turn={turn} />
                     {/* WP-2 — isolate a single answer's render: a throw here (a malformed
                         report, a recovered-report shape mismatch) must not white-screen the
                         conversation or kill the composer. */}
                     <ErrorBoundary label="This answer couldn't be displayed.">
-                      <ChatMessage
+                      <PartsMessage
                         turn={turn}
+                        message={assistantMsg}
                         connectionId={connectionId}
                         // Wave 2 / 2.1 — tag the turn so chip adoption is QUERYABLE. A
                         // clicked follow-up was indistinguishable from a typed question,
@@ -976,8 +1109,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         onFollowUp={(q) => handleSend(q, undefined, { purpose: "followup" })}
                         onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                         onShowSource={setSourcePanel}
-                        onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
-                        onExploreFact={(q, o) => { recordOverviewDrill(connectionId, { canvasId: canvasId ?? undefined, lens: o.lens, table: o.table }); ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, seedSql: o.seedSql, seedContext: o.seedContext, deep: true }); }}
+                        onDeeper={(q, insightId) => sendQuestion(q, "investigate", { insightId: insightId ?? undefined, deep: true })}
+                        onExploreFact={(q, o) => { recordOverviewDrill(connectionId, { canvasId: canvasId ?? undefined, lens: o.lens, table: o.table }); sendQuestion(q, "investigate", { seedSql: o.seedSql, seedContext: o.seedContext, deep: true }); }}
                         onApprovePlan={(invId, keep) => resumePlan(invId, keep)}
                         onRejectPlan={(invId) => rejectPlan(invId)}
                         onChooseClarify={(invId, opt) => resumeClarify(invId, opt)}
@@ -987,19 +1120,25 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         // place. That is what makes "never a dropped or duplicated turn" true
                         // by construction rather than by care.
                         onRetry={(q) => handleSend(q)}
+                        // CA-1 — edit-and-resend: replaces THIS user message and re-sends;
+                        // the SDK truncates the thread from here (branching, the cheap way).
+                        onEdit={(q) => void sendMessage(
+                          { text: q, messageId: userMsg.id, metadata: { mode: "ask" } },
+                          { body: { mode: "auto" } },
+                        )}
                       />
                     </ErrorBoundary>
                     {turn.clarify && (
                       <ClarifyCard
                         turn={turn}
-                        onClarify={(detail) => ask(`${turn.question} — ${detail}`, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
-                        onAnswerAnyway={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, skipClarify: true })}
+                        onClarify={(detail) => sendQuestion(`${turn.question} — ${detail}`, "auto", { skipClarify: true, clarifyReading: detail, clarifySubject: turn.question, clarifySource: turn.clarify?.source })}
+                        onAnswerAnyway={() => sendQuestion(turn.question, "auto", { skipClarify: true })}
                       />
                     )}
                     {turn.escalate && (
                       <EscalateBar
                         turn={turn}
-                        onEscalate={() => ask(turn.question, connectionId, "auto", { canvasId: canvasId ?? undefined, depth: "deep", skipClarify: true })}
+                        onEscalate={() => sendQuestion(turn.question, "auto", { depth: "deep", skipClarify: true })}
                       />
                     )}
                     {/* Wave S2 — ONE receipt surface per answer. Two panels used to render
@@ -1033,6 +1172,22 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                     {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
                     {turn.status === "done" && turn.publicReceiptId && (
                       <WhyThisNumber receiptId={turn.publicReceiptId} />
+                    )}
+                    {/* CA-1 — regenerate: re-run the LAST turn's question as a fresh
+                        answer (the SDK re-sends the same user message). Last turn only —
+                        regenerating an earlier turn would truncate the thread below it. */}
+                    {i === turns.length - 1 && turn.status !== "loading" && assistantMsg && (
+                      <div style={{ display: "inline-flex" }}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => { if (busy) sdkStop(); void regenerate(); }}
+                          title="Ask this again — a fresh answer replaces this one"
+                          className="h-auto gap-1 px-1.5 py-0.5 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+                        >
+                          ↺ Regenerate
+                        </Button>
+                      </div>
                     )}
                     {/* Post-run feedback — shown once per completed deep analysis with hypotheses */}
                     {turn.mode === "investigate" &&
@@ -1078,14 +1233,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                   className="aug-pressable aug-anim-fade gap-1.5 rounded-[var(--r-pill)] h-auto"
                   style={{
                     pointerEvents: "all", padding: "5px 12px 5px 9px",
-                    fontSize: 11.5, fontWeight: 500, fontFamily: "var(--font-ui)",
+                    fontSize: 12, fontWeight: 500, fontFamily: "var(--font-ui)",
                     color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
-                    boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                    boxShadow: "var(--shadow-lg)",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
                 >
-                  <ChevronDownIcon label="" size="small" />
+                  <Icon name="chevd" size={16} />
                   Jump to latest
                 </Button>
               </div>
@@ -1096,7 +1251,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               position: "absolute", bottom: 20, left: 0, right: 0,
               zIndex: 2, pointerEvents: "none",
             }}>
-              <div className="w-[90%] max-w-[var(--measure-chat)] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
+              <div className="w-full max-w-[var(--measure-chat)] px-[var(--chat-gutter)] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
                 <InputBox {...inputBoxProps} />
                 <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
               </div>

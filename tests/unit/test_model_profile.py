@@ -144,7 +144,7 @@ def test_investigate_budgets_follow_the_profile(monkeypatch):
                           reasoning_effort="low", linker_top_tables=4,
                           linker_top_cols=8, context_table_cap=10,
                           parallel_waves=False, rpm_budget=None,
-                          tool_loop_steps=4)
+                          tool_loop_steps=4, deep_loop_steps=10)
     monkeypatch.setattr("aughor.llm.profile.profile_for", lambda *a, **k: cap)
     assert inv._schema_limit() == 42_000
     assert inv._evidence_budget() == 17_000

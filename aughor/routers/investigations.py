@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from aughor.agent.chart_vocab import answer_chart_payload
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
 from aughor.kernel.concurrency import ContextThreadPoolExecutor
@@ -169,7 +170,7 @@ async def _reduced_subq_answers(agent, inv_id, fallback):
 
 
 def _ada_sqls(ada) -> list[str]:
-    """Every executed SQL in an ADA report — walks the report dict collecting
+    """Every executed SQL in a deep-analysis report — walks the report dict collecting
     string values under 'sql' keys. More reliable than query_history, which can
     be empty on some terminal paths (the false-drift cause)."""
     out: list[str] = []
@@ -225,7 +226,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                           connection_id: str, canvas_id: str = "",
                           guard_edges: list | None = None,
                           payload_extra: dict | None = None) -> dict:
-    """K3-wide Trust Receipt for any user-facing answer (chat / ADA / monitor):
+    """K3-wide Trust Receipt for any user-facing answer (chat / deep-analysis / monitor):
 
     Returns ``{"learning": …|None, "activations": …|None}`` — the per-run Learning Receipt (Wave 1·E4) and
     Activation Receipt (Wave 1·E3), each present only when its flag is on and the run had something to
@@ -330,7 +331,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             tolerate(exc, "activation receipt is best-effort; the Trust Receipt still writes without it",
                      counter="chat.receipt_activations")
         # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
-        # answer cost. For job-backed answers (ADA) the job row carries the full total
+        # answer cost. For job-backed answers (deep-analysis) the job row carries the full total
         # too; for the synchronous quick-answer path this is the only sink.
         from aughor.kernel import metering
         _cost = metering.snapshot()
@@ -345,7 +346,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # Wave H2: the persona this answer was produced AS, read from the ambient contextvar
         # rather than threaded through — so a scheduled agent run (H1) and an interactive one
         # stamp identically. This function is the ONE place every user-facing answer is
-        # receipted (chat / ADA / monitor), so stamping here attributes all three by
+        # receipted (chat / deep-analysis / monitor), so stamping here attributes all three by
         # construction. Absent when nobody asked as an agent — an unbound answer says so by
         # omission rather than carrying an empty agent that reads like a real one.
         _agent = None
@@ -373,7 +374,7 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                                   conn_id=connection_id, canvas_id=canvas_id or None)
         # Wave L1: the answer becomes a `finding` node on the connection knowledge graph
         # NOW, so the next question can read back what this one learned. This is the one
-        # place every user-facing answer (chat / ADA / monitor) is receipted, so wiring
+        # place every user-facing answer (chat / deep-analysis / monitor) is receipted, so wiring
         # here covers all three callers by construction rather than by three edits.
         # Gated by `graph.build`, best-effort, and the finding shape is exactly what
         # `load_investigation_findings` would rebuild from the same receipt.
@@ -520,7 +521,7 @@ async def _aiter_sync(sync_iter):
     it = iter(sync_iter)
     # Carry the run's context (the metering RunMetrics + org) into every graph step. `run_in_executor`
     # does not propagate contextvars on its own, so without this a node's record_llm/record_query/
-    # record_activation would miss the run's accumulator and the ADA Trust Receipt would show empty
+    # record_activation would miss the run's accumulator and the deep-analysis Trust Receipt would show empty
     # cost/learning/activations. The progress variant already does this (via ctx.run for its sink).
     ctx = contextvars.copy_context()
     while True:
@@ -623,7 +624,7 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
     """Best-effort terminal synthesis when the graph stops without a report.
 
     A SOTA investigation must never end with nothing: if ANY evidence was gathered
-    (explore sub-answers or ADA phases), synthesise a best-effort report from it,
+    (explore sub-answers or deep-analysis phases), synthesise a best-effort report from it,
     persist it, and return the SSE string to emit. Returns ``None`` only when there
     is genuinely no evidence to salvage. Never raises."""
     try:
@@ -650,7 +651,7 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
                     "investigation_id": inv_id, "query_mode": "explore", "partial": True,
                 })
 
-        # ADA / investigate: synthesise from whatever phases completed.
+        # deep-analysis / investigate: synthesise from whatever phases completed.
         if merged.get("investigation_phases"):
             from aughor.agent.investigate import ada_synthesize
             out = ada_synthesize(merged)
@@ -702,7 +703,7 @@ async def salvage_orphaned_investigation(
     """Crash-recovery for an investigation orphaned by a process restart. Reads its
     LangGraph checkpoint (persisted SqliteSaver, keyed by inv_id) and runs the same
     proven `_try_salvage` the timeout/exception paths use — synthesising a partial
-    report from whatever evidence (ADA phases / explore answers) was gathered before
+    report from whatever evidence (deep-analysis phases / explore answers) was gathered before
     the crash. Recovery instead of sweep-to-failed; always reaches a terminal status
     (complete on salvage, failed when there's nothing to recover). Runs as a
     supervised kernel job, so it carries its own job.state lifecycle + heartbeat."""
@@ -762,8 +763,8 @@ class InvestigateRequest(BaseModel):
     seed_context: str = ""
     # Drilling into a known briefing finding: its stored finding id. When set (and not
     # `deep`), the explorer's pre-computed Finding Dossier is served as the trace —
-    # a deterministic ledger read, NOT a second ADA run. `deep` is the explicit
-    # "Investigate deeper" escalation: run ADA, seeded with that dossier.
+    # a deterministic ledger read, NOT a second deep-analysis run. `deep` is the explicit
+    # "Investigate deeper" escalation: run deep-analysis, seeded with that dossier.
     insight_id: Optional[str] = None
     # `escalate` is the explicit "go deeper than the saved finding" flag. It is NOT the
     # `depth` knob — the two were both spelled `deep` on the same request, which is how
@@ -773,6 +774,9 @@ class InvestigateRequest(BaseModel):
     # canvas composes on the previous query instead of starting cold — parity with the
     # quick /chat path. Same shape /chat + /ask accept.
     history: list[ChatHistoryTurn] = []
+    # CA-0: the conversation this deep turn belongs to. The quick and auto bodies already
+    # carry it; the explicit-deep body did not, so no deep run was ever filed under a session.
+    session_id: str = ""
     # P4 pause posture — see AskRequest.allow_clarify.
     allow_clarify: bool = True
 
@@ -869,59 +873,7 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-# Concentration / 80-20 intent — only the QUESTION carries this, so the chart
-# selection has to read it here (the renderer never sees the question). Models
-# inconsistently emit a share column or the literal "pareto" chart_type, so this
-# makes the intent deterministic.
-_CONCENTRATION_RE = re.compile(
-    r"80[\s/_-]?20|pareto|concentrat|cumulative\s+share|long\s+tail|"
-    r"(few|handful|top)\b.{0,40}\b(drive|account|make up|generate)\b.{0,20}\b(most|majority|bulk)",
-    re.IGNORECASE,
-)
-_PARETO_BLOCK = {"line", "none", "heatmap", "scatter", "stacked_bar", "multi_line", "area"}
 _ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
-
-
-def _maybe_pareto(question: str, columns: list[str], rows: list, current: str) -> str:
-    """Force a Pareto when the question asks about concentration/80-20 and the
-    result is a single category(+id) ranking over a measure. The renderer
-    computes the cumulative curve itself, so no share column is required."""
-    if current in _PARETO_BLOCK:
-        return current
-    if not question or not _CONCENTRATION_RE.search(question):
-        return current
-    if not columns or len(rows) < 4:
-        return current
-    sample = rows[0]
-    if not isinstance(sample, (list, tuple)):
-        return current
-
-    def _numlike(v: object) -> bool:
-        # QueryResult stringifies every cell, so numbers arrive as strings.
-        if isinstance(v, bool):
-            return False
-        if isinstance(v, (int, float)):
-            return True
-        if isinstance(v, str):
-            s = v.strip().replace(",", "")
-            if not s or s == "NULL":
-                return False
-            try:
-                float(s)
-                return True
-            except ValueError:
-                return False
-        return False
-
-    num_idx = [i for i, v in enumerate(sample) if _numlike(v)]
-    cat_idx = [i for i in range(len(columns)) if i not in num_idx]
-    # A ranking = at least one dimension + at least one measure. When the only
-    # dimension is an id (numeric → counted above), still treat it as a ranking.
-    if num_idx and cat_idx:
-        return "pareto"
-    if len(num_idx) >= 2 and any(_ID_COL_RE.search(c) for c in columns):
-        return "pareto"
-    return current
 
 
 def _coerce_list_str(v: object) -> list[str]:
@@ -1270,14 +1222,24 @@ def build_prior_answers_section(priors) -> str:
     Deliberately carries the headline and the date only, never the prior SQL: re-running
     an old query is the model's decision to make from today's schema, not something to
     copy."""
-    priors = list(priors or [])
+    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+
+    # A run that reported it could not analyse anything is not a baseline. Offered as
+    # one, the model dutifully compared against it — live, an answer opened "Compared to
+    # the previous report from August 20, 2026, the picture has expanded significantly"
+    # when the earlier turn had simply failed and this one had not.
+    priors = [p for p in (priors or [])
+              if not (p.get("headline") or "").startswith(NO_DATA_HEADLINE_PREFIX)]
     if not priors:
         return ""
     lines = [
         "PREVIOUSLY ASKED — this same question was answered in an earlier session. "
         "Answer from TODAY's data first, then say plainly whether the picture is "
         "unchanged or what moved. Never restate a previous answer as if it were current, "
-        "and never cite its numbers as this turn's evidence:",
+        "and never cite its numbers as this turn's evidence. Compare LIKE WITH LIKE: only "
+        "a differing VALUE for the same measure is a change. How many rows an answer "
+        "listed, or which examples it happened to name, is a difference in what was "
+        "SHOWN — never report it as the data having grown, shrunk or expanded:",
     ]
     for p in priors:
         when = str(p.get("asked_at", ""))[:10] or "an earlier session"
@@ -2458,7 +2420,7 @@ def _answer_core(
             except Exception as _e:
                 logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
 
-        # R6 (mode cross-pollination) — Insight had parent-fanout + dimension-ratio-chasm, but ADA's
+        # R6 (mode cross-pollination) — Insight had parent-fanout + dimension-ratio-chasm, but deep-analysis's
         # Verifier also runs the three aggregate-over-chasm detectors (the "SUM(inventory) after
         # joining 2.4M line-items, inflating ~1000x" class) that Insight could miss. Run the full
         # Verifier battery for parity and feed any hit into the same repair path. Best-effort.
@@ -2649,15 +2611,13 @@ def _answer_core(
                         "detail": _e1_msgs[:400]})
             except Exception as _e:
                 logger.debug("chat E1 checks are best-effort; skipped: %s", _e)
-        # Deterministic concentration→pareto (the renderer never sees the question).
-        _chart_before = answer.chart_type
-        answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
-        if answer.chart_type != _chart_before:
-            _receipt({
-                "guard": "concentration_pareto", "action": "overrode_chart",
-                "detail": ("the question asks about concentration (80/20) over a ranked "
-                           "measure; a Pareto states that claim, the picked chart did not"),
-                "before": _chart_before, "after": answer.chart_type})
+        # CA-4 form-by-job: the model names the data's JOB ("magnitude", "trend",
+        # …); resolve it to the engine hint here so chart_config, persistence and
+        # the wire all speak forms. (The concentration→pareto auto-upgrade died
+        # with the dual-axis ban — §6: no dual-axis charts, nothing upgrades into
+        # one; a concentration question reads on the sorted ranking itself.)
+        from aughor.agent.chart_vocab import resolve_chart_type
+        answer.chart_type = resolve_chart_type(answer.chart_type)
         # Chart-grammar exhibit for the quick answer — computed from the result grid alone
         # (severity ramp for a single-rate ranking; point labels for a scatter). Rides inside
         # chart_config so no new event/persistence surface is needed; absent when the
@@ -2751,8 +2711,8 @@ def _answer_core(
                 question=question, sqls=[final_sql], headline=_grounded_headline or question,
                 schema=schema, connection_id=connection_id, canvas_id=canvas_id,
                 guard_edges=_guards,
-                payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows),
-                               "complexity_tier": _cx.tier},
+                payload_extra=answer_chart_payload(
+                    answer.chart_type, answer.chart_config, len(result.rows), _cx.tier),
             )
             # Surface the per-run receipts live (Wave 1·E4 learning · E3 activations); each is flag-gated.
             for _evt in ("learning", "activations"):
@@ -3170,7 +3130,7 @@ async def _stream_chat(
         async for _frame_type, _frame_payload in _bridge:
             yield _sse(_frame_type, _frame_payload)
     except _CoreCancelled:
-        pass
+        return
     except Exception as e:
         yield _sse("error", _error_event(e))
     finally:
@@ -3228,10 +3188,14 @@ async def _stream_converse(
     The machine-readable marker rides on ``done`` instead.
     """
     def _run(emit, cancelled):
-        from aughor.agent.converse_tools import converse
+        from aughor.agent.converse_tools import converse, ground_answer_numbers
         from aughor.obs import session_log
 
-        turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False}
+        # `rows` accumulates what the turn's queries actually returned — the evidence
+        # the closing prose is held to. A turn may run several queries; all of their
+        # cells are citable, so they pool.
+        turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False,
+                      "rows": []}
 
         def _forward(_frame_type: str, _frame_payload: dict) -> None:
             """The tools' frames, minus the lifecycle. Named ``_frame_type`` on purpose:
@@ -3249,6 +3213,8 @@ async def _stream_converse(
                 return
             if _frame_type == "sql":
                 turn["sql"] = True
+            if _frame_type == "rows":
+                turn["rows"].extend(_frame_payload.get("rows") or [])
             emit(_frame_type, _frame_payload)
 
         def _on_step(step) -> None:
@@ -3314,6 +3280,15 @@ async def _stream_converse(
                     f"{'call' if steps_n == 1 else 'calls'}). What each step found is "
                     "above — asking again, or more specifically, usually gets there."
                 )
+        # Every other number this turn shows the user came from a result set; until
+        # now the sentence above them did not, and nothing compared the two. A model
+        # that writes a plausible table the rows do not contain is the one failure the
+        # user cannot catch — the chart beside it looks authoritative either way.
+        answer, _ground_receipt = ground_answer_numbers(
+            answer, turn["rows"], question=question)
+        if _ground_receipt is not None:
+            emit("guard_receipt", _ground_receipt)
+
         if not turn["sql"]:
             # No SQL this turn ⇒ the same shape the core's own no-SQL paths use, so a
             # text-only converse answer renders exactly like a definitional one does.
@@ -3351,11 +3326,137 @@ async def _stream_converse(
         await _bridge.aclose()
 
 
+async def _stream_analyst(
+    question: str,
+    connection_id: str,
+    history: list[ChatHistoryTurn],
+    session_id: str = "",
+    canvas_id: Optional[str] = None,
+    schema_scope: Optional[str] = None,
+    origin_finding: Optional[dict] = None,
+    purpose: str = "",
+) -> AsyncGenerator[str, None]:
+    """Serve one deep `/ask` turn as the ANALYST (CA-3) — the phase library as tools,
+    the sequence as the model's, under the deep step budget.
+
+    Same shape as :func:`_stream_converse` — the shared bridge, a different body. The
+    frames are the deep path's own vocabulary: ``phase_complete`` as each slice lands,
+    ``converse_step`` as each tool is chosen, ``guard_receipt``/``phase_progress``
+    relayed from inside the phase bodies via the progress sink, and the terminal
+    ``answer_report`` the narrator synthesizes from the evidence log. CA-1's parts
+    renderer draws all of it with no frontend change — the user watches the analyst
+    slice, and the report is the summary of what they watched.
+    """
+    loop = asyncio.get_running_loop()
+
+    def _run(emit, cancelled):
+        from aughor.agent.analyst import run_analyst
+        from aughor.agent.progress import clear_progress_sink, set_progress_sink
+        from aughor.obs import session_log
+
+        turn = {"steps": 0}
+
+        def _forward(_frame_type: str, _frame_payload: dict) -> None:
+            # The tools' frames, minus the lifecycle — the analyst emits its own
+            # terminals. Same relay claim `_stream_converse` makes.
+            if _frame_type in _CONVERSE_SUPPRESSED:
+                return
+            emit(_frame_type, _frame_payload)
+
+        def _on_step(step) -> None:
+            if cancelled():
+                raise _CoreCancelled()
+            turn["steps"] += 1
+            emit("converse_step", {
+                "index": turn["steps"],
+                "tool": step.tool,
+                "arguments": {k: str(v)[:400] for k, v in (step.arguments or {}).items()},
+                "ok": step.ok,
+                "detail": str(step.detail or "")[:500],
+                "result_chars": step.result_chars,
+            })
+            session_log.emit(session_log.TOOL_CALL_RESULT, name=step.tool,
+                             conn_id=connection_id, ok=step.ok,
+                             payload={"body": "analyst", "detail": str(step.detail or "")})
+
+        class _SinkShim:
+            """The progress sink's queue face, forwarding straight to `emit`: guard
+            receipts and per-dimension progress fired INSIDE a phase body reach the
+            stream without the graph's asyncio queue. `put_nowait` runs on the event
+            loop (the emitter schedules it there), where `emit`'s own
+            `call_soon_threadsafe` is still correct."""
+
+            @staticmethod
+            def put_nowait(p) -> None:
+                try:
+                    if not isinstance(p, dict):
+                        return
+                    if "__guard_receipt__" in p:
+                        emit("guard_receipt", p["__guard_receipt__"])
+                    elif "__report_delta__" in p:
+                        emit("report_delta", {"executive_summary": p["__report_delta__"]})
+                    elif "phase_id" in p:
+                        emit("phase_progress", p)
+                except _CoreCancelled:
+                    return None  # the loop's own checkpoint ends the turn; telemetry is disposable
+
+        token = set_progress_sink(loop, _SinkShim())
+        try:
+            _memory = (build_history_section(history)
+                       + build_prior_answers_section(
+                           resolve_prior_answers(question, connection_id, session_id)))
+            result = run_analyst(
+                connection_id, question,
+                origin_finding=origin_finding,
+                extra_context=_memory or None,
+                session_id=session_id, canvas_id=canvas_id, schema_scope=schema_scope,
+                emit=_forward, on_step=_on_step, purpose=purpose,
+            )
+        finally:
+            clear_progress_sink(token)
+
+        if result.report is None:
+            # No synthesized report — the loop concluded in prose (or ran dry). The
+            # turn renders as a direct answer: what it produced, said plainly, never
+            # a report-shaped shell around nothing.
+            answer = result.answer or (
+                "The investigation ran out of steps before reaching a conclusion — "
+                "what each step found is above."
+                if result.stop_reason == "budget" else
+                "The investigation ended without a conclusion — what each step found is above."
+            )
+            emit("report", {"report": {"headline": answer}, "query_mode": "direct",
+                            "investigation_id": result.investigation_id or None})
+        emit("done", {"body": "analyst", "stop_reason": result.stop_reason,
+                      "steps": len(result.steps)})
+
+        session_log.emit(
+            session_log.TOOL_CALL, name="ask.analyst", conn_id=connection_id,
+            ok=bool(result.report or result.answer), row_count=len(result.steps),
+            payload={"body": "analyst", "stop_reason": result.stop_reason,
+                     "tools": [s.tool for s in result.steps],
+                     "injected_chars": result.injected_chars,
+                     "reinjection_ratio": round(result.reinjection_ratio, 2)},
+        )
+        return result
+
+    _bridge = _core_frames(_run)
+    try:
+        async for _frame_type, _frame_payload in _bridge:
+            yield _sse(_frame_type, _frame_payload)
+    except _CoreCancelled:
+        return
+    except Exception as e:
+        yield _sse("error", _error_event(e))
+    finally:
+        await _bridge.aclose()
+
+
 # ── Investigation streaming ───────────────────────────────────────────────────
 
 def _render_origin_prose(o: dict) -> str:
     """Render an origin finding as a compact prior-analysis note — for the
-    direct/explore branches, which read ``prior_analyses``. (The ADA branch reads the
+    direct/explore branches, which read ``prior_analyses``. (The deep-analysis branch reads the
     structured ``origin_finding`` directly; see ``ada_intake``.)"""
     parts = [f"ALREADY ESTABLISHED by background exploration (do not re-derive): {o.get('finding', '')}"]
     if o.get("result_cells"):
@@ -3376,7 +3477,7 @@ async def _build_origin_finding(
     """The structured, already-established finding this investigation is DRILLING — or
     None for a cold-start question.
 
-    The SINGLE source of truth for "what known result am I explaining": the ADA branch
+    The SINGLE source of truth for "what known result am I explaining": the deep-analysis branch
     reads it directly (``ada_intake`` anchors its metric/tables/window on it instead of
     re-deriving), and the report carries its provenance (``insight_id``).
 
@@ -3425,11 +3526,17 @@ async def _build_origin_finding(
     return None
 
 
-def _followup_origin(history: list) -> Optional[dict]:
+def _followup_origin(history: list, followup: bool = True) -> Optional[dict]:
     """A structured origin_finding built from the PREVIOUS turn — the base a follow-up
     question composes on. Same shape as ``_build_origin_finding`` so ada_intake anchors
     on it and the direct/explore branches see it via prior_analyses. The ``finding`` text
-    is a compose-on-base directive; the ``sql`` is the base query to keep/extend."""
+    is a compose-on-base directive; the ``sql`` is the base query to keep/extend.
+
+    CA-3 — ``followup=False`` is the SOFT form: the prior spec still rides as context
+    (defect ⑦: ``is_followup`` missed "only focus on…", so the deep follow-up lost its
+    metric and returned zero rows), but the directive grants the MODEL the decision —
+    inherit the spec only if this question continues the thread. The regex detector
+    stops being the only door; it now merely chooses the directive's strength."""
     from aughor.explorer.scope import tables_in_sql
     if not history:
         return None
@@ -3442,11 +3549,19 @@ def _followup_origin(history: list) -> Optional[dict]:
     _headline = (_get("headline") or "").strip()
     key_rows = _get("key_rows") or []
     _cells = "; ".join(" | ".join(str(c) for c in (row or [])[:6]) for row in key_rows[:3])
-    directive = (
-        f"FOLLOW-UP — compose on the previous query. Prior question: \"{_q}\". Keep its "
-        f"metric, filters, grain and time window unless this question changes them, and "
-        f"resolve 'that' / 'those' / 'the top one' against its result. Do NOT start from scratch."
-    )
+    if followup:
+        directive = (
+            f"FOLLOW-UP — compose on the previous query. Prior question: \"{_q}\". Keep its "
+            f"metric, filters, grain and time window unless this question changes them, and "
+            f"resolve 'that' / 'those' / 'the top one' against its result. Do NOT start from scratch."
+        )
+    else:
+        directive = (
+            f"PRIOR TURN (context, not a mandate). The previous question was \"{_q}\" and its "
+            f"query is below. If THIS question continues that thread — narrows it, re-cuts it, "
+            f"says 'only …' or 'focus on …' — keep the prior metric, filters, grain and window "
+            f"unless the question changes them. If it is a new question, ignore this context."
+        )
     return {
         "insight_id": "",
         "finding": directive,
@@ -3474,6 +3589,7 @@ async def _stream_investigation(
     requested_mode: str = "investigate",
     purpose: str = "",
     allow_clarify: bool = True,
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -3509,7 +3625,7 @@ async def _stream_investigation(
     # ── Tier 0: the trace is a READ, not a re-run ──────────────────────────────
     # Drilling into a known finding? The explorer already did the deep analysis and
     # captured it in the Finding Dossier. Serve that as the trace — a deterministic
-    # ledger lookup by the finding's id (no semantic-match guess, no ADA, no SQL, no LLM).
+    # ledger lookup by the finding's id (no semantic-match guess, no deep-analysis, no SQL, no LLM).
     # `deep` is the explicit escalation past the dossier into a fresh investigation.
     if insight_id and not deep:
         try:
@@ -3550,12 +3666,13 @@ async def _stream_investigation(
             return
 
     inv_id = create_investigation(question, connection_id, canvas_id=canvas_id,
-                                  agent_id=_current_agent_id(), purpose=purpose)
+                                  agent_id=_current_agent_id(), purpose=purpose,
+                                  session_id=session_id or "")
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
 
-    # Surface matched org-playbook items up front (they're also injected into ADA
+    # Surface matched org-playbook items up front (they're also injected into deep-analysis
     # synthesis). The user can keep / modify / remove them from the result.
     try:
         from aughor.playbook.retriever import retrieve_for_metric_and_phases
@@ -3616,7 +3733,7 @@ async def _stream_investigation(
                 # Complete the join paths BEFORE building the catalog (mirrors the /chat path):
                 # schema-linking picks ~4 tables by keyword, missing bridge/parent tables a join
                 # needs — e.g. the timestamp on `orders` when revenue is on `invoices`. Without
-                # this the ADA coder can't see the date column and hallucinates one on the metric
+                # this the deep-analysis coder can't see the date column and hallucinates one on the metric
                 # table. Expand against the FULL schema, capped at 10 tables.
                 from aughor.llm.profile import profile_for as _pf
                 from aughor.tools.schema_linker import rank_tables_for_context
@@ -3671,7 +3788,7 @@ async def _stream_investigation(
         # Prefer structured Data Catalog as the primary schema context
         schema_for_agent = data_catalog if data_catalog else schema
 
-        # Inject the UNIFIED metric grounding so ADA resolves a metric (e.g. "revenue")
+        # Inject the UNIFIED metric grounding so deep-analysis resolves a metric (e.g. "revenue")
         # to the SAME approved SQL the /chat path uses — closing the "revenue means two
         # different things" / "Insight vs Deep disagree" gap. ONE resolver, both paths:
         # the governed catalog (with NEVER rules) + the connection's north-star + verified
@@ -3705,7 +3822,7 @@ async def _stream_investigation(
 
         # ONE structured origin finding — the single source of truth for "what known
         # result is this investigation drilling" (insight_id dossier, or an inline
-        # seed_context/seed_sql). The ADA branch reads origin_finding directly
+        # seed_context/seed_sql). The deep-analysis branch reads origin_finding directly
         # (ada_intake anchors its spec on it); for the direct/explore branches we render
         # it into prior_analyses (the channel those read). scan_context stays empty —
         # exploratory_scan overwrites it, so seeding there is a no-op.
@@ -3713,13 +3830,16 @@ async def _stream_investigation(
         # Follow-up composition (the quick /chat path already does this via
         # build_history_section). When THIS question is a continuation and no explicit
         # drill seed was given, anchor the run on the previous turn's query — the same
-        # origin_finding channel ADA reads + prior_analyses the direct/explore branches
+        # origin_finding channel deep-analysis reads + prior_analyses the direct/explore branches
         # read — so "break that down / for luxury only / that one" composes on the base
         # instead of starting from scratch.
         if _origin is None and history:
+            # CA-3: the prior turn's spec ALWAYS rides as context on a deep turn with
+            # history — soft-form when the regex detector did not fire, so the model
+            # (which sees the question) decides whether to compose on it. `is_followup`
+            # stops being the only door (defect ⑦: it missed "only focus on…").
             from aughor.agent.followup import is_followup
-            if is_followup(question):
-                _origin = _followup_origin(history)
+            _origin = _followup_origin(history, followup=is_followup(question))
         _seed_priors = [_render_origin_prose(_origin)] if _origin else []
 
         # AL-05 (Semantic plane) — resolve the ontology / metrics / profile / KB once here and
@@ -3906,7 +4026,7 @@ async def _stream_investigation(
                 if insight_id and isinstance(ada_save, dict):
                     ada_save["origin_insight_id"] = insight_id  # provenance: drilled from this finding
                 await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False, origin_insight_id=insight_id))
-                # K3-wide: the ADA report carries a Trust Receipt too (executed
+                # K3-wide: the deep-analysis report carries a Trust Receipt too (executed
                 # queries → input tables → metric enforcement), so an agentic
                 # answer self-justifies like a chat answer and an explorer finding.
                 # Wave S2 — a deep answer reports its trusted-query provenance like a quick
@@ -4210,7 +4330,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
             elif node_name == "reason_over_result":
                 # P3 plan-gate resume streams the EXPLORE path too — surface each
-                # sub-question answer as it lands (this loop only handled the ADA path before).
+                # sub-question answer as it lands (this loop only handled the deep-analysis path before).
                 answers = merged.get("subq_answers", [])
                 if answers:
                     yield _sse("subq_answer", _explore_subq_event(answers[-1]))
@@ -4332,6 +4452,7 @@ async def _investigation_job_streamed(
     requested_mode: str = "investigate",
     purpose: str = "",
     allow_clarify: bool = True,
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -4355,7 +4476,7 @@ async def _investigation_job_streamed(
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
                 insight_id=insight_id, deep=deep, history=history,
                 requested_mode=requested_mode, purpose=purpose,
-                allow_clarify=allow_clarify,
+                allow_clarify=allow_clarify, session_id=session_id,
             ):
                 await queue.put(sse)
         finally:
@@ -4386,7 +4507,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
-            allow_clarify=req.allow_clarify,
+            allow_clarify=req.allow_clarify, session_id=req.session_id,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -4423,16 +4544,36 @@ def _converse_eligible(req, route) -> bool:
     ``forced == "dossier"``; it is deep by ROUTING convention, not because the user asked
     for a report, which is exactly why the conversation may take it.
 
-    Two carve-outs remain, each with a live reason. ``escalate`` is the user's explicit
-    "investigate deeper" — a command, not a question, and spending a model turn to
-    re-decide it would be latency with no information. A router-chosen ``deep`` route
-    (minus the dossier case) keeps the dedicated body until the investigation's frames
-    can stream through a converse turn (the CI-6a renderer is the missing half).
+    CA-3 dissolved the last two carve-outs' REASON: a deep or escalated turn is now
+    served by the ANALYST body (:func:`_analyst_eligible` / :func:`_stream_analyst`),
+    whose frames stream through the turn exactly as CI-6a's renderer needed. This
+    predicate keeps answering the narrower question it always answered — "may a
+    QUICK turn be served by plain converse" — so deep/escalate still return False
+    here and take the analyst door instead.
     """
     from aughor.agent.converse_tools import converse_available
     if not converse_available() or req.escalate:
         return False
     return route.depth != "deep" or route.forced == "dossier"
+
+
+def _analyst_eligible(req, route) -> bool:
+    """CA-3 — the door opens: a deep or escalated ``/ask`` turn is served by the
+    analyst loop when the converse experiment is on.
+
+    Two deliberate exclusions. A dossier drill stays a CONVERSATION (Tier-0 read
+    posture — the trace already exists; CI-4 decided the conversation takes it,
+    holding ``deep_analysis`` in reserve). A router-chosen ``explore`` wave keeps the
+    explore graph — the analyst investigates one question; it does not run the
+    multi-cut landscape scan. With the flag off, the phase script serves every deep
+    turn exactly as before (§5's free-tier ladder: the library remains the fallback).
+    """
+    from aughor.agent.converse_tools import converse_available
+    if not converse_available():
+        return False
+    if route.forced == "dossier" or route.mode == "explore":
+        return False
+    return route.depth == "deep" or bool(req.escalate)
 
 
 async def _origin_prose_for(req, conn_id: str) -> str:
@@ -4685,7 +4826,7 @@ async def record_overview_drill(req: OverviewDrillRequest) -> None:
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to a body.
 
-    THREE bodies now, not two: quick, deep (ADA/explore), and — behind `ask.converse`,
+    THREE bodies now, not two: quick, deep (deep-analysis/explore), and — behind `ask.converse`,
     an EXPERIMENT that is off by default — the conversational one. The two originals are
     unchanged; converse swaps which body answers a quick turn, never which door it
     entered by, so the overview branch, the clarify gate and federation all still run
@@ -4772,6 +4913,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     # is inert, and minting a second routing frame for the same decision would be exactly
     # the parallel vocabulary this wave is trying not to create.
     _use_converse = _converse_eligible(req, route)
+    _use_analyst = _analyst_eligible(req, route)   # CA-3 — deep/escalate take the analyst door
     # CI-1 — resolve the effective conversation history ONCE, here, before any body runs:
     # the client's turns when it sent them, else a server-side reconstruction from the
     # session store so a reload / another device / the MCP server / a scheduled task all
@@ -4784,6 +4926,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _route_ev["purpose"] = req.purpose   # R13/R10 — starter provenance on the receipt
     if _use_converse:
         _route_ev["body"] = "converse"
+    if _use_analyst:
+        _route_ev["body"] = "analyst"
     # The route receipt measures the memory it injected — turns and chars — the same
     # discipline PE-1 applied to prompt spend: a feature you cannot see the size of is
     # one you cannot tell is working. `reconstructed` distinguishes server-rebuilt memory
@@ -4794,7 +4938,26 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     _route_ev["history_reconstructed"] = bool(_hist) and not bool(_client_history)
     yield _sse("route", _route_ev)
 
-    if route.depth == "deep" and not _use_converse:
+    if _use_analyst:
+        # CA-3 — the analyst loop serves the deep turn: intake anchors the spec (the
+        # origin resolution below is the same one the phase script seeds, so a drill
+        # or a follow-up carries its base), the model chooses the slices, the
+        # narrator writes the report from the evidence. Metered like converse — a
+        # deep turn spends MORE requests, and the meter is the honesty about it.
+        _origin = await _build_origin_finding(conn_id, req.insight_id,
+                                              req.seed_context or "", req.seed_sql)
+        if _origin is None and req.history:
+            from aughor.agent.followup import is_followup
+            _origin = _followup_origin(req.history, followup=is_followup(req.question))
+        _analyst_body = _stream_analyst(
+            req.question, conn_id, req.history,
+            session_id=req.session_id, canvas_id=req.canvas_id,
+            schema_scope=req.schema_name, origin_finding=_origin,
+            purpose=req.purpose,
+        )
+        async for sse in _metered_stream(_analyst_body, budget=_insight_budget(conn_id)):
+            yield sse
+    elif route.depth == "deep" and not _use_converse:
         async for sse in _investigation_job_streamed(
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
@@ -4807,6 +4970,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             requested_mode=route.mode,
             allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
+            session_id=req.session_id,  # CA-0 — the deep run is filed under the conversation
         ):
             yield sse
     else:
@@ -5316,7 +5480,6 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     `narrate=true` prepends an LLM-authored executive summary (best-effort; the
     export still succeeds if the model is slow or unavailable)."""
     from fastapi.responses import Response
-    from aughor.export import ExportUnavailable, export_report
     from aughor.security.authz import check_owner
 
     check_owner("investigation", inv_id, principal)  # SEC-05: no cross-org export
@@ -5326,6 +5489,21 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     fmt = (format or "pdf").lower()
     if fmt not in ("pdf", "pptx"):
         raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
+
+    # Imported after the authz/existence checks so a caller who may not read this
+    # investigation learns nothing about the deployment's configuration, and guarded
+    # separately from the render below: `aughor.export` pulls the extra's whole dependency
+    # closure at import time, and an ImportError here is the same CONFIGURATION state as
+    # ExportUnavailable — not a fault. Catching it only around export_report() let the
+    # matplotlib import escape as a 500.
+    try:
+        from aughor.export import ExportUnavailable, export_report
+    except ImportError as exc:
+        logger.warning("export requested but its extra failed to import: %s", exc)
+        raise HTTPException(status_code=501, detail=(
+            "Report export needs the 'export' extra (reportlab, python-pptx, matplotlib). "
+            f"Install it with:  uv sync --extra export   —  underlying import error: {exc}"))
+
     try:
         # The router resolves the effective currency (org override → profile) and injects
         # it — the platform-side export must not import agent-side settings itself.
@@ -5398,12 +5576,115 @@ def list_chat_sessions_route(conn_id: Optional[str] = None, limit: int = 30):
     return list_chat_sessions(conn_id, limit=limit)
 
 
+class RenameChatSessionRequest(BaseModel):
+    """A thread's user-chosen name. Empty clears it back to the opening question."""
+    title: str = Field(default="", max_length=200,
+                       description="The thread's display name; empty restores the derived title.")
+
+
+@router.patch("/chat-sessions/{session_id}")
+def rename_chat_session_route(session_id: str, req: RenameChatSessionRequest):
+    """Rename a thread (CA-5). The rail's titles were derived from the opening
+    question — a good default, a bad permanent name. Org-scoped in the store, like
+    every other read and write keyed by a session id."""
+    from aughor.db.history import rename_chat_session
+    if not rename_chat_session(session_id, req.title):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "title": req.title.strip()[:200]}
+
+
+@router.delete("/chat-sessions/{session_id}", status_code=204)
+def delete_chat_session_route(session_id: str):
+    """Delete a thread and every turn's full footprint — history rows, evidence
+    claims, vector entries, the title override (CA-5).
+
+    A real delete, not a hidden flag: the History panel's per-run delete already
+    removes runs outright, and a thread the user asked to be gone that still steered
+    future analysis from the RAG index would be the same lie CA-0 went after.
+    """
+    from aughor.db.purge import purge_chat_session_artifacts
+    counts = purge_chat_session_artifacts(session_id)
+    if not counts.get("investigations"):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
 @router.get("/chat-sessions/{session_id}/turns")
 def get_chat_session_turns(session_id: str):
     turns = get_session_turns(session_id)
     if not turns:
         raise HTTPException(status_code=404, detail="Session not found")
     return turns
+
+
+def _turn_to_ui_messages(t: dict) -> list[dict]:
+    """One stored chat turn as an AI-SDK `UIMessage` pair (CA-1).
+
+    The persisted form and the streamed form are the same shape: text parts carry
+    the prose (channel-stamped exactly as the live adapter stamps them), typed
+    ``data-*`` parts carry the structure, and the web client's ``projectTurn``
+    derives the turn from either without knowing which it got. That equivalence is
+    what let the client's 40-field manual restore literal be deleted — restoring a
+    thread is ``setMessages`` and nothing else.
+
+    An interrupted turn carries a ``data-error`` part with the shared uncertainty
+    sentence (kernel/jobs.py UNCERTAIN_RESULT): the partial it produced renders,
+    and the tail says plainly that it is missing — a partial presented as complete
+    is a worse lie than not restoring it.
+    """
+    from aughor.kernel.jobs import UNCERTAIN_RESULT
+
+    parts: list[dict] = []
+    if t.get("headline"):
+        parts.append({
+            "type": "text", "text": t["headline"], "state": "done",
+            "providerMetadata": {"aughor": {"channel": "headline"}},
+        })
+        parts.append({"type": "data-headline", "data": {"headline": t["headline"]}})
+    if t.get("sql"):
+        parts.append({"type": "data-sql", "data": {"sql": t["sql"]}})
+    if t.get("columns"):
+        parts.append({"type": "data-columns", "data": {"columns": t["columns"]}})
+    if t.get("rows"):
+        parts.append({"type": "data-rows", "data": {"rows": t["rows"]}})
+    if t.get("chart_type"):
+        parts.append({"type": "data-chart_type", "data": {"chart_type": t["chart_type"]}})
+    if t.get("tables_used"):
+        parts.append({"type": "data-tables_used", "data": {"tables": t["tables_used"]}})
+    if t.get("intent") or t.get("approach"):
+        parts.append({"type": "data-analysis", "data": {
+            "intent": t.get("intent") or "", "steps": t.get("approach") or [],
+        }})
+    # WIRE-NAME BOUNDARY — the stored key is `insight` (report_json["insight"], a
+    # persisted identity); the wire part is `narrative`, the platform's own word.
+    if t.get("insight"):
+        parts.append({"type": "data-narrative", "data": t["insight"]})
+    if t.get("overview_report"):
+        parts.append({"type": "data-overview_report",
+                      "data": {"overview_report": t["overview_report"]}})
+    if (t.get("status") or "complete") == "interrupted":
+        parts.append({"type": "data-error", "data": {
+            "message": f"This answer was interrupted — {UNCERTAIN_RESULT}.",
+        }})
+    elif t.get("sql"):
+        # The turn id IS the receipt key; the receipt surface 404-noops gracefully
+        # if this turn predates receipts.
+        parts.append({"type": "data-done", "data": {"has_receipt": True, "inv_id": t["id"]}})
+    return [
+        {"id": f"{t['id']}-q", "role": "user",
+         "parts": [{"type": "text", "text": t.get("question") or ""}]},
+        {"id": t["id"], "role": "assistant", "parts": parts},
+    ]
+
+
+@router.get("/chat-sessions/{session_id}/messages")
+def get_chat_session_messages(session_id: str):
+    """The thread as AI-SDK ``UIMessage[]`` (CA-1) — thread selection on the web
+    is ``setMessages`` over this, the same shape the live stream accumulates.
+    Org-scoped in the store, like the turns read."""
+    turns = get_session_turns(session_id)
+    if not turns:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return [m for t in turns for m in _turn_to_ui_messages(t)]
 
 
 @router.get("/answer/{connection_id}/{inv_id}/receipt")
@@ -5413,7 +5694,7 @@ def get_answer_receipt(connection_id: str, inv_id: str):
     investigations produced before receipts."""
     from aughor.kernel.ledger import Ledger
     # natural_key stays `ada:` — a persisted storage identity; renaming it would
-    # orphan every receipt written before this rename. Only the URL path is de-ADA'd.
+    # orphan every receipt written before this rename. Only the URL path is de-deep-analysis'd.
     rec = Ledger.default().receipt(f"ada:{connection_id}:{inv_id}")
     if rec is None:
         raise HTTPException(status_code=404, detail="No receipt for this report")
@@ -5423,7 +5704,7 @@ def get_answer_receipt(connection_id: str, inv_id: str):
 @router.get("/ada/{connection_id}/{inv_id}/receipt", deprecated=True)
 def get_ada_receipt(connection_id: str, inv_id: str):
     """@deprecated Use `/answer/{connection_id}/{inv_id}/receipt`. Kept one release
-    for the `ADA`→answer rename (REC-U9)."""
+    for the acronym→answer rename (REC-U9)."""
     return get_answer_receipt(connection_id, inv_id)
 
 

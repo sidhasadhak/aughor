@@ -78,7 +78,7 @@ def test_latin1_csv_ingests_and_reads_back(conn, tmp_path) -> None:
     assert res.rows and res.rows[0][0] == "café"
 
 
-def test_xlsx_reads(conn, tmp_path) -> None:
+def test_xlsx_reads(conn, tmp_path, duckdb_extension) -> None:
     """`read_excel` does not exist; `read_xlsx` does, once the extension loads.
 
     The fixture is written with xlsxwriter rather than openpyxl deliberately —
@@ -86,6 +86,7 @@ def test_xlsx_reads(conn, tmp_path) -> None:
     the ONE test covering the broken format into a permanent skip. A test that
     never runs would not have caught the bug it exists for.
     """
+    duckdb_extension("excel")   # fetched from extensions.duckdb.org on first use
     xlsxwriter = pytest.importorskip("xlsxwriter")
     p = tmp_path / "book.xlsx"
     wb = xlsxwriter.Workbook(str(p))

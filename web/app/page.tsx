@@ -16,6 +16,7 @@ import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -66,6 +67,7 @@ const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspa
 import { getApiBase, DEMO_PACK } from "@/lib/config";
 import {
   getConnections,
+  seedDemoConnection,
   getWorkspaces,
   createWorkspace as apiCreateWorkspace,
   type Workspace,
@@ -133,49 +135,15 @@ type AskMode = "ask" | "investigate";
 
 // ── Icon primitives ────────────────────────────────────────────────────────────
 
-const ICON_PATHS: Record<string, string> = {
-  home:     "M3 12L12 3l9 9M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9",
-  chat:     "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
-  clock:    "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z",
-  db:       "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z",
-  builder:  "M3 3h7v7H3V3zm11 0h7v7h-7V3zm0 11h7v7h-7v-7zM3 14h7v7H3v-7z",
-  catalog:  "M4 6h16M4 10h16M4 14h16M4 18h16",
-  node:     "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
-  settings: "M12 15a3 3 0 100-6 3 3 0 000 6zm7.94-3c0-.32-.03-.63-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.6-.22l-2.39.96a7.07 7.07 0 00-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.58.23-1.13.54-1.62.94l-2.39-.96a.48.48 0 00-.6.22L2.07 9.47a.48.48 0 00.12.61l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.6.22l2.39-.96c.49.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.58-.27 1.13-.58 1.62-.94l2.39.96c.22.07.48 0 .6-.22l1.92-3.32a.48.48 0 00-.12-.61l-2.01-1.58c.05-.31.07-.63.07-.94z",
-  search:   "M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35",
-  plus:     "M12 5v14M5 12h14",
-  close:    "M18 6L6 18M6 6l12 12",
-  chevd:    "M6 9l6 6 6-6",
-  chevr:    "M9 6l6 6-6 6",
-  send:     "M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z",
-  spark:    "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
-  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
-  process:  "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
-  playbook: "M9 12h6M9 16h4M5 3H3a2 2 0 00-2 2v16a2 2 0 002 2h16a2 2 0 002-2V5a2 2 0 00-2-2h-2M15 3H9a1 1 0 00-1 1v2a1 1 0 001 1h6a1 1 0 001-1V4a1 1 0 00-1-1z",
-  check:    "M20 6L9 17l-5-5",
-  info:     "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-14v4m0 4v.01",
-  warning:  "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4m0 4v.01",
-  sun:      "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41",
-  moon:     "M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
-  refresh:  "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
-  trash:    "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6",
-  canvas:   "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
-  plug:     "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
-  metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
-  brief:    "M3 5h18M3 9h18M3 13h12M3 17h8",
-  layers:   "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
-  inbox:    "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
-  shield:   "M12 2l8 3v6c0 5-3.4 9.1-8 11-4.6-1.9-8-6-8-11V5l8-3zM9.5 12l1.8 1.8L15 9.8",
-};
-
+// The nav's glyphs come from the ONE icon set (components/ui/icon.tsx). Thirty
+// hand-written paths stood here — one of four such maps in this tree, each having
+// re-drawn the same glyphs slightly differently. `NavIcon` survives as a thin adapter
+// so the ~40 call sites below keep their `name`/`size`/`color` shape.
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
-  const d = ICON_PATHS[name] || ICON_PATHS.info;
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Icon name={name as IconName} size={size} />
+    </span>
   );
 }
 
@@ -288,7 +256,7 @@ function WorkspaceSwitcher({
       >
         <NavIcon name="layers" size={14} color="var(--blue4)" />
         <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
-          <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
+          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
             {active?.name ?? "—"}
           </span>
@@ -303,7 +271,7 @@ function WorkspaceSwitcher({
           borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
           padding: 6,
         }}>
-          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
             Workspaces
           </div>
           {workspaces.map(w => {
@@ -328,7 +296,7 @@ function WorkspaceSwitcher({
                   <span style={{ display: "block", fontSize: 12, fontWeight: on ? 500 : 400, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {w.name}
                   </span>
-                  <span style={{ display: "block", fontSize: 10, color: "var(--t4)" }}>
+                  <span style={{ display: "block", fontSize: 11, color: "var(--t4)" }}>
                     {w.connection_ids.length} connection{w.connection_ids.length === 1 ? "" : "s"}{w.is_default ? " · default" : ""}
                   </span>
                 </span>
@@ -408,7 +376,7 @@ function Topbar({
       <div style={{ display: "flex", alignItems: "center", gap: 9, width: 224, flexShrink: 0 }}>
         <AughorLogo />
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
             Aughor
           </div>
           {/* <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
@@ -433,8 +401,8 @@ function Topbar({
         <NavIcon name="search" size={13} />
         <span style={{ flex: 1, textAlign: "left" }}>Search tables, analyses, metrics…</span>
         <span style={{ display: "flex", gap: 2, alignItems: "center" }}>
-          <kbd style={{ fontSize: 9, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
-          <kbd style={{ fontSize: 9, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
+          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
+          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
         </span>
       </button>
 
@@ -562,14 +530,14 @@ function Sidebar({
         {/* Demo posture is stated, not implied. The hosted demo names a real company, so
             a visitor must be able to see at a glance that the operational figures are
             synthetic — and "Local" was simply wrong there: the backend is a recording. */}
-        <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
           {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
         </div>
         {DEMO_PACK && (
           <div
             title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
             style={{
-              fontSize: 9, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
+              fontSize: 11, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
               padding: "6px 6px 0", marginTop: 2, borderTop: "1px solid var(--b0)",
             }}
           >
@@ -621,13 +589,13 @@ function SearchOverlay({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200 }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }} />
       <div style={{
         position: "fixed", top: "16%", left: "50%", transform: "translateX(-50%)",
         zIndex: 201, width: "100%", maxWidth: 560,
         background: "var(--bg-3)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "0 24px 48px rgba(0,0,0,.6)",
+        boxShadow: "var(--shadow-xl)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--b1)" }}>
           <NavIcon name="search" size={14} color="var(--t3)" />
@@ -640,7 +608,7 @@ function SearchOverlay({
           />
           <kbd
             onClick={onClose}
-            style={{ fontSize: 9, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
+            style={{ fontSize: 11, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
           >
             ESC
           </kbd>
@@ -684,8 +652,8 @@ function SearchOverlay({
         <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 12 }}>
           {[["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]].map(([k, l]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <kbd style={{ fontSize: 9, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
-              <span style={{ fontSize: 10, color: "var(--t4)" }}>{l}</span>
+              <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
             </span>
           ))}
         </div>
@@ -717,9 +685,9 @@ function StatCard({ value, label, accent, sub, onClick }: {
         transition: "background .12s, border-color .12s", minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 24, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)" }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)" }}>{value}</div>
       <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 5 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: accent, marginTop: 3, fontFamily: "var(--font-mono)" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: accent, marginTop: 3, fontFamily: "var(--font-mono)" }}>{sub}</div>}
       <div style={{ width: 20, height: 2, background: accent, borderRadius: 1, marginTop: 10 }} />
     </div>
   );
@@ -738,6 +706,7 @@ function HomeScreen({
   onOpenInvestigation,
   onAddConnection,
   onTryDemo,
+  demoLoading,
 }: {
   connections: Connection[];
   selectedConn: string;
@@ -747,6 +716,7 @@ function HomeScreen({
   onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
   onAddConnection: () => void;
   onTryDemo: () => void;
+  demoLoading: boolean;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -808,7 +778,7 @@ function HomeScreen({
             the question into the chat with the chosen depth. */}
         {connections.length > 0 && (
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
+            <div style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <textarea
                 value={homeQ}
@@ -845,17 +815,17 @@ function HomeScreen({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
               {[
                 { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
-                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Browse the bundled BeautyCommerce sample workspace.",       cta: "Open the demo",    accent: "var(--vio3)", action: onTryDemo },
+                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Load a synthetic dataset — 90 days of SaaS revenue with a real outage to find.", cta: demoLoading ? "Loading…" : "Load the demo", accent: "var(--vio3)", action: onTryDemo, busy: demoLoading },
                 { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the deep analysis for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
               ].map(s => (
                 <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div style={{ width: 22, height: 22, borderRadius: "50%", background: s.accent + "22", border: `1px solid ${s.accent}55`, color: s.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{s.n}</div>
                     <NavIcon name={s.icon} size={13} color={s.accent} />
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5, flex: 1, marginBottom: 12 }}>{s.desc}</div>
-                  <button onClick={s.action} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: "pointer" }}>{s.cta} →</button>
+                  <button onClick={s.action} disabled={!!s.busy} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: s.busy ? "progress" : "pointer", opacity: s.busy ? 0.6 : 1 }}>{s.cta} →</button>
                 </div>
               ))}
             </div>
@@ -926,7 +896,7 @@ function HomeScreen({
                     <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
                       <td style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
-                        {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
+                        {inv.headline && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
                       </td>
                       <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
                       <td>
@@ -1136,7 +1106,7 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: theme === m.id ? "var(--blue5)" : "var(--t1)", marginBottom: 2 }}>{m.label}</div>
-                    <div style={{ fontSize: 10, color: "var(--t3)" }}>{m.desc}</div>
+                    <div style={{ fontSize: 11, color: "var(--t3)" }}>{m.desc}</div>
                   </div>
                   {theme === m.id && (
                     <div style={{ marginLeft: "auto", flexShrink: 0 }}>
@@ -1298,10 +1268,10 @@ function AddConnectionForm({
   ];
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
           </button>
@@ -1339,7 +1309,7 @@ function AddConnectionForm({
                     }}
                   >
                     <div style={{ fontWeight: 500 }}>{ct.label}</div>
-                    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
+                    <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
                   </button>
                 ))
               ))}
@@ -1415,7 +1385,7 @@ function DeleteConnModal({
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div style={{ width: "100%", maxWidth: 360, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -1423,13 +1393,13 @@ function DeleteConnModal({
             <NavIcon name="trash" size={14} color="var(--red4)" />
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
               This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 10, color: "var(--t3)" }}>
+        <div style={{ fontSize: 11, color: "var(--t3)" }}>
           Type <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span> to confirm
         </div>
         <input
@@ -1493,6 +1463,16 @@ const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
   catalog:  "catalog",
   builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
   query:    "query",
+  semantic: "semantic",
+};
+
+/** The inverse, for the rail's active mark. Two ids collapse onto `query` above, so
+ *  the map cannot be inverted mechanically: `builder` is the rail item that exists.
+ *  Without this the SQL Editor was the one destination the rail never lit up — you
+ *  could be looking at it and the nav still said you were nowhere. */
+const RAIL_TAB_FOR_DATA_LAYER: Record<DataLayer, NavTab> = {
+  catalog:  "catalog",
+  query:    "builder",
   semantic: "semantic",
 };
 
@@ -1790,8 +1770,29 @@ export default function Home() {
 
   // Populate the org-settings cache that the display formatters read (currency symbol,
   // date format) with the active workspace's effective settings; refresh on switch.
+  //
+  // CA-5 / CI-6b — the same fetch decides where an org LANDS. An org that has chosen
+  // the conversation as its front door is sent to /chat, but only from a bare "/":
+  // a deep link (?chat=…, a canvas, a shared view) names its destination, and a
+  // redirect that overrode it would break every link this app has ever handed out.
+  // The hop happens once per load, and /chat carries "Open in workbench" back.
+  const redirectedHome = useRef(false);
   useEffect(() => {
-    getEffectiveSettings(selectedWorkspace || undefined).then(setOrgSettingsCache).catch(() => {});
+    getEffectiveSettings(selectedWorkspace || undefined)
+      .then((settings) => {
+        setOrgSettingsCache(settings);
+        if (
+          settings?.chat_first_home &&
+          !redirectedHome.current &&
+          typeof window !== "undefined" &&
+          window.location.pathname === "/" &&
+          window.location.search === ""
+        ) {
+          redirectedHome.current = true;
+          window.location.replace("/chat");
+        }
+      })
+      .catch(() => {});
   }, [selectedWorkspace]);
 
   const reloadWorkspaces = () => getWorkspaces().then(setWorkspaces).catch(() => {});
@@ -1808,14 +1809,36 @@ export default function Home() {
 
   const reloadConnections = () => getConnections().then(setConnections).catch(() => {});
 
-  // First-run funnel: select the best available demo connection and open the Catalog to browse it.
-  const tryDemo = () => {
-    const demo = connections.find(c => c.name === "BeautyCommerce")
-      || connections.find(c => c.id === "workspace")
-      || connections.find(c => c.builtin)
-      || connections[0];
-    if (demo) setSelectedConn(demo.id);
-    handleNavigate("catalog");
+  // First-run funnel: open the demo dataset, provisioning it first if it isn't there.
+  // Nothing is seeded on boot, so on a fresh install this used to land on an empty
+  // Workspace — the step promised a sample to browse and delivered nothing. The seed
+  // endpoint is idempotent, so a second click just reopens what exists.
+  const [demoLoading, setDemoLoading] = useState(false);
+  const tryDemo = async () => {
+    const existing = connections.find(c => c.id === "fixture")
+      || connections.find(c => c.name === "BeautyCommerce");
+    if (existing) {
+      setSelectedConn(existing.id);
+      handleNavigate("catalog");
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      const { id } = await seedDemoConnection();
+      // Both lists, not just connections: the Catalog renders `wsConnections`, which
+      // filters by the active workspace's membership, so refreshing connections alone
+      // left the new connection filtered out by a stale workspace and the demo looked
+      // like it had not loaded at all.
+      await Promise.all([reloadConnections(), reloadWorkspaces()]);
+      setSelectedConn(id);
+      handleNavigate("catalog");
+    } catch {
+      // Seeding is the only thing that can fail here, and it is recoverable — leave the
+      // user on the funnel with the step still actionable rather than navigating to an
+      // empty Catalog that looks broken.
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string) => {
@@ -2057,7 +2080,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? dataLayer : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
@@ -2074,6 +2097,7 @@ export default function Home() {
                 onOpenInvestigation={openInvestigation}
                 onAddConnection={() => setShowAddConn(true)}
                 onTryDemo={tryDemo}
+                demoLoading={demoLoading}
               />
             )}
 
@@ -2120,7 +2144,7 @@ export default function Home() {
                         {activeCanvas.name}
                       </span>
                       {activeCanvas.scopes[0]?.tables.length > 0 && (
-                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 10 }}>
+                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 11 }}>
                           {activeCanvas.scopes[0].tables.length} tables
                         </span>
                       )}
@@ -2339,6 +2363,9 @@ export default function Home() {
                 layer={dataLayer}
                 onLayerChange={setDataLayer}
                 ariaLabel="Data views"
+                // Catalog / SQL Editor / Semantic Layer are each their own rail item,
+                // so the switcher row repeated the rail. The rail is the switcher.
+                headerless
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (

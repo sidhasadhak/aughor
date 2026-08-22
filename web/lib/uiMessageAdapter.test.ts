@@ -12,11 +12,8 @@
  * adapter calls the methods we think it calls.
  */
 
-import { readFileSync } from "node:fs";
-
 import { describe, expect, it } from "vitest";
 
-import { UNRENDERED_FRAMES } from "./aughorUIDataTypes";
 import { AughorToUIMessage, adaptFrames, isDeclaredDataPart } from "./uiMessageAdapter";
 
 /** Concatenate every text-delta for a given part id, in order. */
@@ -191,32 +188,75 @@ describe("the unknown-frame path (why an open model beats a closed switch)", () 
   });
 });
 
-describe("the two authorities must not drift", () => {
-  /**
-   * `UNRENDERED_FRAMES` exists in two places: `investigationStream.ts`, which
-   * owns it, and `aughorUIDataTypes.ts`, which mirrors it so the adapter can
-   * tell deliberate silence from a genuine gap.
-   *
-   * Two copies of one list drift, and this one drifts SILENTLY: a frame added
-   * to the reducer's list but not the mirror starts rendering as
-   * "unrecognised", and a frame removed from the reducer's list but left in the
-   * mirror vanishes — the precise failure the mirror was added to prevent. A
-   * guard goes blind when its matching key stops matching, so this reads the
-   * source rather than trusting a second hand-written list.
-   */
-  it("mirrors the reducer's UNRENDERED_FRAMES exactly", () => {
-    const src = readFileSync(new URL("./investigationStream.ts", import.meta.url), "utf8");
-    // `[\s\S]` rather than the `s` (dotAll) flag: this project's tsc target is
-    // below es2018, where that flag is a compile error — and the test suite is
-    // not type-checked by `npm test`, so it would have slipped past.
-    const block = /UNRENDERED_FRAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(src);
-    // If this fails the list was renamed or restructured — fix the guard, do
-    // not delete it.
-    expect(block, "could not find UNRENDERED_FRAMES in investigationStream.ts").toBeTruthy();
+describe("the payload the text channel cannot carry (CA-1)", () => {
+  // The reducer read structure off settled and terminal frames that a text
+  // channel or a bare error string drops. Each of these is a field the
+  // projection (`chatTurn.ts`) reconstitutes — losing the part loses the field.
 
-    const theirs = new Set([...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]));
-    expect(theirs.size).toBeGreaterThan(0);
-    expect([...UNRENDERED_FRAMES].sort()).toEqual([...theirs].sort());
+  it("stamps every text block with its channel, so the projection can tell them apart", () => {
+    const { chunks } = adaptFrames([
+      { event: "headline_delta", data: { headline: "Total" } },
+      { event: "narrative_delta", data: { narrative: "It rose" } },
+      { event: "report_delta", data: { executive_summary: "Deep prose" } },
+    ]);
+    const channels = chunks
+      .filter((c) => c.type === "text-start")
+      .map((c) => (c as { providerMetadata?: { aughor?: { channel?: string } } })
+        .providerMetadata?.aughor?.channel);
+    expect(channels).toEqual(["headline", "narrative", "report"]);
+  });
+
+  it("a settled narrative rides as data too — anomalies/trend/confidence survive", () => {
+    const { chunks } = adaptFrames([
+      { event: "narrative", data: { narrative: "Up 4%", anomalies: ["spike"], trend: "up", confidence: "high" } },
+    ]);
+    expect(textFor(chunks)).toBe("Up 4%");
+    const part = chunks.find((c) => c.type === "data-narrative") as
+      | { data: Record<string, unknown> } | undefined;
+    expect(part?.data.anomalies).toEqual(["spike"]);
+  });
+
+  it("normalises the legacy `insight` spelling onto `narrative`", () => {
+    const { chunks } = adaptFrames([{ event: "insight", data: { insight: "legacy words" } }]);
+    expect(chunks.some((c) => c.type === "data-narrative")).toBe(true);
+    expect(chunks.some((c) => (c.type as string) === "data-insight")).toBe(false);
+  });
+
+  it("deltas stay text-only — no data part per keystroke", () => {
+    const { chunks } = adaptFrames([{ event: "headline_delta", data: { headline: "Tot" } }]);
+    expect(chunks.filter((c) => c.type.startsWith("data-"))).toHaveLength(0);
+  });
+
+  it("an error frame's typed tail (Wave R4) rides as data beside the error chunk", () => {
+    const { chunks } = adaptFrames([
+      { event: "error", data: { message: "rate limited", reason: "rate_limited", retryable: true, recovery: "retry", hint: "Try again." } },
+    ]);
+    const part = chunks.find((c) => c.type === "data-error") as
+      | { data: Record<string, unknown> } | undefined;
+    expect(part?.data.reason).toBe("rate_limited");
+    expect(chunks.some((c) => c.type === "error")).toBe(true);
+  });
+
+  it("a done that names the Trust Receipt rides as data; a bare done stays partless", () => {
+    const withReceipt = adaptFrames([{ event: "done", data: { has_receipt: true, inv_id: "abc" } }]);
+    const part = withReceipt.chunks.find((c) => c.type === "data-done") as
+      | { data: Record<string, unknown> } | undefined;
+    expect(part?.data.inv_id).toBe("abc");
+
+    const bare = adaptFrames([{ event: "done", data: {} }]);
+    expect(bare.chunks.some((c) => c.type === "data-done")).toBe(false);
+  });
+
+  it("a gate frame (P3/P4 pause) closes the message cleanly instead of reading as a drop", () => {
+    // The upstream ends at a gate without a `done`; before this the route's
+    // "ended without a terminal frame" abort fired on every deliberate pause.
+    const { chunks, terminal } = adaptFrames([
+      { event: "plan_pending", data: { investigation_id: "inv9", sub_questions: [] } },
+    ]);
+    expect(terminal).toBe(true);
+    expect(chunks.some((c) => c.type === "data-plan_pending")).toBe(true);
+    expect(kinds(chunks).at(-1)).toBe("finish");
+    expect(chunks.some((c) => c.type === "abort")).toBe(false);
   });
 });
 
@@ -234,7 +274,9 @@ describe("settled text frames render as PROSE, not as data blobs", () => {
       { event: "headline", data: { headline: "**AOV by Region**\n\n| Central | 426.59 |" } },
     ]);
     expect(textFor(chunks)).toContain("AOV by Region");
-    expect(chunks.some((c) => c.type === "data-headline")).toBe(false);
+    // CA-1: the settled value ALSO rides as a data part (the projection's
+    // authoritative copy) — the prose requirement is that the TEXT is text.
+    expect(chunks.some((c) => c.type === "data-headline")).toBe(true);
   });
 
   it("does not double the text when a settled frame follows its own deltas", () => {

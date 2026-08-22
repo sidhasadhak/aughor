@@ -109,10 +109,31 @@ def _migrate_v4(c: sqlite3.Connection) -> None:
     add_column_if_missing(c, "investigations", "purpose", "TEXT NOT NULL DEFAULT ''")
 
 
+def _migrate_v5(c: sqlite3.Connection) -> None:
+    """CA-5 — per-thread metadata (the rail's rename).
+
+    A thread's title was always DERIVED — the first question asked in it — which is a
+    good default and a bad permanent name: the opening question is often the vaguest
+    thing the user will say in that conversation. The override lives in its own table
+    rather than as a column on ``investigations`` because a title belongs to the
+    SESSION, and a session spans many rows; writing it onto every turn would have no
+    single owner and would drift the moment one row was deleted.
+    """
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS chat_session_meta (
+            session_id TEXT PRIMARY KEY,
+            title      TEXT NOT NULL,
+            org_id     TEXT NOT NULL DEFAULT '%s',
+            renamed_at TEXT NOT NULL
+        )
+    """ % DEFAULT_ORG_ID)
+
+
 _MIGRATIONS = [
     Migration(2, "additive columns + backfills (through 2026-07)", _migrate_v2),
     Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
     Migration(4, "add purpose (starter provenance)", _migrate_v4),
+    Migration(5, "chat_session_meta (thread rename, CA-5)", _migrate_v5),
 ]
 
 
@@ -144,6 +165,7 @@ def create_investigation(
     canvas_id: Optional[str] = None,
     agent_id: str = "",
     purpose: str = "",
+    session_id: str = "",
 ) -> str:
     """Insert a new in-progress row and return its ID.
 
@@ -151,14 +173,19 @@ def create_investigation(
     ('' when none), so the Agent Workspace can join run history per agent.
     ``purpose`` (R10) is the named starter's purpose tag ('' for a free-typed
     question) — the run's provenance, queryable like the agent.
+    ``session_id`` (CA-0) files the run under the conversation it was asked in. Deep runs
+    carried no session at all — both Direkteingabe specimens have session_id NULL — so a
+    follow-up could not find the run it was following up on. Stamped when the caller has
+    one; '' otherwise (the column stays NULL for a run asked outside any conversation).
     """
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or ""),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status, org_id, agent_id, purpose, session_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running", current_org_id(), agent_id, purpose or "",
+         (session_id or None)),
     )
     c.commit()
     c.close()
@@ -544,20 +571,93 @@ def list_chat_sessions(connection_id: Optional[str] = None, *, limit: int = 30) 
     out = []
     for r in rows:
         d = dict(r)
+        # The title is DERIVED from the opening question unless the user renamed the
+        # thread (CA-5). `renamed` rides along so the rail can show which titles are
+        # the user's own words rather than the first thing they happened to type.
+        custom = c.execute(
+            "SELECT title FROM chat_session_meta WHERE session_id = ?",
+            (d["session_id"],),
+        ).fetchone()
         first = c.execute(
             f"""SELECT question FROM investigations
                WHERE session_id = ? AND kind = 'chat'{_org}
                ORDER BY started_at ASC LIMIT 1""",
             (d["session_id"], *_op),
         ).fetchone()
+        title = (custom["title"] if custom else "") or (first["question"] if first else "")
         out.append({
             "session_id": d["session_id"],
-            "title": (first["question"] if first else "") or "(untitled)",
+            "title": title or "(untitled)",
+            "renamed": bool(custom),
             "turns": d["turns"],
             "last_at": d["last_at"],
         })
     c.close()
     return out
+
+
+def rename_chat_session(session_id: str, title: str) -> bool:
+    """Give a thread a name of the user's choosing. Returns False if no such thread.
+
+    Org-scoped through the SAME existence check the reads use: a rename is a write
+    keyed only by a session id, and session ids are random but not an authorization
+    model (see :func:`get_session_turns`). An empty title CLEARS the override, so the
+    thread falls back to its opening question rather than being stuck blank.
+    """
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = ((" AND org_id = ?", [current_org_id()])
+                 if require_identity_enabled() else ("", []))
+    owned = c.execute(
+        f"SELECT 1 FROM investigations WHERE session_id = ? AND kind = 'chat'{_org} LIMIT 1",
+        (session_id, *_op),
+    ).fetchone()
+    if not owned:
+        c.close()
+        return False
+    clean = (title or "").strip()[:200]
+    if clean:
+        c.execute(
+            "INSERT INTO chat_session_meta (session_id, title, org_id, renamed_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET "
+            "title = excluded.title, renamed_at = excluded.renamed_at",
+            (session_id, clean, current_org_id() or DEFAULT_ORG_ID,
+             datetime.now(timezone.utc).isoformat()),
+        )
+    else:
+        c.execute("DELETE FROM chat_session_meta WHERE session_id = ?", (session_id,))
+    c.commit()
+    c.close()
+    return True
+
+
+def chat_session_turn_ids(session_id: str) -> list[str]:
+    """Every turn id filed under a thread, org-scoped — what a thread delete must
+    purge one by one (each turn owns evidence claims and a vector entry keyed by ITS
+    id, not the session's)."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = ((" AND org_id = ?", [current_org_id()])
+                 if require_identity_enabled() else ("", []))
+    rows = c.execute(
+        f"SELECT id FROM investigations WHERE session_id = ? AND kind = 'chat'{_org}",
+        (session_id, *_op),
+    ).fetchall()
+    c.close()
+    return [r["id"] for r in rows]
+
+
+def forget_chat_session_meta(session_id: str) -> None:
+    """Drop a thread's title override — called when the thread itself is deleted, so a
+    new session that reuses the id (they are random, but nothing forbids it) cannot
+    inherit a stranger's name."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    c.execute("DELETE FROM chat_session_meta WHERE session_id = ?", (session_id,))
+    c.commit()
+    c.close()
 
 
 class _ReconstructedTurn:

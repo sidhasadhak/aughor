@@ -340,22 +340,22 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 4px 8px" }}>
       {/* SQL */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-code)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
+        <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
       {/* Result */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-code)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
+        <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {obsPreview}
         </pre>
       </div>
       {/* Query intent */}
       {ep.think && (
         <div>
-          <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
+          <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
           <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
         </div>
       )}
@@ -394,7 +394,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
     position: "sticky", top: 0, zIndex: 1,
     background: "var(--bg-0)",
     padding: "7px 8px",
-    textAlign: "left", fontSize: 9,
+    textAlign: "left", fontSize: 11,
     fontFamily: "var(--font-mono)", color: "var(--t4)",
     textTransform: "uppercase", letterSpacing: "0.07em",
     borderBottom: "1px solid var(--b2)", fontWeight: 500,
@@ -469,16 +469,16 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                   onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                 >
                   {/* # — var(--b0) was a BORDER token used as text: near-invisible */}
-                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {seq}
                   </td>
                   {/* timestamp */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {meta.datetime}
                   </td>
                   {/* type */}
                   <td style={{ padding: "7px 8px" }}>
-                    <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid color-mix(in srgb, ${pm.color} 25%, transparent)` }}>
+                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid color-mix(in srgb, ${pm.color} 25%, transparent)` }}>
                       {pm.label}
                     </span>
                   </td>
@@ -489,7 +489,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                   {/* status */}
                   <td style={{ padding: "7px 8px" }}>
                     <span style={{
-                      fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 500,
+                      fontSize: 11, padding: "2px 6px", borderRadius: 3, fontWeight: 500,
                       background: meta.isError ? "var(--red1)" : "var(--grn1)",
                       color: meta.isError ? "var(--red4)" : "var(--grn4)",
                       border: `0.5px solid ${meta.isError ? "var(--red2)" : "var(--grn2)"}`,
@@ -498,15 +498,15 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                     </span>
                   </td>
                   {/* rows */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
                     {formatCount(meta.rows)}
                   </td>
                   {/* object */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {meta.object}
                   </td>
                   {/* expand */}
-                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 9, color: "var(--t4)" }}>
+                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t4)" }}>
                     {isOpen ? "▲" : "▼"}
                   </td>
                 </tr>
@@ -535,7 +535,7 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
     <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-0)", borderRadius: 5, border: "0.5px solid var(--b1)" }}>
       {options.map(o => (
         <button key={o.v} onClick={() => onChange(o.v)} style={{
-          fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
+          fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
           background: value === o.v ? "var(--blue1)" : "transparent",
           color: value === o.v ? "var(--blue4)" : "var(--t4)",
           border: value === o.v ? "0.5px solid var(--blue2)" : "0.5px solid transparent",
@@ -706,7 +706,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         />
         <div style={{ flex: 1 }} />
         {errorCount > 0 && (
-          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
+          <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
         )}
@@ -714,7 +714,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           <button onClick={handleFixAll} disabled={fixingAll}
             title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
             style={{
-              fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
+              fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
               background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)",
               opacity: fixingAll ? 0.5 : 1,
             }}>
@@ -722,7 +722,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           </button>
         )}
         {fixAllSummary && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>
             fixed {fixAllSummary.fixed}/{fixAllSummary.total} · saved {fixAllSummary.saved}
             {fixAllSummary.flagged > 0 && ` (${fixAllSummary.flagged} flagged)`}
             {fixAllSummary.failed > 0 && ` · ${fixAllSummary.failed} still failing`}
@@ -734,7 +734,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         </span>
         {filtered.length > DEFAULT_LIMIT && (
           <button onClick={() => setShowAll(v => !v)} style={{
-            fontSize: 10, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+            fontSize: 11, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
             background: showAll ? "var(--blue1)" : "var(--bg-1)",
             color: showAll ? "var(--blue4)" : "var(--t3)",
             border: `0.5px solid ${showAll ? "var(--blue2)" : "var(--bg-3)"}`,

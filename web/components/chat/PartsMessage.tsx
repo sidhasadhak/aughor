@@ -1,46 +1,37 @@
 "use client";
 
 /**
- * Render one `UIMessage` from its parts — CI-1d.
+ * Render one assistant turn from its `UIMessage` parts — CI-1d, finished in CA-1.
  *
- * THIS IS THE POINT OF THE WHOLE MIGRATION. The reducer it replaces is a
- * 107-case CLOSED switch: a frame it does not name reaches a `default:` that
- * only warns in dev, so a backend that grows a frame renders NOTHING and says
+ * THIS IS THE POINT OF THE WHOLE MIGRATION. The reducer it replaces was a
+ * 107-case CLOSED switch: a frame it did not name reached a `default:` that only
+ * warned in dev, so a backend that grew a frame rendered NOTHING and said
  * nothing in production. Here the same frame renders a labelled fallback. The
  * difference is not cosmetic — it is whether a new capability appears as
  * "unrecognised: forecast_band" or as silence.
  *
- * ── The migration is smaller than it looked ─────────────────────────────────
+ * HOW EVERY DECLARED PART REACHES AN ORGAN. The parts are projected into the
+ * turn view-model (`projectTurn`, `lib/chatTurn.ts` — the reducer's accumulation
+ * as a pure function) and the projected turn drives `ChatMessage`: the same
+ * organ suite the reducer path drove — the report registry, the gates, the
+ * trace, the guard chain, the tool trail, the figure. The organs took typed
+ * props all along; only the accumulation moved. Coverage is a TESTED contract:
+ * every key of `AughorUIDataTypes` is consumed by a projector or named in
+ * `FALLBACK_PARTS`, and `chatTurn.test.ts` fails on any key that is neither.
  *
- * Five of the reducer's nine importers take TYPES ONLY — `GuardReceipt`,
- * `ConverseStep`, `ContextManifest`, `ClarifyPending`, `PlanPending`. They are
- * payload shapes, not reducer state, so those renderers do not care where their
- * data came from and are reused here UNCHANGED. That is the migration's central
- * claim, tested by using them rather than by asserting it: only three modules
- * (`useChat`, `useInvestigationThread`, `aguiTransport`) actually consume the
- * reducer.
- *
- * ── Why parts are grouped before rendering ──────────────────────────────────
- *
- * `guard_receipt` and `converse_step` arrive as ONE PART EACH, while their
- * renderers take ARRAYS — `GuardReceiptChain` draws a chain and `ToolTrail`
- * draws a trail, and both are about the sequence. Rendering per part would
- * produce a row of one-item chains: technically every receipt on screen, and
- * none of the meaning. So same-typed parts are collected first and drawn once,
- * at the position where the first of them arrived.
+ * WHAT RENDERS AS A FALLBACK, DELIBERATELY:
+ *   • `data-unknown_frame` — the escape hatch, labelled with the frame's own
+ *     name, so a gap is legible instead of invisible;
+ *   • any SDK part type this shell has no organ for yet (files, sources, tool
+ *     invocations) — same rule: name it, never drop it.
  */
 
-import { ContextRibbon } from "@/components/ContextRibbon";
-import { GuardReceiptChain } from "@/components/GuardReceiptChain";
-import { ToolTrail } from "@/components/ToolTrail";
-import type {
-  ContextManifest,
-  ConverseStep,
-  GuardReceipt,
-} from "@/lib/investigationStream";
-import type { AughorUIMessage } from "@/lib/useAughorChat";
+import { ChatMessage } from "@/components/ChatMessage";
+import type { ChatMessageProps } from "@/components/ChatMessage";
+import type { AughorUIMessage } from "@/lib/chatTurn";
+import { PROJECTED_PARTS } from "@/lib/chatTurn";
 
-/** A titled block of monospace payload — the honest default for a typed part. */
+/** A titled block of monospace payload — the honest default for an unclaimed part. */
 function DataBlock({ label, value }: { label: string; value: unknown }) {
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
   return (
@@ -60,93 +51,33 @@ function DataBlock({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-/** Part types whose renderer takes the whole sequence, not one item. */
-const COLLECTED = new Set(["data-guard_receipt", "data-converse_step"]);
+export interface PartsMessageProps extends ChatMessageProps {
+  /** The raw message the turn was projected from — the fallback sweep reads it. */
+  message?: AughorUIMessage;
+}
 
-export function PartsMessage({
-  message,
-  connectionId = "",
-  streaming = false,
-}: {
-  message: AughorUIMessage;
-  connectionId?: string;
-  streaming?: boolean;
-}) {
-  // Collect the sequence-valued parts up front, and remember where the FIRST of
-  // each landed so the chain draws in the position it actually occupied.
-  const receipts: GuardReceipt[] = [];
-  const steps: ConverseStep[] = [];
-  const firstAt = new Map<string, number>();
-  message.parts.forEach((part, i) => {
-    if (!COLLECTED.has(part.type)) return;
-    if (!firstAt.has(part.type)) firstAt.set(part.type, i);
-    const data = (part as { data: unknown }).data;
-    if (part.type === "data-guard_receipt") receipts.push(data as GuardReceipt);
-    else steps.push(data as ConverseStep);
-  });
-
+export function PartsMessage({ message, ...chatMessageProps }: PartsMessageProps) {
   return (
-    <div style={{ marginBlock: 10 }}>
-      <span className="aug-label" style={{ color: "var(--t3)" }}>{message.role}</span>
-      {message.parts.map((part, i) => {
-        const key = `${message.id}:${i}`;
-
-        // Text is the answer itself — the one part that renders as prose.
-        if (part.type === "text") {
-          return (
-            <p key={key} className="aug-fs-ui"
-               style={{ margin: "4px 0", color: "var(--t1)", whiteSpace: "pre-wrap" }}>
-              {part.text}
-            </p>
-          );
-        }
-
-        if (part.type === "reasoning") {
-          return <DataBlock key={key} label="reasoning" value={part.text} />;
-        }
-
-        // A collected type draws once, where its first part arrived.
-        if (COLLECTED.has(part.type)) {
-          if (firstAt.get(part.type) !== i) return null;
-          return part.type === "data-guard_receipt"
-            ? <GuardReceiptChain key={key} receipts={receipts} streaming={streaming} />
-            : <ToolTrail key={key} steps={steps} streaming={streaming} />;
-        }
-
-        if (part.type === "data-context_assembled") {
-          return (
-            <ContextRibbon key={key}
-                           manifest={(part as { data: unknown }).data as ContextManifest}
-                           connectionId={connectionId} />
-          );
-        }
-
+    <>
+      <ChatMessage {...chatMessageProps} />
+      {(message?.parts ?? []).map((part, i) => {
+        const key = `${message?.id ?? "m"}:${i}`;
         // The escape hatch, rendered rather than swallowed. A frame the backend
-        // grew that nothing here names still arrives — carrying its own name, so
-        // the gap is legible instead of invisible.
+        // grew that nothing here names still arrives — carrying its own name.
         if (part.type === "data-unknown_frame") {
           const d = part.data as { event: string; payload: Record<string, unknown> };
           return <DataBlock key={key} label={`unrecognised: ${d.event}`} value={d.payload} />;
         }
-
-        // The remaining declared parts — including `clarify_pending` and
-        // `plan_pending`, whose renderers need `onChoose` / `onApprove`
-        // callbacks. Those are a RESUME path back to the backend, not a
-        // rendering problem, so they are shown as data rather than drawn
-        // half-working: an approve button that cannot approve is worse than a
-        // payload you can read.
-        if (part.type.startsWith("data-")) {
-          return (
-            <DataBlock key={key}
-                       label={part.type.slice("data-".length)}
-                       value={(part as { data: unknown }).data} />
-          );
+        // Text and every projected data part already rendered through the organs.
+        if (part.type === "text" || part.type === "step-start") return null;
+        if (part.type.startsWith("data-") && PROJECTED_PARTS.has(part.type.slice(5))) {
+          return null;
         }
-
-        // An SDK part type this renderer does not handle yet (files, sources,
-        // tool calls). Same rule as an unknown frame: name it, never drop it.
+        // An SDK part type this shell has no organ for yet (reasoning, files,
+        // sources, tool calls) — or a data part that slipped every net. Same
+        // rule as an unknown frame: name it, never drop it.
         return <DataBlock key={key} label={part.type} value={part} />;
       })}
-    </div>
+    </>
   );
 }

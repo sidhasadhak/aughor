@@ -4,12 +4,13 @@
  * Agent Ops · Activity · Usage — what the platform spent, on what, and how much of that
  * we can actually see.
  *
- * This replaces an orphaned panel. `ActivityUsagePanel.tsx` was written, never imported by
- * anything, and half broken: it asked `/activity` for `roles`, `window` and `fallback`,
- * which that route has never returned, so its fallback card could not populate no matter
- * what the data said. The fix was not in the component — the columns did not exist. W0's
- * Migration 9 promoted `role` and `fallback` out of the JSON payload, and
- * `/obs/usage-summary` folds them over the shared window; this panel reads that.
+ * This replaces an orphaned panel, removed by this change. `ActivityUsagePanel.tsx`
+ * was written, never imported by anything, and half broken: it asked `/activity`
+ * for `roles`, `window` and `fallback`, which that route has never returned, so
+ * its fallback card could not populate no matter what the data said. The fix was
+ * not in the component — the columns did not exist. W0's Migration 10 promoted
+ * `role` and `fallback` out of the JSON payload, and `/obs/usage-summary` folds them
+ * over the shared window; this panel reads that.
  *
  * **Coverage is part of the measurement, not a footnote.** Three numbers here exist only to
  * stop a small figure reading as a cheap week: calls whose backend reported no usage, calls
@@ -177,7 +178,7 @@ export function UsagePanel({ range, onBrush, onOpenEvents }: {
           }))} />
 
         <Ranked title="By role" note="what the calls were FOR"
-          empty="No call recorded a role. Migration 9 promoted this out of the payload — rows written before it stay unattributed."
+          empty="No call recorded a role. Migration 10 promoted this out of the payload — rows written before it stay unattributed."
           rows={data.roles.map(r => ({
             key: r.role,
             label: r.role,

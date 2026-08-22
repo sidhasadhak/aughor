@@ -2,8 +2,8 @@
 
 import { useRef, useLayoutEffect, useState } from "react";
 import { formatCount } from "@/lib/format";
-import TableIcon from "@atlaskit/icon/core/table";
 import { RichSchema, SchemaTable, SchemaJoin } from "@/lib/api";
+import { Icon } from "@/components/ui/icon";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const CARD_W     = 264;   // card body width
@@ -166,7 +166,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
           style={{ height: HEADER_H }}
         >
           <div className="w-7 h-7 rounded bg-indigo-950/80 border border-indigo-800/50 flex items-center justify-center text-indigo-300 shrink-0">
-            <TableIcon label="Table" size="small" />
+            <Icon name="table" size={16} label="Table" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="aug-fs-sm font-semibold font-mono text-zinc-100 truncate leading-snug">

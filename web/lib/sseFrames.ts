@@ -23,7 +23,7 @@ export type AughorFrame = { event: string; data: Record<string, unknown> };
  *
  * THE FRAME NAME LIVES IN THE PAYLOAD, NOT IN AN `event:` LINE. Aughor's
  * backend emits bare `data: {"type":"route",…}` records — it does not use the
- * SSE event field at all, and `investigationStream.ts:587` has always read
+ * SSE event field at all, and the reducer this seam replaced always read
  * `p.type` from the parsed JSON for exactly this reason.
  *
  * Written the other way round — trusting an `event:` line with a `"message"`

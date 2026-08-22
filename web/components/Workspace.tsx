@@ -30,6 +30,13 @@ type WorkspaceProps<L extends string> = {
    *  Attention layer's "needs a human" count). Zero/undefined renders nothing —
    *  a badge must mean something is actually waiting. */
   badges?: Partial<Record<L, number>>;
+  /** Drop the header row entirely. For the ONE workspace whose layers each already
+   *  have their own item in the left rail (Data: Catalog / SQL Editor / Semantic
+   *  Layer), the header is a second copy of a control the rail already provides —
+   *  a 44px band that repeats the rail's answer to "where am I". The other
+   *  workspaces fold several rail items into fewer layers, or none at all, so their
+   *  switcher is the only way to reach a layer and the header stays. */
+  headerless?: boolean;
 };
 
 /**
@@ -45,6 +52,7 @@ type WorkspaceProps<L extends string> = {
  */
 export function Workspace<L extends string>({
   layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, renderLayer, badges,
+  headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<L>>(() => new Set([layer]));
@@ -57,10 +65,16 @@ export function Workspace<L extends string>({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
       {/* Workspace header — title + optional controls + perspective switcher */}
+      {!headerless && (
       <div className="aug-content-header" style={{ gap: 14, flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
         {renderIcon(active.icon, 14, "var(--t3)")}
         <span style={{ fontSize: 13, fontWeight: 500, flexShrink: 0 }}>{active.label}</span>
+        {/* The blurb repeats what the switcher chip beside it already says — "SQL
+            Editor · Write SQL, or compose visually" next to a chip reading "SQL
+            Editor". It survives as the switcher's tooltip, where it answers a
+            question someone is actually asking. */}
         <span
+          hidden
           style={{
             fontSize: 13, color: "var(--t3)",
             minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
@@ -115,7 +129,7 @@ export function Workspace<L extends string>({
                 {(badges?.[l.id] ?? 0) > 0 && (
                   <span style={{
                     fontSize: 11, fontWeight: 600, lineHeight: 1,
-                    padding: "2px 5px", borderRadius: "var(--r-pill)",
+                    padding: "2px 5px", borderRadius: "var(--r-chip)",
                     background: "var(--amb1)", border: "1px solid var(--amb2)",
                     color: "var(--amb5)", fontVariantNumeric: "tabular-nums",
                   }}>
@@ -127,6 +141,7 @@ export function Workspace<L extends string>({
           })}
         </div>
       </div>
+      )}
 
       {/* Layered body — visited layers stay mounted; only the active one shows. */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>

@@ -8,7 +8,7 @@
 // question never re-asks.
 
 import { Button } from "@/components/ui/button";
-import type { ClarifyPending } from "@/lib/investigationStream";
+import type { ClarifyPending } from "@/lib/chatTurn";
 
 export function ClarifyGateCard({
   clarify,

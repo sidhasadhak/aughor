@@ -230,3 +230,87 @@ def numeric_cells_block(rows, limit: int = 40) -> str:
     if len(seen) > limit:
         out += f", … (+{len(seen) - limit} more)"
     return out
+
+
+# ── cited pairs: "ZRH-LHR 108" when that row says 28 ─────────────────────────
+# The magnitude rule above is deliberately blind to small counts, so that a derived
+# "top 10" or a "84 routes" row-count is never false-flagged. That blindness has a
+# cost: a chat answer that tabulates entity → value pairs fabricates numbers well
+# under 1000 and passes untouched (live: flights per route answered 108 / 96 / 84
+# against real counts of 28 / 42 / 35).
+#
+# A pair is checkable in a way a lone number is not: the LABEL says which row the
+# number claims to be. So this asks a narrower question than "does this number exist
+# anywhere" — "does the row this number NAMES actually hold it?" — which is why it can
+# be strict about small integers without flagging the qualifiers around them.
+
+#: How far past a label to look for the number it claims. Wide enough for a markdown
+#: cell separator or a few words of prose, short enough to stay on the same claim.
+_PAIR_WINDOW = 48
+#: Numbers considered per label occurrence. More than one because a table's window
+#: spills into the next row and prose can put a qualifier first ("in 7 days, 28").
+_PAIR_LOOKAHEAD = 3
+
+_PAIR_NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _row_label_values(rows) -> dict:
+    """``{label: {numbers on that label's row}}`` — the pairs a result asserts."""
+    facts: dict = {}
+    for row in rows or []:
+        cells = list(row.values()) if isinstance(row, dict) else list(row or [])
+        labels, values = [], []
+        for c in cells:
+            if isinstance(c, bool):
+                continue
+            f = _to_float(c)
+            if f is not None:
+                values.append(f)
+            elif isinstance(c, str) and len(c.strip()) >= 2:
+                labels.append(c.strip().lower())
+        for lab in labels:
+            facts.setdefault(lab, set()).update(values)
+    return {k: v for k, v in facts.items() if v}
+
+
+def ungrounded_label_values(text: str, rows) -> list[str]:
+    """Labels whose cited number contradicts that label's own row.
+
+    Conservative on purpose: a label followed by NO number is not a claim, and a label
+    whose window holds several numbers passes if ANY of them matches — so "ZRH-LHR flew
+    28 flights over 7 days" grounds on the 28 and never trips on the 7.
+    """
+    facts = _row_label_values(rows)
+    if not facts or not text:
+        return []
+    low = text.lower()
+    bad: list[str] = []
+    for label, values in facts.items():
+        if label not in low:
+            continue
+        for m in re.finditer(re.escape(label), low):
+            # BOTH directions. A table writes "ZRH-LHR | 28" and prose writes "28
+            # flights on ZRH-LHR"; a forward-only window reads the second as a label
+            # with no claim attached and waves the fabrication through.
+            after = _PAIR_NUM_RE.findall(low[m.end():m.end() + _PAIR_WINDOW])[:_PAIR_LOOKAHEAD]
+            before = _PAIR_NUM_RE.findall(low[max(0, m.start() - _PAIR_WINDOW):m.start()])[-_PAIR_LOOKAHEAD:]
+            nums: list[float] = []
+            for tok in list(after) + list(before):
+                try:
+                    nums.append(float(tok.replace(",", "")))
+                except ValueError:
+                    continue
+            if not nums:
+                continue
+            if not any(_pair_matches(n, v) for n in nums for v in values):
+                bad.append(f"{label}={nums[0]:g}")
+                break
+    return bad
+
+
+def _pair_matches(cited: float, cell: float) -> bool:
+    """Exact, or within the rounding a writer would do (0.5%)."""
+    if cited == cell:
+        return True
+    denom = abs(cell) or 1.0
+    return abs(cited - cell) / denom <= 0.005

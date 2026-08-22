@@ -17,11 +17,6 @@ import React, { useState } from "react";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SqlResultTable } from "@/components/AugTable";
-import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
-import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
-import RetryIcon        from "@atlaskit/icon/core/retry";
-import TableIcon        from "@atlaskit/icon/core/table";
-
 /** Open the right-side Source-data drawer (data + SQL + Query Builder) for a finding. Typed inline
  *  (structurally = ChatMessage's SourcePanelData) to avoid a circular import with ChatMessage. */
 type ShowSource = (data: { columns: string[]; rows: unknown[][]; sql: string | null; title: string }) => void;
@@ -35,6 +30,7 @@ import {
   renderEmphasis,
 } from "@/components/brief/Brief";
 import { TrendStrip } from "@/components/brief/Sparkline";
+import { Icon } from "@/components/ui/icon";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -61,6 +57,8 @@ interface InvestigationFinding {
   trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
   column_units?: Record<string, string> | null;  // per-column display unit ({metric_total:"percent"})
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec | null;  // chart-grammar semantics
+  claim?: string | null;     // CA-4: the one-sentence claim — the chart's title when present
+  subtitle?: string | null;  // CA-4: scope · period · unit under the claim
 }
 
 interface InvestigationPhase {
@@ -137,7 +135,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-500 transition-colors"
       >
-        {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
+        {open ? <Icon name="chevd" size={16} /> : <Icon name="chevr" size={16} />}
         {label} · {rows.length} rows
       </button>
       {open && (
@@ -198,15 +196,18 @@ function sourceLabel(title: string): string {
 function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  // CA-4 "title = claim": the claim leads the figure; the query's descriptive
+  // name stays on the source-data affordance below.
+  const headline = finding.claim?.trim() || finding.title;
 
   return (
     <div className="flex flex-col gap-2.5">
       {/* Chart — the framed figure */}
       {hasChart && (
-        <BriefFigure caption={finding.title}>
+        <BriefFigure caption={headline} subcaption={finding.subtitle?.trim() || undefined}>
           {/* Deep Analysis chart — renders clean; the hover pencil opens the side-panel
               viz editor (chart type / fields / transform / labels), Databricks-style. */}
-          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
+          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={headline} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
         </BriefFigure>
       )}
 
@@ -217,7 +218,7 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
           className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors max-w-full"
           title={`Data + SQL behind “${finding.title}”`}
         >
-          <TableIcon label="Table" size="small" />
+          <Icon name="table" size={16} label="Table" />
           {/* Name the source by WHAT it shows (Genie's "…for viz" footer), not an opaque "Source N". */}
           <span className="truncate">{sourceLabel(finding.title)}</span>
         </button>
@@ -322,7 +323,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
         <span className="text-base leading-none">{phase.phase_icon}</span>
         {isRunning && (
           <span className="text-sky-400 animate-spin inline-block">
-            <RetryIcon label="Loading" size="small" />
+            <Icon name="refresh" size={16} label="Loading" />
           </span>
         )}
         <span className={`aug-fs-xs font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-500" : "text-zinc-400"}`}>

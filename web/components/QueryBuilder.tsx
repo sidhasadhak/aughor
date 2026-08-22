@@ -25,6 +25,7 @@ import { inferChartType, availableChartTypes, CHART_TYPE_LABEL, type ChartType }
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
+import { Icon } from "@/components/ui/icon";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -90,10 +91,10 @@ function SemanticStepPanel({
     <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
       <Button variant="ghost" onClick={() => setOpen(!open)}
         className={`w-full h-auto justify-start font-normal gap-1.5 px-2.5 py-1.5 aug-fs-xs text-violet-300 hover:text-violet-200 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.8L20 10l-5.1 2.2L12 18l-2.9-5.8L4 10l6.1-1.2z"/></svg>
+        <Icon name="spark" size={11} />
         Semantic step
         <span className="text-zinc-500">— reason over a text column with an LLM</span>
-        <svg className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+        <Icon name="chevd" size={11} className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
       </Button>
       {open && (
         <div className="px-2.5 pb-2.5 flex flex-col gap-2">
@@ -879,7 +880,7 @@ function ResultsPane({
           {!semResult && result.receipt_id && <WhyThisNumber receiptId={result.receipt_id} />}
           <Button variant="ghost" size="xs" onClick={exportCsv} title="Download results as CSV"
             className={`h-auto font-normal aug-fs-xs px-2 py-0.5 rounded border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 hover:bg-transparent dark:hover:bg-transparent transition gap-1 ${SVG_SIZE_AUTO}`}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <Icon name="download" size={10} />
             CSV
           </Button>
         </div>
@@ -935,12 +936,7 @@ function ResultsPane({
               </>
             ) : (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="7" height="7" rx="1"/>
-                  <rect x="14" y="3" width="7" height="7" rx="1"/>
-                  <rect x="14" y="14" width="7" height="7" rx="1"/>
-                  <rect x="3" y="14" width="7" height="7" rx="1"/>
-                </svg>
+                <Icon name="builder" size={12} />
                 Start Canvas
               </>
             )}
@@ -1665,10 +1661,7 @@ export function QueryBuilder({
 
       {/* ══ HEADER ═══════════════════════════════════════════════════════════ */}
       <div className="flex items-center gap-3 px-5 h-14 border-b border-zinc-700/50 shrink-0 bg-zinc-900/50">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
-          <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
-          <rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>
-        </svg>
+        <span style={{ color: "var(--t3)", display: "inline-flex" }} className="shrink-0"><Icon name="builder" size={16} /></span>
         {/* No mode label here: the workbench's toggle says "Visual" 40px above this row,
             and the same word twice is furniture, not information. */}
 
@@ -1685,7 +1678,7 @@ export function QueryBuilder({
               const found = isPrimary || !!js?.join;
               return (
                 <span key={t} title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : undefined}
-                  className={`flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 ${
+                  className={`flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-chip)] border shrink-0 ${
                     isPrimary ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
                     : found ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                             : "bg-amber-500/10  border-amber-500/30  text-amber-300"
@@ -1698,7 +1691,7 @@ export function QueryBuilder({
             })}
           </div>
         ) : result ? (
-          <span className="flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-pill)] border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
+          <span className="flex items-center gap-1.5 aug-fs-xs font-mono px-2.5 py-0.5 rounded-[var(--r-chip)] border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
             <span className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-violet-400" />
             imported query · edit SQL below
           </span>
@@ -1720,9 +1713,7 @@ export function QueryBuilder({
                 pinState === "pinned" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
                   : "border-violet-500/40 bg-violet-500/10 text-violet-300 hover:text-violet-300 hover:bg-violet-500/20 dark:hover:bg-violet-500/20"
               }`}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <path d="M12 17v5"/><path d="M9 4.5 8 8H5.5a1.5 1.5 0 0 0-1.06 2.56l4.5 4.5a1.5 1.5 0 0 0 2.12 0l4.5-4.5A1.5 1.5 0 0 0 18.5 8H16l-1-3.5A1.5 1.5 0 0 0 13.56 3.5h-3.12A1.5 1.5 0 0 0 9 4.5Z"/>
-              </svg>
+              <Icon name="pin" size={11} className="shrink-0" />
               {pinState === "pinning" ? "Pinning…" : pinState === "pinned" ? "Pinned ✓" : "Pin"}
             </Button>
 
@@ -1763,7 +1754,7 @@ export function QueryBuilder({
             return (
               <span style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
-                fontSize: 10.5, fontWeight: 600, padding: "2px 9px", borderRadius: 999,
+                fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: "var(--r-chip)",
                 background: ok ? "var(--grn1)" : "var(--red1)",
                 border: `1px solid ${ok ? "var(--grn2)" : "var(--red2)"}`,
                 color: ok ? "var(--grn4)" : "var(--red4)",
@@ -1784,7 +1775,7 @@ export function QueryBuilder({
             } ${SVG_SIZE_AUTO}`}>
             {running
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-[var(--r-pill)] animate-spin"/>Running…</>
-              : <><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>Run</>
+              : <><Icon name="run" size={10} />Run</>
             }
           </Button>
         </div>
@@ -1807,7 +1798,7 @@ export function QueryBuilder({
               ))}
               <Button variant="ghost" size="icon-xs" onClick={()=>setControlsCollapsed(c=>!c)} title={controlsCollapsed?"Expand panel":"Collapse panel"}
                 className={`ml-auto size-auto text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent p-1.5 ${SVG_SIZE_AUTO}`}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${controlsCollapsed?"rotate-180":""}`}><polyline points="6 9 12 15 18 9"/></svg>
+                <Icon name="chevd" size={12} className={`transition-transform ${controlsCollapsed?"rotate-180":""}`} />
               </Button>
             </div>
             {!controlsCollapsed && (<>
@@ -1839,10 +1830,7 @@ export function QueryBuilder({
                   e.g. an imported query from Insights / Deep Analysis) */}
               {!primaryTable && !result && (
                 <div className="flex items-center gap-3 rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
-                    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
-                  </svg>
+                  <span style={{ color: "var(--t3)", display: "inline-flex" }} className="shrink-0"><Icon name="builder" size={18} /></span>
                   <div className="min-w-0">
                     <p className="aug-fs-ui font-medium text-zinc-300">Drag a field from the catalog to begin</p>
                     <p className="aug-fs-xs text-zinc-500 mt-0.5">Drop columns into Dimensions or Metrics below. Fields from related tables join automatically along the studied schema relationships.</p>
@@ -1853,9 +1841,7 @@ export function QueryBuilder({
               {/* Auto-join hint */}
               {joinHint && (
                 <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 aug-fs-sm text-blue-200">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-                  </svg>
+                  <Icon name="link" size={13} className="shrink-0" />
                   <span className="font-mono">{joinHint}</span>
                   <Button variant="ghost" size="xs" onClick={()=>setJoinHint(null)} className="h-auto p-0 font-normal ml-auto opacity-60 hover:opacity-100 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                 </div>
@@ -1996,7 +1982,7 @@ export function QueryBuilder({
               {joinStatuses.length > 0 && (
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/20">
                   <Button variant="ghost" onClick={()=>setJoinsOpen(o=>!o)} className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 text-left hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
+                    <Icon name="chevr" size={11} className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`} />
                     <span className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
                     {fanOutRisk && (
                       <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
@@ -2077,9 +2063,7 @@ export function QueryBuilder({
                   ) : (
                     <Button variant="ghost" size="xs" onClick={()=>setShowAddFilter(true)}
                       className={`h-auto font-normal gap-1.5 aug-fs-sm border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                      </svg>
+                      <Icon name="plus" size={11} />
                       Add filter
                     </Button>
                   )}
@@ -2109,9 +2093,7 @@ export function QueryBuilder({
                     ))}
                     <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
                       className={`h-auto font-normal gap-1.5 aug-fs-sm border-dashed border-zinc-700 rounded-[var(--r3)] px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                      </svg>
+                      <Icon name="plus" size={11} />
                       Add having
                     </Button>
                   </div>
@@ -2146,7 +2128,7 @@ export function QueryBuilder({
               <div className="border-t border-zinc-700/30 pt-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Button variant="ghost" onClick={()=>setSqlOpen(o=>!o)} className={`h-auto p-0 font-normal gap-2 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
+                    <Icon name="chevr" size={11} className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`} />
                     <p className="aug-fs-ui font-semibold text-zinc-300">SQL</p>
                   </Button>
                   {!autoSql && (
@@ -2296,9 +2278,7 @@ export function QueryBuilder({
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-zinc-500">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" className="opacity-50">
-                  <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-                </svg>
+                <Icon name="chart" size={28} className="opacity-50" />
                 <p className="aug-fs-sm italic">Configure your query in the panel, then <strong className="text-zinc-400 font-normal not-italic">Run</strong> or press <kbd className="text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 aug-fs-xs">⌘↵</kbd></p>
               </div>
             )}

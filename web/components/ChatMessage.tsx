@@ -4,16 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
 import { ExportButton } from "@/components/ExportButton";
-import TableIcon         from "@atlaskit/icon/core/table";
-import DownloadIcon      from "@atlaskit/icon/core/download";
-import CloseIcon         from "@atlaskit/icon/core/close";
-import CopyIcon          from "@atlaskit/icon/core/copy";
-import CheckMarkIcon     from "@atlaskit/icon/core/check-mark";
-import ChevronDownIcon   from "@atlaskit/icon/core/chevron-down";
-import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
-import InformationIcon   from "@atlaskit/icon/core/information";
-import WarningIcon       from "@atlaskit/icon/core/warning";
-import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
 import {
   Brief,
   BriefHeadline,
@@ -27,11 +17,12 @@ import {
   BriefMeta,
   type BriefMetric,
 } from "@/components/brief/Brief";
+import { hasProseBlocks, renderProseBlocks } from "@/components/brief/BriefProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
-import { ChatTurn } from "@/lib/useChat";
-import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import type { ChatTurn } from "@/lib/chatTurn";
+import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -71,6 +62,7 @@ import {
   isIdLike,
 } from "@/components/charts/columnRoles";
 import { isAdditiveMeasure } from "@/lib/measureKind";
+import { Icon } from "@/components/ui/icon";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -401,7 +393,7 @@ function ResultFigure({
             onClick={handleSourceClick}
             className="self-end h-auto gap-1.5 px-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
           >
-            <TableIcon label="Table" size="small" />
+            <Icon name="table" size={16} label="Table" />
             Source data
           </Button>
         )}
@@ -436,8 +428,8 @@ function CopyAnswerButton({ text }: { text: string }) {
       className="h-auto gap-1.5 px-1.5 py-1 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
     >
       {copied
-        ? <><span className="text-emerald-400 aug-check-pop"><CheckMarkIcon label="Copied" size="small" /></span>Copied</>
-        : <><CopyIcon label="Copy answer" size="small" />Copy</>}
+        ? <><span className="text-emerald-400 aug-check-pop"><Icon name="check" size={16} label="Copied" /></span>Copied</>
+        : <><Icon name="copy" size={16} label="Copy answer" />Copy</>}
     </Button>
   );
 }
@@ -466,8 +458,8 @@ function SqlBlock({ sql }: { sql: string }) {
         className="absolute top-2 right-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60 opacity-0 group-hover/sql:opacity-100"
       >
         {copied
-          ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
-          : <CopyIcon label="Copy SQL" size="small" />}
+          ? <span className="text-emerald-400"><Icon name="check" size={16} label="Copied" /></span>
+          : <Icon name="copy" size={16} label="Copy SQL" />}
       </Button>
     </div>
   );
@@ -503,7 +495,7 @@ export function SourcePanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="shrink-0 text-zinc-400">
-            <TableIcon label="Table" size="small" />
+            <Icon name="table" size={16} label="Table" />
           </span>
           <span className="aug-fs-sm font-medium text-zinc-200 truncate">{title}</span>
         </div>
@@ -516,21 +508,21 @@ export function SourcePanel({
             title="Download as CSV"
             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60"
           >
-            <DownloadIcon label="Download CSV" size="small" />
+            <Icon name="download" size={16} label="Download CSV" />
           </Button>
           {/* Copy SQL */}
           {sql && (
             <Button variant="ghost" size="icon-xs" onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
               className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
               {copied
-                ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
-                : <CopyIcon label="Copy SQL" size="small" />}
+                ? <span className="text-emerald-400"><Icon name="check" size={16} label="Copied" /></span>
+                : <Icon name="copy" size={16} label="Copy SQL" />}
             </Button>
           )}
           {/* Close */}
           <Button variant="ghost" size="icon-xs" onClick={onClose} title="Close"
             className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 dark:hover:bg-zinc-700/60">
-            <CloseIcon label="Close" size="small" />
+            <Icon name="close" size={16} label="Close" />
           </Button>
         </div>
       </div>
@@ -572,7 +564,7 @@ export function SourcePanel({
         <div className="flex-1 min-h-0 flex flex-col border-t border-zinc-700/60">
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 flex-shrink-0 border-b border-zinc-700/40">
             <span className="flex items-center gap-1.5 aug-fs-sm font-medium text-zinc-300">
-              <AngleBracketsIcon label="SQL" size="small" /> SQL
+              <Icon name="sql" size={16} label="SQL" /> SQL
             </span>
             {openInQuery && (
               <Button
@@ -583,7 +575,7 @@ export function SourcePanel({
                 className="h-auto gap-1 px-0 aug-fs-xs text-blue-400 hover:text-blue-300"
               >
                 Explore with Query Builder
-                <ArrowRightIcon label="" size="small" />
+                <Icon name="next" size={16} />
               </Button>
             )}
           </div>
@@ -626,13 +618,13 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
         <span>Trace · derived during exploration — instant, no re-run</span>
       </div>
       {dossier.finding && (
-        <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{dossier.finding}</div>
+        <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{dossier.finding}</div>
       )}
       <DossierTrace dossier={dossier} />
       {dossier.sql && (
         <div>
-          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
-          <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
+          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
+          <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
         </div>
       )}
       {onDeeper && (
@@ -743,7 +735,7 @@ function InvestigateBody({
 function Chevron({ open }: { open: boolean }) {
   return (
     <span className={`text-zinc-500 transition-transform duration-150 inline-block ${open ? "rotate-180" : ""}`}>
-      <ChevronDownIcon label="" size="small" />
+      <Icon name="chevd" size={16} />
     </span>
   );
 }
@@ -786,7 +778,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
         className="w-full h-auto justify-start gap-2 px-3 py-2 border-b border-amber-700/20 rounded-none text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
         <span className="shrink-0 text-amber-400/90">
-          <WarningIcon label="Playbook" size="small" />
+          <Icon name="warning" size={16} label="Playbook" />
         </span>
         <span className="aug-fs-xs font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
         <span className="aug-fs-xs text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
@@ -819,9 +811,9 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                     <p className="aug-fs-sm text-zinc-300 leading-relaxed">{item.recommendation}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {item.trigger_condition && (
-                        <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
+                        <span className="text-[11px] text-zinc-500">when {item.trigger_condition}</span>
                       )}
-                      <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-pill)] border border-zinc-700 text-zinc-500">
+                      <span className="aug-fs-xs px-1.5 py-px rounded-[var(--r-chip)] border border-zinc-700 text-zinc-500">
                         {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}
                       </span>
                     </div>
@@ -897,13 +889,104 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
 // ── Quick answer, rendered as a clean Brief ───────────────────────────────────
 // Headline + narrative prose + the one framed result (chart / table /
 // metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
+/**
+ * CA-5 — the follow-up row stops being only *questions*.
+ *
+ * A suggestion that can only re-ask is half a suggestion: after an answer the two
+ * things an analyst most often wants are "go deeper on this" and "keep this", and
+ * both already existed in this app — as a conditional escalate bar that appeared only
+ * when the backend offered it, and as a pin path reachable from the briefing and the
+ * query builder but not from the conversation that produced the number.
+ *
+ * The actions are DERIVED from the turn, not sent over the wire: the client already
+ * holds the whole projected turn (CA-1), so what a turn affords is a function of what
+ * it contains. A backend frame restating that would be a second copy of state that can
+ * disagree with the first.
+ *
+ * Pin goes through the SAME guarded door the Query Builder uses — the server re-runs
+ * the SQL through the guard battery and REFUSES a card whose query errors or is
+ * blocked. A pinned number that nobody re-checked is exactly the lie CA-0 went after.
+ */
+function TurnActions({
+  turn, connectionId, onDrill,
+}: {
+  turn: ChatTurn;
+  connectionId?: string;
+  onDrill?: () => void;
+}) {
+  const [pin, setPin] = useState<"idle" | "pinning" | "pinned" | "error">("idle");
+  const [pinMsg, setPinMsg] = useState("");
+
+  // Whether going deeper is even meaningful is the CALLER's knowledge, not a wire
+  // value re-read here: the quick surface passes `onDrill`, the deep one cannot go
+  // deeper and passes nothing.
+  const canPin = !!connectionId && !!turn.sql && turn.rows.length > 0;
+  const canDrill = !!onDrill && !!turn.question;
+  if (!canPin && !canDrill) return null;
+
+  const doPin = async () => {
+    if (!connectionId || !turn.sql) return;
+    setPin("pinning"); setPinMsg("");
+    try {
+      await pinQueryToDashboard(connectionId, turn.sql, turn.headline || turn.question);
+      setPin("pinned");
+    } catch (e) {
+      setPin("error");
+      setPinMsg((e as Error).message || "Couldn't pin");
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      {canDrill && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={onDrill}
+          title="Re-run this question as a full deep analysis"
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
+        >
+          {/* The same glyph the Deep analyses nav item wears, so the action and the
+              destination read as the same thing. */}
+          <Icon name="search" size={13} className="shrink-0 text-zinc-500" />
+          Run a deep analysis
+        </Button>
+      )}
+      {canPin && pin !== "pinned" && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={doPin}
+          disabled={pin === "pinning"}
+          title={pinMsg || "Pin this result to the dashboard (re-run through the guard battery first)"}
+          className="aug-pressable h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-400 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] hover:bg-transparent dark:hover:bg-transparent"
+        >
+          <Icon name="pin" size={13} className="shrink-0 text-zinc-500" />
+          {pin === "pinning" ? "Pinning…" : pin === "error" ? "Retry pin" : "Pin to dashboard"}
+        </Button>
+      )}
+      {pin === "pinned" && (
+        <span className="aug-fs-sm text-emerald-400">✓ Pinned to dashboard</span>
+      )}
+      {pin === "error" && pinMsg && (
+        <span className="aug-fs-xs text-zinc-500" title={pinMsg}>
+          {/* The guard battery refusing is INFORMATION, not a glitch to hide. */}
+          {pinMsg.slice(0, 80)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function NarrativeBrief({
-  turn, connectionId, onShowSource, onFollowUp, onRunFresh,
+  turn, connectionId, onShowSource, onFollowUp, onRunFresh, onDrill,
 }: {
   turn: ChatTurn;
   connectionId?: string;
   onShowSource?: (data: SourcePanelData) => void;
   onFollowUp?: (q: string) => void;
+  /** CA-5 — re-ask this turn's question as a deep analysis. */
+  onDrill?: () => void;
   onRunFresh?: (q: string) => void;
 }) {
   const streaming = turn.status === "loading";
@@ -945,7 +1028,13 @@ function NarrativeBrief({
         />
       )}
 
-      {turn.headline
+      {/* A conversational answer lands on `headline`, and it is not always one line: a
+          turn that tabulates its result puts a markdown table there, and the headline
+          organ renders it pipe by literal pipe. Block-structured text takes the block
+          renderer; a one-line conclusion keeps the headline treatment it was built for. */}
+      {turn.headline && hasProseBlocks(turn.headline)
+        ? <div className="flex flex-col gap-1">{renderProseBlocks(turn.headline)}</div>
+        : turn.headline
         ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
         : streamingHeadline != null
           ? <BriefHeadline animate={false} className="aug-stream-in">{safePartial(streamingHeadline)}</BriefHeadline>
@@ -953,7 +1042,7 @@ function NarrativeBrief({
 
       {inspect && inspect.issues.length > 0 && (
         <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
-          <span className="shrink-0 mt-0.5"><WarningIcon label="Warning" size="small" /></span>
+          <span className="shrink-0 mt-0.5"><Icon name="warning" size={16} label="Warning" /></span>
           <span>
             Result may be incomplete — {inspect.issues.join("; ")}
             {inspect.suggestedFix ? `. ${inspect.suggestedFix}` : ""}
@@ -972,7 +1061,7 @@ function NarrativeBrief({
           onClick={() => setExplained(true)}
           className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
         >
-          <InformationIcon label="" size="small" />
+          <Icon name="info" size={16} />
           Explain the data
         </Button>
       )}
@@ -1004,12 +1093,16 @@ function NarrativeBrief({
                 onClick={() => onFollowUp?.(q)}
                 className="aug-pressable h-auto items-start justify-start gap-1.5 p-0 text-left whitespace-normal aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
               >
-                <span className="shrink-0 text-zinc-500 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
+                <span className="shrink-0 text-zinc-500 mt-0.5"><Icon name="next" size={16} /></span>
                 <span>{q}</span>
               </Button>
             ))}
           </div>
         </BriefSection>
+      )}
+
+      {!streaming && (
+        <TurnActions turn={turn} connectionId={connectionId} onDrill={onDrill} />
       )}
 
       {/* Hover toolbar (CK-grade): message actions stay invisible until the turn is
@@ -1183,7 +1276,7 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
         onClick={load}
         className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
       >
-        <InformationIcon label="" size="small" />
+        <Icon name="info" size={16} />
         Show grounding
       </Button>
     );
@@ -1284,7 +1377,7 @@ function InsightDetails({
           })}
           className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
-          <TableIcon label="Table" size="small" />
+          <Icon name="table" size={16} label="Table" />
           View source data &amp; SQL
         </Button>
       )}
@@ -1296,6 +1389,24 @@ function InsightDetails({
       )}
     </BriefDetails>
   );
+}
+
+export interface ChatMessageProps {
+  turn: ChatTurn;
+  connectionId?: string;
+  onFollowUp?: (q: string) => void;
+  onRunFresh?: (q: string) => void;
+  onShowSource?: (data: SourcePanelData) => void;
+  onDeeper?: (question: string, insightId: string | null) => void;
+  /** Drill an overview fact into a live seeded deep analysis (see OverviewReportView). */
+  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
+  onApprovePlan?: (invId: string, keepIndices: number[]) => void;
+  onRejectPlan?: (invId: string) => void;
+  onChooseClarify?: (invId: string, option: string) => void;
+  /** Wave R4 — re-ask this turn's question after a retryable failure. */
+  onRetry?: (question: string) => void;
+  /** CA-1 — replace this turn's question and re-send from here (edit-and-resend). */
+  onEdit?: (newQuestion: string) => void;
 }
 
 export function ChatMessage({
@@ -1310,22 +1421,20 @@ export function ChatMessage({
   onRejectPlan,
   onChooseClarify,
   onRetry,
-}: {
-  turn: ChatTurn;
-  connectionId?: string;
-  onFollowUp?: (q: string) => void;
-  onRunFresh?: (q: string) => void;
-  onShowSource?: (data: SourcePanelData) => void;
-  onDeeper?: (question: string, insightId: string | null) => void;
-  /** Drill an overview fact into a live seeded deep analysis (see OverviewReportView). */
-  onExploreFact?: (question: string, opts: { seedSql: string | null; seedContext: string; lens: string; table: string }) => void;
-  onApprovePlan?: (invId: string, keepIndices: number[]) => void;
-  onRejectPlan?: (invId: string) => void;
-  onChooseClarify?: (invId: string, option: string) => void;
-  /** Wave R4 — re-ask this turn's question after a retryable failure. */
-  onRetry?: (question: string) => void;
-}) {
+  onEdit,
+}: ChatMessageProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // CA-1 edit-and-resend: the question bubble becomes an editor; sending replaces
+  // this user message and truncates the thread from here (the SDK's own branch
+  // semantics), so the edited question is an ordinary new turn.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const submitEdit = () => {
+    const q = draft.trim();
+    if (!q || !onEdit) return;
+    setEditing(false);
+    onEdit(q);
+  };
   const isInvestigate = turn.mode === "investigate";
   const hasResult = isInvestigate
     ? !!(turn.deepReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
@@ -1368,12 +1477,51 @@ export function ChatMessage({
               <Chevron open={!collapsed} />
             </Button>
           )}
-          <div
-            className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
-            style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
-          >
-            {turn.question}
-          </div>
+          {isDone && onEdit && !editing && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => { setDraft(turn.question); setEditing(true); }}
+              className="h-auto w-auto p-0.5 mt-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-transparent dark:hover:bg-transparent"
+              title="Edit and re-send — the conversation continues from this question"
+            >
+              Edit
+            </Button>
+          )}
+          {editing ? (
+            <div className="flex flex-col gap-1.5" style={{ minWidth: 280 }}>
+              <textarea
+                autoFocus
+                rows={2}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEdit(); }
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                className="w-full aug-fs-sm text-zinc-100 rounded-[var(--r3)] px-3 py-2 resize-none focus:outline-none"
+                style={{ background: "var(--bg-2)", border: "1px solid var(--bfocus)" }}
+              />
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="ghost" size="xs" onClick={() => setEditing(false)}
+                  className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                  Cancel
+                </Button>
+                <Button variant="ghost" size="xs" onClick={submitEdit} disabled={!draft.trim()}
+                  className="h-auto px-2 py-0.5 aug-fs-xs font-medium rounded text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
+                  style={{ background: "var(--blue-solid)" }}>
+                  Send
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="px-3.5 py-2 rounded-[var(--r3)] aug-fs-sm font-semibold text-white leading-snug"
+              style={{ background: isInvestigate ? "var(--vio-solid)" : "var(--blue-solid)" }}
+            >
+              {turn.question}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1485,7 +1633,7 @@ export function ChatMessage({
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="aug-fs-sm text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
-            <StatusChip key={t} hue="muted" icon={<TableIcon label="Table" size="small" />} className="font-mono">
+            <StatusChip key={t} hue="muted" icon={<Icon name="table" size={16} label="Table" />} className="font-mono">
               {t}
             </StatusChip>
           ))}
@@ -1511,6 +1659,7 @@ export function ChatMessage({
           onShowSource={onShowSource}
           onFollowUp={onFollowUp}
           onRunFresh={onRunFresh}
+          onDrill={onDeeper ? () => onDeeper(turn.question, null) : undefined}
         />
       )}
 
@@ -1520,7 +1669,7 @@ export function ChatMessage({
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-[var(--r3)] bg-amber-950/30 border border-amber-800/40 aug-fs-xs text-amber-400 leading-snug">
               <span className="shrink-0 mt-0.5 text-amber-500">
-                <InformationIcon label="Info" size="small" />
+                <Icon name="info" size={16} label="Info" />
               </span>
               <span className="flex-1">
                 <span className="text-amber-300 font-medium">From a similar past deep analysis</span>
@@ -1552,16 +1701,17 @@ export function ChatMessage({
                   variant="ghost"
                   size="xs"
                   onClick={() => onFollowUp?.(q)}
-                  className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-pill)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
+                  className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"
                 >
                   <span className="text-zinc-500 shrink-0">
-                    <ArrowRightIcon label="" size="small" />
+                    <Icon name="next" size={16} />
                   </span>
                   {q}
                 </Button>
               ))}
             </div>
           )}
+          <TurnActions turn={turn} connectionId={connectionId} />
         </>
       )}
 

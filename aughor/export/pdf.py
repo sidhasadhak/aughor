@@ -22,12 +22,19 @@ from reportlab.platypus import (
 
 from .document import Block, ExportDoc
 
-_INDIGO = colors.HexColor("#4f46e5")
-_INK = colors.HexColor("#18181b")
-_BODY = colors.HexColor("#3f3f46")
-_MUTED = colors.HexColor("#71717a")
-_LINE = colors.HexColor("#e4e4e7")
-_BG = colors.HexColor("#f4f4f5")
+# Palette — the light theme, literal.
+# A print artifact has no document to read CSS vars from, so these mirror
+# web/aughor-v2/theme/tokens-v2.css's [data-theme="light"] block by hand and must
+# move with it (the same contract as printChartTokens() in the web chart theme).
+#   _ACCENT --blue3 · _INK --t1 · _MUTED --t2 · _LINE --b2 · _BG --bg-3
+# _BODY is _INK: this system has one ink for prose and one for meta, and the old
+# third grey was a leftover from a palette that is no longer used anywhere.
+_ACCENT = colors.HexColor("#1F6CB0")
+_INK = colors.HexColor("#11171C")
+_BODY = _INK
+_MUTED = colors.HexColor("#5F7281")
+_LINE = colors.HexColor("#D3DAE0")
+_BG = colors.HexColor("#F4F7F9")
 
 _CONTENT_W = A4[0] - 36 * mm  # page width minus L+R margins (18mm each)
 
@@ -39,13 +46,13 @@ def _styles() -> dict[str, ParagraphStyle]:
         "title": mk(name="t", fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=_INK, spaceAfter=4),
         "subtitle": mk(name="s", fontName="Helvetica", fontSize=10.5, leading=14, textColor=_MUTED, spaceAfter=2),
         "meta": mk(name="m", fontName="Helvetica", fontSize=8.5, leading=12, textColor=_MUTED),
-        "h": mk(name="h", fontName="Helvetica-Bold", fontSize=12.5, leading=15, textColor=_INDIGO, spaceBefore=14, spaceAfter=5),
+        "h": mk(name="h", fontName="Helvetica-Bold", fontSize=12.5, leading=15, textColor=_ACCENT, spaceBefore=14, spaceAfter=5),
         "body": mk(name="b", fontName="Helvetica", fontSize=10, leading=15, textColor=_BODY, spaceAfter=4),
         "claim": mk(name="c", fontName="Helvetica-Bold", fontSize=10.5, leading=14, textColor=_INK, spaceBefore=4, spaceAfter=1),
-        "kpi": mk(name="kpi", fontName="Helvetica-Bold", fontSize=15, leading=17, textColor=_INDIGO),
+        "kpi": mk(name="kpi", fontName="Helvetica-Bold", fontSize=15, leading=17, textColor=_ACCENT),
         "kpil": mk(name="kpil", fontName="Helvetica", fontSize=7.5, leading=10, textColor=_MUTED),
         "small": mk(name="sm", fontName="Helvetica", fontSize=8, leading=11, textColor=_MUTED),
-        "tag": mk(name="tg", fontName="Helvetica-Bold", fontSize=7.5, leading=10, textColor=_INDIGO, spaceAfter=2),
+        "tag": mk(name="tg", fontName="Helvetica-Bold", fontSize=7.5, leading=10, textColor=_ACCENT, spaceAfter=2),
         "bullet": mk(name="bu", fontName="Helvetica", fontSize=10, leading=14, textColor=_BODY, leftIndent=10, bulletIndent=0, spaceAfter=2),
         "cell": mk(name="cl", fontName="Helvetica", fontSize=8, leading=10, textColor=_BODY),
         "cellh": mk(name="ch", fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=_INK),
@@ -72,6 +79,24 @@ def _image(png: bytes, max_w: float = _CONTENT_W):
     w = min(max_w, iw * 0.5)
     h = w * ih / iw
     return Image(io.BytesIO(png), width=w, height=h)
+
+
+def _svg_flowable(svg: bytes, max_w: float = _CONTENT_W):
+    """CA-4 one-renderer: the chart arrives as the web resolver's own SVG —
+    embedded as a VECTOR drawing scaled to the content width (crisp at any
+    zoom; no raster backend needed). None on any parse failure → png/table."""
+    try:
+        from svglib.svglib import svg2rlg
+        drawing = svg2rlg(io.StringIO(svg.decode("utf-8", "replace")))
+        if drawing is None or not drawing.width:
+            return None
+        s = min(1.0, max_w / float(drawing.width))
+        drawing.scale(s, s)
+        drawing.width *= s
+        drawing.height *= s
+        return drawing
+    except Exception:
+        return None
 
 
 def _table(columns, rows, S):
@@ -152,12 +177,18 @@ def _flow(block: Block, S) -> list:
     elif block.kind == "keynums" and block.keynums:
         out.append(_keynums(block.keynums, S))
         out.append(Spacer(1, 4))
-    elif block.kind == "chart" and block.png:
-        # No caption under a chart: the figure draws its own title (charts.py ax.set_title),
-        # so the PDF was printing every chart's name twice. The Block keeps the caption —
-        # slides use it as the slide heading, where the PNG title isn't a heading.
-        out.append(_image(block.png))
-        out.append(Spacer(1, 6))
+    elif block.kind == "chart" and (block.svg or block.png):
+        # No caption under a chart: the figure draws its own title (the ECharts
+        # option's title block), so the PDF was printing every chart's name
+        # twice. The Block keeps the caption — slides use it as the slide
+        # heading, where the figure title isn't a heading. Vector SVG preferred;
+        # PNG only as the fallback.
+        fl = _svg_flowable(block.svg) if block.svg else None
+        if fl is None and block.png:
+            fl = _image(block.png)
+        if fl is not None:
+            out.append(fl)
+            out.append(Spacer(1, 6))
     elif block.kind == "table" and block.columns:
         out.append(_table(block.columns, block.rows, S))
         if block.caption:

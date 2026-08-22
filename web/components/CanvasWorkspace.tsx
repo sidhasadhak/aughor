@@ -8,31 +8,28 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
-const PATHS: Record<string, string> = {
-  back:     "M19 12H5M12 5l-7 7 7 7",
-  canvas:   "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
-  db:       "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z",
-  chat:     "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
-  clock:    "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z",
-  process:  "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
-  catalog:  "M4 6h16M4 10h16M4 14h16M4 18h16",
-  settings: "M12 15a3 3 0 100-6 3 3 0 000 6zm7.94-3c0-.32-.03-.63-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.6-.22l-2.39.96a7.07 7.07 0 00-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.58.23-1.13.54-1.62.94l-2.39-.96a.48.48 0 00-.6.22L2.07 9.47a.48.48 0 00.12.61l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.6.22l2.39-.96c.49.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.58-.27 1.13-.58 1.62-.94l2.39.96c.22.07.48 0 .6-.22l1.92-3.32a.48.48 0 00-.12-.61l-2.01-1.58c.05-.31.07-.63.07-.94z",
-  close:    "M18 6L6 18M6 6l12 12",
-  check:    "M20 6L9 17l-5-5",
-  table:    "M3 3h18v4H3zM3 11h18M3 19h18M8 7v12M16 7v12",
-  plus:     "M12 5v14M5 12h14",
-};
+/**
+ * This screen's glyphs. The names below are the ones its call sites already use; the
+ * drawings come from the platform set (`components/ui/icon.tsx`). Until now this file
+ * carried its own 13-entry SVG path map — the fourth such map in the app, each having
+ * drawn "database" and "table" a little differently from the others.
+ */
+const ROLE = {
+  back: "back", canvas: "canvas", db: "db", chat: "chat", clock: "clock",
+  process: "process", catalog: "catalog", settings: "settings", close: "close",
+  check: "check", table: "table", plus: "plus",
+} as const;
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
+  const role = (ROLE as Record<string, IconName>)[name] ?? "catalog";
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={PATHS[name] || PATHS.catalog} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={role} size={size} />
+    </span>
   );
 }
 
@@ -145,7 +142,7 @@ function CanvasHistory({
           </span>
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            padding: "1px 6px", borderRadius: 3, fontSize: 11,
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
@@ -168,7 +165,7 @@ function CanvasHistory({
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+            <Glyph name="trash" size={13} />
           </button>
         </div>
         );
@@ -277,7 +274,7 @@ function SettingsPopover({
         background: "var(--bg-2)", border: "1px solid var(--b2)",
         borderRadius: "var(--r3)", padding: "16px",
         width: 280, display: "flex", flexDirection: "column", gap: 10,
-        boxShadow: "0 8px 32px rgba(0,0,0,.4)",
+        boxShadow: "var(--shadow-lg)",
       }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -369,7 +366,6 @@ function CapabilitiesBlock({
   canvas: Canvas;
   connection: Connection | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const scope = canvas.scopes[0];
   const tables = scope?.tables ?? [];
   const isFull = tables.length === 0;
@@ -387,16 +383,18 @@ function CapabilitiesBlock({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
-      {/* Title */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: "var(--r2)",
-          background: canvas.is_legacy ? "var(--bg-3)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
-          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <Icon name="canvas" size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
-        </div>
+      {/* Title — the mark sits ABOVE the name rather than beside it (the reference's arrangement),
+          so the name starts at the same left edge as the description and the capabilities
+          below it, instead of being indented by the width of an icon. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/canvas-mark.svg"
+          alt=""
+          width={44}
+          height={44}
+          style={{ borderRadius: "var(--r2)", display: "block", flexShrink: 0 }}
+        />
         <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
       </div>
 
@@ -412,42 +410,13 @@ function CapabilitiesBlock({
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
         <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
           {caps.map(c => (
-            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5 }}>
+            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--t2)", lineHeight: 1.5 }}>
               <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
               {c}
             </li>
           ))}
         </ul>
 
-        {/* Table chips — revealed via Show more, like Databricks */}
-        {!isFull && tables.length > 0 && (
-          <>
-            {expanded && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                {tables.map(t => (
-                  <span key={t} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 9px", borderRadius: 999,
-                    background: "var(--bg-2)", border: "1px solid var(--b1)",
-                    fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
-                  }}>
-                    <Icon name="table" size={10} color="var(--t4)" />
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => setExpanded(v => !v)}
-              style={{
-                marginTop: 8, background: "none", border: "none", cursor: "pointer",
-                color: "var(--blue4)", fontSize: 12, fontWeight: 500, padding: 0,
-              }}
-            >
-              {expanded ? "Show less" : `Show ${tables.length} table${tables.length !== 1 ? "s" : ""}`}
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
@@ -512,7 +481,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
         >
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            padding: "1px 6px", borderRadius: 3, fontSize: 11,
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             {item.kind}
@@ -536,7 +505,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+            <Glyph name="trash" size={13} />
           </button>
         </div>
       ))}
@@ -651,7 +620,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           Canvases
         </button>
 
-        <span style={{ color: "var(--t4)", fontSize: 16, lineHeight: 1, userSelect: "none" }}>/</span>
+        <span style={{ color: "var(--t4)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
 
         {/* Canvas icon + name */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -678,7 +647,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           border: `1px solid ${tableCount === 0
             ? "color-mix(in srgb, var(--grn3) 25%, transparent)"
             : "var(--b1)"}`,
-          fontSize: 10,
+          fontSize: 11,
           color: tableCount === 0 ? "var(--grn4)" : "var(--t3)",
         }}>
           {tableCount === 0 ? "All tables" : `${tableCount} table${tableCount !== 1 ? "s" : ""}`}
@@ -690,7 +659,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "2px 7px", borderRadius: 3,
             background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 10, color: "var(--t3)",
+            fontSize: 11, color: "var(--t3)",
           }}>
             <Icon name="db" size={10} color="var(--t4)" />
             {connection.name}

@@ -5,31 +5,30 @@ import { getCanvases, deleteCanvas, type Canvas, type Connection } from "@/lib/a
 import { AugTable } from "@/components/AugTable";
 import { Button } from "@/components/ui/button";
 import type { TableColumnsType } from "antd";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
-function Icon({ d, size = 14, color = "currentColor" }: { d: string; size?: number; color?: string }) {
+function Icon({ name, size = 14, color = "currentColor" }: { name: IconName; size?: number; color?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={name} size={size} />
+    </span>
   );
 }
 
-const SEARCH_ICON = "M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35";
-const PLUS_ICON   = "M12 5v14M5 12h14";
-const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
-const CHEVD_ICON   = "M6 9l6 6 6-6";
-const CANVAS_ICON = "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4";
-const TRASH_ICON  = "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6";
-const DB_ICON     = "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z";
-const PERSON_ICON = "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z";
-const GRID_ICON   = "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z";
-const LIST_ICON   = "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01";
-const CLOCK_ICON  = "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z";
-const LAYERS_ICON = "M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5";
+const SEARCH_ICON: IconName = "search";
+const PLUS_ICON: IconName = "plus";
+const SLIDERS_ICON: IconName = "sliders";
+const CHEVD_ICON: IconName = "chevd";
+const CANVAS_ICON: IconName = "canvas";
+const TRASH_ICON: IconName = "trash";
+const DB_ICON: IconName = "db";
+const PERSON_ICON: IconName = "user";
+const GRID_ICON: IconName = "builder";
+const LIST_ICON: IconName = "list";
+const CLOCK_ICON: IconName = "clock";
+const LAYERS_ICON: IconName = "layers";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,18 +47,18 @@ function timeAgo(iso: string): string {
 
 // ── Filter chip ───────────────────────────────────────────────────────────────
 
-function FilterChip({ label, icon, active, onClick }: { label: string; icon?: string; active?: boolean; onClick: () => void }) {
+function FilterChip({ label, icon, active, onClick }: { label: string; icon?: IconName; active?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{
       display: "inline-flex", alignItems: "center", gap: 6,
-      padding: "5px 13px", borderRadius: 999,
+      padding: "5px 13px", borderRadius: "var(--r-chip)",
       background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
       color: active ? "var(--blue4)" : "var(--t2)",
       fontSize: 12, fontWeight: active ? 500 : 400,
       cursor: "pointer", transition: "all .1s", whiteSpace: "nowrap",
     }}>
-      {icon && <Icon d={icon} size={13} color={active ? "var(--blue4)" : "var(--t3)"} />}
+      {icon && <Icon name={icon} size={13} color={active ? "var(--blue4)" : "var(--t3)"} />}
       {label}
     </button>
   );
@@ -95,10 +94,10 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <Icon d={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+          <Icon name={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {canvas.name}
           </div>
@@ -116,7 +115,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
             onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "var(--t4)"; }}
           >
-            <Icon d={TRASH_ICON} size={13} />
+            <Icon name={TRASH_ICON} size={13} />
           </button>
         )}
       </div>
@@ -135,7 +134,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px",
             borderRadius: 4, background: "var(--bg-3)", border: "1px solid var(--b1)",
             fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap" }}>
-            <Icon d={DB_ICON} size={10} color="var(--t4)" />{connection.name}
+            <Icon name={DB_ICON} size={10} color="var(--t4)" />{connection.name}
           </span>
         )}
         <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 4,
@@ -252,14 +251,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               : "color-mix(in srgb, var(--blue3) 35%, transparent)"}`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Icon d={CANVAS_ICON} size={13} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+            <Icon name={CANVAS_ICON} size={13} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>
               {canvas.name}
             </div>
             {canvas.is_legacy && (
-              <div style={{ fontSize: 10, color: "var(--t4)" }}>auto-generated</div>
+              <div style={{ fontSize: 11, color: "var(--t4)" }}>auto-generated</div>
             )}
           </div>
         </div>
@@ -300,9 +299,9 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             background: "var(--bg-3)", border: "1px solid var(--b1)",
             fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap",
           }}>
-            <Icon d={DB_ICON} size={10} color="var(--t4)" />
+            <Icon name={DB_ICON} size={10} color="var(--t4)" />
             {connection.name}
-            <span style={{ color: "var(--t4)", fontSize: 10 }}>{label}</span>
+            <span style={{ color: "var(--t4)", fontSize: 11 }}>{label}</span>
           </span>
         );
       },
@@ -350,7 +349,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "var(--t4)"; }}
           >
-            <Icon d={TRASH_ICON} size={13} />
+            <Icon name={TRASH_ICON} size={13} />
           </button>
         ),
     },
@@ -379,7 +378,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           variant="default" size="sm"
           style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, marginTop: 4 }}
         >
-          <Icon d={PLUS_ICON} size={12} color="currentColor" />
+          <Icon name={PLUS_ICON} size={12} color="currentColor" />
           New
         </Button>
       </div>
@@ -395,7 +394,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)"; }}
           onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; }}
         >
-          <Icon d={SEARCH_ICON} size={14} color="var(--t4)" />
+          <Icon name={SEARCH_ICON} size={14} color="var(--t4)" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -426,7 +425,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
           marginRight: 2,
         }}>
-          <Icon d={SLIDERS_ICON} size={14} color="var(--t3)" />
+          <Icon name={SLIDERS_ICON} size={14} color="var(--t3)" />
         </div>
         <FilterChip label="All"           icon={LAYERS_ICON} active={filter === "all"}  onClick={() => setFilter("all")} />
         <FilterChip label="Created by me" icon={PERSON_ICON} active={filter === "mine"} onClick={() => setFilter("mine")} />
@@ -453,7 +452,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                     width: 27, height: 24, borderRadius: 5, cursor: "pointer",
                     background: view === v ? "var(--bg-4)" : "transparent",
                     color: view === v ? "var(--t1)" : "var(--t3)", transition: "all .1s" }}>
-                  <Icon d={ic} size={13} color="currentColor" />
+                  <Icon name={ic} size={13} color="currentColor" />
                 </div>
               ))}
             </div>
@@ -474,14 +473,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             >
               <span style={{ color: "var(--t4)" }}>Sort:</span>
               {SORT_LABELS[sort]}
-              <Icon d={CHEVD_ICON} size={12} color="var(--t4)" />
+              <Icon name={CHEVD_ICON} size={12} color="var(--t4)" />
             </button>
             {sortOpen && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30,
                 minWidth: 160, padding: 4,
                 background: "var(--bg-2)", border: "1px solid var(--b2)",
-                borderRadius: "var(--r2)", boxShadow: "0 8px 28px rgba(0,0,0,.35)",
+                borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
               }}>
                 {(["activity", "modified", "name", "tables"] as const).map(opt => (
                   <button
@@ -498,7 +497,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                     onMouseLeave={e => { if (sort !== opt) e.currentTarget.style.background = "transparent"; }}
                   >
                     {sort === opt
-                      ? <Icon d="M20 6L9 17l-5-5" size={12} color="var(--blue4)" />
+                      ? <Icon name="check" size={12} color="var(--blue4)" />
                       : <span style={{ width: 12 }} />}
                     {SORT_LABELS[opt]}
                   </button>
@@ -521,10 +520,10 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               border: "1px solid color-mix(in srgb, var(--blue3) 22%, transparent)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <Icon d={CANVAS_ICON} size={22} color="var(--blue4)" />
+              <Icon name={CANVAS_ICON} size={22} color="var(--blue4)" />
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
                 {search ? "No matching Data Canvases" : "No Data Canvases yet"}
               </div>
               <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, maxWidth: 300 }}>
@@ -536,7 +535,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             {!search && (
               <Button onClick={onNew} variant="default" size="sm"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                <Icon d={PLUS_ICON} size={12} color="currentColor" />
+                <Icon name={PLUS_ICON} size={12} color="currentColor" />
                 Create your first Data Canvas
               </Button>
             )}
@@ -602,9 +601,9 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             background: "var(--bg-2)", border: "1px solid var(--b2)",
             borderRadius: "var(--r3)", padding: "24px 24px 20px",
             width: 360, display: "flex", flexDirection: "column", gap: 12,
-            boxShadow: "0 20px 60px rgba(0,0,0,.4)",
+            boxShadow: "var(--shadow-xl)",
           }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
             <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>
               Are you sure you want to delete{" "}
               <strong style={{ color: "var(--t1)" }}>{pendingDelete.name}</strong>?

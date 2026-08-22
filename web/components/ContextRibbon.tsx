@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
 import { rescopeContext } from "@/lib/api";
-import type { ContextManifest } from "@/lib/investigationStream";
+import type { ContextManifest } from "@/lib/chatTurn";
 
 export function ContextRibbon({
   manifest,
