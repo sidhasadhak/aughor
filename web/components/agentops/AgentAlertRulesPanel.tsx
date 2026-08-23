@@ -3,7 +3,7 @@
 /**
  * VA-6 — the rules behind the alerts.
  *
- * The engine that decides whether a fleet is misbehaving shipped complete and unreachable:
+ * The engine that decides whether the agents are misbehaving shipped complete and unreachable:
  * nothing stored a rule, so nothing could ever evaluate one. This is the surface that
  * stores them. It sits inside Attention rather than beside Monitors because the person
  * who sets these thresholds is the person reading what is waiting on them.
@@ -138,7 +138,7 @@ export function AgentAlertRulesPanel() {
           Alert rules
           <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>
             {rules.length === 0
-              ? "none yet — nothing about the fleet is being watched"
+              ? "none yet — nothing about the agents is being watched"
               : `${rules.filter(r => r.enabled).length} of ${rules.length} enabled`}
           </span>
         </div>
@@ -155,7 +155,7 @@ export function AgentAlertRulesPanel() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12,
           paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
           <Field label="Name" width={200}>
-            <input className="aug-input" value={draft.name} placeholder="Fleet error rate"
+            <input className="aug-input" value={draft.name} placeholder="Error rate across agents"
               onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} />
           </Field>
           <Field label="Metric" width={190}>

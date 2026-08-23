@@ -20,6 +20,13 @@ from aughor.packs.inject import build_injection, PackInjection
 _PACKS_DIR = Path(__file__).resolve().parents[2] / "packs"
 
 
+def packs_root() -> Path:
+    """Where packs live. Public because a caller that needs the default must not reach for
+    a private module attribute to get it — the ratchet is right that a cross-module `_name`
+    is a seam nobody agreed to."""
+    return _PACKS_DIR
+
+
 def known_pack_ids(packs_dir=None) -> list[str]:
     """Ids of every pack on disk, active or not — the set a binding may legally name.
 
@@ -75,6 +82,15 @@ def injection_for_question(
         from aughor.kernel.errors import tolerate
         tolerate(e, "agent pack-preference is advisory; full pool proceeds",
                  counter="packs.agent_pool")
+    # ⚠️ A `partial` pack carries prose and nothing else — no entities to bind, no recipes
+    # to inject — so it can never produce an injection. Leaving it in the pool is not
+    # harmless: `select_pack` returns the single best match, so an imported skill that
+    # outscores a properly bound one would win the routing and then fall out at the
+    # binding gate below, returning None. Steering would silently STOP working on exactly
+    # the questions a real pack was deployed for, and the only visible symptom would be a
+    # generalist answer. It is excluded here rather than in `select_pack` because routing
+    # is about which pack OWNS a question; this is about which one can act.
+    pool = [p for p in pool if not p.manifest.partial]
     if not pool:
         return None
     hit = select_pack(question, pool)

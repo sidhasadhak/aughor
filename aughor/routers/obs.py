@@ -759,7 +759,8 @@ class AgentAlertRuleBody(BaseModel):
 # Rules sit at the default write floor rather than at `admin.manage_org`, matching
 # monitors: the thing that actually reaches a person is the Action Hub trigger a rule
 # names, and creating one of those is governed where triggers are created. A rule with no
-# channel is in-app only. What a rule CAN do that a monitor cannot is read the fleet, so
+# channel is in-app only. What a rule CAN do that a monitor cannot is read the agent
+# plane, so
 # the metric vocabulary is served from the code rather than typed into the UI — the same
 # rule `/activity` follows: a filter must never advertise something nothing can produce.
 

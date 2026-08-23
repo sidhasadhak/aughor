@@ -6829,6 +6829,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Pack Status
+         * @description Move a pack between draft / active / deprecated — the write `status` never had.
+         *
+         *     Four endpoints and two modules READ this field; none wrote it, so the only way to
+         *     activate anything was to hand-edit `pack.yaml`. Worse, `POST /packs/{id}/evaluate`
+         *     already computed the activation verdict and returned it to a caller with nothing to do
+         *     with it — a decision that is computed but never delivered is not a gate.
+         *
+         *     A grounded pack is activated by ITS EVALS: this runs the same evaluation that endpoint
+         *     runs (one planner pass per golden question — deliberate and on demand) and writes only
+         *     on `can_activate`. A `partial` pack has no evals to run and never steers a plan, so its
+         *     gate is the import lint, and it needs no connection at all.
+         */
+        post: operations["post_pack_status_packs__pack_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playbook": {
         parameters: {
             query?: never;
@@ -10073,6 +10103,26 @@ export interface components {
              * @default true
              */
             persist: boolean;
+        };
+        /** StatusIn */
+        StatusIn: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Status
+             * @description draft | active | deprecated
+             */
+            status: string;
         };
         /** SuggestNameRequest */
         SuggestNameRequest: {
@@ -23384,6 +23434,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProposeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_pack_status_packs__pack_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusIn"];
             };
         };
         responses: {

@@ -831,6 +831,87 @@ def _render(plan, path: Optional[Path], *, verbose: bool) -> None:
 
 
 @cli.group()
+def packs():
+    """Inspect and promote domain packs."""
+
+
+@packs.command("list")
+@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+def packs_list(packs_dir: Path):
+    """Every pack on disk with its status — the answer to 'why is nothing steering'."""
+    from aughor.packs.loader import load_pack
+    from aughor.packs.intake import known_pack_ids
+
+    ids = known_pack_ids(packs_dir)
+    if not ids:
+        console.print(f"[yellow]no packs under {packs_dir}[/yellow]")
+        return
+    for pid in ids:
+        try:
+            pack = load_pack(Path(packs_dir) / pid)
+        except Exception as exc:
+            console.print(f"  [red]✗ {pid}[/red]: {exc}")
+            continue
+        m = pack.manifest
+        colour = {"active": "green", "draft": "yellow"}.get(m.status, "dim")
+        flags = " ".join(filter(None, [
+            "[dim]prose-only[/dim]" if m.partial else "",
+            f"[dim]{m.source}[/dim]" if m.source else "",
+        ]))
+        console.print(f"  [{colour}]{m.status:<10}[/{colour}] {pid}  {flags}")
+    console.print(f"\n{len(ids)} pack(s). Only [green]active[/green] ones are readable "
+                  f"by an agent or selectable for steering.")
+
+
+@packs.command("promote")
+@click.argument("pack_id")
+@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--actor", default="", help="Who is promoting it. Recorded on the journal.")
+def packs_promote(pack_id: str, packs_dir: Path, actor: str):
+    """Make PACK_ID active — the point at which its prose can reach a prompt.
+
+    The import gate runs again HERE, over the pack's prose, because this is the door the
+    prose actually passes through: import is a copy onto disk, and a hand-placed pack
+    never passed the importer at all.
+    """
+    from aughor.packs.promote import PromotionRefused, set_status
+
+    try:
+        pack = set_status(pack_id, "active", packs_dir=packs_dir, actor=actor)
+    except PromotionRefused as exc:
+        console.print(f"[red]refused[/red] {exc}")
+        for f in exc.findings:
+            if f.severity.value == "block":
+                console.print(f"    [red]{f.rule}[/red] line {f.line}: {f.why}")
+        sys.exit(1)
+    except Exception as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[green]✓ active[/green] {pack_id}")
+    if pack.manifest.partial:
+        console.print("[dim]This pack is prose only — it declares no entities or metrics, "
+                      "so it can be READ by an agent but will never steer a plan.[/dim]")
+
+
+@packs.command("demote")
+@click.argument("pack_id")
+@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--status", type=click.Choice(["draft", "deprecated"]), default="draft",
+              show_default=True)
+@click.option("--actor", default="")
+def packs_demote(pack_id: str, packs_dir: Path, status: str, actor: str):
+    """Take PACK_ID out of service. `deprecated` is not a delete — its history stays."""
+    from aughor.packs.promote import set_status
+
+    try:
+        set_status(pack_id, status, packs_dir=packs_dir, actor=actor)
+    except Exception as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[yellow]✓ {status}[/yellow] {pack_id}")
+
+
+@cli.group()
 def skills():
     """Import third-party agent skills (SKILL.md) as packs."""
 

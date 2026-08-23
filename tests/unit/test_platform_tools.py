@@ -222,9 +222,11 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
     one is loaded past its manifest."""
     playbook = SimpleNamespace(trigger_metric="gmv", trigger_operator="<",
                                trigger_condition="baseline", recommendation="r" * 500)
+    from aughor.packs.loader import PROSE_FIELD
     pack = SimpleNamespace(
-        manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"]),
-        playbooks=[playbook])
+        manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"],
+                                 partial=False, source="", source_url="", licence=""),
+        playbooks=[playbook], **{PROSE_FIELD: "Reads the P&L before the dashboard."})
     monkeypatch.setattr("aughor.routers.packs.PACKS_DIR", tmp_path)
     monkeypatch.setattr("aughor.packs.list_packs", lambda root: ["finance"])
     monkeypatch.setattr("aughor.packs.load_pack", lambda root: pack)

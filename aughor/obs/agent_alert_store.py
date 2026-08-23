@@ -6,7 +6,7 @@ Two tables in ``data/agent_alerts.db``:
                        stamp are the only fields that change after the write
 
 A separate store from ``monitors.db`` on purpose. A monitor watches a warehouse metric on
-a connection; a rule here watches the fleet, has no ``conn_id`` at all, and is scoped by
+a connection; a rule here watches the agents, has no ``conn_id`` at all, and is scoped by
 agent or charter instead. Writing both into one table would mean a nullable half of every
 row and two meanings for ``metric_name`` — and the Attention surface would have to guess
 which kind it was holding. Same delivery path, same shape of rule, different subject.

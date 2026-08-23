@@ -234,12 +234,100 @@ def list_monitors(connection_id: str, args: dict) -> dict:
     }
 
 
+#: How much of a pack's prose one `read_pack` call may return. A skill body is a few KB;
+#: this is generous for that and small enough that a tool result cannot eat the window it
+#: was fetched into — the failure VA-5 paid for with a 1.2 MB trace nobody could read.
+_MAX_PACK_PROSE = 12_000
+#: The advertisement. Long enough to judge relevance, short enough that N packs in the
+#: roster's result stay cheap.
+_MAX_PACK_DESCRIPTION = 240
+
+
+def _pack_description(pack) -> str:
+    """One line saying what this pack is for — the half of disclosure that must be cheap.
+
+    Progressive disclosure only works if the advertisement is affordable at scale: every
+    pack's description is read on every `list_packs` call, and only the body of the one the
+    model chooses is ever fetched.
+
+    Taken from the pack's own prose rather than from a manifest field, so the advertisement
+    and the thing `read_pack` returns cannot drift into describing different packs. The
+    title and the importer's provenance block are skipped — they say where a pack came
+    from, which is not what it is for.
+    """
+    from aughor.packs.loader import PROSE_FIELD
+
+    for para in (getattr(pack, PROSE_FIELD, '') or '').split('\n\n'):
+        line = para.strip()
+        if not line or line.startswith("#") or line.startswith(">"):
+            continue
+        return " ".join(line.split())[:_MAX_PACK_DESCRIPTION]
+    return ""
+
+
+def read_pack(connection_id: str, args: dict) -> dict:
+    """One pack's prose, in full — the second rung of the disclosure ladder.
+
+    ACTIVE packs only, and that is the whole access-control story for imported prose. The
+    importer's contract is that nothing imported reaches a prompt until a person promotes
+    it; serving a draft here would break that contract through a side door, and the side
+    door is the one nobody audits. A draft pack is reported as existing-but-not-active
+    rather than as missing, because "promote it" and "you typed the id wrong" are
+    different problems.
+    """
+    from aughor.packs import load_pack, list_packs as _list_packs
+    from aughor.packs.loader import PROSE_FIELD
+    from aughor.routers.packs import PACKS_DIR
+
+    pack_id = str(args.get("pack_id") or "").strip()
+    if not pack_id:
+        return {"error": "pack_id is required"}
+    if pack_id not in set(_list_packs(PACKS_DIR)):
+        return {"error": f"no pack '{pack_id}' is installed"}
+
+    try:
+        pack = load_pack(PACKS_DIR / pack_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an unloadable pack answers with its error, not with silence",
+                 counter="platform_tools.read_pack_load")
+        return {"error": f"pack '{pack_id}' failed to load"}
+
+    if pack.manifest.status != "active":
+        return {"pack_id": pack_id, "status": pack.manifest.status, "readable": False,
+                "why": (f"'{pack_id}' is {pack.manifest.status}, not active. Imported "
+                        "prose is inert until a person promotes it.")}
+
+    prose = (getattr(pack, PROSE_FIELD, '') or '').strip()
+    truncated = len(prose) > _MAX_PACK_PROSE
+    return {
+        "pack_id": pack_id,
+        "name": pack.manifest.name,
+        "status": pack.manifest.status,
+        "readable": True,
+        "domains": pack.manifest.domains,
+        # Said on every read, not only on import: prose-only means this pack knows nothing
+        # about the reader's actual tables, and an answer that leans on it should say so.
+        "partial": pack.manifest.partial,
+        "source": pack.manifest.source,
+        "source_url": pack.manifest.source_url,
+        "licence": pack.manifest.licence,
+        "prose": prose[:_MAX_PACK_PROSE],
+        "truncated": truncated,
+        "metrics": [{"name": m.name, "definition": m.definition} for m in pack.metrics[:12]],
+    }
+
+
 def list_packs(connection_id: str, args: dict) -> dict:
     """Installed specialist packs, and which one is bound to THIS connection.
 
     The bound pack answers with its playbooks — that is the piece a conversation can
     actually use ("what would the finance pack look at here"), and it is only fetched
     for the one pack whose detail matters.
+
+    Each entry also carries a one-line `description`, which is what makes this the first
+    rung of a disclosure ladder rather than a bare inventory: the model reads N cheap
+    descriptions, then spends a `read_pack` call on the one that matches.
     """
     from aughor.packs import load_binding, load_pack, list_packs as _list_packs
     from aughor.routers.packs import PACKS_DIR
@@ -253,7 +341,11 @@ def list_packs(connection_id: str, args: dict) -> dict:
         try:
             pack = load_pack(PACKS_DIR / pack_id)
             entry.update({"name": pack.manifest.name, "status": pack.manifest.status,
-                          "domains": pack.manifest.domains})
+                          "domains": pack.manifest.domains,
+                          "description": _pack_description(pack),
+                          "partial": pack.manifest.partial,
+                          "source": pack.manifest.source,
+                          "readable": pack.manifest.status == "active"})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "an unloadable pack is listed by id, not hidden",
@@ -420,6 +512,14 @@ _LIMIT_PARAMS = {
     "properties": {"limit": {"type": "integer", "description": "Max results."}},
 }
 _EMPTY_PARAMS: dict = {"type": "object", "properties": {}}
+_PACK_PARAMS = {
+    "type": "object",
+    "properties": {"pack_id": {
+        "type": "string",
+        "description": "The pack id, exactly as `list_packs` reported it.",
+    }},
+    "required": ["pack_id"],
+}
 _BRIEFING_PARAMS = {
     "type": "object",
     "properties": {"schema": {
@@ -565,6 +665,19 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             ),
             parameters=_EMPTY_PARAMS,
             run=lambda a: list_packs(connection_id, a),
+        ),
+        ToolSpec(
+            name="read_pack",
+            description=(
+                "The full prose of ONE domain pack, by id. Call it after "
+                "`list_packs` when a pack's description matches the question — that "
+                "two-step is deliberate, so N descriptions stay cheap and only the "
+                "body you need is fetched. Active packs only. A `partial` pack is "
+                "prose about a domain and knows nothing about this warehouse's "
+                "tables, so ground its advice in real columns before relying on it."
+            ),
+            parameters=_PACK_PARAMS,
+            run=lambda a: read_pack(connection_id, a),
         ),
         ToolSpec(
             name="platform_help",

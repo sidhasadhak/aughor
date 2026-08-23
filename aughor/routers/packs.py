@@ -200,6 +200,84 @@ def post_delta_status(delta_id: int, body: DeltaStatusIn):
     return {"changed": changed}
 
 
+class StatusIn(BaseModel):
+    status: str = Field(description="draft | active | deprecated")
+    actor: str = ""
+    connection_id: str = ""
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+@router.post("/packs/{pack_id}/status")
+def post_pack_status(pack_id: str, body: StatusIn):
+    """Move a pack between draft / active / deprecated — the write `status` never had.
+
+    Four endpoints and two modules READ this field; none wrote it, so the only way to
+    activate anything was to hand-edit `pack.yaml`. Worse, `POST /packs/{id}/evaluate`
+    already computed the activation verdict and returned it to a caller with nothing to do
+    with it — a decision that is computed but never delivered is not a gate.
+
+    A grounded pack is activated by ITS EVALS: this runs the same evaluation that endpoint
+    runs (one planner pass per golden question — deliberate and on demand) and writes only
+    on `can_activate`. A `partial` pack has no evals to run and never steers a plan, so its
+    gate is the import lint, and it needs no connection at all.
+    """
+    from aughor.packs.promote import PromotionRefused, set_status
+
+    pack_dir = PACKS_DIR / pack_id
+    if not (pack_dir / "pack.yaml").is_file():
+        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+
+    decision = None
+    if body.status == "active":
+        try:
+            pack = load_pack(pack_dir)
+        except PacksError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        if not pack.manifest.partial:
+            if not body.connection_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(f"'{pack_id}' steers plans, so activation is decided by its "
+                            f"evals on a connection — send connection_id."))
+            decision = _activation_decision(pack, pack_id, body)
+
+    try:
+        # `packs_dir=PACKS_DIR` explicitly: this router reads through its own constant and
+        # `promote` defaults to `intake._PACKS_DIR`. They resolve to the same directory
+        # today, which is exactly why a divergence would be found late.
+        pack = set_status(pack_id, body.status, packs_dir=PACKS_DIR,
+                          actor=body.actor, gate_decision=decision)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PromotionRefused as e:
+        # 409, not 422: the request is well-formed and the pack is real — the pack's own
+        # gate says no, and that is a state conflict a caller resolves by fixing the pack.
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"id": pack_id, "status": pack.manifest.status, "partial": pack.manifest.partial}
+
+
+def _activation_decision(pack, pack_id: str, body: "StatusIn"):
+    """Bet 2's verdict for a grounded pack, computed exactly as /evaluate computes it."""
+    from aughor.packs.engine_eval import make_ask_fn
+    from aughor.packs.evalgate import evaluate_activation
+    from aughor.packs.evalrunner import run_pack_evals
+
+    try:
+        ask = make_ask_fn(body.connection_id, body.schema_name, pack)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
+    results = run_pack_evals(pack, ask)
+    binding = load_binding(pack_id, body.connection_id, body.schema_name or "")
+    bmap = (binding or {}).get("bindings") or {}
+    return evaluate_activation(
+        pack, results, binding_pinned=bool(binding),
+        binding_verified=bool(binding and binding.get("verified")),
+        missing_roles=[r for r in pack.entities if r not in bmap])
+
+
 class EvalIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     connection_id: str

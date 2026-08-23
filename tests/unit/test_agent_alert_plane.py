@@ -2,7 +2,7 @@
 
 `aughor/obs/agent_alerts.py` shipped complete and inert: metrics, rules, verdicts, and one
 importer in the whole repo — its own test. Nothing stored a rule, nothing evaluated one, and
-nothing could deliver the result, so a fleet could fail sixty times an hour in silence with a
+nothing could deliver the result, so an agent could fail sixty times an hour in silence with a
 green suite. This file is deliberately weighted towards the SEAMS rather than the arithmetic,
 because the arithmetic was never the part that was missing.
 
@@ -36,7 +36,7 @@ def _clean_rules():
 
 
 def _rule(**kw) -> AgentAlertRule:
-    base = dict(name="fleet errors", metric="failed_runs", comparator="gte",
+    base = dict(name="agent errors", metric="failed_runs", comparator="gte",
                 threshold=3, window_minutes=60, debounce_minutes=30)
     base.update(kw)
     return store.upsert_rule(AgentAlertRule(**base))
