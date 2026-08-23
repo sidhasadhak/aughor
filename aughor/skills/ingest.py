@@ -187,11 +187,21 @@ def _domains(doc: SkillDoc) -> list[str]:
 
     Never inferred from the prose. A guessed domain routes real questions to a pack that
     was never about them, and a wrong routing hint is harder to notice than a missing one.
+
+    ``metadata.category`` counts as declared. Google's skills carry their subject there
+    rather than in `domains` — `BigDataAndAnalytics`, `Databases` — and reading a field the
+    author filled in is not inference. Measured 2026-08-24: without it, every skill in that
+    library imported with `domains: []`, which is a pack that can never be routed to.
     """
-    raw = doc.frontmatter.get("domains") or doc.frontmatter.get("tags") or []
+    fm = doc.frontmatter
+    raw = fm.get("domains") or fm.get("tags") or []
     if isinstance(raw, str):
         raw = [raw]
-    return [str(d).strip() for d in raw if str(d).strip()]
+    out = [str(d).strip() for d in raw if str(d).strip()]
+    meta = fm.get("metadata")
+    if not out and isinstance(meta, dict) and meta.get("category"):
+        out = [str(meta["category"]).strip()]
+    return out
 
 
 def _prose(doc: SkillDoc) -> str:

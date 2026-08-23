@@ -217,3 +217,73 @@ def test_a_namespace_disambiguates_the_generic_names_the_library_is_full_of(tmp_
 def test_an_explicit_pack_id_still_wins_over_a_namespace():
     plan = plan_pack(SKILL, licence="MIT", namespace="ns", pack_id="chosen")
     assert plan.pack_id == "chosen"
+
+
+# ── VA-1 follow-ups: what the first real import showed ────────────────────────────
+
+def test_a_declared_category_becomes_a_domain(tmp_path):
+    """Reading a field the author filled in is not inference.
+
+    Measured on google/skills 2026-08-24: those skills carry their subject in
+    `metadata.category`, not `domains` — so every one of them imported with `domains: []`,
+    which is a pack that can never be routed to."""
+    from aughor.skills.ingest import plan_pack
+
+    plan = plan_pack("---\nname: bigquery-basics\nmetadata:\n  category: BigDataAndAnalytics\n"
+                     "description: Runs SQL.\n---\n\nBody.\n")
+
+    import yaml
+    assert yaml.safe_load(plan.files["pack.yaml"])["domains"] == ["BigDataAndAnalytics"]
+
+
+def test_an_explicit_domain_outranks_the_category(tmp_path):
+    from aughor.skills.ingest import plan_pack
+
+    plan = plan_pack("---\nname: s\ndomains: [retention]\nmetadata:\n  category: Databases\n"
+                     "description: d\n---\n\nBody.\n")
+
+    import yaml
+    assert yaml.safe_load(plan.files["pack.yaml"])["domains"] == ["retention"]
+
+
+def test_import_records_where_the_skill_CAME_from(tmp_path, monkeypatch):
+    """`source_url` was the local file path — not attribution, and meaningless on any other
+    machine. Apache-2.0 and MIT both want the origin recorded."""
+    import yaml
+    from click.testing import CliRunner
+
+    from aughor.cli import cli
+
+    src = tmp_path / "checkout" / "skills" / "cloud" / "bigquery-basics"
+    src.mkdir(parents=True)
+    (src / "SKILL.md").write_text("---\nname: bq\ndescription: d\n---\n\nBody.\n")
+    packs = tmp_path / "packs"
+
+    result = CliRunner().invoke(cli, [
+        "skills", "import", str(src), "--packs-dir", str(packs), "--licence", "Apache-2.0",
+        "--source-url", "https://github.com/google/skills/tree/main/skills/cloud/bigquery-basics"])
+
+    assert result.exit_code == 0, result.output
+    manifest = yaml.safe_load((packs / "bq" / "pack.yaml").read_text())
+    assert manifest["source_url"] == (
+        "https://github.com/google/skills/tree/main/skills/cloud/bigquery-basics/SKILL.md")
+    assert manifest["licence"] == "Apache-2.0"
+
+
+def test_without_an_upstream_url_the_local_path_is_kept(tmp_path):
+    """Honest fallback: a local path is a poor provenance, and inventing a URL would be
+    worse than recording the only thing we actually know."""
+    import yaml
+    from click.testing import CliRunner
+
+    from aughor.cli import cli
+
+    src = tmp_path / "s"
+    src.mkdir()
+    (src / "SKILL.md").write_text("---\nname: bq2\ndescription: d\n---\n\nBody.\n")
+    packs = tmp_path / "packs"
+
+    CliRunner().invoke(cli, ["skills", "import", str(src), "--packs-dir", str(packs)])
+
+    manifest = yaml.safe_load((packs / "bq2" / "pack.yaml").read_text())
+    assert manifest["source_url"].endswith("SKILL.md") and str(tmp_path) in manifest["source_url"]

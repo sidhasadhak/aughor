@@ -956,10 +956,15 @@ def skills_lint(target: Path):
               help="Licence of the source library. Recorded on every pack; a missing "
                    "one is a warning, because redistributed prose needs its terms known.")
 @click.option("--source", default="", help="Name of the source library.")
+@click.option("--source-url", default="",
+              help="UPSTREAM base URL of the checkout, e.g. "
+                   "https://github.com/google/skills/tree/main. Recorded per pack with the "
+                   "file's path appended. Without it the provenance is a local path, which "
+                   "is not attribution and is meaningless on any other machine.")
 @click.option("--dry-run", is_flag=True, help="Show what would be created; write nothing.")
 @click.option("--overwrite", is_flag=True, help="Replace packs that already exist.")
 def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
-                  source: str, dry_run: bool, overwrite: bool):
+                  source: str, source_url: str, dry_run: bool, overwrite: bool):
     """Import SKILL.md files under TARGET as packs.
 
     TARGET is a path — a file or a directory. A URL is NOT accepted: fetching untrusted
@@ -988,9 +993,21 @@ def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
         return
     console.print(f"[dim]writing to {packs_dir}[/dim]")
 
+    root = target if target.is_dir() else target.parent
+
+    def _origin(f: Path) -> str:
+        """Where this skill came FROM, not where it happens to sit on this disk."""
+        if not source_url:
+            return str(f)
+        try:
+            rel = f.relative_to(root)
+        except ValueError:
+            rel = Path(f.name)
+        return f"{source_url.rstrip('/')}/{rel}"
+
     wrote = blocked = failed = 0
     for f in files:
-        kwargs = dict(source=source or DEFAULT_SOURCE, source_url=str(f),
+        kwargs = dict(source=source or DEFAULT_SOURCE, source_url=_origin(f),
                       licence=licence, namespace=namespace)
         try:
             if dry_run:
