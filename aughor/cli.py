@@ -799,9 +799,6 @@ def graph_export(connection_id: str, out_dir: str, schema: str):
 # The ingester without a door is a library nobody can reach; the linter without an
 # importer was a gate on a door that did not exist. This is where both become usable.
 
-PACKS_DIR = Path(__file__).parent.parent / "packs"
-
-
 def _skill_files(target: Path) -> list[Path]:
     """Every SKILL.md under `target`, or the file itself.
 
@@ -828,6 +825,94 @@ def _render(plan, path: Optional[Path], *, verbose: bool) -> None:
             console.print(f"      [red]{f.rule}[/red] line {f.line}: {f.why}")
         elif verbose:
             console.print(f"      [yellow]{f.rule}[/yellow] line {f.line}: {f.why}")
+
+
+@cli.group()
+def packs():
+    """Inspect and promote domain packs."""
+
+
+@packs.command("list")
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
+def packs_list(packs_dir: Path):
+    """Every pack on disk with its status — the answer to 'why is nothing steering'."""
+    from aughor.packs.loader import load_pack
+    from aughor.packs.intake import known_pack_ids
+
+    from aughor.packs.roots import authored_root, imported_root, pack_dir
+
+    ids = known_pack_ids(packs_dir)
+    if not ids:
+        console.print(f"[yellow]no packs in {authored_root()} or {imported_root()}[/yellow]")
+        return
+    for pid in ids:
+        root = Path(packs_dir) / pid if packs_dir else pack_dir(pid)
+        try:
+            pack = load_pack(root)
+        except Exception as exc:
+            console.print(f"  [red]✗ {pid}[/red]: {exc}")
+            continue
+        m = pack.manifest
+        colour = {"active": "green", "draft": "yellow"}.get(m.status, "dim")
+        flags = " ".join(filter(None, [
+            "[dim]prose-only[/dim]" if m.partial else "",
+            f"[dim]{m.source}[/dim]" if m.source else "",
+            "[dim](imported)[/dim]" if root and root.parent == imported_root() else "",
+        ]))
+        console.print(f"  [{colour}]{m.status:<10}[/{colour}] {pid}  {flags}")
+    console.print(f"\n{len(ids)} pack(s). Only [green]active[/green] ones are readable "
+                  f"by an agent or selectable for steering.")
+
+
+@packs.command("promote")
+@click.argument("pack_id")
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
+@click.option("--actor", default="", help="Who is promoting it. Recorded on the journal.")
+def packs_promote(pack_id: str, packs_dir: Path, actor: str):
+    """Make PACK_ID active — the point at which its prose can reach a prompt.
+
+    The import gate runs again HERE, over the pack's prose, because this is the door the
+    prose actually passes through: import is a copy onto disk, and a hand-placed pack
+    never passed the importer at all.
+    """
+    from aughor.packs.promote import PromotionRefused, set_status
+
+    try:
+        pack = set_status(pack_id, "active", packs_dir=packs_dir, actor=actor)
+    except PromotionRefused as exc:
+        console.print(f"[red]refused[/red] {exc}")
+        for f in exc.findings:
+            if f.severity.value == "block":
+                console.print(f"    [red]{f.rule}[/red] line {f.line}: {f.why}")
+        sys.exit(1)
+    except Exception as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[green]✓ active[/green] {pack_id}")
+    if pack.manifest.partial:
+        console.print("[dim]This pack is prose only — it declares no entities or metrics, "
+                      "so it can be READ by an agent but will never steer a plan.[/dim]")
+
+
+@packs.command("demote")
+@click.argument("pack_id")
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
+@click.option("--status", type=click.Choice(["draft", "deprecated"]), default="draft",
+              show_default=True)
+@click.option("--actor", default="")
+def packs_demote(pack_id: str, packs_dir: Path, status: str, actor: str):
+    """Take PACK_ID out of service. `deprecated` is not a delete — its history stays."""
+    from aughor.packs.promote import set_status
+
+    try:
+        set_status(pack_id, status, packs_dir=packs_dir, actor=actor)
+    except Exception as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[yellow]✓ {status}[/yellow] {pack_id}")
 
 
 @cli.group()
@@ -862,7 +947,8 @@ def skills_lint(target: Path):
 
 @skills.command("import")
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
-@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
 @click.option("--namespace", default="",
               help="Prefix every pack id. Skill names in the wild are generic — a real "
                    "library here produced 'access' three times from three plugins.")
@@ -870,10 +956,15 @@ def skills_lint(target: Path):
               help="Licence of the source library. Recorded on every pack; a missing "
                    "one is a warning, because redistributed prose needs its terms known.")
 @click.option("--source", default="", help="Name of the source library.")
+@click.option("--source-url", default="",
+              help="UPSTREAM base URL of the checkout, e.g. "
+                   "https://github.com/google/skills/tree/main. Recorded per pack with the "
+                   "file's path appended. Without it the provenance is a local path, which "
+                   "is not attribution and is meaningless on any other machine.")
 @click.option("--dry-run", is_flag=True, help="Show what would be created; write nothing.")
 @click.option("--overwrite", is_flag=True, help="Replace packs that already exist.")
 def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
-                  source: str, dry_run: bool, overwrite: bool):
+                  source: str, source_url: str, dry_run: bool, overwrite: bool):
     """Import SKILL.md files under TARGET as packs.
 
     TARGET is a path — a file or a directory. A URL is NOT accepted: fetching untrusted
@@ -883,17 +974,40 @@ def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
 
     Every pack lands `status: draft` and `partial: true`. Nothing imported reaches a
     prompt until someone promotes it.
+
+    Writes to the UNTRACKED imported root by default, never into the tracked `packs/`
+    directory: this repo is public, and redistributing a few dozen third-party documents
+    inside it is a decision to take deliberately rather than as a side effect of running
+    an importer. `--packs-dir` overrides that if you mean to.
     """
     from aughor.skills.ingest import DEFAULT_SOURCE, SkillIngestError, ingest_skill, plan_pack
+
+    if packs_dir is None:
+        from aughor.packs.roots import imported_root
+        packs_dir = imported_root()
+        packs_dir.mkdir(parents=True, exist_ok=True)
 
     files = _skill_files(target)
     if not files:
         console.print(f"[yellow]no SKILL.md under {target}[/yellow]")
         return
+    console.print(f"[dim]writing to {packs_dir}[/dim]")
+
+    root = target if target.is_dir() else target.parent
+
+    def _origin(f: Path) -> str:
+        """Where this skill came FROM, not where it happens to sit on this disk."""
+        if not source_url:
+            return str(f)
+        try:
+            rel = f.relative_to(root)
+        except ValueError:
+            rel = Path(f.name)
+        return f"{source_url.rstrip('/')}/{rel}"
 
     wrote = blocked = failed = 0
     for f in files:
-        kwargs = dict(source=source or DEFAULT_SOURCE, source_url=str(f),
+        kwargs = dict(source=source or DEFAULT_SOURCE, source_url=_origin(f),
                       licence=licence, namespace=namespace)
         try:
             if dry_run:

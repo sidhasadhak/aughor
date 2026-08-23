@@ -17,26 +17,31 @@ from aughor.packs.routing import select_pack
 from aughor.packs.bindings import load_binding
 from aughor.packs.inject import build_injection, PackInjection
 
-_PACKS_DIR = Path(__file__).resolve().parents[2] / "packs"
-
-
 def known_pack_ids(packs_dir=None) -> list[str]:
     """Ids of every pack on disk, active or not — the set a binding may legally name.
 
-    Public because a caller validating a binding must not reach for `_PACKS_DIR`, and
-    `active_packs()` is the wrong gate here: a pack that is on disk but not yet active is
-    an inert binding, not a typo, and refusing it would contradict the write-time contract.
+    Spans BOTH roots (see `aughor.packs.roots`): an imported pack is a legal binding target
+    the moment it is on disk. `active_packs()` is the wrong gate here — a pack that is not
+    yet active is an inert binding, not a typo, and refusing it would contradict the
+    write-time contract.
     """
-    return list_packs(Path(packs_dir or _PACKS_DIR))
+    if packs_dir is not None:
+        return list_packs(Path(packs_dir))
+    from aughor.packs.roots import all_pack_ids
+    return all_pack_ids()
 
 
 def active_packs(packs_dir=None) -> list[Pack]:
-    """Loadable, status==active packs under the packs dir (best-effort)."""
-    base = Path(packs_dir or _PACKS_DIR)
+    """Loadable, status==active packs across both roots (best-effort)."""
+    from aughor.packs.roots import pack_dir as _pack_dir
+
     out: list[Pack] = []
-    for pid in list_packs(base):
+    for pid in known_pack_ids(packs_dir):
+        root = Path(packs_dir) / pid if packs_dir is not None else _pack_dir(pid)
+        if root is None:
+            continue
         try:
-            p = load_pack(base / pid)
+            p = load_pack(root)
         except Exception as e:
             from aughor.kernel.errors import tolerate
             tolerate(e, f"skip pack {pid} during active scan", counter="packs.active_scan")
@@ -75,6 +80,15 @@ def injection_for_question(
         from aughor.kernel.errors import tolerate
         tolerate(e, "agent pack-preference is advisory; full pool proceeds",
                  counter="packs.agent_pool")
+    # ⚠️ A `partial` pack carries prose and nothing else — no entities to bind, no recipes
+    # to inject — so it can never produce an injection. Leaving it in the pool is not
+    # harmless: `select_pack` returns the single best match, so an imported skill that
+    # outscores a properly bound one would win the routing and then fall out at the
+    # binding gate below, returning None. Steering would silently STOP working on exactly
+    # the questions a real pack was deployed for, and the only visible symptom would be a
+    # generalist answer. It is excluded here rather than in `select_pack` because routing
+    # is about which pack OWNS a question; this is about which one can act.
+    pool = [p for p in pool if not p.manifest.partial]
     if not pool:
         return None
     hit = select_pack(question, pool)

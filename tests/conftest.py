@@ -35,6 +35,15 @@ for _env, _file in (
     ("AUGHOR_ARTIFACTS_DB", "artifacts.db"),
     ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
     ("AUGHOR_MONITORS_DB", "monitors.db"),
+    ("AUGHOR_AGENT_ALERTS_DB", "agent_alerts.db"),
+    # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
+    # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
+    # the repo on any suite run that saved a synonym.
+    ("AUGHOR_VOCABULARY_ROOT", "vocabulary"),
+    # `skills import` writes here by default; it defaults under data/, so the suite would
+    # otherwise create packs in the developer's tree. (The AUTHORED root is handled below
+    # as a temp COPY, because tests READ the sample pack that ships in it.)
+    ("AUGHOR_IMPORTED_PACKS_DIR", "packs-imported"),
     ("AUGHOR_BRIEFS_FILE", "brief_subscriptions.json"),
     ("AUGHOR_ORGS_DB", "orgs.db"),
     ("AUGHOR_ORG_LLM_DB", "org_llm.db"),
@@ -180,6 +189,15 @@ for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_
     if os.path.exists(_src) and not os.path.exists(_dst):
         _shutil.copyfile(_src, _dst)
     os.environ.setdefault(_env, _dst)
+
+# The authored pack root, same reasoning one level up: a DIRECTORY of tracked content the
+# suite reads (the sample pack) and could write (promotion rewrites pack.yaml). A copy gives
+# both — identical reads, and a status flip that cannot dirty the working tree.
+_packs_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packs")
+_packs_dst = os.path.join(_test_stores_dir, "packs-authored")
+if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
+    _shutil.copytree(_packs_src, _packs_dst)
+os.environ.setdefault("AUGHOR_PACKS_DIR", _packs_dst)
 
 
 @pytest.fixture(scope="session", autouse=True)

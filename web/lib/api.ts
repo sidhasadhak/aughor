@@ -5546,19 +5546,26 @@ export async function getFleetOverview(params?: {
 }
 
 export interface NeedsHumanRow {
-  source: "kinetic_inbox" | "paused_run" | "automation_approval";
+  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert";
   id: string;
   title: string;
   connection_id: string | null;
   since: string | null;
   since_basis?: "paused_event" | "started_at";
   waiting_ms: number | null;
+  /** Agent alerts only: two rows can wait the same time and not be equally urgent. */
+  severity?: "info" | "warning" | "critical";
   resolve: Record<string, string>;
 }
 
 export interface NeedsHuman {
   count: number;
-  sources: { kinetic_inbox: number; paused_runs: number; automation_approvals: number };
+  sources: {
+    kinetic_inbox: number;
+    paused_runs: number;
+    automation_approvals: number;
+    agent_alerts: number;
+  };
   rows: NeedsHumanRow[];
 }
 
@@ -5566,6 +5573,103 @@ export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
   const res = await fetch(`${getApiBase()}/control-room/needs-human?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch needs-human (${res.status})`);
   return res.json();
+}
+
+// ── VA-6: agent alerts ───────────────────────────────────────────────────────────
+
+/** One rule that fired. The numbers travel with the row because a rule is editable and
+ *  an alert is a statement about a moment. */
+export interface AgentAlertEvent {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  metric: string;
+  severity: "info" | "warning" | "critical";
+  fired_at: string;
+  value: number | null;
+  threshold: number | null;
+  population: number;
+  window_minutes: number;
+  reason: string;
+  delivered: boolean;
+  delivery_detail: string;
+  acknowledged: boolean;
+}
+
+export interface AgentAlertRule {
+  id: string;
+  name: string;
+  metric: string;
+  comparator: "gt" | "gte" | "lt" | "lte";
+  threshold: number;
+  window_minutes: number;
+  debounce_minutes: number;
+  check_cron: string;
+  agent_id: string;
+  charter_id: string;
+  channel: string;
+  severity: "info" | "warning" | "critical";
+  enabled: boolean;
+  last_notified_at: string | null;
+}
+
+export async function listAgentAlertRules(enabledOnly = false): Promise<AgentAlertRule[]> {
+  const res = await fetch(
+    `${getApiBase()}/obs/agent-alerts/rules?enabled_only=${enabledOnly}`);
+  if (!res.ok) throw new Error(`Failed to fetch agent alert rules (${res.status})`);
+  return (await res.json()).rules;
+}
+
+export async function listAgentAlertEvents(limit = 100): Promise<AgentAlertEvent[]> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/events?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch agent alerts (${res.status})`);
+  return (await res.json()).events;
+}
+
+/** The metric vocabulary, from the server. Never hardcoded here: a picker that offers a
+ *  metric the backend cannot measure is a control that silently does nothing. */
+export async function getAgentAlertVocabulary(): Promise<{ metrics: string[]; comparators: string[] }> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/metrics`);
+  if (!res.ok) throw new Error(`Failed to fetch alert metrics (${res.status})`);
+  return res.json();
+}
+
+export async function upsertAgentAlertRule(rule: Partial<AgentAlertRule>): Promise<AgentAlertRule> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail || `save failed (${res.status})`);
+  return body;
+}
+
+export async function deleteAgentAlertRule(ruleId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules/${ruleId}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete failed (${res.status})`);
+}
+
+/** One verdict, right now. Returns whether it crossed AND the population it saw — "it did
+ *  not fire" is only useful with the number behind it. */
+export async function testAgentAlertRule(ruleId: string): Promise<{
+  verdict: { value: number | null; matched: boolean; should_notify: boolean;
+             population: number; reason: string };
+  event: AgentAlertEvent | null;
+}> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules/${ruleId}/test`,
+    { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail || `test failed (${res.status})`);
+  return body;
+}
+
+export async function acknowledgeAgentAlert(eventId: string): Promise<AgentAlertEvent> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/events/${eventId}/ack`,
+    { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail || `acknowledge failed (${res.status})`);
+  return body;
 }
 
 // ── The shared time axis (W0) ────────────────────────────────────────────────────

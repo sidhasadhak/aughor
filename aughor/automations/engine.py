@@ -104,7 +104,12 @@ UNCERTAIN_DELIVERY = "it may already have been delivered, so it was not retried"
 #: Effect kinds that reach a person. Only these are claimed: a claim narrows when an
 #: automation may run again, and paying that for a purely internal effect (a rebuild, a
 #: governed write with its own idempotency) would restrict work that was never at risk.
-OUTWARD_EFFECT_KINDS = frozenset({"notify", "brief"})
+#: ``agent_alert`` is here even though a rule with no channel stays in-app: the kind is
+#: static and the channel is per-rule config, so the choice is between claiming a few
+#: in-app rules that were never at risk and letting a channel-backed rule double-page when
+#: two loops tick together. The rule's own debounce cannot close that race — both ticks read
+#: `last_notified_at` before either writes it. A duplicate page is the worse failure.
+OUTWARD_EFFECT_KINDS = frozenset({"notify", "brief", "agent_alert"})
 
 
 def has_outward_effect(automation: Automation) -> bool:
@@ -390,6 +395,28 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
                          message=f"{alert.severity}: {alert.message[:120]}")
 
 
+def _dispatch_agent_alert(effect: Effect, automation: Automation) -> EffectOutcome:
+    """VA-6 — evaluate an agent alert rule and deliver it if it crosses.
+
+    ``suppress=True``, exactly as the monitor effect does: the rule's quiet period is about
+    not re-paging a human, and a heartbeat that ignored it would turn one bad deploy into
+    sixty messages. The outcome distinguishes the three things an operator needs told apart
+    — the rule had no population to measure, it measured and did not cross, or it fired."""
+    from aughor.obs.agent_alert_runner import run_rule_by_id
+
+    rule_id = str(effect.config.get("rule_id", ""))
+    verdict, event = run_rule_by_id(rule_id, suppress=True)
+    if verdict is None:
+        return EffectOutcome(kind=effect.kind, target=rule_id, status="skipped",
+                             message="rule missing or disabled")
+    if event is None:
+        return EffectOutcome(kind=effect.kind, target=rule_id, status="executed",
+                             message=verdict.reason[:200])
+    delivered = "delivered" if event.delivered else f"recorded ({event.delivery_detail})"
+    return EffectOutcome(kind=effect.kind, target=rule_id, status="executed",
+                         message=f"{event.severity}: {verdict.reason[:160]} — {delivered}")
+
+
 def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutcome:
     """Run a deep investigation on the automation's connection, optionally AS a user-agent.
 
@@ -443,6 +470,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "brief": _dispatch_brief,
     "investigate": _dispatch_investigate,
     "monitor": _dispatch_monitor,
+    "agent_alert": _dispatch_agent_alert,
 }
 
 

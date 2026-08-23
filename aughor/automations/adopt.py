@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 MONITOR_PREFIX = "monitor:"
 BRIEF_PREFIX = "brief:"
+AGENT_ALERT_PREFIX = "agent_alert:"
 
 
 def monitor_as_automation(monitor) -> Automation:
@@ -68,6 +69,31 @@ def subscription_as_automation(sub) -> Automation:
     )
 
 
+def rule_as_automation(rule) -> Automation:
+    """An ``AgentAlertRule`` read as a virtual Automation: fire on its cron, evaluate + deliver.
+
+    VA-6 joins the heartbeat the way everything else does. There is one loop in this platform —
+    the per-monitor and per-brief schedulers were deleted in Wave 4 precisely so a second one
+    could not come back — so an alert plane that arrived with its own timer would be the thing
+    that deletion was for.
+
+    ``conn_id=""`` because a rule has no connection: it watches the fleet, scoped by agent or
+    charter, and the metrics come from the ledger rather than from a warehouse. ``max_retries=0``
+    for the same reason the adopted monitor uses it — the next cron fire is the only retry an
+    alert should ever get, and a retried alert is a second page about one condition.
+    """
+    return Automation(
+        id=f"{AGENT_ALERT_PREFIX}{rule.id}",
+        conn_id="",
+        name=rule.name,
+        description=f"adopted agent alert rule {rule.id}",
+        conditions=[Condition(kind="schedule", config={"cron": rule.check_cron})],
+        effects=[Effect(kind="agent_alert", config={"rule_id": rule.id})],
+        enabled=rule.enabled,
+        max_retries=0,
+    )
+
+
 def list_adopted_automations() -> list[Automation]:
     """Every enabled monitor and brief subscription, as virtual Automations — what the heartbeat
     runs when ``automations.adopt_legacy`` is on. Best-effort per store: a failure to read one
@@ -83,6 +109,11 @@ def list_adopted_automations() -> list[Automation]:
         out.extend(subscription_as_automation(s) for s in list_subscriptions() if s.enabled)
     except Exception as exc:
         logger.warning("adopt: could not read brief subscriptions: %s", exc)
+    try:
+        from aughor.obs.agent_alert_store import list_rules
+        out.extend(rule_as_automation(r) for r in list_rules(enabled_only=True))
+    except Exception as exc:
+        logger.warning("adopt: could not read agent alert rules: %s", exc)
     return out
 
 

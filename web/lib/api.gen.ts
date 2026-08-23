@@ -2534,7 +2534,7 @@ export interface paths {
         };
         /**
          * Needs Human
-         * @description One derived list over the three real sources — a VIEW, never a queue.
+         * @description One derived list over the four real sources — a VIEW, never a queue.
          *
          *     Each row deep-links to its native resolve surface, so resolving anywhere
          *     removes it everywhere by construction (one store per source, no copies).
@@ -5383,6 +5383,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/obs/agent-alerts/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Alert Events
+         * @description Fired alerts, newest first — what Attention reads.
+         */
+        get: operations["list_agent_alert_events_obs_agent_alerts_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/agent-alerts/events/{event_id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Agent Alert Event */
+        post: operations["acknowledge_agent_alert_event_obs_agent_alerts_events__event_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/agent-alerts/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Alert Metrics
+         * @description The metrics a rule may watch, from the Literal that defines them.
+         */
+        get: operations["agent_alert_metrics_obs_agent_alerts_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/agent-alerts/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Alert Rules */
+        get: operations["list_agent_alert_rules_obs_agent_alerts_rules_get"];
+        put?: never;
+        /**
+         * Upsert Agent Alert Rule
+         * @description Create or update a rule. A cron that APScheduler cannot read is refused here rather
+         *     than at the first tick, where the failure would be a log line nobody is watching.
+         */
+        post: operations["upsert_agent_alert_rule_obs_agent_alerts_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/agent-alerts/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Alert Rule */
+        get: operations["get_agent_alert_rule_obs_agent_alerts_rules__rule_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Agent Alert Rule */
+        delete: operations["delete_agent_alert_rule_obs_agent_alerts_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/agent-alerts/rules/{rule_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Agent Alert Rule
+         * @description Evaluate a rule right now and show the raw verdict.
+         *
+         *     ``suppress=False`` — the quiet period exists so a persistent condition does not page a
+         *     human sixty times; an operator who clicked Test is not that. The verdict is returned
+         *     whether or not it crossed, because "it did not fire, and here is the number and the
+         *     population it saw" is the answer somebody debugging a rule actually needs.
+         */
+        post: operations["test_agent_alert_rule_obs_agent_alerts_rules__rule_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/obs/model-usage": {
         parameters: {
             query?: never;
@@ -6701,6 +6823,36 @@ export interface paths {
          *     candidate (table/column/value, confidence, evidence) + a bound summary for deploy review.
          */
         post: operations["post_propose_bindings_packs__pack_id__propose_bindings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packs/{pack_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Pack Status
+         * @description Move a pack between draft / active / deprecated — the write `status` never had.
+         *
+         *     Four endpoints and two modules READ this field; none wrote it, so the only way to
+         *     activate anything was to hand-edit `pack.yaml`. Worse, `POST /packs/{id}/evaluate`
+         *     already computed the activation verdict and returned it to a caller with nothing to do
+         *     with it — a decision that is computed but never delivered is not a gate.
+         *
+         *     A grounded pack is activated by ITS EVALS: this runs the same evaluation that endpoint
+         *     runs (one planner pass per golden question — deliberate and on demand) and writes only
+         *     on `can_activate`. A `partial` pack has no evals to run and never steers a plan, so its
+         *     gate is the import lint, and it needs no connection at all.
+         */
+        post: operations["post_pack_status_packs__pack_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8147,6 +8299,71 @@ export interface components {
             /** Schema Name */
             schema_name?: string | null;
         };
+        /**
+         * AgentAlertRuleBody
+         * @description A rule as the API accepts it — the domain model's fields, minus the ones only the
+         *     store may set. ``last_notified_at`` is deliberately absent: the debounce clock is
+         *     written when a rule NOTIFIES, and letting a caller post it would hand any client a
+         *     mute button that leaves no trace of having been pressed.
+         */
+        AgentAlertRuleBody: {
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
+             * Channel
+             * @default
+             */
+            channel: string;
+            /**
+             * Charter Id
+             * @default
+             */
+            charter_id: string;
+            /**
+             * Check Cron
+             * @default *\/5 * * * *
+             */
+            check_cron: string;
+            /**
+             * Comparator
+             * @default gt
+             */
+            comparator: string;
+            /**
+             * Debounce Minutes
+             * @default 30
+             */
+            debounce_minutes: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Metric */
+            metric: string;
+            /** Name */
+            name: string;
+            /**
+             * Severity
+             * @default warning
+             */
+            severity: string;
+            /** Threshold */
+            threshold: number;
+            /**
+             * Window Minutes
+             * @default 15
+             */
+            window_minutes: number;
+        };
         /** AgentGovernancePatch */
         AgentGovernancePatch: {
             /** Allow Paid */
@@ -8966,6 +9183,12 @@ export interface components {
          *     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
          *     engine instead of its own scheduler.
          *
+         *     ``agent_alert`` (VA-6) evaluates one :class:`~aughor.obs.agent_alerts.AgentAlertRule` and,
+         *     when it crosses, records the alert and delivers it. Sibling of ``monitor`` in every way that
+         *     matters — an adopted object running through the one engine rather than a loop of its own —
+         *     and different only in its subject: a monitor watches a warehouse metric on a connection,
+         *     a rule watches what the agents are doing, fleet-wide.
+         *
          *     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
          *     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
          *     the run still drains the one ask path, and the agent's instructions, document/pack scope
@@ -8980,7 +9203,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert";
         };
         /** EvalIn */
         EvalIn: {
@@ -9880,6 +10103,26 @@ export interface components {
              * @default true
              */
             persist: boolean;
+        };
+        /** StatusIn */
+        StatusIn: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Status
+             * @description draft | active | deprecated
+             */
+            status: string;
         };
         /** SuggestNameRequest */
         SuggestNameRequest: {
@@ -20815,6 +21058,247 @@ export interface operations {
             };
         };
     };
+    list_agent_alert_events_obs_agent_alerts_events_get: {
+        parameters: {
+            query?: {
+                rule_id?: string | null;
+                unacknowledged_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_agent_alert_event_obs_agent_alerts_events__event_id__ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_alert_metrics_obs_agent_alerts_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_agent_alert_rules_obs_agent_alerts_rules_get: {
+        parameters: {
+            query?: {
+                enabled_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_agent_alert_rule_obs_agent_alerts_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentAlertRuleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_alert_rule_obs_agent_alerts_rules__rule_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_alert_rule_obs_agent_alerts_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_agent_alert_rule_obs_agent_alerts_rules__rule_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     model_usage_obs_model_usage_get: {
         parameters: {
             query?: {
@@ -22950,6 +23434,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProposeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_pack_status_packs__pack_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusIn"];
             };
         };
         responses: {

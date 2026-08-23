@@ -78,8 +78,12 @@ class ActionPayload:
     triggered_at:     str
     #: Idempotency key for THIS delivery, stable across every attempt (4.1a). Empty for
     #: callers that have no period to key on. `triggered_at` cannot serve: it is stamped
-    #: fresh per attempt, so a receiver could not tell our retry from a new alert — and
-    #: `_post` retries twice on a 15s timeout, which a slow-but-successful receiver hits.
+    #: fresh per attempt, so a receiver could not tell our retry from a new alert.
+    #: ⚠️ This used to read "`_post` retries twice on a 15s timeout, which a
+    #: slow-but-successful receiver hits" — a real duplicate source that this key existed to
+    #: paper over. `_post` no longer retries a read timeout at all, so the key now guards
+    #: only the retries that are genuinely safe (connect errors, 429, 5xx). Kept, because a
+    #: receiver still cannot tell a 5xx retry from a new alert without it.
     delivery_key:     str = ""
     #: Sender-specific facts that do not fit the recommendation shape above (OA·N8-0).
     #: A monitor alert carries severity, the value against its threshold, the connection

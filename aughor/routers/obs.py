@@ -731,3 +731,130 @@ async def activity_stream(request: Request, kind: Optional[str] = None,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class AgentAlertRuleBody(BaseModel):
+    """A rule as the API accepts it — the domain model's fields, minus the ones only the
+    store may set. ``last_notified_at`` is deliberately absent: the debounce clock is
+    written when a rule NOTIFIES, and letting a caller post it would hand any client a
+    mute button that leaves no trace of having been pressed."""
+
+    id: str = ""
+    name: str
+    metric: str
+    comparator: str = "gt"
+    threshold: float
+    window_minutes: int = 15
+    debounce_minutes: int = 30
+    check_cron: str = "*/5 * * * *"
+    agent_id: str = ""
+    charter_id: str = ""
+    channel: str = ""
+    severity: str = "warning"
+    enabled: bool = True
+
+
+# ── VA-6: the agent alert plane ──────────────────────────────────────────────────
+#
+# Rules sit at the default write floor rather than at `admin.manage_org`, matching
+# monitors: the thing that actually reaches a person is the Action Hub trigger a rule
+# names, and creating one of those is governed where triggers are created. A rule with no
+# channel is in-app only. What a rule CAN do that a monitor cannot is read the agent
+# plane, so
+# the metric vocabulary is served from the code rather than typed into the UI — the same
+# rule `/activity` follows: a filter must never advertise something nothing can produce.
+
+@router.get("/obs/agent-alerts/metrics")
+def agent_alert_metrics():
+    """The metrics a rule may watch, from the Literal that defines them."""
+    from typing import get_args
+
+    from aughor.obs.agent_alerts import Comparator, Metric
+
+    return {"metrics": list(get_args(Metric)), "comparators": list(get_args(Comparator))}
+
+
+@router.get("/obs/agent-alerts/rules")
+def list_agent_alert_rules(enabled_only: bool = False):
+    from aughor.obs import agent_alert_store as store
+
+    rules = store.list_rules(enabled_only=enabled_only)
+    return {"rules": [r.model_dump() for r in rules]}
+
+
+@router.get("/obs/agent-alerts/rules/{rule_id}")
+def get_agent_alert_rule(rule_id: str):
+    from aughor.obs import agent_alert_store as store
+
+    rule = store.get_rule(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent alert rule: {rule_id}")
+    return rule.model_dump()
+
+
+@router.post("/obs/agent-alerts/rules")
+def upsert_agent_alert_rule(rule: AgentAlertRuleBody):
+    """Create or update a rule. A cron that APScheduler cannot read is refused here rather
+    than at the first tick, where the failure would be a log line nobody is watching."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    from aughor.obs import agent_alert_store as store
+    from aughor.obs.agent_alerts import AgentAlertRule
+
+    try:
+        CronTrigger.from_crontab(rule.check_cron, timezone="UTC")
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422,
+                            detail=f"invalid check_cron '{rule.check_cron}': {exc}") from exc
+    stored = store.upsert_rule(AgentAlertRule(**rule.model_dump()),
+                               org_id=current_org_id() or "")
+    return stored.model_dump()
+
+
+@router.delete("/obs/agent-alerts/rules/{rule_id}")
+def delete_agent_alert_rule(rule_id: str):
+    from aughor.obs import agent_alert_store as store
+
+    if not store.delete_rule(rule_id):
+        raise HTTPException(status_code=404, detail=f"unknown agent alert rule: {rule_id}")
+    return {"deleted": rule_id}
+
+
+@router.post("/obs/agent-alerts/rules/{rule_id}/test")
+def test_agent_alert_rule(rule_id: str):
+    """Evaluate a rule right now and show the raw verdict.
+
+    ``suppress=False`` — the quiet period exists so a persistent condition does not page a
+    human sixty times; an operator who clicked Test is not that. The verdict is returned
+    whether or not it crossed, because "it did not fire, and here is the number and the
+    population it saw" is the answer somebody debugging a rule actually needs.
+    """
+    from aughor.obs import agent_alert_store as store
+    from aughor.obs.agent_alert_runner import run_rule
+
+    rule = store.get_rule(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent alert rule: {rule_id}")
+    verdict, event = run_rule(rule, suppress=False)
+    return {"verdict": verdict.as_dict(), "event": event.model_dump() if event else None}
+
+
+@router.get("/obs/agent-alerts/events")
+def list_agent_alert_events(rule_id: Optional[str] = None, unacknowledged_only: bool = False,
+                            limit: int = 100):
+    """Fired alerts, newest first — what Attention reads."""
+    from aughor.obs import agent_alert_store as store
+
+    events = store.list_events(rule_id=rule_id, unacknowledged_only=unacknowledged_only,
+                               limit=max(1, min(int(limit), 500)))
+    return {"events": [e.model_dump() for e in events]}
+
+
+@router.post("/obs/agent-alerts/events/{event_id}/ack")
+def acknowledge_agent_alert_event(event_id: str):
+    from aughor.obs import agent_alert_store as store
+
+    event = store.acknowledge_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent alert: {event_id}")
+    return event.model_dump()
