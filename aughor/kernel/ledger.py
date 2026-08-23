@@ -246,6 +246,122 @@ def _as_bool_int(value: Any) -> Optional[int]:
     return int(bool(value))
 
 
+def _payload_text(value: Any) -> Optional[str]:
+    """A payload ``role`` as the TEXT this column already holds on every SQLite store.
+
+    Measured against the statement this replaced (2026-08-23): ``json_extract`` hands back
+    a typed JSON value, and a TEXT-affinity column then converts it — 7 becomes '7', a JSON
+    ``true`` becomes '1', an object becomes its compact JSON text. Reproducing that is
+    three lines, and it is the difference between "the two backends agree" and "the two
+    backends agree about the shapes I happened to look at". Every live role is a string
+    today; the table is what makes that a measurement rather than an assumption.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):        # before the int branch — a bool IS an int in Python
+        return "1" if value else "0"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(value, separators=(",", ":"))
+
+
+def _payload_bool(value: Any) -> Optional[int]:
+    """A payload ``fallback`` as 1 / 0 / unknown — the back-fill's truth table.
+
+    Deliberately NOT :func:`_as_bool_int`. That one is the WRITE path's rule and reads
+    any unrecognised string as False; this one answers unknown, because it has to
+    reproduce row for row what the SQL ``CASE`` this back-fill used to be already wrote
+    on every SQLite store. A migration that gives two dialects two answers for one
+    payload is a second bug wearing the first one's fix.
+
+    ``str(value).lower()`` stands in for SQLite's ``lower(CAST(x AS TEXT))`` on every
+    shape the extraction can yield: a JSON boolean arrives here as Python ``True`` and
+    arrived there as SQLite ``1``, and 'true' and '1' are both in the truthy column.
+    No ``strip()`` — the CASE had none, so a padded value was unknown there too.
+    """
+    if value is None:
+        return None
+    text = str(value).lower()
+    if text in ("1", "true", "yes"):
+        return 1
+    if text in ("0", "false", "no"):
+        return 0
+    return None
+
+
+#: Rows per back-fill round trip — bounded so a long log is never read in one gulp.
+_BACKFILL_BATCH = 500
+
+
+def _backfill_payload_facts(c: sqlite3.Connection) -> None:
+    """Populate ``role``/``fallback`` on rows written before they were columns.
+
+    In Python rather than in SQL because ``json_extract`` and ``json_valid`` are
+    SQLite-only and this store is not SQLite-only: ``AUGHOR_DB_URL`` moves the whole
+    ledger onto shared Postgres, which is what the deployment runs. There ``json_valid``
+    does not exist at all, and ``json_extract`` transpiles to a ``json``-typed function
+    that a TEXT payload cannot feed. The statement raised, ``run_migrations`` re-raised,
+    and because this runs inside ``Ledger.__init__`` the store could not be CONSTRUCTED
+    at all — not a missing column but no ledger, therefore no boot.
+
+    ``json.loads`` in a try/except is what ``json_valid`` was for: the table holds
+    payloads that are not JSON (a clipped string, a pre-JSON row) and one bad row must
+    not abort a migration, or ``user_version`` stays behind and it re-runs forever. The
+    skipped rows are COUNTED and logged rather than dropped quietly — a back-fill that
+    passes over part of the table without saying so is indistinguishable from one that
+    had nothing to do. Not through :func:`aughor.kernel.errors.tolerate`, which is the
+    house idiom everywhere else: tolerate journals to the ledger, this runs inside
+    ``Ledger.__init__``, and reporting a store failure through the store it is still
+    building is the recursion #379 already paid for.
+
+    Paged forward on ``seq`` rather than looping on the filter: a row whose payload
+    carries neither fact still matches that filter after it has been visited, so an
+    OFFSET-free loop over the same predicate would never terminate.
+    """
+    last_seq = 0
+    unparsed = 0
+    while True:
+        batch = c.execute(
+            "SELECT seq, payload FROM session_events "
+            "WHERE seq > ? AND payload IS NOT NULL AND (role IS NULL OR fallback IS NULL) "
+            f"ORDER BY seq LIMIT {_BACKFILL_BATCH}", (last_seq,)).fetchall()
+        if not batch:
+            if unparsed:
+                logger.info("session_events back-fill: %d payload(s) were not a JSON object "
+                            "and kept their unknown role/fallback", unparsed)
+            return
+        roles: list[tuple[str, int]] = []
+        flags: list[tuple[int, int]] = []
+        for row in batch:
+            seq, payload = row[0], row[1]
+            last_seq = seq
+            try:
+                doc = json.loads(payload)
+            except (TypeError, ValueError):
+                unparsed += 1
+                continue
+            if not isinstance(doc, dict):
+                unparsed += 1
+                continue
+            role = _payload_text(doc.get("role"))
+            if role is not None:
+                roles.append((role, seq))
+            flag = _payload_bool(doc.get("fallback"))
+            if flag is not None:
+                flags.append((flag, seq))
+        # The `IS NULL` guard rides in the WHERE, not only in the SELECT above: it is
+        # what keeps a re-run additive instead of a rewrite of a value someone set.
+        if roles:
+            c.executemany(
+                "UPDATE session_events SET role = ? WHERE seq = ? AND role IS NULL", roles)
+        if flags:
+            c.executemany(
+                "UPDATE session_events SET fallback = ? WHERE seq = ? AND fallback IS NULL",
+                flags)
+
+
 def _add_session_event_attribution(c: sqlite3.Connection) -> None:
     """Which RUN produced this call, and which agent charter owned that run.
 
@@ -284,17 +400,7 @@ def _add_session_event_attribution(c: sqlite3.Connection) -> None:
     # Back-fill from the payload, so a window spanning the migration does not read as
     # "role coverage collapsed today". A migration that only helps FUTURE rows leaves the
     # operator with an empty view on the day it ships.
-    #
-    # `json_valid` is load-bearing: `json_extract` RAISES on a malformed payload, and this
-    # table holds some (a clipped string, a pre-JSON row). One bad row must not abort a
-    # migration — the failure would leave user_version behind and re-run forever.
-    c.execute("UPDATE session_events SET role = json_extract(payload, '$.role') "
-              "WHERE role IS NULL AND payload IS NOT NULL AND json_valid(payload)")
-    c.execute("UPDATE session_events SET fallback = "
-              "CASE lower(CAST(json_extract(payload, '$.fallback') AS TEXT)) "
-              "     WHEN '1' THEN 1 WHEN 'true' THEN 1 WHEN 'yes' THEN 1 "
-              "     WHEN '0' THEN 0 WHEN 'false' THEN 0 WHEN 'no' THEN 0 ELSE NULL END "
-              "WHERE fallback IS NULL AND payload IS NOT NULL AND json_valid(payload)")
+    _backfill_payload_facts(c)
 
 
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
@@ -335,6 +441,16 @@ _MIGRATIONS = [
     # Hermetic tests cannot see this: they build a fresh database, which gets everything.
     # The body is idempotent (add_column_if_missing / CREATE INDEX IF NOT EXISTS), so it is
     # a no-op for the columns v9 already added and additive for the rest.
+    #
+    # ⚠️ REPAIRED IN PLACE 2026-08-23, and in place is the CORRECT repair here — the usual
+    # rule (a shipped migration is frozen; fix forward with a new version) does not apply,
+    # because this one never SUCCEEDED anywhere it is still needed. Its back-fill used
+    # `json_extract`/`json_valid`, which do not exist on Postgres, so on the shared-database
+    # backend it raised inside `Ledger.__init__` and nothing committed: those stores sit at
+    # user_version=8 and will run this body, now portable, on their next connect. Every
+    # SQLite store is already at 10 with the back-fill done, so the edit is invisible there.
+    # A Migration(11) would have been the wrong shape: it would re-scan every SQLite log to
+    # redo work already done, and still leave Postgres stuck at 8 behind the failing v10.
     Migration(10, "session_events: run attribution (job/charter), role, fallback, at index",
               _add_session_event_attribution),
 ]

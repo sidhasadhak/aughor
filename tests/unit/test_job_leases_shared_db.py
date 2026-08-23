@@ -78,7 +78,11 @@ def test_peer_boot_recovers_a_job_whose_owner_died(shared_ledgers):
     resumable = JobKernel(b).boot_recovery()
 
     row = b.job_get("job-of-dead-a")
-    assert row["state"] == JobState.FAILED and "lease lapsed" in row["error"]
+    # INTERRUPTED, not FAILED — #281 moved the orphan verdict deliberately: nobody
+    # observed a failure, so a restart must not be charged to the error rate. This
+    # assertion kept saying FAILED for months because the only backend it runs on is
+    # one CI does not start, and since #371 it never got past fixture setup at all.
+    assert row["state"] == JobState.INTERRUPTED and "lease lapsed" in row["error"]
     assert [j["id"] for j in resumable] == ["job-of-dead-a"]   # respawnable exploration
 
 
