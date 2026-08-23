@@ -7752,6 +7752,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/traces/{trace_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Feedback
+         * @description Every judgement recorded on this run, newest first.
+         *
+         *     A list rather than a single verdict: two people disagreeing about a run is a fact
+         *     worth keeping, and collapsing it to the latest opinion would silently discard the
+         *     disagreement that made the run interesting.
+         */
+        get: operations["get_trace_feedback_traces__trace_id__feedback_get"];
+        put?: never;
+        /**
+         * Post Trace Feedback
+         * @description Record a judgement on one run — VA-5.
+         *
+         *     ``by`` is the identity of whoever is CLICKING, read at submit time, which is a
+         *     different thing from the run's own attribution. That distinction matters: the
+         *     roadmap said this deliverable "unblocks what OA·LF-2 was stuck on (identity
+         *     attribution)", and it does not. `user_id` on `session_events` is still 0 of 8,198
+         *     rows on this store — exactly the measurement that stopped LF-2 — so a run remains
+         *     unattributed no matter how much feedback it collects. What this can honestly key on
+         *     is the reader, and only when there IS one: an unidentified single-user install
+         *     records "", which is the true answer rather than a fabricated actor.
+         */
+        post: operations["post_trace_feedback_traces__trace_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/traces/{trace_id}/spans/{span_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Span
+         * @description One span's input and output — the paged drill-down the summary points at.
+         *
+         *     This is the "never load whole" half of the roadmap's own risk note: an agent that
+         *     has found the slow step from the summary pays for that step alone, instead of pulling
+         *     every payload in the run to read one.
+         */
+        get: operations["get_trace_span_traces__trace_id__spans__span_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/traces/{trace_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Summary
+         * @description One run, small enough for an agent to reason about — VA-5.
+         *
+         *     `GET /traces/{trace_id}` returns the whole log, which is 1.2 MB for a 1,140-event
+         *     run on this store — roughly 300k tokens. That is not a trace surface for a coding
+         *     agent, it is a way to exhaust the context that was going to read it.
+         *
+         *     This answers the question people open a trace to ask, rather than the events that
+         *     happened: where the time went, what it cost, and what failed. `idle_pct` is the
+         *     union-of-intervals reading and is the number the waterfall was built to expose —
+         *     a deep run measured ~60% idle, which no single event in the log states.
+         */
+        get: operations["get_trace_summary_traces__trace_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/usage": {
         parameters: {
             query?: never;
@@ -10765,6 +10855,16 @@ export interface components {
             include_agents: boolean;
             /** Model */
             model?: string | null;
+        };
+        /** _TraceFeedbackRequest */
+        _TraceFeedbackRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Verdict */
+            verdict: string;
         };
         /** _TriggerBody */
         _TriggerBody: {
@@ -24870,6 +24970,139 @@ export interface operations {
     get_trace_traces__trace_id__get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_feedback_traces__trace_id__feedback_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_trace_feedback_traces__trace_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_TraceFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_span_traces__trace_id__spans__span_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+                span_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_summary_traces__trace_id__summary_get: {
+        parameters: {
+            query?: {
+                top?: number;
+            };
             header?: never;
             path: {
                 trace_id: string;

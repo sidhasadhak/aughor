@@ -228,3 +228,119 @@ def test_the_client_calls_the_digest_and_span_paths():
     paths = [p for p, _ in seen]
     assert paths == ["/traces/t1/summary", "/traces/t1/spans/s2", "/traces"]
     assert seen[0][1]["top"] == 5
+
+
+# ── trace feedback ──────────────────────────────────────────────────────────────
+
+def test_a_run_judgement_is_recorded_with_who_clicked(monkeypatch):
+    from aughor.routers import obs
+    from aughor.org import context as octx
+    import aughor.kernel.ledger as _led
+
+    monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
+    emitted: list = []
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _fake_ledger(emitted))
+    tok = octx.set_user_id("reviewer-2")
+    try:
+        out = obs.post_trace_feedback(
+            "t1", obs._TraceFeedbackRequest(verdict="unhelpful", note="answered the wrong question"))
+    finally:
+        octx._current_user.reset(tok)
+        _led.Ledger.default = orig
+    assert out["recorded"] is True
+    kind, payload = emitted[0]
+    assert kind == "trace.feedback"
+    assert payload["verdict"] == "unhelpful"
+    assert payload["by"] == "reviewer-2"
+    assert payload["trace_id"] == "t1"
+
+
+def test_an_unidentified_install_records_an_empty_actor_not_a_guess(monkeypatch):
+    """`user_id` is 0 of 8,198 rows on this store — the measurement that stopped
+    OA·LF-2. Recording "" is the true answer; inventing an actor would make the trail
+    assert something it does not know."""
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
+    emitted: list = []
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _fake_ledger(emitted))
+    try:
+        obs.post_trace_feedback("t1", obs._TraceFeedbackRequest(verdict="helpful"))
+    finally:
+        _led.Ledger.default = orig
+    assert emitted[0][1]["by"] == ""
+
+
+def test_an_unknown_verdict_is_a_400_not_a_silently_stored_string(monkeypatch):
+    from fastapi import HTTPException
+    from aughor.routers import obs
+    monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
+    with pytest.raises(HTTPException) as exc:
+        obs.post_trace_feedback("t1", obs._TraceFeedbackRequest(verdict="meh"))
+    assert exc.value.status_code == 400
+
+
+def test_feedback_on_a_trace_that_does_not_exist_is_a_404(monkeypatch):
+    from fastapi import HTTPException
+    from aughor.routers import obs
+    monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: [])
+    with pytest.raises(HTTPException) as exc:
+        obs.post_trace_feedback("nope", obs._TraceFeedbackRequest(verdict="helpful"))
+    assert exc.value.status_code == 404
+
+
+def test_the_run_vocabulary_is_NOT_the_finding_vocabulary():
+    """A thumbs-down on a run that was slow but right is not a rejected finding.
+    Folding them together would teach the planner's close-the-loop signal to read
+    latency complaints as wrong answers."""
+    from aughor.routers.obs import TRACE_VERDICTS
+    from aughor.feedback.verdicts import VERDICTS as FINDING_VERDICTS
+    assert set(TRACE_VERDICTS) == {"helpful", "unhelpful"}
+    assert not set(TRACE_VERDICTS) & set(FINDING_VERDICTS)
+
+
+def test_disagreement_is_kept_rather_than_collapsed(monkeypatch):
+    """Two people disagreeing about a run is the fact worth keeping; the latest
+    opinion is not the answer."""
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    rows = [{"at": "t2", "payload": {"verdict": "unhelpful", "note": "slow", "by": "b"}},
+            {"at": "t1", "payload": {"verdict": "helpful", "note": "", "by": "a"}}]
+
+    class _L:
+        def events(self, **kw):
+            return rows
+
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _L())
+    try:
+        out = obs.get_trace_feedback("t1")
+    finally:
+        _led.Ledger.default = orig
+    assert out["count"] == 2 and out["helpful"] == 1 and out["unhelpful"] == 1
+    assert [i["by"] for i in out["items"]] == ["b", "a"]
+
+
+def test_a_broken_journal_does_not_error_at_someone_trying_to_help(monkeypatch):
+    """Fail-open, like `chat.feedback`. But it reports `recorded: False` rather than
+    claiming success — a thumbs that silently vanished is worse than one that says so."""
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
+
+    class _Broken:
+        def emit(self, *a, **k):
+            raise RuntimeError("ledger down")
+
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _Broken())
+    try:
+        out = obs.post_trace_feedback("t1", obs._TraceFeedbackRequest(verdict="helpful"))
+    finally:
+        _led.Ledger.default = orig
+    assert out["ok"] is False and out["recorded"] is False

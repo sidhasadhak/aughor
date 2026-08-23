@@ -308,6 +308,86 @@ def get_trace_span(trace_id: str, span_id: str):
     return span
 
 
+#: A judgement about a RUN — was this any good — which is a different question from
+#: `feedback.verdicts`' accept/correct/reject, a judgement about whether a FINDING is
+#: true. They are kept apart deliberately: a thumbs-down on a run that was slow but
+#: right is not a rejected finding, and folding one into the other would teach the
+#: planner's close-the-loop signal to treat latency complaints as wrong answers.
+TRACE_VERDICTS = ("helpful", "unhelpful")
+
+
+class _TraceFeedbackRequest(BaseModel):
+    verdict: str
+    note: str = ""
+
+
+@router.post("/traces/{trace_id}/feedback")
+def post_trace_feedback(trace_id: str, body: _TraceFeedbackRequest):
+    """Record a judgement on one run — VA-5.
+
+    ``by`` is the identity of whoever is CLICKING, read at submit time, which is a
+    different thing from the run's own attribution. That distinction matters: the
+    roadmap said this deliverable "unblocks what OA·LF-2 was stuck on (identity
+    attribution)", and it does not. `user_id` on `session_events` is still 0 of 8,198
+    rows on this store — exactly the measurement that stopped LF-2 — so a run remains
+    unattributed no matter how much feedback it collects. What this can honestly key on
+    is the reader, and only when there IS one: an unidentified single-user install
+    records "", which is the true answer rather than a fabricated actor.
+    """
+    verdict = (body.verdict or "").strip().lower()
+    if verdict not in TRACE_VERDICTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"verdict must be one of {list(TRACE_VERDICTS)}, got {body.verdict!r}")
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+
+    from aughor.kernel.errors import tolerate
+    from aughor.org.context import current_user_id
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "trace.feedback",
+            {"trace_id": trace_id, "verdict": verdict, "note": body.note[:2000],
+             "by": current_user_id()},
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        # Fail-open, like `chat.feedback`: losing a thumbs must not surface as an error
+        # to someone who was trying to help. Counted, so a silently discarding endpoint
+        # shows up as a rising counter rather than as an unusually happy user base.
+        tolerate(exc, "trace feedback journal", counter="trace.feedback")
+        return {"ok": False, "recorded": False}
+    return {"ok": True, "recorded": True, "verdict": verdict}
+
+
+@router.get("/traces/{trace_id}/feedback")
+def get_trace_feedback(trace_id: str, limit: int = 50):
+    """Every judgement recorded on this run, newest first.
+
+    A list rather than a single verdict: two people disagreeing about a run is a fact
+    worth keeping, and collapsing it to the latest opinion would silently discard the
+    disagreement that made the run interesting.
+    """
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().events(kind="trace.feedback", trace_id=trace_id,
+                                   org_id=current_org_id() or None,
+                                   limit=max(1, min(limit, 200)))
+    items = [{"at": r.get("at") or r.get("created_at"),
+              "verdict": (r.get("payload") or {}).get("verdict"),
+              "note": (r.get("payload") or {}).get("note") or "",
+              "by": (r.get("payload") or {}).get("by") or ""}
+             for r in rows]
+    return {
+        "trace_id": trace_id,
+        "count": len(items),
+        "helpful": sum(1 for i in items if i["verdict"] == "helpful"),
+        "unhelpful": sum(1 for i in items if i["verdict"] == "unhelpful"),
+        "items": items,
+    }
+
+
 # ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
 # Storing model-call CONTENT is the most sensitive write this product makes, so it is
 # never a standing setting: an operator opens a window bounded by a call budget AND a
