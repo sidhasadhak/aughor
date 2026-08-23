@@ -101,10 +101,52 @@ _KEEPALIVE_LOCK = threading.Lock()
 #: production — but a caller that keeps redirecting store paths (every test gets a fresh
 #: tmp dir) grows it without limit, and running out of descriptors would be a worse
 #: failure than the one this prevents.
+#:
+#: MEASURED 2026-08-24 on a live API (`lsof -p <pid>`): **23 distinct store files**, one
+#: keepalive fd and one mapping each, against this cap of 256. Eviction therefore never
+#: runs in the serving process, which retires it as a suspect for the SIGBUS — the
+#: high-water mark below is what keeps that answer true rather than remembered.
 _KEEPALIVE_MAX = 256
 #: Counted rather than raised. Visible without depending on any store — see the warning
 #: in `_hold_wal_open` about why this cannot go through the ledger.
 _KEEPALIVE_REFUSED = 0
+#: `(inode, size)` of the `-shm` as each keepalive attached, so drift can be DETECTED.
+#:
+#: The crash is a live mapping onto a WAL index that moved underneath it, and a SIGBUS
+#: report cannot name the file: `vmRegionInfo` carries an `Object_id`, never a path, so
+#: no post-mortem so far could say WHICH store died. This makes it answerable.
+#:
+#: ⚠️ The SIZE is half the record, and it is the half that matters. Measured 2026-08-24:
+#: unlinking a live `-shm` is SURVIVABLE — an open fd keeps the inode alive and reads
+#: through the mapping still succeed. TRUNCATING it in place is the fault: pages past
+#: the new EOF have no backing store, and touching one is `SIGBUS · FS pagein error 22`,
+#: reproduced exactly (exit 138). Truncation leaves the inode IDENTICAL, so a detector
+#: watching only the inode is blind to the only thing that actually kills the process.
+#: SQLite truncates a `-shm` to zero in `unixOpenSharedMemory` whenever a connection
+#: opens it and is granted an EXCLUSIVE lock — i.e. whenever it believes nobody else is
+#: using it.
+_KEEPALIVE_SHM: "dict[str, Optional[tuple]]" = {}
+#: Stores whose `-shm` moved under a live mapping. Reported once, then remembered — the
+#: condition is permanent for the life of the process, so re-alerting adds noise, and the
+#: entry must NOT leave `_KEEPALIVE`: an absent entry is what would invite the next
+#: `connect_store` call to re-attach into the fault. See `check_wal_drift`.
+_KEEPALIVE_DRIFT_PATHS: "set" = set()
+_KEEPALIVE_EVICTED = 0
+_KEEPALIVE_HIGHWATER = 0
+_KEEPALIVE_DRIFTED = 0
+
+
+def _shm_state(key: str) -> Optional[tuple]:
+    """``(inode, size)`` of a store's WAL index, or None when there isn't one.
+
+    ``os.stat`` and nothing else. Opening a connection is the very act whose consequences
+    this observes, so an observer that opened one would be reporting on itself.
+    """
+    try:
+        st = os.stat(key + "-shm")
+        return (st.st_ino, st.st_size)
+    except OSError:
+        return None
 
 
 def _evict_one_locked() -> None:
@@ -127,6 +169,14 @@ def _evict_one_locked() -> None:
             return
         _key = next(iter(_KEEPALIVE))
         conn = _KEEPALIVE.pop(_key)
+    _KEEPALIVE_SHM.pop(_key, None)
+    global _KEEPALIVE_EVICTED
+    _KEEPALIVE_EVICTED += 1
+    if _KEEPALIVE_EVICTED == 1:                 # once — the suite evicts constantly
+        _LOG.warning("store WAL keepalive evicted %s at %d/%d held. In the serving "
+                     "process this should never happen (23 stores measured); if it is "
+                     "happening there, the store just evicted runs unprotected.",
+                     _key, len(_KEEPALIVE) + 1, _KEEPALIVE_MAX)
     try:
         conn.close()
     except Exception:                           # noqa: BLE001 — a close we cannot do is not fatal
@@ -184,6 +234,11 @@ def _hold_wal_open(path: Path) -> None:
             # -shm yet, and one that has not opened it does not hold it open.
             c.execute("SELECT count(*) FROM sqlite_master").fetchone()
             _KEEPALIVE[key] = c
+            # AFTER the attach: the read above is what creates the `-shm`, so an inode
+            # read before it would record None for every store and drift would never fire.
+            _KEEPALIVE_SHM[key] = _shm_state(key)
+            global _KEEPALIVE_HIGHWATER
+            _KEEPALIVE_HIGHWATER = max(_KEEPALIVE_HIGHWATER, len(_KEEPALIVE))
         except Exception as exc:                # noqa: BLE001 — see docstring
             failure = exc
 
@@ -194,6 +249,110 @@ def _hold_wal_open(path: Path) -> None:
             _LOG.warning("store WAL keepalive unavailable for %s: %s — stores opened from "
                          "here run without it and are exposed to the WAL-unlink crash",
                          key, failure)
+
+
+def wal_keepalive_report() -> dict:
+    """What the keepalive holds, and whether any of it has been stranded.
+
+    The SIGBUS this module exists to prevent leaves no Python traceback and no filename:
+    a crash report's ``vmRegionInfo`` gives an ``Object_id`` and a region size, so the
+    only thing a post-mortem could ever say was "a 32 KB mapped file", never *which*
+    store. This answers that — for a live process through the diagnostics route, and
+    after a crash by comparing the inodes it last reported against the files on disk.
+
+    Never raises: a diagnostic that can break the process it diagnoses is worse than no
+    diagnostic. ``stores`` is sorted so two readings can be diffed.
+    """
+    def _serving_pid():
+        from aughor.db.serving import serving_pid
+        return serving_pid()
+
+    def _is_foreign():
+        from aughor.db import serving
+        pid = serving.serving_pid()
+        return pid is not None and pid != os.getpid()
+
+    try:
+        stores = []
+        for key in list(_KEEPALIVE):
+            recorded = _KEEPALIVE_SHM.get(key)
+            current = _shm_state(key)
+            stores.append({
+                "path": key,
+                "shm_at_attach": list(recorded) if recorded else None,
+                "shm_now": list(current) if current else None,
+                "shm_present": current is not None,
+                # None at attach means this store never had a WAL index to lose
+                # (`:memory:`, or a backend with no `-shm`), which is not drift.
+                "drifted": recorded is not None and current != recorded,
+            })
+        stores.sort(key=lambda d: d["path"])
+        return {
+            "backend": "postgres" if is_postgres() else "sqlite",
+            "held": len(_KEEPALIVE),
+            "max": _KEEPALIVE_MAX,
+            "highwater": _KEEPALIVE_HIGHWATER,
+            "evicted": _KEEPALIVE_EVICTED,
+            "refused": _KEEPALIVE_REFUSED,
+            "drifted": _KEEPALIVE_DRIFTED,
+            "drifted_paths": sorted(_KEEPALIVE_DRIFT_PATHS),
+            "serving_pid": _serving_pid(),
+            "foreign_process": _is_foreign(),
+            "stores": stores,
+        }
+    except Exception as exc:                    # noqa: BLE001 — see docstring
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def check_wal_drift() -> list:
+    """Find stores whose WAL index moved under us, and — deliberately — do nothing else.
+
+    Drift means some actor moved a ``-shm`` while we were mapped into it: recreated it
+    (new inode) or, the one that actually kills the process, TRUNCATED it in place (same
+    inode, size 0). Once that has happened this process is holding a mapping onto storage
+    that cannot be paged in, and the next read through it is `SIGBUS · FS pagein error 22`.
+
+    The obvious response — drop the stale connection and attach a fresh one — was
+    implemented, measured, and REMOVED. It is itself a SIGBUS (reproduced 2026-08-24,
+    exit 138). SQLite's unix VFS keeps ONE shared-memory object per database inode per
+    PROCESS, so a "fresh" connection does not get a fresh mapping: it is handed the same
+    truncated one, and the attach read faults on it. Closing the stale connection is no
+    better — that runs SQLite's cleanup through the same dead mapping.
+
+    So this touches nothing. It does not close, re-attach, evict, or even remove the
+    registry entry — leaving the entry in place is what stops the next `connect_store`
+    call from "helpfully" re-attaching into the fault. It records, reports, and lets the
+    operator restart the process, which is the only safe recovery from a mapping that has
+    already lost its backing store.
+
+    Returns the paths that drifted, first time only (empty on the healthy path, which is
+    every tick).
+    """
+    global _KEEPALIVE_DRIFTED
+    newly = []
+    try:
+        with _KEEPALIVE_LOCK:
+            for key in list(_KEEPALIVE):
+                recorded = _KEEPALIVE_SHM.get(key)
+                if recorded is None:
+                    continue                    # never had a WAL index; nothing to lose
+                if key in _KEEPALIVE_DRIFT_PATHS:
+                    continue                    # already reported; do not re-alert forever
+                if _shm_state(key) == recorded:
+                    continue
+                _KEEPALIVE_DRIFT_PATHS.add(key)
+                newly.append(key)
+        for key in newly:
+            _KEEPALIVE_DRIFTED += 1
+            _LOG.error("store WAL index MOVED under a live mapping: %s (attached as %s, "
+                       "now %s). This process is one read away from SIGBUS in "
+                       "walFindFrame; nothing in-process can undo it — restart the "
+                       "server. Not re-attaching: a fresh connection is handed the same "
+                       "dead mapping and faults on it.",
+                       key, _KEEPALIVE_SHM.get(key), _shm_state(key))
+    except Exception as exc:                    # noqa: BLE001 — a detector must not crash the app
+        _LOG.warning("WAL drift check failed: %s", exc)
+    return newly
 
 
 def connect_store(
@@ -222,6 +381,11 @@ def connect_store(
         # the pool counters to read zero. Naming the branch keeps the two apart.
         _count_backend("sqlite")
         p = Path(path)
+        # Once per process, before anything is opened: are we a visitor in a directory
+        # somebody else is serving? That pairing is the crash's precondition and it has
+        # been invisible at the only moment it could be acted on.
+        from aughor.db.serving import warn_if_foreign
+        warn_if_foreign(p)
         p.parent.mkdir(parents=True, exist_ok=True)
         conn = tune(sqlite3.connect(str(p), check_same_thread=check_same_thread))
         # AFTER the first real connection, so the file and its WAL exist before we pin them.

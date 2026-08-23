@@ -2613,6 +2613,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/diagnostics/wal-keepalive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wal Keepalive Diagnostics
+         * @description What the store WAL keepalive holds, and whether anything has been stranded.
+         *
+         *     The SIGBUS that ate the API for a week (#379, #383) leaves no traceback and names no
+         *     file — a crash report describes the victim only as a 32 KB mapped region. This is the
+         *     surface that can name it: every held store with the `-shm` inode recorded when we
+         *     attached beside the one on disk now. `drifted` on any store means some actor moved
+         *     that store's WAL index under a live mapping, which is the crash's precondition.
+         */
+        get: operations["wal_keepalive_diagnostics_diagnostics_wal_keepalive_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -16069,6 +16095,26 @@ export interface operations {
         };
     };
     reset_dev_stats_dev_stats_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    wal_keepalive_diagnostics_diagnostics_wal_keepalive_get: {
         parameters: {
             query?: never;
             header?: never;

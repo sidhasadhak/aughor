@@ -108,6 +108,12 @@ async def _lifespan(app: "FastAPI"):
     # First of all: plug the Agent into the Platform's registries (purge hooks,
     # schema annotators, …) so the platform's seams carry the agent's intelligence
     # on the live path. Must precede any request handling. Idempotent + fault-isolated.
+    # Before any of it: claim the state directory, so a script, a CLI command or a test
+    # run that opens these stores while we serve can say so at the moment it happens.
+    # Two processes mapped into one WAL index is the SIGBUS precondition (db/serving.py).
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import claim
+        claim()
     await _register_agent_plugins()
     # Then: make contextvars (current job id + per-run metering) cross the
     # run_in_executor boundary, before any startup step dispatches into a thread.
@@ -144,6 +150,9 @@ async def _lifespan(app: "FastAPI"):
     # Background loops (supervisor, ontology refresh) are cancelled by event-loop
     # teardown, and the kernel's boot_recovery fails any job orphaned by the stop
     # on the next start. The one explicit teardown is the context executor.
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import release
+        release()
     global _CTX_EXECUTOR
     if _CTX_EXECUTOR is not None:
         try:
