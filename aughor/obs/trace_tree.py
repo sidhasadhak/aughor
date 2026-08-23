@@ -85,6 +85,25 @@ def _node_kind(row: dict) -> str:
     return "event"
 
 
+def _delegation(row: dict) -> Optional[dict]:
+    """The delegation identity a hop's span carries, or None for ordinary work.
+
+    Read off the PAYLOAD because that is the only part of a span the trace reader can
+    see — a span's other attributes are written to `task_history`, a different table
+    this module never opens.
+    """
+    p = row.get("payload") or {}
+    path = p.get("aughor.delegation.path")
+    if not path:
+        return None
+    return {
+        "path": path,
+        "depth": p.get("aughor.delegation.depth"),
+        "agent_id": p.get("delegate_agent_id") or "",
+        "agent_name": p.get("delegate_agent_name") or p.get("delegate_agent_id") or "",
+    }
+
+
 def build_timeline(events: Iterable[dict]) -> dict:
     """Lay a run's events out on a time axis. Pure — the read is the caller's.
 
@@ -117,6 +136,8 @@ def build_timeline(events: Iterable[dict]) -> dict:
             node["ended_at"] = r.get("at")
             if node.get("usage") is None:
                 node["usage"] = _usage(r)
+            if node.get("delegation") is None:
+                node["delegation"] = _delegation(r)
             continue
 
         at = _parse(r.get("at"))
@@ -140,6 +161,7 @@ def build_timeline(events: Iterable[dict]) -> dict:
             "role": r.get("role"),
             "fallback": r.get("fallback"),
             "usage": _usage(r),
+            "delegation": _delegation(r),
             "depth": 0,
             "gap_ms": None,
             "critical": False,
@@ -224,15 +246,40 @@ def build_timeline(events: Iterable[dict]) -> dict:
 
 
 def flow_edges(timeline: dict) -> list[dict]:
-    """Node-to-node edges for the flow view, each carrying the latency between them.
+    """Edges for the node view: real parentage where the run has it, sequence where it
+    does not — each carrying the latency the reference product renders ON the edge.
 
-    The reference product renders that number ON the edge ("0ms", "12ms", "62ms"), which
-    is the detail that turns a boxes-and-arrows picture into a reading of where a run
-    actually spent its time.
+    Two kinds, because a run is two things at once and drawing only one of them lies:
+
+    * ``child`` — a span nested inside another. These are the edges that make a run a
+      GRAPH. Before delegation existed there were almost none, which is why this
+      function used to be `zip(nodes, nodes[1:])`: with no real parentage to draw,
+      adjacency was the only structure available. A delegated run has actual hops, and
+      drawing those as a flat chain would render two delegates working under one
+      supervisor as three things that happened in a row.
+    * ``next`` — the top-level flow, between consecutive ROOT nodes only. Nested spans
+      are reached by their parent edge instead, so a child is not also chained to
+      whatever happened to precede it in `seq` — that pairing means nothing.
+
+    `latency_ms` is the gap since the previous node ENDED, and it is carried only on
+    `next` edges. A parent→child edge has no gap to report: the child runs INSIDE the
+    parent, so any number here would be a duration dressed up as a wait.
     """
     nodes: list[dict[str, Any]] = timeline.get("nodes") or []
+    by_span: dict[str, dict] = {n["span_id"]: n for n in nodes if n.get("span_id")}
     out: list[dict] = []
-    for prev, node in zip(nodes, nodes[1:]):
+
+    for node in nodes:
+        pid = node.get("parent_span_id")
+        parent = by_span.get(pid or "")
+        # `is not node` guards a row that names itself as its own parent — malformed,
+        # but it would otherwise draw a self-loop the layout cannot resolve.
+        if parent is not None and parent is not node:
+            out.append({"from": parent["id"], "to": node["id"],
+                        "latency_ms": None, "kind": "child"})
+
+    roots = [n for n in nodes if not by_span.get(n.get("parent_span_id") or "")]
+    for prev, node in zip(roots, roots[1:]):
         out.append({"from": prev["id"], "to": node["id"],
-                    "latency_ms": node.get("gap_ms")})
+                    "latency_ms": node.get("gap_ms"), "kind": "next"})
     return out

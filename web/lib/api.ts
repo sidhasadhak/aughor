@@ -5310,8 +5310,12 @@ export interface TimelineNode {
   name: string;
   /** The stored event kind. */
   event_kind: string;
-  /** What to draw it as: "model" | "tool" | "frame" | "error" | "event". */
+  /** What to draw it as: "model" | "tool" | "frame" | "error" | "event" | "delegation". */
   kind: string;
+  /** VA-5 — set only on a delegated hop: which agent ran this, and how deep. */
+  delegation: {
+    path: string; depth: number | null; agent_id: string; agent_name: string;
+  } | null;
   at: string | null;
   ended_at: string | null;
   /** Milliseconds from the run's first event — the bar's x position. */
@@ -5351,7 +5355,17 @@ export interface TraceTimeline {
   concurrent_nodes: number;
 }
 
-export interface TraceFlowEdge { from: string; to: string; latency_ms: number | null }
+export interface TraceFlowEdge {
+  from: string;
+  to: string;
+  /** Gap since the previous node ENDED. Carried on "next" edges only — a child runs
+   *  inside its parent, so a number on a "child" edge would be a duration posing as a
+   *  wait. */
+  latency_ms: number | null;
+  /** "child" = real nesting (the edges that make a run a graph); "next" = the
+   *  top-level flow between consecutive root nodes. */
+  kind: "child" | "next";
+}
 
 export type TraceDetail = {
       measured: true; recording: boolean; trace_id: string; question: string;

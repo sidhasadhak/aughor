@@ -28,6 +28,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from aughor.agent.delegation import DelegationContext, DelegationRefused
+from aughor.telemetry import mlflow_tool_span
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +169,24 @@ def _run_one(target: dict, task: str, ctx: DelegationContext, *,
     # The delegate streams under its OWN identity, not the caller's.
     hop_emit = delegated_emit(emit, ctx=child, agent_id=agent_id, agent_name=name)
 
+    # VA-5 — the hop gets its OWN span, and this is what makes a run a graph rather than
+    # a list. Without it a multi-target delegation is a single `delegate_task` tool call:
+    # the work of two delegates collapsed into one node, with no parentage to draw and
+    # no per-hop duration to read.
+    #
+    # `span_attrs` rather than the attributes dict, deliberately — ordinary attributes
+    # become `task_history` labels and never reach the `session_events` payload, which is
+    # the table the trace reader actually reads. `span_attributes()` had been written for
+    # exactly this purpose and called from nowhere; passing it the ordinary way would have
+    # looked wired and still shown nothing.
+    hop_attrs = {**child.span_attributes(),
+                 "delegate_agent_id": agent_id, "delegate_agent_name": name}
+
     try:
-        result = answer(conn, {"question": framed}, emit=hop_emit, session_id=session_id)
+        with mlflow_tool_span(f"delegate:{name}", {"question": framed},
+                              span_kind="delegation", span_attrs=hop_attrs):
+            result = answer(conn, {"question": framed}, emit=hop_emit,
+                            session_id=session_id)
     except Exception as exc:                      # a delegate failing is a RESULT
         logger.warning("delegate %s failed: %s", agent_id, exc, exc_info=True)
         return {"agent_name": name, "response": f"{name} could not answer: {exc}",

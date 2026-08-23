@@ -374,6 +374,9 @@ def _close_span_stack(stack: ExitStack, what: str) -> None:
 def mlflow_tool_span(
     name: str,
     attributes: dict | None = None,
+    *,
+    span_kind: str = "tool",
+    span_attrs: dict | None = None,
 ) -> Generator[Any, None, None]:
     """A TOOL span for a unit of work (e.g. a guarded SQL execution).
 
@@ -390,7 +393,8 @@ def mlflow_tool_span(
     # Local sinks first (outermost) so their span id is the parent of anything the
     # body opens, and a body exception is recorded before it unwinds. No-op unless
     # `obs.task_table` / `obs.session_log`. trace_id="" → inherit the ambient trace.
-    stack.enter_context(_obs_span(name, "", attributes, span_kind="tool"))
+    stack.enter_context(_obs_span(name, "", attributes, span_kind=span_kind,
+                                  span_attrs=span_attrs))
     span_obj = _mlflow_enter_span(stack, name, attributes, span_type="TOOL")
     try:
         yield span_obj
@@ -420,6 +424,12 @@ _active_trace_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 # Metadata keys lifted into the dedicated input/captured_output columns (in
 # preference order); everything else on the span becomes labels JSON.
+#
+# ⚠️ Those labels land in `task_history` ONLY — the `session_events` payload carries
+# just `span_kind` plus the input/output text. Anything a TRACE READER needs (the
+# waterfall, the node view) has to travel on `span_attrs`, which is written into the
+# payload of both the call and the result. Passing it as an ordinary attribute puts it
+# in the other table, where `build_timeline` will never see it.
 _INPUT_KEYS = ("input", "sql", "question", "query")
 _OUTPUT_KEYS = ("captured_output", "output", "result", "row_count")
 
@@ -491,7 +501,8 @@ def bind_trace(trace_id: str) -> Generator[str, None, None]:
 
 @contextmanager
 def _obs_span(task: str, trace_id: str, attributes: dict | None,
-              *, span_kind: str = "node") -> Generator[None, None, None]:
+              *, span_kind: str = "node",
+              span_attrs: dict | None = None) -> Generator[None, None, None]:
     """One observation frame around a unit of work, driving both local sinks.
 
     Both sinks share ONE span id and one parent linkage — which is the reason
@@ -525,7 +536,8 @@ def _obs_span(task: str, trace_id: str, attributes: dict | None,
         from aughor.obs import session_log as _slog
         _slog.emit(_slog.TOOL_CALL, name=task, trace_id=tid, span_id=span_id,
                    parent_span_id=parent_id,
-                   payload={"span_kind": span_kind, **({"input": inp} if inp else {})})
+                   payload={"span_kind": span_kind, **(span_attrs or {}),
+                            **({"input": inp} if inp else {})})
     start = datetime.now(timezone.utc)
     t0 = _time.monotonic()
     err: str | None = None
@@ -578,7 +590,7 @@ def _obs_span(task: str, trace_id: str, attributes: dict | None,
                        span_id=span_id, parent_span_id=parent_id,
                        ok=err is None, duration_ms=duration_ms, error_class=err_class,
                        row_count=_rows,
-                       payload={"span_kind": span_kind,
+                       payload={"span_kind": span_kind, **(span_attrs or {}),
                                 **({"output": outp_attr} if outp_attr else {}),
                                 **({"error": err} if err else {})})
 
