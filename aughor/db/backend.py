@@ -133,6 +133,22 @@ def _evict_one_locked() -> None:
         pass
 
 
+def hold_wal_open(path: Path) -> None:
+    """Public contract for a store that is legitimately NOT on the ``connect_store`` seam.
+
+    Opting off the seam is a real, occasionally correct choice — LangGraph's SqliteSaver
+    owns its own connection and wrapping it is unproven. Opting off the WAL GUARANTEE is
+    never correct, and for two days the two were the same act: #379 protected every store
+    that went through ``connect_store``, and the one store that did not kept killing the
+    API with SIGBUS in ``walFindFrame``.
+
+    So the guarantee gets a front door. Call this with the store's path and SQLite never
+    sees a last close on it, whoever owns the connections. Idempotent; lock-free on the
+    repeat path; never raises.
+    """
+    _hold_wal_open(Path(path))
+
+
 def _hold_wal_open(path: Path) -> None:
     """Keep one idle connection to ``path`` so SQLite never sees a last-close.
 

@@ -80,8 +80,8 @@ def _checkpointer():
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
 
-    from aughor.db.backend import _hold_wal_open
-    _hold_wal_open(_CHECKPOINT_DB)
+    from aughor.db.backend import hold_wal_open
+    hold_wal_open(_CHECKPOINT_DB)
     conn = tune(sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False))
     return SqliteSaver(conn)
 
