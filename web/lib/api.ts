@@ -5776,3 +5776,33 @@ export async function getTraceFeedback(traceId: string): Promise<TraceFeedback> 
   if (!res.ok) throw new Error(`Failed to fetch trace feedback (${res.status})`);
   return res.json();
 }
+
+/** VA-5 — the kernel journal for one run.
+ *
+ *  The waterfall shows what the agent DID; this shows what the run SURVIVED. A
+ *  tolerated error is invisible in the waterfall by construction — the span it
+ *  happened inside succeeded — so the journal is the only place it exists. */
+export interface TraceLogLine {
+  at: string;
+  seq: number;
+  kind: string;
+  tolerated: boolean;
+  error: string | null;
+  reason: string | null;
+  counter: string | null;
+  payload: Record<string, unknown> | null;
+}
+
+export interface TraceLogs {
+  trace_id: string;
+  count: number;
+  tolerated_errors: number;
+  lines: TraceLogLine[];
+}
+
+export async function getTraceLogs(traceId: string, limit = 200): Promise<TraceLogs> {
+  const res = await fetch(
+    `${getApiBase()}/traces/${encodeURIComponent(traceId)}/logs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch trace logs (${res.status})`);
+  return res.json();
+}

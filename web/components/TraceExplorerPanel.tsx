@@ -21,9 +21,10 @@ import { StatusChip } from "@/components/brief/StatusChip";
 import { TraceFlow } from "@/components/agentops/TraceFlow";
 import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
 import {
-  getTrace, getTraces, getTraceFeedback, getVerdicts, recordTraceFeedback, recordVerdict,
+  getTrace, getTraceLogs, getTraces, getTraceFeedback, getVerdicts, recordTraceFeedback,
+  recordVerdict,
   type FindingVerdict, type SessionEvent, type TraceDetail, type TraceFeedback,
-  type TraceSpan, type TraceSummary,
+  type TraceLogs, type TraceSpan, type TraceSummary,
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
@@ -45,12 +46,13 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
-  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "feedback">("timeline");
+  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "logs" | "feedback">("timeline");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
   const [verdictBusy, setVerdictBusy] = useState(false);
   const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
+  const [logs, setLogs] = useState<TraceLogs | null>(null);
   const [runBusy, setRunBusy] = useState(false);
 
   const loadList = useCallback(() => {
@@ -79,6 +81,11 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const loadVerdicts = useCallback(() => {
     getVerdicts(connId ?? undefined, 50).then(setVerdicts).catch(() => {});
   }, [connId]);
+  const loadLogs = useCallback(async () => {
+    if (!selected) return;
+    try { setLogs(await getTraceLogs(selected)); } catch { setLogs(null); }
+  }, [selected]);
+
   const loadRunFeedback = useCallback(async () => {
     if (!selected) return;
     try { setRunFeedback(await getTraceFeedback(selected)); } catch { setRunFeedback(null); }
@@ -86,6 +93,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
 
   useEffect(() => { if (tab === "feedback") { loadVerdicts(); loadRunFeedback(); } },
     [tab, loadVerdicts, loadRunFeedback]);
+  useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, loadLogs]);
 
   const depths = useMemo(
     () => (detail?.measured ? spanDepths(detail.spans) : new Map<string, number>()),
@@ -200,6 +208,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 onClick={() => setTab("flow")}>Flow</Button>
               <Button variant={tab === "events" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("events")}>Events</Button>
+              <Button variant={tab === "logs" ? "secondary" : "ghost"} size="xs"
+                onClick={() => setTab("logs")}>Logs</Button>
               <Button variant={tab === "feedback" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("feedback")}>Feedback</Button>
             </div>
@@ -294,6 +304,61 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                     </div>
                   );
                 })}
+              </div>
+            ) : tab === "logs" ? (
+              /* What the run SURVIVED, beside what it did. A tolerated error cannot
+                 appear in the waterfall — the span it happened inside succeeded — so
+                 these lines are the only place it exists. Scoped to this run, which
+                 scopes it in time: the same journal read in aggregate shows 959
+                 NameErrors from a guard that was fixed two months ago. */
+              <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+                {!logs || logs.count === 0 ? (
+                  <div className="aug-fs-sm" style={{ padding: 8, color: "var(--t3)" }}>
+                    No kernel journal lines for this run. Spans are recorded separately —
+                    the waterfall is unaffected.
+                  </div>
+                ) : (
+                  <>
+                    <div className="aug-fs-xs" style={{ color: "var(--t2)", padding: "0 4px 8px" }}>
+                      {logs.count} journal {logs.count === 1 ? "line" : "lines"}
+                      {logs.tolerated_errors > 0 && (
+                        <span style={{ color: "var(--red4)" }}>
+                          {" · "}{logs.tolerated_errors} swallowed
+                          {logs.tolerated_errors === 1 ? " error" : " errors"}
+                        </span>
+                      )}
+                    </div>
+                    {logs.lines.map(line => (
+                      <div key={`${line.seq}-${line.kind}`} className="aug-fs-sm"
+                        style={{ padding: "6px 4px", borderBottom: "1px solid var(--b0)" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <StatusChip strength="soft" hue={line.tolerated ? "negative" : "info"}>
+                            {line.kind}
+                          </StatusChip>
+                          <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                            {relTime(line.at)}
+                          </span>
+                        </div>
+                        {line.tolerated ? (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ color: "var(--red4)" }}>{line.error}</div>
+                            {/* The reason is what separates a designed degradation from
+                                a bug nobody noticed. Without it the error is unreadable. */}
+                            <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 2 }}>
+                              tolerated because: {line.reason}
+                              {line.counter ? ` · ${line.counter}` : ""}
+                            </div>
+                          </div>
+                        ) : line.payload ? (
+                          <pre className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t2)",
+                            whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {JSON.stringify(line.payload)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>

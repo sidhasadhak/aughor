@@ -388,6 +388,54 @@ def get_trace_feedback(trace_id: str, limit: int = 50):
     }
 
 
+@router.get("/traces/{trace_id}/logs")
+def get_trace_logs(trace_id: str, limit: int = 200):
+    """The kernel journal for one run — VA-5's trace logs.
+
+    Two record systems describe a run and neither knows about the other: `session_events`
+    holds the spans (what the agent DID) and the ledger journal holds the state
+    transitions and, crucially, the **tolerated errors** — failures that were deliberately
+    swallowed so the run could continue. A swallowed error is invisible in the waterfall
+    by construction: the span it happened inside succeeded.
+
+    Measured: 35,980 of 95,220 journal events carry a trace id, and 222 of the 263 runs
+    with spans have journal lines, so this is a real surface rather than a mostly-empty
+    tab. `error.tolerated` is 342 of those — the rest are state transitions.
+
+    **Scoped to one run, which scopes it in time, and that is the point.** Read in
+    aggregate this journal is actively misleading: `explorer.grain_lint_failed` shows 959
+    occurrences of a NameError, which reads as a live dead guard until you notice the last
+    one was 2026-06-30 and the missing import has since been added. Counts without dates
+    turn fixed bugs into fresh alarms. A run's own lines cannot lie that way.
+    """
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().events(trace_id=trace_id, org_id=current_org_id() or None,
+                                   limit=max(1, min(limit, 1000)))
+    lines = []
+    for r in rows:
+        payload = r.get("payload") or {}
+        tolerated = r.get("kind") == "error.tolerated"
+        lines.append({
+            "at": r.get("at") or r.get("created_at"),
+            "seq": r.get("seq"),
+            "kind": r.get("kind"),
+            "tolerated": tolerated,
+            # The two fields that make a swallowed error readable: what broke, and the
+            # reason someone decided it was survivable. Without the reason a reader
+            # cannot tell a designed degradation from a bug nobody noticed.
+            "error": payload.get("error") if tolerated else None,
+            "reason": payload.get("reason") if tolerated else None,
+            "counter": payload.get("counter") if tolerated else None,
+            "payload": None if tolerated else payload,
+        })
+    return {
+        "trace_id": trace_id,
+        "count": len(lines),
+        "tolerated_errors": sum(1 for line in lines if line["tolerated"]),
+        "lines": lines,
+    }
+
+
 # ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
 # Storing model-call CONTENT is the most sensitive write this product makes, so it is
 # never a standing setting: an operator opens a window bounded by a call budget AND a

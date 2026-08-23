@@ -7789,6 +7789,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/traces/{trace_id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Logs
+         * @description The kernel journal for one run — VA-5's trace logs.
+         *
+         *     Two record systems describe a run and neither knows about the other: `session_events`
+         *     holds the spans (what the agent DID) and the ledger journal holds the state
+         *     transitions and, crucially, the **tolerated errors** — failures that were deliberately
+         *     swallowed so the run could continue. A swallowed error is invisible in the waterfall
+         *     by construction: the span it happened inside succeeded.
+         *
+         *     Measured: 35,980 of 95,220 journal events carry a trace id, and 222 of the 263 runs
+         *     with spans have journal lines, so this is a real surface rather than a mostly-empty
+         *     tab. `error.tolerated` is 342 of those — the rest are state transitions.
+         *
+         *     **Scoped to one run, which scopes it in time, and that is the point.** Read in
+         *     aggregate this journal is actively misleading: `explorer.grain_lint_failed` shows 959
+         *     occurrences of a NameError, which reads as a live dead guard until you notice the last
+         *     one was 2026-06-30 and the missing import has since been added. Counts without dates
+         *     turn fixed bugs into fresh alarms. A run's own lines cannot lie that way.
+         */
+        get: operations["get_trace_logs_traces__trace_id__logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/traces/{trace_id}/spans/{span_id}": {
         parameters: {
             query?: never;
@@ -25045,6 +25081,39 @@ export interface operations {
                 "application/json": components["schemas"]["_TraceFeedbackRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_logs_traces__trace_id__logs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -344,3 +344,85 @@ def test_a_broken_journal_does_not_error_at_someone_trying_to_help(monkeypatch):
     finally:
         _led.Ledger.default = orig
     assert out["ok"] is False and out["recorded"] is False
+
+
+# ── trace logs ──────────────────────────────────────────────────────────────────
+
+def _ledger_rows():
+    return [
+        {"seq": 9, "at": "2026-08-23T10:00:03Z", "kind": "error.tolerated",
+         "payload": {"error": "NameError: name 'x' is not defined",
+                     "reason": "grain-bug lint is best-effort", "counter": "explorer.grain_lint_failed"}},
+        {"seq": 8, "at": "2026-08-23T10:00:01Z", "kind": "node.span",
+         "payload": {"name": "cross_section", "ms": 120.0}},
+    ]
+
+
+def _ledger_with(rows):
+    class _L:
+        def events(self, **kw):
+            return rows
+    return _L()
+
+
+def test_a_swallowed_error_is_visible_in_the_runs_logs(monkeypatch):
+    """A tolerated error is invisible in the waterfall BY CONSTRUCTION — the span it
+    happened inside succeeded. The journal is the only place it exists."""
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _ledger_with(_ledger_rows()))
+    try:
+        out = obs.get_trace_logs("t1")
+    finally:
+        _led.Ledger.default = orig
+
+    assert out["count"] == 2 and out["tolerated_errors"] == 1
+    swallowed = next(line for line in out["lines"] if line["tolerated"])
+    assert "NameError" in swallowed["error"]
+    assert swallowed["reason"], (
+        "without the reason a reader cannot tell a designed degradation from a bug "
+        "nobody noticed")
+    assert swallowed["counter"] == "explorer.grain_lint_failed"
+
+
+def test_ordinary_journal_lines_keep_their_payload_and_are_not_flagged(monkeypatch):
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _ledger_with(_ledger_rows()))
+    try:
+        out = obs.get_trace_logs("t1")
+    finally:
+        _led.Ledger.default = orig
+    plain = next(line for line in out["lines"] if not line["tolerated"])
+    assert plain["kind"] == "node.span"
+    assert plain["payload"]["name"] == "cross_section"
+    assert plain["error"] is None
+
+
+def test_the_logs_are_scoped_to_ONE_run(monkeypatch):
+    """The scoping is the safety property, not a convenience. Read in aggregate this
+    journal is misleading: `explorer.grain_lint_failed` shows 959 NameErrors, which reads
+    as a live dead guard until you notice the last was 2026-06-30 and the import has since
+    been added. A run's own lines cannot mislead that way."""
+    from aughor.routers import obs
+    import aughor.kernel.ledger as _led
+
+    seen: list = []
+
+    class _L:
+        def events(self, **kw):
+            seen.append(kw)
+            return []
+
+    orig = _led.Ledger.default
+    _led.Ledger.default = classmethod(lambda cls: _L())
+    try:
+        obs.get_trace_logs("t-scoped", limit=5000)
+    finally:
+        _led.Ledger.default = orig
+    assert seen[0]["trace_id"] == "t-scoped", "the read was not scoped to the run"
+    assert seen[0]["limit"] <= 1000, "an unbounded limit makes this the whole journal again"
