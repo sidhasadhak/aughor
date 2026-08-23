@@ -35,6 +35,11 @@ for _env, _file in (
     ("AUGHOR_ARTIFACTS_DB", "artifacts.db"),
     ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
     ("AUGHOR_MONITORS_DB", "monitors.db"),
+    ("AUGHOR_AGENT_ALERTS_DB", "agent_alerts.db"),
+    # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
+    # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
+    # the repo on any suite run that saved a synonym.
+    ("AUGHOR_VOCABULARY_ROOT", "vocabulary"),
     ("AUGHOR_BRIEFS_FILE", "brief_subscriptions.json"),
     ("AUGHOR_ORGS_DB", "orgs.db"),
     ("AUGHOR_ORG_LLM_DB", "org_llm.db"),

@@ -42,7 +42,12 @@ def tick_once() -> dict[str, int]:
     counts of what was evaluated — each object's own ``schedule`` condition decides
     whether it actually fires — so a caller holding an external clock (``/cron/tick``)
     can report a tick that did something distinguishable from one that found nothing."""
-    from aughor.automations.adopt import BRIEF_PREFIX, MONITOR_PREFIX, list_adopted_automations
+    from aughor.automations.adopt import (
+        AGENT_ALERT_PREFIX,
+        BRIEF_PREFIX,
+        MONITOR_PREFIX,
+        list_adopted_automations,
+    )
 
     try:
         from aughor.automations.store import list_automations
@@ -56,13 +61,18 @@ def tick_once() -> dict[str, int]:
     except Exception as exc:
         logger.warning("automation heartbeat could not adopt legacy objects: %s", exc)
 
-    counts = {"automations": 0, "monitors": 0, "briefs": 0}
+    # A family per adopted kind, not one bucket: "the tick evaluated 40 automations" is not
+    # an answer to "is the alert plane running", and a caller holding an external clock has
+    # nothing else to read.
+    counts = {"automations": 0, "monitors": 0, "briefs": 0, "agent_alerts": 0}
     for automation in automations:
         aid = str(automation.id)
         if aid.startswith(MONITOR_PREFIX):
             counts["monitors"] += 1
         elif aid.startswith(BRIEF_PREFIX):
             counts["briefs"] += 1
+        elif aid.startswith(AGENT_ALERT_PREFIX):
+            counts["agent_alerts"] += 1
         else:
             counts["automations"] += 1
         try:

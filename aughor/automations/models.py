@@ -97,6 +97,7 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     "notify":         ("trigger_id",),
     "kinetic_action": ("action_id",),
     "monitor":        ("monitor_id",),
+    "agent_alert":    ("rule_id",),
 }
 
 
@@ -113,12 +114,18 @@ class Effect(BaseModel):
     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
     engine instead of its own scheduler.
 
+    ``agent_alert`` (VA-6) evaluates one :class:`~aughor.obs.agent_alerts.AgentAlertRule` and,
+    when it crosses, records the alert and delivers it. Sibling of ``monitor`` in every way that
+    matters — an adopted object running through the one engine rather than a loop of its own —
+    and different only in its subject: a monitor watches a warehouse metric on a connection,
+    a rule watches what the agents are doing, fleet-wide.
+
     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
     the run still drains the one ask path, and the agent's instructions, document/pack scope
     and connection binding are applied by that path, not re-implemented here.
     """
-    kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor"]
+    kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -150,7 +157,8 @@ class Effect(BaseModel):
 
     def target(self) -> str:
         """The referenced primitive, for run history and audit detail."""
-        for key in ("action_id", "subscription_id", "trigger_id", "monitor_id", "question"):
+        for key in ("action_id", "subscription_id", "trigger_id", "monitor_id", "rule_id",
+                    "question"):
             if self.config.get(key):
                 return str(self.config[key])[:200]
         return ""

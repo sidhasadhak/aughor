@@ -74,6 +74,7 @@ def cron_tick(request: Request, window_s: int = 60) -> dict:
         counts["automations_tick"] = 1
         counts["monitors_evaluated"] = evaluated.get("monitors", 0)
         counts["briefs_evaluated"] = evaluated.get("briefs", 0)
+        counts["agent_alerts_evaluated"] = evaluated.get("agent_alerts", 0)
     except Exception as exc:
         tolerate(exc, "automation tick is fault-isolated within the cron tick",
                  counter="cron.automations")

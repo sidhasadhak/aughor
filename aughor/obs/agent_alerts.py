@@ -70,7 +70,13 @@ class AgentAlertRule(BaseModel):
     #: Narrow to one agent/charter. Empty = the whole fleet.
     agent_id: str = ""
     charter_id: str = ""
-    #: A monitors notification trigger id. Empty = in-app only.
+    #: How often the rule is EVALUATED, as cron — distinct from ``window_minutes``, which is
+    #: how far back each evaluation looks. Same field and default shape as ``Monitor.check_cron``,
+    #: because a rule reaches the heartbeat the same way a monitor does: adopted as a virtual
+    #: automation whose ``schedule`` condition reads this cron. There is one loop in this
+    #: platform and this is how work joins it.
+    check_cron: str = "*/5 * * * *"
+    #: A notification trigger id (Action Hub). Empty = in-app only.
     channel: str = ""
     severity: Literal["info", "warning", "critical"] = "warning"
     enabled: bool = True
@@ -101,6 +107,47 @@ class Verdict:
                 "matched": self.matched, "should_notify": self.should_notify,
                 "population": self.population, "reason": self.reason,
                 "observed": self.observed}
+
+
+class AgentAlertEvent(BaseModel):
+    """A rule that fired, recorded. The row Attention reads and delivery quotes.
+
+    Persisted BEFORE any send is attempted, and ``delivered`` is stamped afterwards, so a
+    channel that is down leaves a visible alert rather than nothing at all — the same
+    ordering monitor alerts use, for the same reason: the row is the source of truth and
+    delivery is a best-effort consequence of it.
+
+    ``value``/``threshold``/``population`` travel with the event instead of being looked up
+    from the rule later. A rule is editable; an alert is a statement about a moment, and it
+    has to keep meaning what it meant after somebody raises the threshold.
+    """
+
+    id: str = ""
+    rule_id: str
+    rule_name: str = ""
+    metric: str = ""
+    severity: str = "warning"
+    fired_at: str = ""
+    value: Optional[float] = None
+    threshold: Optional[float] = None
+    population: int = 0
+    window_minutes: int = 0
+    reason: str = ""
+    observed: dict = Field(default_factory=dict)
+    delivered: bool = False
+    delivery_detail: str = ""
+    acknowledged: bool = False
+    acknowledged_at: Optional[str] = None
+    org_id: str = ""
+
+
+def event_from_verdict(rule: AgentAlertRule, verdict: Verdict, *, fired_at: str) -> AgentAlertEvent:
+    """The verdict, frozen into the row that outlives it."""
+    return AgentAlertEvent(
+        rule_id=rule.id, rule_name=rule.name, metric=rule.metric, severity=rule.severity,
+        fired_at=fired_at, value=verdict.value, threshold=rule.threshold,
+        population=verdict.population, window_minutes=rule.window_minutes,
+        reason=verdict.reason, observed=dict(verdict.observed))
 
 
 def _pct(values: list[float], q: float) -> Optional[float]:

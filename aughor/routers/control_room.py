@@ -375,7 +375,7 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
 
 @router.get("/control-room/needs-human")
 def needs_human(limit: int = 100):
-    """One derived list over the three real sources — a VIEW, never a queue.
+    """One derived list over the four real sources — a VIEW, never a queue.
 
     Each row deep-links to its native resolve surface, so resolving anywhere
     removes it everywhere by construction (one store per source, no copies).
@@ -462,10 +462,34 @@ def needs_human(limit: int = 100):
     except Exception:
         logger.warning("needs-human: automation-run read failed", exc_info=True)
 
+    # Source D — agent alerts nobody has acknowledged (VA-6). A fired alert IS a thing
+    # waiting on a person, and acknowledging it is the resolve action, so it belongs in the
+    # same view as the other three rather than in a list of its own. The severity rides on
+    # the row: "the fleet error rate crossed 40%" and "a proposal needs a decision" are
+    # both waiting, but they are not equally urgent.
+    alert_count = 0
+    try:
+        from aughor.obs.agent_alert_store import list_events
+
+        for ev in list_events(unacknowledged_only=True, limit=limit):
+            alert_count += 1
+            rows.append({
+                "source": "agent_alert", "id": ev.id,
+                "title": f"{ev.rule_name}: {ev.reason[:140]}",
+                "connection_id": "",
+                "severity": ev.severity,
+                "since": ev.fired_at, "waiting_ms": _waiting_ms(ev.fired_at),
+                "resolve": {"surface": "agent_alert",
+                            "ack": f"/obs/agent-alerts/events/{ev.id}/ack"},
+            })
+    except Exception:
+        logger.warning("needs-human: agent-alert read failed", exc_info=True)
+
     rows.sort(key=lambda r: r.get("waiting_ms") or 0, reverse=True)
     return {
-        "count": inbox_count + paused_count + approval_count,
+        "count": inbox_count + paused_count + approval_count + alert_count,
         "sources": {"kinetic_inbox": inbox_count, "paused_runs": paused_count,
-                    "automation_approvals": approval_count},
+                    "automation_approvals": approval_count,
+                    "agent_alerts": alert_count},
         "rows": rows[: max(1, int(limit))],
     }

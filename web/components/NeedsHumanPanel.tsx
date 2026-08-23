@@ -1,22 +1,24 @@
 "use client";
 
 /**
- * CR4 — needs a human: ONE derived list over the three real sources (pending
+ * CR4 — needs a human: ONE derived list over the four real sources (pending
  * kinetic proposals · paused deep runs · automation effects at
- * approval_required). It is a VIEW — resolving through a native surface
- * removes the row here because there is one store per source and no copies.
+ * approval_required · unacknowledged agent alerts). It is a VIEW — resolving
+ * through a native surface removes the row here because there is one store per
+ * source and no copies.
  *
- * Inbox rows resolve inline (their accept/reject endpoints are one POST with
- * no follow-up stream); paused runs and automation approvals deep-link to
- * their native surfaces, where resume/inspection already work.
+ * Inbox rows and agent alerts resolve inline (accept/reject and acknowledge are
+ * each one POST with no follow-up stream); paused runs and automation approvals
+ * deep-link to their native surfaces, where resume/inspection already work.
  */
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
-import { StatusChip } from "@/components/brief/StatusChip";
+import { AgentAlertRulesPanel } from "@/components/agentops/AgentAlertRulesPanel";
+import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import {
-  acceptProposal, getNeedsHuman, rejectProposal,
+  acceptProposal, acknowledgeAgentAlert, getNeedsHuman, rejectProposal,
   type NeedsHuman, type NeedsHumanRow,
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
@@ -31,11 +33,24 @@ function humanAge(ms: number): string {
   return h < 24 ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-const SOURCE_CHIP: Record<NeedsHumanRow["source"], { hue: "caution" | "info" | "accent"; label: string }> = {
+type ChipSpec = { hue: ChipHue; label: string };
+
+const SOURCE_CHIP: Record<NeedsHumanRow["source"], ChipSpec> = {
   kinetic_inbox: { hue: "caution", label: "proposal" },
   paused_run: { hue: "info", label: "paused run" },
   automation_approval: { hue: "accent", label: "approval" },
+  agent_alert: { hue: "negative", label: "alert" },
 };
+
+/** An alert's own severity outranks the source chip: three rows can wait the same
+ *  number of minutes and not be equally urgent. */
+function chipFor(row: NeedsHumanRow): ChipSpec {
+  const base = SOURCE_CHIP[row.source];
+  if (row.source !== "agent_alert" || !row.severity) return base;
+  const hue: ChipHue = row.severity === "critical" ? "negative"
+    : row.severity === "info" ? "info" : "caution";
+  return { hue, label: row.severity };
+}
 
 export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   onOpenInvestigation?: (invId: string) => void;
@@ -55,6 +70,18 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
     const iv = setInterval(load, 10_000);
     return () => clearInterval(iv);
   }, [load]);
+
+  const resolveAlert = async (row: NeedsHumanRow) => {
+    setBusy(row.id);
+    try {
+      await acknowledgeAgentAlert(row.id);
+      load();
+    } catch (e) {
+      setError(String((e as Error)?.message || e));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const resolveInbox = async (row: NeedsHumanRow, action: "accept" | "reject") => {
     setBusy(row.id);
@@ -84,12 +111,20 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      {/* The rules come first: what is waiting on a person is downstream of what somebody
+          decided was worth being told about, and an empty Attention page with no rules
+          reads as "all clear" when it means "nothing is watching". */}
+      <AgentAlertRulesPanel />
       <MiniStatRow>
         <MiniStat value={data.count} label="Waiting on a human"
           tone={data.count > 0 ? "var(--amb4)" : "var(--t1)"} />
         <MiniStat value={data.sources.kinetic_inbox} label="Inbox proposals" />
         <MiniStat value={data.sources.paused_runs} label="Paused deep runs" />
         <MiniStat value={data.sources.automation_approvals} label="Automation approvals" />
+        {/* `?? 0` because this source is newer than the panel: an API that predates
+            VA-6 omits the key, and rendering `undefined` where a count belongs is a
+            worse answer than zero. */}
+        <MiniStat value={data.sources.agent_alerts ?? 0} label="Agent alerts" />
         {/* The leading indicator. A count says how many are waiting; the OLDEST says
             whether anything has been abandoned — three items waiting a minute and three
             waiting since Tuesday are the same count and a different situation. */}
@@ -101,12 +136,12 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       {data.rows.length === 0 ? (
         <div style={{ padding: 32, textAlign: "center", color: "var(--t3)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-          Nothing needs a human. All three sources are empty right now.
+          Nothing needs a human. All four sources are empty right now.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {data.rows.map(row => {
-            const chip = SOURCE_CHIP[row.source];
+            const chip = chipFor(row);
             return (
               <div key={`${row.source}:${row.id}`}
                 style={{ display: "flex", alignItems: "center", gap: 12,
@@ -137,6 +172,10 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                 {row.source === "automation_approval" && onOpenAutomations && (
                   <Button variant="secondary" size="xs"
                     onClick={onOpenAutomations}>Open automation</Button>
+                )}
+                {row.source === "agent_alert" && (
+                  <Button variant="secondary" size="xs" disabled={busy === row.id}
+                    onClick={() => resolveAlert(row)}>Acknowledge</Button>
                 )}
               </div>
             );

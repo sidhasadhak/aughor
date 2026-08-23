@@ -144,3 +144,52 @@ def test_no_generated_state_store_still_hardcodes_the_data_dir():
         if re.search(r'Path\(\s*["\']data["\']\s*\)|parent\s*/\s*["\']data["\']', p.read_text())
     ]
     assert offenders == [], f"re-hardcoded data/ instead of state_dir(): {offenders}"
+
+
+def test_every_store_env_override_is_pointed_at_the_test_dir():
+    """The generic guard the per-store tests above cannot be: find the overrides in the
+    CODE, then check the environment the suite is actually running in.
+
+    Every test in this file names one store, which means each was written after that store
+    leaked — the list only ever grows by costing somebody their data. `resolve_db_path` is
+    the one seam every SQLite store passes through, so the call sites are enumerable, and a
+    store added tomorrow without a conftest line fails here instead of quietly writing to
+    the developer's `data/` directory for a whole suite run.
+
+    Checked against `os.environ` rather than by parsing conftest: what matters is where the
+    path RESOLVES, not whether a line appears in a list. And the property asserted is "not
+    inside the repo's data/", not "inside one named temp dir" — the ledger and the registry
+    each get their own temp directory, and a guard that insisted on one prefix would have
+    reported those two as leaks and taught the next reader to loosen it.
+    """
+    import ast
+    import os
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    found: dict[str, str] = {}
+    for path in root.rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:                      # not ours to police here
+            continue
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and node.args):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name != "resolve_db_path":
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                found[first.value] = str(path.relative_to(root))
+
+    assert found, "found no resolve_db_path call sites — this guard has gone blind"
+    repo_data = (root.parent / "data").resolve()
+
+    def _leaks(env: str) -> bool:
+        resolved = pathlib.Path(os.environ.get(env, "") or "").resolve()
+        return not os.environ.get(env) or repo_data in resolved.parents or resolved == repo_data
+
+    unisolated = {env: where for env, where in sorted(found.items()) if _leaks(env)}
+    assert unisolated == {}, (
+        "these stores resolve to a path outside the suite's temp dir, so the tests write "
+        f"the developer's live data/: {unisolated}. Add each to the list in tests/conftest.py")

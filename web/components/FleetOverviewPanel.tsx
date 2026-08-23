@@ -68,9 +68,11 @@ const JOB_FILTERS: { id: JobFilter; label: string }[] = [
 
 const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
   kinetic_inbox: "proposal", paused_run: "paused run", automation_approval: "automation",
+  agent_alert: "alert",
 };
 const SOURCE_HUE: Record<NeedsHumanRow["source"], "accent" | "negative" | "caution"> = {
   kinetic_inbox: "accent", paused_run: "negative", automation_approval: "caution",
+  agent_alert: "negative",
 };
 
 /** A live age, counted up from the moment the item started waiting. */
