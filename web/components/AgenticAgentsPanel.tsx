@@ -528,7 +528,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
         </span>
       </div>
 
-      <PersonaHistory persona={persona} onChanged={onChanged} onError={onError} />
+      <AgentConfigHistory agent={persona} onChanged={onChanged} onError={onError} />
 
       <div style={{ display: "flex", gap: 8 }}>
         <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
@@ -538,35 +538,94 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
   );
 }
 
-/** H6 — the configuration history, next to the fields that write it.
+/** H6 + VA-7 — the configuration history, next to the fields that write it.
  *
  *  Only the settings that change how the agent answers are versioned, so a rename never
  *  shows up here. Restoring writes the old configuration forward as a new revision rather
- *  than rewinding: what was tried in between stays on the record. */
-function PersonaHistory({ persona, onChanged, onError }: {
-  persona: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
+ *  than rewinding: what was tried in between stays on the record.
+ *
+ *  VA-7: a row now says what the edit MOVED, and opens to show it. Before this it showed
+ *  a truncated copy of the instructions, which meant two revisions differing only in
+ *  schema scope looked identical, and two differing by one sentence of a long prompt
+ *  looked identical too — a history that could be counted but not read. */
+
+const FIELD_LABEL: Record<string, string> = {
+  instructions: "Instructions",
+  connection_id: "Connection",
+  schema_scope: "Schema scope",
+  doc_ids: "Documents",
+  pack_ids: "Packs",
+};
+
+/** One governing value as text. Lists read as a count plus their members, because
+ *  "3 documents" answers the question a reader actually has and the names answer the
+ *  next one. An empty scope is the RESTRICTIVE case here — say so rather than showing a
+ *  blank, which reads as "unset" and means the opposite. */
+export function valueText(field: string, value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.length ? `${value.length}: ${value.join(", ")}` : "none";
+  }
+  const text = String(value ?? "").trim();
+  if (text) return text;
+  return field === "instructions" ? "no instructions" : "not set";
+}
+
+function FieldDiff({ field, before, after }: {
+  field: string; before: unknown; after: unknown;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingTop: 6 }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {FIELD_LABEL[field] ?? field}
+      </span>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div className="aug-fs-xs"
+             style={{ flex: 1, minWidth: 0, color: "var(--t3)",
+                      background: "var(--bg-1)", border: "1px solid var(--b1)",
+                      borderRadius: "var(--r-chip)", padding: "4px 6px",
+                      whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {valueText(field, before)}
+        </div>
+        <div className="aug-fs-xs"
+             style={{ flex: 1, minWidth: 0, color: "var(--t2)",
+                      background: "var(--bg-1)", border: "1px solid var(--border)",
+                      borderRadius: "var(--r-chip)", padding: "4px 6px",
+                      whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {valueText(field, after)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AgentConfigHistory({ agent, onChanged, onError }: {
+  agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
 }) {
   const [revisions, setRevisions] = useState<AgentRevision[]>([]);
   const [busy, setBusy] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
-    listAgentRevisions(persona.id)
+    listAgentRevisions(agent.id)
       .then(r => { if (alive) setRevisions(r.revisions); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [persona.id, persona.config_rev]);
+  }, [agent.id, agent.config_rev]);
 
   const restore = async (version: number) => {
     setBusy(version);
     onError(null);
     try {
-      if (await restoreAgentRevision(persona.id, version)) onChanged();
+      if (await restoreAgentRevision(agent.id, version)) onChanged();
       else onError("Restore failed.");
     } finally { setBusy(null); }
   };
 
-  if (revisions.length <= 1) return null;
+  // Shown from the FIRST revision, not the second. An agent with one entry has a real
+  // thing to say — this is the configuration it was born with — and hiding until two
+  // meant every agent that predated revision tracking showed nothing at all.
+  if (!revisions.length) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -580,32 +639,67 @@ function PersonaHistory({ persona, onChanged, onError }: {
         // configuration (edit away, edit back) — saying "current" on both would claim two
         // heads; saying "Restore" would offer a button that changes nothing.
         const isHead = i === 0;
-        const sameAsHead = !isHead && r.config_rev === persona.config_rev;
+        const sameAsHead = !isHead && r.config_rev === agent.config_rev;
+        const previous = revisions[i + 1];
+        const changed = r.changed ?? [];
+        const expandable = changed.length > 0 && previous !== undefined;
+        const isOpen = open === r.version;
         return (
           <div key={r.version} style={{
-            display: "flex", alignItems: "center", gap: 8, fontSize: 12,
+            display: "flex", flexDirection: "column",
             padding: "5px 0", borderTop: "1px solid var(--b1)",
           }}>
-            <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
-            <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
-            <span style={{
-              flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-              whiteSpace: "nowrap", color: "var(--t3)",
-            }}>
-              {String((r.config as { instructions?: string }).instructions || "").trim()
-                || "no instructions"}
-            </span>
-            {isHead && <StatusChip hue="info" strength="soft">current</StatusChip>}
-            {sameAsHead && (
-              <span title="This configuration is the one running now — restoring it would change nothing.">
-                <StatusChip hue="muted" strength="soft">same as current</StatusChip>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
+              <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+              <span style={{ flex: 1, minWidth: 0, display: "flex", gap: 4,
+                             flexWrap: "wrap", alignItems: "center" }}>
+                {r.changed === null ? (
+                  <span style={{ color: "var(--t3)" }}>earlier history not loaded</span>
+                ) : changed.length === 0 ? (
+                  <span style={{ color: "var(--t3)" }}>
+                    {r.version === 1 ? "the configuration it started with" : "no governing change"}
+                  </span>
+                ) : (
+                  changed.map(f => (
+                    <StatusChip key={f} hue="muted" strength="soft">
+                      {FIELD_LABEL[f] ?? f}
+                    </StatusChip>
+                  ))
+                )}
               </span>
-            )}
-            {!isHead && !sameAsHead && (
-              <Button size="xs" variant="ghost" disabled={busy !== null}
-                onClick={() => restore(r.version)}>
-                {busy === r.version ? "Restoring…" : "Restore"}
-              </Button>
+              {expandable && (
+                <Button size="xs" variant="ghost"
+                  onClick={() => setOpen(isOpen ? null : r.version)}>
+                  {isOpen ? "Hide" : "What changed"}
+                </Button>
+              )}
+              {isHead && <StatusChip hue="info" strength="soft">current</StatusChip>}
+              {sameAsHead && (
+                <span title="This configuration is the one running now — restoring it would change nothing.">
+                  <StatusChip hue="muted" strength="soft">same as current</StatusChip>
+                </span>
+              )}
+              {!isHead && !sameAsHead && (
+                <Button size="xs" variant="ghost" disabled={busy !== null}
+                  onClick={() => restore(r.version)}>
+                  {busy === r.version ? "Restoring…" : "Restore"}
+                </Button>
+              )}
+            </div>
+            {isOpen && expandable && (
+              <div style={{ paddingLeft: 36, paddingBottom: 4 }}>
+                <div className="aug-fs-xs"
+                     style={{ display: "flex", gap: 8,
+                              color: "var(--t3)", paddingTop: 4 }}>
+                  <span style={{ flex: 1 }}>before (v{previous.version})</span>
+                  <span style={{ flex: 1 }}>after (v{r.version})</span>
+                </div>
+                {changed.map(f => (
+                  <FieldDiff key={f} field={f}
+                    before={previous.config[f]} after={r.config[f]} />
+                ))}
+              </div>
             )}
           </div>
         );

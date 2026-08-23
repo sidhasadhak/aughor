@@ -70,6 +70,43 @@ def record_revision(agent: UserAgent, *, author: str = "") -> Optional[str]:
         return None
 
 
+def changed_fields(before: dict, after: dict) -> list[str]:
+    """Which governing fields differ between two configurations, in declared order.
+
+    Order comes from ``GOVERNING_FIELDS`` rather than from either dict, so the same edit
+    reads the same way every time it is shown. Compared as JSON so ``doc_ids`` and
+    ``pack_ids`` — lists — compare by value; ``!=`` on two equal lists is already correct,
+    but a tuple that arrived from one path and a list from another is not, and the store
+    reads them back through ``json.loads``.
+    """
+    import json as _json
+    out = []
+    for f in GOVERNING_FIELDS:
+        a, b = before.get(f), after.get(f)
+        if _json.dumps(a, sort_keys=True, default=str) != _json.dumps(b, sort_keys=True, default=str):
+            out.append(f)
+    return out
+
+
+def ensure_baseline(agent: UserAgent) -> bool:
+    """Give an agent with NO history the configuration it currently has, as its first
+    revision. Returns whether one was written.
+
+    Measured 2026-08-24 against the live install: both custom agents had ZERO revisions.
+    The plane records revision 1 at creation — but only for agents created since it
+    shipped, and nothing backfilled the ones that predate it. For those the first edit
+    produced a one-sided history: a single entry, no predecessor, nothing to diff, and a
+    UI that hides itself below two entries. The feature was complete, wired, and
+    unreachable for every agent that existed.
+
+    Called before an edit is applied, so the recorded baseline is the configuration being
+    edited AWAY from — which is exactly what the diff needs on the other side.
+    """
+    if list_revisions(agent.id, limit=1):
+        return False
+    return record_revision(agent, author="baseline") is not None
+
+
 def list_revisions(agent_id: str, *, limit: int = 50) -> list[dict]:
     """The configuration history, newest first.
 
@@ -94,7 +131,19 @@ def list_revisions(agent_id: str, *, limit: int = 50) -> list[dict]:
             "author": payload.get("author", ""),
             "name": payload.get("name", ""),
             "config": payload.get("config") or {},
+            # Filled in below: a revision's diff is against its PREDECESSOR, which is the
+            # next entry in a newest-first list.
+            "changed": None,
         })
+    for i, entry in enumerate(out):
+        prev = out[i + 1] if i + 1 < len(out) else None
+        if prev is not None:
+            entry["changed"] = changed_fields(prev["config"], entry["config"])
+        elif entry["version"] == 1:
+            entry["changed"] = []       # the configuration it was born with: nothing changed
+        # else: the window was truncated by `limit`, so the predecessor exists but was not
+        # fetched. `None` says "unknown", which is not the same as "nothing changed" —
+        # rendering an empty list there would tell the reader an edit did nothing.
     return out
 
 

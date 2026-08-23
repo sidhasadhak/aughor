@@ -189,6 +189,14 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     updates = {k: v for k, v in fields.items() if k in _PATCHABLE and v is not None}
     if not updates:
         return get_agent(agent_id)
+    # Before the write, not after: an agent that predates revision tracking has no
+    # history, and recording its CURRENT configuration first is what gives the edge about
+    # to be made something to be measured against. Without this the first edit produces a
+    # single entry with no predecessor — a history that cannot be read as a change.
+    before = get_agent(agent_id)
+    if before is not None:
+        from aughor.custom_agents.revisions import ensure_baseline
+        ensure_baseline(before)
     sets, params = [], []
     for k, v in updates.items():
         sets.append(f"{k} = ?")

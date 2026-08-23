@@ -4798,6 +4798,12 @@ export interface AgentRevision {
   author: string;
   name: string;
   config: Record<string, unknown>;
+  /** Governing fields this revision moved, in declared order.
+   *
+   *  `[]` on revision 1 — it is the beginning, so nothing changed. `null` when the
+   *  predecessor exists but fell outside the requested window: unknown, which is NOT the
+   *  same as "this edit did nothing". */
+  changed: string[] | null;
 }
 
 export async function listAgentRevisions(

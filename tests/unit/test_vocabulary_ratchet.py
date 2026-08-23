@@ -264,7 +264,9 @@ BASELINE: dict[str, int] = {
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 281,  # paid down 2026-08-06: the user-agents graduation eval retired with its flag
+    "persona": 271,  # paid down 2026-08-24: the agent's configuration-history component and
+                     # its prop were named for the retired word; VA-7 rewrote it anyway
+                     # (was 281 — paid down 2026-08-06 when the graduation eval retired)
     "reforce": 1,
     "soma": 26,
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";
