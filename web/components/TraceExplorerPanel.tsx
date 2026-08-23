@@ -53,6 +53,10 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [verdictBusy, setVerdictBusy] = useState(false);
   const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
   const [logs, setLogs] = useState<TraceLogs | null>(null);
+  /** Session replay: how many events the run has "reached". null = show all,
+   *  which is the resting state — replay is a thing you opt into, not a mode
+   *  the panel starts in. */
+  const [replayAt, setReplayAt] = useState<number | null>(null);
   const [runBusy, setRunBusy] = useState(false);
 
   const loadList = useCallback(() => {
@@ -81,6 +85,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const loadVerdicts = useCallback(() => {
     getVerdicts(connId ?? undefined, 50).then(setVerdicts).catch(() => {});
   }, [connId]);
+  useEffect(() => { setReplayAt(null); }, [selected]);
+
   const loadLogs = useCallback(async () => {
     if (!selected) return;
     try { setLogs(await getTraceLogs(selected)); } catch { setLogs(null); }
@@ -234,14 +240,44 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               </div>
             ) : tab === "events" ? (
               <div style={{ flex: 1, overflowY: "auto", padding: "10px 20px" }}>
-                {detail.events.map(e => {
+                {/* Replay — step the run forward in `session_events` order, which is the
+                    order it actually happened in (`seq`, the store's own monotonic write
+                    order, not a timestamp two events can share). Events past the cursor
+                    are DIMMED rather than removed: the run's shape stays on screen, so
+                    stepping shows what was known at step N against what was still to
+                    come. Removing them would make every step look like a different run. */}
+                <div style={{ display: "flex", gap: 8, alignItems: "center",
+                  padding: "0 6px 8px" }}>
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setReplayAt(a => Math.max(1, (a ?? detail.events.length) - 1))}
+                    disabled={replayAt !== null && replayAt <= 1}>← Step</Button>
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setReplayAt(a => a === null ? 1
+                      : Math.min(detail.events.length, a + 1))}
+                    disabled={replayAt !== null && replayAt >= detail.events.length}>Step →</Button>
+                  <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                    {replayAt === null
+                      ? `${detail.events.length} events`
+                      : `step ${replayAt} of ${detail.events.length}`}
+                  </span>
+                  {replayAt !== null && (
+                    <Button variant="ghost" size="xs" onClick={() => setReplayAt(null)}>
+                      Show all
+                    </Button>
+                  )}
+                </div>
+                {detail.events.map((e, idx) => {
                   if (e.kind === "tool_call" && e.span_id && resultSpans.has(e.span_id)) return null;
+                  const reached = replayAt === null || idx < replayAt;
+                  const isCursor = replayAt !== null && idx === replayAt - 1;
                   const depth = e.span_id ? (depths.get(e.span_id) ?? 0) : 0;
                   const width = totalMs > 0 && e.duration_ms != null
                     ? Math.max(1.5, Math.min(100, (e.duration_ms / totalMs) * 100)) : null;
                   const isOpen = expanded === e.seq;
                   return (
-                    <div key={e.seq}>
+                    <div key={e.seq} style={{
+                      opacity: reached ? 1 : 0.28,
+                      borderLeft: isCursor ? "2px solid var(--blue3)" : "2px solid transparent" }}>
                       <Button variant="ghost" size="sm"
                         onClick={() => setExpanded(isOpen ? null : e.seq)}
                         style={{ display: "flex", width: "100%", height: "auto",
