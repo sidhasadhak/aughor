@@ -32,7 +32,9 @@ from typing import Any, Callable, Optional
 #: The reader-facing vocabulary. Small on purpose: a category nobody would filter by is a
 #: category that only adds a decision to whoever emits the next event.
 CATEGORIES: tuple[str, ...] = (
-    "data_access",         # a query ran against a connection
+    "data_access",         # data was read: a query against a connection, or a run's
+                           # captured payloads (which carry SQL and, when a capture
+                           # window is open, prompt content)
     "governance_change",   # a governed definition or tag changed
     "action_decision",     # the approval gate allowed, auto-allowed or blocked an action
     "model_call",          # an LLM call (the cost/usage trail — G3a)
@@ -44,6 +46,10 @@ KIND_CATEGORY: dict[str, str] = {
     "govern.tag": "governance_change",
     "metric.governance": "governance_change",
     "llm_call": "model_call",
+    # Arc VA decision ③ — admins may read any trace's payloads, and every such read is
+    # auditable. Filed as data_access because that is what an auditor asking "who saw
+    # what" filters on; the `kind` separates it from query execution within that view.
+    "trace.payload_access": "data_access",
 }
 
 #: The non-Ledger sink: the append-only `audit_log` table is entirely data access.
@@ -114,7 +120,8 @@ def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
         p = e.get("payload") or {}
         out.append(AuditEvent(
             category=category, kind=kind, at=str(e.get("created_at") or ""),
-            actor=str(p.get("actor") or p.get("set_by") or p.get("cleared_by") or ""),
+            actor=str(p.get("actor") or p.get("set_by") or p.get("cleared_by")
+                      or p.get("read_by") or ""),
             org_id=str(p.get("org_id") or e.get("org_id") or ""),
             conn_id=str(e.get("conn_id") or p.get("scope") or ""),
             summary=_summarize(kind, p), detail=p))
@@ -136,6 +143,12 @@ def _summarize(kind: str, p: dict) -> str:
                 f" ({p.get('from', '?')} → {p.get('to', '?')})")
     if kind == "llm_call":
         return f"{p.get('role') or 'model'} call"
+    if kind == "trace.payload_access":
+        who = p.get("read_by") or "unidentified"
+        whose = p.get("subject_user_id") or "unattributed"
+        content = p.get("content_events") or 0
+        return (f"{who} read trace {str(p.get('trace_id') or '?')[:12]} ({whose})"
+                + (f" — {content} events with prompt content" if content else ""))
     return kind
 
 
@@ -210,6 +223,7 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
 #: Sink readers, keyed by the category they contribute to.
 _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("data_access", _from_audit_table),
+    ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
     ("action_decision", lambda n: _from_ledger("action.approval", n)),
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),

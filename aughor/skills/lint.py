@@ -22,9 +22,7 @@ arbitrary text safe, and nothing here should be described as if it did.
 """
 from __future__ import annotations
 
-import math
 import re
-from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
@@ -67,38 +65,19 @@ _MODEL_ID = re.compile(
 )
 
 # ── 2 · credentials ──────────────────────────────────────────────────────────────
-# Prefixed key shapes are unambiguous. Everything else is entropy-judged below, because
-# `password=hunter2` in a tutorial is documentation and `password=<40 random chars>` is a
-# leak, and a rule that cannot tell them apart trains people to ignore it.
-_KEY_SHAPES = re.compile(
-    r"\b("
-    r"sk-[A-Za-z0-9_\-]{16,}"
-    r"|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
-    r"|AKIA[0-9A-Z]{12,}"
-    r"|xox[baprs]-[A-Za-z0-9\-]{10,}"
-    r"|AIza[0-9A-Za-z_\-]{30,}"
-    r"|eyJ[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{10,}"
-    r")\b"
+# The patterns and the entropy judgement live in `aughor/security/credentials.py`, not
+# here: VA-5's trace-payload inspector needs exactly the same call — is this a real key or
+# a documentation placeholder — and two copies of that judgement drift into two different
+# answers for the same string. This module keeps the POLICY (what a skill may carry);
+# the security module owns the DETECTION.
+from aughor.security.credentials import (  # noqa: E402
+    KEY_SHAPES as _KEY_SHAPES,
+    PLACEHOLDER as _PLACEHOLDER,
+    SECRET_ASSIGN as _SECRET_ASSIGN,
+    entropy as _entropy,
+    MIN_SECRET_LEN as _MIN_SECRET_LEN,
+    SECRET_ENTROPY as _SECRET_ENTROPY,
 )
-_SECRET_ASSIGN = re.compile(
-    r"(?i)\b(api[_\-]?key|secret|token|password|passwd|pwd|bearer)\b\s*[:=]\s*"
-    # 3+, not 12+: `password: mypass` is short AND worth a reviewer's glance. Length and
-    # entropy decide BLOCK vs WARN below; they must not decide whether we LOOK at all.
-    r"[\"']?([A-Za-z0-9/+_\-\.]{3,})[\"']?"
-)
-#: Obvious placeholders are documentation, not leaks.
-_PLACEHOLDER = re.compile(
-    r"(?i)^(your|my|the)?[_\-]?(api[_\-]?key|secret|token|password|value|xxx+|placeholder|"
-    r"changeme|example|redacted|dummy|test|fake|<[^>]+>|\$\{?[a-z_]+\}?|hunter2)$"
-)
-
-
-def _entropy(s: str) -> float:
-    if not s:
-        return 0.0
-    counts = Counter(s)
-    n = len(s)
-    return -sum((c / n) * math.log2(c / n) for c in counts.values())
 
 
 # ── 3 · instruction injection ────────────────────────────────────────────────────
@@ -158,7 +137,7 @@ def lint_skill(text: str, *, name: str = "") -> list[Finding]:
             value = m.group(2)
             if _PLACEHOLDER.match(value):
                 continue
-            if _entropy(value) >= 3.2 and len(value) >= 16:
+            if _entropy(value) >= _SECRET_ENTROPY and len(value) >= _MIN_SECRET_LEN:
                 out.append(Finding(
                     "credential", Severity.BLOCK, i, f"{m.group(1)}=…",
                     "assigns a high-entropy literal to a secret-shaped name. A placeholder "

@@ -47,12 +47,91 @@ _CONTENT_KEYS = ("system_prompt", "user_prompt", "response")
 
 
 def _mark_content(event: dict) -> dict:
-    """Label prompt content so a UI can gate it explicitly rather than discover
-    it by accident: `content_captured` says whether this row carries any."""
+    """Label prompt content, and mask any credential inside the payload.
+
+    `content_captured` says whether this row carries prompt text, so a UI can gate it
+    explicitly rather than discover it by accident.
+
+    The masking is the one seam every raw-event surface passes through — the waterfall,
+    `/activity` and its stream — which is why it lives here rather than at three call
+    sites. What it removes is deliberately narrow: **credentials only, never PII.** Arc VA's decision ③ is that an admin sees everything on a trace, audited, so
+    the questions, the SQL and the captured prompts are theirs to read. A credential is
+    the exception because it is not the subject's data at all — it is an access token
+    that reading would hand over, and a key rendered into a trace viewer is also in a
+    browser cache and in whatever the reader pastes into a bug report.
+
+    `credentials_masked` is reported rather than silent: a viewer that quietly alters
+    what it shows is worse than one that shows everything, because nobody can tell which
+    it did.
+    """
     payload = event.get("payload")
-    if isinstance(payload, dict) and any(k in payload for k in _CONTENT_KEYS):
-        event["content_captured"] = True
+    if isinstance(payload, dict):
+        if any(k in payload for k in _CONTENT_KEYS):
+            event["content_captured"] = True
+        try:
+            from aughor.security.credentials import mask_payload
+            masked, n = mask_payload(payload)
+            if n:
+                event["payload"] = masked
+                event["credentials_masked"] = n
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "credential masking is best-effort; the event still renders",
+                     counter="obs.mask_credentials")
     return event
+
+
+def _audit_payload_access(trace_id: str, events: list[dict],
+                          investigation_id: str | None) -> None:
+    """Record that someone read this run's payloads — Arc VA decision ③.
+
+    The decision reads: admins get full payload access on all traces, **with every access
+    logged as an auditable event (who, whose trace, when)** — and it is explicit that the
+    audit trail *is* the control, so it ships with the access rather than after it. The
+    access shipped in #372. This is the half that did not.
+
+    Why it needs saying at all: this route is gated at ``admin.manage_org``, so everyone
+    who can call it is entitled to what it returns. That makes the access control
+    uninteresting and the ACCOUNTABILITY the whole point — an entitlement nobody can
+    review is indistinguishable from no policy. `who` is the caller; `subject_user_id` is
+    whose run it was, which is what makes "did anyone read MY runs" answerable rather than
+    just "were traces read".
+
+    Journalled to the ledger (not `audit_log`, which is query-execution shaped: it wants
+    SQL, a verdict and a row count, and inventing those to fit would put a lie in the
+    audit trail). `emit` stamps org and the ambient trace itself. Never raises — a
+    failure to journal must not deny a legitimate read — but it IS counted, so a silently
+    unrecorded surface shows up as a rising counter rather than as nothing at all.
+    """
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.kernel.ledger import Ledger
+        from aughor.org.context import current_user_id
+        Ledger.default().emit(
+            "trace.payload_access",
+            {
+                "trace_id": trace_id,
+                "investigation_id": investigation_id,
+                # Whose run this was. Empty on an unidentified/local run, which is the
+                # honest answer rather than a guess.
+                "subject_user_id": next(
+                    (e["user_id"] for e in events if e.get("user_id")), ""),
+                "subject_agent_id": next(
+                    (e["agent_id"] for e in events if e.get("agent_id")), ""),
+                "read_by": current_user_id(),
+                "events": len(events),
+                # The two facts that make the record worth reading: whether prompt
+                # CONTENT was actually exposed by this read, and whether anything was
+                # masked on the way out.
+                "content_events": sum(1 for e in events if e.get("content_captured")),
+                "credentials_masked": sum(int(e.get("credentials_masked") or 0)
+                                          for e in events),
+            },
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        tolerate(exc, "payload-access journal is best-effort; the read still returns",
+                 counter="obs.trace.payload_access_audit")
 
 
 # ── CR1: traces ──────────────────────────────────────────────────────────────────
@@ -161,6 +240,8 @@ def get_trace(trace_id: str):
     # and every llm_call row in this store has none.
     from aughor.obs.trace_tree import build_timeline, flow_edges
     timeline = build_timeline(events)
+
+    _audit_payload_access(trace_id, events, inv_id)
 
     return {
         "measured": True,

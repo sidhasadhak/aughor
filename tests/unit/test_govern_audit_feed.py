@@ -35,7 +35,11 @@ def test_every_governance_kind_is_categorized():
     The kinds are listed here rather than discovered, so ADDING a sink means editing this
     list — which is the moment to also decide its category.
     """
-    emitted = {"action.approval", "govern.tag", "metric.governance", "llm_call"}
+    emitted = {"action.approval", "govern.tag", "metric.governance", "llm_call",
+               # VA-5: an admin reading a trace's payloads. Decision ③ makes the audit
+               # trail the control, so this kind being uncategorized would mean the
+               # control exists and nobody can see it.
+               "trace.payload_access"}
     assert uncategorized_kinds(emitted) == [], (
         "a governance-emitting kind has no category — add it to KIND_CATEGORY so the "
         "audit feed can surface it, or the sink is invisible to every reader")
