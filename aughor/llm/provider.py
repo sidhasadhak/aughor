@@ -1230,7 +1230,9 @@ def _record_llm_call(*, backend: str, model: str, role: str,
     took, how hard it had to try, or whether the fallback quietly swapped it
     mid-run" — the questions a measurement must answer before it can be trusted.
     The dedicated per-call record (``telemetry.log_generation``) existed but had
-    no call sites, so all of it was discarded.
+    no call sites, so all of it was discarded — until VA-3 gave it this one. It is
+    now the export path too: the same measurement, in the OTel GenAI vocabulary, on
+    a span an external backend can read.
 
     Provider, model and token counts go to real columns rather than payload JSON:
     "tokens by model this week" should be a GROUP BY, not a JSON extraction —
@@ -1244,6 +1246,11 @@ def _record_llm_call(*, backend: str, model: str, role: str,
     Strict no-op when the flag is off; never raises (the sink swallows).
     """
     from aughor.obs import session_log
+    # Captured ONCE and reused below. `capture_prompt` spends the operator's
+    # window budget when it stores content, so calling it again for the export
+    # path would charge two captures for one model call — and the number the
+    # operator was shown would stop meaning what it says.
+    captured = session_log.capture_prompt(system, user, _response_text(output))
     session_log.emit(
         session_log.LLM_CALL, name=model, ok=ok, duration_ms=round(ms, 1),
         error_class=error_class, provider=backend, model=model,
@@ -1257,8 +1264,27 @@ def _record_llm_call(*, backend: str, model: str, role: str,
                     and completion_tokens is None else {}),
                  # Content only while a prompt-capture WINDOW is open;
                  # the helper owns the capping + truncation-marking policy.
-                 **session_log.capture_prompt(system, user, _response_text(output))},
+                 **captured},
     )
+    # VA-3 — the same call, exported. `telemetry.log_generation` was written for
+    # exactly this and had no caller for its entire life, so a trace shipped to
+    # Jaeger, Tempo, Grafana or Langfuse arrived carrying our phases and **not one
+    # model call**: no model name, no provider, no token counts. This is the one
+    # chokepoint every backend funnels through, so it is the only place the wire
+    # belongs. Strict no-op unless an OTLP endpoint is configured.
+    try:
+        from aughor import telemetry
+        telemetry.log_generation(
+            telemetry.current_trace_id(), role, model,
+            backend=backend, prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens, duration_ms=ms,
+            temperature=temperature, error_class=error_class,
+            content=captured or None,
+            metadata={"role": role, "fallback": fallback, "streamed": streamed,
+                      **({"retries": retries} if retries else {})},
+        )
+    except Exception as exc:  # telemetry must never break the call it records
+        logger.debug("generation export skipped: %s", exc)
 
 
 def _response_text(output: Any) -> Optional[str]:

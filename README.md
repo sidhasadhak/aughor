@@ -264,7 +264,7 @@ One corpus at three altitudes plus the **Evidence** layer. The Briefing is **con
 | Analytics | DuckDB, PostgreSQL |
 | LLM runtime | Ollama / Groq / Together / Anthropic (configurable per role) |
 | Statistics · SQL | scipy, statsmodels, numpy · SQLGlot |
-| Vector · Observability | Qdrant + ChromaDB · Langfuse, OpenTelemetry, MLflow tracing (`obs.mlflow`) |
+| Vector · Observability | Qdrant + ChromaDB · OpenTelemetry spans with the GenAI semantic conventions — phases, guarded SQL, delegation hops and every model call with provider, model and token counts. Point `AUGHOR_OTLP_ENDPOINT` at Jaeger, Tempo, a collector, VoltOps or Langfuse; unset means no export. MLflow via `AUGHOR_MLFLOW_TRACKING_URI` |
 | State · Packaging | SQLite (history, registry, evidence, audit) · uv |
 
 ## Project structure

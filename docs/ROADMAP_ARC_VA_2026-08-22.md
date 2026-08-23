@@ -11,7 +11,8 @@
 > | VA-2 delegation | ✅ **shipped** — #376 |
 > | VA-1 skills plane | ✅ **shipped** — #377 (deliverables 4–5 outstanding) |
 > | VA-5 node view | ✅ **shipped** — #380 (payload inspector · trace logs · feedback · trace API · replay outstanding) |
-> | VA-3 · VA-7 · VA-8 · VA-9 · VA-10 | planned below |
+> | VA-3 OTLP standardization | ✅ shipped 2026-08-23 |
+> | VA-7 · VA-8 · VA-9 · VA-10 | planned below |
 > | VA-4 automations dataflow | parked (see §2) |
 >
 > Three §4 decisions are LOCKED by the user; the rest remain open.
@@ -46,7 +47,7 @@ machinery (concluded 4×).
 | Substrate | State | Consequence for the plan |
 |---|---|---|
 | `session_events` | 8,184 rows; columns include **`span_id`, `parent_span_id`**, `duration_ms`, `at`, `trace_id`, `payload`, token counts, `role`, `fallback`, `job_id`, `charter_id`, `org_id`, `user_id` | **The waterfall tree already exists in data.** VA-5 is a rendering + API problem, not a schema problem |
-| `telemetry.py` | Imports OTel SDK + OTLP HTTP exporter (~line 126); Langfuse *attribute conventions* on spans; Langfuse **SDK backend silently dead** (v2 API vs 4.7.1) | VA-3 is finishing a half-soldered wire + a deletion, not new plumbing |
+| `telemetry.py` | Imports OTel SDK + OTLP HTTP exporter (~line 126); Langfuse *attribute conventions* on spans; Langfuse **SDK backend silently dead** (v2 API vs 4.7.1) | ⚠️ **This cell was wrong on both counts.** The deletion was already done (OA·LF-1), and the wire was not half-soldered — model calls and tool spans reached an external backend by no path at all. See VA-3 below |
 | `custom_agents/revisions.py` | **Complete**: `record_revision` (fires on every `update_agent`), `list_revisions`, `revision_config(agent_id, version)` | **VA-7's versioning substrate is live.** What's missing is labels, approval, diff UI, eval-on-change |
 | `platform_tools.py` | 14 tools, closure-bound, `platform_tools(connection_id, *, session_id)` → `list[ToolSpec]` | VA-2 adds tool #15 at one seam |
 | `UserAgent` | id, name, instructions, connection_id, schema_scope, doc_ids, pack_ids, owner, enabled, last_eval | VA-2 needs one field (`purpose`); VA-8 needs one (`guardrails`) |
@@ -181,23 +182,64 @@ cost multiplication (each hop is a full turn) — surface it in the run's cost.
 
 ---
 
-### VA-3 — OTLP standardization (≈3–4 days)
+### VA-3 — OTLP standardization — ✅ SHIPPED 2026-08-23
 
 **Goal:** one telemetry contract, any backend. **BYO-observability — the twin of BYOK.**
 
-**Deliverables**
-1. **OTel GenAI semantic conventions** on `session_log` spans (`gen_ai.system`,
-   `gen_ai.request.model`, `gen_ai.usage.input_tokens`, …) alongside the keys we already
-   emit.
-2. **Delete the dead Langfuse SDK backend** (v2 API against 4.7.1 — silently dead;
-   removing it is the honest move, and the Langfuse *attribute* conventions stay).
-3. `AUGHOR_OTLP_ENDPOINT` (+ headers) as config; ship **off** by default (pure local),
-   on when set. ✅ **LOCKED by decision ④.** Langfuse / VoltOps / Grafana / Jaeger all become "point it here".
-4. **This closes §7.5's LF-2/LF-3 topology question** — it collapses into "where does the
+**⚠️ The pre-check moved the wave's scope — again (9 for 9).** Two of the four planned
+deliverables were wrong about the starting state, in opposite directions:
+
+| Planned | Measured 2026-08-23 |
+|---|---|
+| ~~Delete the dead Langfuse SDK backend~~ | **Already gone.** OA·LF-1 shipped it: the v2 span path is deleted, `pyproject` pins `langfuse>=4,<5`, and `tests/unit/test_telemetry_sdk_surface.py` is the rot guard. Nothing to do |
+| GenAI conventions "alongside the keys we already emit" | `gen_ai` had **zero occurrences repo-wide** |
+| *(not in the plan at all)* | 🔴 **`telemetry.log_generation` had no caller in its entire life, and `mlflow_tool_span` drove three sinks that are all LOCAL.** An exported trace was our phase spans and **nothing else**: no model calls, no models, no token counts, no guarded SQL, no delegation hops. The receipt this wave demanded — "the trace tree with model calls, tool calls and token counts" — was not one step from true; **two of the three span families reached an external backend by no path at all** |
+
+**Delivered**
+1. `aughor/obs/genai.py` — the OTel **GenAI** conventions as a translation layer, keys
+   hardcoded (the incubating semconv path is private and would turn a dependency bump
+   into an `ImportError` inside telemetry) and pinned by `tests/unit/test_genai_semconv.py`.
+   🔑 **Unknown providers pass through, never forced into the enum:** measured across
+   2,506 calls, `openrouter` (1,322) and `ollama` have no well-known spec value, and
+   relabelling a gateway as `openai` would misattribute its spend in every downstream
+   cost aggregate.
+   ⚠️ The conventions ride the **exported** spans, not the local tables. `session_events`
+   already has typed `provider`/`model`/`prompt_tokens` columns; a parallel `gen_ai.*`
+   namespace in SQLite would be the same numbers twice, with no reader, and two places
+   to drift. The conventions exist to be portable — that is where they were put.
+2. **Model calls reach the pipeline.** `provider._record_llm_call` — the one chokepoint
+   every backend funnels through — now also exports a generation span, written
+   *retroactively* from the latency it already knows, so it has a real duration instead
+   of arriving zero-width.
+3. **Tool spans reach the pipeline.** `mlflow_tool_span`'s eight call sites (guarded SQL,
+   its retries, delegation hops, agent evaluation) now emit an OTel span. A delegation hop
+   is `invoke_agent`, not `execute_tool` — collapsing another agent's whole run into a
+   tool call is what makes a delegation tree unreadable in an external viewer.
+4. **The export is a tree, not a list.** `_otel_parent` nests a span under the live one
+   when it is on the same trace, and only pins to the synthetic root otherwise — so an
+   unrelated ambient span (a request span) can never adopt the run.
+5. `AUGHOR_OTLP_ENDPOINT` / `_HEADERS` / `_PROTOCOL`, **off unless set** (decision ④),
+   defaulting to OTLP/HTTP because that is what every target accepts from a pasted URL.
+   OpenTelemetry's own `OTEL_EXPORTER_OTLP_ENDPOINT` still works, second, on its
+   historical gRPC transport — adding our name must not silently unplug a deployment.
+6. **Content is not exported by turning telemetry on.** Prompt/response text rides only
+   an open `capture_prompt` window — one gate, reused, and captured **once** per call so
+   the export path cannot spend an operator's budget twice. What *does* always travel is
+   the measurement plus the operational attributes a span exists to explain (a
+   `sql.execute` span carries its SQL — a trace you cannot read the query off is not
+   worth exporting), capped at 2,000 chars and **marked** when truncated. `.env.example`
+   states this as two lists rather than one reassuring sentence, because "content is not
+   exported" would have been true and misleading.
+7. **This closes §7.5's LF-2/LF-3 topology question** — it collapses into "where does the
    endpoint point".
 
-**Receipt:** run a Jaeger (or otel-collector) container, drive one deep analysis, show the
-trace tree with model calls, tool calls and token counts on the spans.
+**Receipt (live, over the wire):** a real OTLP/HTTP receiver, fed by the real production
+functions, decoding protobuf: 8 spans, one trace matching the derived id, `service.name`
+= `aughor`, 19,707 tokens on the spans, `cross_section → {chat gemini-3.1-flash-lite,
+sql.execute, invoke_agent Luxury Revenue Analyst → chat nvidia/nemotron-…}`.
+🔑 **The receipt caught a defect every unit test had passed over:** generation spans were
+pinned to the synthetic root and arrived as *siblings* of the phase that made them. Fixed,
+and now covered by two tests that fail without it.
 **Risk:** span volume/cost — sample by default at the collector, not in our code.
 
 ---
@@ -368,7 +410,7 @@ NOW
   VA-0  ship Agent Ops                     (built — the chassis)
 
 FOUNDATION (parallel-safe)
-  VA-3  OTLP conventions        (3–4 d)  ─┐  small, unblocks nothing but pays forever
+  VA-3  OTLP conventions        ✅ SHIPPED   small, unblocks nothing but pays forever
   VA-1  skills plane            (1 wk)   ─┤  content multiplier, independent
   VA-2  delegation              (1–2 wk) ─┘  ← the biggest gap; gates VA-5's node view
 

@@ -96,14 +96,17 @@ def test_end_trace_removes_from_internal_dict():
 # ── log_generation ────────────────────────────────────────────────────────────
 
 def test_log_generation_no_crash_when_disabled():
-    """log_generation must be a silent no-op when Langfuse is not configured."""
+    """log_generation must be a silent no-op when no endpoint is configured."""
     import aughor.telemetry as tel
     tel.log_generation(
         trace_id="",
         name="decompose",
         model="llama-3.3-70b",
-        input_messages=[{"role": "user", "content": "Hello"}],
-        output="Some output",
+        backend="groq",
+        prompt_tokens=120,
+        completion_tokens=8,
+        duration_ms=430.0,
+        content={"user_prompt": "Hello", "response": "Some output"},
         metadata={"hypothesis_id": "h1"},
     )
 
@@ -115,8 +118,7 @@ def test_log_generation_with_unknown_trace_id_no_crash():
         trace_id="unknown-id",
         name="synthesize",
         model="qwen2.5-coder:32b",
-        input_messages=[],
-        output="report text",
+        backend="ollama",
     )
 
 
@@ -377,14 +379,69 @@ def test_only_the_first_span_claims_the_root(spans):
 def test_generation_is_typed_so_langfuse_renders_it_as_a_model_call(spans):
     """The observation type is what separates a generation from a plain span."""
     import aughor.telemetry as tel
-    tel.log_generation("inv-sliced", "narrator", "llama-3.3-70b",
-                       [{"role": "user", "content": "q"}], "out")
+    tel.log_generation("inv-sliced", "narrator", "llama-3.3-70b", backend="groq",
+                       content={"user_prompt": "q", "response": "out"})
     (gen,) = spans.get_finished_spans()
-    assert gen.name == "narrator"
+    # The span NAME follows the GenAI convention `{operation} {model}` (VA-3), not
+    # our internal role: a reader grouping model calls groups on this string, and
+    # "narrator" is a fact about our pipeline that no external backend can use.
+    assert gen.name == "chat llama-3.3-70b"
     assert gen.attributes[tel._LF_OBS_TYPE] == "generation"
     assert gen.attributes[tel._LF_OBS_MODEL] == "llama-3.3-70b"
     assert "out" in gen.attributes[tel._LF_OBS_OUTPUT]
     assert _trace_ids(spans) == {tel._lf_trace_id("inv-sliced")}
+
+
+def test_generation_carries_the_genai_conventions_every_other_backend_reads(spans):
+    """Langfuse's keys make it render; these make it legible in Jaeger, Tempo,
+    Grafana or a bare collector — the point of VA-3."""
+    import aughor.telemetry as tel
+    from aughor.obs import genai
+    tel.log_generation("inv-sliced", "narrator", "gemini-3.1-flash-lite",
+                       backend="gemini", prompt_tokens=1200, completion_tokens=85,
+                       duration_ms=1500.0, temperature=0.2)
+    (gen,) = spans.get_finished_spans()
+    assert gen.attributes[genai.OPERATION_NAME] == "chat"
+    assert gen.attributes[genai.PROVIDER_NAME] == "gcp.gemini"
+    assert gen.attributes[genai.REQUEST_MODEL] == "gemini-3.1-flash-lite"
+    assert gen.attributes[genai.USAGE_INPUT_TOKENS] == 1200
+    assert gen.attributes[genai.USAGE_OUTPUT_TOKENS] == 85
+
+
+def test_generation_span_has_the_duration_the_call_actually_took(spans):
+    """Written retroactively — the caller already knows the latency, so the span is
+    back-dated instead of arriving zero-width. A generation with no duration makes
+    a waterfall useless, which is the surface this data exists for."""
+    import aughor.telemetry as tel
+    tel.log_generation("inv-sliced", "narrator", "m", backend="groq", duration_ms=1500.0)
+    (gen,) = spans.get_finished_spans()
+    elapsed_ms = (gen.end_time - gen.start_time) / 1_000_000
+    assert 1400 <= elapsed_ms <= 1700, f"span lasted {elapsed_ms}ms, not ~1500"
+
+
+def test_generation_without_a_capture_window_exports_no_content(spans):
+    """The user's decision, pinned: turning telemetry on must not start shipping
+    prompt text off-box. Content rides only what `capture_prompt` already stored."""
+    import aughor.telemetry as tel
+    tel.log_generation("inv-sliced", "narrator", "m", backend="groq",
+                       prompt_tokens=10, completion_tokens=2, content=None)
+    (gen,) = spans.get_finished_spans()
+    assert tel._LF_OBS_INPUT not in gen.attributes
+    assert tel._LF_OBS_OUTPUT not in gen.attributes
+    # …while the measurement still travels in full.
+    assert gen.attributes[tel._LF_OBS_MODEL] == "m"
+
+
+def test_unreported_usage_never_becomes_zero_tokens_on_the_wire(spans):
+    """Local backends report no usage; a zero would make every downstream cost
+    aggregate silently understate itself."""
+    import aughor.telemetry as tel
+    from aughor.obs import genai
+    tel.log_generation("inv-sliced", "narrator", "llama3", backend="ollama",
+                       prompt_tokens=None, completion_tokens=None)
+    (gen,) = spans.get_finished_spans()
+    assert genai.USAGE_INPUT_TOKENS not in gen.attributes
+    assert genai.USAGE_OUTPUT_TOKENS not in gen.attributes
 
 
 def test_end_trace_finalises_a_trace_it_did_not_create(spans):
