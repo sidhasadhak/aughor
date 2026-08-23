@@ -43,6 +43,8 @@ answers that question through ``RETURNING``.
 from __future__ import annotations
 
 import hashlib
+import logging
+from collections import OrderedDict
 import os
 import re
 import sqlite3
@@ -69,6 +71,113 @@ def _count_backend(kind: str) -> None:
         stats.inc(f"store.backend.{kind}")
     except Exception:
         pass        # no logger in this module, and a counter is not worth one
+
+
+# ── WAL keepalive: why one idle connection per store is load-bearing ──────────
+#
+# Platform stores open a connection PER OPERATION and never close it explicitly — the
+# connection dies whenever the GC finalizes it. So the live-connection count for a store
+# oscillates through ZERO constantly, and SQLite deletes `-wal` and `-shm` on the last
+# close. Measured: after `assign_role`, `rbac.db-shm` does not exist. Every operation
+# unlinks and recreates the write-ahead log.
+#
+# That churn is what turned a theoretical race into four identical crashes. The WAL index
+# lives in `-shm`, which is ALWAYS memory-mapped in WAL mode. A thread reading through
+# `walFindFrame` holds that mapping; another thread's last-close unlinks and truncates the
+# file underneath it; the next page-in fails and the process takes SIGBUS —
+# `EXC_BAD_ACCESS / FS pagein error: 22`, no Python traceback, the API just dies.
+#
+# One idle connection per store removes the precondition rather than narrowing the window:
+# SQLite finalizes the WAL only on the LAST close, and with a keepalive open there is no
+# last close until the process exits. It holds no locks and runs no statements after the
+# initial attach, so it costs one file descriptor and nothing else. Normal auto-checkpoint
+# still bounds `-wal` growth; only the final cleanup is deferred to exit, which is what a
+# long-running server should do anyway.
+_LOG = logging.getLogger(__name__)
+
+_KEEPALIVE: "OrderedDict[str, sqlite3.Connection]" = OrderedDict()
+_KEEPALIVE_LOCK = threading.Lock()
+#: Bounds file descriptors. The app has ~35 stores, so this is never reached in
+#: production — but a caller that keeps redirecting store paths (every test gets a fresh
+#: tmp dir) grows it without limit, and running out of descriptors would be a worse
+#: failure than the one this prevents.
+_KEEPALIVE_MAX = 256
+#: Counted rather than raised. Visible without depending on any store — see the warning
+#: in `_hold_wal_open` about why this cannot go through the ledger.
+_KEEPALIVE_REFUSED = 0
+
+
+def _evict_one_locked() -> None:
+    """Close the least-recently-opened keepalive. Caller holds the lock.
+
+    Evicting is safe for the same reason any close is: SQLite finalizes the WAL only when
+    the LAST connection goes, so if another connection is open our close is not last and
+    unlinks nothing — and if ours IS the last, there is no other reader left to strand.
+    What eviction must never do is REFUSE a live store, which is what a hard cap did:
+    at 256/256 every store opened afterwards ran silently unprotected, and the suite hit
+    that within one run.
+    """
+    # Remove FIRST, close second. A close that raises must still have shrunk the
+    # registry, because the caller loops until it does — swallowing a failure that left
+    # the entry in place spun forever and hung the suite.
+    try:
+        _key, conn = _KEEPALIVE.popitem(last=False)
+    except (AttributeError, TypeError, KeyError):
+        if not _KEEPALIVE:
+            return
+        _key = next(iter(_KEEPALIVE))
+        conn = _KEEPALIVE.pop(_key)
+    try:
+        conn.close()
+    except Exception:                           # noqa: BLE001 — a close we cannot do is not fatal
+        pass
+
+
+def _hold_wal_open(path: Path) -> None:
+    """Keep one idle connection to ``path`` so SQLite never sees a last-close.
+
+    Best-effort by construction: this exists to protect the store, so a failure here must
+    never break the store. A store that cannot hold its WAL open still works — it is just
+    back to the behaviour that crashes.
+
+    ⚠️ Reporting here is a plain log line, never ``tolerate``. The ledger is itself a store
+    opened through ``connect_store``, so reporting a keepalive failure through it
+    re-enters this function — under the lock that deadlocks, and after the lock it
+    recurses without bound. Both hung the suite. Nothing in this function may touch a code
+    path that opens a store.
+    """
+    key = str(path)
+    if key in _KEEPALIVE:                       # fast path, no lock on the common case
+        return
+
+    failure: BaseException | None = None
+    with _KEEPALIVE_LOCK:
+        if key in _KEEPALIVE:
+            return
+        # Bounded, not `while`. An eviction that cannot make progress must not become an
+        # infinite loop inside a held lock — that is a hang, which is worse than the
+        # crash this whole mechanism exists to prevent.
+        for _ in range(len(_KEEPALIVE) + 1):
+            if len(_KEEPALIVE) < _KEEPALIVE_MAX:
+                break
+            _evict_one_locked()
+        try:
+            c = sqlite3.connect(key, check_same_thread=False)
+            c.execute("PRAGMA journal_mode=WAL")
+            # Force the WAL attach NOW. A connection that never reads has not opened the
+            # -shm yet, and one that has not opened it does not hold it open.
+            c.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            _KEEPALIVE[key] = c
+        except Exception as exc:                # noqa: BLE001 — see docstring
+            failure = exc
+
+    if failure is not None:
+        global _KEEPALIVE_REFUSED
+        _KEEPALIVE_REFUSED += 1
+        if _KEEPALIVE_REFUSED == 1:             # once, so a hot path cannot flood the log
+            _LOG.warning("store WAL keepalive unavailable for %s: %s — stores opened from "
+                         "here run without it and are exposed to the WAL-unlink crash",
+                         key, failure)
 
 
 def connect_store(
@@ -99,6 +208,8 @@ def connect_store(
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         conn = tune(sqlite3.connect(str(p), check_same_thread=check_same_thread))
+        # AFTER the first real connection, so the file and its WAL exist before we pin them.
+        _hold_wal_open(p)
         if row_factory:
             conn.row_factory = sqlite3.Row
         return conn
