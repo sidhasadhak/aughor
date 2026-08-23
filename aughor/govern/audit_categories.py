@@ -119,7 +119,11 @@ def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
     for e in _ledger_events(kind, limit):
         p = e.get("payload") or {}
         out.append(AuditEvent(
-            category=category, kind=kind, at=str(e.get("created_at") or ""),
+            # The ledger's column is `at`. `created_at` was read for as long as this
+            # sink existed and matched nothing, so every governance event arrived
+            # timestamped "" — and `feed` sorts on that, which made "newest first" a
+            # claim about 505 identical empty strings.
+            category=category, kind=kind, at=str(e.get("at") or e.get("created_at") or ""),
             actor=str(p.get("actor") or p.get("set_by") or p.get("cleared_by")
                       or p.get("read_by") or ""),
             org_id=str(p.get("org_id") or e.get("org_id") or ""),
@@ -181,7 +185,8 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
     for e in rows:
         p = e.get("payload") or {}
         out.append(AuditEvent(
-            category="model_call", kind="llm_call", at=str(e.get("created_at") or ""),
+            category="model_call", kind="llm_call",
+            at=str(e.get("at") or e.get("created_at") or ""),   # session_events.at
             actor=str(e.get("user_id") or ""), org_id=str(e.get("org_id") or ""),
             conn_id=str(e.get("conn_id") or ""),
             summary=f"{p.get('role') or 'model'} call · {e.get('model') or '?'}",
@@ -213,7 +218,7 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
         verdict = r.get("verdict") or "?"
         out.append(AuditEvent(
             category=AUDIT_TABLE_CATEGORY, kind="query.execution",
-            at=str(r.get("timestamp") or r.get("created_at") or ""),
+            at=str(r.get("ts") or r.get("timestamp") or r.get("created_at") or ""),  # audit_log.ts
             actor=str(r.get("org_id") or ""), org_id=str(r.get("org_id") or ""),
             conn_id=str(r.get("connection_id") or ""),
             summary=f"query {verdict}", detail=r))

@@ -175,3 +175,43 @@ def test_model_calls_are_read_from_the_session_log_not_the_generic_event_path():
     assert "session_events" in src
     sinks = {cat: fn for cat, fn in AC._SINKS}
     assert sinks["model_call"] is AC._from_session_log
+
+
+# ── the timestamp every sink was dropping ───────────────────────────────────────
+
+def test_every_sink_reports_a_real_timestamp():
+    """Measured on the live feed: **505 of 505 events had `at == ""`**.
+
+    Each of the three sinks read a column name its table does not have — the ledger and
+    the session log call it `at`, the audit table calls it `ts`, and the code asked for
+    `created_at`/`timestamp`. Nothing raised, because `.get()` on a missing key returns
+    None and the code coalesced it to "".
+
+    That is not a cosmetic defect. `feed()` sorts on this field, so "newest first" was a
+    claim about hundreds of identical empty strings; and Arc VA's decision ③ requires the
+    audit trail to answer *who, whose trace, and WHEN* — the third of which was blank on
+    every row.
+    """
+    import aughor.govern.audit_categories as ac
+
+    import inspect
+
+    # The ledger sink, driven with a row keyed the way the events table keys it.
+    orig_ledger = ac._ledger_events
+    ac._ledger_events = lambda kind, limit: [
+        {"at": "2026-08-23T10:00:00Z", "org_id": "default",
+         "payload": {"read_by": "admin-7", "trace_id": "t1"}}]
+    try:
+        (ev,) = ac._from_ledger("trace.payload_access", 10)
+        assert ev.at == "2026-08-23T10:00:00Z", (
+            f"the ledger sink reported at={ev.at!r} — it is reading a column the events "
+            f"table does not have")
+    finally:
+        ac._ledger_events = orig_ledger
+
+    # The other two readers open real stores, so pin the COLUMN each one asks for. The
+    # bug was never in the logic; it was one wrong key in each mapping.
+    assert '"ts"' in inspect.getsource(ac._from_audit_table), \
+        "the audit-table sink must read `ts` — that is what the audit_log column is called"
+    assert '"at"' in inspect.getsource(ac._from_session_log), \
+        "the session-log sink must read `at` — that is what the session_events column is called"
