@@ -1,9 +1,10 @@
 """Optional observability — Langfuse traces per investigation, OTel spans per node,
 MLflow trace trees per run.
 
-Activation:
-  Langfuse: set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
-  OTel:     set OTEL_EXPORTER_OTLP_ENDPOINT
+Activation — **nothing exports until something is configured** (VA-3, decision ④):
+  OTLP:     set AUGHOR_OTLP_ENDPOINT (+ AUGHOR_OTLP_HEADERS / AUGHOR_OTLP_PROTOCOL).
+            OpenTelemetry's own OTEL_EXPORTER_OTLP_ENDPOINT still works, second.
+  Langfuse: set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY — same pipeline, no SDK.
 
 **Langfuse rides the OTel exporter (OA·LF-1).** It used to speak the Langfuse
 Python SDK v2 directly — ``lf.trace()``, ``tr.span()``, ``tr.generation()``.
@@ -21,6 +22,13 @@ one place to break, and a version bump can no longer rot it silently — see
             other two, MLflow owns trace *creation* via autolog (LangChain/OpenAI),
             so this module only nests node/tool spans under the active trace and
             tags it with the investigation id.
+
+Spans carry three vocabularies at once, because no two readers share one: our own
+attribute names, Langfuse's observation keys, and the OpenTelemetry **GenAI**
+semantic conventions (``aughor/obs/genai.py``) that make a model call legible to
+Jaeger, Tempo, Grafana or a bare collector. Before VA-3 an exported trace held our
+phase spans and nothing else — the model calls and the tool spans reached no
+external backend by any path at all.
 
 All public functions are strict no-ops when no backend is configured.
 """
@@ -109,42 +117,93 @@ _otel_provider: Any = None
 _otel_init_done = False
 
 
+def _parse_headers(raw: str) -> dict[str, str]:
+    """``k1=v1,k2=v2`` → dict, deliberately the same format as
+    ``OTEL_EXPORTER_OTLP_HEADERS`` so an operator can paste a header line out of
+    any OpenTelemetry doc and have it work. A malformed pair is skipped rather
+    than raised: a typo in one header must not take tracing down, and an export
+    that then fails auth fails loudly at the collector, where it is visible."""
+    out: dict[str, str] = {}
+    for pair in raw.split(","):
+        k, sep, v = pair.partition("=")
+        if sep and k.strip():
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _otlp_target() -> tuple[str, dict[str, str], str, str] | None:
+    """Where spans go — ``(endpoint, headers, protocol, label)``, or None when
+    nothing is configured and this whole module stays a no-op.
+
+    Three sources, and the precedence between them is the design (VA-3):
+
+    1. ``AUGHOR_OTLP_ENDPOINT`` — the product's own switch, and the one the
+       roadmap's decision ④ names. **Unset means no export and zero egress**, which
+       is why every other source is checked only after it: BYO-observability is
+       the twin of BYOK, and a telemetry pipe that turns itself on is the opposite
+       of that. Setting it is what turns Langfuse, VoltOps, Grafana Tempo or a bare
+       otel-collector into "point it here". Transport defaults to OTLP/**HTTP**,
+       because that is the one all four accept from a pasted URL;
+       ``AUGHOR_OTLP_PROTOCOL=grpc`` switches it.
+    2. ``OTEL_EXPORTER_OTLP_ENDPOINT`` — OpenTelemetry's own variable, kept on its
+       historical gRPC transport byte-for-byte. Introducing our name must not
+       silently unplug a deployment that is already exporting through the standard
+       one; it is second, not deleted.
+    3. Langfuse keys — the fallback destination, OTLP/HTTP with Basic auth
+       (OA·LF-1: one span pipeline, no second SDK to rot).
+    """
+    endpoint = os.getenv("AUGHOR_OTLP_ENDPOINT", "").strip()
+    if endpoint:
+        protocol = "grpc" if os.getenv(
+            "AUGHOR_OTLP_PROTOCOL", "http").strip().lower().startswith("grpc") else "http"
+        return (endpoint, _parse_headers(os.getenv("AUGHOR_OTLP_HEADERS", "")),
+                protocol, "OpenTelemetry")
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    if endpoint:
+        return endpoint, {}, "grpc", "OpenTelemetry"
+    lf = _langfuse_otlp()
+    if lf is not None:
+        return lf[0], lf[1], "http", "Langfuse"
+    return None
+
+
 def _otel() -> Any | None:
-    """The tracer, once. An explicit OTEL_EXPORTER_OTLP_ENDPOINT wins and keeps its
-    historical gRPC transport byte-for-byte; Langfuse is the fallback destination and
-    speaks OTLP/HTTP (its endpoint does not accept gRPC), which is why the exporter is
-    chosen per destination rather than shared."""
+    """The tracer, once. Destination, transport and headers come from
+    :func:`_otlp_target`; the exporter class is picked per protocol rather than
+    shared, because the two OTLP transports are separate packages and Langfuse's
+    endpoint does not accept gRPC at all."""
     global _otel_tracer, _otel_provider, _otel_init_done
     if _otel_init_done:
         return _otel_tracer
     _otel_init_done = True
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-    lf = None if endpoint else _langfuse_otlp()
-    if not endpoint and lf is None:
+    target = _otlp_target()
+    if target is None:
         return None
+    endpoint, headers, protocol, what = target
     try:
         from opentelemetry import trace  # type: ignore[import]
+        from opentelemetry.sdk.resources import Resource  # type: ignore[import]
         from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import]
         from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import]
 
-        if lf is not None:
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import]
-                OTLPSpanExporter)
-            endpoint, headers = lf
-            exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
-            _what = "Langfuse"
-        else:
+        if protocol == "grpc":
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import]
                 OTLPSpanExporter)
-            exporter = OTLPSpanExporter(endpoint=endpoint)
-            _what = "OpenTelemetry"
+        else:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import]
+                OTLPSpanExporter)
+        exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers or None)
 
-        provider = TracerProvider()
+        # A service name, so a run arriving in a shared collector is attributable
+        # to this app rather than landing as `unknown_service` beside everything
+        # else pointed at the same endpoint.
+        provider = TracerProvider(resource=Resource.create(
+            {"service.name": os.getenv("OTEL_SERVICE_NAME", "aughor")}))
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         _otel_provider = provider
         _otel_tracer = trace.get_tracer("aughor")
-        logger.info("%s tracing enabled (endpoint=%s)", _what, endpoint)
+        logger.info("%s tracing enabled (endpoint=%s, protocol=%s)", what, endpoint, protocol)
     except ImportError:
         logger.debug("opentelemetry packages not installed — OTel tracing disabled")
     except Exception as exc:
@@ -173,6 +232,33 @@ def _otel_context(trace_id: str):
     except Exception as exc:
         logger.debug("OTel context build failed for %s: %s", trace_id, exc)
         return None
+
+
+def _otel_parent(trace_id: str):
+    """The context a new span should hang from — the difference between a tree and
+    a flat list.
+
+    ``None`` means "whatever span is currently active", i.e. real nesting: a tool
+    span opened inside a phase span becomes its child, which is the shape an
+    external viewer draws as a tree. Pinning every span to the trace's synthetic
+    root instead — which is what unconditionally passing :func:`_otel_context`
+    does — exports a run as N siblings and loses the parentage the local sinks
+    have recorded all along.
+
+    The active span is only trusted when it is on the SAME trace we would pin to.
+    Otherwise an unrelated ambient span — a web framework's request span, say —
+    would adopt the investigation's spans onto its trace, and the run would stop
+    being addressable by its investigation id.
+    """
+    tid = _lf_trace_id(trace_id) if trace_id else None
+    try:
+        from opentelemetry import trace as _t  # type: ignore[import]
+        ctx = _t.get_current_span().get_span_context()
+        if ctx.is_valid and (tid is None or ctx.trace_id == int(tid, 16)):
+            return None
+    except Exception as exc:
+        logger.debug("OTel parent probe failed for %s: %s", trace_id, exc)
+    return _otel_context(trace_id)
 
 
 def flush_traces(timeout_ms: int = 5_000) -> None:
@@ -396,10 +482,48 @@ def mlflow_tool_span(
     stack.enter_context(_obs_span(name, "", attributes, span_kind=span_kind,
                                   span_attrs=span_attrs))
     span_obj = _mlflow_enter_span(stack, name, attributes, span_type="TOOL")
+    _otel_tool_span(stack, name, span_kind, attributes, span_attrs)
     try:
         yield span_obj
     finally:
         _close_span_stack(stack, "MLflow tool")
+
+
+def _otel_tool_span(stack: ExitStack, name: str, span_kind: str,
+                    attributes: dict | None, span_attrs: dict | None) -> None:
+    """Put a tool span on the OTLP pipeline (VA-3).
+
+    Every sink this function's caller drives was local — MLflow needs a tracking
+    URI, `task_history` needs a flag, the session log needs a flag — so the eight
+    call sites of :func:`mlflow_tool_span` (guarded SQL, its retries, delegation
+    hops, agent evaluation) reached an external backend through **no path at all**.
+    An exported trace was phases and nothing else; the work inside them was
+    invisible to the very tool you would open to find out where the time went.
+
+    A delegation hop is labelled ``invoke_agent``, not ``execute_tool``: it is the
+    one span kind here that is another agent's whole run, and collapsing it into a
+    tool call is what makes a delegation tree unreadable in an external viewer.
+    """
+    otel = _otel()
+    if otel is None:
+        return
+    try:
+        from aughor.obs import genai
+        tid = _active_trace_id.get()
+        if span_kind == "delegation":
+            agent = str((span_attrs or {}).get("delegate_agent_name") or "").strip()
+            attrs = genai.agent_attrs(agent or name.removeprefix("delegate:"))
+            sname = genai.span_name(genai.OP_INVOKE_AGENT, agent) if agent else name
+        else:
+            # `span_kind` is only a TYPE when it says something: the default
+            # "tool" would just restate the operation name.
+            attrs = genai.tool_attrs(name, kind=None if span_kind == "tool" else span_kind)
+            sname = name
+        attrs.update(_flat_attrs({**(span_attrs or {}), **(attributes or {})}))
+        stack.enter_context(otel.start_as_current_span(
+            sname, context=_otel_parent(tid), attributes=attrs))
+    except Exception as exc:
+        logger.debug("OTel tool span start failed for %s: %s", name, exc)
 
 
 # ── task_history sink (feature flag `obs.task_table`) ─────────────────────────
@@ -737,7 +861,7 @@ def span(
                 attrs = {**attrs, **pending, _LF_AS_ROOT: True}
             otel_span = _stack.enter_context(
                 otel.start_as_current_span(
-                    name, context=_otel_context(trace_id), attributes=attrs))
+                    name, context=_otel_parent(trace_id), attributes=attrs))
         except Exception as exc:
             logger.debug("OTel span start failed: %s", exc)
     try:
@@ -765,35 +889,85 @@ def log_generation(
     trace_id: str,
     name: str,
     model: str,
-    input_messages: list[dict],
-    output: str,
+    *,
+    backend: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    duration_ms: float | None = None,
+    temperature: float | None = None,
+    error_class: str | None = None,
+    content: dict | None = None,
     metadata: dict | None = None,
 ) -> None:
-    """Log a single LLM call as a Langfuse generation span. No-op when disabled.
+    """Export one LLM call as a span. No-op when no OTLP endpoint is configured.
 
-    Emitted as an OTel span typed ``generation`` — the observation type is what makes
-    Langfuse render it as a model call (with model, input, output) rather than a plain
-    span. OA·LF-2 gives this its call sites; it has had none since it was written
-    (``llm/provider.py``), which is why the per-call record has only ever lived in the
-    session log."""
+    This is the record that had no call sites for the whole life of the file. The
+    consequence was not that model calls were traced badly — it is that a trace
+    exported to Jaeger, Tempo or Langfuse contained **no model calls at all**: our
+    phases arrived as spans, and the 2,506 recorded generations, their models and
+    their token counts stayed in the local session log. ``_record_llm_call`` is
+    now its caller, which is the single chokepoint every backend already funnels
+    through.
+
+    Two vocabularies ride the same span on purpose: Langfuse's observation keys
+    (what makes it render as a model call rather than a bar) and the OTel **GenAI**
+    conventions (what makes every other reader show the model, provider and token
+    counts). Neither is a superset of the other, and both are cheap.
+
+    **Content is not captured here.** ``content`` is whatever
+    ``session_log.capture_prompt`` already decided to store — an operator's
+    prompt-capture window is the one gate, and it is a *budget* that is spent when
+    content is stored, so asking for it a second time on the export path would
+    charge an operator twice for one call. Absent a window this is metadata only:
+    model, provider, tokens, latency, error. That is the answer to "does turning
+    on telemetry start shipping user text off-box" — only if you opened the window.
+
+    The span is written **retroactively**: the caller already knows how long the
+    call took, so ``duration_ms`` back-dates the start rather than reporting a
+    zero-width span at the moment of recording. A generation with no duration is
+    the shape that makes a waterfall useless.
+    """
     otel = _otel()
     if otel is None or not trace_id:
         return
     try:
+        from aughor.obs import genai
+        attrs: dict[str, Any] = {
+            _LF_OBS_TYPE: "generation",
+            _LF_OBS_MODEL: model,
+            **genai.generation_attrs(
+                backend=backend, model=model,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                temperature=temperature, conversation_id=trace_id,
+                error_class=error_class),
+            **_flat_attrs(metadata or {}),
+        }
+        if content:
+            # `capture_prompt`'s own key names, mapped onto Langfuse's input/output
+            # fields so an open window is inspectable in the UI it was opened for.
+            _in = {k: v for k, v in content.items()
+                   if k in ("system_prompt", "user_prompt")}
+            if _in:
+                attrs[_LF_OBS_INPUT] = _json_attr(_in)
+            if (_out := content.get("response")) is not None:
+                attrs[_LF_OBS_OUTPUT] = _json_attr(_out)
+        start_ns = None
+        if duration_ms is not None:
+            start_ns = _time.time_ns() - int(max(0.0, duration_ms) * 1_000_000)
         with otel.start_as_current_span(
-            name,
-            context=_otel_context(trace_id),
-            attributes={
-                _LF_OBS_TYPE: "generation",
-                _LF_OBS_MODEL: model,
-                _LF_OBS_INPUT: _json_attr(input_messages),
-                _LF_OBS_OUTPUT: _json_attr(output),
-                **_flat_attrs(metadata or {}),
-            },
+            genai.span_name(genai.OP_CHAT, model) if model else (name or "chat"),
+            # `_otel_parent`, not `_otel_context`: a model call runs INSIDE the
+            # phase (or the delegation hop) that made it, and pinning it to the
+            # trace's synthetic root instead exports it as a sibling — which is
+            # how the receipt caught this, with three generations arriving as
+            # roots while every unit test passed.
+            context=_otel_parent(trace_id),
+            attributes=attrs,
+            start_time=start_ns,
         ):
             pass
     except Exception as exc:
-        logger.debug("Langfuse generation log failed: %s", exc)
+        logger.debug("generation span failed: %s", exc)
 
 
 def end_trace(trace_id: str, output: dict | None = None) -> None:
@@ -863,11 +1037,21 @@ def node_span(name: str):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _flat_attrs(d: dict) -> dict[str, str | int | float | bool]:
-    """Flatten a metadata dict to the scalar types OTel span attributes accept."""
+    """Flatten a metadata dict to the scalar types OTel span attributes accept.
+
+    Strings are capped at ``_MLF_ATTR_MAX_CHARS``, same as every other sink. This
+    is the EXPORT path, so an uncapped value is not merely a fat row: generated SQL
+    and framed questions arrive here, collectors reject or truncate oversized spans,
+    and a span dropped at ingest is a hole in a trace with nothing to explain it.
+    Truncation is marked rather than silent — a query that reads as complete but
+    was cut is the kind of evidence that sends someone debugging the wrong thing."""
     out: dict[str, str | int | float | bool] = {}
     for k, v in d.items():
-        if isinstance(v, (str, int, float, bool)):
+        if isinstance(v, bool) or isinstance(v, (int, float)):
             out[str(k)] = v
-        else:
-            out[str(k)] = str(v)
+            continue
+        text = v if isinstance(v, str) else str(v)
+        if len(text) > _MLF_ATTR_MAX_CHARS:
+            text = text[:_MLF_ATTR_MAX_CHARS] + "…[truncated]"
+        out[str(k)] = text
     return out

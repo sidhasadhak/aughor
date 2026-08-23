@@ -26,6 +26,28 @@ services:
     volumes:
       - mlflow_data:/mlflow
 
+  # Opt-in OTLP backend (VA-3):
+  #   docker compose --profile obs up -d jaeger
+  # then set AUGHOR_OTLP_ENDPOINT=http://localhost:4318/v1/traces and restart the
+  # API; the UI is http://localhost:16686. Setting the endpoint is the on switch —
+  # unset means no export and zero egress, so the default `docker compose up` and
+  # an unconfigured install are both unchanged.
+  #
+  # Jaeger is only the cheapest thing to point at. The same variable aims the same
+  # spans at Grafana Tempo, a bare otel-collector, VoltOps or Langfuse — that is
+  # what standardising on OTLP bought.
+  # Jaeger v2 accepts OTLP out of the box — no COLLECTOR_OTLP_ENABLED (that was a v1
+  # switch). The ports are the load-bearing part: a container started without `-p`
+  # runs perfectly and is unreachable from the host, so the endpoint points at a
+  # closed port and the exporter drops every batch with nothing on screen to say so.
+  jaeger:
+    image: jaegertracing/jaeger:2.20.0
+    profiles: ["obs"]
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP/HTTP — the default AUGHOR_OTLP_PROTOCOL
+      - "4317:4317"     # OTLP/gRPC — AUGHOR_OTLP_PROTOCOL=grpc
+
 volumes:
   qdrant_data:
   mlflow_data:

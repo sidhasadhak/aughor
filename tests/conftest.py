@@ -125,6 +125,28 @@ os.environ.setdefault(
     "AUGHOR_LLM_CONFIG_PATH", os.path.join(_test_stores_dir, "llm_config.json")
 )
 
+# VA-3 — the telemetry EXPORT switches. `AUGHOR_OTLP_ENDPOINT` (and the Langfuse keys,
+# which ride the same pipeline) turn span export on for the whole process. Without this,
+# a developer who has actually configured an observability backend — precisely the person
+# VA-3 exists for — would have the suite POST every span it produces to their real
+# collector: thousands of test spans mixed into production trace data, and a connection
+# attempt plus retry backoff per batch whenever the endpoint is not listening. Measured:
+# with an endpoint set to a closed port, six "no-op when telemetry is off" tests fail and
+# the run ends in a wall of `Connection refused` retries.
+#
+# Set to EMPTY rather than popped, and that is the load-bearing detail: `aughor/api.py`
+# runs `load_dotenv()` at import time, which re-plants the developer's .env the moment any
+# test touches the app. `load_dotenv` does not override a variable that is already set —
+# so the empty value survives, where a `pop` would simply be undone.
+#
+# A test that exercises export config sets the variable itself (monkeypatch wins over
+# this), and `tests/unit/test_otlp_export.py` drives real spans through an in-memory
+# exporter, which needs no endpoint at all.
+for _export_var in ("AUGHOR_OTLP_ENDPOINT", "AUGHOR_OTLP_HEADERS", "AUGHOR_OTLP_PROTOCOL",
+                    "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
+    os.environ[_export_var] = ""
+
 # The suite must not spend real LLM requests. `semantic.autoseed` defaults ON and `get_schema()`
 # fires it, so ANY test that loads a schema would call a live model against the free 1,000/day
 # budget. Measured before this line existed: `tests/integration/test_evals_experiments.py`
