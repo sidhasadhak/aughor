@@ -30,7 +30,9 @@ import { useMemo } from "react";
 import {
   Background,
   Controls,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
@@ -147,6 +149,12 @@ function NodeCard({ data }: { data: { node: TimelineNode } }) {
         overflow: "hidden",
       }}
     >
+      {/* A custom node needs handles or its edges have nothing to anchor to and simply
+          do not render — 14 nodes drew 0 edges before these existed. Hidden, because the
+          anchor points are geometry, not something a reader of a finished run acts on. */}
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px" }}>
         <span style={{ color: "var(--t1)", fontWeight: 500, overflow: "hidden",
                        textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -285,6 +293,12 @@ export function TraceFlow({
           edges={rfEdges}
           nodeTypes={NODE_TYPES}
           fitView
+          // Bounded, because an unbounded fit is not a view. A wide run fitted to the
+          // container resolved to scale 0.2 — every card 7px tall and unreadable, which
+          // is a picture of a run rather than a reading of one. Fit when the run is
+          // small enough to fit legibly; otherwise stay legible and let the reader pan,
+          // with fit-to-screen still one click away in the controls.
+          fitViewOptions={{ minZoom: 0.55, maxZoom: 1, padding: 0.15 }}
           proOptions={{ hideAttribution: true }}
           minZoom={0.2}
           maxZoom={1.6}
