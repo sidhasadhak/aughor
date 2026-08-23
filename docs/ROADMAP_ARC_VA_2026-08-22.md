@@ -8,8 +8,9 @@
 > | VA-0 Agent Ops control room | ✅ **shipped** — #371 |
 > | VA-5 trace waterfall | ✅ **shipped** — #372 |
 > | VA-6 agent-plane alerting | ✅ **shipped** (rule engine) — #373 |
-> | VA-2 delegation | ✅ **complete, unpushed** — spine · `delegate_task` · roster · attributed sub-agent streaming · the hop rendered |
-> | VA-1 skills plane | ✅ **complete, unpushed** — linter · `SKILL.md`→pack ingester · `aughor skills lint\|import` CLI |
+> | VA-2 delegation | ✅ **shipped** — #376 |
+> | VA-1 skills plane | ✅ **shipped** — #377 (deliverables 4–5 outstanding) |
+> | VA-5 node view | ✅ **shipped** — #380 (payload inspector · trace logs · feedback · trace API · replay outstanding) |
 > | VA-3 · VA-7 · VA-8 · VA-9 · VA-10 | planned below |
 > | VA-4 automations dataflow | parked (see §2) |
 >
@@ -191,7 +192,7 @@ cost multiplication (each hop is a full turn) — surface it in the run's cost.
 2. **Delete the dead Langfuse SDK backend** (v2 API against 4.7.1 — silently dead;
    removing it is the honest move, and the Langfuse *attribute* conventions stay).
 3. `AUGHOR_OTLP_ENDPOINT` (+ headers) as config; ship **off** by default (pure local),
-   on when set. Langfuse / VoltOps / Grafana / Jaeger all become "point it here".
+   on when set. ✅ **LOCKED by decision ④.** Langfuse / VoltOps / Grafana / Jaeger all become "point it here".
 4. **This closes §7.5's LF-2/LF-3 topology question** — it collapses into "where does the
    endpoint point".
 
@@ -440,20 +441,44 @@ access — never after. Users are told, in the product, that admins can read the
 
 ### Still open
 
+⚠️ **Four entries that used to sit here were already answered by the LOCKED decisions
+above, added the same day.** They are struck rather than deleted, because a stale open
+question costs someone a decision they have already made:
 
+- ~~VA-1 import scope~~ → **②** (all data/analytics skills, spot-checked).
+- ~~VA-2 targets~~ and ~~VA-2 depth~~ → **①** (unbounded depth; charters resolved by
+  measurement, not by building).
+- ~~VA-10 privacy~~ → **③** (admins see everything, audited).
 
-1. **VA-1 import scope** — the ~15 data-engine skills reviewed one by one, or bulk-import
-   the library tagged by source? *(Rec: reviewed; prompt content is product surface.)*
-2. **VA-2 targets** — custom agents only, or charters too? *(Rec: custom agents first;
-   charters already act through tools.)*
-3. **VA-2 depth** — allow a delegate to delegate? *(Rec: no, depth 1 this wave.)*
-4. **VA-3 default** — OTLP off unless configured? *(Rec: yes, local-first.)*
-5. **VA-9 posture** — which MCP servers are allowlisted at launch, and do outbound writes
-   require approval every time or once per grant? *(Rec: Slack + Gmail + GitHub; approval
-   per grant, with a per-call audit and a kill switch.)*
-6. **VA-10 privacy** — may an admin read a user's prompt payloads, or only metadata?
-7. Does Arc VA interleave with the open CA-3 decisions (deep step budget/tier,
-   `ask.converse` posture)? VA-2 touches the same loop.
+**RESOLVED 2026-08-23 by the user:**
+
+**④ VA-3 default — OTLP OFF unless an endpoint is configured.** Local-first, matching
+every other integration here: `AUGHOR_OTLP_ENDPOINT` unset means no export and zero
+egress. Setting it turns Langfuse / VoltOps / Grafana / Jaeger into "point it here".
+
+**⑤ VA-9 launch allowlist — Slack + Gmail + GitHub + Airtable + Cron.** The catalog
+breadth of the reference product, including a schedule-based trigger. ⚠️ This is five
+credential shapes and two mechanisms (webhook AND polling) at once, on the arc's largest
+attack surface — so the consumer, the vault path and the approval flow should be proven
+end to end on ONE server before the other four are enabled, even though all five are in
+scope for the wave.
+
+**⑥ VA-9 write approval — ONCE PER GRANT, with a per-call audit and a kill switch.**
+Granting `post_message` to an agent authorises that tool until revoked. Per-call approval
+was rejected deliberately: an automation that reacts to an external event cannot complete
+unattended if every write stops for a human, which defeats what triggers are for. The
+audit trail and the kill switch are therefore not optional — they are the whole control,
+and they ship in the same PR as the grant.
+
+**⑦ Sequencing — FINISH ARC VA FIRST.** CA-3's open items (deep step budget/tier,
+`ask.converse` posture) wait. VA-2 already touched that loop and landed cleanly, and
+CA-3 is easier to decide once the trace and guardrail planes exist to measure it with.
+
+🔑 **Carried debt, unscheduled by that choice:** threading a real `cancelled` callable
+down the converse tool seam. VA-2 documented the exposure — a suppressed frame is a
+cancellation checkpoint not taken — and the fix covers `answer_question` and
+`deep_analysis` at the same time. Bounded to one hop today; it should not stay open
+forever just because it lost a sequencing vote.
 
 ---
 
