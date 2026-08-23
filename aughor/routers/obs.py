@@ -260,6 +260,54 @@ def get_trace(trace_id: str):
     }
 
 
+@router.get("/traces/{trace_id}/summary")
+def get_trace_summary(trace_id: str, top: int = 8):
+    """One run, small enough for an agent to reason about — VA-5.
+
+    `GET /traces/{trace_id}` returns the whole log, which is 1.2 MB for a 1,140-event
+    run on this store — roughly 300k tokens. That is not a trace surface for a coding
+    agent, it is a way to exhaust the context that was going to read it.
+
+    This answers the question people open a trace to ask, rather than the events that
+    happened: where the time went, what it cost, and what failed. `idle_pct` is the
+    union-of-intervals reading and is the number the waterfall was built to expose —
+    a deep run measured ~60% idle, which no single event in the log states.
+    """
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+    for e in events:
+        _mark_content(e)
+    from aughor.obs.trace_summary import build_summary
+    # A summary reports masking counts but never carries a payload, so this read exposes
+    # no content — recorded all the same, because "who looked at whose run" is the
+    # question the audit trail answers, and a reader who only ever fetched summaries
+    # would otherwise be invisible in it.
+    _audit_payload_access(trace_id, events, None)
+    return build_summary(trace_id, events, top_n=max(1, min(top, 50)))
+
+
+@router.get("/traces/{trace_id}/spans/{span_id}")
+def get_trace_span(trace_id: str, span_id: str):
+    """One span's input and output — the paged drill-down the summary points at.
+
+    This is the "never load whole" half of the roadmap's own risk note: an agent that
+    has found the slow step from the summary pays for that step alone, instead of pulling
+    every payload in the run to read one.
+    """
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+    for e in events:
+        _mark_content(e)
+    from aughor.obs.trace_summary import span_payload
+    span = span_payload(trace_id, events, span_id)
+    if span is None:
+        raise HTTPException(status_code=404, detail="No such span in this trace")
+    _audit_payload_access(trace_id, events, None)
+    return span
+
+
 # ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
 # Storing model-call CONTENT is the most sensitive write this product makes, so it is
 # never a standing setting: an operator opens a window bounded by a call budget AND a

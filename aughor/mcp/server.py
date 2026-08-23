@@ -38,6 +38,9 @@ How to use this server:
    re-deriving a formula. `list_findings` / `get_briefing` surface what Aughor already
    discovered in the background. `explore` kicks off background discovery.
 5. `list_jobs` / `get_job` / `cancel_job` are the agent fleet — running and finished work.
+6. When an answer was slow or wrong, debug it: `list_runs` → `inspect_run` (where the time
+   went, what it cost, what failed) → `read_run_span` for the one span that matters. Do not
+   ask for a whole trace; the summary plus one span is the surface, by design.
 
 Every answer is auditable: `ask` and `deep_analysis` results carry a `receipt` with the
 executed SQL, the input tables, and the trust guards that fired.
@@ -263,3 +266,60 @@ async def list_trusted_queries(
     from aughor.mcp.knowledge_tools import list_trusted_queries as _trusted
 
     return _trusted(connection, limit=limit)
+
+
+# ── traces (VA-5) ────────────────────────────────────────────────────────────────
+# Three tools, narrowing: which runs → one run's shape → one span's payload. There is
+# deliberately no "fetch the whole trace" tool. That response is 1.2 MB for a 1,140-event
+# run on a real store, roughly 300k tokens — a tool whose SUCCESS case exhausts the
+# caller's context is not a usable tool, and the roadmap's own risk note says to page by
+# span rather than load whole.
+
+
+@mcp.tool()
+async def list_runs(
+    limit: Annotated[int, Field(description="Max runs to return (default 20, newest first).", ge=1, le=100)] = 20,
+    investigation: Annotated[Optional[str], Field(description="Only runs that touched this investigation id.")] = None,
+    agent: Annotated[Optional[str], Field(description="Only runs by this agent id.")] = None,
+) -> dict:
+    """Recent Aughor runs, newest first — the index into the trace surface.
+
+    One summary per run: its question, when it started, how many events, tool calls and
+    model calls it made, and how many errored. Use it to FIND the run you care about, then
+    call `inspect_run` with its `trace_id`. Debugging a slow or wrong answer starts here."""
+    return {"runs": await _client.list_runs(
+        limit=limit, investigation_id=investigation, agent_id=agent)}
+
+
+@mcp.tool()
+async def inspect_run(
+    trace_id: Annotated[str, Field(description="A trace id from list_runs.")],
+    top: Annotated[int, Field(description="How many entries in each ranked list (default 8).", ge=1, le=50)] = 8,
+) -> dict:
+    """What happened in one run: where the time went, what it cost, and what failed.
+
+    Returns a SUMMARY, not the event log — the shape of the run, its slowest spans, its
+    longest waits, token usage per model, and any errors. `time.idle_pct` is the number
+    worth reading first: a run can be slow because the work is slow, or because it spent
+    most of the wall clock waiting, and those have opposite fixes. It is computed over the
+    union of span intervals, so it stays true when the run did work in parallel.
+
+    Span inputs and outputs are NOT included. Once the summary tells you which span matters,
+    fetch that one with `read_run_span` — paying for one step instead of the whole run."""
+    return await _client.inspect_run(trace_id, top=top)
+
+
+@mcp.tool()
+async def read_run_span(
+    trace_id: Annotated[str, Field(description="A trace id from list_runs.")],
+    span_id: Annotated[str, Field(description="A span id from inspect_run's slowest_spans or errors.")],
+) -> dict:
+    """One span's input and output — the drill-down `inspect_run` points at.
+
+    Use it on the span the summary identified: the slowest one, or the one that errored.
+    Returns that span's call payload (e.g. the SQL that ran, or the tool's arguments) and
+    its result, with any credential in them masked.
+
+    This read is AUDITED: Aughor journals who read whose run, because payload access is
+    governed rather than merely permitted."""
+    return await _client.run_span(trace_id, span_id)
