@@ -47,12 +47,91 @@ _CONTENT_KEYS = ("system_prompt", "user_prompt", "response")
 
 
 def _mark_content(event: dict) -> dict:
-    """Label prompt content so a UI can gate it explicitly rather than discover
-    it by accident: `content_captured` says whether this row carries any."""
+    """Label prompt content, and mask any credential inside the payload.
+
+    `content_captured` says whether this row carries prompt text, so a UI can gate it
+    explicitly rather than discover it by accident.
+
+    The masking is the one seam every raw-event surface passes through — the waterfall,
+    `/activity` and its stream — which is why it lives here rather than at three call
+    sites. What it removes is deliberately narrow: **credentials only, never PII.** Arc VA's decision ③ is that an admin sees everything on a trace, audited, so
+    the questions, the SQL and the captured prompts are theirs to read. A credential is
+    the exception because it is not the subject's data at all — it is an access token
+    that reading would hand over, and a key rendered into a trace viewer is also in a
+    browser cache and in whatever the reader pastes into a bug report.
+
+    `credentials_masked` is reported rather than silent: a viewer that quietly alters
+    what it shows is worse than one that shows everything, because nobody can tell which
+    it did.
+    """
     payload = event.get("payload")
-    if isinstance(payload, dict) and any(k in payload for k in _CONTENT_KEYS):
-        event["content_captured"] = True
+    if isinstance(payload, dict):
+        if any(k in payload for k in _CONTENT_KEYS):
+            event["content_captured"] = True
+        try:
+            from aughor.security.credentials import mask_payload
+            masked, n = mask_payload(payload)
+            if n:
+                event["payload"] = masked
+                event["credentials_masked"] = n
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "credential masking is best-effort; the event still renders",
+                     counter="obs.mask_credentials")
     return event
+
+
+def _audit_payload_access(trace_id: str, events: list[dict],
+                          investigation_id: str | None) -> None:
+    """Record that someone read this run's payloads — Arc VA decision ③.
+
+    The decision reads: admins get full payload access on all traces, **with every access
+    logged as an auditable event (who, whose trace, when)** — and it is explicit that the
+    audit trail *is* the control, so it ships with the access rather than after it. The
+    access shipped in #372. This is the half that did not.
+
+    Why it needs saying at all: this route is gated at ``admin.manage_org``, so everyone
+    who can call it is entitled to what it returns. That makes the access control
+    uninteresting and the ACCOUNTABILITY the whole point — an entitlement nobody can
+    review is indistinguishable from no policy. `who` is the caller; `subject_user_id` is
+    whose run it was, which is what makes "did anyone read MY runs" answerable rather than
+    just "were traces read".
+
+    Journalled to the ledger (not `audit_log`, which is query-execution shaped: it wants
+    SQL, a verdict and a row count, and inventing those to fit would put a lie in the
+    audit trail). `emit` stamps org and the ambient trace itself. Never raises — a
+    failure to journal must not deny a legitimate read — but it IS counted, so a silently
+    unrecorded surface shows up as a rising counter rather than as nothing at all.
+    """
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.kernel.ledger import Ledger
+        from aughor.org.context import current_user_id
+        Ledger.default().emit(
+            "trace.payload_access",
+            {
+                "trace_id": trace_id,
+                "investigation_id": investigation_id,
+                # Whose run this was. Empty on an unidentified/local run, which is the
+                # honest answer rather than a guess.
+                "subject_user_id": next(
+                    (e["user_id"] for e in events if e.get("user_id")), ""),
+                "subject_agent_id": next(
+                    (e["agent_id"] for e in events if e.get("agent_id")), ""),
+                "read_by": current_user_id(),
+                "events": len(events),
+                # The two facts that make the record worth reading: whether prompt
+                # CONTENT was actually exposed by this read, and whether anything was
+                # masked on the way out.
+                "content_events": sum(1 for e in events if e.get("content_captured")),
+                "credentials_masked": sum(int(e.get("credentials_masked") or 0)
+                                          for e in events),
+            },
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        tolerate(exc, "payload-access journal is best-effort; the read still returns",
+                 counter="obs.trace.payload_access_audit")
 
 
 # ── CR1: traces ──────────────────────────────────────────────────────────────────
@@ -162,6 +241,8 @@ def get_trace(trace_id: str):
     from aughor.obs.trace_tree import build_timeline, flow_edges
     timeline = build_timeline(events)
 
+    _audit_payload_access(trace_id, events, inv_id)
+
     return {
         "measured": True,
         "recording": True,
@@ -176,6 +257,182 @@ def get_trace(trace_id: str):
         "spans": roots,
         "timeline": timeline,
         "flow_edges": flow_edges(timeline),
+    }
+
+
+@router.get("/traces/{trace_id}/summary")
+def get_trace_summary(trace_id: str, top: int = 8):
+    """One run, small enough for an agent to reason about — VA-5.
+
+    `GET /traces/{trace_id}` returns the whole log, which is 1.2 MB for a 1,140-event
+    run on this store — roughly 300k tokens. That is not a trace surface for a coding
+    agent, it is a way to exhaust the context that was going to read it.
+
+    This answers the question people open a trace to ask, rather than the events that
+    happened: where the time went, what it cost, and what failed. `idle_pct` is the
+    union-of-intervals reading and is the number the waterfall was built to expose —
+    a deep run measured ~60% idle, which no single event in the log states.
+    """
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+    for e in events:
+        _mark_content(e)
+    from aughor.obs.trace_summary import build_summary
+    # A summary reports masking counts but never carries a payload, so this read exposes
+    # no content — recorded all the same, because "who looked at whose run" is the
+    # question the audit trail answers, and a reader who only ever fetched summaries
+    # would otherwise be invisible in it.
+    _audit_payload_access(trace_id, events, None)
+    return build_summary(trace_id, events, top_n=max(1, min(top, 50)))
+
+
+@router.get("/traces/{trace_id}/spans/{span_id}")
+def get_trace_span(trace_id: str, span_id: str):
+    """One span's input and output — the paged drill-down the summary points at.
+
+    This is the "never load whole" half of the roadmap's own risk note: an agent that
+    has found the slow step from the summary pays for that step alone, instead of pulling
+    every payload in the run to read one.
+    """
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+    for e in events:
+        _mark_content(e)
+    from aughor.obs.trace_summary import span_payload
+    span = span_payload(trace_id, events, span_id)
+    if span is None:
+        raise HTTPException(status_code=404, detail="No such span in this trace")
+    _audit_payload_access(trace_id, events, None)
+    return span
+
+
+#: A judgement about a RUN — was this any good — which is a different question from
+#: `feedback.verdicts`' accept/correct/reject, a judgement about whether a FINDING is
+#: true. They are kept apart deliberately: a thumbs-down on a run that was slow but
+#: right is not a rejected finding, and folding one into the other would teach the
+#: planner's close-the-loop signal to treat latency complaints as wrong answers.
+TRACE_VERDICTS = ("helpful", "unhelpful")
+
+
+class _TraceFeedbackRequest(BaseModel):
+    verdict: str
+    note: str = ""
+
+
+@router.post("/traces/{trace_id}/feedback")
+def post_trace_feedback(trace_id: str, body: _TraceFeedbackRequest):
+    """Record a judgement on one run — VA-5.
+
+    ``by`` is the identity of whoever is CLICKING, read at submit time, which is a
+    different thing from the run's own attribution. That distinction matters: the
+    roadmap said this deliverable "unblocks what OA·LF-2 was stuck on (identity
+    attribution)", and it does not. `user_id` on `session_events` is still 0 of 8,198
+    rows on this store — exactly the measurement that stopped LF-2 — so a run remains
+    unattributed no matter how much feedback it collects. What this can honestly key on
+    is the reader, and only when there IS one: an unidentified single-user install
+    records "", which is the true answer rather than a fabricated actor.
+    """
+    verdict = (body.verdict or "").strip().lower()
+    if verdict not in TRACE_VERDICTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"verdict must be one of {list(TRACE_VERDICTS)}, got {body.verdict!r}")
+    events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
+    if not events:
+        raise HTTPException(status_code=404, detail="No events for this trace")
+
+    from aughor.kernel.errors import tolerate
+    from aughor.org.context import current_user_id
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "trace.feedback",
+            {"trace_id": trace_id, "verdict": verdict, "note": body.note[:2000],
+             "by": current_user_id()},
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        # Fail-open, like `chat.feedback`: losing a thumbs must not surface as an error
+        # to someone who was trying to help. Counted, so a silently discarding endpoint
+        # shows up as a rising counter rather than as an unusually happy user base.
+        tolerate(exc, "trace feedback journal", counter="trace.feedback")
+        return {"ok": False, "recorded": False}
+    return {"ok": True, "recorded": True, "verdict": verdict}
+
+
+@router.get("/traces/{trace_id}/feedback")
+def get_trace_feedback(trace_id: str, limit: int = 50):
+    """Every judgement recorded on this run, newest first.
+
+    A list rather than a single verdict: two people disagreeing about a run is a fact
+    worth keeping, and collapsing it to the latest opinion would silently discard the
+    disagreement that made the run interesting.
+    """
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().events(kind="trace.feedback", trace_id=trace_id,
+                                   org_id=current_org_id() or None,
+                                   limit=max(1, min(limit, 200)))
+    items = [{"at": r.get("at") or r.get("created_at"),
+              "verdict": (r.get("payload") or {}).get("verdict"),
+              "note": (r.get("payload") or {}).get("note") or "",
+              "by": (r.get("payload") or {}).get("by") or ""}
+             for r in rows]
+    return {
+        "trace_id": trace_id,
+        "count": len(items),
+        "helpful": sum(1 for i in items if i["verdict"] == "helpful"),
+        "unhelpful": sum(1 for i in items if i["verdict"] == "unhelpful"),
+        "items": items,
+    }
+
+
+@router.get("/traces/{trace_id}/logs")
+def get_trace_logs(trace_id: str, limit: int = 200):
+    """The kernel journal for one run — VA-5's trace logs.
+
+    Two record systems describe a run and neither knows about the other: `session_events`
+    holds the spans (what the agent DID) and the ledger journal holds the state
+    transitions and, crucially, the **tolerated errors** — failures that were deliberately
+    swallowed so the run could continue. A swallowed error is invisible in the waterfall
+    by construction: the span it happened inside succeeded.
+
+    Measured: 35,980 of 95,220 journal events carry a trace id, and 222 of the 263 runs
+    with spans have journal lines, so this is a real surface rather than a mostly-empty
+    tab. `error.tolerated` is 342 of those — the rest are state transitions.
+
+    **Scoped to one run, which scopes it in time, and that is the point.** Read in
+    aggregate this journal is actively misleading: `explorer.grain_lint_failed` shows 959
+    occurrences of a NameError, which reads as a live dead guard until you notice the last
+    one was 2026-06-30 and the missing import has since been added. Counts without dates
+    turn fixed bugs into fresh alarms. A run's own lines cannot lie that way.
+    """
+    from aughor.kernel.ledger import Ledger
+    rows = Ledger.default().events(trace_id=trace_id, org_id=current_org_id() or None,
+                                   limit=max(1, min(limit, 1000)))
+    lines = []
+    for r in rows:
+        payload = r.get("payload") or {}
+        tolerated = r.get("kind") == "error.tolerated"
+        lines.append({
+            "at": r.get("at") or r.get("created_at"),
+            "seq": r.get("seq"),
+            "kind": r.get("kind"),
+            "tolerated": tolerated,
+            # The two fields that make a swallowed error readable: what broke, and the
+            # reason someone decided it was survivable. Without the reason a reader
+            # cannot tell a designed degradation from a bug nobody noticed.
+            "error": payload.get("error") if tolerated else None,
+            "reason": payload.get("reason") if tolerated else None,
+            "counter": payload.get("counter") if tolerated else None,
+            "payload": None if tolerated else payload,
+        })
+    return {
+        "trace_id": trace_id,
+        "count": len(lines),
+        "tolerated_errors": sum(1 for line in lines if line["tolerated"]),
+        "lines": lines,
     }
 
 

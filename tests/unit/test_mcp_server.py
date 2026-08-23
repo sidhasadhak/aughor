@@ -50,7 +50,14 @@ def test_server_registers_the_governed_tools():
         # this exact set deliberately: the assertion exists so growing the external agent
         # surface is a decision somebody made, not a thing that happened.
         "search_graph", "describe_entity", "get_table_health", "list_trusted_queries",
+        # VA-5 — the trace surface: find a run, see its shape, read the one span that
+        # matters. Same reasoning as above; and note what is NOT here, deliberately.
+        "list_runs", "inspect_run", "read_run_span",
     }
+    # No whole-trace tool either, for the same reason as `query`: `GET /traces/{id}` is
+    # 1.2 MB for a 1,140-event run, so a tool wrapping it would exhaust the context that
+    # was going to read it. The surface is a summary plus one span, by design.
+    assert not {"get_trace", "fetch_trace", "read_trace"} & tools
     # No raw `query` tool — the whole point is governed tools, not a SQL runner.
     assert "query" not in tools
 

@@ -90,9 +90,31 @@ def _repo_root() -> Path:
 
 
 def _port_in_use(port: int) -> bool:
-    """True when something already listens on the port (best-effort: try to bind
-    127.0.0.1 — the interface uvicorn/next bind by default in dev)."""
+    """True when something already LISTENS on the port.
+
+    Best-effort by binding 127.0.0.1 — the interface uvicorn/next bind by default in dev
+    — and the bind must be attempted the way the SERVER attempts it, with
+    ``SO_REUSEADDR`` (``uvicorn/config.py`` sets it; so does anything that expects to be
+    restartable). Without that flag this probe was strictly stricter than the process it
+    was protecting, and it refused a port the server could have taken.
+
+    That mattered on exactly the path people use most. When a TCP connection is closed by
+    the side that owns the listening address, that address sits in TIME_WAIT for around a
+    minute. A plain bind fails there with EADDRINUSE while nothing is listening at all —
+    so ``./start.sh --stop && ./start.sh`` reported "Port 8000 is already in use" and
+    quit, and the fix was to wait and try again, which reads as flakiness rather than as
+    a rule.
+
+    The old behaviour told on itself: the refusal printed no "owned by …" clause, because
+    :func:`_port_owner` correctly filters to ``-sTCP:LISTEN`` and found nobody. Two checks
+    disagreed and the pessimistic one won silently. With ``SO_REUSEADDR`` they agree —
+    "busy" now means a live listener, which is the only thing that should stop a start.
+
+    ``SO_REUSEADDR`` does NOT let this bind over an active listener on BSD/macOS (that
+    would need ``SO_REUSEPORT``), so the refusal still fires when it should.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
         except OSError:

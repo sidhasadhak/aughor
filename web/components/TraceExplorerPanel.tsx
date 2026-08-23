@@ -21,9 +21,10 @@ import { StatusChip } from "@/components/brief/StatusChip";
 import { TraceFlow } from "@/components/agentops/TraceFlow";
 import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
 import {
-  getTrace, getTraces, getVerdicts, recordVerdict,
-  type FindingVerdict, type SessionEvent, type TraceDetail, type TraceSpan,
-  type TraceSummary,
+  getTrace, getTraceLogs, getTraces, getTraceFeedback, getVerdicts, recordTraceFeedback,
+  recordVerdict,
+  type FindingVerdict, type SessionEvent, type TraceDetail, type TraceFeedback,
+  type TraceLogs, type TraceSpan, type TraceSummary,
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
@@ -45,11 +46,18 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
-  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "feedback">("timeline");
+  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "logs" | "feedback">("timeline");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
   const [verdictBusy, setVerdictBusy] = useState(false);
+  const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
+  const [logs, setLogs] = useState<TraceLogs | null>(null);
+  /** Session replay: how many events the run has "reached". null = show all,
+   *  which is the resting state — replay is a thing you opt into, not a mode
+   *  the panel starts in. */
+  const [replayAt, setReplayAt] = useState<number | null>(null);
+  const [runBusy, setRunBusy] = useState(false);
 
   const loadList = useCallback(() => {
     getTraces(focusInvestigationId ? { investigation_id: focusInvestigationId } : { limit: 50 })
@@ -77,7 +85,21 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const loadVerdicts = useCallback(() => {
     getVerdicts(connId ?? undefined, 50).then(setVerdicts).catch(() => {});
   }, [connId]);
-  useEffect(() => { if (tab === "feedback") loadVerdicts(); }, [tab, loadVerdicts]);
+  useEffect(() => { setReplayAt(null); }, [selected]);
+
+  const loadLogs = useCallback(async () => {
+    if (!selected) return;
+    try { setLogs(await getTraceLogs(selected)); } catch { setLogs(null); }
+  }, [selected]);
+
+  const loadRunFeedback = useCallback(async () => {
+    if (!selected) return;
+    try { setRunFeedback(await getTraceFeedback(selected)); } catch { setRunFeedback(null); }
+  }, [selected]);
+
+  useEffect(() => { if (tab === "feedback") { loadVerdicts(); loadRunFeedback(); } },
+    [tab, loadVerdicts, loadRunFeedback]);
+  useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, loadLogs]);
 
   const depths = useMemo(
     () => (detail?.measured ? spanDepths(detail.spans) : new Map<string, number>()),
@@ -96,6 +118,18 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   }, [detail]);
 
   const totalMs = detail?.measured ? detail.duration_ms || 0 : 0;
+
+  const submitRunFeedback = async (verdict: "helpful" | "unhelpful") => {
+    if (!selected) return;
+    setRunBusy(true);
+    try {
+      await recordTraceFeedback(selected, verdict, note);
+      setNote("");
+      loadRunFeedback();
+    } finally {
+      setRunBusy(false);
+    }
+  };
 
   const submitVerdict = async (verdict: "accept" | "correct" | "reject") => {
     if (!invId) return;
@@ -180,6 +214,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 onClick={() => setTab("flow")}>Flow</Button>
               <Button variant={tab === "events" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("events")}>Events</Button>
+              <Button variant={tab === "logs" ? "secondary" : "ghost"} size="xs"
+                onClick={() => setTab("logs")}>Logs</Button>
               <Button variant={tab === "feedback" ? "secondary" : "ghost"} size="xs"
                 onClick={() => setTab("feedback")}>Feedback</Button>
             </div>
@@ -204,14 +240,44 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               </div>
             ) : tab === "events" ? (
               <div style={{ flex: 1, overflowY: "auto", padding: "10px 20px" }}>
-                {detail.events.map(e => {
+                {/* Replay — step the run forward in `session_events` order, which is the
+                    order it actually happened in (`seq`, the store's own monotonic write
+                    order, not a timestamp two events can share). Events past the cursor
+                    are DIMMED rather than removed: the run's shape stays on screen, so
+                    stepping shows what was known at step N against what was still to
+                    come. Removing them would make every step look like a different run. */}
+                <div style={{ display: "flex", gap: 8, alignItems: "center",
+                  padding: "0 6px 8px" }}>
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setReplayAt(a => Math.max(1, (a ?? detail.events.length) - 1))}
+                    disabled={replayAt !== null && replayAt <= 1}>← Step</Button>
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setReplayAt(a => a === null ? 1
+                      : Math.min(detail.events.length, a + 1))}
+                    disabled={replayAt !== null && replayAt >= detail.events.length}>Step →</Button>
+                  <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                    {replayAt === null
+                      ? `${detail.events.length} events`
+                      : `step ${replayAt} of ${detail.events.length}`}
+                  </span>
+                  {replayAt !== null && (
+                    <Button variant="ghost" size="xs" onClick={() => setReplayAt(null)}>
+                      Show all
+                    </Button>
+                  )}
+                </div>
+                {detail.events.map((e, idx) => {
                   if (e.kind === "tool_call" && e.span_id && resultSpans.has(e.span_id)) return null;
+                  const reached = replayAt === null || idx < replayAt;
+                  const isCursor = replayAt !== null && idx === replayAt - 1;
                   const depth = e.span_id ? (depths.get(e.span_id) ?? 0) : 0;
                   const width = totalMs > 0 && e.duration_ms != null
                     ? Math.max(1.5, Math.min(100, (e.duration_ms / totalMs) * 100)) : null;
                   const isOpen = expanded === e.seq;
                   return (
-                    <div key={e.seq}>
+                    <div key={e.seq} style={{
+                      opacity: reached ? 1 : 0.28,
+                      borderLeft: isCursor ? "2px solid var(--blue3)" : "2px solid transparent" }}>
                       <Button variant="ghost" size="sm"
                         onClick={() => setExpanded(isOpen ? null : e.seq)}
                         style={{ display: "flex", width: "100%", height: "auto",
@@ -275,23 +341,114 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                   );
                 })}
               </div>
+            ) : tab === "logs" ? (
+              /* What the run SURVIVED, beside what it did. A tolerated error cannot
+                 appear in the waterfall — the span it happened inside succeeded — so
+                 these lines are the only place it exists. Scoped to this run, which
+                 scopes it in time: the same journal read in aggregate shows 959
+                 NameErrors from a guard that was fixed two months ago. */
+              <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+                {!logs || logs.count === 0 ? (
+                  <div className="aug-fs-sm" style={{ padding: 8, color: "var(--t3)" }}>
+                    No kernel journal lines for this run. Spans are recorded separately —
+                    the waterfall is unaffected.
+                  </div>
+                ) : (
+                  <>
+                    <div className="aug-fs-xs" style={{ color: "var(--t2)", padding: "0 4px 8px" }}>
+                      {logs.count} journal {logs.count === 1 ? "line" : "lines"}
+                      {logs.tolerated_errors > 0 && (
+                        <span style={{ color: "var(--red4)" }}>
+                          {" · "}{logs.tolerated_errors} swallowed
+                          {logs.tolerated_errors === 1 ? " error" : " errors"}
+                        </span>
+                      )}
+                    </div>
+                    {logs.lines.map(line => (
+                      <div key={`${line.seq}-${line.kind}`} className="aug-fs-sm"
+                        style={{ padding: "6px 4px", borderBottom: "1px solid var(--b0)" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <StatusChip strength="soft" hue={line.tolerated ? "negative" : "info"}>
+                            {line.kind}
+                          </StatusChip>
+                          <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                            {relTime(line.at)}
+                          </span>
+                        </div>
+                        {line.tolerated ? (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ color: "var(--red4)" }}>{line.error}</div>
+                            {/* The reason is what separates a designed degradation from
+                                a bug nobody noticed. Without it the error is unreadable. */}
+                            <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 2 }}>
+                              tolerated because: {line.reason}
+                              {line.counter ? ` · ${line.counter}` : ""}
+                            </div>
+                          </div>
+                        ) : line.payload ? (
+                          <pre className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t2)",
+                            whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {JSON.stringify(line.payload)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
             ) : (
               <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+                {/* Was this RUN any good — available on every trace. The verdict block
+                    below judges a FINDING and needs a deep-analysis id, which 256 of 263
+                    runs on this store do not have; it used to be the only control here,
+                    so on a quick turn the buttons did nothing at all. */}
+                <div className="aug-fs-sm" style={{ marginBottom: 8 }}>Was this run helpful?</div>
+                <textarea className="aug-input aug-fs-sm" value={note} rows={2}
+                  placeholder="Optional note (what was right or wrong)"
+                  onChange={e => setNote(e.target.value)}
+                  style={{ width: "100%", marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
+                  <Button variant="secondary" size="sm" disabled={runBusy}
+                    onClick={() => submitRunFeedback("helpful")}>Helpful</Button>
+                  <Button variant="outline" size="sm" disabled={runBusy}
+                    onClick={() => submitRunFeedback("unhelpful")}>Unhelpful</Button>
+                  {runFeedback && runFeedback.count > 0 && (
+                    <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                      {runFeedback.helpful} helpful · {runFeedback.unhelpful} unhelpful
+                    </span>
+                  )}
+                </div>
+                {runFeedback && runFeedback.items.length > 0 && (
+                  <div style={{ marginBottom: 18 }}>
+                    {runFeedback.items.map((f, i) => (
+                      <div key={`${f.at}-${i}`} className="aug-fs-sm" style={{ display: "flex",
+                        gap: 8, alignItems: "center", padding: "6px 0",
+                        borderBottom: "1px solid var(--b0)" }}>
+                        <StatusChip strength="soft"
+                          hue={f.verdict === "helpful" ? "positive" : "negative"}>
+                          {f.verdict}
+                        </StatusChip>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
+                          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {f.note || (f.by ? `by ${f.by}` : "no note")}
+                        </span>
+                        <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>{relTime(f.at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {!invId ? (
                   <div style={{ fontSize: 12, color: "var(--t3)" }}>
-                    This trace recorded no deep analysis id (a quick turn), so a verdict has
-                    nothing durable to attach to. Feedback is available on deep runs.
+                    This trace recorded no deep analysis id (a quick turn), so there is no
+                    finding to accept or reject — the run judgement above is the one that
+                    applies here.
                   </div>
                 ) : (
                   <>
                     <div style={{ fontSize: 12, marginBottom: 8 }}>
                       Record a verdict on this run&apos;s finding — it lands in the
-                      verify store and feeds the closed loop.
+                      verify store and feeds the closed loop. Uses the note above.
                     </div>
-                    <textarea className="aug-input" value={note} rows={2}
-                      placeholder="Optional note (what was right or wrong)"
-                      onChange={e => setNote(e.target.value)}
-                      style={{ width: "100%", marginBottom: 8, fontSize: 12 }} />
                     <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
                       <Button variant="secondary" size="sm" disabled={verdictBusy}
                         onClick={() => submitVerdict("accept")}>Accept</Button>

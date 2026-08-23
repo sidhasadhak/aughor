@@ -352,6 +352,23 @@ class AughorClient:
     async def cancel_job(self, job_id: str) -> dict:
         return await self._post(f"/jobs/{job_id}/cancel")
 
+    # ── traces (VA-5) ────────────────────────────────────────────────────────
+    # Three calls, narrowing: which runs → one run's shape → one span's payload.
+    # There is deliberately no "give me the whole trace": that response is 1.2 MB
+    # for a 1,140-event run, and a tool whose success case floods the caller's
+    # context is not a usable tool.
+
+    async def list_runs(self, *, limit: int = 20, investigation_id: Optional[str] = None,
+                        agent_id: Optional[str] = None) -> Any:
+        return await self._get("/traces", params={
+            "limit": limit, "investigation_id": investigation_id, "agent_id": agent_id})
+
+    async def inspect_run(self, trace_id: str, *, top: int = 8) -> Any:
+        return await self._get(f"/traces/{trace_id}/summary", params={"top": top})
+
+    async def run_span(self, trace_id: str, span_id: str) -> Any:
+        return await self._get(f"/traces/{trace_id}/spans/{span_id}")
+
 
 def _clean(params: Optional[dict]) -> Optional[dict]:
     """Drop None-valued query params so we never send ``?schema=None``."""

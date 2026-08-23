@@ -61,8 +61,27 @@ def _checkpointer():
     # is unproven territory. The Postgres story for checkpoints is the library's
     # own PostgresSaver (a swap recorded in docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md
     # §6 Q4), not SQL translation.
+    #
+    # ⚠️ Opting out of the seam is NOT opting out of the WAL guarantee, and for two days
+    # it silently was. #379 removed the SIGBUS precondition for every store that goes
+    # through `connect_store`; this one does not, and it is the largest store on disk
+    # (151 MB) with the highest connection churn — this function is not memoized, so
+    # every call opened a fresh WAL connection and dropped it on GC. Each of those is a
+    # LAST CLOSE, which unlinks `-wal`/`-shm` while another thread is mapped into the
+    # WAL index: `EXC_BAD_ACCESS / SIGBUS · FS pagein error: 22` in `walFindFrame`, no
+    # Python traceback, the API simply vanishes. Five such crashes on 2026-08-22/23,
+    # all identical, all after #379 had shipped.
+    #
+    # `_hold_wal_open` takes an INDEPENDENT idle connection to the same file. It never
+    # touches LangGraph's connection, so the reason this store stayed off the seam still
+    # holds — and with one connection always open SQLite never sees a last close, so
+    # there is nothing to unlink. Idempotent and lock-free on the repeat path, so calling
+    # it per invocation costs a dict lookup.
     import sqlite3
     from langgraph.checkpoint.sqlite import SqliteSaver
+
+    from aughor.db.backend import hold_wal_open
+    hold_wal_open(_CHECKPOINT_DB)
     conn = tune(sqlite3.connect(str(_CHECKPOINT_DB), check_same_thread=False))
     return SqliteSaver(conn)
 

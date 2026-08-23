@@ -5732,3 +5732,77 @@ export async function getInvestigationsList(limit = 50): Promise<InvestigationLi
   if (!res.ok) throw new Error(`Failed to fetch investigations (${res.status})`);
   return res.json();
 }
+
+/** VA-5 — a judgement on a RUN, keyed by trace id.
+ *
+ *  Distinct from `recordVerdict`, which judges a FINDING and needs an investigation id:
+ *  measured on this store, 256 of 263 runs have none, so that control silently did
+ *  nothing on 97% of them. A quick turn is still a run somebody can call unhelpful.
+ *  The vocabularies stay apart on purpose — "this run was unhelpful" is not "this
+ *  finding is wrong", and merging them would teach the closed loop to read a latency
+ *  complaint as a wrong answer. */
+export interface TraceFeedbackItem {
+  at: string;
+  verdict: "helpful" | "unhelpful";
+  note: string;
+  by: string;
+}
+
+export interface TraceFeedback {
+  trace_id: string;
+  count: number;
+  helpful: number;
+  unhelpful: number;
+  items: TraceFeedbackItem[];
+}
+
+export async function recordTraceFeedback(
+  traceId: string, verdict: "helpful" | "unhelpful", note = "",
+): Promise<{ ok: boolean; recorded: boolean }> {
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, note }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to record feedback");
+  }
+  return res.json();
+}
+
+export async function getTraceFeedback(traceId: string): Promise<TraceFeedback> {
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}/feedback`);
+  if (!res.ok) throw new Error(`Failed to fetch trace feedback (${res.status})`);
+  return res.json();
+}
+
+/** VA-5 — the kernel journal for one run.
+ *
+ *  The waterfall shows what the agent DID; this shows what the run SURVIVED. A
+ *  tolerated error is invisible in the waterfall by construction — the span it
+ *  happened inside succeeded — so the journal is the only place it exists. */
+export interface TraceLogLine {
+  at: string;
+  seq: number;
+  kind: string;
+  tolerated: boolean;
+  error: string | null;
+  reason: string | null;
+  counter: string | null;
+  payload: Record<string, unknown> | null;
+}
+
+export interface TraceLogs {
+  trace_id: string;
+  count: number;
+  tolerated_errors: number;
+  lines: TraceLogLine[];
+}
+
+export async function getTraceLogs(traceId: string, limit = 200): Promise<TraceLogs> {
+  const res = await fetch(
+    `${getApiBase()}/traces/${encodeURIComponent(traceId)}/logs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch trace logs (${res.status})`);
+  return res.json();
+}
