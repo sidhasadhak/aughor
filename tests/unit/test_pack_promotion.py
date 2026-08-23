@@ -161,7 +161,11 @@ def test_an_active_prose_pack_does_not_shadow_a_grounded_one(monkeypatch):
 
 @pytest.fixture
 def packs_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr("aughor.routers.packs.PACKS_DIR", tmp_path)
+    # The AUTHORED root, through its env override: reads now resolve via
+    # `packs.roots`, which spans two directories, so patching one module constant
+    # no longer redirects them.
+    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
     return tmp_path
 
 
@@ -288,3 +292,84 @@ def test_demotion_needs_no_connection_and_no_gate(client, packs_dir):
     res = client.post("/packs/finance/status", json={"status": "deprecated"})
 
     assert res.status_code == 200 and res.json()["status"] == "deprecated"
+
+
+# ── two roots ─────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def two_roots(tmp_path, monkeypatch):
+    """An authored root and an imported one, both empty, both isolated."""
+    authored, imported = tmp_path / "authored", tmp_path / "imported"
+    authored.mkdir(); imported.mkdir()
+    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(authored))
+    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(imported))
+    return authored, imported
+
+
+def test_both_roots_are_searched(two_roots):
+    from aughor.packs.roots import all_pack_ids, pack_dir
+
+    authored, imported = two_roots
+    _write_pack(authored, "customer-analytics", partial=False)
+    _write_pack(imported, "tanstack-sorting")
+
+    assert set(all_pack_ids()) == {"customer-analytics", "tanstack-sorting"}
+    assert pack_dir("tanstack-sorting") == imported / "tanstack-sorting"
+
+
+def test_authored_wins_a_collision(two_roots):
+    """A skill library will eventually contain a `retention`. An import must not shadow a
+    pack someone here maintains — and the imported copy stays on disk, so the collision is
+    recoverable by renaming rather than by re-importing."""
+    from aughor.packs.roots import all_pack_ids, pack_dir
+
+    authored, imported = two_roots
+    _write_pack(authored, "retention", prose="The authored one.")
+    _write_pack(imported, "retention", prose="The imported one.")
+
+    assert all_pack_ids().count("retention") == 1
+    assert pack_dir("retention") == authored / "retention"
+    assert (imported / "retention" / PROSE_FILE).is_file(), "the loser stays on disk"
+
+
+def test_pack_dir_refuses_to_leave_its_roots(two_roots):
+    """A pack id arrives from a route parameter and from a tool call."""
+    from aughor.packs.roots import pack_dir
+
+    assert pack_dir("../../etc") is None
+    assert pack_dir("..") is None
+    assert pack_dir("") is None
+
+
+def test_an_imported_pack_can_be_promoted_and_read(two_roots):
+    """The whole point of the second root: it is a real pack root, not a staging area."""
+    from aughor.agent import platform_tools as pt
+
+    _authored, imported = two_roots
+    _write_pack(imported, "tanstack-sorting", prose="Sort with rowSortingFeature.")
+
+    set_status("tanstack-sorting", "active", actor="amit")
+
+    out = pt.read_pack("c1", {"pack_id": "tanstack-sorting"})
+    assert out["readable"] is True
+    assert "rowSortingFeature" in out["prose"]
+
+
+def test_skills_import_writes_to_the_untracked_root_by_default(two_roots, tmp_path):
+    """This repo is public; redistributing a skill library inside it is a decision, not a
+    side effect of running an importer."""
+    from click.testing import CliRunner
+
+    from aughor.cli import cli
+
+    _authored, imported = two_roots
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "SKILL.md").write_text(
+        "---\nname: cohort-analysis\ndescription: Cohorts over totals.\n---\n\nBody.\n")
+
+    result = CliRunner().invoke(cli, ["skills", "import", str(src), "--licence", "MIT"])
+
+    assert result.exit_code == 0, result.output
+    assert (imported / "cohort-analysis" / "pack.yaml").is_file()
+    assert not (_authored / "cohort-analysis").exists(), "never into the tracked root"

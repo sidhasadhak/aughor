@@ -227,8 +227,15 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
         manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"],
                                  partial=False, source="", source_url="", licence=""),
         playbooks=[playbook], **{PROSE_FIELD: "Reads the P&L before the dashboard."})
-    monkeypatch.setattr("aughor.routers.packs.PACKS_DIR", tmp_path)
-    monkeypatch.setattr("aughor.packs.list_packs", lambda root: ["finance"])
+    # The AUTHORED root, through its env override: reads now resolve via
+    # `packs.roots`, which spans two directories, so patching one module constant
+    # no longer redirects them.
+    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    # The tool resolves ids through `packs.roots` now, and the fake pack is not on disk,
+    # so the resolution is stubbed alongside the loader it feeds.
+    monkeypatch.setattr("aughor.packs.roots.all_pack_ids", lambda: ["finance"])
+    monkeypatch.setattr("aughor.packs.roots.pack_dir", lambda pid: tmp_path / pid)
     monkeypatch.setattr("aughor.packs.load_pack", lambda root: pack)
     monkeypatch.setattr("aughor.packs.load_binding",
                         lambda pid, cid, schema="": {"pack": pid})
@@ -247,8 +254,13 @@ def test_an_unloadable_pack_is_listed_not_hidden(monkeypatch, tmp_path):
     def _boom(root):
         raise ValueError("bad manifest")
 
-    monkeypatch.setattr("aughor.routers.packs.PACKS_DIR", tmp_path)
-    monkeypatch.setattr("aughor.packs.list_packs", lambda root: ["broken"])
+    # The AUTHORED root, through its env override: reads now resolve via
+    # `packs.roots`, which spans two directories, so patching one module constant
+    # no longer redirects them.
+    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    monkeypatch.setattr("aughor.packs.roots.all_pack_ids", lambda: ["broken"])
+    monkeypatch.setattr("aughor.packs.roots.pack_dir", lambda pid: tmp_path / pid)
     monkeypatch.setattr("aughor.packs.load_pack", _boom)
 
     out = pt.list_packs("c1", {})

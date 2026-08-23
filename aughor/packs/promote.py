@@ -60,11 +60,20 @@ class PromotionRefused(Exception):
         self.findings = findings or []
 
 
-def _packs_dir(packs_dir=None) -> Path:
+def _pack_root(pack_id: str, packs_dir=None) -> Path:
+    """Where this pack lives — an explicit dir if given, else whichever root holds it."""
     if packs_dir is not None:
-        return Path(packs_dir)
-    from aughor.packs.intake import packs_root
-    return packs_root()
+        base = Path(packs_dir)
+        root = base / pack_id
+        # A caller-supplied id reaches here; assert containment rather than trusting it.
+        if root.parent.resolve() != base.resolve() or not (root / "pack.yaml").is_file():
+            raise PacksError(f"no pack '{pack_id}' under {base}")
+        return root
+    from aughor.packs.roots import pack_dir
+    found = pack_dir(pack_id)
+    if found is None:
+        raise PacksError(f"no pack '{pack_id}' in any pack root")
+    return found
 
 
 def lint_pack_prose(root: Path) -> list:
@@ -97,13 +106,8 @@ def set_status(pack_id: str, status: str, *, packs_dir=None, actor: str = "",
     if status not in STATUSES:
         raise ValueError(f"unknown status '{status}' — one of {', '.join(STATUSES)}")
 
-    base = _packs_dir(packs_dir)
-    root = base / pack_id
+    root = _pack_root(pack_id, packs_dir)
     manifest_file = root / "pack.yaml"
-    # The slug reaches here from a route parameter; assert containment locally rather than
-    # trusting whatever validated it upstream.
-    if root.parent.resolve() != base.resolve() or not manifest_file.is_file():
-        raise PacksError(f"no pack '{pack_id}' under {base}")
 
     if status == "active":
         findings = lint_pack_prose(root)

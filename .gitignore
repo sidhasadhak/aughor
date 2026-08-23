@@ -143,3 +143,8 @@ evals/llm_exp/
 .env*
 .vercelignore
 .env.local
+
+# Imported skill packs — third-party prose brought in by `aughor skills import`.
+# Untracked on purpose: this repo is public, and redistributing a skill library inside
+# it is a deliberate decision, not a side effect of running an importer.
+data/packs/

@@ -275,18 +275,19 @@ def read_pack(connection_id: str, args: dict) -> dict:
     rather than as missing, because "promote it" and "you typed the id wrong" are
     different problems.
     """
-    from aughor.packs import load_pack, list_packs as _list_packs
+    from aughor.packs import load_pack
     from aughor.packs.loader import PROSE_FIELD
-    from aughor.routers.packs import PACKS_DIR
+    from aughor.packs.roots import pack_dir
 
     pack_id = str(args.get("pack_id") or "").strip()
     if not pack_id:
         return {"error": "pack_id is required"}
-    if pack_id not in set(_list_packs(PACKS_DIR)):
+    root = pack_dir(pack_id)
+    if root is None:
         return {"error": f"no pack '{pack_id}' is installed"}
 
     try:
-        pack = load_pack(PACKS_DIR / pack_id)
+        pack = load_pack(root)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an unloadable pack answers with its error, not with silence",
@@ -329,17 +330,17 @@ def list_packs(connection_id: str, args: dict) -> dict:
     rung of a disclosure ladder rather than a bare inventory: the model reads N cheap
     descriptions, then spends a `read_pack` call on the one that matches.
     """
-    from aughor.packs import load_binding, load_pack, list_packs as _list_packs
-    from aughor.routers.packs import PACKS_DIR
-
-    if not PACKS_DIR.is_dir():
-        return {"count": 0, "packs": []}
+    from aughor.packs import load_binding, load_pack
+    from aughor.packs.roots import all_pack_ids, pack_dir
 
     packs = []
-    for pack_id in _list_packs(PACKS_DIR):
+    for pack_id in all_pack_ids():
         entry: dict = {"id": pack_id}
+        root = pack_dir(pack_id)
+        if root is None:                       # removed between the listing and the load
+            continue
         try:
-            pack = load_pack(PACKS_DIR / pack_id)
+            pack = load_pack(root)
             entry.update({"name": pack.manifest.name, "status": pack.manifest.status,
                           "domains": pack.manifest.domains,
                           "description": _pack_description(pack),

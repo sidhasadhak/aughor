@@ -799,9 +799,6 @@ def graph_export(connection_id: str, out_dir: str, schema: str):
 # The ingester without a door is a library nobody can reach; the linter without an
 # importer was a gate on a door that did not exist. This is where both become usable.
 
-PACKS_DIR = Path(__file__).parent.parent / "packs"
-
-
 def _skill_files(target: Path) -> list[Path]:
     """Every SKILL.md under `target`, or the file itself.
 
@@ -836,19 +833,23 @@ def packs():
 
 
 @packs.command("list")
-@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
 def packs_list(packs_dir: Path):
     """Every pack on disk with its status — the answer to 'why is nothing steering'."""
     from aughor.packs.loader import load_pack
     from aughor.packs.intake import known_pack_ids
 
+    from aughor.packs.roots import authored_root, imported_root, pack_dir
+
     ids = known_pack_ids(packs_dir)
     if not ids:
-        console.print(f"[yellow]no packs under {packs_dir}[/yellow]")
+        console.print(f"[yellow]no packs in {authored_root()} or {imported_root()}[/yellow]")
         return
     for pid in ids:
+        root = Path(packs_dir) / pid if packs_dir else pack_dir(pid)
         try:
-            pack = load_pack(Path(packs_dir) / pid)
+            pack = load_pack(root)
         except Exception as exc:
             console.print(f"  [red]✗ {pid}[/red]: {exc}")
             continue
@@ -857,6 +858,7 @@ def packs_list(packs_dir: Path):
         flags = " ".join(filter(None, [
             "[dim]prose-only[/dim]" if m.partial else "",
             f"[dim]{m.source}[/dim]" if m.source else "",
+            "[dim](imported)[/dim]" if root and root.parent == imported_root() else "",
         ]))
         console.print(f"  [{colour}]{m.status:<10}[/{colour}] {pid}  {flags}")
     console.print(f"\n{len(ids)} pack(s). Only [green]active[/green] ones are readable "
@@ -865,7 +867,8 @@ def packs_list(packs_dir: Path):
 
 @packs.command("promote")
 @click.argument("pack_id")
-@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
 @click.option("--actor", default="", help="Who is promoting it. Recorded on the journal.")
 def packs_promote(pack_id: str, packs_dir: Path, actor: str):
     """Make PACK_ID active — the point at which its prose can reach a prompt.
@@ -895,7 +898,8 @@ def packs_promote(pack_id: str, packs_dir: Path, actor: str):
 
 @packs.command("demote")
 @click.argument("pack_id")
-@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
 @click.option("--status", type=click.Choice(["draft", "deprecated"]), default="draft",
               show_default=True)
 @click.option("--actor", default="")
@@ -943,7 +947,8 @@ def skills_lint(target: Path):
 
 @skills.command("import")
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
-@click.option("--packs-dir", default=str(PACKS_DIR), show_default=True, type=Path)
+@click.option("--packs-dir", default=None, type=Path,
+              help="Override the pack root. Defaults to both roots (authored, then imported).")
 @click.option("--namespace", default="",
               help="Prefix every pack id. Skill names in the wild are generic — a real "
                    "library here produced 'access' three times from three plugins.")
@@ -964,13 +969,24 @@ def skills_import(target: Path, packs_dir: Path, namespace: str, licence: str,
 
     Every pack lands `status: draft` and `partial: true`. Nothing imported reaches a
     prompt until someone promotes it.
+
+    Writes to the UNTRACKED imported root by default, never into the tracked `packs/`
+    directory: this repo is public, and redistributing a few dozen third-party documents
+    inside it is a decision to take deliberately rather than as a side effect of running
+    an importer. `--packs-dir` overrides that if you mean to.
     """
     from aughor.skills.ingest import DEFAULT_SOURCE, SkillIngestError, ingest_skill, plan_pack
+
+    if packs_dir is None:
+        from aughor.packs.roots import imported_root
+        packs_dir = imported_root()
+        packs_dir.mkdir(parents=True, exist_ok=True)
 
     files = _skill_files(target)
     if not files:
         console.print(f"[yellow]no SKILL.md under {target}[/yellow]")
         return
+    console.print(f"[dim]writing to {packs_dir}[/dim]")
 
     wrote = blocked = failed = 0
     for f in files:

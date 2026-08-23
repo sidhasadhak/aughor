@@ -13,14 +13,27 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.packs import (
-    load_pack, list_packs, validate_pack, PacksError,
+    load_pack, validate_pack, PacksError,
     schema_facts_from_table_cols, save_binding, load_binding,
 )
+from aughor.packs import roots as _roots
 from aughor.packs.resolver import binding_report
 
 router = APIRouter(tags=["packs"])
 
-PACKS_DIR = Path(__file__).resolve().parents[2] / "packs"
+#: The AUTHORED root. Kept as a module constant because it is API surface for this
+#: router's own writes; every READ below goes through `roots.pack_dir`, which also finds
+#: imported packs. See aughor/packs/roots.py for why there are two.
+PACKS_DIR = _roots.authored_root()
+
+
+def _dir_for(pack_id: str) -> Path:
+    """The directory this pack id resolves to, or a 404. One place, so a route cannot
+    accidentally look in only one of the two roots."""
+    found = _roots.pack_dir(pack_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    return found
 
 
 def _summary(pack_dir: Path) -> dict:
@@ -48,18 +61,17 @@ def get_packs():
     deploy binding)."""
     enabled = True
     packs = []
-    if PACKS_DIR.is_dir():
-        for pid in list_packs(PACKS_DIR):
-            packs.append(_summary(PACKS_DIR / pid))
+    for pid in _roots.all_pack_ids():
+        root = _roots.pack_dir(pid)
+        if root is not None:
+            packs.append(_summary(root))
     return {"enabled": enabled, "packs": packs}
 
 
 @router.get("/packs/{pack_id}")
 def get_pack(pack_id: str):
     """Full pack detail + validation report."""
-    pack_dir = PACKS_DIR / pack_id
-    if not (pack_dir / "pack.yaml").is_file():
-        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    pack_dir = _dir_for(pack_id)
     try:
         pack = load_pack(pack_dir)
     except PacksError as e:
@@ -105,9 +117,7 @@ def post_propose_bindings(pack_id: str, body: ProposeIn):
     """Propose role→table/column bindings for this pack. Pass `table_cols` explicitly, or omit
     it and we introspect `connection_id` (+ optional `schema`) live. Returns each role's
     candidate (table/column/value, confidence, evidence) + a bound summary for deploy review."""
-    pack_dir = PACKS_DIR / pack_id
-    if not (pack_dir / "pack.yaml").is_file():
-        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    pack_dir = _dir_for(pack_id)
     try:
         pack = load_pack(pack_dir)
     except PacksError as e:
@@ -224,9 +234,7 @@ def post_pack_status(pack_id: str, body: StatusIn):
     """
     from aughor.packs.promote import PromotionRefused, set_status
 
-    pack_dir = PACKS_DIR / pack_id
-    if not (pack_dir / "pack.yaml").is_file():
-        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    pack_dir = _dir_for(pack_id)
 
     decision = None
     if body.status == "active":
@@ -243,11 +251,10 @@ def post_pack_status(pack_id: str, body: StatusIn):
             decision = _activation_decision(pack, pack_id, body)
 
     try:
-        # `packs_dir=PACKS_DIR` explicitly: this router reads through its own constant and
-        # `promote` defaults to `intake._PACKS_DIR`. They resolve to the same directory
-        # today, which is exactly why a divergence would be found late.
-        pack = set_status(pack_id, body.status, packs_dir=PACKS_DIR,
-                          actor=body.actor, gate_decision=decision)
+        # No `packs_dir`: promote resolves through the same roots this route read from,
+        # so an imported pack is promotable and a route cannot write to a root it did not
+        # look in.
+        pack = set_status(pack_id, body.status, actor=body.actor, gate_decision=decision)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except PromotionRefused as e:
@@ -289,9 +296,7 @@ def post_evaluate(pack_id: str, body: EvalIn):
     """Run the pack's golden questions through the engine on this connection and return the
     activation decision (Bet 2). Promotion to active requires every eval to pass AND the pack to
     be fully bound. NOTE: runs one planner pass per eval — a deliberate, on-demand gate."""
-    pack_dir = PACKS_DIR / pack_id
-    if not (pack_dir / "pack.yaml").is_file():
-        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    pack_dir = _dir_for(pack_id)
     try:
         pack = load_pack(pack_dir)
     except PacksError as e:
