@@ -11,6 +11,9 @@ dist/
 
 # Data & secrets
 data/connections.db
+# The serving process's pid marker (db/serving.py). Runtime state of ONE machine —
+# meaningless anywhere else, and this repo is public.
+data/.serving.pid
 data/.hermes_key
 data/.aughor_key
 data/hermes.duckdb

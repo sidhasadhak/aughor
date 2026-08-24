@@ -327,3 +327,23 @@ def test_a_store_whose_database_was_deleted_is_not_reported_as_drift(store):
     entry = next(s for s in backend.wal_keepalive_report()["stores"] if s["path"] == key)
     assert entry["gone"] is True
     assert entry["drifted"] is False
+
+
+def test_the_serving_marker_is_not_committable(tmp_path, monkeypatch):
+    """The pidfile is one machine's runtime state, and this repo is public.
+
+    Caught in the browser-verification pass: a live API had written `data/.serving.pid`
+    and it showed up as UNTRACKED — one `git add -A` from being published. That has
+    happened here before with another session's files.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from aughor.db import serving
+    repo = Path(__file__).resolve().parents[2]
+    marker = f"data/{serving.PIDFILE_NAME}"
+    result = subprocess.run(["git", "check-ignore", marker], cwd=repo,
+                            capture_output=True, text=True)
+    assert result.returncode == 0, (
+        f"{marker} is not gitignored — the name in `serving.PIDFILE_NAME` and the rule in "
+        f".gitignore have drifted apart, and the file is one `git add -A` from a public repo")
