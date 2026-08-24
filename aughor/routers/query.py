@@ -385,11 +385,15 @@ async def query_run(body: _QueryRunRequest, request: Request):
                     # subquery wrap hides whether the raw query had more rows, so
                     # row n+1 arriving is the only honest "there was more" signal.
                     sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit + 1 if _typed else _limit}"
-                if _params:
-                    # Parameters and the typed capture do not compose yet: the typed
-                    # side-channel hangs off `execute()`, and binding takes its own
-                    # path. Refusing beats serving strings under a "typed" label —
-                    # the same call SE-0 made for `use_bulk`.
+                if _params and _typed:
+                    # They compose now. The capture site always did fire on the bound
+                    # path — `_offer_typed_rows` sits after the `if params:` branch in
+                    # every connector that has one — but the route picked
+                    # `execute_with_params` OR `execute_typed`, so the rows went into a
+                    # sink nobody had set and a parameterised query came back untyped.
+                    result, typed_payload = db.execute_with_params_typed(
+                        _source, sql, _params)
+                elif _params:
                     result = db.execute_with_params(_source, sql, _params)
                 elif _typed:
                     result, typed_payload = db.execute_typed(_source, sql)
