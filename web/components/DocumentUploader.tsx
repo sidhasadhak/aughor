@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatCount } from "@/lib/format";
 import {
   listDocuments,
   uploadDocument,
+  previewDocumentChunks,
   deleteDocument,
   getKnowledgeStatus,
+  type ChunkPreview,
+  type ChunkSettings,
   type DocumentEntry,
   type KnowledgeStatus,
 } from "@/lib/api";
@@ -63,6 +67,37 @@ export function DocumentUploader() {
 
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
 
+  // Chunking, as settings rather than three constants nobody could see. Empty means the
+  // defaults the corpus was indexed under — an omitted field is the previous behaviour,
+  // so a person who never opens this panel gets exactly what they got before.
+  const [showChunking, setShowChunking] = useState(false);
+  const [settings, setSettings] = useState<Partial<ChunkSettings>>({});
+  const [preview, setPreview] = useState<ChunkPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewRef = useRef<HTMLInputElement>(null);
+
+  const setNum = (k: keyof ChunkSettings) => (v: string) => {
+    const n = Number(v);
+    setSettings(prev => (v === "" || Number.isNaN(n)
+      ? Object.fromEntries(Object.entries(prev).filter(([key]) => key !== k))
+      : { ...prev, [k]: n }));
+  };
+
+  const runPreview = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setPreviewError(null);
+    setPreviewing(true);
+    try {
+      setPreview(await previewDocumentChunks(files[0], settings));
+    } catch (e) {
+      setPreview(null);
+      setPreviewError(e instanceof Error ? e.message : "Preview failed");
+    } finally {
+      setPreviewing(false);
+    }
+  }, [settings]);
+
   const refresh = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {});
     // The plane's own account of itself. Without it this panel shows a list of documents
@@ -81,7 +116,7 @@ export function DocumentUploader() {
     const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
-        const entry = await uploadDocument(file);
+        const entry = await uploadDocument(file, settings);
         results.push(entry);
       } catch (e) {
         errors.push(`${file.name}: ${e instanceof Error ? e.message : "failed"}`);
@@ -96,7 +131,7 @@ export function DocumentUploader() {
     if (errors.length > 0) setUploadError(errors.join("\n"));
     setUploading(false);
     getKnowledgeStatus().then(setStatus).catch(() => {});
-  }, []);
+  }, [settings]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -164,6 +199,133 @@ export function DocumentUploader() {
             </p>
           )}
         </div>
+      )}
+
+      {/* How documents are cut up, and what the cuts look like before anything is
+          indexed. Both existed in the API and neither was reachable from here, so the
+          only way to see a setting's effect was to upload, read a number, delete and
+          try again — an embedding call per attempt. */}
+      <div className="rounded-md border border-zinc-700 bg-zinc-900/40">
+        <button
+          type="button"
+          onClick={() => setShowChunking(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 text-left"
+        >
+          <span className="text-sm text-zinc-300">Chunking</span>
+          <span className="aug-fs-xs text-zinc-500">
+            {Object.keys(settings).length === 0
+              ? "defaults"
+              : `${Object.keys(settings).length} changed`}
+            {" "}{showChunking ? "▾" : "▸"}
+          </span>
+        </button>
+
+        {showChunking && (
+          <div className="border-t border-zinc-700 p-3 space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                ["max_chars", "Max characters", "how large a chunk may get"],
+                ["overlap_chars", "Overlap", "characters repeated between neighbours"],
+                ["min_chars", "Minimum", "below this a chunk is DISCARDED"],
+              ] as const).map(([key, label, hint]) => (
+                <div key={key}>
+                  <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor={`chunk-${key}`}>
+                    {label}
+                  </label>
+                  <input
+                    id={`chunk-${key}`}
+                    type="number"
+                    min={1}
+                    value={settings[key] ?? ""}
+                    placeholder={String(preview?.settings?.[key] ?? "default")}
+                    onChange={e => setNum(key)(e.target.value)}
+                    className="aug-input w-full"
+                  />
+                  <p className="aug-fs-xs text-zinc-600 mt-1">{hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={settings.collapse_whitespace ?? true}
+                  onChange={e => setSettings(prev => ({ ...prev, collapse_whitespace: e.target.checked }))}
+                />
+                Collapse whitespace
+              </label>
+              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={settings.strip_urls_emails ?? false}
+                  onChange={e => setSettings(prev => ({ ...prev, strip_urls_emails: e.target.checked }))}
+                />
+                Strip URLs and emails
+              </label>
+            </div>
+            <p className="aug-fs-xs text-zinc-600">
+              Off by default: a policy that cites a source loses the citation. Minimum is
+              the one worth watching — a document of short paragraphs silently loses the
+              chunks that fall under it.
+            </p>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => previewRef.current?.click()}
+                disabled={previewing}
+                className="aug-fs-xs px-2 py-1 rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {previewing ? "Chunking…" : "Preview a file"}
+              </button>
+              <input
+                ref={previewRef}
+                type="file"
+                accept={ACCEPTED}
+                className="hidden"
+                onChange={e => runPreview(e.target.files)}
+              />
+              <span className="aug-fs-xs text-zinc-600">
+                Indexes nothing — no embedder, no writes. Works while search is down.
+              </span>
+            </div>
+
+            {previewError && (
+              <p className="aug-fs-xs text-red-400">{previewError}</p>
+            )}
+
+            {preview && (
+              <div className="rounded border border-zinc-700 bg-zinc-950/50 p-2 space-y-2">
+                <p className="aug-fs-xs text-zinc-400">
+                  {preview.total_chunks} chunk{preview.total_chunks !== 1 ? "s" : ""} from{" "}
+                  {formatCount(preview.characters)} characters · showing {preview.shown}
+                </p>
+                {preview.chunks.map(c => (
+                  <div key={c.index} className="rounded bg-zinc-900 p-2">
+                    <p className="aug-fs-xs text-zinc-600 font-mono mb-1">
+                      #{c.index} · {c.characters} chars · ~{c.tokens_estimate} tokens
+                    </p>
+                    <p className="aug-fs-xs text-zinc-400 whitespace-pre-wrap line-clamp-4">
+                      {c.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Which embedder these documents are being cut for. Shown always, not only when
+          broken: a corpus is only comparable with itself under ONE model, so the model in
+          force is part of reading the list. It is set by configuration rather than here —
+          saying so is more honest than a picker that cannot take effect. */}
+      {status?.embedder?.ok && (
+        <p className="aug-fs-xs text-zinc-600 font-mono">
+          embedding with {status.embedder.model} · {status.embedder.dim}-dimension vectors ·
+          {" "}{status.chunks} chunk{status.chunks !== 1 ? "s" : ""} indexed
+        </p>
       )}
 
       {/* Drop zone */}

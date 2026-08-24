@@ -173,7 +173,8 @@ export interface OrgLLMConfig {
   configured: boolean;
   backend: string;
   models: Record<string, string>;
-  keys_set: Record<string, boolean>;
+  keys_set: Record<string, boolean>;          // USABLE — a stored key that cannot be decrypted is false
+  keys_state?: Record<string, "set" | "unset" | "unreadable">;
   updated_at: string;
 }
 
@@ -2329,7 +2330,13 @@ export interface KnowledgeStatus {
   /** What the STORE holds — the only number that answers "how much can be searched".
    *  The per-document `chunk_count` below is the registry's CLAIM, and they differ. */
   chunks: number;
-  embedder: { model: string; endpoint: string; ok: boolean; error?: string; why?: string };
+  /** `dim` is PROBED from the live embedder, never declared, so it is absent when the
+   *  probe could not run. `stored_dim` appears only when the index disagrees with it —
+   *  which is the one state where nothing can be indexed OR searched. */
+  embedder: {
+    backend?: string; model: string; endpoint: string; ok: boolean;
+    dim?: number; stored_dim?: number; error?: string; why?: string;
+  };
   store: { ok: boolean; backend: string; chunks?: number; why?: string };
   consistency: {
     ok: boolean;
@@ -2353,9 +2360,47 @@ export async function listDocuments(): Promise<DocumentEntry[]> {
   return res.json();
 }
 
-export async function uploadDocument(file: File): Promise<DocumentEntry> {
+/** How a document is cut up. Every field defaults to the value the corpus was indexed
+ *  under, so an omitted setting is the previous behaviour and not a new one. */
+export interface ChunkSettings {
+  delimiter: string;
+  max_chars: number;
+  overlap_chars: number;
+  min_chars: number;
+  collapse_whitespace: boolean;
+  strip_urls_emails: boolean;
+}
+
+export interface ChunkPreview {
+  total_chunks: number;
+  shown: number;
+  characters: number;
+  settings: ChunkSettings;
+  chunks: { index: number; characters: number; tokens_estimate: number; text: string }[];
+}
+
+/** Chunk a document and show the result WITHOUT indexing it — no embedder, no writes.
+ *  The alternative to seeing is upload, look at a number, delete, try again. */
+export async function previewDocumentChunks(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<ChunkPreview> {
   const form = new FormData();
   form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/preview`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Preview failed");
+  }
+  return res.json();
+}
+
+export async function uploadDocument(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<DocumentEntry> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
   const res = await fetch(`${getApiBase()}/documents/upload`, { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -3867,7 +3912,8 @@ export interface LlmConfig {
   backend: string;
   models: Record<string, string>;          // effective coder/narrator/fast
   base_urls: Record<string, string>;       // effective ollama/lmstudio
-  keys_set: Record<string, boolean>;        // groq/together/anthropic — set or not (never the value)
+  keys_set: Record<string, boolean>;        // groq/together/anthropic — USABLE or not (never the value)
+  keys_state?: Record<string, "set" | "unset" | "unreadable">;  // "unreadable" = stored, undecryptable
   capabilities: Record<string, LlmCapability>;  // per-role vended profile (§5b)
   models_set: Record<string, string>;       // explicit overrides on disk
   base_urls_set: Record<string, string>;
