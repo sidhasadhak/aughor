@@ -67,13 +67,11 @@ NO_BINDING = {
 
 #: Connectors with no driver-handle abort, with the reason. Same contract as NO_BINDING:
 #: an entry is a DECISION, an omission is a bug.
-NO_INTERRUPT = {
-    "BigQueryConnection":
-        "there is no connection-level abort to reach: BigQuery cancels a JOB, which needs "
-        "the running QueryJob object, and this connector does not retain one. The base "
-        "returns False, which is the honest answer for a caller with nothing better to do "
-        "than wait.",
-}
+#: Empty, and kept anyway. `BigQueryConnection` was the one entry — "cancelling means
+#: cancelling a JOB, and this connector does not retain one" — which was true right up
+#: until it retained one. The mechanism stays so the next exemption has a home and the
+#: rot-guard below keeps watching it.
+NO_INTERRUPT: dict[str, str] = {}
 
 
 @pytest.mark.parametrize("cls", WORKBENCH_CONNECTORS, ids=lambda c: c.__name__)
