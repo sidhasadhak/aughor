@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -210,6 +212,44 @@ if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
     _shutil.copytree(_packs_src, _packs_dst)
 os.environ.setdefault("AUGHOR_PACKS_DIR", _packs_dst)
 
+
+
+@pytest.fixture(autouse=True)
+def _live_env_for_marked_tests(request):
+    """Give `.env` back to the tests that explicitly opted OUT of hermeticity.
+
+    The suite runs with `AUGHOR_SKIP_DOTENV` set, because a developer's `.env` leaking
+    into the process is what made a local run a different experiment from CI's. But tests
+    marked `e2e` or `eval` make REAL calls and need the developer's real credentials —
+    without them the call 401s silently and the test fails claiming the pipeline metered
+    no tokens, which is true and completely misleading.
+
+    Applied through `dotenv_values` + `monkeypatch`, never `load_dotenv`: the values are
+    scoped to the test and undone afterwards, so one opt-in live test cannot leave the
+    environment changed for everything that runs after it. Non-override semantics are
+    reproduced deliberately — that is what `load_dotenv` does, and the conftest's own
+    isolation (temp store paths, scrubbed export switches) must keep winning.
+
+    ⚠️ `monkeypatch` is resolved LAZILY, inside the marker branch, rather than declared in
+    the signature. An autouse fixture that requests it pulls monkeypatch into every test's
+    fixture graph and changes when it unwinds relative to everything else — which broke
+    `test_parallel_safety.py` at teardown, where a deliberately-exploding double outlived
+    the patch that installed it. An autouse fixture must add nothing to the tests it does
+    not apply to.
+    """
+    if not (request.node.get_closest_marker("e2e") or request.node.get_closest_marker("eval")):
+        yield
+        return
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        yield
+        return
+    monkeypatch = request.getfixturevalue("monkeypatch")
+    for key, value in (dotenv_values(Path(__file__).parent.parent / ".env") or {}).items():
+        if value is not None and key not in os.environ:
+            monkeypatch.setenv(key, value)
+    yield
 
 @pytest.fixture(scope="session", autouse=True)
 def _seed_builtin_dbs():
