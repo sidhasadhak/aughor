@@ -131,8 +131,13 @@ def test_every_store_connect_site_is_tuned():
     """Mechanical guard: any file that opens a SQLite connection must also tune it
     (or set busy_timeout directly). The one intentional exception is the user-file
     connector, which opens the caller's own DB read-only and must not rewrite it."""
+    # The dot is ESCAPED. Unescaped it is a wildcard, so the pattern also matched the
+    # phrase "sqlite3 connections" in ordinary prose — which is how a docstring EXPLAINING
+    # a SQLite hazard got reported as an untuned connect site. A guard that cannot tell
+    # code from prose about the code sends its next reader looking for a bug that is a
+    # sentence.
     out = subprocess.run(
-        ["grep", "-rl", "sqlite3.connect", "aughor", "--include=*.py"],
+        ["grep", "-rl", r"sqlite3\.connect", "aughor", "--include=*.py"],
         capture_output=True, text=True, check=True,
     ).stdout.split()
     ALLOWED_UNTUNED = {"aughor/connectors/file/sqlite.py"}

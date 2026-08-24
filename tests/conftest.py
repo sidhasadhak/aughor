@@ -3,8 +3,21 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+
+# BEFORE anything imports the app. `aughor/api.py` and four eval scripts call
+# `load_dotenv` at IMPORT, so any test that builds a TestClient — or merely imports one
+# of those eval modules — pulled the developer's `.env` into the process and every test
+# after it ran in a different environment from CI's. That is not a theoretical risk: it
+# was measured on 2026-08-24 as `test_route_wide::test_ask_causal_question_pins_
+# investigate_with_flag_on`, green in CI and red on a laptop for weeks, because `.env`'s
+# `AUGHOR_DEFAULT_POSTGRES_DSN` changed how a connection id resolves and the ask died
+# with "Connection 'c1' not found" before it reached the faked deep body. The suite runs
+# on the environment the conftest declares, and nothing else.
+os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
 
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
@@ -199,6 +212,44 @@ if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
     _shutil.copytree(_packs_src, _packs_dst)
 os.environ.setdefault("AUGHOR_PACKS_DIR", _packs_dst)
 
+
+
+@pytest.fixture(autouse=True)
+def _live_env_for_marked_tests(request):
+    """Give `.env` back to the tests that explicitly opted OUT of hermeticity.
+
+    The suite runs with `AUGHOR_SKIP_DOTENV` set, because a developer's `.env` leaking
+    into the process is what made a local run a different experiment from CI's. But tests
+    marked `e2e` or `eval` make REAL calls and need the developer's real credentials —
+    without them the call 401s silently and the test fails claiming the pipeline metered
+    no tokens, which is true and completely misleading.
+
+    Applied through `dotenv_values` + `monkeypatch`, never `load_dotenv`: the values are
+    scoped to the test and undone afterwards, so one opt-in live test cannot leave the
+    environment changed for everything that runs after it. Non-override semantics are
+    reproduced deliberately — that is what `load_dotenv` does, and the conftest's own
+    isolation (temp store paths, scrubbed export switches) must keep winning.
+
+    ⚠️ `monkeypatch` is resolved LAZILY, inside the marker branch, rather than declared in
+    the signature. An autouse fixture that requests it pulls monkeypatch into every test's
+    fixture graph and changes when it unwinds relative to everything else — which broke
+    `test_parallel_safety.py` at teardown, where a deliberately-exploding double outlived
+    the patch that installed it. An autouse fixture must add nothing to the tests it does
+    not apply to.
+    """
+    if not (request.node.get_closest_marker("e2e") or request.node.get_closest_marker("eval")):
+        yield
+        return
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        yield
+        return
+    monkeypatch = request.getfixturevalue("monkeypatch")
+    for key, value in (dotenv_values(Path(__file__).parent.parent / ".env") or {}).items():
+        if value is not None and key not in os.environ:
+            monkeypatch.setenv(key, value)
+    yield
 
 @pytest.fixture(scope="session", autouse=True)
 def _seed_builtin_dbs():

@@ -325,6 +325,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/guardrails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Agent Guardrails
+         * @description What this agent is allowed to do with what it sees, and how much it may spend (VA-8).
+         *
+         *     Always answers — an agent with no policy gets the defaults, which are what the
+         *     platform did before guardrails existed. `modes` is served from the code rather than
+         *     written into the frontend, so a mode nothing enforces can never appear in the UI.
+         */
+        get: operations["get_user_agent_guardrails_agents_custom__agent_id__guardrails_get"];
+        /**
+         * Set User Agent Guardrails
+         * @description Set this agent's guardrails.
+         *
+         *     Deliberately NOT part of the agent's governing configuration: a guardrail is an
+         *     operator's decision ABOUT an agent rather than part of the configuration the revision
+         *     plane versions, and folding it in would mark every eval chip stale the moment somebody
+         *     tightened a cap.
+         */
+        put: operations["set_user_agent_guardrails_agents_custom__agent_id__guardrails_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/observability": {
         parameters: {
             query?: never;
@@ -2607,6 +2640,32 @@ export interface paths {
          * @description Reset all counters to zero.
          */
         post: operations["reset_dev_stats_dev_stats_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/diagnostics/wal-keepalive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wal Keepalive Diagnostics
+         * @description What the store WAL keepalive holds, and whether anything has been stranded.
+         *
+         *     The SIGBUS that ate the API for a week (#379, #383) leaves no traceback and names no
+         *     file — a crash report describes the victim only as a 32 KB mapped region. This is the
+         *     surface that can name it: every held store with the `-shm` inode recorded when we
+         *     attached beside the one on disk now. `drifted` on any store means some actor moved
+         *     that store's WAL index under a live mapping, which is the crash's precondition.
+         */
+        get: operations["wal_keepalive_diagnostics_diagnostics_wal_keepalive_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9418,6 +9477,16 @@ export interface components {
              */
             text: string;
         };
+        /** GuardrailBody */
+        GuardrailBody: {
+            /** Max Tokens Per Run */
+            max_tokens_per_run?: number | null;
+            /**
+             * Pii
+             * @default redact
+             */
+            pii: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -11876,6 +11945,72 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_agent_guardrails_agents_custom__agent_id__guardrails_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_agent_guardrails_agents_custom__agent_id__guardrails_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuardrailBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -16069,6 +16204,26 @@ export interface operations {
         };
     };
     reset_dev_stats_dev_stats_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    wal_keepalive_diagnostics_diagnostics_wal_keepalive_get: {
         parameters: {
             query?: never;
             header?: never;

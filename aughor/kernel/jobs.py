@@ -577,6 +577,19 @@ class JobKernel:
                 self._resume_investigation_paused_explorers()
             except Exception:
                 logger.warning("supervisor: paused-explorer backstop failed", exc_info=True)
+            try:
+                # Adopted onto this loop rather than given a timer of its own — the
+                # house rule, and the right cadence anyway: drift is only dangerous for
+                # as long as it goes unnoticed, so a 30s check bounds the window that
+                # the SIGBUS lives in. 23 os.stat calls; it costs nothing.
+                from aughor.db.backend import check_wal_drift
+                drifted = check_wal_drift()
+                if drifted:
+                    self.ledger.emit("store.wal_drift", {"stores": drifted})
+                    logger.error("supervisor: %d store(s) lost their WAL index under a "
+                                 "live mapping: %s", len(drifted), drifted)
+            except Exception:
+                logger.warning("supervisor: WAL drift check failed", exc_info=True)
             if tick % 10 == 0:  # ~every 5 min — absorb the old boot-only sweep
                 try:
                     from aughor.db.history import sweep_stale_running

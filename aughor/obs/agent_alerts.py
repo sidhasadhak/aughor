@@ -41,6 +41,8 @@ Metric = Literal[
     "tokens",            # burn over the window
     "cost_usd",          # spend over the window
     "unmetered_runs",    # runs whose spend we cannot see — coverage, not cost
+    "guardrail_blocks",     # absolute count of guardrail BLOCKS  (VA-8)
+    "guardrail_block_rate", # blocked / evaluated                 (ratio 0..1)
 ]
 
 Comparator = Literal["gt", "gte", "lt", "lte"]
@@ -158,7 +160,8 @@ def _pct(values: list[float], q: float) -> Optional[float]:
     return round(ordered[idx], 3)
 
 
-def measure(metric: Metric, jobs: list[dict], *, calls: Optional[list[dict]] = None
+def measure(metric: Metric, jobs: list[dict], *, calls: Optional[list[dict]] = None,
+            guardrails: Optional[list[dict]] = None
             ) -> tuple[Optional[float], int, dict]:
     """Compute one metric over a window's rows. Returns ``(value, population, observed)``.
 
@@ -166,6 +169,21 @@ def measure(metric: Metric, jobs: list[dict], *, calls: Optional[list[dict]] = N
     which is different from the metric being zero, and the caller must not flatten them.
     """
     calls = calls or []
+    guardrails = guardrails or []
+
+    if metric in ("guardrail_blocks", "guardrail_block_rate"):
+        # The population is EVALUATIONS, not runs. A guardrail that was never consulted
+        # cannot have blocked anything, so counting it in the denominator would make an
+        # unguarded fleet look compliant — the ratio rule this codebase keeps relearning:
+        # a denominator may contain only things that could have had the property.
+        blocked = [g for g in guardrails if g.get("blocked")]
+        observed = {"evaluated": len(guardrails), "blocked": len(blocked)}
+        if metric == "guardrail_blocks":
+            return float(len(blocked)), len(guardrails), observed
+        if not guardrails:
+            # Nothing was evaluated. Not a 0% block rate — no block rate.
+            return None, 0, observed
+        return round(len(blocked) / len(guardrails), 4), len(guardrails), observed
 
     if metric == "runs_started":
         return float(len(jobs)), len(jobs), {"runs": len(jobs)}
@@ -261,6 +279,7 @@ def debounce_allows(rule: AgentAlertRule, now: datetime) -> bool:
 
 def evaluate(rule: AgentAlertRule, jobs: list[dict], *,
              calls: Optional[list[dict]] = None,
+             guardrails: Optional[list[dict]] = None,
              now: Optional[datetime] = None) -> Verdict:
     """Evaluate one rule against one window's rows."""
     now = now or datetime.now(timezone.utc)
@@ -276,7 +295,17 @@ def evaluate(rule: AgentAlertRule, jobs: list[dict], *,
         scoped = [j for j in scoped
                   if (j.get("charter_id") or j.get("_charter")) == rule.charter_id]
 
-    value, population, observed = measure(rule.metric, scoped, calls=calls)
+    # Guardrail rows carry their own agent attribution and are not job rows, so the
+    # rule's agent scope has to be applied to them here rather than inherited from
+    # `scoped` — an agent-scoped rule reading every agent's blocks would fire on somebody
+    # else's traffic.
+    scoped_guardrails = guardrails
+    if scoped_guardrails and rule.agent_id:
+        scoped_guardrails = [g for g in scoped_guardrails
+                             if g.get("agent_id") == rule.agent_id]
+
+    value, population, observed = measure(rule.metric, scoped,
+                                          calls=calls, guardrails=scoped_guardrails)
 
     if value is None:
         return Verdict(rule.id, rule.metric, None, False, False, population=0,

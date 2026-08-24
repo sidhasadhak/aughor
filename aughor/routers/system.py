@@ -63,9 +63,29 @@ def health():
         ledger_error = Ledger.default().integrity_error
     except Exception as exc:
         ledger_error = f"{type(exc).__name__}: {exc}"
+    # A store whose WAL index moved under a live mapping cannot be repaired in-process
+    # (db/backend.check_wal_drift) — the only recovery is a restart, so this has to reach
+    # an operator the same way a ledger integrity failure does, rather than sit in a log.
+    try:
+        from aughor.db.backend import wal_keepalive_report
+        wal = wal_keepalive_report()
+        wal_drifted = sorted(wal.get("drifted_paths") or [])
+    except Exception as exc:
+        wal_drifted = []
+        wal = {"error": f"{type(exc).__name__}: {exc}"}
     return {
-        "status": "degraded" if ledger_error else "ok",
+        "status": "degraded" if (ledger_error or wal_drifted) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
+        "stores": {
+            "ok": not wal_drifted,
+            "wal_drifted": wal_drifted,
+            "held": wal.get("held"),
+            "detail": (
+                f"{len(wal_drifted)} store(s) lost their WAL index under a live mapping; "
+                "this process is exposed to SIGBUS in walFindFrame — restart the server"
+                if wal_drifted else "every store holds its WAL index"
+            ),
+        },
         "fixture_db": fixture_db_path().exists(),
         "llm": _llm_readiness(),
         "object_store": {
@@ -78,6 +98,20 @@ def health():
             ),
         },
     }
+
+
+@router.get("/diagnostics/wal-keepalive")
+def wal_keepalive_diagnostics():
+    """What the store WAL keepalive holds, and whether anything has been stranded.
+
+    The SIGBUS that ate the API for a week (#379, #383) leaves no traceback and names no
+    file — a crash report describes the victim only as a 32 KB mapped region. This is the
+    surface that can name it: every held store with the `-shm` inode recorded when we
+    attached beside the one on disk now. `drifted` on any store means some actor moved
+    that store's WAL index under a live mapping, which is the crash's precondition.
+    """
+    from aughor.db.backend import wal_keepalive_report
+    return wal_keepalive_report()
 
 
 @router.get("/capabilities")

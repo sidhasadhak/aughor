@@ -68,11 +68,11 @@ const JOB_FILTERS: { id: JobFilter; label: string }[] = [
 
 const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
   kinetic_inbox: "proposal", paused_run: "paused run", automation_approval: "automation",
-  agent_alert: "alert",
+  agent_alert: "alert", automation_broken: "broken automation",
 };
 const SOURCE_HUE: Record<NeedsHumanRow["source"], "accent" | "negative" | "caution"> = {
   kinetic_inbox: "accent", paused_run: "negative", automation_approval: "caution",
-  agent_alert: "negative",
+  agent_alert: "negative", automation_broken: "negative",
 };
 
 /** A live age, counted up from the moment the item started waiting. */
@@ -251,7 +251,10 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
           {attention.length === 0 ? (
             <Card>
               <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-                Nothing needs a human. All three sources are empty right now.
+                {/* No count. It said "three" while there were four, and five after
+                    VA-8's broken-automation source — a number in copy is a fact that
+                    goes stale the next time somebody adds a source. */}
+                Nothing needs a human. Every source is empty right now.
               </span>
             </Card>
           ) : (

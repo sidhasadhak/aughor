@@ -1,33 +1,49 @@
-/**
- * Vitest config — CI-1d.
- *
- * `web/` had no test runner, which is how the C1 adapter sat untested for two
- * weeks. Node 24 strips TS types natively but will not resolve the extensionless
- * imports the app is written with, so a runner with bundler-style resolution is
- * the smallest thing that works.
- *
- * `.mts`, not `.ts`: this package is CommonJS (no `"type": "module"`, and adding
- * one would change resolution for the whole app), so Vite's native config loader
- * warns that ESM syntax is being loaded as CJS — a warning that becomes an error
- * in a future major. The explicit module extension settles it locally.
- *
- * The `@/*` alias is duplicated from `tsconfig.json` rather than read from it:
- * vitest does not consult tsconfig paths on its own, and a test that cannot
- * resolve an import fails as "Cannot find package", which reads like a missing
- * dependency rather than a missing alias.
- */
-
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vitest/config";
 
+/**
+ * Two projects, because the suite has two costs.
+ *
+ * Until now `web/` had vitest and nothing else — no jsdom, no
+ * `@testing-library/react` — so 255 tests could pass while a canvas rendered ZERO
+ * edges, and VA-6's whole UI had to be verified by driving a browser by hand. Every
+ * UI wave paid that.
+ *
+ * The 255 logic tests stay in `node` and stay fast (826ms for the lot). Rendering
+ * tests pay for a DOM, so they are their own project and only they load it — a single
+ * jsdom environment for everything would tax every pure function in the repo for the
+ * benefit of a handful of components.
+ *
+ * The `@` alias is declared explicitly rather than inherited. Vitest resolves
+ * `tsconfig` paths on its own TODAY, with no config file present at all; the moment a
+ * config exists that behaviour is worth pinning rather than relying on.
+ */
+const root = fileURLToPath(new URL(".", import.meta.url));
+const alias = { "@": root.replace(/\/$/, "") };
+
 export default defineConfig({
-  resolve: {
-    alias: { "@": fileURLToPath(new URL("./", import.meta.url)) },
-  },
   test: {
-    // Co-located with the code they test — the repo has no __tests__ convention.
-    include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: ["node_modules/**", ".next/**"],
+    projects: [
+      {
+        resolve: { alias },
+        test: {
+          name: "logic",
+          environment: "node",
+          include: ["**/*.test.ts"],
+          exclude: ["**/node_modules/**", "**/.next/**"],
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          name: "components",
+          environment: "jsdom",
+          include: ["**/*.test.tsx"],
+          exclude: ["**/node_modules/**", "**/.next/**"],
+          setupFiles: ["./vitest.setup.ts"],
+        },
+      },
+    ],
   },
 });

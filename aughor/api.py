@@ -7,12 +7,29 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# Load .env from the project root (no-op if python-dotenv not installed)
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent / ".env")
-except ImportError:
-    pass
+#: Set by the test conftest before any app import. A developer's `.env` is the one
+#: thing that makes a local suite run a DIFFERENT experiment from CI's, and the
+#: divergence is invisible: it presents as one test that fails on a laptop and passes in
+#: CI, which reads as flakiness and gets re-run rather than diagnosed. Measured
+#: 2026-08-24 — `test_route_wide::test_ask_causal_question_pins_investigate_with_flag_on`
+#: had been exactly that for weeks, and the mechanism was this line: importing the app
+#: (any test with a TestClient) loaded `.env`, whose `AUGHOR_DEFAULT_POSTGRES_DSN`
+#: changed how a connection id resolves, and the ask then failed with
+#: "Connection 'c1' not found" instead of reaching the faked deep body.
+#:
+#: ANY non-empty value skips the load — including "0". It is set by the test conftest and
+#: by nothing else, so there is no reader to surprise; six copies of a truthiness parser
+#: would cost more than the ambiguity does.
+SKIP_DOTENV_ENV = "AUGHOR_SKIP_DOTENV"
+
+# Load .env from the project root (no-op if python-dotenv not installed, or when the
+# caller has declared it wants a clean environment).
+if not os.environ.get(SKIP_DOTENV_ENV):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env")
+    except ImportError:
+        pass
 
 # ── Serverless shape (Vercel) ─────────────────────────────────────────────────
 # On Vercel the filesystem is read-only except /tmp, and relational state lives in
@@ -108,6 +125,12 @@ async def _lifespan(app: "FastAPI"):
     # First of all: plug the Agent into the Platform's registries (purge hooks,
     # schema annotators, …) so the platform's seams carry the agent's intelligence
     # on the live path. Must precede any request handling. Idempotent + fault-isolated.
+    # Before any of it: claim the state directory, so a script, a CLI command or a test
+    # run that opens these stores while we serve can say so at the moment it happens.
+    # Two processes mapped into one WAL index is the SIGBUS precondition (db/serving.py).
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import claim
+        claim()
     await _register_agent_plugins()
     # Then: make contextvars (current job id + per-run metering) cross the
     # run_in_executor boundary, before any startup step dispatches into a thread.
@@ -144,6 +167,9 @@ async def _lifespan(app: "FastAPI"):
     # Background loops (supervisor, ontology refresh) are cancelled by event-loop
     # teardown, and the kernel's boot_recovery fails any job orphaned by the stop
     # on the next start. The one explicit teardown is the context executor.
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import release
+        release()
     global _CTX_EXECUTOR
     if _CTX_EXECUTOR is not None:
         try:

@@ -149,7 +149,9 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
 
     # Importing run_golden also loads .env (its module-level load_dotenv) — but
     # AUGHOR_CODER_MODEL was exported above and load_dotenv never overrides
-    # existing env, so the arm's model pin survives.
+    # existing env, so the arm's model pin survives. That load is now skipped when
+    # AUGHOR_SKIP_DOTENV is set, which is the test suite and nothing else: a bakeoff run
+    # from a shell still gets `.env`, a test importing this module no longer does.
     from evals import run_golden
     from evals.mlflow_scorers import exec_success, make_execution_accuracy, trust_verify
     from evals.sql_accuracy import _safe_exec

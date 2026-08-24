@@ -4798,6 +4798,43 @@ export interface AgentRevision {
   author: string;
   name: string;
   config: Record<string, unknown>;
+  /** Governing fields this revision moved, in declared order.
+   *
+   *  `[]` on revision 1 — it is the beginning, so nothing changed. `null` when the
+   *  predecessor exists but fell outside the requested window: unknown, which is NOT the
+   *  same as "this edit did nothing". */
+  changed: string[] | null;
+}
+
+/** VA-8 — what an agent may do with what it sees, and how much it may spend. */
+export interface AgentGuardrails {
+  /** `redact` is what the platform did before guardrails existed, so it is the default
+   *  and an unconfigured agent is unchanged. */
+  pii: "off" | "redact" | "block";
+  /** Tokens, not dollars. A cost ceiling can only be applied after a call is priced,
+   *  which is after it has been paid for — it could stop the NEXT run, never this one. */
+  max_tokens_per_run: number | null;
+}
+
+export async function getAgentGuardrails(
+  agentId: string,
+): Promise<{ guardrails: AgentGuardrails; is_default: boolean; modes: { pii: string[] } } | null> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function setAgentGuardrails(
+  agentId: string,
+  guardrails: AgentGuardrails,
+): Promise<{ guardrails: AgentGuardrails } | null> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(guardrails),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function listAgentRevisions(
@@ -5546,7 +5583,8 @@ export async function getFleetOverview(params?: {
 }
 
 export interface NeedsHumanRow {
-  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert";
+  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert"
+        | "automation_broken";
   id: string;
   title: string;
   connection_id: string | null;
@@ -5565,6 +5603,9 @@ export interface NeedsHuman {
     paused_runs: number;
     automation_approvals: number;
     agent_alerts: number;
+    /** Optional because the key is newer than some deployed APIs — read it with `?? 0`
+     *  rather than rendering `undefined` where a count belongs. */
+    broken_automations?: number;
   };
   rows: NeedsHumanRow[];
 }

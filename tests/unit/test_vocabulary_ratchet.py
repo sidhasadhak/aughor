@@ -133,7 +133,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # exempts the two places that cannot avoid naming them, and nothing else.
         r"(?i)control[\s_-]room", CODE_ROOTS,
         ("aughor/routers/control_room.py", "tests/unit/test_agent_ops_endpoints.py",
-         "tests/unit/test_agent_ops_data_plane.py"),
+         "tests/unit/test_agent_ops_data_plane.py",
+         # Same reason as its two siblings: it calls `/control-room/needs-human`, which
+         # is one of the frozen routes, and a test cannot assert against a path it is
+         # not allowed to spell.
+         "tests/unit/test_attention_broken_automations.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),
@@ -264,7 +268,10 @@ BASELINE: dict[str, int] = {
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 281,  # paid down 2026-08-06: the user-agents graduation eval retired with its flag
+    "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
+                     # component (281 → 271) and VA-8 renamed the custom-agent detail
+                     # component it hangs off (271 → 216). Both were named for the retired
+                     # word and both were being edited anyway.
     "reforce": 1,
     "soma": 26,
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";

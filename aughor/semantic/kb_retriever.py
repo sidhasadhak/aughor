@@ -18,13 +18,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Load .env so AUGHOR_KB_PATH is available when running standalone scripts
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent.parent / ".env")
-except ImportError as exc:
-    from aughor.kernel.errors import tolerate
-    tolerate(exc, "python-dotenv is optional; env vars from the real environment are used when it is absent", counter="kb_retriever.dotenv")
+# Load .env so AUGHOR_KB_PATH is available when running standalone scripts. Skipped when
+# the caller has declared a clean environment: this is a LIBRARY module, so the load runs
+# the moment anything imports it — including a test that only wanted the retriever.
+if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent.parent / ".env")
+    except ImportError as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "python-dotenv is optional; env vars from the real environment are used when it is absent", counter="kb_retriever.dotenv")
 
 KB_COLLECTION = "sql_knowledge_base"
 

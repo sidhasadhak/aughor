@@ -45,11 +45,15 @@ if str(_REPO_ROOT) not in sys.path:
 # same lesson as run_golden: a standalone script never imports api.py, so without
 # this the provider silently falls back to its hardcoded default model and the
 # run measures the wrong thing.
-try:
-    from dotenv import load_dotenv
-    load_dotenv(_REPO_ROOT / ".env")
-except Exception:
-    pass
+# Skipped when the caller has declared it wants a clean environment: this runs at
+# IMPORT, so a test importing anything from here gets the developer's `.env` in its
+# process — which is how a suite that is green in CI fails on a laptop.
+if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_REPO_ROOT / ".env")
+    except Exception:
+        pass
 
 # Point SPIDER2_ROOT at your local clone of https://github.com/xlang-ai/Spider2
 SPIDER2_ROOT = Path(os.environ.get("SPIDER2_ROOT", _REPO_ROOT.parent / "Spider2"))

@@ -29,11 +29,15 @@ if str(_REPO_ROOT) not in sys.path:
 # imports api.py (which is what loads dotenv for the app), so without this the
 # whole run silently fell back to qwen2.5-coder:32b — uninstalled → every
 # generation 404'd and scored 0 (a measurement that looked stable but was empty).
-try:
-    from dotenv import load_dotenv
-    load_dotenv(_REPO_ROOT / ".env")
-except ImportError:
-    pass
+# Skipped when the caller has declared it wants a clean environment. This runs at
+# IMPORT, so a test that imports anything from this module gets the developer's `.env`
+# in its process — which is how a suite that is green in CI fails on a laptop.
+if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_REPO_ROOT / ".env")
+    except ImportError:
+        pass
 
 from evals.sql_accuracy import score_single
 from aughor.db.connection import open_connection_for

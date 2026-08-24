@@ -47,10 +47,11 @@ TOOL_CALL_RESULT = "tool_call_result"
 LLM_CALL = "llm_call"
 FINAL_RESPONSE = "final_response"
 EXECUTION_ERROR = "execution_error"
+GUARDRAIL = "guardrail"
 
 EVENT_KINDS = (
     USER_REQUEST, TOOL_CALL, TOOL_CALL_RESULT, LLM_CALL,
-    FINAL_RESPONSE, EXECUTION_ERROR,
+    FINAL_RESPONSE, EXECUTION_ERROR, GUARDRAIL,
 )
 
 # Cap free-text payload values (a question, a SQL string, an error). Matches the

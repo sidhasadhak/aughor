@@ -6,7 +6,8 @@ brief and the document-retrieval scope."""
 from __future__ import annotations
 
 import contextvars
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from aughor.custom_agents.models import UserAgent
 
@@ -15,11 +16,50 @@ _active: contextvars.ContextVar[Optional[UserAgent]] = contextvars.ContextVar(
 )
 
 
-def activate_agent(agent: UserAgent) -> contextvars.Token:
-    return _active.set(agent)
+@dataclass
+class _Activation:
+    """What has to be undone when the agent is released.
+
+    A plain ``contextvars.Token`` until VA-8: activating an agent now also arms that
+    agent's per-run token cap, and the two have to come down together. Structural rather
+    than a second call every caller has to remember — "activating an agent" and
+    "activating its guardrails" being separable is exactly how a governance plane ends up
+    configured and unenforced. No call site changed: nobody inspects this, they only pass
+    it back to `release_agent`.
+    """
+
+    agent_token: contextvars.Token
+    budget_token: Any = None
 
 
-def release_agent(token: contextvars.Token) -> None:
+def activate_agent(agent: UserAgent) -> "_Activation":
+    token = _active.set(agent)
+    budget_token = None
+    try:
+        from aughor.govern.guardrails import arm_run_cap, policy_for
+        budget_token = arm_run_cap(policy_for(agent.id))
+    except Exception as exc:                # noqa: BLE001 — a cap that cannot be armed
+        # must not stop the agent from running; it is a ceiling, not a gate.
+        import logging
+        logging.getLogger(__name__).warning(
+            "guardrail run cap not armed for agent %s: %s", agent.id, exc)
+    return _Activation(agent_token=token, budget_token=budget_token)
+
+
+def release_agent(token: "_Activation") -> None:
+    # Tolerant of a bare ContextVar token: `activate_agent` returned one directly before
+    # VA-8, and a caller holding an old one (a resumed run, a pickled path) must still be
+    # able to put the agent down.
+    if isinstance(token, _Activation):
+        try:
+            from aughor.govern.guardrails import disarm_run_cap
+            disarm_run_cap(token.budget_token)
+        except Exception as exc:            # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "releasing an agent's guardrail cap; the agent is still released",
+                     counter="guardrails.disarm")
+        _active.reset(token.agent_token)
+        return
     _active.reset(token)
 
 

@@ -312,6 +312,54 @@ def restore_user_agent_revision(agent_id: str, version: int):
     return {"restored_from": version, "agent": agent.model_dump()}
 
 
+class GuardrailBody(BaseModel):
+    pii: str = "redact"
+    max_tokens_per_run: Optional[int] = None
+
+
+@router.get("/agents/custom/{agent_id}/guardrails")
+def get_user_agent_guardrails(agent_id: str):
+    """What this agent is allowed to do with what it sees, and how much it may spend (VA-8).
+
+    Always answers — an agent with no policy gets the defaults, which are what the
+    platform did before guardrails existed. `modes` is served from the code rather than
+    written into the frontend, so a mode nothing enforces can never appear in the UI.
+    """
+    from aughor.custom_agents import get_agent
+    from aughor.govern.guardrails import PII_MODES, policy_for
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    policy = policy_for(agent_id)
+    return {"agent_id": agent_id, "guardrails": policy.to_dict(),
+            "is_default": policy.is_default, "modes": {"pii": list(PII_MODES)}}
+
+
+@router.put("/agents/custom/{agent_id}/guardrails")
+def set_user_agent_guardrails(agent_id: str, body: GuardrailBody):
+    """Set this agent's guardrails.
+
+    Deliberately NOT part of the agent's governing configuration: a guardrail is an
+    operator's decision ABOUT an agent rather than part of the configuration the revision
+    plane versions, and folding it in would mark every eval chip stale the moment somebody
+    tightened a cap.
+    """
+    from aughor.custom_agents import get_agent
+    from aughor.govern.guardrails import PII_MODES, GuardrailPolicy, set_policy
+    if get_agent(agent_id) is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    if body.pii not in PII_MODES:
+        raise HTTPException(status_code=422,
+                            detail=f"unknown pii mode {body.pii!r} — known: {list(PII_MODES)}")
+    if body.max_tokens_per_run is not None and body.max_tokens_per_run <= 0:
+        raise HTTPException(status_code=422,
+                            detail="max_tokens_per_run must be positive — a cap of zero "
+                                   "is not a cap, it is an outage")
+    policy = GuardrailPolicy(pii=body.pii, max_tokens_per_run=body.max_tokens_per_run)
+    set_policy(agent_id, policy)
+    return {"agent_id": agent_id, "guardrails": policy.to_dict(),
+            "is_default": policy.is_default}
+
+
 @router.delete("/agents/custom/{agent_id}")
 def delete_user_agent(agent_id: str):
     from aughor.custom_agents import delete_agent

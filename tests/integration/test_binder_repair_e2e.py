@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-# Standalone scripts/tests that hit the coder must load .env or fall back to an
-# uninstalled model and the LLM call silently fails (known gotcha).
-from dotenv import load_dotenv
-load_dotenv()
+# `.env` is loaded for this module by `tests/conftest.py`, which gives it back to tests
+# marked `e2e`/`eval` and ONLY to them — scoped with monkeypatch, so an opt-in live run
+# cannot leave the developer's environment planted for everything that follows. A
+# module-level `load_dotenv` here ran when pytest merely COLLECTED the file, which is
+# every bare `pytest` invocation including CI's.
 
 
 @pytest.mark.e2e
