@@ -2317,6 +2317,36 @@ export interface DocumentEntry {
   uploaded_at: string;
 }
 
+/** What the knowledge plane can actually do right now — see `aughor/knowledge/health.py`.
+ *  Exists because an empty search result had four possible causes and one appearance. */
+export interface KnowledgeStatus {
+  /** A search can run AND there is something to search. Stricter than "no error": a
+   *  working embedder over an empty corpus is healthy and useless. */
+  ready: boolean;
+  /** "" when ready; otherwise which of the four it is. */
+  reason: string;
+  documents: number;
+  /** What the STORE holds — the only number that answers "how much can be searched".
+   *  The per-document `chunk_count` below is the registry's CLAIM, and they differ. */
+  chunks: number;
+  embedder: { model: string; endpoint: string; ok: boolean; error?: string; why?: string };
+  store: { ok: boolean; backend: string; chunks?: number; why?: string };
+  consistency: {
+    ok: boolean;
+    orphan_documents: number;
+    orphan_chunks: number;
+    orphans: string[];
+    mismatched_documents: Record<string, { registry: number; store: number }>;
+    listed_chunks_present: number;
+  };
+}
+
+export async function getKnowledgeStatus(): Promise<KnowledgeStatus | null> {
+  const res = await fetch(`${getApiBase()}/knowledge/status`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function listDocuments(): Promise<DocumentEntry[]> {
   const res = await fetch(`${getApiBase()}/documents`);
   if (!res.ok) return [];

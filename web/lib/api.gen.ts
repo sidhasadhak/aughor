@@ -2689,6 +2689,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Document Chunks
+         * @description Chunk a document and return the first chunks WITHOUT indexing it.
+         *
+         *     KB-2. Chunk settings are only meaningful if a person can see what they do, and the
+         *     alternative to seeing is uploading, looking at a number, deleting and trying again —
+         *     with an embedding call per attempt against a local model.
+         *
+         *     Deliberately embeds nothing and writes nothing: no vector store, no registry, no
+         *     `doc_id`. That is what makes it safe to call repeatedly, and it also means a preview
+         *     works when the embedder is DOWN — the one moment a person most needs to know their
+         *     settings are sane before they queue an upload.
+         */
+        post: operations["preview_document_chunks_documents_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/search": {
         parameters: {
             query?: never;
@@ -4694,6 +4723,30 @@ export interface paths {
          *     success returns 200 with the dispatch outcome.
          */
         post: operations["execute_action_kinetic_actions__action_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Knowledge Status Endpoint
+         * @description Whether the knowledge plane can index, can search, and holds what it claims.
+         *
+         *     Exists because an empty search result had four possible causes and one appearance. The
+         *     surface that shows a knowledge base has to be able to tell a person which of them
+         *     happened — "no match" and "your embedder is not running" are not the same news.
+         */
+        get: operations["knowledge_status_endpoint_knowledge_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8705,6 +8758,13 @@ export interface components {
             /** Schema */
             schema?: string | null;
         };
+        /** Body_preview_document_chunks_documents_preview_post */
+        Body_preview_document_chunks_documents_preview_post: {
+            /** Chunk Settings */
+            chunk_settings?: string | null;
+            /** File */
+            file: string;
+        };
         /** Body_put_object_metastore_volumes__volume_id__objects_post */
         Body_put_object_metastore_volumes__volume_id__objects_post: {
             /** File */
@@ -8712,6 +8772,8 @@ export interface components {
         };
         /** Body_upload_document_documents_upload_post */
         Body_upload_document_documents_upload_post: {
+            /** Chunk Settings */
+            chunk_settings?: string | null;
             /** File */
             file: string;
         };
@@ -16263,6 +16325,39 @@ export interface operations {
             };
         };
     };
+    preview_document_chunks_documents_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_preview_document_chunks_documents_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_documents_endpoint_documents_search_post: {
         parameters: {
             query?: never;
@@ -19614,6 +19709,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    knowledge_status_endpoint_knowledge_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
