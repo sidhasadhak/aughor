@@ -522,9 +522,11 @@ interface Props {
   onCanvasUpdate: (canvas: Canvas) => void;
   initialOpenInvId?: string | null;
   initialRestoreSessionId?: string | null;
+  /** Open the global document corpus (Intelligence → Documents). */
+  onOpenDocuments?: () => void;
 }
 
-export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId }: Props) {
+export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
@@ -813,6 +815,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
       {/* Configure slide-over */}
       {showConfigure && (
         <ConfigurePanel
+          onOpenDocuments={onOpenDocuments}
           canvas={canvas}
           connections={connections}
           onClose={() => setShowConfigure(false)}

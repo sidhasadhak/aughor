@@ -118,6 +118,7 @@ type NavTab =
   | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
   | "health"
   | "playbook"
+  | "documents"        // the global document corpus — see the nav comment on why it is here
   | "catalog"
   | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
   | "query"
@@ -450,6 +451,13 @@ const NAV_SECTIONS = [
       { id: "recents",      icon: "search",   label: "Deep analyses" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
+      // Documents sit here rather than under Data because the group means "what Aughor
+      // KNOWS about your data" and a corpus is exactly that — Playbook is the sibling,
+      // both being authored material the agent reasons WITH, not data it queries. They
+      // are also GLOBAL: `index_file` takes no connection, so a per-connection home would
+      // claim a scope the corpus does not have. Named Documents, not Knowledge, because
+      // Knowledge already means the Semantic Layer's connection store.
+      { id: "documents",    icon: "folder",   label: "Documents" },
     ],
   },
   {
@@ -577,6 +585,7 @@ function SearchOverlay({
     { label: "Domain Intelligence", icon: "process", action: () => { onNavigate("intel"); onClose(); } },
     { label: "Activity Log",      icon: "activity", action: () => { onNavigate("activity"); onClose(); } },
     { label: "Playbook",          icon: "playbook", action: () => { onNavigate("playbook"); onClose(); } },
+    { label: "Documents",         icon: "folder",   action: () => { onNavigate("documents"); onClose(); } },
   ].filter(s => !q || s.label.toLowerCase().includes(q.toLowerCase()));
 
   const questions = [
@@ -1448,7 +1457,7 @@ const VALID_TABS = new Set<NavTab>([
   "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
-  "health", "playbook", "catalog", "builder", "query", "connections", "metrics",
+  "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
   "monitors", "actions", "activity", "security", "semantic", "settings",
 ]);
 
@@ -2117,6 +2126,7 @@ export default function Home() {
                 <CanvasWorkspace
                   canvas={activeCanvas}
                   connections={wsConnections}
+                  onOpenDocuments={() => handleNavigate("documents")}
                   onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
                   onCanvasUpdate={updated => setActiveCanvas(updated)}
                   initialOpenInvId={initialCanvasInvId}
@@ -2325,6 +2335,18 @@ export default function Home() {
               </div>
             )}
 
+            {tab === "documents" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div className="aug-content-header">
+                  <NavIcon name="folder" size={14} color="var(--t3)" />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>Documents</span>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
+                  <DocumentUploader />
+                </div>
+              </div>
+            )}
+
             {/* ── RECOMMENDATION INBOX ── */}
             {tab === "inbox" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
@@ -2382,6 +2404,7 @@ export default function Home() {
                     <CatalogScreen
                       connections={wsConnections}
                       workspaceId={selectedWorkspace}
+                      onOpenDocuments={() => handleNavigate("documents")}
                       selectedConn={selectedConn}
                       onSelect={setSelectedConn}
                       onDeleteConn={conn => setPendingDeleteConn(conn)}
