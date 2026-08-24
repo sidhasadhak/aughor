@@ -22,19 +22,93 @@ import pytest
 from aughor.connectors.file.local_upload import LocalUploadConnection
 from aughor.db.connection import DatabaseConnection, DuckDBConnection, PostgresConnection
 
-#: The connector classes a user can reach from the SQL workbench. Postgres is included
-#: even though the demo has none — it is a first-class target and its overrides are the
-#: ones most likely to drift, being spelled differently at every level (`cancel()` vs
-#: `interrupt()`, `%(name)s` vs `$name`).
-WORKBENCH_CONNECTORS = [DuckDBConnection, LocalUploadConnection, PostgresConnection]
+#: Every connector class the product can OPEN, resolved from the registry rather than
+#: listed by hand.
+#:
+#: The hand-written list this replaces named three classes and called them "the connectors
+#: a user can reach from the SQL workbench" — and `/query` restricts nothing by type, so
+#: the premise was false: a Snowflake or BigQuery connection reaches the same route. The
+#: guard was therefore green while `execute_with_params` was missing from every warehouse
+#: connector — exactly the failure it was written to catch, one level up. A list derived
+#: from the registry cannot go stale the next time a connector is added.
+def _openable_connectors():
+    from aughor.connectors.registry import REGISTRY
+
+    out, unloadable = [DuckDBConnection, PostgresConnection], []
+    for conn_type in sorted(REGISTRY.supported_types()):
+        try:
+            cls = REGISTRY.get_class(conn_type)
+        except Exception as exc:
+            unloadable.append(f"{conn_type}: {exc}")
+            continue
+        if cls is not None and cls not in out:
+            out.append(cls)
+    # A connector whose module will not import is skipped, and a skipped connector is an
+    # UNGUARDED one — silence is the failure mode this whole file exists to prevent. Every
+    # connector defers its driver import to `connect()`, so a missing optional driver is
+    # NOT a reason for this to fail; an import error here is a real breakage.
+    assert not unloadable, f"registered connectors this guard could not load: {unloadable}"
+    assert LocalUploadConnection in out, (
+        "the Workspace's class fell out of the registry walk — it is the class the product "
+        "opens BY DEFAULT, and every capability this file guards went missing from it once")
+    return out
+
+
+WORKBENCH_CONNECTORS = _openable_connectors()
+
+#: Connectors deliberately left unable to bind, with the reason. An entry here is a
+#: DECISION; an omission is a bug.
+NO_BINDING = {
+    "ExasolConnection":
+        "pyexasol takes query_params by formatting them into the statement text rather "
+        "than sending bind values, and the package is installed nowhere here, so the claim "
+        "cannot be checked against the driver. See warehouse/exasol.py.",
+}
+
+#: Connectors with no driver-handle abort, with the reason. Same contract as NO_BINDING:
+#: an entry is a DECISION, an omission is a bug.
+NO_INTERRUPT = {
+    "BigQueryConnection":
+        "there is no connection-level abort to reach: BigQuery cancels a JOB, which needs "
+        "the running QueryJob object, and this connector does not retain one. The base "
+        "returns False, which is the honest answer for a caller with nothing better to do "
+        "than wait.",
+}
 
 
 @pytest.mark.parametrize("cls", WORKBENCH_CONNECTORS, ids=lambda c: c.__name__)
 def test_connector_can_run_parameterised_queries(cls):
     """It must NOT inherit the base's refusal — the base exists to say "no safely",
     not to be the answer for a connector users actually query."""
+    if cls.__name__ in NO_BINDING:
+        pytest.skip(NO_BINDING[cls.__name__])
     assert cls.execute_with_params is not DatabaseConnection.execute_with_params, (
         f"{cls.__name__} inherits the base refusal, so parameters silently fail on it")
+
+
+@pytest.mark.parametrize("cls", WORKBENCH_CONNECTORS, ids=lambda c: c.__name__)
+def test_a_binding_connector_declares_both_halves(cls):
+    """`param_style` without `_bind_execute` renders a statement nothing runs;
+    `_bind_execute` without `param_style` is dead code the envelope never reaches. Neither
+    half fails loudly on its own."""
+    from aughor.connectors.base import Connector
+
+    if cls.__name__ in NO_BINDING or not issubclass(cls, Connector):
+        return                               # DuckDB/Postgres bind through their own `_run`
+    if cls.execute_with_params is not Connector.execute_with_params:
+        return                               # its own implementation, e.g. LocalUpload's `_run`
+    assert cls.param_style, f"{cls.__name__} declares no param_style"
+    assert cls._bind_execute is not Connector._bind_execute, (
+        f"{cls.__name__} declares param_style {cls.param_style!r} but never implements "
+        f"_bind_execute, so every bound query raises NotImplementedError")
+
+
+def test_the_exemption_list_names_only_real_connectors():
+    """A rot-guard on the guard: a renamed or deleted connector leaves an entry here that
+    exempts nothing, and the next connector to miss binding goes uncaught."""
+    names = {c.__name__ for c in WORKBENCH_CONNECTORS}
+    for label, exempt in (("NO_BINDING", NO_BINDING), ("NO_INTERRUPT", NO_INTERRUPT)):
+        assert set(exempt) <= names, f"{label} names non-connectors: {set(exempt) - names}"
 
 
 @pytest.mark.parametrize("cls", WORKBENCH_CONNECTORS, ids=lambda c: c.__name__)
@@ -42,12 +116,27 @@ def test_connector_can_be_interrupted(cls):
     """Either it overrides `interrupt()`, or it keeps its driver handle where the base
     implementation looks for it (`self._conn`). Anything else means Cancel does
     nothing while reporting success."""
+    if cls.__name__ in NO_INTERRUPT:
+        pytest.skip(NO_INTERRUPT[cls.__name__])
     if cls.interrupt is not DatabaseConnection.interrupt:
         return                                  # its own implementation; SE-3 F tests it
-    source = inspect.getsource(cls)
-    assert "self._conn" in source, (
-        f"{cls.__name__} uses the base interrupt(), which reaches `self._conn` — but "
-        f"this class never assigns it, so interrupting is a silent no-op")
+    # Assert the RESOLVED handle, not the presence of a substring in the source. The
+    # substring form (`"self._conn" in source`) passed for S3, Federated, Google Sheets and
+    # the three REST mirrors — every one of which keeps its handle on `self._duckdb` and
+    # merely happens to contain `self._connection_id`. Six connectors whose Cancel was a
+    # silent no-op sat behind a green assertion that matched a field name.
+    stub = cls.__new__(cls)                     # no __init__: this asks about the CLASS
+    stub._conn = object()
+    assert stub._driver_handle() is stub._conn, (
+        f"{cls.__name__} uses the base interrupt(), which reaches whatever "
+        f"`_driver_handle()` returns — and this class does not resolve to its driver, so "
+        f"interrupting is a silent no-op that reports success")
+    # The MRO, not the class body: the three REST mirrors assign their handle in
+    # `RestApiSync.__init__`, so reading only the subclass source says they assign nothing.
+    source = "\n".join(inspect.getsource(k) for k in cls.__mro__
+                       if k.__module__.startswith("aughor"))
+    assert "self._conn =" in source or "self._duckdb =" in source, (
+        f"{cls.__name__} never assigns a driver handle this class knows how to find")
 
 
 def test_the_base_refuses_rather_than_interpolating():

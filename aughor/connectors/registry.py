@@ -157,18 +157,21 @@ FORM_FIELDS: dict[str, list[dict]] = {
 # dependencies only — so on the deployment most of this list is absent.
 #
 # Names are the module actually imported at the call site, not the distribution that
-# provides it, because that is what determines whether the import succeeds. Two of
-# them do not correspond to anything this project declares:
+# provides it, because that is what determines whether the import succeeds. Two of them
+# used to correspond to nothing this project declared, and recording them here made the
+# picker tell the truth about that without fixing it:
 #
-#   pyexasol  — imported by warehouse/exasol.py, declared in NO extra and not in the
-#               base dependencies. The exasol tile cannot work in any install of this
-#               project as it stands, including a full `[warehouse]` one.
+#   pyexasol  — imported by warehouse/exasol.py, declared in NO extra and not in the base
+#               dependencies, so the exasol tile could not work in any install including a
+#               full `[warehouse]` one. Now pinned in `[warehouse]`.
 #   requests  — imported at MODULE level by the three REST connectors, while `[crm]`
-#               declares `stripe`, `hubspot-api-client` and `simple-salesforce`, none
-#               of which those modules import. It resolves today only transitively.
+#               declared `stripe`, `hubspot-api-client` and `simple-salesforce`, none of
+#               which those modules import. It resolved only transitively. `[crm]` now
+#               declares `requests` and nothing else.
 #
-# Recording them here does not fix either — it makes the picker tell the truth about
-# them instead of failing at form-submit time.
+# `tests/unit/test_connector_dependencies.py` asserts this list against pyproject in both
+# directions, so a driver added here without a pin — or a pin nothing imports — fails
+# there rather than in someone's connection form.
 DRIVERS: dict[str, tuple[str, ...]] = {
     "duckdb":       ("duckdb",),
     "postgres":     ("psycopg2",),

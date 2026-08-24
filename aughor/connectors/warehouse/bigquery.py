@@ -54,6 +54,40 @@ class BigQueryConnection(Connector):
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
+    #: BigQuery names parameters `@name`, and unlike every DBAPI driver here it wants each
+    #: one DECLARED with a type rather than inferred from the value on the wire.
+    param_style = "at"
+
+    #: Python type → BigQuery scalar type. `bool` is checked before `int` because it is a
+    #: SUBCLASS of int in Python: ordered the other way, every True binds as INT64 1 and a
+    #: `WHERE is_active = @flag` silently compares a boolean column to a number.
+    _PARAM_TYPES = ((bool, "BOOL"), (int, "INT64"), (float, "FLOAT64"), (str, "STRING"))
+
+    def _bind_execute(self, sql: str, params: dict):
+        from google.cloud import bigquery
+
+        declared = []
+        for name, value in (params or {}).items():
+            bq_type = next((t for py, t in self._PARAM_TYPES if isinstance(value, py)), None)
+            if bq_type is None:
+                # A NULL has no type to read off the value, and BigQuery will not take an
+                # untyped parameter. Guessing STRING would make `WHERE n = @p` compare a
+                # number to text and return zero rows with no error — a wrong answer that
+                # looks like a real one. Refusing names the fix instead.
+                what = "NULL" if value is None else type(value).__name__
+                raise ValueError(
+                    f"parameter '{name}' is {what}; BigQuery needs a declared type for it. "
+                    f"Use a string, number or boolean, or inline that value in the SQL.")
+            declared.append(bigquery.ScalarQueryParameter(name, bq_type, value))
+
+        job_config = bigquery.QueryJobConfig(
+            default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
+            query_parameters=declared,
+        )
+        rows_it = self._client.query(sql, job_config=job_config).result(
+            max_results=self.max_rows)
+        return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
         from aughor.db.connection import enforce_row_policy, security_pre, security_post

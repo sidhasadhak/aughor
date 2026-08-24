@@ -46,9 +46,27 @@ def test_render_for_engine_duckdb_uses_dollar_names():
         == "SELECT * FROM t WHERE a = $region"
 
 
-def test_render_for_engine_postgres_uses_pyformat():
-    assert render_for_engine("SELECT * FROM t WHERE a = :region", "postgres") \
+def test_render_for_engine_pyformat_is_what_postgres_and_mysql_drivers_take():
+    assert render_for_engine("SELECT * FROM t WHERE a = :region", "pyformat") \
         == "SELECT * FROM t WHERE a = %(region)s"
+
+
+def test_the_map_is_keyed_on_the_DRIVER_style_not_the_sql_dialect():
+    """`ExasolConnection` declares `dialect = "postgres"` because Postgres is the closest
+    transpile target for Exasol's SQL — and pyexasol accepts no Postgres placeholder syntax
+    at all. Keyed on dialect, that connector would have been handed `%(name)s` silently."""
+    from aughor.connectors.warehouse.exasol import ExasolConnection
+
+    assert ExasolConnection.dialect == "postgres"
+    assert ExasolConnection.param_style is None
+    with pytest.raises(ParamRenderError):
+        render_for_engine("SELECT :a", ExasolConnection.dialect)
+
+
+def test_named_is_the_identity_rendering():
+    """sqlite3's own named style IS `:name`. An identity rewrite is still a rewrite — it
+    has to be declared, or the driver falls through to the refusal."""
+    assert render_for_engine("SELECT :a", "named") == "SELECT :a"
 
 
 def test_render_for_engine_leaves_casts_and_strings_alone():
@@ -60,11 +78,15 @@ def test_render_for_engine_leaves_casts_and_strings_alone():
     assert "= $v" in out
 
 
-def test_render_for_engine_refuses_an_unknown_dialect():
-    """An engine we cannot spell a placeholder for must REFUSE, never silently run the
-    query with `:name` left in it (or, worse, with values interpolated)."""
+def test_render_for_engine_refuses_an_unknown_style():
+    """A driver we cannot spell a placeholder for must REFUSE, never silently run the
+    query with `:name` left in it (or, worse, with values interpolated).
+
+    This used to name "bigquery" as the unspellable example. BigQuery binds now (`@name`),
+    and a test whose example became supported would have kept passing while asserting
+    nothing — the token just has to be unknown, so it says so."""
     with pytest.raises(ParamRenderError):
-        render_for_engine("SELECT :a", "bigquery")
+        render_for_engine("SELECT :a", "no-such-driver-style")
 
 
 # ── The guard rendering (analysis only) ───────────────────────────────────────

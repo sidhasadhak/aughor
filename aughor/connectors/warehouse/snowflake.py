@@ -50,6 +50,14 @@ class SnowflakeConnection(Connector):
             network_timeout=60,
         )
 
+    param_style = "pyformat"
+
+    def _bind_execute(self, sql: str, params: dict):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return cols, cur.fetchmany(self.max_rows)
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 

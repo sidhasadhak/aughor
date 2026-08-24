@@ -58,6 +58,18 @@ class MySQLConnection(Connector):
             **ssl_opts,
         )
 
+    param_style = "pyformat"
+
+    def _bind_execute(self, sql: str, params: dict):
+        with self._conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows_raw = cur.fetchmany(self.max_rows)
+            # DictCursor: columns come from the first row, and from `description` when the
+            # result is empty — the same two-source read `execute` already does.
+            cols = (list(rows_raw[0].keys()) if rows_raw else
+                    ([d[0] for d in cur.description] if cur.description else []))
+            return cols, [list(r.values()) for r in rows_raw]
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 

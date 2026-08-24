@@ -681,6 +681,11 @@ class DatabaseConnection(ABC):
     @abstractmethod
     def close(self) -> None: ...
 
+    def _driver_handle(self):
+        """The live driver object `interrupt()` reaches. Overridable because not every
+        connector keeps it on ``self._conn`` — see `connectors.base.Connector`."""
+        return getattr(self, "_conn", None)
+
     def interrupt(self) -> bool:
         """Ask the engine to abort the statement running on this connection, from
         ANOTHER thread. Returns True when the connector could ask, False when it has
@@ -710,8 +715,7 @@ class DatabaseConnection(ABC):
         behind; a connection that somehow does end up unusable is caught by the pool's
         ``is_healthy`` probe at the next acquire rather than handed to another caller.
         """
-        handle = getattr(self, "_conn", None)
-        ask = getattr(handle, "interrupt", None)
+        ask = getattr(self._driver_handle(), "interrupt", None)
         if not callable(ask):
             return False
         try:
@@ -1468,7 +1472,7 @@ class PostgresConnection(DatabaseConnection):
                     # sqlglot cannot parse pyformat, so introducing it any earlier
                     # breaks validation and the dialect rewrite.
                     from aughor.sql.params import render_for_engine
-                    cur.execute(render_for_engine(sql, "postgres"), params)
+                    cur.execute(render_for_engine(sql, "pyformat"), params)
                 else:
                     cur.execute(sql)
                 rows = cur.fetchmany(max_rows)

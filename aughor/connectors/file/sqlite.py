@@ -107,6 +107,24 @@ class SQLiteConnection(Connector):
         except Exception as e:
             return False, str(e)
 
+    #: sqlite3's named style is already `:name`, so `render_for_engine` is the identity
+    #: here — the editor's syntax reaches this driver verbatim.
+    param_style = "named"
+
+    #: This connector caps at the SHARED `MAX_ROWS` (500), not the 2000 every other
+    #: connector module declares for itself. Stated here so the bound path and `execute`
+    #: return the same population — two caps over one query is how a tile ends up
+    #: disagreeing with the chart beside it.
+    max_rows = MAX_ROWS
+
+    def _bind_execute(self, sql: str, params: dict):
+        # `translate` runs HERE and not in the shared envelope because it is this
+        # connector's own DuckDB→SQLite step; sqlglot reads `:name` as a Placeholder, so it
+        # survives the rewrite exactly as it does on the unparameterised path.
+        cur = self._conn.execute(self.translate(sql), params)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return cols, cur.fetchmany(self.max_rows)
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         # Gate through the public security interface; the read-only connection
         # also blocks any write at the engine.

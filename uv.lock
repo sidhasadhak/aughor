@@ -300,9 +300,7 @@ cloud-storage = [
     { name = "azure-storage-blob" },
 ]
 crm = [
-    { name = "hubspot-api-client" },
-    { name = "simple-salesforce" },
-    { name = "stripe" },
+    { name = "requests" },
 ]
 dev = [
     { name = "httpx" },
@@ -342,6 +340,7 @@ warehouse = [
     { name = "connectorx" },
     { name = "google-cloud-bigquery" },
     { name = "ibis-framework", extra = ["duckdb", "postgres"] },
+    { name = "pyexasol" },
     { name = "pymysql" },
     { name = "snowflake-connector-python" },
 ]
@@ -361,7 +360,6 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "google-cloud-bigquery", marker = "extra == 'warehouse'", specifier = ">=3.0.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
-    { name = "hubspot-api-client", marker = "extra == 'crm'", specifier = ">=8.0.0" },
     { name = "ibis-framework", extras = ["duckdb", "postgres"], marker = "extra == 'warehouse'", specifier = ">=9.0.0" },
     { name = "instructor", specifier = ">=1.4.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
@@ -378,6 +376,7 @@ requires-dist = [
     { name = "polars", marker = "extra == 'fastread'", specifier = ">=1.0.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
     { name = "pydantic", specifier = ">=2.7.0" },
+    { name = "pyexasol", marker = "extra == 'warehouse'", specifier = ">=0.25.0" },
     { name = "pymysql", marker = "extra == 'warehouse'", specifier = ">=1.0.0" },
     { name = "pypdf", marker = "extra == 'docs'", specifier = ">=6.4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
@@ -390,12 +389,11 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "qdrant-client", marker = "extra == 'semantic'", specifier = ">=1.9.0" },
     { name = "reportlab", marker = "extra == 'export'", specifier = ">=4.5.1" },
+    { name = "requests", marker = "extra == 'crm'", specifier = ">=2.32.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "scipy", specifier = ">=1.13.0" },
-    { name = "simple-salesforce", marker = "extra == 'crm'", specifier = ">=1.12.0" },
     { name = "snowflake-connector-python", marker = "extra == 'warehouse'", specifier = ">=3.0.0" },
     { name = "sqlglot", specifier = ">=25.0.0" },
-    { name = "stripe", marker = "extra == 'crm'", specifier = ">=7.0.0" },
     { name = "svglib", marker = "extra == 'export'", specifier = ">=1.5.1" },
     { name = "uvicorn", specifier = ">=0.46.0" },
 ]
@@ -1334,22 +1332,6 @@ wheels = [
 ]
 
 [[package]]
-name = "hubspot-api-client"
-version = "12.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "certifi" },
-    { name = "python-dateutil" },
-    { name = "requests" },
-    { name = "six" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/33/b4/8bfa11b523586108eb526abeca6a214eed3b3534ab10c8a3314fa7e488d5/hubspot_api_client-12.0.0.tar.gz", hash = "sha256:ddfc60f3a80565dd5bf7fc7554d0d2dabad37926f547436158258772f1a04e69", size = 1882105, upload-time = "2025-05-07T12:56:15.686Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/bf/b417bcf30d6fc4f473f3c1ab13cbffc3a809caa464d5aa2ae43de96416d9/hubspot_api_client-12.0.0-py3-none-any.whl", hash = "sha256:5426627ff808fdf259d5b5e4791667a323a2a82d36a834e7e43ec8e8f021aa08", size = 4295367, upload-time = "2025-05-07T12:56:12.203Z" },
-]
-
-[[package]]
 name = "hyperframe"
 version = "6.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2007,15 +1989,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e8/4f/a054cd8860590e4e942aee1aab3c94307878159f945fa844acc9ea787721/mlflow_skinny-3.14.0.tar.gz", hash = "sha256:e50f4506422c7737157ae6643c165122af7898345f2e828fa93c4f10128653cf", size = 2901772, upload-time = "2026-06-17T07:57:44.252Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/58/e7/b80f76ce689b9d6f21cdb84abb2b02148a1149e63a6428dd2c629cefd061/mlflow_skinny-3.14.0-py3-none-any.whl", hash = "sha256:a4880e086365871ef9d78e727a34ea5fb1ce615689579998d48e8c65ee1665a9", size = 3462788, upload-time = "2026-06-17T07:57:42.583Z" },
-]
-
-[[package]]
-name = "more-itertools"
-version = "11.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/de/1d/f4da6f02cdffe04d6362210b807146a26044c88d839208aec273bb0d9184/more_itertools-11.1.0.tar.gz", hash = "sha256:48e8f4d9e7e5878571ecf6f2b4e57634f93cd474cc8cfbd2376f2d11b396e30d", size = 145772, upload-time = "2026-05-22T14:14:29.909Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/3d/1087453384dbde46a8c7f9356eead2c58be8a7bf156bca40243377c85715/more_itertools-11.1.0-py3-none-any.whl", hash = "sha256:4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192", size = 72226, upload-time = "2026-05-22T14:14:28.824Z" },
 ]
 
 [[package]]
@@ -3182,6 +3155,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pyexasol"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "packaging" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/f5/3bdee9f6a223277e0e8173980e7de640db4ac04226630aa327f431380708/pyexasol-2.3.1.tar.gz", hash = "sha256:9515a38428a69d5d31c42e8fdf1698371e8a4e51c25401febcb080c98d8bd685", size = 63973, upload-time = "2026-08-05T12:42:07.164Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/b7/c46118b78473efe4800df8b2c4e6195ef3ddb1fd1ad0d1cde2b7c442c1f7/pyexasol-2.3.1-py3-none-any.whl", hash = "sha256:a481d5871239cb9d4e1001b7391dbd47bb3eb1f624e70af3fc995e962940a0a9", size = 75853, upload-time = "2026-08-05T12:42:08.182Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3478,18 +3465,6 @@ wheels = [
 ]
 
 [[package]]
-name = "requests-file"
-version = "3.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
-]
-
-[[package]]
 name = "requests-oauthlib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3757,22 +3732,6 @@ wheels = [
 ]
 
 [[package]]
-name = "simple-salesforce"
-version = "1.12.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "more-itertools" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "requests" },
-    { name = "typing-extensions" },
-    { name = "zeep" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/65/3f/45d257baacb8ab9e31906d5252541c151e062cedbf2152df7cef5960342d/simple_salesforce-1.12.9.tar.gz", hash = "sha256:86d63c43cf6581847284f2538fd8b17aaea0727c63a947267759f7f242a4ef8e", size = 203899, upload-time = "2025-08-23T14:30:42.929Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/ab/a3b57812836755b2afa62fea86a71d37a9d898723538f7f82ae5c975fddf/simple_salesforce-1.12.9-py3-none-any.whl", hash = "sha256:1ea83b64d49208f1291119b847861638d5c1f6e4c8a8aa56b598878b2e63377f", size = 191560, upload-time = "2025-08-23T14:30:41.258Z" },
-]
-
-[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3926,19 +3885,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/bb/2799cc2ede3ed41131f8975621e7213dfc7ef4acbbaadfa440f32500c370/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
-]
-
-[[package]]
-name = "stripe"
-version = "15.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/28/c3550f39d9e258c21bcba81a89ef3ca7af352ad2cb14fe16b80248841644/stripe-15.2.0.tar.gz", hash = "sha256:f795d8a8ff27433e9ab03099afc0f5c4e992a8a6f92b9f839dc0048bb12f76f6", size = 1520207, upload-time = "2026-05-27T20:34:44.256Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/2b/697003ba6349058b65a5cb6b0bd8a8b0e909ed35911f7beebfc24b0563ee/stripe-15.2.0-py3-none-any.whl", hash = "sha256:e74d45bb07bb912fdc4ce81ffbdf184bcb92ce6e210cb7939966e537021c1842", size = 2168459, upload-time = "2026-05-27T20:34:42.312Z" },
 ]
 
 [[package]]
@@ -4203,6 +4149,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d5/a0/8fd707bcb776a7be556bad06a2ea5fb9bd519df78ef8e26f70ccf0f38bff/webencodings-0.6.1.tar.gz", hash = "sha256:565f9ad031c702dae404e27a099e3e09186a3ab1b9520f06d215502b651fd910", size = 15001, upload-time = "2026-08-15T14:22:57.549Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/c6/040cbc72480d789a5f40d63fb484d3106554c4dfa2d2b70ad5022057750f/webencodings-0.6.1-py3-none-any.whl", hash = "sha256:7fab6269c8bf237c657876b52058ccb182e861518d1c695c1a9aaa8c1c105d5b", size = 8745, upload-time = "2026-08-15T14:22:56.31Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576, upload-time = "2025-10-07T21:16:36.495Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616, upload-time = "2025-10-07T21:16:34.951Z" },
 ]
 
 [[package]]
@@ -4590,24 +4545,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/19/3774d162f6732d1cfb0b47b4140a942a35ca82bb19b6db1f80e9e7bdc8f8/yarl-1.23.0-cp314-cp314t-win_amd64.whl", hash = "sha256:4503053d296bc6e4cbd1fad61cf3b6e33b939886c4f249ba7c78b602214fabe2", size = 97610, upload-time = "2026-03-01T22:07:45.773Z" },
     { url = "https://files.pythonhosted.org/packages/51/47/3fa2286c3cb162c71cdb34c4224d5745a1ceceb391b2bd9b19b668a8d724/yarl-1.23.0-cp314-cp314t-win_arm64.whl", hash = "sha256:44bb7bef4ea409384e3f8bc36c063d77ea1b8d4a5b2706956c0d6695f07dcc25", size = 86041, upload-time = "2026-03-01T22:07:49.026Z" },
     { url = "https://files.pythonhosted.org/packages/69/68/c8739671f5699c7dc470580a4f821ef37c32c4cb0b047ce223a7f115757f/yarl-1.23.0-py3-none-any.whl", hash = "sha256:a2df6afe50dea8ae15fa34c9f824a3ee958d785fd5d089063d960bae1daa0a3f", size = 48288, upload-time = "2026-03-01T22:07:51.388Z" },
-]
-
-[[package]]
-name = "zeep"
-version = "4.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-    { name = "isodate" },
-    { name = "lxml" },
-    { name = "platformdirs" },
-    { name = "requests" },
-    { name = "requests-file" },
-    { name = "requests-toolbelt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/c2/e06e5f177d818d0fc34fcbe2f98c175af2cba63b7d90f4bfcb6fe360d343/zeep-4.3.3.tar.gz", hash = "sha256:99d5059f92f721020998695fd9c85289ccb03ec5a2398ad49c6dbe43f19cfb94", size = 167372, upload-time = "2026-06-18T17:17:58.994Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/87/5c1d29f52fc32da98b75dc8a681cd0de78c9cfd5c10493cd7fb730e1d4b0/zeep-4.3.3-py3-none-any.whl", hash = "sha256:5adfae35582848819f8bb97b6ea9f1a34a2d4851a539f830e14dbab09961dd18", size = 102054, upload-time = "2026-06-18T17:17:57.223Z" },
 ]
 
 [[package]]

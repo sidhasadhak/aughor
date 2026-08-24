@@ -50,6 +50,13 @@ class MotherDuckConnection(Connector):
 
         self._conn = duckdb.connect(target)
 
+    param_style = "duckdb"
+
+    def _bind_execute(self, sql: str, params: dict):
+        self._conn.execute(sql, params)
+        cols = [d[0] for d in self._conn.description] if self._conn.description else []
+        return cols, self._conn.fetchall()
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 
