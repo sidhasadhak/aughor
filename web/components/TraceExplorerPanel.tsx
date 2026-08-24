@@ -232,7 +232,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             ) : tab === "flow" ? (
               <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
                 {detail.timeline
-                  ? <TraceFlow timeline={detail.timeline} edges={detail.flow_edges ?? []} />
+                  ? <TraceFlow timeline={detail.timeline} edges={detail.flow_edges ?? []}
+                               events={detail.events ?? []} />
                   : <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                       This run predates the laid-out timeline, so there is no graph to
                       draw. The Events tab reads the same run from its raw log.

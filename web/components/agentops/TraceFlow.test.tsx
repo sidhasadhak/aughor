@@ -18,11 +18,11 @@
  * and edges the component computes and passes down. That is where the bug lived: the
  * forest was right and the canvas got nothing. Geometry stays a browser question.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TraceFlow } from "@/components/agentops/TraceFlow";
-import type { TimelineNode, TraceFlowEdge } from "@/lib/api";
+import { TraceFlow, eventForNode } from "@/components/agentops/TraceFlow";
+import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 /** What the component handed the renderer on the most recent render. */
 const handoff: { nodes: RFLike[]; edges: RFLike[] }[] = [];
@@ -184,5 +184,84 @@ describe("TraceFlow", () => {
     );
     expect(screen.getByText("a")).toBeInTheDocument();
     expect(screen.queryByText(/recorded no nodes to draw/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("node details — the row a card was built from", () => {
+  const ev = (over: Partial<SessionEvent> = {}): SessionEvent => ({
+    seq: 0, at: "2026-08-24T10:00:00Z", trace_id: "t1", kind: "tool_call", name: "search",
+    span_id: "a", parent_span_id: null, ok: true, duration_ms: 12, error_class: null,
+    investigation_id: null, session_id: null, user_id: null, agent_id: null, conn_id: null,
+    provider: null, model: null, prompt_tokens: null, completion_tokens: null,
+    total_tokens: null, row_count: null, retries: null, job_id: null, charter_id: null,
+    role: null, fallback: null, payload: null,
+    ...over,
+  } as SessionEvent);
+
+  it("matches a node to its row by span before sequence", () => {
+    // A frame without a span has only its seq to be found by, so seq has to work — but
+    // preferring it would pair a node with whatever row shares its number.
+    const n = node("a", { span_id: "span-a", seq: 7 });
+    const bySeq = ev({ span_id: "other", seq: 7, kind: "wrong-row" });
+    const bySpan = ev({ span_id: "span-a", seq: 99, kind: "right-row" });
+
+    expect(eventForNode(n, [bySeq, bySpan])?.kind).toBe("right-row");
+    expect(eventForNode(node("b", { span_id: null, seq: 7 }), [bySeq])?.kind).toBe("wrong-row");
+    expect(eventForNode(node("c", { span_id: "nope", seq: 42 }), [bySeq])).toBeNull();
+  });
+
+  it("shows the payload only once a reader asks for it", () => {
+    render(
+      <TraceFlow
+        timeline={timeline([node("a", { span_id: "a" })])}
+        edges={[]}
+        events={[ev({ span_id: "a", payload: { question: "why did revenue drop" } })]}
+      />,
+    );
+
+    // Collapsed: a canvas of open panels is not a canvas.
+    expect(screen.queryByText(/why did revenue drop/)).toBeNull();
+
+    fireEvent.click(screen.getByText("Details"));
+    expect(screen.getByText(/why did revenue drop/)).toBeInTheDocument();
+  });
+
+  it("opens one node at a time", () => {
+    render(
+      <TraceFlow
+        timeline={timeline([node("a", { span_id: "a" }), node("b", { span_id: "b" })])}
+        edges={[]}
+        events={[ev({ span_id: "a", payload: { pick: "first" } }),
+                 ev({ span_id: "b", payload: { pick: "second" } })]}
+      />,
+    );
+
+    const toggles = screen.getAllByText("Details");
+    fireEvent.click(toggles[0]);
+    expect(screen.getByText(/first/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByText("Details")[0]);
+    expect(screen.getByText(/second/)).toBeInTheDocument();
+    expect(screen.queryByText(/"pick": "first"/)).toBeNull();
+  });
+
+  it("says when there is no row behind a node, rather than showing an empty panel", () => {
+    render(<TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]} events={[]} />);
+
+    fireEvent.click(screen.getByText("Details"));
+    expect(screen.getByText(/No stored row matched this node/)).toBeInTheDocument();
+  });
+
+  it("names capture being OFF, because that is not the same as having nothing to say", () => {
+    render(
+      <TraceFlow
+        timeline={timeline([node("a", { span_id: "a" })])}
+        edges={[]}
+        events={[ev({ span_id: "a", content_captured: false })]}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Details"));
+    expect(screen.getByText(/prompt_capture was off/)).toBeInTheDocument();
   });
 });
