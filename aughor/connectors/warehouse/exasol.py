@@ -45,6 +45,16 @@ class ExasolConnection(Connector):
             connection_timeout=30,
         )
 
+    #: NO `param_style`, so `execute_with_params` keeps the base class's visible refusal.
+    #: This is the one connector here that is deliberately left unbound: `pyexasol` takes
+    #: its `query_params` by FORMATTING them into the statement text rather than sending
+    #: them as bind values, which is the one thing this feature must never do — and the
+    #: package is not installed anywhere here, so the claim cannot be checked against the
+    #: driver either. Refusing visibly beats a rendering nobody has run. Note that keying
+    #: the placeholder map on DIALECT would have bound it silently and wrongly: Exasol
+    #: declares `dialect = "postgres"` for transpile, and pyexasol speaks no Postgres
+    #: placeholder syntax at all. That counter-example is why `param_style` exists.
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 

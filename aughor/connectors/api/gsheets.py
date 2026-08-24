@@ -171,6 +171,13 @@ class GoogleSheetsConnector(Connector):
                 pass
         self._save_to_cache(loaded)
 
+    param_style = "duckdb"
+
+    def _bind_execute(self, sql: str, params: dict):
+        self._duckdb.execute(sql, params)
+        cols = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
+        return cols, self._duckdb.fetchall()
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 

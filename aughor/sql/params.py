@@ -112,22 +112,37 @@ def find_params(sql: str) -> list[str]:
 #: How each engine spells a named placeholder. DuckDB rejects `:name` outright
 #: (`Parser Error: syntax error at or near ":"`), which is why translation is not
 #: optional — the editor's syntax is not any engine's syntax.
+#: Bind STYLE → how a driver in that style spells a placeholder.
+#:
+#: Keyed on the driver's style and NOT on the SQL dialect, which was the original shape and
+#: is wrong by one concrete counter-example: ``ExasolConnection`` declares
+#: ``dialect = "postgres"`` because Postgres is the closest transpile target for Exasol's
+#: SQL — and `pyexasol` does not speak ``%(name)s`` at all. Dialect answers "what grammar do
+#: I write"; style answers "what does this driver accept as a placeholder". Two connections
+#: can agree on the first and disagree on the second, and a rewrite that conflates them
+#: produces a statement the engine rejects — or, worse, one it misreads.
+#:
+#: ``named`` is the identity rewrite: sqlite3's own named style IS ``:name``, so the
+#: editor's syntax already reaches that driver verbatim.
 _PLACEHOLDER = {
-    "duckdb": lambda name: f"${name}",
-    "postgres": lambda name: f"%({name})s",
+    "duckdb":   lambda name: f"${name}",
+    "pyformat": lambda name: f"%({name})s",
+    "named":    lambda name: f":{name}",
+    "at":       lambda name: f"@{name}",
 }
 
 
-def render_for_engine(sql: str, dialect: str) -> str:
-    """Rewrite ``:name`` into ``dialect``'s placeholder. Values are NOT substituted —
-    they travel separately, as bind values, which is the entire security property.
+def render_for_engine(sql: str, style: str) -> str:
+    """Rewrite ``:name`` into the placeholder a driver of this bind ``style`` accepts.
+    Values are NOT substituted — they travel separately, as bind values, which is the
+    entire security property.
 
-    Raises ``ParamRenderError`` for a dialect with no known placeholder syntax, so an
-    unsupported engine refuses the query rather than running an unparameterised one.
+    Raises ``ParamRenderError`` for a style with no known placeholder syntax, so an
+    unsupported driver refuses the query rather than running an unparameterised one.
     """
-    spell = _PLACEHOLDER.get((dialect or "").lower())
+    spell = _PLACEHOLDER.get((style or "").lower())
     if spell is None:
-        raise ParamRenderError(f"parameters are not supported for dialect {dialect!r}")
+        raise ParamRenderError(f"parameters are not supported for bind style {style!r}")
     out, last = [], 0
     for start, end, name in _scan(sql or ""):
         out.append(sql[last:start])
