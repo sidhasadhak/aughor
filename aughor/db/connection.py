@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging as _logging
+import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 import duckdb
 import sqlglot
@@ -889,7 +892,6 @@ def _apply_lane_envelope(duck_conn, connection_id: str) -> None:
         from aughor.db.lanes import lane_for_connection
         lane_for_connection(connection_id).apply_envelope(duck_conn)
     except Exception as _exc:
-        import logging as _logging
         _logging.getLogger(__name__).debug("lane envelope skipped (%s): %s", connection_id, _exc)
 
 
@@ -927,7 +929,6 @@ class DuckDBConnection(DatabaseConnection):
             except Exception:
                 self._conn = duckdb.connect(str(self._path), read_only=False)
                 self.engine_read_only = False
-                import logging as _logging
                 _logging.getLogger(__name__).info(
                     "duckdb connection %s opened read-WRITE (backend rejected read_only=True); "
                     "the AST mutation gate is the effective read-only boundary", connection_id or path)
@@ -1136,15 +1137,39 @@ class AughorOpsConnection(DuckDBConnection):
     "Aughor investigates Aughor" connection (Rec 4 · leverage #2, flag
     ``obs.task_table``).
 
-    An in-memory DuckDB ATTACHes the kernel ledger's SQLite (``system.db``) as the
-    read-only ``aughor_ops`` schema, so Deep Analysis can point at
-    ``aughor_ops.task_history`` (spans), ``aughor_ops.jobs`` and
-    ``aughor_ops.events`` and ask "why were yesterday's briefings slow?" as an
-    ordinary investigation. The ATTACH is live (new rows appear on re-query, no
-    copy); if the sqlite extension can't be autoloaded (a cold offline cache) it
-    falls back to materialising the current ``task_history`` rows via the Ledger
-    API, so the connection always opens. All mutations are blocked by the AST
+    An in-memory DuckDB ATTACHes the curated operational tables as the read-only
+    ``aughor_ops`` schema, so Deep Analysis can point at ``aughor_ops.task_history``
+    (spans), ``aughor_ops.jobs`` and ``aughor_ops.events`` and ask "why were yesterday's
+    briefings slow?" as an ordinary investigation. All mutations are blocked by the AST
     gate; the ATTACH is ``READ_ONLY`` besides.
+
+    ⚠️⚠️ **It attaches a SNAPSHOT, never the live ``system.db``, and that is load-bearing.**
+    This used to attach the live file and describe the liveness as the feature. Measured
+    2026-08-24, that ATTACH was the cause of the `SIGBUS` in ``walFindFrame`` that had been
+    killing this application for a week:
+
+    DuckDB's ``sqlite_scanner`` links its OWN copy of SQLite, so the process contains two
+    SQLite libraries. POSIX advisory locks do not conflict WITHIN a process, so when
+    duckdb's copy asks the kernel for the exclusive dead-man-switch lock on the ``-shm``,
+    it is granted — even though our python-sqlite3 connections hold that lock and are
+    mapped into the file. SQLite's response to winning that lock is
+    ``robust_ftruncate(shm, 0)``: it truncates the WAL index, on the theory that nobody
+    else is using it. Every mapping we hold is then over a file with no backing pages, and
+    the next read through one is a bus error.
+
+    Measured, 60 attach rounds against a store with a keepalive and four reader threads:
+    **503 `-shm` transitions with the attach (32768 → 3 bytes and back, same inode), and 1
+    without it** — the initial creation. The keepalive never helped because this was never
+    a last-close problem.
+
+    The snapshot is built with python-sqlite3 (the SAME library instance our stores use,
+    so no second-library hazard) into a temp file nothing else maps. Duckdb may truncate
+    THAT file's WAL index freely; it harms nobody.
+
+    **The cost is freshness.** The data is now as of the moment the connection opened
+    rather than of each query. An investigation gets a consistent point-in-time view,
+    which is arguably the better contract for analysis anyway — and it is the honest price
+    of not crashing the process that serves it.
     """
 
     dialect = "duckdb"
@@ -1152,23 +1177,88 @@ class AughorOpsConnection(DuckDBConnection):
     # are noise for behavioural self-investigation.
     _OPS_TABLES = ("task_history", "jobs", "events", "session_events")
 
+    #: Rows copied per curated table, newest first. Matches the fallback's cap: this is a
+    #: surface for asking why yesterday was slow, not an archive, and an unbounded copy of
+    #: a 137 MB store on every connection open would be its own outage.
+    _SNAPSHOT_ROW_CAP = 100_000
+
     def __init__(self, path: str | Path, connection_id: str = "aughor_ops"):
         self._path = Path(path)                 # the kernel ledger sqlite (system.db)
         self._connection_id = connection_id
         self._schema_name = "aughor_ops"
         self.engine_read_only = True
+        self._snapshot: Optional[Path] = None
         self._conn = duckdb.connect(":memory:")
         try:
-            # Live attach — DuckDB autoloads the sqlite extension; new ledger rows
-            # are visible on re-query (verified), so this is fresh, not a snapshot.
+            # A SNAPSHOT, never the live file — see the class docstring. Attaching
+            # `system.db` here truncated its WAL index out from under every mapping in
+            # the process and was the SIGBUS that killed this app for a week.
+            self._snapshot = self._build_snapshot()
             self._conn.execute(
-                f"ATTACH '{self._path.as_posix()}' AS aughor_ops (TYPE sqlite, READ_ONLY)")
+                f"ATTACH '{self._snapshot.as_posix()}' AS aughor_ops (TYPE sqlite, READ_ONLY)")
             self._conn.execute("SET search_path = 'aughor_ops'")
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "aughor_ops live sqlite ATTACH unavailable; materialising task_history",
+            tolerate(exc, "aughor_ops snapshot unavailable; materialising task_history",
                      counter="obs.task_table.attach_fallback")
+            self._discard_snapshot()
             self._materialise_fallback()
+
+    def _build_snapshot(self) -> Path:
+        """Copy the curated tables into a temp SQLite nothing else has mapped.
+
+        Read through `connect_store`, so the source read goes over the normal seam and
+        under the WAL keepalive, and — the point — through the SAME sqlite library every
+        other store uses. A second library instance touching a file we are mapped into is
+        the whole defect this exists to avoid.
+        """
+        import tempfile
+
+        from aughor.db.backend import connect_store
+
+        fd, dest = tempfile.mkstemp(prefix="aughor-ops-", suffix=".sqlite")
+        os.close(fd)
+        os.unlink(dest)                         # sqlite creates it on ATTACH
+        src = connect_store(self._path)
+        try:
+            src.execute("ATTACH ? AS snap", (dest,))
+            for tbl in self._OPS_TABLES:
+                try:
+                    # `rowid DESC` rather than a per-table timestamp: every one of these
+                    # is an ordinary rowid table, insertion order IS chronological for an
+                    # append-only journal, and naming a column per table would be four
+                    # more things to keep in step with four schemas.
+                    src.execute(
+                        f"CREATE TABLE snap.{tbl} AS "
+                        f"SELECT * FROM main.{tbl} ORDER BY rowid DESC LIMIT ?",
+                        (self._SNAPSHOT_ROW_CAP,))
+                except Exception as exc:        # noqa: BLE001 — a table that is not
+                    # there yet is not a reason to have no snapshot at all.
+                    _logging.getLogger(__name__).debug(
+                        "aughor_ops snapshot skipped %s: %s", tbl, exc)
+                    continue
+            src.execute("DETACH snap")
+        finally:
+            try:
+                src.close()
+            except Exception as exc:            # noqa: BLE001 — the snapshot is built;
+                # failing to put the source connection down does not un-build it.
+                _logging.getLogger(__name__).debug("snapshot source close: %s", exc)
+        return Path(dest)
+
+    def _discard_snapshot(self) -> None:
+        """Remove the temp copy. Never raises: a leaked temp file is not worth an error
+        on a path that is usually already handling one."""
+        snap = self._snapshot
+        self._snapshot = None
+        if snap is None:
+            return
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                Path(str(snap) + suffix).unlink(missing_ok=True)
+            except OSError as exc:
+                _logging.getLogger(__name__).debug(
+                    "ops snapshot %s%s not removed: %s", snap, suffix, exc)
 
     def _materialise_fallback(self) -> None:
         """Cold-cache path: build ``aughor_ops.task_history`` in memory from the
@@ -1221,6 +1311,20 @@ class AughorOpsConnection(DuckDBConnection):
             return True, "Connected (aughor_ops)"
         except Exception as e:
             return False, str(e)
+
+    def close(self) -> None:
+        """Close duckdb FIRST, then delete the snapshot.
+
+        Order matters: duckdb holds the snapshot open while it is attached, and removing
+        a file out from under an engine that has it mapped is the class of bug this whole
+        change exists to fix.
+        """
+        try:
+            self._conn.close()
+        except Exception as exc:                # noqa: BLE001 — the snapshot still has
+            # to go, so a close that fails must not skip the cleanup below.
+            _logging.getLogger(__name__).debug("aughor_ops duckdb close: %s", exc)
+        self._discard_snapshot()
 
 
 # ── Postgres ──────────────────────────────────────────────────────────────────

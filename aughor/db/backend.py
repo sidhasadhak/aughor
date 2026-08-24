@@ -329,6 +329,15 @@ def check_wal_drift() -> list:
     operator restart the process, which is the only safe recovery from a mapping that has
     already lost its backing store.
 
+    ⚠️ **What this can and cannot see.** It samples on the 30s supervisor tick, so it
+    detects drift that PERSISTS. The fault that actually killed this application does not:
+    duckdb's sqlite_scanner truncated the `-shm` to 3 bytes and SQLite grew it back to
+    32768 immediately, same inode, so nothing was left to observe by the next tick — this
+    check reported zero drift through a crash it was built to name (2026-08-24 09:11).
+    That cause is fixed at its source (`AughorOpsConnection` attaches a snapshot now, and
+    a ratchet stops another `TYPE sqlite` attach arriving), and this remains a backstop
+    for the persistent case. Do not read "drifted: 0" as "nothing truncated anything".
+
     Returns the paths that drifted, first time only (empty on the healthy path, which is
     every tick).
     """
