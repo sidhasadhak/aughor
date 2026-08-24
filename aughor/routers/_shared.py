@@ -405,7 +405,6 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
 
     Thin sync wrapper over ``spawn_explorer``. Must be called from within a running event loop.
     """
-    import asyncio
     from aughor.explorer.models import ExplorationPhase
 
     if auto:
