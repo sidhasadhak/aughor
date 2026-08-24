@@ -38,6 +38,22 @@ def _run(automation_id: str, *, status: str, message: str = "unknown Action Hub 
     return append_run(run)
 
 
+def _tick(automation_id: str, *, name: str = "Hourly jobs pulse",
+          started_at: str | None = None):
+    """A tick that evaluated its conditions and did NOT fire — no effects at all.
+
+    This is what the engine records most of the time: measured live, it ticks every
+    minute and fires once an hour.
+    """
+    from aughor.automations.models import AutomationRun
+    from aughor.automations.store import append_run
+    return append_run(AutomationRun(
+        automation_id=automation_id, automation_name=name, conn_id="c1",
+        outcome="not_fired", reason="schedule not due", effects=[],
+        **({"started_at": started_at} if started_at else {}),
+    ))
+
+
 def _attention(client) -> dict:
     return client.get("/control-room/needs-human").json()
 
@@ -95,3 +111,37 @@ def test_one_row_per_automation_however_many_times_it_has_failed(client):
     rows = [r for r in _attention(client)["rows"]
             if r["resolve"].get("automation_id") == "auto-noisy"]
     assert len(rows) == 1
+
+
+def test_a_tick_that_did_not_fire_does_not_read_as_health(client):
+    """The defect that only driving the live system could find.
+
+    The engine ticks EVERY MINUTE and records `not_fired` when the schedule is not due,
+    firing once an hour. Deciding on the most recent run of ANY kind therefore read a
+    `not_fired` tick as "it dispatched fine" and hid the broken automation for 59 minutes
+    out of every 60. Every earlier test in this file used `fired` runs, so none of them
+    could catch it — the shape below is the live one, verbatim.
+    """
+    _run("auto-hourly", status="dispatch_error", started_at="2026-08-24T07:00:10Z")
+    for minute in (2, 3, 4):
+        _tick("auto-hourly", started_at=f"2026-08-24T07:0{minute}:11Z")
+
+    rows = [r for r in _attention(client)["rows"]
+            if r["resolve"].get("automation_id") == "auto-hourly"]
+    assert len(rows) == 1, (
+        "a tick that never reached its effects carries no verdict on whether they can "
+        "dispatch — only a run that fired does")
+
+
+def test_a_fire_that_recovered_still_clears_it(client):
+    """The other direction, with non-firing ticks in between: the newest run that ACTUALLY
+    FIRED decides, so a fixed automation drops out even though ticks follow it."""
+    _run("auto-fixed", status="dispatch_error", started_at="2026-08-24T05:00:00Z")
+    _tick("auto-fixed", started_at="2026-08-24T05:30:00Z")
+    _run("auto-fixed", status="executed", message="delivered",
+         started_at="2026-08-24T06:00:00Z")
+    _tick("auto-fixed", started_at="2026-08-24T06:30:00Z")
+
+    rows = [r for r in _attention(client)["rows"]
+            if r["resolve"].get("automation_id") == "auto-fixed"]
+    assert rows == []

@@ -80,16 +80,41 @@ class GuardrailPolicy:
         return self == GuardrailPolicy()
 
 
+#: Resolved policies, per process. `active_policy` is consulted on EVERY query result, so
+#: an uncached read put one ledger open on the platform's hottest path — and `system.db` is
+#: the store this app has repeatedly died on (SIGBUS in `walFindFrame`). A policy is an
+#: operator decision that changes when somebody changes it, so the cache is invalidated by
+#: `set_policy` rather than by a clock: within one process that is exact, and this app is
+#: one process. On a multi-instance host a policy change reaches the others when they next
+#: start, which is the same guarantee every other operator setting here already has.
+_CACHE: dict = {}
+
+
+def invalidate_cache(agent_id: str = "") -> None:
+    """Drop one agent's cached policy, or all of them."""
+    if agent_id:
+        _CACHE.pop(agent_id, None)
+    else:
+        _CACHE.clear()
+
+
 def policy_for(agent_id: str) -> GuardrailPolicy:
     """The policy governing one agent — the default when none is set. Never raises."""
     if not agent_id:
         return GuardrailPolicy()
+    cached = _CACHE.get(agent_id)
+    if cached is not None:
+        return cached
     try:
         from aughor.kernel.ledger import Ledger
-        return GuardrailPolicy.from_dict(Ledger.default().kv_get(KV_STORE, agent_id))
+        policy = GuardrailPolicy.from_dict(Ledger.default().kv_get(KV_STORE, agent_id))
     except Exception as exc:                # noqa: BLE001 — a guardrail read must not break a run
         _LOG.warning("guardrail policy unreadable for %s: %s — using defaults", agent_id, exc)
+        # NOT cached: a store that is unreadable now may be readable on the next call, and
+        # caching the fallback would pin every agent to the defaults until a restart.
         return GuardrailPolicy()
+    _CACHE[agent_id] = policy
+    return policy
 
 
 def set_policy(agent_id: str, policy: GuardrailPolicy) -> None:
@@ -97,6 +122,7 @@ def set_policy(agent_id: str, policy: GuardrailPolicy) -> None:
     written, so "unset" and "explicitly set to the defaults" cannot drift apart."""
     from aughor.kernel.ledger import Ledger
     ledger = Ledger.default()
+    invalidate_cache(agent_id)
     if policy.is_default:
         ledger.kv_delete(KV_STORE, agent_id)
         return

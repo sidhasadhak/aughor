@@ -306,3 +306,39 @@ def test_the_route_refuses_a_cap_of_zero(client, agent):
 
 def test_an_unknown_agent_has_no_guardrails_to_read(client):
     assert client.get("/agents/custom/ua_nope/guardrails").status_code == 404
+
+
+def test_the_policy_is_read_once_per_process_not_once_per_query(agent):
+    """`active_policy` is consulted on EVERY query result, so an uncached read put one
+    ledger open on the platform's hottest path — and `system.db` is the store this app
+    has repeatedly died on. Measured after a live crash during VA-8's own verification."""
+    from aughor.kernel.ledger import Ledger
+
+    g.invalidate_cache()
+    ledger = Ledger.default()
+    real = ledger.kv_get
+    calls = []
+
+    def counted(store, key, default=None):
+        if store == g.KV_STORE:
+            calls.append(key)
+        return real(store, key, default)
+
+    ledger.kv_get = counted                     # type: ignore[method-assign]
+    try:
+        for _ in range(5):
+            g.policy_for(agent.id)
+    finally:
+        ledger.kv_get = real                    # type: ignore[method-assign]
+    assert len(calls) == 1, f"read the ledger {len(calls)} times for one policy"
+
+
+def test_setting_a_policy_takes_effect_immediately(agent):
+    """A cache with no invalidation would leave an operator's change inert until restart —
+    the exact 'configured but not enforced' failure this plane exists to avoid."""
+    g.invalidate_cache()
+    assert g.policy_for(agent.id).pii == "redact"
+
+    g.set_policy(agent.id, g.GuardrailPolicy(pii="block"))
+
+    assert g.policy_for(agent.id).pii == "block"

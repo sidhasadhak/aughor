@@ -494,18 +494,28 @@ def needs_human(limit: int = 100):
     # proof and never replaced. It had been erroring every hour since, in a log line
     # nobody reads, because the outcome was PRODUCED and nothing consumed it.
     #
-    # ONE row per automation, from its most recent run only. A thing that has failed
-    # hourly for a week is one problem, and 168 rows of it would bury the other four
-    # sources rather than surface this one.
+    # ONE row per automation, from its most recent run THAT FIRED. A thing that has
+    # failed hourly for a week is one problem, and 168 rows of it would bury the other
+    # four sources rather than surface this one.
+    #
+    # ⚠️ "Most recent run" is not the same as "most recent run that fired", and the
+    # difference is the whole feature. Measured live 2026-08-24: the engine ticks EVERY
+    # MINUTE and records `not_fired` when the schedule is not due, firing once an hour.
+    # Deciding on the newest run of any kind therefore read a `not_fired` tick as health
+    # and hid the broken automation for 59 minutes out of every 60. A tick that evaluated
+    # its conditions and declined to fire says nothing about whether the effect can
+    # dispatch — only a run that reached its effects does.
     broken_count = 0
     try:
         seen_automations: set = set()
-        for run in get_runs(limit=200):
+        for run in get_runs(limit=500):
             if run.automation_id in seen_automations:
                 continue
+            if not run.effects:
+                continue        # never reached its effects; carries no dispatch verdict
             failing = [e for e in run.effects if e.status == "dispatch_error"]
             if not failing:
-                # The newest run of this automation dispatched. Whatever went wrong
+                # The newest FIRED run of this automation dispatched. Whatever went wrong
                 # before has stopped, so it is not waiting on anybody — and recording it
                 # as seen keeps an older broken run from resurrecting it.
                 seen_automations.add(run.automation_id)
