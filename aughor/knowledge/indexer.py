@@ -49,7 +49,8 @@ def get_document(doc_id: str) -> Optional[dict]:
     return next((d for d in _load_registry() if d["doc_id"] == doc_id), None)
 
 
-def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded_at: str) -> None:
+def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded_at: str,
+              settings: Optional[dict] = None) -> None:
     docs = _load_registry()
     # Remove any existing entry for this doc_id
     docs = [d for d in docs if d["doc_id"] != doc_id]
@@ -59,6 +60,11 @@ def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded
         "title": title,
         "chunk_count": chunk_count,
         "uploaded_at": uploaded_at,
+        # KB-1 — WHAT CUT IT. Without this a re-index is a guess: the defaults may have
+        # moved, or the document may have been indexed with settings a person chose once
+        # and cannot now recall. Absent on every document indexed before this existed,
+        # which `ChunkSettings.from_dict(None)` reads as "the defaults", because it was.
+        **({"chunk_settings": settings} if settings else {}),
     })
     _save_registry(docs)
 
@@ -74,9 +80,33 @@ def _deregister(doc_id: str) -> bool:
 
 # ── Qdrant helpers ────────────────────────────────────────────────────────────
 
+class EmbeddingDimensionMismatch(RuntimeError):
+    """The configured embedder does not fit the collection that already exists."""
+
+
 def _ensure_collection() -> None:
-    from aughor.semantic.vector_store import ensure_collection
-    ensure_collection(DOCS_COLLECTION)
+    """Create the collection at the ACTIVE embedder's width, or refuse if one exists at a
+    different one.
+
+    `ensure_collection` no-ops on an existing collection whatever its width, so without this
+    a changed embedding model fails at upsert with a driver error and — far worse — at
+    search, where the failure is swallowed into an empty result. Switching model always
+    requires re-embedding anyway (a different model is a different vector space, even at an
+    identical width); this makes the moment it becomes necessary loud instead of silent.
+    """
+    from aughor.semantic.embedder import embedding_dim
+    from aughor.semantic.vector_store import collection_dim, ensure_collection
+
+    dim = embedding_dim()
+    existing = collection_dim(DOCS_COLLECTION)
+    if existing is not None and existing != dim:
+        from aughor.semantic.embedder import embed_backend, embed_model
+        raise EmbeddingDimensionMismatch(
+            f"the document index holds {existing}-dimension vectors and "
+            f"{embed_backend()}/{embed_model()} produces {dim}. Nothing was written. The "
+            f"corpus must be re-embedded with one model: delete the '{DOCS_COLLECTION}' "
+            f"collection and re-index, or switch the embedder back.")
+    ensure_collection(DOCS_COLLECTION, dim=dim)
 
 
 def _delete_doc_chunks(doc_id: str) -> None:
@@ -105,6 +135,7 @@ def index_text(
     source: str = "",
     doc_id: Optional[str] = None,
     source_url: str = "",
+    settings=None,
 ) -> dict:
     """
     Chunk plain text, embed, and upsert into Qdrant — no file I/O required.
@@ -126,13 +157,15 @@ def index_text(
         filename=filename,
         uploaded_at=uploaded_at,
         source_url=source_url,
+        settings=settings,
     )
     if not chunks:
         return {"doc_id": doc_id, "chunk_count": 0}
 
     _ensure_collection()
     _upsert_chunks(chunks)
-    _register(doc_id, filename, title, len(chunks), uploaded_at)
+    _register(doc_id, filename, title, len(chunks), uploaded_at,
+              settings=settings.as_dict() if settings else None)
     return {
         "doc_id": doc_id,
         "title": title,
@@ -143,7 +176,7 @@ def index_text(
     }
 
 
-def index_file(path: Path, title: Optional[str] = None) -> dict:
+def index_file(path: Path, title: Optional[str] = None, settings=None) -> dict:
     """
     Parse, chunk, embed, and upsert a document file.
     Returns the registry entry dict.
@@ -153,13 +186,15 @@ def index_file(path: Path, title: Optional[str] = None) -> dict:
     uploaded_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     title = title or path.stem.replace("_", " ").replace("-", " ").title()
 
-    chunks = chunk_file(path, doc_id=doc_id, title=title, uploaded_at=uploaded_at)
+    chunks = chunk_file(path, doc_id=doc_id, title=title, uploaded_at=uploaded_at,
+                        settings=settings)
     if not chunks:
         raise ValueError(f"No text could be extracted from {path.name}")
 
     _ensure_collection()
     _upsert_chunks(chunks)
-    _register(doc_id, path.name, title, len(chunks), uploaded_at)
+    _register(doc_id, path.name, title, len(chunks), uploaded_at,
+              settings=settings.as_dict() if settings else None)
 
     return {
         "doc_id": doc_id,

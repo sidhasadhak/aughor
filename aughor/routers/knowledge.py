@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from aughor.semantic.glossary import load_glossary, update_column, update_table
@@ -15,26 +15,114 @@ router = APIRouter(tags=["knowledge"])
 
 # ── Documents ─────────────────────────────────────────────────────────────────
 
-@router.post("/documents/upload", status_code=201)
-async def upload_document(file: UploadFile = File(...)):
-    """Upload a PDF, Word, Markdown, or plain-text document for semantic indexing."""
+#: The file types the parser can read. One list, used by upload AND preview — a preview
+#: that accepted what upload rejects would show a person chunks they can never index.
+_ALLOWED_SUFFIXES = {".pdf", ".docx", ".md", ".txt", ".markdown"}
+
+#: Chunks returned by a preview. Enough to judge the settings, not the whole document —
+#: this runs on every keystroke-ish adjustment and the point is that it stays cheap.
+_PREVIEW_CHUNKS = 10
+
+
+def _settings_from(raw: Optional[str]):
+    """Parse a JSON settings blob from a form field, or the defaults when absent."""
+    import json
+
+    from aughor.knowledge.documents import ChunkSettings, ChunkSettingsError
+
+    if not raw:
+        return None                      # None means "the defaults", all the way down
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"chunk settings are not JSON: {exc}")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=422, detail="chunk settings must be an object")
+    try:
+        return ChunkSettings.from_dict(parsed)
+    except ChunkSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+async def _spool(file: UploadFile):
+    """Write an upload to a temp file the parsers can read, after checking its type."""
     import tempfile
     from pathlib import Path as _Path
 
-    allowed = {".pdf", ".docx", ".md", ".txt", ".markdown"}
     suffix = _Path(file.filename or "").suffix.lower()
-    if suffix not in allowed:
+    if suffix not in _ALLOWED_SUFFIXES:
         raise HTTPException(
             status_code=422,
-            detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(allowed))}",
+            detail=f"Unsupported file type '{suffix}'. "
+                   f"Allowed: {', '.join(sorted(_ALLOWED_SUFFIXES))}",
         )
     content = await file.read()
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
-        tmp_path = _Path(tmp.name)
+        return _Path(tmp.name)
+
+
+@router.post("/documents/preview")
+async def preview_document_chunks(file: UploadFile = File(...),
+                                  chunk_settings: Optional[str] = Form(None)):
+    """Chunk a document and return the first chunks WITHOUT indexing it.
+
+    KB-2. Chunk settings are only meaningful if a person can see what they do, and the
+    alternative to seeing is uploading, looking at a number, deleting and trying again —
+    with an embedding call per attempt against a local model.
+
+    Deliberately embeds nothing and writes nothing: no vector store, no registry, no
+    `doc_id`. That is what makes it safe to call repeatedly, and it also means a preview
+    works when the embedder is DOWN — the one moment a person most needs to know their
+    settings are sane before they queue an upload.
+    """
+    from aughor.knowledge.documents import (DEFAULT_CHUNK_SETTINGS, chunk_text,
+                                            extract_text)
+
+    settings = _settings_from(chunk_settings)
+    path = await _spool(file)
+    try:
+        raw = extract_text(path)
+    except Exception:
+        logger.exception("Document parsing failed during preview")
+        raise HTTPException(status_code=422, detail="No text could be extracted")
+    finally:
+        path.unlink(missing_ok=True)
+
+    chunks = chunk_text(raw, title="preview", filename=file.filename or "preview",
+                        settings=settings)
+    shown = chunks[:_PREVIEW_CHUNKS]
+    return {
+        "total_chunks": len(chunks),
+        "shown": len(shown),
+        "characters": len(raw),
+        # The settings that PRODUCED this, echoed back — a preview whose settings are
+        # implicit cannot be compared with the next one.
+        "settings": (settings or DEFAULT_CHUNK_SETTINGS).as_dict(),
+        "chunks": [{
+            "index": c.chunk_index,
+            "characters": len(c.text),
+            # Estimated, and named so. A real count needs the embedder's tokeniser, which
+            # this endpoint exists to avoid calling.
+            "tokens_estimate": max(1, len(c.text) // 4),
+            "text": c.text,
+        } for c in shown],
+    }
+
+
+@router.post("/documents/upload", status_code=201)
+async def upload_document(file: UploadFile = File(...),
+                          chunk_settings: Optional[str] = Form(None)):
+    """Upload a PDF, Word, Markdown, or plain-text document for semantic indexing."""
+    from pathlib import Path as _Path
+
+    settings = _settings_from(chunk_settings)
+    tmp_path = await _spool(file)
     try:
         from aughor.knowledge.indexer import index_file
-        entry = index_file(tmp_path, title=_Path(file.filename or "").stem.replace("_", " ").replace("-", " ").title())
+        entry = index_file(tmp_path,
+                           title=_Path(file.filename or "").stem.replace("_", " ").replace("-", " ").title(),
+                           settings=settings)
         entry["filename"] = file.filename or entry["filename"]
         return entry
     except RuntimeError as e:
@@ -44,6 +132,19 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Indexing failed")
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/knowledge/status")
+def knowledge_status_endpoint():
+    """Whether the knowledge plane can index, can search, and holds what it claims.
+
+    Exists because an empty search result had four possible causes and one appearance. The
+    surface that shows a knowledge base has to be able to tell a person which of them
+    happened — "no match" and "your embedder is not running" are not the same news.
+    """
+    from aughor.knowledge.health import knowledge_status
+
+    return knowledge_status()
 
 
 @router.get("/documents")

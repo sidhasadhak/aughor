@@ -5,7 +5,9 @@ import {
   listDocuments,
   uploadDocument,
   deleteDocument,
+  getKnowledgeStatus,
   type DocumentEntry,
+  type KnowledgeStatus,
 } from "@/lib/api";
 
 const ACCEPTED = ".pdf,.docx,.md,.txt,.markdown";
@@ -38,6 +40,19 @@ function FileTypeChip({ filename }: { filename: string }) {
   );
 }
 
+/** What to say about a document's size.
+ *
+ *  `chunk_count` is the REGISTRY's claim, and the registry is not the index: measured on a
+ *  real install, one document claimed 59 chunks where the store held 5. Showing the claim
+ *  alone tells a person their document is searchable when most of it is not, so when the
+ *  two disagree, both numbers appear and the store's is the one in front. */
+function chunkLabel(doc: DocumentEntry, status: KnowledgeStatus | null): string {
+  const drift = status?.consistency.mismatched_documents?.[doc.doc_id];
+  const plural = (n: number) => `${n} chunk${n !== 1 ? "s" : ""}`;
+  if (!drift) return plural(doc.chunk_count);
+  return `${plural(drift.store)} indexed of ${drift.registry} claimed`;
+}
+
 export function DocumentUploader() {
   const [docs, setDocs] = useState<DocumentEntry[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -46,9 +61,17 @@ export function DocumentUploader() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const [status, setStatus] = useState<KnowledgeStatus | null>(null);
+
+  const refresh = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {});
+    // The plane's own account of itself. Without it this panel shows a list of documents
+    // and no hint that nothing can be searched — an unreachable embedder looks exactly
+    // like a healthy corpus from here.
+    getKnowledgeStatus().then(setStatus).catch(() => setStatus(null));
   }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -72,6 +95,7 @@ export function DocumentUploader() {
     }
     if (errors.length > 0) setUploadError(errors.join("\n"));
     setUploading(false);
+    getKnowledgeStatus().then(setStatus).catch(() => {});
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -88,6 +112,7 @@ export function DocumentUploader() {
     try {
       await deleteDocument(docId);
       setDocs(prev => prev.filter(d => d.doc_id !== docId));
+      getKnowledgeStatus().then(setStatus).catch(() => {});
     } catch {
       /* silent */
     } finally {
@@ -101,9 +126,45 @@ export function DocumentUploader() {
       <div>
         <h2 className="text-sm font-semibold text-zinc-200">Documents</h2>
         <p className="text-xs text-zinc-500 mt-0.5">
-          Upload PDFs, Word docs, or Markdown files. Deep analysis retrieves relevant snippets while it runs.
+          Upload PDFs, Word docs, or Markdown files. Deep analysis and the conversation both
+          retrieve relevant snippets.
         </p>
       </div>
+
+      {/* What the plane can actually do. Shown only when something is wrong or drifted —
+          a banner that appears on every healthy load is a banner nobody reads. */}
+      {status && !status.ready && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+          <p className="text-sm text-amber-300">Search is unavailable — {status.reason}.</p>
+          {!status.embedder.ok && (
+            <p className="aug-fs-xs text-zinc-400 font-mono mt-1">
+              embedder {status.embedder.model} at {status.embedder.endpoint} · this is a
+              LOCAL model, so indexing and search only work where it is running
+            </p>
+          )}
+          <p className="aug-fs-xs text-zinc-500 mt-1">
+            Documents already uploaded are unaffected; nothing can be indexed or searched
+            until this is resolved.
+          </p>
+        </div>
+      )}
+      {status && status.ready && !status.consistency.ok && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+          <p className="text-sm text-amber-300">
+            The index and this list disagree — {status.consistency.listed_chunks_present} of
+            the {status.chunks} indexed chunks belong to documents shown here.
+          </p>
+          {status.consistency.orphan_chunks > 0 && (
+            <p className="aug-fs-xs text-zinc-400 mt-1">
+              {status.consistency.orphan_chunks} chunk
+              {status.consistency.orphan_chunks !== 1 ? "s" : ""} across{" "}
+              {status.consistency.orphan_documents} document
+              {status.consistency.orphan_documents !== 1 ? "s" : ""} are in the index but not
+              listed — they can be found by search and cannot be removed from here.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Drop zone */}
       <div
@@ -164,7 +225,7 @@ export function DocumentUploader() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
                   <p className="aug-fs-xs text-zinc-500 font-mono mt-0.5">
-                    {doc.filename} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? "s" : ""} · {timeAgo(doc.uploaded_at)}
+                    {doc.filename} · {chunkLabel(doc, status)} · {timeAgo(doc.uploaded_at)}
                   </p>
                 </div>
                 <button

@@ -157,6 +157,36 @@ def _pg_where(query_filter) -> tuple[str, list]:
 
 # ── public API ───────────────────────────────────────────────────────────────
 
+def collection_dim(name: str) -> int | None:
+    """The vector width an existing collection was created with, or None if there is no
+    such collection (or the backend cannot say).
+
+    Exists because `ensure_collection` silently does NOTHING when a collection is already
+    there, whatever its width — so changing embedding model against an existing index
+    produces a dimension mismatch at UPSERT (an opaque driver error) and, worse, at SEARCH,
+    where `search_documents`' `except: return []` turns it into a silently empty result.
+    """
+    if not available():
+        return None
+    if backend() == "pgvector":
+        return None                      # one shared column; width is not per collection
+    try:
+        from qdrant_client.models import VectorParams
+
+        info = _client().get_collection(name)
+        params = info.config.params.vectors
+        if isinstance(params, VectorParams):
+            return int(params.size)
+        if isinstance(params, dict):     # named-vector collections
+            first = next(iter(params.values()), None)
+            return int(first.size) if first is not None else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an unknown collection width is reported as unknown, not as a match",
+                 counter="vector_store.collection_dim")
+    return None
+
+
 def ensure_collection(name: str, dim: int = VECTOR_DIM) -> None:
     if not available():
         logger.debug("semantic index unavailable; skipping ensure_collection(%s)", name)

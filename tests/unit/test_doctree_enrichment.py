@@ -126,7 +126,13 @@ def test_index_doc_tree_embeds_the_polish(monkeypatch, tmp_path):
                         lambda texts: [[0.0] * 8 for _ in texts])
     monkeypatch.setattr("aughor.semantic.vector_store.upsert",
                         lambda coll, points: upserts.extend(points))
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection", lambda coll: None)
+    # `ensure_collection` takes the active embedder's width now, and `collection_dim` has
+    # to be stubbed beside it: without that, this fixture reached a REAL Qdrant for the
+    # existing collection's width and compared 768 against its own 8-dimension fake. The
+    # fixture was hermetic only while nothing READ from the store.
+    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+                        lambda coll, dim=None: None)
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: None)
     monkeypatch.setattr(idx, "_delete_doc_chunks", lambda doc_id: None)
 
     tree = build_doc_tree(_graph())

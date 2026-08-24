@@ -25,8 +25,15 @@ def fakes(monkeypatch, tmp_path):
                         lambda texts: [[0.0] * 8 for _ in texts])
     monkeypatch.setattr("aughor.semantic.vector_store.upsert",
                         lambda coll, points: state["upserts"].extend(points))
+    # `ensure_collection` now takes the active embedder's width, so the stub has to accept
+    # it — and `collection_dim` has to be stubbed too. Without it this "hermetic" fixture
+    # reached a REAL Qdrant for the existing collection's width and compared 768 against
+    # this file's 8-dimension fake embedder. It was hermetic only while nothing READ from
+    # the store; the first read escaped.
     monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
-                        lambda coll: state.__setitem__("ensured", state["ensured"] + 1))
+                        lambda coll, dim=None: state.__setitem__("ensured",
+                                                                 state["ensured"] + 1))
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: None)
     monkeypatch.setattr(idx, "_delete_doc_chunks",
                         lambda doc_id: state["deleted"].append(doc_id))
     return state
@@ -103,11 +110,19 @@ def test_index_doc_tree_is_raise_transparent(monkeypatch, tmp_path):
     wrapper is the resilience layer, and it can only work if failures surface."""
     monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
 
-    def _down(coll):
+    # This test used no fixture, so it reached a REAL embedder and a REAL Qdrant — which
+    # made it pass on a laptop and fail in CI, and worse, pass on the laptop for the WRONG
+    # REASON: `EmbeddingDimensionMismatch` is a RuntimeError, so it satisfied the assertion
+    # below without the stub ever being called. Both halves are stubbed now, so what is
+    # asserted is propagation and nothing else.
+    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: None)
+
+    def _down(coll, dim=None):
         raise RuntimeError("qdrant down")
 
     monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection", _down)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="qdrant down"):
         idx.index_doc_tree(_tree(), connection_id="c", schema="s")
 
 

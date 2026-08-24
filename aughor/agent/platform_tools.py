@@ -333,6 +333,121 @@ def read_pack(connection_id: str, args: dict) -> dict:
     }
 
 
+#: Characters of a matched passage handed back per hit. Whole documents do not belong in a
+#: tool result — the trace surface learned that at 1.2 MB.
+_MAX_DOC_SNIPPET = 700
+_MAX_DOC_HITS = 5
+
+_DOC_PARAMS = {
+    "type": "object",
+    "properties": {"query": {
+        "type": "string",
+        "description": "What to look for, in the user's own words.",
+    }},
+    "required": ["query"],
+}
+
+
+def search_documents(connection_id: str, args: dict) -> dict:
+    """Semantic search over the indexed documents — the retrieval half of the knowledge
+    plane, which the conversation could not reach.
+
+    The plane was already built and already running: `build_external_context_section`
+    injects document snippets into DEEP ANALYSIS and investigations, scoped per agent and
+    fail-closed. Chat had neither the injection nor a tool, so on the surface a person
+    actually talks to, the knowledge base did not exist. Sixteen tools and not one of them
+    reached a document.
+
+    Scoped exactly as the injection is — through `agent_doc_ids()`, so an agent sees the
+    documents its creator bound to it and no others, and an agent bound to none sees none.
+    Duplicating the retrieval call rather than reusing
+    `build_external_context_section` on purpose: that function returns PROSE formatted for
+    prompt injection, and a tool result needs structure the model can cite from.
+    """
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return {"error": "query is required"}
+
+    try:
+        from aughor.custom_agents.context import agent_doc_ids
+        from aughor.knowledge.indexer import search_documents as _search
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the knowledge plane is optional; its absence is not an error",
+                 counter="platform_tools.docs_import")
+        return {"count": 0, "hits": [], "why": "document search is unavailable here"}
+
+    allowed = agent_doc_ids()
+    if allowed is not None and not allowed:
+        # Fail closed, and SAY so. An agent bound to no documents returning "no matches" is
+        # indistinguishable from an empty index, and the two call for opposite fixes.
+        return {"count": 0, "hits": [],
+                "why": "this agent is bound to no documents, so it searches none"}
+
+    try:
+        # Always over-fetch: the cap is applied AFTER de-duplication, and agent scoping
+        # filters on top of that. Fetching exactly the cap would hand back three passages
+        # where five were asked for.
+        raw = _search(query, top_k=max(_MAX_DOC_HITS * 4, 16))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a failed document search answers empty, not with a broken turn",
+                 counter="platform_tools.docs_search")
+        return {"count": 0, "hits": [], "why": "the document index could not be searched"}
+
+    if not raw:
+        # An empty corpus, an unreachable embedder and a genuine no-match all arrive here
+        # identically. Say which, so the model reports the right thing to a person instead
+        # of concluding the documentation is silent on the subject.
+        why = ""
+        try:
+            from aughor.knowledge.health import why_empty
+            why = why_empty()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "an unexplained empty result is still a valid empty result",
+                     counter="platform_tools.docs_why_empty")
+        return {"count": 0, "hits": [],
+                "why": why or "nothing in the indexed documents matched that query"}
+
+    if allowed is not None:
+        raw = [h for h in raw if h.get("doc_id") in allowed]
+
+    # De-duplicate by TEXT, not by doc_id. One passage is commonly indexed under several
+    # documents — a connection whose schema is documented as both `main` and `default`
+    # produces two doctrees carrying identical prose — and measured on this install, 8 raw
+    # hits for one question held only 6 distinct passages. Capped at five, that spent two
+    # of the model's five slots repeating itself, which is how a tool earns a reputation
+    # for being useless. The extra sources are reported rather than dropped: the same text
+    # in two places is a fact about the corpus, and hiding it would be a second small lie.
+    hits: list[dict] = []
+    seen: dict[str, dict] = {}
+    for h in raw:
+        text = str(h.get("text") or "")
+        key = " ".join(text.split())[:400]
+        if not key:
+            continue
+        if key in seen:
+            other = h.get("doc_id", "")
+            if other and other not in seen[key]["also_in"]:
+                seen[key]["also_in"].append(other)
+            continue
+        entry = {
+            "doc_id": h.get("doc_id", ""),
+            "title": h.get("title") or h.get("filename") or h.get("doc_id", ""),
+            "score": round(float(h.get("score") or 0.0), 3),
+            "text": text[:_MAX_DOC_SNIPPET],
+            "also_in": [],
+        }
+        seen[key] = entry
+        hits.append(entry)
+        if len(hits) >= _MAX_DOC_HITS:
+            break
+    return {"count": len(hits), "hits": hits,
+            "note": ("Passages, not facts about the warehouse. Quote or paraphrase them as "
+                     "documentation; a NUMBER still has to come from a query.")}
+
+
 def list_packs(connection_id: str, args: dict) -> dict:
     """Installed specialist packs, and which one is bound to THIS connection.
 
@@ -700,6 +815,18 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             ),
             parameters=_EMPTY_PARAMS,
             run=lambda a: list_packs(connection_id, a),
+        ),
+        ToolSpec(
+            name="search_documents",
+            description=(
+                "Semantic search over documents indexed for this workspace — schema "
+                "documentation Aughor generated, and any files a person uploaded. Use it "
+                "for what something MEANS ('how is recognised revenue defined here', "
+                "'what does this table actually record'), never for a number. Returns passages "
+                "with their source, which you may quote; figures still come from `run_sql`."
+            ),
+            parameters=_DOC_PARAMS,
+            run=lambda a: search_documents(connection_id, a),
         ),
         ToolSpec(
             name="read_pack",
