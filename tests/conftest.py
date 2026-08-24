@@ -455,6 +455,22 @@ def _reset_provider_process_caches():
 
 
 @pytest.fixture(autouse=True)
+def _reset_embedder_dimension_cache():
+    """Clear the embedder's process-global width memo between tests.
+
+    `embedding_dim()` memoises into `embedder._DIM_CACHE` keyed by (backend, model), and
+    the memo outlives `monkeypatch`. A file whose fake embedder returns 8-wide vectors
+    passes alone and fails in a suite where an earlier test already cached 768 for the same
+    key: `_ensure_collection` compares the two and refuses every write, on a dimension
+    neither test chose. Same family as the provider caches above — right for a server that
+    should probe once, poison for a session that swaps embedders per test.
+    """
+    yield
+    from aughor.semantic.embedder import _DIM_CACHE
+    _DIM_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_provider_credentials(request):
     """Layer 0.2 — the mechanical no-key guarantee: a test structurally cannot reach a
     paid backend.

@@ -224,7 +224,10 @@ async def trigger_knowledge_sync(conn_id: str):
         except Exception as exc:
             logger.warning("Knowledge sync failed for %s: %s", conn_id, exc)
 
-    asyncio.create_task(_run())
+    # Tracked: an untracked task holds no reference to itself and can be collected
+    # part-way through a sync.
+    from aughor.kernel.concurrency import spawn
+    spawn(_run(), name=f"knowledge-sync-{conn_id}")
     return {"message": f"Knowledge sync triggered for {conn_id} ({conn_type})", "async": True}
 
 
@@ -317,7 +320,8 @@ async def trigger_sync(conn_id: str, incremental: bool = True):
         except Exception as exc:
             logger.warning("Sync failed for %s: %s", conn_id, exc)
 
-    asyncio.create_task(_run())
+    from aughor.kernel.concurrency import spawn
+    spawn(_run(), name=f"sync-{conn_id}")
     return {"message": f"Sync triggered for {conn_id}", "incremental": incremental}
 
 

@@ -453,9 +453,13 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
             phase = getattr(getattr(existing, "status", None), "phase", None)
             if phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED, None):
                 continue  # this schema's run is already active
+        # Tracked, not discarded: `create_task`'s return value is the only strong
+        # reference to the task, and a kick whose reference is dropped can be collected
+        # mid-exploration. It also gives a test a way to end what it started.
+        from aughor.kernel.concurrency import spawn
         if birth:
-            asyncio.create_task(spawn_birth(conn_id, schema_name=sch), name=f"birth-{key}")
+            spawn(spawn_birth(conn_id, schema_name=sch), name=f"birth-{key}")
         else:
-            asyncio.create_task(spawn_explorer(conn_id, schema_name=sch), name=f"kickoff-{key}")
+            spawn(spawn_explorer(conn_id, schema_name=sch), name=f"kickoff-{key}")
         started = True
     return started
