@@ -26,7 +26,7 @@
  * other canvases. The argument was wrong on the facts, so the canvas is the better
  * answer — same library, same design system, and pan/zoom/fit come with it.)
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -39,7 +39,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import type { TimelineNode, TraceFlowEdge, TraceTimeline } from "@/lib/api";
+import type { SessionEvent, TimelineNode, TraceFlowEdge, TraceTimeline } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
 const KIND_COLOR: Record<string, string> = {
@@ -130,8 +130,46 @@ export function layoutForest(forest: FlowNode[]): Map<string, { col: number; row
   return pos;
 }
 
-function NodeCard({ data }: { data: { node: TimelineNode } }) {
+/** The stored row behind a node, or null when nothing matched.
+ *
+ *  Matched on `span_id` first and `seq` second. A node IS an event — the timeline is
+ *  built from these rows — but a frame without a span has only its sequence number to be
+ *  found by, and matching on seq alone would pair a node with whatever row happened to
+ *  share its number in a run that recorded spans out of order. */
+export function eventForNode(node: TimelineNode, events: SessionEvent[]): SessionEvent | null {
+  if (node.span_id) {
+    const bySpan = events.find(e => e.span_id === node.span_id);
+    if (bySpan) return bySpan;
+  }
+  return events.find(e => e.seq === node.seq) ?? null;
+}
+
+/** What a payload says, without pretending it says more than it does. */
+function payloadText(event: SessionEvent | null): string | null {
+  if (!event?.payload || Object.keys(event.payload).length === 0) return null;
+  try {
+    return JSON.stringify(event.payload, null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ color: "var(--t4)", flexShrink: 0 }}>{label}</span>
+      <span style={{ color: "var(--t2)", textAlign: "right", overflowWrap: "anywhere" }}>{value}</span>
+    </div>
+  );
+}
+
+function NodeCard({ data }: {
+  data: { node: TimelineNode; event: SessionEvent | null; open: boolean; onToggle: () => void };
+}) {
   const node = data.node;
+  const event = data.event;
+  const open = data.open;
+  const payload = open ? payloadText(event) : null;
   const color = KIND_COLOR[node.kind] ?? "var(--chart-6)";
   const failed = node.ok === false;
   const u = node.usage;
@@ -207,6 +245,76 @@ function NodeCard({ data }: { data: { node: TimelineNode } }) {
           {node.error_class || "failed"}
         </div>
       )}
+
+      {/* The card summarises; this is the row it summarises FROM. Without it the canvas
+          could say a call took 9.63s and cost 806 tokens and still not say what was
+          asked or answered — which is the question a person opens a trace to settle. */}
+      <button
+        type="button"
+        onClick={data.onToggle}
+        className="nodrag aug-fs-xs"
+        style={{
+          width: "100%", display: "flex", justifyContent: "space-between",
+          alignItems: "center", padding: "3px 8px", background: "none", cursor: "pointer",
+          border: "none", borderTop: "1px solid var(--border)", color: "var(--t3)",
+        }}
+      >
+        <span>{open ? "Hide details" : "Details"}</span>
+        <span>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div
+          className="nodrag nowheel aug-fs-xs"
+          style={{
+            borderTop: "1px solid var(--border)", padding: "6px 8px",
+            maxHeight: 260, overflowY: "auto", background: "var(--bg-1)",
+          }}
+        >
+          {event ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <DetailRow label="Kind" value={event.kind} />
+              <DetailRow label="At" value={event.at} />
+              {node.offset_ms != null && <DetailRow label="Offset" value={ms(node.offset_ms)} />}
+              {node.gap_ms != null && <DetailRow label="Waited before" value={ms(node.gap_ms)} />}
+              {event.provider && <DetailRow label="Provider" value={event.provider} />}
+              {event.role && <DetailRow label="Role" value={event.role} />}
+              {event.fallback === true && <DetailRow label="Fallback" value="the primary backend refused" />}
+              {event.retries != null && event.retries > 0 && (
+                <DetailRow label="Retries" value={formatCount(event.retries)} />
+              )}
+              {event.row_count != null && <DetailRow label="Rows" value={formatCount(event.row_count)} />}
+              {event.error_class && <DetailRow label="Error" value={event.error_class} />}
+
+              {payload ? (
+                <>
+                  <span style={{ color: "var(--t4)", marginTop: 4 }}>Payload</span>
+                  <pre style={{
+                    margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+                    color: "var(--t2)", fontFamily: "var(--font-mono)",
+                  }}>{payload}</pre>
+                </>
+              ) : (
+                <span style={{ color: "var(--t4)", marginTop: 4 }}>
+                  This row carries no payload.
+                </span>
+              )}
+
+              {event.content_captured === false && (
+                // Absence with a reason. "No prompt here" and "prompt capture was off"
+                // call for different responses, and only one of them is a bug.
+                <span style={{ color: "var(--t4)" }}>
+                  Prompt content was not captured for this run (obs.prompt_capture was off).
+                </span>
+              )}
+            </div>
+          ) : (
+            <span style={{ color: "var(--t4)" }}>
+              No stored row matched this node, so there is nothing further to show.
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -216,10 +324,18 @@ const NODE_TYPES = { traceNode: NodeCard };
 export function TraceFlow({
   timeline,
   edges,
+  events = [],
 }: {
   timeline: TraceTimeline;
   edges: TraceFlowEdge[];
+  /** The trace's stored rows, so a node can show what it was built FROM. */
+  events?: SessionEvent[];
 }) {
+  // One at a time. An expanded card overlays the row beneath it — the layout is a fixed
+  // grid, so it cannot make room — and several open at once turns a readable canvas into
+  // stacked panels. Opening one closes the last, which is also how a person reads a run.
+  const [openId, setOpenId] = useState<string | null>(null);
+
   const { rfNodes, rfEdges, nested } = useMemo(() => {
     const forest = buildForest(timeline.nodes ?? [], edges ?? []);
     const pos = layoutForest(forest);
@@ -229,12 +345,21 @@ export function TraceFlow({
       .filter(n => drawn.has(n.id))
       .map(n => {
         const p = pos.get(n.id)!;
+        const open = openId === n.id;
         return {
           id: n.id,
           type: "traceNode",
           position: { x: p.col * COL_W, y: p.row * ROW_H },
-          data: { node: n },
+          data: {
+            node: n,
+            event: eventForNode(n, events),
+            open,
+            onToggle: () => setOpenId(cur => (cur === n.id ? null : n.id)),
+          },
           draggable: true,
+          // An open card has to sit above its neighbours, or the detail it exists to
+          // show is drawn underneath the next node.
+          zIndex: open ? 10 : 0,
         };
       });
 
@@ -266,7 +391,7 @@ export function TraceFlow({
       rfNodes, rfEdges,
       nested: forest.some(n => n.children.length > 0),
     };
-  }, [timeline.nodes, edges]);
+  }, [timeline.nodes, edges, events, openId]);
 
   if (!rfNodes.length) {
     return (

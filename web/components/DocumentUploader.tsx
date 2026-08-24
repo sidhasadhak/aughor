@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatCount } from "@/lib/format";
 import {
   listDocuments,
   uploadDocument,
+  previewDocumentChunks,
   deleteDocument,
   getKnowledgeStatus,
+  type ChunkPreview,
+  type ChunkSettings,
   type DocumentEntry,
   type KnowledgeStatus,
 } from "@/lib/api";
@@ -63,6 +67,38 @@ export function DocumentUploader() {
 
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
 
+  // Chunking, as settings rather than three constants nobody could see. Empty means the
+  // defaults the corpus was indexed under — an omitted field is the previous behaviour,
+  // so a person who never opens this panel gets exactly what they got before.
+  const [settings, setSettings] = useState<Partial<ChunkSettings>>({});
+  const [preview, setPreview] = useState<ChunkPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState<string>("");
+  const previewRef = useRef<HTMLInputElement>(null);
+
+  const setNum = (k: keyof ChunkSettings) => (v: string) => {
+    const n = Number(v);
+    setSettings(prev => (v === "" || Number.isNaN(n)
+      ? Object.fromEntries(Object.entries(prev).filter(([key]) => key !== k))
+      : { ...prev, [k]: n }));
+  };
+
+  const runPreview = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setPreviewError(null);
+    setPreviewing(true);
+    try {
+      setPreviewName(files[0].name);
+      setPreview(await previewDocumentChunks(files[0], settings));
+    } catch (e) {
+      setPreview(null);
+      setPreviewError(e instanceof Error ? e.message : "Preview failed");
+    } finally {
+      setPreviewing(false);
+    }
+  }, [settings]);
+
   const refresh = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {});
     // The plane's own account of itself. Without it this panel shows a list of documents
@@ -81,7 +117,7 @@ export function DocumentUploader() {
     const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
-        const entry = await uploadDocument(file);
+        const entry = await uploadDocument(file, settings);
         results.push(entry);
       } catch (e) {
         errors.push(`${file.name}: ${e instanceof Error ? e.message : "failed"}`);
@@ -96,7 +132,7 @@ export function DocumentUploader() {
     if (errors.length > 0) setUploadError(errors.join("\n"));
     setUploading(false);
     getKnowledgeStatus().then(setStatus).catch(() => {});
-  }, []);
+  }, [settings]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -124,8 +160,8 @@ export function DocumentUploader() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h2 className="text-sm font-semibold text-zinc-200">Documents</h2>
-        <p className="text-xs text-zinc-500 mt-0.5">
+        <h2 className="aug-fs-ui font-semibold text-zinc-200">Documents</h2>
+        <p className="aug-fs-xs text-zinc-500 mt-0.5">
           Upload PDFs, Word docs, or Markdown files. Deep analysis and the conversation both
           retrieve relevant snippets.
         </p>
@@ -135,7 +171,7 @@ export function DocumentUploader() {
           a banner that appears on every healthy load is a banner nobody reads. */}
       {status && !status.ready && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-          <p className="text-sm text-amber-300">Search is unavailable — {status.reason}.</p>
+          <p className="aug-fs-sm text-amber-300">Search is unavailable — {status.reason}.</p>
           {!status.embedder.ok && (
             <p className="aug-fs-xs text-zinc-400 font-mono mt-1">
               embedder {status.embedder.model} at {status.embedder.endpoint} · this is a
@@ -150,7 +186,7 @@ export function DocumentUploader() {
       )}
       {status && status.ready && !status.consistency.ok && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-          <p className="text-sm text-amber-300">
+          <p className="aug-fs-sm text-amber-300">
             The index and this list disagree — {status.consistency.listed_chunks_present} of
             the {status.chunks} indexed chunks belong to documents shown here.
           </p>
@@ -166,45 +202,229 @@ export function DocumentUploader() {
         </div>
       )}
 
-      {/* Drop zone */}
-      <div
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onClick={() => inputRef.current?.click()}
-        className={`relative rounded-md border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
-          dragging
-            ? "border-violet-500 bg-violet-500/10"
-            : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
-        }`}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPTED}
-          multiple
-          className="hidden"
-          onChange={e => handleFiles(e.target.files)}
-        />
-        {uploading ? (
-          <div className="space-y-2">
-            <div className="h-5 w-5 rounded-[var(--r-pill)] border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
-            <p className="text-sm text-zinc-400">Indexing…</p>
+      {/* Ingest — settings on the left, what they DO on the right.
+          Chunk settings and preview both existed in the API and neither was reachable, so
+          the only way to see a setting's effect was upload → read a count → delete → try
+          again, an embedding call per attempt. Side by side is the whole point: a number
+          in a field means nothing until you can see the cut it produces. */}
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
+
+        {/* ── left: what to ingest, and how ─────────────────────────────────── */}
+        <div className="space-y-4">
+          <div
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onClick={() => inputRef.current?.click()}
+            className={`relative rounded-md border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
+              dragging
+                ? "border-violet-500 bg-violet-500/10"
+                : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
+            }`}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPTED}
+              multiple
+              className="hidden"
+              onChange={e => handleFiles(e.target.files)}
+            />
+            {uploading ? (
+              <div className="space-y-2">
+                <div className="h-5 w-5 rounded-[var(--r-pill)] border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
+                <p className="aug-fs-ui text-zinc-400">Indexing…</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <p className="aug-fs-h2">📄</p>
+                <p className="aug-fs-ui text-zinc-300 font-medium">
+                  {dragging ? "Drop to upload" : "Drop files here or click to browse"}
+                </p>
+                <p className="aug-fs-xs text-zinc-500">PDF · Word · Markdown · Plain text</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-2xl">📄</p>
-            <p className="text-sm text-zinc-300 font-medium">
-              {dragging ? "Drop to upload" : "Drop files here or click to browse"}
+
+          <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4 space-y-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="aug-fs-ui font-semibold text-zinc-200">Chunk settings</h3>
+                <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-pill)] px-1.5">
+                  General
+                </span>
+                <span className="aug-fs-xs text-zinc-600 ml-auto">
+                  {Object.keys(settings).length === 0
+                    ? "defaults"
+                    : `${Object.keys(settings).length} changed`}
+                </span>
+              </div>
+              <p className="aug-fs-xs text-zinc-500 mt-1">
+                One chunk per delimiter block. The same chunk is retrieved and given as context.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor="chunk-delimiter">
+                  Delimiter
+                </label>
+                <input
+                  id="chunk-delimiter"
+                  type="text"
+                  value={settings.delimiter ?? ""}
+                  placeholder="\n\n"
+                  onChange={e => setSettings(prev => (e.target.value
+                    ? { ...prev, delimiter: e.target.value }
+                    : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== "delimiter"))))}
+                  className="aug-input w-full font-mono"
+                />
+              </div>
+              {([
+                ["max_chars", "Maximum chunk length", "characters"],
+                ["overlap_chars", "Chunk overlap", "characters"],
+                ["min_chars", "Minimum chunk length", "below this a chunk is DISCARDED"],
+              ] as const).map(([key, label, hint]) => (
+                <div key={key}>
+                  <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor={`chunk-${key}`}>
+                    {label}
+                  </label>
+                  <input
+                    id={`chunk-${key}`}
+                    type="number"
+                    min={1}
+                    value={settings[key] ?? ""}
+                    placeholder={String(preview?.settings?.[key] ?? "default")}
+                    onChange={e => setNum(key)(e.target.value)}
+                    className="aug-input w-full"
+                  />
+                  <p className="aug-fs-xs text-zinc-600 mt-1">{hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <p className="aug-fs-xs text-zinc-300 font-medium">Text pre-processing rules</p>
+              <p className="aug-fs-xs text-zinc-600 mb-2">Applied before chunking and embedding.</p>
+              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400 mb-1">
+                <input
+                  type="checkbox"
+                  checked={settings.collapse_whitespace ?? true}
+                  onChange={e => setSettings(prev => ({ ...prev, collapse_whitespace: e.target.checked }))}
+                />
+                Replace consecutive spaces, newlines and tabs
+              </label>
+              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={settings.strip_urls_emails ?? false}
+                  onChange={e => setSettings(prev => ({ ...prev, strip_urls_emails: e.target.checked }))}
+                />
+                Delete all URLs and email addresses
+              </label>
+              <p className="aug-fs-xs text-zinc-600 mt-2">
+                Off by default: a policy that cites a source loses the citation.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => previewRef.current?.click()}
+                disabled={previewing}
+                className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-600 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {previewing ? "Chunking…" : "Preview chunks"}
+              </button>
+              <input
+                ref={previewRef}
+                type="file"
+                accept={ACCEPTED}
+                className="hidden"
+                onChange={e => runPreview(e.target.files)}
+              />
+              <button
+                type="button"
+                onClick={() => { setSettings({}); setPreview(null); setPreviewName(""); }}
+                className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+              >
+                Reset
+              </button>
+            </div>
+            {previewError && <p className="aug-fs-xs text-red-400">{previewError}</p>}
+          </div>
+
+          {/* The model in force. A corpus is only comparable with itself under ONE model,
+              so this is part of reading the list — not an error state. It is chosen by
+              configuration, and saying so beats a picker that could not take effect. */}
+          <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4">
+            <h3 className="aug-fs-ui font-semibold text-zinc-200">Embedding model</h3>
+            {status?.embedder?.ok ? (
+              <>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="aug-fs-xs text-zinc-500">Model</span>
+                  <span className="aug-fs-xs text-zinc-200 font-mono">{status.embedder.model}</span>
+                </div>
+                {status.embedder.dim != null && (
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span className="aug-fs-xs text-zinc-500">Vector width</span>
+                    <span className="aug-fs-xs text-zinc-200 font-mono">
+                      {status.embedder.dim} dimensions
+                    </span>
+                  </div>
+                )}
+                <p className="aug-fs-xs text-zinc-600 mt-2">
+                  Set by configuration, not here. Changing it means re-embedding the whole
+                  corpus — a different model is a different vector space.
+                </p>
+              </>
+            ) : (
+              <p className="aug-fs-xs text-zinc-500 mt-2">
+                No embedder is answering, so nothing can be indexed or searched.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* ── right: what those settings actually do ─────────────────────────── */}
+        <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4 lg:sticky lg:top-2">
+          <h3 className="aug-fs-ui font-semibold text-zinc-200">Preview</h3>
+          <p className="aug-fs-xs text-zinc-500 mt-0.5">
+            {preview
+              ? `${previewName || "document"} · ${formatCount(preview.total_chunks)} chunk${preview.total_chunks !== 1 ? "s" : ""} · ${formatCount(preview.characters)} characters`
+              : "Indexes nothing — no embedder, no writes. Works while search is down."}
+          </p>
+
+          {!preview ? (
+            <p className="aug-fs-xs text-zinc-600 mt-4">
+              Choose a file with <span className="text-zinc-400">Preview chunks</span> to see
+              how these settings cut it, before anything is embedded.
             </p>
-            <p className="text-xs text-zinc-500">PDF · Word · Markdown · Plain text</p>
-          </div>
-        )}
+          ) : (
+            <div className="mt-3 space-y-2">
+              <p className="aug-fs-xs text-zinc-500">
+                Showing {preview.shown} of {formatCount(preview.total_chunks)} chunks
+              </p>
+              {preview.chunks.map(c => (
+                <div key={c.index} className="rounded border border-zinc-800 bg-zinc-950/60 p-2.5">
+                  <p className="aug-fs-xs text-zinc-500 font-mono mb-1">
+                    <span className="text-zinc-300">Chunk-{c.index + 1}</span>
+                    {" · "}{formatCount(c.characters)} characters
+                    {" · "}~{formatCount(c.tokens_estimate)} tokens
+                  </p>
+                  <p className="aug-fs-xs text-zinc-400 whitespace-pre-wrap line-clamp-6">
+                    {c.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Error */}
       {uploadError && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400 whitespace-pre-wrap font-mono">
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 aug-fs-xs text-red-400 whitespace-pre-wrap font-mono">
           {uploadError}
         </div>
       )}
@@ -223,7 +443,7 @@ export function DocumentUploader() {
               >
                 <FileTypeChip filename={doc.filename} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
+                  <p className="aug-fs-sm font-medium text-zinc-200 truncate">{doc.title}</p>
                   <p className="aug-fs-xs text-zinc-500 font-mono mt-0.5">
                     {doc.filename} · {chunkLabel(doc, status)} · {timeAgo(doc.uploaded_at)}
                   </p>
@@ -242,7 +462,7 @@ export function DocumentUploader() {
       )}
 
       {docs.length === 0 && !uploading && (
-        <p className="text-xs text-zinc-500 text-center py-4">
+        <p className="aug-fs-xs text-zinc-500 text-center py-4">
           No documents yet. Upload one above to give deep analysis external context.
         </p>
       )}

@@ -5,7 +5,6 @@ import { SqlResultTable } from "@/components/AugTable";
 import { Button } from "@/components/ui/button";
 import { compactNumber, formatCount } from "@/lib/format";
 import { MetricsPanel } from "./MetricsPanel";
-import { DocumentUploader } from "./DocumentUploader";
 import { useSchema } from "@/lib/schema-context";
 import {
   updateCanvas,
@@ -72,6 +71,9 @@ function AboutTab({
   canvas: Canvas;
   connection: Connection | undefined;
   onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
 }) {
   const [name, setName] = useState(canvas.name);
   const [desc, setDesc] = useState(canvas.description);
@@ -264,6 +266,9 @@ function DataTab({
   canvas: Canvas;
   connId: string;
   onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
 }) {
   const { schema } = useSchema();
   const allTables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
@@ -504,9 +509,12 @@ interface ConfigurePanelProps {
   connections: Connection[];
   onClose: () => void;
   onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
 }
 
-export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }: ConfigurePanelProps) {
+export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, onOpenDocuments }: ConfigurePanelProps) {
   const [tab, setTab] = useState<"about" | "data" | "instructions" | "docs">("about");
   const connectionId = canvas.scopes[0]?.connection_id ?? "";
   const connection = connections.find((c) => c.id === connectionId);
@@ -560,8 +568,21 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }:
             <InstructionsTab canvasId={canvas.id} />
           )}
           {tab === "docs" && (
-            <div className="flex-1 overflow-auto p-2">
-              <DocumentUploader />
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-xs text-zinc-400 leading-relaxed max-w-md">
+                Documents are shared across every canvas and connection — a policy uploaded
+                once is retrievable everywhere. Hosting the uploader here suggested each
+                canvas had its own set, which it never did.
+              </p>
+              {onOpenDocuments && (
+                <button
+                  type="button"
+                  onClick={onOpenDocuments}
+                  className="mt-3 aug-fs-xs px-2 py-1 rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                >
+                  Open Documents
+                </button>
+              )}
             </div>
           )}
         </div>

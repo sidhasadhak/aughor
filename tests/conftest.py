@@ -455,6 +455,47 @@ def _reset_provider_process_caches():
 
 
 @pytest.fixture(autouse=True)
+def _end_background_tasks_with_their_test():
+    """Cancel background tasks a test left running.
+
+    The routers kick off exploration, births and syncs with a task nobody awaits — right
+    for a product where a request must not block on a schema build, and a leak inside a
+    suite: a TestClient's portal keeps its loop alive after the response, so the kick runs
+    on into whatever test comes next. One of them re-indexed a doc tree and its write
+    landed in a LATER test's fake vector store, arriving as `doc::doctree::fixture::default::0`
+    in a capture that had every reason to believe the point was its own.
+
+    Cancellation happens on each task's own loop, so this works from the main thread while
+    a portal thread is still running the task.
+
+    ⚠️ It ends the awaiting TASK, not the executor thread behind it: the kicks do their
+    real work in a thread, and cancelling abandons that future while the worker runs on.
+    So this narrows the window rather than closing it, and the fixtures that must not see
+    a stranger's write still capture only their own doc_ids. Two defences, because neither
+    one is complete.
+    """
+    yield
+    from aughor.kernel.concurrency import cancel_background
+    cancel_background()
+
+
+@pytest.fixture(autouse=True)
+def _reset_embedder_dimension_cache():
+    """Clear the embedder's process-global width memo between tests.
+
+    `embedding_dim()` memoises into `embedder._DIM_CACHE` keyed by (backend, model), and
+    the memo outlives `monkeypatch`. A file whose fake embedder returns 8-wide vectors
+    passes alone and fails in a suite where an earlier test already cached 768 for the same
+    key: `_ensure_collection` compares the two and refuses every write, on a dimension
+    neither test chose. Same family as the provider caches above — right for a server that
+    should probe once, poison for a session that swaps embedders per test.
+    """
+    yield
+    from aughor.semantic.embedder import _DIM_CACHE
+    _DIM_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_provider_credentials(request):
     """Layer 0.2 — the mechanical no-key guarantee: a test structurally cannot reach a
     paid backend.

@@ -220,6 +220,18 @@ def clear_org_config(org_id: str) -> None:
     evict(org_id)
 
 
+def _stored_key_state(stored: object) -> str:
+    """`"set"` · `"unset"` · `"unreadable"` for one stored (encrypted) key."""
+    from aughor.secretvault import decrypt_secret, is_encrypted
+
+    if not stored:
+        return "unset"
+    plain = decrypt_secret(stored if isinstance(stored, str) else None)
+    if not plain:
+        return "unset"
+    return "unreadable" if is_encrypted(plain) else "set"
+
+
 def describe_org_config(org_id: str) -> dict:
     """The secret-free view for the org panel: backend, models, which keys are set
     — never a key value, masked or otherwise (masking is a preview convenience for
@@ -229,6 +241,12 @@ def describe_org_config(org_id: str) -> dict:
         "configured": bool(overlay),
         "backend": overlay.get("backend", ""),
         "models": dict(overlay.get("models") or {}),
-        "keys_set": {b: True for b in (overlay.get("keys") or {})},
+        # Stored is not the same as usable: a key whose vault key is gone decrypts to its
+        # own ciphertext, and reporting `True` for it points the reader at the provider
+        # instead of at the thing that is actually missing.
+        "keys_set": {b: _stored_key_state(v) == "set"
+                     for b, v in (overlay.get("keys") or {}).items()},
+        "keys_state": {b: _stored_key_state(v)
+                       for b, v in (overlay.get("keys") or {}).items()},
         "updated_at": overlay.get("updated_at", ""),
     }

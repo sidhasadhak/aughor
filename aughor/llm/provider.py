@@ -2353,6 +2353,22 @@ def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMPro
     return _providers[cache_key]
 
 
+def _key_state(backend: str) -> str:
+    """`"set"` · `"unset"` · `"unreadable"` for one backend's API key.
+
+    `unreadable` means a key IS stored and cannot be decrypted — the vault key is absent
+    or has changed since it was written. Measured live: the ciphertext reached Google,
+    which answered *"Please pass a valid API key"*, and that message sends a person to
+    rotate a key that was never the problem.
+    """
+    from aughor.secretvault import is_encrypted
+
+    key = _active_key(backend)
+    if not key:
+        return "unset"
+    return "unreadable" if is_encrypted(key) else "set"
+
+
 # ── Config management (used by the /llm/config API) ───────────────────────────
 
 def current_config() -> dict:
@@ -2388,7 +2404,15 @@ def current_config() -> dict:
         # effective values (what calls actually use):
         "models": {r: _active_model(backend, r) for r in ROLES},
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
-        "keys_set": {b: bool(_active_key(b)) for b in NEEDS_KEY},
+        # A key that cannot be DECRYPTED is not a key that is set. `decrypt_secret`
+        # returns an undecryptable value as-is — deliberate, so one bad record cannot take
+        # down a read path — so the ciphertext itself used to satisfy `bool(...)` and this
+        # answered `true` for a key the provider would reject. Both available answers were
+        # lies: "set" sends a person to check the provider, "unset" sends them to paste a
+        # key they already pasted. The third state is the true one, and it is the only one
+        # that names the actual fix (AUGHOR_SECRET_KEY is absent or has changed).
+        "keys_set": {b: _key_state(b) == "set" for b in NEEDS_KEY},
+        "keys_state": {b: _key_state(b) for b in NEEDS_KEY},
         # the vended capability profile per role (§5b, Invariant #7):
         "capabilities": {r: _capability(r) for r in ROLES},
         # explicit overrides on disk (so the UI shows set vs default), never secrets:

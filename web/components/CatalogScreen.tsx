@@ -36,7 +36,7 @@ import { VolumesPanel, PermissionsPanel } from "@/components/catalog/MetastorePa
 import { GlossaryPanel } from "@/components/catalog/GlossaryPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
-import { DocumentUploader } from "@/components/DocumentUploader";
+import { listDocuments, getKnowledgeStatus, type DocumentEntry, type KnowledgeStatus } from "@/lib/api";
 import { AddDataPanel } from "@/components/AddDataPanel";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
@@ -1002,7 +1002,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
 
 type CatalogTab = "schemas";
 
-function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult }: {
+function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult, onOpenDocuments }: {
   sel:            Extract<Sel, { level: "catalog" }>;
   onSelectSchema: (schema: CatalogSchemaInfo) => void;
   conn?:          Connection;
@@ -1010,6 +1010,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
   onDelete?:      (id: string) => void;
   testing?:       boolean;
   testResult?:    boolean;
+  onOpenDocuments?: () => void;
 }) {
   const [filter, setFilter] = useState("");
   const [tab, setTab]       = useState<"overview" | "knowledge" | "volumes" | "permissions">("overview");
@@ -1035,7 +1036,11 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           { id: "overview", label: `Overview  ${entry.schemas.length}` },
           { id: "volumes", label: "Volumes" },
           { id: "permissions", label: "Permissions" },
-          ...(entry.builtin ? [] : [{ id: "knowledge", label: "Knowledge" }]),
+          // "Schema docs", not "Knowledge": this tab shows what the ontology COMPILED for
+          // this connection, which is genuinely per-connection. Uploaded documents are
+          // not — `index_file` takes no connection — and calling both Knowledge was how
+          // this tab came to promise a scope the corpus does not have.
+          ...(entry.builtin ? [] : [{ id: "knowledge", label: "Schema docs" }]),
         ]}
         active={effTab}
         onChange={id => setTab(id as "overview" | "knowledge" | "volumes" | "permissions")}
@@ -1047,12 +1052,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
         <PermissionsPanel catalogId={entry.conn_id} />
       ) : effTab === "knowledge" ? (
         <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-          <p style={{ fontSize: 12, color: "var(--t2)", marginBottom: 16, maxWidth: 560, lineHeight: 1.5 }}>
-            Upload documents (PDFs, reports, runbooks) to give Aughor institutional knowledge
-            about <span style={{ color: "var(--t1)", fontWeight: 500 }}>{entry.name}</span>. This
-            grounds Quick and Agentic answers in your team&rsquo;s own context.
-          </p>
-          <DocumentUploader />
+          <SchemaDocsTab entry={entry} onOpenDocuments={onOpenDocuments} />
         </div>
       ) : (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1405,6 +1405,94 @@ function TreeRow({
 
 // ── Main CatalogScreen ────────────────────────────────────────────────────────
 
+/** What the ontology compiled FOR THIS CONNECTION, which is the only part of the corpus
+ *  that is per-connection at all.
+ *
+ *  This tab used to host the uploader and tell people it gave Aughor "institutional
+ *  knowledge about {connection}". It did not: `index_file` takes no connection, so an
+ *  upload here was retrievable everywhere and belonged to nothing. Schema docs are the
+ *  genuine article — `doctree::<connection>::<schema>`, one chunk per table, rebuilt when
+ *  intelligence runs — so this tab now shows those and sends uploads to their real home.
+ *
+ *  The chunk count comes from the registry, and the registry is not the index: measured on
+ *  a real install, one document claimed 59 chunks where the store held 5. When they
+ *  disagree, both numbers appear. */
+function SchemaDocsTab({ entry, onOpenDocuments }: {
+  entry: { conn_id: string; name: string };
+  onOpenDocuments?: () => void;
+}) {
+  const [docs, setDocs] = useState<DocumentEntry[]>([]);
+  const [status, setStatus] = useState<KnowledgeStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([listDocuments().catch(() => []), getKnowledgeStatus().catch(() => null)])
+      .then(([d, st]) => {
+        if (!alive) return;
+        setDocs(d.filter(x => x.doc_id.startsWith(`doctree::${entry.conn_id}::`)));
+        setStatus(st);
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [entry.conn_id]);
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <p className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 14, lineHeight: 1.5 }}>
+        Documentation Aughor compiled for{" "}
+        <span style={{ color: "var(--t1)", fontWeight: 500 }}>{entry.name}</span> — one entry
+        per schema, one chunk per table, rebuilt whenever intelligence runs over it. Answers
+        retrieve from these the same way they retrieve from uploaded documents.
+      </p>
+
+      {loading ? (
+        <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</p>
+      ) : docs.length === 0 ? (
+        <p className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+          Nothing compiled yet. Schema documentation is written when intelligence runs over
+          a schema, so this fills in after the first exploration of {entry.name}.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {docs.map(d => {
+            const drift = status?.consistency.mismatched_documents?.[d.doc_id];
+            return (
+              <div key={d.doc_id} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6,
+              }}>
+                <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{d.title}</span>
+                <span className="aug-fs-xs" style={{ color: drift ? "var(--amb4)" : "var(--t3)", fontFamily: "var(--font-mono)" }}>
+                  {drift
+                    ? `${drift.store} indexed of ${drift.registry} claimed`
+                    : `${d.chunk_count} chunk${d.chunk_count !== 1 ? "s" : ""}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 16, lineHeight: 1.5 }}>
+        Uploading your own documents — policies, runbooks, reports — happens in{" "}
+        {onOpenDocuments ? (
+          <button
+            type="button"
+            onClick={onOpenDocuments}
+            className="aug-fs-xs"
+            style={{ color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+          >
+            Intelligence → Documents
+          </button>
+        ) : "Intelligence → Documents"}
+        . That corpus is shared across every connection, which is why it does not live here.
+      </p>
+    </div>
+  );
+}
+
+
 interface Props {
   connections:      Connection[];
   selectedConn:     string;
@@ -1413,9 +1501,13 @@ interface Props {
   onChatWithTable?: (table: string, connId: string) => void;
   /** Active workspace — scopes the catalog tree to its connections' schemas. */
   workspaceId?:     string;
+  /** Open the global document corpus. Threaded from the shell rather than linked by
+   *  href: this app keeps its tab in a query param, so an anchor would reload the whole
+   *  client shell to move one pane. */
+  onOpenDocuments?: () => void;
 }
 
-export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId }: Props) {
+export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId, onOpenDocuments }: Props) {
   const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
@@ -1604,6 +1696,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     );
     if (sel.level === "catalog") return (
       <CatalogDetailPanel sel={sel}
+        onOpenDocuments={onOpenDocuments}
         conn={connections.find(c => c.id === sel.connId)}
         onTest={handleTest}
         onDelete={handleDelete}

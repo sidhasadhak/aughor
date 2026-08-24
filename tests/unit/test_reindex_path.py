@@ -35,8 +35,24 @@ def corpus(monkeypatch):
                             lambda _c: state.__setitem__("dropped", state["dropped"] + 1))
         monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
                             lambda _c, dim=None: state.__setitem__("ensured", dim))
-        monkeypatch.setattr("aughor.semantic.vector_store.upsert",
-                            lambda _c, points: state["upserted"].extend(points))
+        # Capture only the documents this test set up. Something in the wider suite
+        # re-indexes a doc tree from a thread that outlives the request that started it —
+        # observed arriving as `doc::doctree::fixture::default::0`, into THIS collection,
+        # in the middle of an unrelated test. A capture that took every point made that
+        # write look like the code under test: first a KeyError on a payload shaped for
+        # something else, then a stranger's point sitting at `upserted[0]`.
+        from aughor.knowledge.indexer import DOCS_COLLECTION
+
+        owned = ({str(p.get("doc_id") or "") for p in payloads}
+                 | {str(d.get("doc_id") or "") for d in registry})
+
+        def _upsert(coll, points):
+            if coll != DOCS_COLLECTION:
+                return
+            state["upserted"].extend(
+                p for p in points
+                if str((p.get("payload") or {}).get("doc_id") or "") in owned)
+        monkeypatch.setattr("aughor.semantic.vector_store.upsert", _upsert)
         monkeypatch.setattr("aughor.knowledge.indexer.list_documents", lambda: list(registry))
         # Mirrors the real contract: False when the count is ALREADY right, so nothing is
         # rewritten and nothing is counted as a correction. A stub that always returned True
