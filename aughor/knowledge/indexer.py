@@ -80,9 +80,33 @@ def _deregister(doc_id: str) -> bool:
 
 # ── Qdrant helpers ────────────────────────────────────────────────────────────
 
+class EmbeddingDimensionMismatch(RuntimeError):
+    """The configured embedder does not fit the collection that already exists."""
+
+
 def _ensure_collection() -> None:
-    from aughor.semantic.vector_store import ensure_collection
-    ensure_collection(DOCS_COLLECTION)
+    """Create the collection at the ACTIVE embedder's width, or refuse if one exists at a
+    different one.
+
+    `ensure_collection` no-ops on an existing collection whatever its width, so without this
+    a changed embedding model fails at upsert with a driver error and — far worse — at
+    search, where the failure is swallowed into an empty result. Switching model always
+    requires re-embedding anyway (a different model is a different vector space, even at an
+    identical width); this makes the moment it becomes necessary loud instead of silent.
+    """
+    from aughor.semantic.embedder import embedding_dim
+    from aughor.semantic.vector_store import collection_dim, ensure_collection
+
+    dim = embedding_dim()
+    existing = collection_dim(DOCS_COLLECTION)
+    if existing is not None and existing != dim:
+        from aughor.semantic.embedder import embed_backend, embed_model
+        raise EmbeddingDimensionMismatch(
+            f"the document index holds {existing}-dimension vectors and "
+            f"{embed_backend()}/{embed_model()} produces {dim}. Nothing was written. The "
+            f"corpus must be re-embedded with one model: delete the '{DOCS_COLLECTION}' "
+            f"collection and re-index, or switch the embedder back.")
+    ensure_collection(DOCS_COLLECTION, dim=dim)
 
 
 def _delete_doc_chunks(doc_id: str) -> None:

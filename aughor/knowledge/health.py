@@ -21,6 +21,8 @@ value is entirely in a surface being able to say which of the four happened.
 """
 from __future__ import annotations
 
+import os
+
 #: The Qdrant/pgvector collection documents live in. Imported rather than re-spelled — a
 #: status that probed a different collection than the search does would be worse than none.
 from aughor.knowledge.indexer import DOCS_COLLECTION
@@ -34,19 +36,42 @@ def embedder_status() -> dict:
     says the BACKEND is installed and explicitly "says nothing about the server being up".
     The embedder has no such check at all, so this is the only honest answer.
     """
-    from aughor.semantic.embedder import EMBED_MODEL, OLLAMA_BASE_URL
+    from aughor.semantic import embedder
 
-    detail = {"model": EMBED_MODEL, "endpoint": OLLAMA_BASE_URL}
     try:
-        from aughor.semantic.embedder import embed_one
-        vector = embed_one("probe")
+        backend = embedder.embed_backend()
+        detail = {"backend": backend, "model": embedder.embed_model(backend),
+                  "endpoint": embedder.endpoint()[0]}
+    except Exception as exc:
+        # Misconfiguration is its own answer, and a more actionable one than a failed
+        # call: "no embedding model configured for gemini" names the fix.
+        return {"backend": (os.getenv("AUGHOR_EMBED_BACKEND") or "ollama"), "ok": False,
+                "error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:200]}",
+                "why": "the embedding lane is not configured, so nothing can be indexed"}
+    try:
+        vector = embedder.embed_one("probe")
     except Exception as exc:
         return {**detail, "ok": False,
                 "error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}",
                 "why": ("no embeddings can be produced, so nothing can be indexed and no "
                         "search can run — an empty result here means UNAVAILABLE, not "
                         "'no match'")}
-    return {**detail, "ok": True, "dim": len(vector)}
+    dim = len(vector)
+    # The width the store already holds, when it differs. Indexing refuses on a mismatch;
+    # this is how a surface can say WHY before someone tries.
+    stored = None
+    try:
+        from aughor.semantic.vector_store import collection_dim
+        stored = collection_dim(DOCS_COLLECTION)
+    except Exception:
+        stored = None
+    out = {**detail, "ok": True, "dim": dim}
+    if stored is not None and stored != dim:
+        out.update({"ok": False, "stored_dim": stored,
+                    "why": (f"the index holds {stored}-dimension vectors and this embedder "
+                            f"produces {dim} — the corpus must be re-embedded with one "
+                            f"model before anything can be indexed or searched")})
+    return out
 
 
 def store_status() -> dict:

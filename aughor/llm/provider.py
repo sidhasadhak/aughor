@@ -548,6 +548,23 @@ def _active_base_url(backend: str) -> str:
     return _DEFAULT_BASE_URLS.get(backend, "")
 
 
+def endpoint_for(backend: str) -> tuple[str, str]:
+    """`(base_url, api_key)` for a backend — the ladder's key and URL resolution, for
+    callers that are not the chat path.
+
+    Public because the embedding lane needs exactly this and nothing else: the same
+    org-overlay → config → env precedence, the same secretvault decryption, so a key set
+    once in Settings works for chat and for embeddings rather than for one of them. A
+    caller reaching `_active_key` directly would be a second copy of that precedence, and
+    the two would drift the first time either changed.
+
+    The key is empty for local backends, which need none.
+    """
+    if backend not in BACKENDS:
+        raise ValueError(f"unknown backend {backend!r}")
+    return _active_base_url(backend), (_active_key(backend) if backend in NEEDS_KEY else "")
+
+
 def _active_key(backend: str) -> str:
     from aughor.secretvault import decrypt_secret
     org_enc = (_org_overlay().get("keys") or {}).get(backend)

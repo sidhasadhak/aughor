@@ -25,8 +25,15 @@ def fakes(monkeypatch, tmp_path):
                         lambda texts: [[0.0] * 8 for _ in texts])
     monkeypatch.setattr("aughor.semantic.vector_store.upsert",
                         lambda coll, points: state["upserts"].extend(points))
+    # `ensure_collection` now takes the active embedder's width, so the stub has to accept
+    # it — and `collection_dim` has to be stubbed too. Without it this "hermetic" fixture
+    # reached a REAL Qdrant for the existing collection's width and compared 768 against
+    # this file's 8-dimension fake embedder. It was hermetic only while nothing READ from
+    # the store; the first read escaped.
     monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
-                        lambda coll: state.__setitem__("ensured", state["ensured"] + 1))
+                        lambda coll, dim=None: state.__setitem__("ensured",
+                                                                 state["ensured"] + 1))
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: None)
     monkeypatch.setattr(idx, "_delete_doc_chunks",
                         lambda doc_id: state["deleted"].append(doc_id))
     return state
