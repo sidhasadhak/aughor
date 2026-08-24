@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.knowledge import health
+from aughor.semantic import embedder
 
 
 @pytest.fixture()
@@ -63,7 +64,12 @@ def test_an_unreachable_embedder_is_named_as_such(plane):
     assert status["ready"] is False
     assert status["reason"] == "the embedder is unreachable"
     assert "connection refused" in status["embedder"]["error"]
-    assert "localhost:11434" in status["embedder"]["endpoint"]
+    # WHERE it tried, whatever that is — not a literal host. Asserting `localhost:11434`
+    # made this pass only while `OLLAMA_BASE_URL` was unset, which is true on a laptop and
+    # false anywhere the endpoint is configured. The property is that the report names the
+    # endpoint it used, so a person can see it is the wrong one.
+    assert status["embedder"]["endpoint"] == embedder.endpoint()[0]
+    assert status["embedder"]["endpoint"], "an unnamed endpoint explains nothing"
     assert "UNAVAILABLE" in health.why_empty()
 
 
