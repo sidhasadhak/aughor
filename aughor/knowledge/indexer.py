@@ -69,6 +69,25 @@ def _register(doc_id: str, filename: str, title: str, chunk_count: int, uploaded
     _save_registry(docs)
 
 
+def correct_chunk_count(doc_id: str, chunk_count: int) -> bool:
+    """Set a document's recorded chunk count to what the store actually holds.
+
+    Narrow on purpose. Re-indexing needs to stop the registry claiming chunks that are not
+    there, and it needs nothing else from the registry writer — so this exposes that one
+    correction rather than `_register`, which takes six arguments and can invent a document.
+    Returns False for an id the registry does not list.
+    """
+    docs = _load_registry()
+    for entry in docs:
+        if entry["doc_id"] == doc_id:
+            if int(entry.get("chunk_count") or 0) == chunk_count:
+                return False                      # already right; do not rewrite the file
+            entry["chunk_count"] = chunk_count
+            _save_registry(docs)
+            return True
+    return False
+
+
 def _deregister(doc_id: str) -> bool:
     docs = _load_registry()
     filtered = [d for d in docs if d["doc_id"] != doc_id]

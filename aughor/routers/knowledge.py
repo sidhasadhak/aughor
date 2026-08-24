@@ -134,6 +134,40 @@ async def upload_document(file: UploadFile = File(...),
         tmp_path.unlink(missing_ok=True)
 
 
+class ReindexIn(BaseModel):
+    """`dry_run` defaults TRUE. Everything this endpoint can do is destructive."""
+    dry_run: bool = True
+    purge_orphans: bool = False
+
+
+@router.post("/documents/reindex")
+def reindex_documents(body: ReindexIn):
+    """Re-embed the corpus with the ACTIVE model, and stop the registry claiming chunks the
+    store does not hold.
+
+    Needed the moment embeddings became a switch: a different model is a different vector
+    space, and a different WIDTH means the collection must be rebuilt. Live measurement that
+    prompted it — a hosted embedding model returned 3072 against a stored 768. (The id
+    is deliberately not written here: the package names no hosted model, and a rot-guard
+    enforces that even in prose, because prose is where a convenient default starts.)
+
+    ⚠️ It recovers what the STORE holds and nothing more. Uploaded files are unlinked after
+    indexing, so a chunk absent from the store has no source anywhere; the plan reports that
+    count as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+    """
+    from aughor.knowledge import reindex
+
+    if body.dry_run:
+        return {"dry_run": True, **reindex.plan(purge_orphans=body.purge_orphans)}
+    try:
+        return {"dry_run": False, **reindex.run(purge_orphans=body.purge_orphans)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception:
+        logger.exception("Re-index failed")
+        raise HTTPException(status_code=500, detail="Re-index failed; the corpus is unchanged")
+
+
 @router.get("/knowledge/status")
 def knowledge_status_endpoint():
     """Whether the knowledge plane can index, can search, and holds what it claims.
