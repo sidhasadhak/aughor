@@ -5583,7 +5583,8 @@ export async function getFleetOverview(params?: {
 }
 
 export interface NeedsHumanRow {
-  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert";
+  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert"
+        | "automation_broken";
   id: string;
   title: string;
   connection_id: string | null;
@@ -5602,6 +5603,9 @@ export interface NeedsHuman {
     paused_runs: number;
     automation_approvals: number;
     agent_alerts: number;
+    /** Optional because the key is newer than some deployed APIs — read it with `?? 0`
+     *  rather than rendering `undefined` where a count belongs. */
+    broken_automations?: number;
   };
   rows: NeedsHumanRow[];
 }

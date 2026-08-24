@@ -133,7 +133,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # exempts the two places that cannot avoid naming them, and nothing else.
         r"(?i)control[\s_-]room", CODE_ROOTS,
         ("aughor/routers/control_room.py", "tests/unit/test_agent_ops_endpoints.py",
-         "tests/unit/test_agent_ops_data_plane.py"),
+         "tests/unit/test_agent_ops_data_plane.py",
+         # Same reason as its two siblings: it calls `/control-room/needs-human`, which
+         # is one of the frozen routes, and a test cannot assert against a path it is
+         # not allowed to spell.
+         "tests/unit/test_attention_broken_automations.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),

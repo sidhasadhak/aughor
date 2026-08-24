@@ -485,11 +485,55 @@ def needs_human(limit: int = 100):
     except Exception:
         logger.warning("needs-human: agent-alert read failed", exc_info=True)
 
+    # Source E — automations whose effects cannot dispatch at all. An effect pointing at
+    # something that does not exist (a deleted Action Hub trigger, a removed subscription)
+    # is not a transient failure that will clear: it fails identically on every tick, for
+    # as long as the automation is enabled, and only a person changing its configuration
+    # will stop it. Measured on the live install 2026-08-24: one automation, enabled, its
+    # only effect naming `cr-proof-trigger` — a trigger created during Wave CR5's live
+    # proof and never replaced. It had been erroring every hour since, in a log line
+    # nobody reads, because the outcome was PRODUCED and nothing consumed it.
+    #
+    # ONE row per automation, from its most recent run only. A thing that has failed
+    # hourly for a week is one problem, and 168 rows of it would bury the other four
+    # sources rather than surface this one.
+    broken_count = 0
+    try:
+        seen_automations: set = set()
+        for run in get_runs(limit=200):
+            if run.automation_id in seen_automations:
+                continue
+            failing = [e for e in run.effects if e.status == "dispatch_error"]
+            if not failing:
+                # The newest run of this automation dispatched. Whatever went wrong
+                # before has stopped, so it is not waiting on anybody — and recording it
+                # as seen keeps an older broken run from resurrecting it.
+                seen_automations.add(run.automation_id)
+                continue
+            seen_automations.add(run.automation_id)
+            broken_count += 1
+            effect = failing[0]
+            rows.append({
+                "source": "automation_broken",
+                "id": f"{run.automation_id}:broken",
+                "title": f"{run.automation_name or run.automation_id} — cannot dispatch: "
+                         f"{effect.message[:140]}",
+                "connection_id": run.conn_id,
+                "since": run.started_at, "waiting_ms": _waiting_ms(run.started_at),
+                "resolve": {"surface": "automation",
+                            "automation_id": run.automation_id,
+                            "run_id": run.id},
+            })
+    except Exception:
+        logger.warning("needs-human: broken-automation read failed", exc_info=True)
+
     rows.sort(key=lambda r: r.get("waiting_ms") or 0, reverse=True)
     return {
-        "count": inbox_count + paused_count + approval_count + alert_count,
+        "count": (inbox_count + paused_count + approval_count + alert_count
+                  + broken_count),
         "sources": {"kinetic_inbox": inbox_count, "paused_runs": paused_count,
                     "automation_approvals": approval_count,
-                    "agent_alerts": alert_count},
+                    "agent_alerts": alert_count,
+                    "broken_automations": broken_count},
         "rows": rows[: max(1, int(limit))],
     }

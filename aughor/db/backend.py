@@ -277,14 +277,18 @@ def wal_keepalive_report() -> dict:
         for key in list(_KEEPALIVE):
             recorded = _KEEPALIVE_SHM.get(key)
             current = _shm_state(key)
+            gone = not os.path.exists(key)
             stores.append({
                 "path": key,
                 "shm_at_attach": list(recorded) if recorded else None,
                 "shm_now": list(current) if current else None,
                 "shm_present": current is not None,
+                # The database itself is gone. Its mapping is stale, but nothing will
+                # ever read through it, so it is not the hazard — see `check_wal_drift`.
+                "gone": gone,
                 # None at attach means this store never had a WAL index to lose
                 # (`:memory:`, or a backend with no `-shm`), which is not drift.
-                "drifted": recorded is not None and current != recorded,
+                "drifted": recorded is not None and current != recorded and not gone,
             })
         stores.sort(key=lambda d: d["path"])
         return {
@@ -339,6 +343,14 @@ def check_wal_drift() -> list:
                 if key in _KEEPALIVE_DRIFT_PATHS:
                     continue                    # already reported; do not re-alert forever
                 if _shm_state(key) == recorded:
+                    continue
+                if not os.path.exists(key):
+                    # The DATABASE is gone, not just its WAL index. That is a different
+                    # fact and not an actionable one: the fault needs a read THROUGH the
+                    # mapping, and nothing reads a store that no longer exists. Reporting
+                    # it would make every process that ever opened a temporary store —
+                    # the test suite is the extreme case, a per-tenant scratch store the
+                    # ordinary one — permanently "degraded" for a hazard it does not have.
                     continue
                 _KEEPALIVE_DRIFT_PATHS.add(key)
                 newly.append(key)

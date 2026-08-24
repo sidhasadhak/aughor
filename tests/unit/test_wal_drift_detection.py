@@ -306,3 +306,24 @@ def test_the_duckdb_ops_attach_leaves_the_wal_index_alone(tmp_path):
     assert _shm_state(str(db)) == before, (
         "duckdb's sqlite ATTACH moved the WAL index under our live mapping — every "
         "connection this process holds to that store is now one read from SIGBUS")
+
+
+def test_a_store_whose_database_was_deleted_is_not_reported_as_drift(store):
+    """A deleted database is a different fact from a stranded mapping, and only one of
+    them is actionable.
+
+    The fault needs a read THROUGH the mapping, and nothing reads a store that no longer
+    exists. Found by running the full suite: hundreds of tests open temp stores and throw
+    the directory away, and every one of them looked like drift — which would have left
+    any long-lived process permanently "degraded" for a hazard it does not have. A
+    per-tenant scratch store would do the same thing in production.
+    """
+    import shutil
+    backend, key, db = store
+    shutil.rmtree(db.parent, ignore_errors=True)
+    assert not db.exists(), "the probe did not actually remove the store"
+
+    assert backend.check_wal_drift() == []
+    entry = next(s for s in backend.wal_keepalive_report()["stores"] if s["path"] == key)
+    assert entry["gone"] is True
+    assert entry["drifted"] is False

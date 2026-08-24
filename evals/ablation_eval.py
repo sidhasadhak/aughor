@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -42,11 +43,15 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(_REPO_ROOT / ".env")
-except ImportError:
-    pass
+# Skipped when the caller has declared it wants a clean environment. This runs at
+# IMPORT, so a test that imports anything from this module gets the developer's `.env`
+# in its process — which is how a suite that is green in CI fails on a laptop.
+if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_REPO_ROOT / ".env")
+    except ImportError:
+        pass
 
 from evals.run_golden import generate_sql_chat, generate_sql_full_pipeline
 from evals.sql_accuracy import score_single

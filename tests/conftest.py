@@ -6,6 +6,17 @@ import tempfile
 import pytest
 from fastapi.testclient import TestClient
 
+# BEFORE anything imports the app. `aughor/api.py` and four eval scripts call
+# `load_dotenv` at IMPORT, so any test that builds a TestClient — or merely imports one
+# of those eval modules — pulled the developer's `.env` into the process and every test
+# after it ran in a different environment from CI's. That is not a theoretical risk: it
+# was measured on 2026-08-24 as `test_route_wide::test_ask_causal_question_pins_
+# investigate_with_flag_on`, green in CI and red on a laptop for weeks, because `.env`'s
+# `AUGHOR_DEFAULT_POSTGRES_DSN` changed how a connection id resolves and the ask died
+# with "Connection 'c1' not found" before it reached the faked deep body. The suite runs
+# on the environment the conftest declares, and nothing else.
+os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
+
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
 os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")

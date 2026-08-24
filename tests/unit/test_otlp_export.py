@@ -15,6 +15,8 @@ families stay invisible while every unit test passed.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from aughor.obs import genai
@@ -351,15 +353,25 @@ def test_numeric_attributes_survive_as_numbers_not_strings(spans):
 
 # ── 5. the suite itself must not export ───────────────────────────────────────
 
-def test_the_test_suite_is_never_configured_to_export():
+def test_the_test_suite_is_never_configured_to_export(monkeypatch):
     """Hermeticity guard for the wave's own switch.
 
-    `aughor/api.py` calls `load_dotenv()` at import time, so a developer's `.env`
-    reaches the test process the moment any test touches the app. Once
-    `AUGHOR_OTLP_ENDPOINT` is one of the things that `.env` can carry, the suite
-    will happily POST every span it produces to whatever collector that developer
-    configured — thousands of test spans in their production trace data, and a
-    connection attempt plus retry backoff per batch when nothing is listening.
+    `aughor/api.py` used to call `load_dotenv()` unconditionally at import, so a
+    developer's `.env` reached the test process the moment any test touched the app.
+    That door is now shut at the source (`AUGHOR_SKIP_DOTENV`, set by the conftest),
+    but this guard stays: `AUGHOR_OTLP_ENDPOINT` is one of the things `.env` can
+    carry, and a suite configured to export would POST every span it produces to
+    whatever collector that developer runs — thousands of test spans in their real
+    trace data, plus a connection attempt and retry backoff per batch when nothing
+    is listening.
+
+    ⚠️ It applies `.env` through `dotenv_values` + `monkeypatch`, NOT `load_dotenv`.
+    The first version called `load_dotenv` for real, which mutates `os.environ` for
+    the REST OF THE PROCESS — measured 2026-08-24, this single line was the last
+    surviving cause of `test_route_wide` failing on a laptop and passing in CI, long
+    after the same leak had been closed everywhere else. Non-override semantics are
+    reproduced deliberately, because that is what `load_dotenv` does and the guard is
+    only honest if it takes the real path.
 
     `tests/conftest.py` neutralises the export variables for exactly this reason.
     This test fails if that scrub is removed, or if a NEW export variable is added
@@ -373,7 +385,13 @@ def test_the_test_suite_is_never_configured_to_export():
     import aughor.telemetry as tel
     _dotenv = pytest.importorskip("dotenv", reason="python-dotenv is optional")
     from pathlib import Path
-    _dotenv.load_dotenv(Path(tel.__file__).parent.parent / ".env")   # what api.py does
+    values = _dotenv.dotenv_values(Path(tel.__file__).parent.parent / ".env")
+    for _key, _value in (values or {}).items():
+        # `load_dotenv` never overrides a variable that is already set, and the whole
+        # point of the scrub is that these ARE already set. Overriding here would test
+        # a situation the leak could not produce.
+        if _value is not None and _key not in os.environ:
+            monkeypatch.setenv(_key, _value)
     assert tel._otlp_target() is None, (
         f"the suite is configured to export spans to {tel._otlp_target()[0]!r} — "
         f"conftest's export scrub is not covering every variable")

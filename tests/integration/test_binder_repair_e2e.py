@@ -12,10 +12,24 @@ from __future__ import annotations
 
 import pytest
 
-# Standalone scripts/tests that hit the coder must load .env or fall back to an
-# uninstalled model and the LLM call silently fails (known gotcha).
-from dotenv import load_dotenv
-load_dotenv()
+
+
+@pytest.fixture(autouse=True)
+def _live_env():
+    """`.env` is loaded HERE, not at import.
+
+    Tests that hit the coder must load `.env` or fall back to an uninstalled model and
+    the LLM call silently fails (known gotcha) — so the load has to happen. What it must
+    not do is happen at IMPORT: CI runs bare `pytest -m "not e2e and not eval"`, which
+    still COLLECTS this module, so a module-level load planted the developer's `.env`
+    into the process before a single test ran, deselected or not. CI has no `.env`, so it
+    was invisible there and only ever bit on a laptop.
+
+    Inside the fixture it runs when an e2e test actually runs — which is an explicitly
+    non-hermetic mode the caller opted into with `--run-e2e`.
+    """
+    from dotenv import load_dotenv
+    load_dotenv()
 
 
 @pytest.mark.e2e

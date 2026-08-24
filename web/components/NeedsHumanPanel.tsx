@@ -40,6 +40,7 @@ const SOURCE_CHIP: Record<NeedsHumanRow["source"], ChipSpec> = {
   paused_run: { hue: "info", label: "paused run" },
   automation_approval: { hue: "accent", label: "approval" },
   agent_alert: { hue: "negative", label: "alert" },
+  automation_broken: { hue: "negative", label: "broken" },
 };
 
 /** An alert's own severity outranks the source chip: three rows can wait the same
@@ -125,6 +126,8 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
             VA-6 omits the key, and rendering `undefined` where a count belongs is a
             worse answer than zero. */}
         <MiniStat value={data.sources.agent_alerts ?? 0} label="Agent alerts" />
+        <MiniStat value={data.sources.broken_automations ?? 0} label="Broken automations"
+          tone={(data.sources.broken_automations ?? 0) > 0 ? "var(--red4)" : undefined} />
         {/* The leading indicator. A count says how many are waiting; the OLDEST says
             whether anything has been abandoned — three items waiting a minute and three
             waiting since Tuesday are the same count and a different situation. */}
@@ -136,7 +139,7 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       {data.rows.length === 0 ? (
         <div style={{ padding: 32, textAlign: "center", color: "var(--t3)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-          Nothing needs a human. All four sources are empty right now.
+          Nothing needs a human. Every source is empty right now.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -176,6 +179,13 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                 {row.source === "agent_alert" && (
                   <Button variant="secondary" size="xs" disabled={busy === row.id}
                     onClick={() => resolveAlert(row)}>Acknowledge</Button>
+                )}
+                {/* No Acknowledge here on purpose. A broken automation is not something a
+                    person can dismiss — it fails identically on the next tick until its
+                    configuration changes, so the only honest action is to go and fix it. */}
+                {row.source === "automation_broken" && onOpenAutomations && (
+                  <Button variant="secondary" size="xs"
+                    onClick={onOpenAutomations}>Fix automation</Button>
                 )}
               </div>
             );
