@@ -2734,7 +2734,9 @@ export interface paths {
          *
          *     Needed the moment embeddings became a switch: a different model is a different vector
          *     space, and a different WIDTH means the collection must be rebuilt. Live measurement that
-         *     prompted it — `models/gemini-embedding-2` returns 3072 against a stored 768.
+         *     prompted it — a hosted embedding model returned 3072 against a stored 768. (The id
+         *     is deliberately not written here: the package names no hosted model, and a rot-guard
+         *     enforces that even in prose, because prose is where a convenient default starts.)
          *
          *     ⚠️ It recovers what the STORE holds and nothing more. Uploaded files are unlinked after
          *     indexing, so a chunk absent from the store has no source anywhere; the plan reports that
