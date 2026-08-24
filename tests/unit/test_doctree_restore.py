@@ -22,7 +22,7 @@ import aughor.knowledge.reindex as rx
 @pytest.fixture()
 def env(monkeypatch, tmp_path):
     """A doc-tree root, an isolated registry, a fake store, and one live connection."""
-    state = {"upserts": [], "deleted": [], "payloads": []}
+    state = {"upserts": [], "deleted": [], "payloads": [], "owned": set()}
     monkeypatch.setenv("AUGHOR_ONTOLOGY_DOCS_DIR", str(tmp_path / "ontology_docs"))
     monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
     monkeypatch.setattr("aughor.semantic.embedder.embed",
@@ -30,8 +30,25 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: None)
     monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: 8)
-    monkeypatch.setattr("aughor.semantic.vector_store.upsert",
-                        lambda coll, points: state["upserts"].extend(points))
+    # The ACTIVE width, stubbed rather than probed. `embedding_dim()` memoizes into a
+    # module-level `_DIM_CACHE` keyed by (backend, model), and that cache outlives
+    # monkeypatch: run alone this fixture's fake embedder probes 8, but in a full suite an
+    # earlier test has already cached 768 for the same key, so `_ensure_collection` compares
+    # 768 against the 8 above and refuses every write. The sibling fixture in
+    # test_reindex_path.py stubs it for the same reason.
+    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 8)
+    # Capture only the documents this test persisted. Something in the wider suite
+    # re-indexes a doc tree from a thread that outlives the request that started it, into
+    # THIS collection — observed as `doc::doctree::fixture::default::0` landing in the
+    # middle of an unrelated test. Filtering by collection alone is not enough, because
+    # the stranger writes to the same collection; ownership is the property that holds.
+    def _upsert(coll, points):
+        if coll != idx.DOCS_COLLECTION:
+            return
+        state["upserts"].extend(
+            p for p in points
+            if str((p.get("payload") or {}).get("doc_id") or "") in state["owned"])
+    monkeypatch.setattr("aughor.semantic.vector_store.upsert", _upsert)
     monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads",
                         lambda coll, limit=0: list(state["payloads"]))
     monkeypatch.setattr(idx, "_delete_doc_chunks",
@@ -41,8 +58,12 @@ def env(monkeypatch, tmp_path):
     return state
 
 
-def _persist(conn: str = "connZ", schema: str = "s", *, tables: int = 2):
-    """Build a doc tree with `tables` table nodes and leave it on disk, as a build would."""
+def _persist(env=None, conn: str = "connZ", schema: str = "s", *, tables: int = 2):
+    """Build a doc tree with `tables` table nodes and leave it on disk, as a build would.
+
+    Records the doc_id it created in `env["owned"]` so the upsert capture can tell this
+    test's writes from a stranger's.
+    """
     from aughor.ontology.doctree import build_doc_tree, save_doc_tree
     from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 
@@ -63,6 +84,8 @@ def _persist(conn: str = "connZ", schema: str = "s", *, tables: int = 2):
     tree = build_doc_tree(graph, table_stats={f"sales{i}": {"row_count": 42}
                                               for i in range(tables)})
     save_doc_tree(tree)
+    if env is not None:
+        env["owned"].add(f"doctree::{conn}::{schema or 'default'}")
     return tree
 
 
@@ -72,7 +95,7 @@ def test_persisted_trees_are_read_from_the_manifest_not_the_directory_name(env):
     """`_safe` mangles an id into a directory name; un-mangling it would guess wrong."""
     from aughor.ontology.doctree import list_persisted_trees
 
-    _persist(conn="conn/Z:odd", schema="s")
+    _persist(env, conn="conn/Z:odd", schema="s")
     # The directory is mangled, so a reader that trusted it would report the wrong id.
     assert list_persisted_trees() == [("conn/Z:odd", "s")]
 
@@ -80,7 +103,7 @@ def test_persisted_trees_are_read_from_the_manifest_not_the_directory_name(env):
 def test_an_unreadable_manifest_is_skipped_not_fatal(env, tmp_path):
     from aughor.ontology.doctree import list_persisted_trees
 
-    _persist()
+    _persist(env)
     broken = tmp_path / "ontology_docs" / "broken" / "main"
     broken.mkdir(parents=True)
     (broken / "tree.yaml").write_text("{ this is not: valid: yaml ]")
@@ -91,7 +114,7 @@ def test_an_unreadable_manifest_is_skipped_not_fatal(env, tmp_path):
 
 def test_planned_chunks_are_the_chunks_that_get_written(env):
     """The count a person decides a restore on must be the count the write produces."""
-    tree = _persist(tables=3)
+    tree = _persist(env, tables=3)
     planned = idx.doctree_chunks(tree, connection_id="connZ", schema="s")
     written = idx.index_doc_tree(tree, connection_id="connZ", schema="s")
 
@@ -102,7 +125,7 @@ def test_planned_chunks_are_the_chunks_that_get_written(env):
 # ── the plan ──────────────────────────────────────────────────────────────────────────
 
 def test_plan_reports_what_each_document_would_gain(env):
-    _persist(tables=3)
+    _persist(env, tables=3)
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}]  # the store kept one of three
 
     plan = rx.doctree_plan()
@@ -114,8 +137,8 @@ def test_plan_reports_what_each_document_would_gain(env):
 
 def test_an_artifact_outliving_its_connection_is_skipped_with_the_reason(env, monkeypatch):
     """A restore that ignored the registry would put back what a purge just removed."""
-    _persist(conn="deleted_conn", schema="s")
-    _persist(conn="connZ", schema="s")
+    _persist(env, conn="deleted_conn", schema="s")
+    _persist(env, conn="connZ", schema="s")
 
     plan = rx.doctree_plan()
     assert [d["doc_id"] for d in plan["documents"]] == ["doctree::connZ::s"]
@@ -131,8 +154,8 @@ def test_an_artifact_outliving_its_connection_is_skipped_with_the_reason(env, mo
 def test_plan_can_be_scoped_to_one_connection(env, monkeypatch):
     monkeypatch.setattr("aughor.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}, {"id": "other"}])
-    _persist(conn="connZ", schema="s")
-    _persist(conn="other", schema="s")
+    _persist(env, conn="connZ", schema="s")
+    _persist(env, conn="other", schema="s")
 
     plan = rx.doctree_plan(connection_id="other")
     assert [d["doc_id"] for d in plan["documents"]] == ["doctree::other::s"]
@@ -141,7 +164,7 @@ def test_plan_can_be_scoped_to_one_connection(env, monkeypatch):
 # ── the restore ───────────────────────────────────────────────────────────────────────
 
 def test_restore_writes_the_artifact_back(env):
-    _persist(tables=3)
+    _persist(env, tables=3)
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}]
 
     out = rx.doctree_restore()
@@ -156,8 +179,8 @@ def test_restore_writes_the_artifact_back(env):
 def test_a_failing_document_is_named_and_does_not_stop_the_others(env, monkeypatch):
     monkeypatch.setattr("aughor.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}, {"id": "other"}])
-    _persist(conn="connZ", schema="s")
-    _persist(conn="other", schema="s")
+    _persist(env, conn="connZ", schema="s")
+    _persist(env, conn="other", schema="s")
 
     real = idx.index_doc_tree
 
@@ -179,7 +202,7 @@ def test_a_failing_document_is_named_and_does_not_stop_the_others(env, monkeypat
 
 def test_unrecoverable_excludes_what_an_artifact_can_supply(env, monkeypatch):
     """The claim was true for uploads and false for schema docs; both now report right."""
-    _persist(tables=3)
+    _persist(env, tables=3)
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}, {"doc_id": "upload::a"}]
     monkeypatch.setattr("aughor.knowledge.indexer.list_documents", lambda: [
         {"doc_id": "doctree::connZ::s", "chunk_count": 3},   # 2 missing, artifact has them
@@ -213,7 +236,7 @@ def test_the_route_plans_by_default_and_restores_when_asked(env):
     from aughor.api import app
     client = TestClient(app)
 
-    _persist(tables=3)
+    _persist(env, tables=3)
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}]
 
     planned = client.post("/documents/restore-doctrees", json={})
