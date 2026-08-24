@@ -489,6 +489,39 @@ def active_key(backend: str) -> str:
     return _active_key(backend)
 
 
+def key_is_undecryptable(backend: str) -> bool:
+    """True when a key IS configured for this backend and cannot be decrypted.
+
+    `secretvault.decrypt_secret` returns an undecryptable value as-is — deliberately, so one
+    bad record cannot take down a read path. That leaves every caller holding a string that
+    looks like a key and is a Fernet token, and the only place the difference shows is the
+    provider's reply. Measured: `AUGHOR_SECRET_KEY` unset, and `enc:v1:…` went to Google,
+    which answered "Please pass a valid API key" — true of what it got, false about what was
+    wrong, and expensive, because it sends a person to rotate a key that works.
+    """
+    from aughor.secretvault import is_encrypted
+
+    return backend in NEEDS_KEY and is_encrypted(_active_key(backend))
+
+
+def _undecryptable_key_error(backend: str) -> RuntimeError:
+    """The one message, so the chat path and the embedding lane cannot describe this
+    differently."""
+    return RuntimeError(
+        f"the stored {backend} key cannot be decrypted — AUGHOR_SECRET_KEY is missing "
+        f"or does not match the one it was encrypted with. The key itself is probably "
+        f"fine; nothing was sent to the provider.")
+
+
+def usable_key(backend: str) -> str:
+    """The key, or '' when there is none or it cannot be decrypted.
+
+    For callers ASKING whether a backend can be used — failover eligibility, for instance.
+    They must not raise: a chain that crashes because one candidate has a bad key is worse
+    than one that skips it."""
+    return "" if key_is_undecryptable(backend) else _active_key(backend)
+
+
 def default_models(backend: str) -> dict:
     """``{}`` for every operator-selectable backend — nothing ships a default model.
     Kept as a function because callers (the config payload, the picker) still ask; it
@@ -562,7 +595,12 @@ def endpoint_for(backend: str) -> tuple[str, str]:
     """
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
-    return _active_base_url(backend), (_active_key(backend) if backend in NEEDS_KEY else "")
+    if backend not in NEEDS_KEY:
+        return _active_base_url(backend), ""
+
+    if key_is_undecryptable(backend):
+        raise _undecryptable_key_error(backend)
+    return _active_base_url(backend), _active_key(backend)
 
 
 def _active_key(backend: str) -> str:
@@ -1574,6 +1612,12 @@ class LLMProvider:
         # client itself needs no model (it is a base URL + key; the id rides on each
         # request), so building one is harmless and refusing at dispatch is honest.
         self._model = (model or "").strip() or _active_model(backend, role)
+        # The chat path's point of use. Without this the ciphertext travels as the
+        # credential and the first sign of trouble is the provider blaming the key — the
+        # same failure the embedding lane hit, one door along. An explicitly PASSED key is
+        # the caller's business and is not second-guessed.
+        if api_key is None and key_is_undecryptable(backend):
+            raise _undecryptable_key_error(backend)
         key = api_key if api_key is not None else _active_key(backend)
         url = base_url or _active_base_url(backend)
         self._base_url = url
@@ -2253,7 +2297,10 @@ class LLMProvider:
         own_keys = _org_own_keyed_backends()
         return [b for b in _fallback_backends()
                 if b != self.backend
-                and (b not in NEEDS_KEY or _active_key(b))
+                # `usable_key`, not `_active_key`: a candidate whose key cannot be
+                # decrypted is not a candidate. Falling over TO it would turn one
+                # misconfiguration into a second, more confusing failure.
+                and (b not in NEEDS_KEY or usable_key(b))
                 and (own_keys is None or b not in NEEDS_KEY or b in own_keys)
                 and not _in_quota_cooldown(b)]
 

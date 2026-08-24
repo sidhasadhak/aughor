@@ -2718,6 +2718,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reindex Documents
+         * @description Re-embed the corpus with the ACTIVE model, and stop the registry claiming chunks the
+         *     store does not hold.
+         *
+         *     Needed the moment embeddings became a switch: a different model is a different vector
+         *     space, and a different WIDTH means the collection must be rebuilt. Live measurement that
+         *     prompted it — a hosted embedding model returned 3072 against a stored 768. (The id
+         *     is deliberately not written here: the package names no hosted model, and a rot-guard
+         *     enforces that even in prose, because prose is where a convenient default starts.)
+         *
+         *     ⚠️ It recovers what the STORE holds and nothing more. Uploaded files are unlinked after
+         *     indexing, so a chunk absent from the store has no source anywhere; the plan reports that
+         *     count as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+         */
+        post: operations["reindex_documents_documents_reindex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/search": {
         parameters: {
             query?: never;
@@ -10104,6 +10135,22 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * ReindexIn
+         * @description `dry_run` defaults TRUE. Everything this endpoint can do is destructive.
+         */
+        ReindexIn: {
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * Purge Orphans
+             * @default false
+             */
+            purge_orphans: boolean;
+        };
         /** RejectRequest */
         RejectRequest: {
             /**
@@ -16335,6 +16382,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_preview_document_chunks_documents_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reindex_documents_documents_reindex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReindexIn"];
             };
         };
         responses: {

@@ -204,6 +204,34 @@ def ensure_collection(name: str, dim: int = VECTOR_DIM) -> None:
         )
 
 
+def drop_collection(name: str) -> bool:
+    """Delete a collection outright. True if it was there and is now gone.
+
+    The only way to change a collection's VECTOR WIDTH: Qdrant fixes it at creation and
+    `ensure_collection` no-ops on an existing one. So re-embedding with a model of a
+    different dimension means dropping and recreating, which is why this exists and why its
+    only caller reads every payload out first.
+    """
+    if not available():
+        return False
+    if backend() == "pgvector":
+        conn = _pg()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM vectors WHERE collection = %s", (name,))
+            removed = cur.rowcount
+            cur.close()
+            conn.commit()
+            return bool(removed)
+        finally:
+            conn.close()
+    client = _client()
+    if name not in {c.name for c in client.get_collections().collections}:
+        return False
+    client.delete_collection(collection_name=name)
+    return True
+
+
 def upsert(collection: str, points: list[dict]) -> None:
     """points: list of {id: str, vector: list[float], payload: dict}"""
     if not available():
