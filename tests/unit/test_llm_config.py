@@ -154,3 +154,55 @@ def test_a_genuinely_local_tag_is_still_local(clean_cfg):
     for model in ("qwen2.5-coder:14b", "gemma4:31b", "llama3:latest"):
         c = P.set_config({"backend": "ollama", "models": {"coder": model}})
         assert c["capabilities"]["coder"]["privacy_class"] == "local", model
+
+
+# ── the third key state ──────────────────────────────────────────────────────────
+
+def _undecryptable() -> str:
+    """A well-formed ciphertext written under a DIFFERENT vault key.
+
+    Not `enc:v1:garbage`: malformed input can fail base64 decoding rather than
+    decryption, which would exercise a different branch than the one that bites in
+    production, where the ciphertext is perfectly good and the key that made it is gone.
+    """
+    from cryptography.fernet import Fernet
+    return "enc:v1:" + Fernet(Fernet.generate_key()).encrypt(b"sk-real-key").decode()
+
+
+def test_a_stored_key_that_cannot_be_decrypted_is_not_reported_as_set(clean_cfg):
+    """It answered `keys_set: true` and the provider rejected the call, so a person was
+    sent to rotate a key that was never the problem. Both answers a boolean can give are
+    wrong here; the state that names the fix is the third one."""
+    clean_cfg.write_text(json.dumps({"keys": {"groq": _undecryptable()}}))
+    P._runtime = None
+    P._cache_version = -1
+    P.load_config()
+
+    c = P.current_config()
+
+    assert c["keys_state"]["groq"] == "unreadable"
+    assert c["keys_set"]["groq"] is False, "a key that cannot be read is not a key that is set"
+    # The ciphertext is what reaches the provider today — that is the defect this names,
+    # and the reason the state has to be surfaced rather than silently treated as unset.
+    assert P._active_key("groq").startswith("enc:v1:")
+
+
+def test_the_other_two_states_are_unchanged(clean_cfg):
+    """Prove the third state is an addition, not a reinterpretation of the other two."""
+    assert P.current_config()["keys_state"]["groq"] == "unset"
+
+    P.set_config({"keys": {"groq": "sk-secret-abc123"}})
+    c = P.current_config()
+    assert c["keys_state"]["groq"] == "set" and c["keys_set"]["groq"] is True
+
+
+def test_the_org_overlay_reads_a_stored_key_rather_than_assuming_it(clean_cfg):
+    """The org panel reported `True` for the mere PRESENCE of a stored key, without ever
+    decrypting it — so it could not tell a working tenant key from an unreadable one."""
+    from aughor.llm.org_config import _stored_key_state
+    from aughor.secretvault import encrypt_secret
+
+    assert _stored_key_state(None) == "unset"
+    assert _stored_key_state("") == "unset"
+    assert _stored_key_state(_undecryptable()) == "unreadable"
+    assert _stored_key_state(encrypt_secret("sk-tenant-key")) == "set"

@@ -333,7 +333,13 @@ export function InferencePanel() {
   // Always {} since 2026-08-15 — no backend ships a default model. Kept because the
   // payload still carries the key; it must never again put a model id in this form.
   const defaults = cfg.default_models[backend] || {};
-  const keySet = cfg.keys_set[backend];
+  // Three states, not two. A key that is stored but cannot be decrypted answered
+  // "configured" here while the provider rejected it — which sends a person to rotate a
+  // key that was fine. `keys_state` names the real fault; `keys_set` is kept for older
+  // payloads and now means USABLE.
+  const keyState = cfg.keys_state?.[backend] ?? (cfg.keys_set[backend] ? "set" : "unset");
+  const keySet = keyState === "set";
+  const keyUnreadable = keyState === "unreadable";
 
   const onBackend = (b: string) => {
     // Models are backend-specific — reset overrides so a name tuned for the previous
@@ -412,8 +418,8 @@ export function InferencePanel() {
         <div>
           <label style={labelStyle}>
             API key{" "}
-            <span style={{ color: keySet ? "var(--grn4)" : "var(--amb4)" }}>
-              {keySet ? "· configured" : "· not set"}
+            <span style={{ color: keySet ? "var(--grn4)" : keyUnreadable ? "var(--red4)" : "var(--amb4)" }}>
+              {keySet ? "· configured" : keyUnreadable ? "· stored, but unreadable" : "· not set"}
             </span>
           </label>
           <input
@@ -421,11 +427,15 @@ export function InferencePanel() {
             autoComplete="off"
             value={keys[backend] ?? ""}
             onChange={(e) => setKeys({ ...keys, [backend]: e.target.value })}
-            placeholder={keySet ? "•••••••••• (leave blank to keep)" : "paste API key"}
+            placeholder={keySet ? "•••••••••• (leave blank to keep)"
+              : keyUnreadable ? "re-paste the key, or restore AUGHOR_SECRET_KEY"
+              : "paste API key"}
             style={inputStyle}
           />
-          <div style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>
-            Stored encrypted on the server (secretvault). Save before testing a new key.
+          <div style={{ fontSize: 11, color: keyUnreadable ? "var(--red4)" : "var(--t4)", marginTop: 4 }}>
+            {keyUnreadable
+              ? "A key is stored but cannot be decrypted — AUGHOR_SECRET_KEY is missing or has changed since it was saved. The key itself may be perfectly good; the provider will reject it either way."
+              : "Stored encrypted on the server (secretvault). Save before testing a new key."}
           </div>
         </div>
       )}

@@ -82,7 +82,12 @@ export function OrgByokSection() {
     }
   };
 
-  const keySet = !!(backend && cfg?.keys_set?.[backend]);
+  // Three states. A stored key whose vault key is gone reported "set ✓" while every call
+  // using it failed — the one reading that points away from the actual fault.
+  const keyState = backend ? (cfg?.keys_state?.[backend]
+    ?? (cfg?.keys_set?.[backend] ? "set" : "unset")) : "unset";
+  const keySet = keyState === "set";
+  const keyUnreadable = keyState === "unreadable";
 
   return (
     <div>
@@ -104,13 +109,15 @@ export function OrgByokSection() {
         {backend && KEYED.has(backend) && (
           <div style={{ display: "flex", flexDirection: "column" }}>
             <label style={labelStyle}>
-              API key {keySet ? "· set ✓" : "· not set"}
+              API key {keySet ? "· set ✓" : keyUnreadable ? "· stored, unreadable" : "· not set"}
             </label>
             <input
               className="aug-input"
               type="password"
               value={keyInput}
-              placeholder={keySet ? "(unchanged)" : "paste your key"}
+              placeholder={keySet ? "(unchanged)"
+                : keyUnreadable ? "re-paste — the stored key cannot be decrypted"
+                : "paste your key"}
               onChange={(e) => { setSaved(false); setKeyInput(e.target.value); }}
               autoComplete="off"
             />
