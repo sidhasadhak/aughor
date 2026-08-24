@@ -37,6 +37,9 @@ _PAYLOAD_FIELDS = {
     "row_count", "guard_receipts", "next_tool", "session_id", "canvas_id",
     "connection_id", "user_question", "reference_sql", "accept_sql",
     "order_id", "customer_id", "created_at", "sub_category",
+    # A field on every entry `list_packs` returns. The tool's prose has to name it,
+    # because a pack listed with it false is one the model must NOT then try to read.
+    "applies_to_this_connection",
 }
 
 

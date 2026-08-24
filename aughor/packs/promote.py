@@ -13,7 +13,10 @@ Three decisions shape this file:
 pack steers nothing and is read by nobody. Activation is the moment third-party prose
 becomes reachable from a prompt, so that is the door worth guarding — and it guards
 hand-placed packs too, which never passed the importer at all. A pack whose prose BLOCKS
-cannot be activated, and the finding says why.
+cannot be activated, and the finding says why. The same door checks that the pack can
+be REACHED at all: a `scope.connections` naming no connection, or an engine no
+connector answers to, makes activation a no-op, and a no-op that reports success is
+how a plane ends up complete and inert.
 
 **The record ships with the act.** Who promoted what, and when, lands on the journal in
 the same call. An entitlement nobody can review is indistinguishable from no policy, and
@@ -110,6 +113,27 @@ def set_status(pack_id: str, status: str, *, packs_dir=None, actor: str = "",
     manifest_file = root / "pack.yaml"
 
     if status == "active":
+        # Activating a pack that can never apply is a no-op the promoter should hear
+        # about, not discover from a roster that quietly never lists it. Both cases here
+        # are unreachable-by-construction rather than unreachable-today: an empty scope
+        # names no connection at all, and a misspelled engine names a connector type that
+        # does not exist, so neither becomes reachable when someone connects a warehouse.
+        # A scope for an engine nobody has connected YET is legitimate and passes.
+        from aughor.packs import scope as pack_scope
+        ents = pack_scope.entries(load_pack(root).manifest.scope)
+        if not ents:
+            raise PromotionRefused(
+                f"'{pack_id}' has an empty scope.connections, so it applies to no "
+                f"connection and activating it would change nothing. Omit the key to "
+                f"mean every connection.")
+        bad = pack_scope.unknown_engines(ents)
+        if bad:
+            raise PromotionRefused(
+                f"'{pack_id}' is scoped to engine {', '.join(repr(b) for b in bad)}, "
+                f"which no connector type answers to — so it cannot match any connection "
+                f"here. Either the name is a typo, or this pack is for an engine the "
+                f"product does not connect to yet.")
+
         findings = lint_pack_prose(root)
         from aughor.skills.lint import blocks
         refused = blocks(findings)

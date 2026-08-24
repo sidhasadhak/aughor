@@ -225,7 +225,11 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
     from aughor.packs.loader import PROSE_FIELD
     pack = SimpleNamespace(
         manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"],
-                                 partial=False, source="", source_url="", licence=""),
+                                 partial=False, source="", source_url="", licence="",
+                                 # `scope` is read for every listed pack now. A real
+                                 # manifest always carries it (the model defaults it), so
+                                 # the fake completes rather than the reader loosening.
+                                 scope={"connections": ["*"]}),
         playbooks=[playbook], **{PROSE_FIELD: "Reads the P&L before the dashboard."})
     # The AUTHORED root, through its env override: reads now resolve via
     # `packs.roots`, which spans two directories, so patching one module constant

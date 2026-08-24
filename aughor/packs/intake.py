@@ -89,6 +89,13 @@ def injection_for_question(
     # generalist answer. It is excluded here rather than in `select_pack` because routing
     # is about which pack OWNS a question; this is about which one can act.
     pool = [p for p in pool if not p.manifest.partial]
+    # `scope.connections` — a pack states which connections it is for, and for its whole
+    # life nothing read that statement. A pack scoped to one engine steering a plan on
+    # another is the same class of wrong as an unbound one steering at all, and the
+    # binding gate below does not catch it: a role can bind on any warehouse whose tables
+    # happen to fit, engine or not. Resolved once for the pool, not per pack.
+    from aughor.packs import scope as pack_scope
+    pool = pack_scope.filter_applicable(pool, connection_id)
     if not pool:
         return None
     hit = select_pack(question, pool)

@@ -139,8 +139,13 @@ def test_an_active_prose_pack_does_not_shadow_a_grounded_one(monkeypatch):
     deployed for, and the only symptom would be a generalist answer."""
     import aughor.packs.intake as intake
 
-    prose = types.SimpleNamespace(id="imported", manifest=types.SimpleNamespace(partial=True))
-    grounded = types.SimpleNamespace(id="finance", manifest=types.SimpleNamespace(partial=False))
+    # `scope` joins `partial` as a field every pack in the pool is read for; a real
+    # manifest always carries it (the model defaults it), so the fakes complete.
+    _any = {"connections": ["*"]}
+    prose = types.SimpleNamespace(
+        id="imported", manifest=types.SimpleNamespace(partial=True, scope=_any))
+    grounded = types.SimpleNamespace(
+        id="finance", manifest=types.SimpleNamespace(partial=False, scope=_any))
     seen = {}
     monkeypatch.setattr(intake, "active_packs", lambda packs_dir=None: [prose, grounded])
     monkeypatch.setattr(intake, "select_pack",

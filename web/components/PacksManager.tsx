@@ -36,6 +36,7 @@ export function PacksManager() {
                   {p.status || "draft"}
                 </Badge>
                 <Badge color={p.ok ? "#46b06a" : "#e5534b"}>{p.ok ? "valid" : "invalid"}</Badge>
+                {scopeLabel(p.scope) && <Badge color="#888">{scopeLabel(p.scope)}</Badge>}
               </span>
               <span className="aug-fs-xs text-zinc-500">
                 {(p.metrics ?? 0)}m · {(p.roles ?? 0)}r · {(p.evals ?? 0)}e {sel === p.id ? "▾" : "▸"}
@@ -47,6 +48,15 @@ export function PacksManager() {
       </div>
     </div>
   );
+}
+
+/** An engine-scoped pack reads and steers only on connections of that engine, so the
+ *  roster has to say so. A pack scoped to every connection says nothing extra — that is
+ *  the default, and badging it would put a label on all of them. */
+function scopeLabel(scope?: string[]): string {
+  const stated = (scope ?? []).filter(s => s !== "*");
+  if (stated.length === 0) return "";
+  return stated.map(s => s.replace(/^engine:/, "")).join(", ");
 }
 
 function Badge({ children, color }: { children: React.ReactNode; color: string }) {
