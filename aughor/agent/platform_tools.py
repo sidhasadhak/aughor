@@ -243,7 +243,7 @@ _MAX_PACK_PROSE = 12_000
 _MAX_PACK_DESCRIPTION = 240
 
 
-def _pack_description(pack) -> str:
+def pack_description(pack) -> str:
     """One line saying what this pack is for — the half of disclosure that must be cheap.
 
     Progressive disclosure only works if the advertisement is affordable at scale: every
@@ -376,7 +376,7 @@ def list_packs(connection_id: str, args: dict) -> dict:
                           "applies_to_this_connection": applies,
                           "readable": pack.manifest.status == "active" and applies})
             if applies:
-                entry["description"] = _pack_description(pack)
+                entry["description"] = pack_description(pack)
             else:
                 entry["why_not"] = f"for {pack_scope.label(ents)}, not this connection"
         except Exception as exc:

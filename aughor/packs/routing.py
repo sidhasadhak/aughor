@@ -21,6 +21,18 @@ def _tokens(text: str) -> set[str]:
     return {w for w in _WORD.findall((text or "").lower()) if w not in _STOP and len(w) > 1}
 
 
+def score_text(question: str, text: str) -> float:
+    """Overlap between a question and any free text, in the same tokens `score_pack` uses.
+
+    `score_pack` reads intent_tags / domains / canonical questions — the structured routing
+    fields. A prose pack has none of them: an imported skill, or an authored engine pack,
+    carries its whole routing signal in its DESCRIPTION. This scores that, through the same
+    tokeniser, so the two answers cannot drift on what counts as a word.
+    """
+    q = _tokens(question)
+    return float(len(q & _tokens(text))) if q else 0.0
+
+
 def score_pack(question: str, pack: Pack) -> float:
     """Overlap score between a question and a pack. intent_tags/domains count full; canonical
     question tokens count half (broader, noisier)."""
