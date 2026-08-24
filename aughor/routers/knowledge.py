@@ -168,6 +168,40 @@ def reindex_documents(body: ReindexIn):
         raise HTTPException(status_code=500, detail="Re-index failed; the corpus is unchanged")
 
 
+class RestoreDoctreesIn(BaseModel):
+    """`dry_run` defaults TRUE, like its sibling. `connection_id` limits it to one."""
+    dry_run: bool = True
+    connection_id: Optional[str] = None
+
+
+@router.post("/documents/restore-doctrees")
+def restore_doctrees(body: RestoreDoctreesIn):
+    """Put the schema documentation back into the store from its persisted artifact.
+
+    `/documents/reindex` re-embeds what the store holds; when the store has lost chunks,
+    that is all it can do. Schema docs are the exception, because the ontology compiles
+    them to a doc tree on disk before anything is embedded — so the artifact, not the
+    collection, is their source. Measured live: a store holding 5 chunks for a document
+    whose artifact held 59 table docs, with no path back in short of re-running
+    intelligence over the whole connection to rebuild something already compiled.
+
+    Scoped to connections that still exist. An artifact can outlive its connection, and a
+    restore that ignored the registry would resurrect exactly the documents a purge just
+    removed; those trees are reported under `skipped` with the reason rather than dropped
+    quietly. Each document is replaced independently, so a partial failure names what
+    failed instead of leaving the caller to infer it.
+    """
+    from aughor.knowledge import reindex
+
+    if body.dry_run:
+        return {"dry_run": True, **reindex.doctree_plan(connection_id=body.connection_id)}
+    try:
+        return {"dry_run": False, **reindex.doctree_restore(connection_id=body.connection_id)}
+    except Exception:
+        logger.exception("Doc-tree restore failed")
+        raise HTTPException(status_code=500, detail="Restore failed; the corpus is unchanged")
+
+
 @router.get("/knowledge/status")
 def knowledge_status_endpoint():
     """Whether the knowledge plane can index, can search, and holds what it claims.

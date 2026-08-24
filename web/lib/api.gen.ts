@@ -2749,6 +2749,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/restore-doctrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Doctrees
+         * @description Put the schema documentation back into the store from its persisted artifact.
+         *
+         *     `/documents/reindex` re-embeds what the store holds; when the store has lost chunks,
+         *     that is all it can do. Schema docs are the exception, because the ontology compiles
+         *     them to a doc tree on disk before anything is embedded — so the artifact, not the
+         *     collection, is their source. Measured live: a store holding 5 chunks for a document
+         *     whose artifact held 59 table docs, with no path back in short of re-running
+         *     intelligence over the whole connection to rebuild something already compiled.
+         *
+         *     Scoped to connections that still exist. An artifact can outlive its connection, and a
+         *     restore that ignored the registry would resurrect exactly the documents a purge just
+         *     removed; those trees are reported under `skipped` with the reason rather than dropped
+         *     quietly. Each document is replaced independently, so a partial failure names what
+         *     failed instead of leaving the caller to infer it.
+         */
+        post: operations["restore_doctrees_documents_restore_doctrees_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/search": {
         parameters: {
             query?: never;
@@ -10186,6 +10219,19 @@ export interface components {
             schema_name?: string | null;
         };
         /**
+         * RestoreDoctreesIn
+         * @description `dry_run` defaults TRUE, like its sibling. `connection_id` limits it to one.
+         */
+        RestoreDoctreesIn: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /**
          * ResumeEntry
          * @description A per-interrupt response in the resume array of a RunAgentInput.
          */
@@ -16415,6 +16461,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReindexIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_doctrees_documents_restore_doctrees_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreDoctreesIn"];
             };
         };
         responses: {

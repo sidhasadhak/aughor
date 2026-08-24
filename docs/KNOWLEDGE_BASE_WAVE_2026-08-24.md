@@ -76,9 +76,22 @@ driver error and at **search** with an empty list. Indexing refuses first. The d
 **probed, never declared**.
 
 ### The re-index path
-🔑 **The source of truth is the STORE, not the original files.** `index_file` unlinks the
-upload, so a chunk's only surviving copy is its `text` payload. It recovers what the store
-holds and **nothing more**.
+🔑 **For an UPLOAD the source of truth is the STORE.** `index_file` unlinks the upload, so a
+chunk's only surviving copy is its `text` payload. It recovers what the store holds and
+**nothing more**.
+
+🔑 **For a SCHEMA DOC it is not — and this was stated wrongly here first.** The ontology
+compiles schema docs to a doc tree on disk before anything is embedded, so the artifact,
+not the collection, is their source. Measured after the repair below: a store holding 5
+chunks for a document whose artifact held **59 table docs, every one embeddable**. Counting
+those 54 as unrecoverable was a claim about uploads applied to something that is not one,
+and it read as *gone forever* while the source sat in `data/ontology_docs`.
+`POST /documents/restore-doctrees` puts them back; `plan()` now reports the two separately.
+
+⚠️ The restore is scoped to connections that **still exist**. An artifact outlives its
+connection — a fixture connection's tree was on disk here after its documents were purged —
+and a restore that ignored the registry would resurrect exactly what the purge removed.
+Those trees are reported under `skipped` with the reason, never dropped quietly.
 
 **Nothing is destroyed before its replacement exists**: read → embed everything → only then
 drop, recreate, write. `dry_run` defaults true; orphans survive unless asked for; a truncated
@@ -107,7 +120,8 @@ absent. That message sends a person to rotate a working key.
 
 | | |
 |---|---|
-| **The corpus is not repaired** | 41 orphans, one document claiming 59 where 5 exist, **54 chunks unrecoverable** (no source anywhere). One `reindex` pass with `purge_orphans` clears the rest |
+| ~~**The corpus is not repaired**~~ | ✅ **Done 2026-08-24.** Rebuilt onto a 3072-dimension hosted embedder: 38 chunks re-embedded, 41 orphans purged, the 59-claiming document corrected to 5, in 3.4 s. `ready: true`, zero orphans, and a real search returns the right column at 0.76 |
+| **`consistency.ok` means consistent, not complete** | After the repair the plane reports perfect health while holding **5 of 59 tables** for the main workspace connection — it will answer from 8% of that schema and flag nothing. `restore-doctrees` closes the gap; nothing yet *notices* it |
 | **`keys_set` has no third state** | `current_config()["keys_set"]` reports `true` for an undecryptable key. Both answers are lies; needs a third state and a UI change |
 | **No curation surface beyond the panel** | No chunk settings in the UI, no preview, no embedding choice — the API has all three |
 | **Where a Knowledge page belongs in nav** | Documents are reachable only via Configure and Catalog. A product call, not made |

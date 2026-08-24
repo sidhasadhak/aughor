@@ -230,23 +230,22 @@ def delete_document(doc_id: str) -> bool:
     return _deregister(doc_id)
 
 
-def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
-    """R8a — embed the ontology doc tree into the knowledge store with FQN provenance.
+def doctree_doc_id(connection_id: str, schema: str = "") -> str:
+    """The deterministic doc_id for one (connection, schema) doc tree."""
+    return f"doctree::{connection_id}::{schema or 'default'}"
 
-    The R8 doc tree compiles understanding into YAML; this is its retrieval
-    consumer: one chunk per TABLE node (the table summary + its column summaries
-    + the analyst questions — the embed-worthy prose), stamped ``fqn`` /
-    ``kind="schema_doc"`` so a retrieved chunk cites the exact ontology node it
-    came from. The doc_id is deterministic per (connection, schema), so a rebuild
-    REPLACES the previous embedding instead of accumulating stale chunks.
 
-    Raises on a dead embedder/Qdrant like ``index_text`` — the autodoc hook
-    wraps it best-effort (no infra → the YAML artifact alone, exactly as before).
+def doctree_chunks(tree, *, connection_id: str, schema: str = "") -> list[DocumentChunk]:
+    """The chunks a doc tree embeds to — one per TABLE node, in the order it indexes them.
+
+    Factored out of :func:`index_doc_tree` so a caller can ask what indexing WOULD produce
+    without producing it. A second copy of this rule would drift from the copy that writes,
+    and the number it reports is the one a person decides a restore on.
     """
     import datetime
 
     schema_label = schema or "default"
-    doc_id = f"doctree::{connection_id}::{schema_label}"
+    doc_id = doctree_doc_id(connection_id, schema_label)
     uploaded_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     filename = f"schema-docs/{connection_id}/{schema_label}"
 
@@ -265,6 +264,25 @@ def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
             filename=filename, title=node.title, uploaded_at=uploaded_at,
             fqn=node.fqn, kind="schema_doc",
         ))
+    return chunks
+
+
+def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
+    """R8a — embed the ontology doc tree into the knowledge store with FQN provenance.
+
+    The R8 doc tree compiles understanding into YAML; this is its retrieval
+    consumer: one chunk per TABLE node (the table summary + its column summaries
+    + the analyst questions — the embed-worthy prose), stamped ``fqn`` /
+    ``kind="schema_doc"`` so a retrieved chunk cites the exact ontology node it
+    came from. The doc_id is deterministic per (connection, schema), so a rebuild
+    REPLACES the previous embedding instead of accumulating stale chunks.
+
+    Raises on a dead embedder/Qdrant like ``index_text`` — the autodoc hook
+    wraps it best-effort (no infra → the YAML artifact alone, exactly as before).
+    """
+    schema_label = schema or "default"
+    doc_id = doctree_doc_id(connection_id, schema_label)
+    chunks = doctree_chunks(tree, connection_id=connection_id, schema=schema)
     if not chunks:
         return {"doc_id": doc_id, "chunk_count": 0}
 
@@ -272,9 +290,9 @@ def index_doc_tree(tree, *, connection_id: str, schema: str = "") -> dict:
     # Replace, don't accumulate: a shrunk schema must not leave orphan chunks.
     _delete_doc_chunks(doc_id)
     _upsert_chunks(chunks)
-    _register(doc_id, filename,
+    _register(doc_id, chunks[0].filename,
               f"Schema documentation — {connection_id}/{schema_label}",
-              len(chunks), uploaded_at)
+              len(chunks), chunks[0].uploaded_at)
     return {"doc_id": doc_id, "chunk_count": len(chunks)}
 
 

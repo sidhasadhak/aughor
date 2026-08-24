@@ -36,6 +36,13 @@ def plane(monkeypatch):
         monkeypatch.setattr("aughor.semantic.vector_store.available", lambda: store_ok)
         monkeypatch.setattr("aughor.semantic.vector_store.collection_count",
                             lambda _c: chunks)
+        # The width the store holds, matching this fixture's fake embedder. Without it
+        # `embedder_status` reads a REAL Qdrant for the live collection's width and
+        # compares it against the 768 above — so the fixture was hermetic only while the
+        # real collection happened to be 768 too, and the day the corpus was re-embedded
+        # at another width these tests failed on a laptop and stayed green in CI, which
+        # runs no Qdrant at all. A test that passes for want of a server is not passing.
+        monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
         monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads",
                             lambda _c, limit=0: list(points or []))
         monkeypatch.setattr("aughor.knowledge.indexer.list_documents",

@@ -7,13 +7,16 @@ Measured live: a hosted embedding model returned 3072 against a stored 768. The 
 not written here — the package names no hosted model, and the guard that enforces that
 covers prose too, because prose is where a convenient default starts.
 
-🔑 **The source of truth is the STORE, not the original files.** `index_file` writes an
-upload to a temp file and unlinks it, so the only surviving copy of a document's text is the
-`text` payload on each of its chunks. That has a consequence worth stating plainly rather
-than discovering: **re-indexing recovers what the store still holds and nothing more.** A
-document the registry says has 59 chunks where 5 are present comes back with 5 — the other
-54 have no source anywhere. What re-indexing CAN do for that document is stop the registry
-claiming otherwise.
+🔑 **For an UPLOAD, the source of truth is the STORE.** `index_file` writes an upload to a
+temp file and unlinks it, so the only surviving copy of its text is the `text` payload on
+each chunk, and **re-indexing recovers what the store still holds and nothing more.**
+
+🔑 **For a SCHEMA DOC it is not.** `build_and_persist` leaves a doc tree on disk, one YAML
+per node, and that artifact outlives whatever happened to the collection — measured here as
+a store holding 5 chunks for a document whose artifact held 59. Counting those 54 as
+unrecoverable was a claim about uploads applied to something that is not one, and it read
+as "gone forever" while the source sat in `data/ontology_docs`. `plan()` now separates the
+two, and `doctree_restore()` puts the recoverable half back.
 
 **Nothing is destroyed until its replacement exists.** Read every payload, embed every text,
 and only then drop and rebuild. The embedding step is the one that talks to a remote service
@@ -57,6 +60,16 @@ def plan(*, purge_orphans: bool = False) -> dict:
     orphans = {doc: n for doc, n in by_doc.items() if doc not in registry}
     keep = len(payloads) - (sum(orphans.values()) if purge_orphans else 0)
 
+    # What a persisted doc tree could put back. Fail-safe in the honest direction: if the
+    # artifacts cannot be read, claim no recovery rather than a recovery nobody can perform.
+    try:
+        restorable, _ = _tree_chunk_counts()
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "doc-tree artifacts unreadable; reporting no recoverable chunks",
+                 counter="doctree.plan_scan")
+        restorable = {}
+
     from aughor.semantic.embedder import embed_backend, embed_model
     return {
         "ok": not truncated,
@@ -69,9 +82,14 @@ def plan(*, purge_orphans: bool = False) -> dict:
         # What the registry will be corrected TO, per document that currently disagrees.
         "registry_corrections": {doc: {"from": n, "to": by_doc.get(doc, 0)}
                                  for doc, n in registry.items() if by_doc.get(doc, 0) != n},
-        # Said out loud, because it is the one thing a re-index cannot do.
-        "unrecoverable_chunks": sum(max(0, n - by_doc.get(doc, 0))
+        # Said out loud, because it is the one thing a re-index cannot do — but only for
+        # the documents where it is TRUE. A schema doc keeps its source in the doc-tree
+        # artifact, so counting it here read as "gone forever" while it sat on disk. What
+        # an artifact can supply is reported separately, and `doctree_restore` supplies it.
+        "unrecoverable_chunks": sum(max(0, n - by_doc.get(doc, 0) - restorable.get(doc, 0))
                                     for doc, n in registry.items()),
+        "restorable_from_doctrees": sum(
+            max(0, n - by_doc.get(doc, 0)) for doc, n in restorable.items()),
         "backend": embed_backend(),
         "model": embed_model(),
         "current_width": vector_store.collection_dim(DOCS_COLLECTION),
@@ -131,3 +149,118 @@ def run(*, purge_orphans: bool = False, progress: Optional[callable] = None) -> 
     return {**before, "rebuilt": len(points), "width": embedding_dim(),
             "registry_corrected": corrected,
             "orphans_purged": before["orphan_chunks"] if purge_orphans else 0}
+
+
+# ── restoring from the doc-tree artifact ──────────────────────────────────────────────
+#
+# `unrecoverable_chunks` above is true for UPLOADS and false for schema docs, and the
+# difference is worth stating because the two look identical in the store. `index_file`
+# unlinks its upload, so a chunk absent from the store has no source. A schema doc's
+# source is a persisted artifact: `build_and_persist` writes one YAML per node under the
+# doc-tree root and the tree survives whatever happened to the collection. Measured on the
+# machine this was written on: the store held 5 chunks for a connection whose artifact held
+# 59 table docs, every one of them embeddable.
+#
+# Restoring is deliberately its OWN call rather than a flag on `run()`. `run()` re-embeds
+# what the store holds and rebuilds the collection around it; this ADDS chunks the store
+# never had, touching only the documents it names. Folding them together would give one
+# endpoint two safety stories.
+
+
+def _live_connection_ids() -> set[str]:
+    from aughor.db.registry import list_connections
+    return {str(c.get("id") or "") for c in list_connections()}
+
+
+def _tree_chunk_counts(connection_id: Optional[str] = None) -> tuple[dict, list[dict]]:
+    """`(doc_id → chunks the artifact would produce, skipped trees with a reason)`.
+
+    Scoped to connections that still exist. An artifact outliving its connection is not
+    hypothetical — a purge removes a deleted connection's documents, and a restore that
+    ignored the registry would put them straight back, which is the same defect wearing a
+    repair's clothes.
+    """
+    from aughor.knowledge.indexer import doctree_chunks, doctree_doc_id
+    from aughor.ontology.doctree import list_persisted_trees, load_doc_tree
+
+    live = _live_connection_ids()
+    counts: dict[str, int] = {}
+    skipped: list[dict] = []
+    for conn, schema in list_persisted_trees():
+        if connection_id and conn != connection_id:
+            continue
+        if conn not in live:
+            skipped.append({"doc_id": doctree_doc_id(conn, schema), "connection_id": conn,
+                            "reason": "no such connection — restoring it would resurrect a "
+                                      "document a purge removed"})
+            continue
+        tree = load_doc_tree(conn, schema)
+        if tree is None:
+            skipped.append({"doc_id": doctree_doc_id(conn, schema), "connection_id": conn,
+                            "reason": "the artifact is present but unreadable"})
+            continue
+        counts[doctree_doc_id(conn, schema)] = len(
+            doctree_chunks(tree, connection_id=conn, schema=schema))
+    return counts, skipped
+
+
+def _store_counts_by_doc() -> dict[str, int]:
+    from aughor.semantic import vector_store
+    by_doc: dict[str, int] = {}
+    for payload in vector_store.scroll_payloads(DOCS_COLLECTION, limit=_SCAN_LIMIT):
+        doc = str(payload.get("doc_id") or "")
+        by_doc[doc] = by_doc.get(doc, 0) + 1
+    return by_doc
+
+
+def doctree_plan(*, connection_id: Optional[str] = None) -> dict:
+    """What restoring the persisted doc trees would add, without embedding anything.
+
+    Reports per document rather than a total alone: a restore that adds 54 chunks to one
+    document and 0 to nine others is a different decision from one that touches all ten.
+    """
+    counts, skipped = _tree_chunk_counts(connection_id)
+    in_store = _store_counts_by_doc()
+    documents = [{"doc_id": doc, "in_store": in_store.get(doc, 0), "in_artifact": n,
+                  "adds": max(0, n - in_store.get(doc, 0))}
+                 for doc, n in sorted(counts.items())]
+    return {
+        "documents": documents,
+        "restorable_chunks": sum(d["adds"] for d in documents),
+        "skipped": skipped,
+    }
+
+
+def doctree_restore(*, connection_id: Optional[str] = None) -> dict:
+    """Re-embed every persisted doc tree back into the store, replacing what it holds.
+
+    Each document is independent — `index_doc_tree` deletes and rewrites one doc_id — so a
+    failure part-way leaves the documents already done correct and the rest untouched. The
+    ones that failed are named in the result rather than folded into a count, because a
+    restore that silently half-ran is the state this whole path exists to end.
+    """
+    from aughor.knowledge.indexer import doctree_doc_id, index_doc_tree
+    from aughor.ontology.doctree import list_persisted_trees, load_doc_tree
+
+    before = doctree_plan(connection_id=connection_id)
+    planned = {d["doc_id"] for d in before["documents"]}
+
+    restored: list[dict] = []
+    failed: list[dict] = []
+    for conn, schema in list_persisted_trees():
+        doc_id = doctree_doc_id(conn, schema)
+        if doc_id not in planned:
+            continue
+        tree = load_doc_tree(conn, schema)
+        if tree is None:
+            continue
+        try:
+            restored.append(index_doc_tree(tree, connection_id=conn, schema=schema))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"doc-tree restore failed for {doc_id}", counter="doctree.restore")
+            failed.append({"doc_id": doc_id, "error": f"{type(exc).__name__}: {exc}"})
+
+    return {**before, "restored": restored, "failed": failed,
+            "chunks_written": sum(r.get("chunk_count", 0) for r in restored),
+            "ok": not failed}

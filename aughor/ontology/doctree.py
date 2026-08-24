@@ -646,6 +646,32 @@ def load_doc_tree(conn: str, schema: str) -> Optional[DocTree]:
         return None
 
 
+def list_persisted_trees() -> list[tuple[str, str]]:
+    """Every ``(connection_id, schema_name)`` that has a doc tree persisted on disk.
+
+    Read out of each ``tree.yaml`` manifest rather than off the directory names, because
+    :func:`_safe` is lossy — an id carrying a character outside its allowed set is stored
+    under a mangled directory, and un-mangling it would be a guess exactly where a guess
+    matters. The manifest carries both names verbatim, which is why it stores them at all.
+    """
+    root = _root()
+    if not root.exists():
+        return []
+    out: list[tuple[str, str]] = []
+    for manifest in sorted(root.glob("*/*/tree.yaml")):
+        try:
+            meta = yaml.safe_load(manifest.read_text()) or {}
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, f"doctree: skipping an unreadable manifest {manifest.parent.name}",
+                     counter="doctree.manifest_skip")
+            continue
+        conn = str(meta.get("connection_id") or "")
+        if conn:
+            out.append((conn, str(meta.get("schema_name") or "")))
+    return out
+
+
 # ── high-level build (loads graph + profiles, persists) ─────────────────────
 
 def table_stats_from_profiles(table_profiles: Optional[dict[str, Any]]) -> dict[str, dict]:
