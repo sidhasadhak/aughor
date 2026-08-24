@@ -8044,6 +8044,17 @@ export interface paths {
          *
          *     ``investigation_id`` / ``agent_id`` narrow to the traces that touched them
          *     (the H3 drill-in: a run row on the per-agent page opens its trace here).
+         *
+         *     Every other parameter filters the INDEX rather than the page. That distinction is the
+         *     reason they live here at all: the surface used to hold a fixed list and narrow it in
+         *     the browser, which looks identical to a reader and answers a different question —
+         *     "the matching runs" versus "the matching runs among the last fifty". `total` counts
+         *     what matched, and `scanned_events` says how far back the fold reached, because a count
+         *     with no stated window is a claim about all of history that nobody checked.
+         *
+         *     `status` is ``ok`` · ``error`` · ``running``; the last means no final response was
+         *     recorded, which is a run still going and a run that died without one — the log cannot
+         *     tell those apart and does not pretend to.
          */
         get: operations["list_traces_traces_get"];
         put?: never;
@@ -25922,8 +25933,18 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                offset?: number;
                 investigation_id?: string | null;
                 agent_id?: string | null;
+                conn_id?: string | null;
+                status?: string | null;
+                user_id?: string | null;
+                q?: string | null;
+                since?: string | null;
+                until?: string | null;
+                min_duration_ms?: number | null;
+                max_duration_ms?: number | null;
+                min_tokens?: number | null;
             };
             header?: never;
             path?: never;

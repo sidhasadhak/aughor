@@ -14,6 +14,7 @@
  * the trace's investigation id — and then READS THE VERDICT BACK from
  * /verify/verdicts (the CR1 gate: recorded, not just POSTed).
  */
+import type { TraceFilters } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -59,19 +60,37 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [replayAt, setReplayAt] = useState<number | null>(null);
   const [runBusy, setRunBusy] = useState(false);
 
+  /** Narrowing happens on the SERVER. Filtering a page in the browser looks the same to
+   *  a reader and answers a different question — "the matching runs" versus "the matching
+   *  runs among the fifty we happened to fetch" — and the count would confirm the wrong
+   *  one. `total` below is what matched; `rows` is the page cut from it. */
+  const [filters, setFilters] = useState<TraceFilters>({});
+  const [pageSize, setPageSize] = useState(25);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [scanned, setScanned] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [listBusy, setListBusy] = useState(false);
+
   const loadList = useCallback(() => {
-    getTraces(focusInvestigationId ? { investigation_id: focusInvestigationId } : { limit: 50 })
+    setListBusy(true);
+    getTraces({
+      ...(focusInvestigationId ? { investigation_id: focusInvestigationId } : {}),
+      ...filters,
+      limit: pageSize,
+      offset,
+    })
       .then(d => {
         setTraces(d.traces);
-        if (d.traces.length > 0) {
-          setSelected(prev => (prev && d.traces.some(t => t.trace_id === prev)
-            ? prev : d.traces[0].trace_id));
-        }
+        setTotal(d.total ?? d.traces.length);
+        setScanned(d.scanned_events ?? null);
       })
-      .catch(() => {});
-  }, [focusInvestigationId]);
+      .catch(() => {})
+      .finally(() => setListBusy(false));
+  }, [focusInvestigationId, filters, pageSize, offset]);
 
   useEffect(() => { loadList(); }, [loadList]);
+  useEffect(() => { setOffset(0); }, [filters, pageSize]);
   useEffect(() => { if (focusTraceId) setSelected(focusTraceId); }, [focusTraceId]);
 
   useEffect(() => {
@@ -148,37 +167,153 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-      {/* ── trace list ── */}
-      <div style={{ width: 300, flexShrink: 0, borderRight: "1px solid var(--b1)",
-        overflowY: "auto", padding: 10 }}>
+      {/* ── the index ──────────────────────────────────────────────────────────────
+          A run is found by narrowing, not by scrolling: who ran it, whether it failed,
+          how long it took, what it cost. Every control here sends its value to the
+          server, so a match on page four is reachable — the previous surface held a
+          fixed fifty and offered no way to look past them. */}
+      <div style={{ width: 420, flexShrink: 0, borderRight: "1px solid var(--b1)",
+                    display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        <div style={{ padding: 10, borderBottom: "1px solid var(--b1)",
+                      display: "flex", flexDirection: "column", gap: 6 }}>
+          <input
+            className="aug-input aug-fs-sm"
+            placeholder="Search question or answer…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") setFilters(f => ({ ...f, q: search || undefined }));
+            }}
+            onBlur={() => setFilters(f => ({ ...f, q: search || undefined }))}
+          />
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {([["", "All"], ["ok", "OK"], ["error", "Failed"], ["running", "Running"]] as const)
+              .map(([value, label]) => (
+                <Button key={label} variant={(filters.status ?? "") === value ? "secondary" : "ghost"}
+                  size="sm" className="aug-fs-xs"
+                  onClick={() => setFilters(f => ({ ...f, status: value || undefined }))}>
+                  {label}
+                </Button>
+              ))}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+              placeholder="User ID"
+              defaultValue={filters.user_id ?? ""}
+              onBlur={e => setFilters(f => ({ ...f, user_id: e.target.value || undefined }))}
+            />
+            <select
+              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+              value={filters.min_duration_ms ?? ""}
+              onChange={e => setFilters(f => ({
+                ...f, min_duration_ms: e.target.value ? Number(e.target.value) : undefined }))}
+            >
+              <option value="">Any duration</option>
+              <option value="1000">over 1s</option>
+              <option value="10000">over 10s</option>
+              <option value="60000">over 1m</option>
+            </select>
+            <select
+              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+              value={filters.min_tokens ?? ""}
+              onChange={e => setFilters(f => ({
+                ...f, min_tokens: e.target.value ? Number(e.target.value) : undefined }))}
+            >
+              <option value="">Any tokens</option>
+              <option value="1000">over 1K</option>
+              <option value="10000">over 10K</option>
+              <option value="100000">over 100K</option>
+            </select>
+          </div>
+          {(filters.status || filters.user_id || filters.q || filters.min_duration_ms
+            || filters.min_tokens) && (
+            <Button variant="ghost" size="sm" className="aug-fs-xs"
+              onClick={() => { setFilters({}); setSearch(""); }}>
+              Clear filters
+            </Button>
+          )}
+        </div>
+
         {focusInvestigationId && (
-          <div style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px 8px" }}>
-            traces for deep analysis <code style={{ fontSize: 11 }}>{focusInvestigationId}</code>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "6px 10px" }}>
+            traces for deep analysis <code className="aug-fs-xs">{focusInvestigationId}</code>
           </div>
         )}
-        {traces.length === 0 ? (
-          <div style={{ padding: 16, fontSize: 12, color: "var(--t3)" }}>
-            Recording is on — the next question asked will appear here as a trace.
-          </div>
-        ) : traces.map(t => (
-          <Button key={t.trace_id} variant="ghost" size="sm"
-            onClick={() => setSelected(t.trace_id)}
-            style={{
-              display: "block", width: "100%", height: "auto", textAlign: "left",
-              padding: "8px 10px", marginBottom: 2, whiteSpace: "normal",
-              background: selected === t.trace_id ? "var(--bg-sel)" : undefined,
-            }}>
-            <span style={{ display: "block", fontSize: 12, lineHeight: 1.35,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {t.question || t.trace_id}
-            </span>
-            <span style={{ display: "block", fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
-              {relTime(t.started)} · {t.llm_calls} llm · {t.tool_calls} tools
-              {t.errors > 0 && <span style={{ color: "var(--red4)" }}> · {t.errors} err</span>}
-              {t.ok === false && <span style={{ color: "var(--red4)" }}> · failed</span>}
-            </span>
-          </Button>
-        ))}
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+          {traces.length === 0 ? (
+            <div className="aug-fs-sm" style={{ padding: 16, color: "var(--t3)" }}>
+              {listBusy ? "Loading…"
+                : total === 0 && (filters.q || filters.status || filters.user_id
+                                  || filters.min_duration_ms || filters.min_tokens)
+                  ? "No run matches these filters."
+                  : "Recording is on — the next question asked will appear here as a trace."}
+            </div>
+          ) : traces.map(t => (
+            <Button key={t.trace_id} variant="ghost" size="sm"
+              onClick={() => setSelected(t.trace_id)}
+              style={{
+                display: "block", width: "100%", height: "auto", textAlign: "left",
+                padding: "8px 10px", marginBottom: 2, whiteSpace: "normal",
+                background: selected === t.trace_id ? "var(--bg-sel)" : undefined,
+              }}>
+              <span className="aug-fs-sm" style={{ display: "block", lineHeight: 1.35,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t.question || t.trace_id}
+              </span>
+              {t.answer && (
+                <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)",
+                  marginTop: 1, overflow: "hidden", textOverflow: "ellipsis",
+                  whiteSpace: "nowrap" }}>
+                  → {t.answer}
+                </span>
+              )}
+              <span className="aug-fs-xs" style={{ display: "block", color: "var(--t2)", marginTop: 2 }}>
+                {relTime(t.started)}
+                {t.user_id && <> · <span style={{ color: "var(--t3)" }}>u:{t.user_id}</span></>}
+                {" · "}{t.llm_calls} llm · {t.tool_calls} tools
+                {t.duration_ms != null && <> · {fmtMs(t.duration_ms)}</>}
+                {!!t.total_tokens && <> · {compactNumber(t.total_tokens)} tok</>}
+                {t.errors > 0 && <span style={{ color: "var(--red4)" }}> · {t.errors} err</span>}
+                {t.ok === false && <span style={{ color: "var(--red4)" }}> · failed</span>}
+                {t.ok == null && <span style={{ color: "var(--t3)" }}> · running</span>}
+              </span>
+              {/* Cost is a FLOOR. A $0.00 next to unpriced calls means nobody published a
+                  rate for that model — printing it bare would read as free. */}
+              {(t.cost_usd != null && (t.cost_usd > 0 || !!t.unpriced_calls)) && (
+                <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", marginTop: 1 }}>
+                  ${t.cost_usd.toFixed(4)}
+                  {!!t.unpriced_calls && ` · ${t.unpriced_calls} unpriced`}
+                </span>
+              )}
+            </Button>
+          ))}
+        </div>
+
+        {/* Paging over what MATCHED, with the window it was counted in stated rather
+            than implied — a total with no window is a claim about all of history. */}
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "6px 10px",
+                      display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            {total === 0 ? "0 runs" : `${offset + 1}–${Math.min(offset + pageSize, total)} of ${total}`}
+            {scanned != null && <span style={{ color: "var(--t4)" }}> · last {compactNumber(scanned)} events</span>}
+          </span>
+          <select
+            className="aug-input aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
+            value={pageSize}
+            onChange={e => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <Button variant="ghost" size="sm" className="aug-fs-xs"
+            disabled={offset === 0}
+            onClick={() => setOffset(o => Math.max(0, o - pageSize))}>‹</Button>
+          <Button variant="ghost" size="sm" className="aug-fs-xs"
+            disabled={offset + pageSize >= total}
+            onClick={() => setOffset(o => o + pageSize)}>›</Button>
+        </div>
       </div>
 
       {/* ── waterfall / feedback ── */}

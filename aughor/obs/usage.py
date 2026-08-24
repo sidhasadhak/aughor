@@ -244,6 +244,26 @@ class UsageReport:
                 }
 
 
+def cost_of_call(event: dict) -> tuple[float, bool]:
+    """`(usd, priced)` for one LLM-call row.
+
+    Factored out of :func:`rollup` so the trace index can cost a run without keeping a
+    second copy of this arithmetic. Two copies of a cost calculation is how a table and a
+    chart come to disagree about the same call, and the reader has no way to tell which
+    one is lying.
+
+    `priced` is the honest half: an unpriced call is UNKNOWN, not free, and every caller
+    has to be able to count those separately rather than adding zero and moving on.
+    """
+    price = price_for(str(event.get("provider") or ""), str(event.get("model") or ""))
+    if price is None:
+        return 0.0, False
+    pt = int(event.get("prompt_tokens") or 0)
+    ct = int(event.get("completion_tokens") or 0)
+    return ((pt / 1_000_000.0) * price.input_per_1m
+            + (ct / 1_000_000.0) * price.output_per_1m), True
+
+
 def rollup(
     events: Iterable[dict],
     *,
@@ -289,12 +309,11 @@ def rollup(
         row.completion_tokens += ct
         row.total_tokens += int(e.get("total_tokens") or 0)
 
-        price = price_for(str(e.get("provider") or ""), str(e.get("model") or ""))
-        if price is None:
-            row.unpriced_calls += 1
+        usd, priced = cost_of_call(e)
+        if priced:
+            row.cost_usd += usd
         else:
-            row.cost_usd += (pt / 1_000_000.0) * price.input_per_1m
-            row.cost_usd += (ct / 1_000_000.0) * price.output_per_1m
+            row.unpriced_calls += 1
 
     return UsageReport(
         axes=tuple(axes), total_calls=total, unattributed=unattributed,
