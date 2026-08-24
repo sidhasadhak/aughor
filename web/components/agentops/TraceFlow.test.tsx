@@ -193,7 +193,7 @@ describe("node details — the row a card was built from", () => {
     span_id: "a", parent_span_id: null, ok: true, duration_ms: 12, error_class: null,
     investigation_id: null, session_id: null, user_id: null, agent_id: null, conn_id: null,
     provider: null, model: null, prompt_tokens: null, completion_tokens: null,
-    total_tokens: null, row_count: null, retries: null, job_id: null, charter_id: null,
+    total_tokens: null, row_count: null, retries: null, job_id: null,
     role: null, fallback: null, payload: null,
     ...over,
   } as SessionEvent);
