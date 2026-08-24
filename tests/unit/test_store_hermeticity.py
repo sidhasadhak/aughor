@@ -146,6 +146,59 @@ def test_no_generated_state_store_still_hardcodes_the_data_dir():
     assert offenders == [], f"re-hardcoded data/ instead of state_dir(): {offenders}"
 
 
+def test_no_store_path_is_left_to_the_inherited_environment():
+    """Every isolation path is ASSIGNED in conftest, never `setdefault`.
+
+    The sibling guard above asks where a store RESOLVES, and answers "not inside the repo's
+    `data/`" — which a reused `/tmp/throwaway.db` satisfies. So an inherited override that
+    points somewhere harmless passes it, and the suite quietly becomes stateful across runs:
+    four modules accumulate ledger rows and fail on the second run against one file, with
+    the same code that passes on a fresh one.
+
+    That is the likelier mistake rather than an exotic one, because exporting a throwaway
+    ledger is the RIGHT habit for a bare script — which would otherwise open
+    `data/system.db` beside a running API. This asserts the mechanism, because the runtime
+    property cannot tell `setdefault` from assignment in a clean environment: in the only
+    environment where they differ, the guard would already be running against the wrong
+    store.
+
+    Behaviour flags (`AUGHOR_API_KEY`, `AUGHOR_AUTOSEED`, `AUGHOR_SKIP_DOTENV`) are
+    deliberately NOT covered — inheriting those is sometimes exactly what a developer wants,
+    and none of them decides where a byte gets written.
+    """
+    import ast
+
+    conftest = pathlib.Path(__file__).resolve().parents[1] / "conftest.py"
+    source = conftest.read_text()
+    tree = ast.parse(source)
+
+    #: A `setdefault` mentioning any of these is pointing at the suite's own temp dirs, so
+    #: it is an isolation path wearing an escape hatch.
+    ISOLATION_MARKERS = ("_test_stores_dir", "_test_registry_dir", "tempfile.mkdtemp",
+                         "_packs_dst", "_dst")
+
+    offenders, seen_any = [], False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "attr", None) != "setdefault":
+            continue
+        value = getattr(node.func, "value", None)
+        if not (isinstance(value, ast.Attribute) and value.attr == "environ"):
+            continue
+        seen_any = True
+        text = ast.get_source_segment(source, node) or ""
+        if any(marker in text for marker in ISOLATION_MARKERS):
+            offenders.append(text.replace("\n", " ")[:100])
+
+    assert seen_any, "found no os.environ.setdefault calls in conftest — this guard is blind"
+    assert not offenders, (
+        "these conftest lines let an inherited environment variable choose where a store "
+        f"lives: {offenders}. Assign them (`os.environ[X] = ...`) so the suite always gets "
+        f"its own. A test that needs a specific store uses monkeypatch.setenv, which runs "
+        f"later and still wins.")
+
+
 def test_every_store_env_override_is_pointed_at_the_test_dir():
     """The generic guard the per-store tests above cannot be: find the overrides in the
     CODE, then check the environment the suite is actually running in.
