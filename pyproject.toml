@@ -90,17 +90,27 @@ docs = [
     "pypdf>=6.4.0",
     "python-docx>=1.0.0",
 ]
+# Every driver a warehouse connector imports. `pyexasol` was missing from this list and
+# from every other one, so the Exasol tile could not work in ANY install of this project,
+# including a full `[warehouse]` one: the picker offered it, and the ImportError arrived
+# after the user had filled in a connection form. Its own `dep_check` already named the
+# pin — the declaration was the only thing absent.
 warehouse = [
     "ibis-framework[duckdb,postgres]>=9.0.0",
     "connectorx>=0.3.3",
     "google-cloud-bigquery>=3.0.0",
     "snowflake-connector-python>=3.0.0",
     "PyMySQL>=1.0.0",
+    "pyexasol>=0.25.0",
 ]
+# The three REST connectors (`connectors/api/`) speak HTTP through `requests`, imported at
+# MODULE level in all three. This extra used to declare `stripe`, `hubspot-api-client` and
+# `simple-salesforce` — three vendor SDKs that **nothing in this repo imports**, statically
+# or dynamically (stripe.py's own header says the SDK is "not required") — while omitting
+# the one module they all need. It resolved only because something else drags `requests`
+# in transitively, which is a fact about today's lock file, not a declaration.
 crm = [
-    "stripe>=7.0.0",
-    "hubspot-api-client>=8.0.0",
-    "simple-salesforce>=1.12.0",
+    "requests>=2.32.0",
 ]
 cloud-storage = [
     "azure-storage-blob>=12.0.0",
