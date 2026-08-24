@@ -81,12 +81,9 @@ def cancel_background() -> int:
 
     ⚠️ **Cancelling a task does not stop the thread behind it.** These kicks do their real
     work in an executor, and cancelling the awaiting task abandons that future while the
-    worker thread runs on — still holding whatever it holds. Calling this after every test
-    hung the suite: the main thread sat in a timed lock acquire while the pool idled. It is
-    kept because ending a *specific* known task is sometimes right, and because the
-    reference-keeping above is what actually fixes the collectable-task bug. It is
-    deliberately NOT wired into a conftest teardown; tests that must not see a stranger's
-    write should capture only their own, which is a property no cancellation can give them.
+    worker thread runs on. So this narrows the window in which a leaked write can land; it
+    does not close it. A test that must not see a stranger's write should also capture only
+    its own — a property no cancellation can give it.
     """
     asked = 0
     for task in list(_BACKGROUND):
