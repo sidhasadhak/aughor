@@ -323,8 +323,10 @@ export function DocumentUploader() {
           saying so is more honest than a picker that cannot take effect. */}
       {status?.embedder?.ok && (
         <p className="aug-fs-xs text-zinc-600 font-mono">
-          embedding with {status.embedder.model} · {status.embedder.dim}-dimension vectors ·
-          {" "}{status.chunks} chunk{status.chunks !== 1 ? "s" : ""} indexed
+          embedding with {status.embedder.model}
+          {/* Probed, never declared — so it is absent when the probe could not run, and
+              printing `undefined-dimension` would be worse than saying nothing. */}
+          {status.embedder.dim ? ` · ${status.embedder.dim}-dimension vectors` : ""}
         </p>
       )}
 

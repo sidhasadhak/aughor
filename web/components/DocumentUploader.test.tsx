@@ -14,13 +14,15 @@
  * The status call is allowed to fail — the API serving this UI may predate the endpoint —
  * so the third property held here is that an absent status changes nothing.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";
 
 const listDocuments = vi.fn();
 const getKnowledgeStatus = vi.fn();
+const previewDocumentChunks = vi.fn();
+const uploadDocument = vi.fn();
 
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -28,7 +30,8 @@ vi.mock("@/lib/api", async importOriginal => {
     ...actual,
     listDocuments: (...a: unknown[]) => listDocuments(...a),
     getKnowledgeStatus: (...a: unknown[]) => getKnowledgeStatus(...a),
-    uploadDocument: vi.fn(),
+    previewDocumentChunks: (...a: unknown[]) => previewDocumentChunks(...a),
+    uploadDocument: (...a: unknown[]) => uploadDocument(...a),
     deleteDocument: vi.fn(),
   };
 });
@@ -147,5 +150,72 @@ describe("degradation", () => {
     render(<DocumentUploader />);
 
     await waitFor(() => expect(screen.getByText("Handbook")).toBeTruthy());
+  });
+});
+
+
+describe("curation — settings that were only reachable through the API", () => {
+  it("starts at the defaults the corpus was indexed under", async () => {
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+
+    // Not "0 changed": a person who never opens this gets the previous behaviour, and the
+    // label has to say so rather than imply an empty configuration.
+    expect(screen.getByText(/defaults/)).toBeTruthy();
+    expect(screen.queryByLabelText(/Max characters/)).toBeNull();  // collapsed
+  });
+
+  it("previews chunking without indexing anything", async () => {
+    previewDocumentChunks.mockResolvedValue({
+      total_chunks: 3, shown: 2, characters: 4096,
+      settings: { delimiter: "\n\n", max_chars: 1200, overlap_chars: 100,
+                  min_chars: 50, collapse_whitespace: true, strip_urls_emails: false },
+      chunks: [{ index: 0, characters: 900, tokens_estimate: 225, text: "first chunk" },
+               { index: 1, characters: 880, tokens_estimate: 220, text: "second chunk" }],
+    });
+
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+    fireEvent.click(screen.getByText("Chunking"));
+
+    const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
+    fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
+
+    expect(await screen.findByText(/3 chunks from/)).toBeTruthy();
+    expect(screen.getByText(/first chunk/)).toBeTruthy();
+    // The property that makes preview safe to press repeatedly.
+    expect(uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it("carries changed settings into the preview call", async () => {
+    previewDocumentChunks.mockResolvedValue({
+      total_chunks: 1, shown: 1, characters: 10,
+      settings: { delimiter: "\n\n", max_chars: 400, overlap_chars: 100,
+                  min_chars: 50, collapse_whitespace: true, strip_urls_emails: false },
+      chunks: [{ index: 0, characters: 10, tokens_estimate: 3, text: "x" }],
+    });
+
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+    fireEvent.click(screen.getByText("Chunking"));
+    fireEvent.change(screen.getByLabelText(/Max characters/), { target: { value: "400" } });
+
+    const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
+    fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
+
+    await waitFor(() => expect(previewDocumentChunks).toHaveBeenCalled());
+    expect(previewDocumentChunks.mock.calls[0][1]).toMatchObject({ max_chars: 400 });
+  });
+
+  it("names the embedder in force even when everything is healthy", async () => {
+    // A corpus is only comparable with itself under ONE model, so which model produced it
+    // is part of reading the list — not an error state.
+    getKnowledgeStatus.mockResolvedValue(status({
+      embedder: { model: "some-embedder", endpoint: "http://x/v1", ok: true, dim: 3072 },
+    }));
+
+    render(<DocumentUploader />);
+
+    expect(await screen.findByText(/3072-dimension vectors/)).toBeTruthy();
   });
 });
