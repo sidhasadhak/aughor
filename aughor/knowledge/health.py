@@ -172,7 +172,12 @@ def knowledge_status() -> dict:
     except Exception:
         documents = 0
 
-    if not embedder["ok"]:
+    if not embedder["ok"] and embedder.get("stored_dim") is not None:
+        # A WIDTH mismatch is not an outage, and the first live run of the Gemini switch
+        # reported it as one: the embedder answered perfectly (3072 dimensions) against an
+        # index holding 768. "Unreachable" sends a person to check a service that is fine.
+        reason = "the embedder does not fit the index"
+    elif not embedder["ok"]:
         reason = "the embedder is unreachable"
     elif not store["ok"]:
         reason = "the vector store is unavailable"

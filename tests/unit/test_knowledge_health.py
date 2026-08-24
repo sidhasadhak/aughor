@@ -73,6 +73,23 @@ def test_an_unreachable_embedder_is_named_as_such(plane):
     assert "UNAVAILABLE" in health.why_empty()
 
 
+def test_a_width_mismatch_is_not_reported_as_an_outage(plane, monkeypatch):
+    """Found by the first live run of the Gemini switch: the embedder answered perfectly —
+    3072 dimensions — against an index holding 768, and this reported "the embedder is
+    unreachable". That sends a person to check a service that is fine, and away from the
+    re-embed that is actually needed."""
+    plane()
+    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
+    monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda _t: [0.0] * 3072)
+
+    status = health.knowledge_status()
+
+    assert status["ready"] is False
+    assert status["reason"] == "the embedder does not fit the index"
+    assert status["embedder"]["stored_dim"] == 768 and status["embedder"]["dim"] == 3072
+    assert "re-embedded" in status["embedder"]["why"]
+
+
 def test_an_unavailable_store_is_distinct_from_an_unreachable_embedder(plane):
     plane(store_ok=False)
 
