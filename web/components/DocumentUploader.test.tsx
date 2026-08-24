@@ -159,10 +159,13 @@ describe("curation — settings that were only reachable through the API", () =>
     render(<DocumentUploader />);
     await screen.findByText("Handbook");
 
-    // Not "0 changed": a person who never opens this gets the previous behaviour, and the
-    // label has to say so rather than imply an empty configuration.
+    // Not "0 changed": a person who never touches this gets the previous behaviour, and
+    // the label has to say so rather than imply an empty configuration.
     expect(screen.getByText(/defaults/)).toBeTruthy();
-    expect(screen.queryByLabelText(/Max characters/)).toBeNull();  // collapsed
+    // The fields are in front of the reader, not behind a disclosure. A setting you have
+    // to go looking for is the reason none of this was reachable in the first place.
+    expect(screen.getByLabelText(/Maximum chunk length/)).toBeTruthy();
+    expect(screen.getByLabelText(/Chunk overlap/)).toBeTruthy();
   });
 
   it("previews chunking without indexing anything", async () => {
@@ -176,12 +179,12 @@ describe("curation — settings that were only reachable through the API", () =>
 
     render(<DocumentUploader />);
     await screen.findByText("Handbook");
-    fireEvent.click(screen.getByText("Chunking"));
 
     const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
     fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
 
-    expect(await screen.findByText(/3 chunks from/)).toBeTruthy();
+    expect(await screen.findByText(/Showing 2 of 3 chunks/)).toBeTruthy();
+    expect(screen.getByText(/Chunk-1/)).toBeTruthy();
     expect(screen.getByText(/first chunk/)).toBeTruthy();
     // The property that makes preview safe to press repeatedly.
     expect(uploadDocument).not.toHaveBeenCalled();
@@ -197,8 +200,7 @@ describe("curation — settings that were only reachable through the API", () =>
 
     render(<DocumentUploader />);
     await screen.findByText("Handbook");
-    fireEvent.click(screen.getByText("Chunking"));
-    fireEvent.change(screen.getByLabelText(/Max characters/), { target: { value: "400" } });
+    fireEvent.change(screen.getByLabelText(/Maximum chunk length/), { target: { value: "400" } });
 
     const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
     fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
@@ -216,6 +218,7 @@ describe("curation — settings that were only reachable through the API", () =>
 
     render(<DocumentUploader />);
 
-    expect(await screen.findByText(/3072-dimension vectors/)).toBeTruthy();
+    expect(await screen.findByText(/3072 dimensions/)).toBeTruthy();
+    expect(screen.getByText("some-embedder")).toBeTruthy();
   });
 });
