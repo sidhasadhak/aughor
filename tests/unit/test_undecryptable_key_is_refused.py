@@ -73,6 +73,45 @@ def test_an_unknown_backend_is_still_rejected():
         provider.endpoint_for("wishful")
 
 
+def test_the_chat_path_refuses_at_construction(monkeypatch):
+    """The other door. `get_provider` builds a client with the resolved key; without this
+    the ciphertext travels as the credential and the first sign of trouble is the provider
+    blaming it — the same failure the embedding lane hit."""
+    monkeypatch.setattr(provider, "_active_key", lambda _b: _ciphertext())
+    monkeypatch.setattr(provider, "_active_model", lambda _b, _r: "some-model")
+
+    with pytest.raises(RuntimeError, match="AUGHOR_SECRET_KEY"):
+        provider.LLMProvider(backend="gemini", role="coder")
+
+
+def test_an_explicitly_passed_key_is_not_second_guessed(monkeypatch):
+    """A caller who hands in a key has already decided. Refusing theirs because the STORED
+    one is undecryptable would break the path that exists to work around exactly that."""
+    monkeypatch.setattr(provider, "_active_key", lambda _b: _ciphertext())
+    monkeypatch.setattr(provider, "_active_model", lambda _b, _r: "some-model")
+
+    client = provider.LLMProvider(backend="gemini", role="coder", api_key="AIza-real")
+
+    assert client is not None
+
+
+def test_failover_skips_a_backend_it_cannot_authenticate(monkeypatch):
+    """`usable_key`, not a raise: a chain that crashes because one CANDIDATE has a bad key
+    is worse than one that skips it. Falling over TO an unauthenticatable backend would turn
+    one misconfiguration into a second, more confusing failure."""
+    monkeypatch.setattr(provider, "_active_key", lambda _b: _ciphertext())
+
+    assert provider.usable_key("gemini") == ""
+    assert provider.key_is_undecryptable("gemini") is True
+
+
+def test_a_local_backend_is_never_called_undecryptable(monkeypatch):
+    """Ollama holds no key, so `is_encrypted("")` is False and the predicate must say False
+    — not raise, and not exclude it from failover."""
+    assert provider.key_is_undecryptable("ollama") is False
+    assert provider.usable_key("ollama") == ""
+
+
 def test_the_embedding_lane_surfaces_the_refusal(monkeypatch):
     """The path that found this. The lane's own "no API key" check passes — the value is
     non-empty — so without the guard one layer down, the first sign of trouble is a
