@@ -158,9 +158,11 @@ def list_traces(limit: int = 50, offset: int = 0,
     what matched, and `scanned_events` says how far back the fold reached, because a count
     with no stated window is a claim about all of history that nobody checked.
 
-    `status` is ``ok`` · ``error`` · ``running``; the last means no final response was
-    recorded, which is a run still going and a run that died without one — the log cannot
-    tell those apart and does not pretend to.
+    `status` is ``ok`` · ``error`` · ``unfinished``. The last means no final response was
+    RECORDED — deliberately not called "running", because only the `/ask` and `/chat` door
+    emits one and a run arriving by any other path never will. Measured live: 53 of 73
+    runs, the oldest four days old. A reader filtering for live work would have found four
+    days of finished ones.
     """
     org_id = current_org_id() or None
     ledger = Ledger.default()

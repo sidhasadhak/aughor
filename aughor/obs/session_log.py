@@ -379,8 +379,13 @@ def session_index(
     window and `scanned_events` is returned to say how wide it was. A count with no stated
     window is a claim about all of history that nobody checked.
 
-    `status`: ``ok`` · ``error`` · ``running`` (no final response yet — the run is either
-    still going or it died without one, which the log genuinely cannot tell apart).
+    `status`: ``ok`` · ``error`` · ``unfinished``.
+
+    ⚠️ ``unfinished`` means NO FINAL RESPONSE WAS RECORDED — not that a run is in flight.
+    Only the `/ask` and `/chat` door wrapper emits one, so a run that reached the log by
+    any other path never gets it. Measured on a real install: 53 of 73 runs, the oldest
+    four days old. Calling that "running" would have been wrong about most of them, which
+    is why the word is not used anywhere in this path.
     """
     rows = recent_sessions(org_id=org_id, limit=10_000, scan=scan,
                            since=since, until=until, agent_id=agent_id, conn_id=conn_id)
@@ -390,7 +395,7 @@ def session_index(
             return False
         if status == "error" and not (r.get("ok") is False or r.get("errors")):
             return False
-        if status == "running" and r.get("ok") is not None:
+        if status == "unfinished" and r.get("ok") is not None:
             return False
         if user_id and str(r.get("user_id") or "") != user_id:
             return False

@@ -71,6 +71,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [scanned, setScanned] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [listBusy, setListBusy] = useState(false);
+  /** Whether ANY run in the loaded window records a user — see the filter below. */
+  const [anyUser, setAnyUser] = useState(false);
 
   const loadList = useCallback(() => {
     setListBusy(true);
@@ -82,6 +84,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
     })
       .then(d => {
         setTraces(d.traces);
+        setAnyUser(prev => prev || d.traces.some(t => !!t.user_id));
         setTotal(d.total ?? d.traces.length);
         setScanned(d.scanned_events ?? null);
       })
@@ -188,7 +191,10 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             onBlur={() => setFilters(f => ({ ...f, q: search || undefined }))}
           />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {([["", "All"], ["ok", "OK"], ["error", "Failed"], ["running", "Running"]] as const)
+            {/* "No result", not "Running": only the /ask and /chat door records a final
+                response, so most runs without one are finished, not in flight. Measured
+                live at 53 of 73, the oldest four days old. */}
+            {([["", "All"], ["ok", "OK"], ["error", "Failed"], ["unfinished", "No result"]] as const)
               .map(([value, label]) => (
                 <Button key={label} variant={(filters.status ?? "") === value ? "secondary" : "ghost"}
                   size="sm" className="aug-fs-xs"
@@ -198,9 +204,15 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               ))}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
+            {/* Offered only when the data can answer it. `emit` accepts a user id and no
+                caller passes one — measured at 0 of 73 runs — so on an install without
+                identity this control could only ever return nothing, and a filter that
+                cannot match is worse than no filter. It appears the moment a run records
+                a user, which is also how an operator learns identity started arriving. */}
             <input
               className="aug-input aug-fs-xs" style={{ flex: 1 }}
-              placeholder="User ID"
+              placeholder={anyUser ? "User ID" : "User ID — none recorded"}
+              disabled={!anyUser}
               defaultValue={filters.user_id ?? ""}
               onBlur={e => setFilters(f => ({ ...f, user_id: e.target.value || undefined }))}
             />
@@ -278,7 +290,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 {!!t.total_tokens && <> · {compactNumber(t.total_tokens)} tok</>}
                 {t.errors > 0 && <span style={{ color: "var(--red4)" }}> · {t.errors} err</span>}
                 {t.ok === false && <span style={{ color: "var(--red4)" }}> · failed</span>}
-                {t.ok == null && <span style={{ color: "var(--t3)" }}> · running</span>}
+                {t.ok == null && <span style={{ color: "var(--t3)" }}> · no result recorded</span>}
               </span>
               {/* Cost is a FLOOR. A $0.00 next to unpriced calls means nobody published a
                   rate for that model — printing it bare would read as free. */}

@@ -68,7 +68,7 @@ def test_paging_walks_the_filtered_set(runs):
 
 # ── the three states, told apart ──────────────────────────────────────────────────
 
-def test_status_separates_ok_error_and_still_running(runs):
+def test_status_separates_ok_error_and_no_recorded_result(runs):
     runs([run("ok1", ok=True), run("bad", ok=False),
           run("errs", ok=True, errors=2), run("live", ok=None, duration_ms=None)])
 
@@ -76,9 +76,9 @@ def test_status_separates_ok_error_and_still_running(runs):
     # A run that finished with errors is a failure to a reader hunting failures, even
     # though its final response arrived.
     assert {r["trace_id"] for r in session_log.session_index(status="error")["rows"]} == {"bad", "errs"}
-    # No final response: still going, or died without one. The log cannot tell those
-    # apart, so "running" claims only what it knows.
-    assert {r["trace_id"] for r in session_log.session_index(status="running")["rows"]} == {"live"}
+    # NOT "running": only the /ask and /chat door emits a final response, so most runs
+    # without one are finished. Measured live at 53 of 73, the oldest four days old.
+    assert {r["trace_id"] for r in session_log.session_index(status="unfinished")["rows"]} == {"live"}
 
 
 def test_duration_and_token_thresholds_are_inclusive_of_the_boundary(runs):
