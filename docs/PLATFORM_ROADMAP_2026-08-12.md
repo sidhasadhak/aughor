@@ -8,6 +8,20 @@ worktree `skill-usage-question-31d2b6`**) · every pending arc (Waves 6/7,
 Tracks B/C, temporal synthesis, Ontos/ODCS, open chips and branches) · and a
 **new user directive** recorded below as Arc CI.
 
+> ⏱️ **CURRENCY NOTE (added 2026-08-24).** This document is the plan of record as it stood
+> on 2026-08-12 and is not maintained as a live status board. `origin/main` is now
+> `1354306`, twelve days and several arcs later. Read it for the THESIS and the programs it
+> defines; read these for what is actually done:
+>
+> * `ROADMAP_ARC_VA_2026-08-22.md` — the agent platform. **8 of 10 waves shipped**; VA-9
+>   (integrations) and VA-10 (multi-user/admin) are the remainder and both sit outside the
+>   standing "data engines only" directive.
+> * `KNOWLEDGE_BASE_WAVE_2026-08-24.md` — the document/RAG plane, KB-0…KB-4.
+>
+> A plan that reports finished work as pending points its reader at the wrong next move,
+> which is exactly what the Arc VA status table was doing before 2026-08-24. This note
+> exists so the same thing is not true of the plan of record.
+
 **Baseline:** `origin/main` = `4d6de49` (+ #327). Production works end-to-end.
 Layers 0–4 of the unified adoption plan are done; Wave 5 (converse) is merged
 and `ask.converse` is ON locally, serving real traffic through the guarded
