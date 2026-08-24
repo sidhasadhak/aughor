@@ -46,6 +46,19 @@ async def upload_document(file: UploadFile = File(...)):
         tmp_path.unlink(missing_ok=True)
 
 
+@router.get("/knowledge/status")
+def knowledge_status_endpoint():
+    """Whether the knowledge plane can index, can search, and holds what it claims.
+
+    Exists because an empty search result had four possible causes and one appearance. The
+    surface that shows a knowledge base has to be able to tell a person which of them
+    happened — "no match" and "your embedder is not running" are not the same news.
+    """
+    from aughor.knowledge.health import knowledge_status
+
+    return knowledge_status()
+
+
 @router.get("/documents")
 def list_documents_endpoint():
     from aughor.knowledge.indexer import list_documents

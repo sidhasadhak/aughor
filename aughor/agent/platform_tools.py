@@ -395,6 +395,21 @@ def search_documents(connection_id: str, args: dict) -> dict:
                  counter="platform_tools.docs_search")
         return {"count": 0, "hits": [], "why": "the document index could not be searched"}
 
+    if not raw:
+        # An empty corpus, an unreachable embedder and a genuine no-match all arrive here
+        # identically. Say which, so the model reports the right thing to a person instead
+        # of concluding the documentation is silent on the subject.
+        why = ""
+        try:
+            from aughor.knowledge.health import why_empty
+            why = why_empty()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "an unexplained empty result is still a valid empty result",
+                     counter="platform_tools.docs_why_empty")
+        return {"count": 0, "hits": [],
+                "why": why or "nothing in the indexed documents matched that query"}
+
     if allowed is not None:
         raw = [h for h in raw if h.get("doc_id") in allowed]
 
