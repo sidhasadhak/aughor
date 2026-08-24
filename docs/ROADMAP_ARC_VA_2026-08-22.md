@@ -10,7 +10,7 @@
 > | wave | state |
 > |---|---|
 > | VA-0 Agent Ops control room | ✅ shipped — #371 |
-> | VA-1 skills plane | ✅ shipped — #377 (ingest + gate) · #385 (promotion + the disclosure ladder). **Deliverable 4 outstanding**: skills load by description match at need, rather than the agent choosing to call `read_pack` |
+> | VA-1 skills plane | ✅ shipped — #377 (ingest + gate) · #385 (promotion + the ladder) · rung 0, unpushed (a matched pack is NAMED in the prompt). All five deliverables met |
 > | VA-2 delegation | ✅ shipped — #376 |
 > | VA-3 OTLP standardization | ✅ shipped — #382 |
 > | VA-4 automations dataflow | ⏸ parked (see §2) — `engine.py:581` runs effects independently |
@@ -27,11 +27,14 @@
 > calls it the largest new attack surface in the arc. So Arc VA has no next wave that fits
 > the current directive; what remains inside it is VA-1's deliverable 4.
 >
-> **VA-1 deliverable 5** ("seed import: the ~15 data-engine skills, DuckDB first") is
-> substantially met: six Google data-engine skills imported (#385, promoted per-engine after
-> #388's scoping), and an authored, measured `duckdb-engine` pack whose every claim is
-> executed by a test. ⚠️ That pack is on `claude/typed-params-and-cancel` and **unpushed** as
-> of this edit.
+> **VA-1 is complete.** d5: six Google data-engine skills imported (#385, promoted per-engine
+> after #388's scoping) plus an authored `duckdb-engine` pack whose every claim is executed by
+> a test. d4: rung 0 of the ladder — a matched pack is named in the prompt for ~137 tokens
+> rather than pasted for ~1,493. ⚠️ Both are on `claude/typed-params-and-cancel` and
+> **unpushed** as of this edit.
+>
+> ⇒ **Arc VA now has NO remaining work inside the standing directive.** VA-9 and VA-10 are
+> both outside it; VA-4 stays parked.
 >
 > Three §4 decisions are LOCKED by the user; the rest remain open.
 > **Thesis:** Aughor's warehouse/AI-BI half is a moat VoltOps does not have. VoltOps's
@@ -93,7 +96,11 @@ against the real store with `AUGHOR_CORS_ORIGINS` set.
 ---
 
 ### VA-1 — The skills plane — ✅ SHIPPED (#377 ingest+gate · #385 promotion+disclosure)
-*Deliverable 4 (load by description match) outstanding; deliverable 5 substantially met.*
+*All five deliverables met. Rung 0 (d4) and the `duckdb-engine` pack (d5) are unpushed.*
+> 🔑 **d4's premise, measured on the ledger:** 0 `list_packs` and 0 `read_pack` in 2,672
+> recorded tool calls, while `run_sql` shows 55 — the tools were recorded and simply never
+> reached for. And scoring on DESCRIPTIONS alone, as the deliverable words it, fired on
+> nothing: `intent_tags` are the words a user types, a description is the words we chose.
 
 **Goal:** turn the 1,497-skill MIT library (`awesome-agent-skills`, Anthropic SKILL.md
 format) into Aughor content, and load skills only when relevant.
