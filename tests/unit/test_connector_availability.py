@@ -19,7 +19,8 @@ from fastapi.testclient import TestClient
 from aughor.connectors.registry import DRIVERS, missing_drivers
 
 # What `pyproject.toml` lists under [project.dependencies]. Everything else a
-# connector imports lives in an extra (or, for two of them, nowhere at all).
+# connector imports lives in an extra — declared there, and asserted to be, by
+# `tests/unit/test_connector_dependencies.py`.
 BASE_INSTALL = {"duckdb", "psycopg2"}
 
 
@@ -48,24 +49,6 @@ def test_every_registered_type_declares_its_drivers() -> None:
         f"connector types advertised by /connectors/types with no DRIVERS entry: "
         f"{sorted(undeclared)} — add one, or the picker will call them available "
         f"whether or not they are"
-    )
-
-
-def test_exasol_driver_is_declared_in_no_extra() -> None:
-    """pyexasol is imported by the connector and named in NO dependency group.
-
-    Pinned deliberately: this is a real gap, not a test fixture. If someone adds
-    pyexasol to an extra, this test should fail and be deleted along with the note
-    in `DRIVERS`.
-    """
-    import pathlib
-    import re
-
-    pyproject = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
-    text = pyproject.read_text()
-    assert DRIVERS["exasol"] == ("pyexasol",)
-    assert not re.search(r'"pyexasol', text), (
-        "pyexasol is now declared — update DRIVERS' note and drop this test"
     )
 
 
@@ -118,9 +101,18 @@ def test_endpoint_carries_available_and_missing(client: TestClient) -> None:
         )
 
 
-def test_endpoint_marks_exasol_unavailable(client: TestClient) -> None:
-    """End-to-end on the one type that is unavailable in EVERY install, so this
-    holds on a developer machine with all extras as well as on the deployment."""
+def test_endpoint_marks_a_driverless_type_unavailable(monkeypatch, client: TestClient) -> None:
+    """End-to-end, on a SIMULATED install rather than this machine's.
+
+    This used to name exasol and lean on `pyexasol` being declared in no extra, so it was
+    "unavailable in EVERY install" — true, and a defect, until `[warehouse]` started
+    pinning it. A test whose premise is a bug passes for the wrong reason the moment the
+    bug is fixed; simulating the absent driver asserts the endpoint's contract instead.
+    """
+    _simulate_install(monkeypatch, BASE_INSTALL)
     types = {t["type"]: t for t in client.get("/connectors/types").json()["types"]}
     assert types["exasol"]["available"] is False
     assert types["exasol"]["missing"] == ["pyexasol"]
+    assert types["duckdb"]["available"] is True, (
+        "the simulation must not make everything unavailable — then the assertion above "
+        "would hold for a reason that has nothing to do with drivers")
