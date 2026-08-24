@@ -43,12 +43,13 @@ CALL_READ_LIMIT = 5000
 
 
 def window_rows(rule: AgentAlertRule, *, now: Optional[datetime] = None
-                ) -> tuple[list[dict], list[dict], bool]:
-    """``(agent jobs, priced model calls, truncated)`` over the rule's look-back window.
+                ) -> tuple[list[dict], list[dict], list[dict], bool]:
+    """``(agent jobs, priced model calls, guardrail verdicts, truncated)`` over the
+    rule's look-back window.
 
-    Model calls are read only for the metrics that need them: every other metric answers
-    from the job rows alone, and a session-log scan per rule per tick would make the
-    heartbeat pay for facts nobody asked for.
+    Model calls and guardrail verdicts are read only for the metrics that need them:
+    every other metric answers from the job rows alone, and a session-log scan per rule
+    per tick would make the heartbeat pay for facts nobody asked for.
     """
     from aughor.obs.timeseries import job_rows, resolve_window
 
@@ -60,7 +61,43 @@ def window_rows(rule: AgentAlertRule, *, now: Optional[datetime] = None
     calls: list[dict] = []
     if rule.metric == "cost_usd":
         calls = priced_calls(window.since, window.until)
-    return agents, calls, truncated
+    guardrails: list[dict] = []
+    if rule.metric in ("guardrail_blocks", "guardrail_block_rate"):
+        guardrails = guardrail_verdicts(window.since, window.until)
+    return agents, calls, guardrails, truncated
+
+
+def guardrail_verdicts(since: str, until: str) -> list[dict]:
+    """Every guardrail EVALUATION in the window, blocked or not.
+
+    Both halves, because the metric is a rate: recording only the blocks would leave a
+    numerator with no denominator, and an agent nothing ever checked would be
+    indistinguishable from one that always passed.
+    """
+    from aughor.govern.guardrails import EVENT_KIND
+    from aughor.kernel.ledger import Ledger
+
+    rows = Ledger.default().session_events(kind=EVENT_KIND, since=since, until=until,
+                                           limit=CALL_READ_LIMIT)
+    out: list[dict] = []
+    for r in rows:
+        row = dict(r)
+        payload = row.get("payload")
+        if isinstance(payload, str):
+            import json
+            try:
+                payload = json.loads(payload)
+            except ValueError:
+                payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        row["blocked"] = bool(payload.get("blocked"))
+        row["guardrail"] = payload.get("guardrail") or row.get("name") or ""
+        # The column wins over the payload copy: `session_event_insert` promotes the
+        # ambient agent identity to a column, and a payload written by a caller that had
+        # no agent in context would otherwise blank it.
+        row["agent_id"] = row.get("agent_id") or payload.get("agent_id") or ""
+        out.append(row)
+    return out
 
 
 def priced_calls(since: str, until: str) -> list[dict]:
@@ -192,8 +229,8 @@ def run_rule(rule: AgentAlertRule, *, now: Optional[datetime] = None,
     from aughor.obs import agent_alert_store as store
 
     now = now or datetime.now(timezone.utc)
-    jobs, calls, truncated = window_rows(rule, now=now)
-    verdict = evaluate(rule, jobs, calls=calls, now=now)
+    jobs, calls, guardrails, truncated = window_rows(rule, now=now)
+    verdict = evaluate(rule, jobs, calls=calls, guardrails=guardrails, now=now)
 
     if truncated:
         # A capped read makes the population a floor, not a total. Say so on the verdict

@@ -264,9 +264,10 @@ BASELINE: dict[str, int] = {
     "kinetic": 402,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 271,  # paid down 2026-08-24: the agent's configuration-history component and
-                     # its prop were named for the retired word; VA-7 rewrote it anyway
-                     # (was 281 — paid down 2026-08-06 when the graduation eval retired)
+    "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
+                     # component (281 → 271) and VA-8 renamed the custom-agent detail
+                     # component it hangs off (271 → 216). Both were named for the retired
+                     # word and both were being edited anyway.
     "reforce": 1,
     "soma": 26,
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";

@@ -319,6 +319,17 @@ def clear_budget(token: "contextvars.Token") -> None:
         tolerate(exc, "metering budget clear", counter="metering")
 
 
+def current_budget() -> Optional[tuple]:
+    """The armed in-context budget as ``(token_budget, time_budget_s)``, or None.
+
+    Public because a second budget-setter has to be able to see the first one: an agent
+    guardrail arming its own cap must take the most-restrictive of the two, not silently
+    replace whatever the run already had (`govern.guardrails.arm_run_cap`).
+    """
+    b = _budget.get()
+    return None if b is None else (b.token_budget, b.time_budget_s)
+
+
 def check_budget() -> None:
     """Raise BudgetExceeded if the active run is over its in-context budget. No-op
     when no budget is armed (job paths enforce via the kernel heartbeat instead)."""

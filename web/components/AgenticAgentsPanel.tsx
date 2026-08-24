@@ -27,11 +27,12 @@ import { StatusChip } from "@/components/brief/StatusChip";
 import {
   createAgentGolden, createUserAgent,
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
-  evaluateUserAgent, getAgentObservability, getAgents, getConnections, getJobs,
+  evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
+  getConnections, getJobs,
   getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
-  restoreAgentRevision,
-  type AgentEvalResult, type AgentGolden, type AgentObservability,
+  restoreAgentRevision, setAgentGuardrails,
+  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type PackSummary, type UserAgent,
 } from "@/lib/api";
@@ -146,7 +147,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
               ? { kind: "persona", id: personas[0].id }
               : charters[0] ? { kind: "charter", id: charters[0].id } : null)} />
         ) : persona ? (
-          <PersonaDetail key={persona.id} persona={persona} onChanged={reload}
+          <AgentDetail key={persona.id} agent={persona} onChanged={reload}
             onDeleted={() => { setSelected(null); reload(); }}
             onError={setError} onOpenTrace={onOpenTrace} />
         ) : charter ? (
@@ -186,10 +187,10 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
   );
 }
 
-// ── persona detail ───────────────────────────────────────────────────────────────
+// ── custom-agent detail ───────────────────────────────────────────────────────────────
 
-function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: {
-  persona: UserAgent; onChanged: () => void; onDeleted: () => void;
+function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace }: {
+  agent: UserAgent; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
   onOpenTrace?: (investigationId: string) => void;
 }) {
@@ -198,7 +199,7 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
 
   const togglePause = async () => {
     setBusy(true);
-    try { await patchUserAgent(persona.id, { enabled: !persona.enabled }); onChanged(); }
+    try { await patchUserAgent(agent.id, { enabled: !agent.enabled }); onChanged(); }
     catch (e) { onError(String((e as Error)?.message || e)); }
     finally { setBusy(false); }
   };
@@ -207,26 +208,26 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
     <div style={{ padding: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{persona.name}</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
           <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
-            custom · {persona.connection_id || "any connection"}
-            {persona.schema_scope ? ` · ${persona.schema_scope}` : ""}
-            {persona.pack_ids.length > 0 ? ` · ${persona.pack_ids.length} pack${persona.pack_ids.length === 1 ? "" : "s"}` : ""}
+            custom · {agent.connection_id || "any connection"}
+            {agent.schema_scope ? ` · ${agent.schema_scope}` : ""}
+            {agent.pack_ids.length > 0 ? ` · ${agent.pack_ids.length} pack${agent.pack_ids.length === 1 ? "" : "s"}` : ""}
           </div>
         </div>
         {(() => {
-          const chip = evalChip(persona.last_eval, persona.eval_basis);
+          const chip = evalChip(agent.last_eval, agent.eval_basis);
           return chip && (
             <span title={chip.detail}>
               <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
             </span>
           );
         })()}
-        <StatusChip hue={persona.enabled ? "positive" : "caution"} strength="soft">
-          {persona.enabled ? "active" : "paused"}
+        <StatusChip hue={agent.enabled ? "positive" : "caution"} strength="soft">
+          {agent.enabled ? "active" : "paused"}
         </StatusChip>
         <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
-          {persona.enabled ? "Pause" : "Resume"}
+          {agent.enabled ? "Pause" : "Resume"}
         </Button>
         <Button variant={tab === "overview" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("overview")}>Overview</Button>
@@ -234,8 +235,8 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
           onClick={() => setTab("configure")}>Configure</Button>
       </div>
       {tab === "overview"
-        ? <PersonaOverview persona={persona} onOpenTrace={onOpenTrace} />
-        : <PersonaConfigure persona={persona} onChanged={onChanged}
+        ? <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
+        : <PersonaConfigure agent={agent} onChanged={onChanged}
             onDeleted={onDeleted} onError={onError} />}
     </div>
   );
@@ -243,8 +244,8 @@ function PersonaDetail({ persona, onChanged, onDeleted, onError, onOpenTrace }: 
 
 /** H3's honest run view, unchanged in spirit: everything the agent did, spend
  *  or the flag that would measure it — never a confident zero. */
-function PersonaOverview({ persona, onOpenTrace }: {
-  persona: UserAgent; onOpenTrace?: (invId: string) => void;
+function PersonaOverview({ agent, onOpenTrace }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void;
 }) {
   const [obs, setObs] = useState<AgentObservability | null>(null);
   const [loading, setLoading] = useState(true);
@@ -252,11 +253,11 @@ function PersonaOverview({ persona, onOpenTrace }: {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    getAgentObservability(persona.id)
+    getAgentObservability(agent.id)
       .then(o => { if (alive) setObs(o); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [persona.id]);
+  }, [agent.id]);
 
   if (loading) return <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>;
   if (!obs) return <div style={{ fontSize: 12, color: "var(--t3)" }}>No observability data.</div>;
@@ -268,11 +269,11 @@ function PersonaOverview({ persona, onOpenTrace }: {
 
   return (
     <>
-      {persona.instructions && (
+      {agent.instructions && (
         <div style={{ padding: "10px 14px", background: "var(--bg-2)",
           border: "1px solid var(--b1)", borderRadius: "var(--r3)", fontSize: 12,
           color: "var(--t2)", lineHeight: 1.5, marginBottom: 14, whiteSpace: "pre-wrap" }}>
-          {persona.instructions}
+          {agent.instructions}
         </div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
@@ -330,16 +331,16 @@ function PersonaOverview({ persona, onOpenTrace }: {
   );
 }
 
-/** The persona's editable surface — fields, bindings and the golden suite
+/** The agent's editable surface — fields, bindings and the golden suite
  *  (ported from AgentsAdminPanel, which this panel replaces). */
-function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
-  persona: UserAgent; onChanged: () => void; onDeleted: () => void;
+function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
+  agent: UserAgent; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
 }) {
   const [form, setForm] = useState({
-    name: persona.name, instructions: persona.instructions,
-    connection_id: persona.connection_id, schema_scope: persona.schema_scope,
-    doc_ids: persona.doc_ids, pack_ids: persona.pack_ids,
+    name: agent.name, instructions: agent.instructions,
+    connection_id: agent.connection_id, schema_scope: agent.schema_scope,
+    doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
   });
   const [connections, setConnections] = useState<Connection[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
@@ -354,8 +355,8 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
     getConnections().then(setConnections).catch(() => {});
     listDocuments().then(setDocuments).catch(() => {});
     getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
-    listAgentGoldens(persona.id).then(setGoldens).catch(() => {});
-  }, [persona.id]);
+    listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
+  }, [agent.id]);
 
   // Re-seed the form when the SAVED configuration moves under it — which happens on a
   // restore. Without this the fields keep showing the configuration that was just replaced,
@@ -363,32 +364,32 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
   // config_rev, so typing is never interrupted: it only fires when what is stored changed.
   useEffect(() => {
     setForm({
-      name: persona.name, instructions: persona.instructions,
-      connection_id: persona.connection_id, schema_scope: persona.schema_scope,
-      doc_ids: persona.doc_ids, pack_ids: persona.pack_ids,
+      name: agent.name, instructions: agent.instructions,
+      connection_id: agent.connection_id, schema_scope: agent.schema_scope,
+      doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona.config_rev]);
+  }, [agent.config_rev]);
 
   const save = async () => {
     if (!form.name.trim()) { onError("Name is required."); return; }
     setSaving(true);
     onError(null);
-    try { await patchUserAgent(persona.id, form); onChanged(); }
+    try { await patchUserAgent(agent.id, form); onChanged(); }
     catch (e) { onError(e instanceof Error ? e.message : "Save failed."); }
     finally { setSaving(false); }
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete agent “${persona.name}”? Its instructions and bindings are removed; documents stay.`)) return;
-    await deleteUserAgent(persona.id);
+    if (!window.confirm(`Delete agent “${agent.name}”? Its instructions and bindings are removed; documents stay.`)) return;
+    await deleteUserAgent(agent.id);
     onDeleted();
   };
 
   const addGolden = async () => {
     if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
     try {
-      const g = await createAgentGolden(persona.id, goldenDraft);
+      const g = await createAgentGolden(agent.id, goldenDraft);
       setGoldens(gs => [...gs, g]);
       setGoldenDraft({ question: "", reference_sql: "" });
     } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
@@ -397,7 +398,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
   const runEvaluation = async () => {
     setEvaluating(true);
     onError(null);
-    try { setEvalResult(await evaluateUserAgent(persona.id)); onChanged(); }
+    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); }
     catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
     finally { setEvaluating(false); }
   };
@@ -508,7 +509,7 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
               whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
             <Button variant="ghost" size="xs" onClick={async () => {
-              await deleteAgentGolden(persona.id, g.id);
+              await deleteAgentGolden(agent.id, g.id);
               setGoldens(gs => gs.filter(x => x.id !== g.id));
             }}>Remove</Button>
           </div>
@@ -528,7 +529,9 @@ function PersonaConfigure({ persona, onChanged, onDeleted, onError }: {
         </span>
       </div>
 
-      <AgentConfigHistory agent={persona} onChanged={onChanged} onError={onError} />
+      <AgentGuardrailsSection agent={agent} onError={onError} />
+
+      <AgentConfigHistory agent={agent} onChanged={onChanged} onError={onError} />
 
       <div style={{ display: "flex", gap: 8 }}>
         <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
@@ -594,6 +597,107 @@ function FieldDiff({ field, before, after }: {
           {valueText(field, after)}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** VA-8 — the guardrails an operator has set on one agent.
+ *
+ *  Deliberately NOT part of the agent's governing configuration: a guardrail is a
+ *  decision ABOUT an agent, not part of what the revision plane versions, and folding it
+ *  in would mark every eval chip stale the moment somebody tightened a cap. So this saves
+ *  on its own rather than riding the agent's Save button. */
+
+const PII_COPY: Record<string, { label: string; hint: string }> = {
+  off: { label: "Off", hint: "Results are shown exactly as the warehouse returned them." },
+  redact: { label: "Redact", hint: "Sensitive values are masked; the rest of the row is shown. This is the platform default." },
+  block: { label: "Block", hint: "A result containing sensitive values is withheld entirely — not shown with holes in it." },
+};
+
+export function AgentGuardrailsSection({ agent, onError }: {
+  agent: UserAgent; onError: (e: string | null) => void;
+}) {
+  const [policy, setPolicy] = useState<AgentGuardrails | null>(null);
+  const [modes, setModes] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getAgentGuardrails(agent.id)
+      .then(r => {
+        if (!alive || !r) return;
+        setPolicy(r.guardrails);
+        // The vocabulary comes from the API, which reads it off the code. A mode this
+        // build cannot enforce must never be offerable here.
+        setModes(r.modes?.pii ?? []);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [agent.id]);
+
+  const save = async (next: AgentGuardrails) => {
+    setPolicy(next);
+    setSaving(true);
+    setSaved(false);
+    onError(null);
+    try {
+      if (await setAgentGuardrails(agent.id, next)) setSaved(true);
+      else onError("Could not save guardrails.");
+    } finally { setSaving(false); }
+  };
+
+  if (!policy) return null;
+
+  const capValue = policy.max_tokens_per_run;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="aug-label">Guardrails</span>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        Applied while this agent is answering, and saved on their own — tightening a
+        guardrail does not change the agent&apos;s configuration or its evaluation.
+      </span>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
+          Sensitive data
+        </span>
+        <select className="aug-input" style={{ maxWidth: 140 }} value={policy.pii}
+          onChange={e => save({ ...policy, pii: e.target.value as AgentGuardrails["pii"] })}>
+          {modes.map(m => (
+            <option key={m} value={m}>{PII_COPY[m]?.label ?? m}</option>
+          ))}
+        </select>
+        <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
+          {PII_COPY[policy.pii]?.hint ?? ""}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
+          Tokens per run
+        </span>
+        <input className="aug-input" style={{ maxWidth: 140 }} type="number" min={1}
+          placeholder="no cap"
+          value={capValue ?? ""}
+          onChange={e => {
+            const raw = e.target.value.trim();
+            const n = raw === "" ? null : Number(raw);
+            // An empty field means "no cap". A zero would arm a budget breached by the
+            // first token, which is an outage rather than a guardrail — the API refuses
+            // it, and offering it here would only produce a 422.
+            save({ ...policy, max_tokens_per_run: n && n > 0 ? Math.floor(n) : null });
+          }} />
+        <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
+          {capValue
+            ? `This agent stops once a run has spent ${compactNumber(capValue)} tokens.`
+            : "No ceiling beyond whatever the run itself carries."}
+        </span>
+      </div>
+
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {saving ? "Saving…" : saved ? "Saved." : "\u00a0"}
+      </span>
     </div>
   );
 }

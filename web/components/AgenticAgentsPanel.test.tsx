@@ -14,13 +14,20 @@ import type { AgentRevision, UserAgent } from "@/lib/api";
 
 const listAgentRevisions = vi.fn();
 const restoreAgentRevision = vi.fn();
+const getAgentGuardrails = vi.fn();
+const setAgentGuardrailsFn = vi.fn();
 
+// One mock for the module. `vi.mock` is hoisted, so a second call for the same specifier
+// silently replaces the first — two of them in one file is a trap for whoever adds the
+// third and wonders why their stub is ignored.
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     listAgentRevisions: (...a: unknown[]) => listAgentRevisions(...a),
     restoreAgentRevision: (...a: unknown[]) => restoreAgentRevision(...a),
+    getAgentGuardrails: (...a: unknown[]) => getAgentGuardrails(...a),
+    setAgentGuardrails: (...a: unknown[]) => setAgentGuardrailsFn(...a),
   };
 });
 
@@ -100,5 +107,76 @@ describe("AgentConfigHistory", () => {
     show([rev(1, { changed: [], config_rev: "rev2" })]);
     await screen.findByText(/the configuration it started with/i);
     expect(screen.queryByRole("button", { name: /what changed/i })).not.toBeInTheDocument();
+  });
+});
+
+// ── VA-8 · guardrails ─────────────────────────────────────────────────────────
+
+const { AgentGuardrailsSection } = await import("@/components/AgenticAgentsPanel");
+
+const guardrails = (over = {}) => ({
+  guardrails: { pii: "redact", max_tokens_per_run: null, ...over },
+  is_default: true,
+  modes: { pii: ["off", "redact", "block"] },
+});
+
+describe("AgentGuardrailsSection", () => {
+  beforeEach(() => {
+    getAgentGuardrails.mockReset();
+    setAgentGuardrailsFn.mockReset();
+    setAgentGuardrailsFn.mockResolvedValue({ guardrails: {} });
+  });
+
+  const showGuardrails = async (payload: unknown) => {
+    getAgentGuardrails.mockResolvedValue(payload);
+    render(<AgentGuardrailsSection agent={agent()} onError={() => {}} />);
+    return screen.findByText("Guardrails");
+  };
+
+  it("offers only the modes this build can enforce", async () => {
+    // The list comes from the API, which reads it off the code. A mode nothing enforces
+    // appearing here is a promise the platform cannot keep.
+    await showGuardrails(guardrails());
+    const select = screen.getByRole("combobox");
+    expect([...select.querySelectorAll("option")].map(o => o.getAttribute("value")))
+      .toEqual(["off", "redact", "block"]);
+  });
+
+  it("says what the chosen mode actually does", async () => {
+    await showGuardrails(guardrails({ pii: "block" }));
+    expect(screen.getByText(/withheld entirely/i)).toBeInTheDocument();
+  });
+
+  it("saves a mode change on its own, without the agent's Save button", async () => {
+    // A guardrail is a decision ABOUT an agent, not part of its versioned configuration.
+    await showGuardrails(guardrails());
+    await userEvent.selectOptions(screen.getByRole("combobox"), "block");
+
+    expect(setAgentGuardrailsFn).toHaveBeenCalledWith("ua_1",
+      { pii: "block", max_tokens_per_run: null });
+  });
+
+  it("reads an empty cap field as no cap rather than as zero", async () => {
+    // Zero would arm a budget breached by the first token — an outage wearing a
+    // guardrail's name, and a guaranteed 422 from the API.
+    await showGuardrails(guardrails({ max_tokens_per_run: 4096 }));
+    await userEvent.clear(screen.getByRole("spinbutton"));
+
+    expect(setAgentGuardrailsFn).toHaveBeenLastCalledWith("ua_1",
+      { pii: "redact", max_tokens_per_run: null });
+  });
+
+  it("says plainly when there is no ceiling", async () => {
+    await showGuardrails(guardrails());
+    expect(screen.getByText(/No ceiling beyond/i)).toBeInTheDocument();
+  });
+
+  it("renders nothing at all when the policy cannot be read", async () => {
+    // A guardrail surface that renders defaults it did not fetch would tell an operator
+    // this agent is on `redact` when nobody knows what it is on.
+    getAgentGuardrails.mockResolvedValue(null);
+    const { container } = render(
+      <AgentGuardrailsSection agent={agent()} onError={() => {}} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

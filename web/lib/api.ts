@@ -4806,6 +4806,37 @@ export interface AgentRevision {
   changed: string[] | null;
 }
 
+/** VA-8 — what an agent may do with what it sees, and how much it may spend. */
+export interface AgentGuardrails {
+  /** `redact` is what the platform did before guardrails existed, so it is the default
+   *  and an unconfigured agent is unchanged. */
+  pii: "off" | "redact" | "block";
+  /** Tokens, not dollars. A cost ceiling can only be applied after a call is priced,
+   *  which is after it has been paid for — it could stop the NEXT run, never this one. */
+  max_tokens_per_run: number | null;
+}
+
+export async function getAgentGuardrails(
+  agentId: string,
+): Promise<{ guardrails: AgentGuardrails; is_default: boolean; modes: { pii: string[] } } | null> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function setAgentGuardrails(
+  agentId: string,
+  guardrails: AgentGuardrails,
+): Promise<{ guardrails: AgentGuardrails } | null> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(guardrails),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function listAgentRevisions(
   agentId: string,
 ): Promise<{ current_rev: string; eval_basis: EvalBasis; revisions: AgentRevision[] }> {

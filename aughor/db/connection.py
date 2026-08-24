@@ -241,12 +241,53 @@ def _security_post(
             )
             _typed_mirror_slice(budget.max_rows)
 
-        # 2. PII redaction
+        # 2. PII — redact, block, or stand aside, as the ACTIVE AGENT's policy says
+        #    (VA-8). No agent, or no policy, means `redact`: exactly what this did before
+        #    the policy existed, so the default path is unchanged byte for byte.
+        from aughor.govern import guardrails
+        _agent_id, _policy = guardrails.active_policy()
         pii_count = 0
-        if result.columns and result.rows:
+        pii_blocked = 0
+        if result.columns and result.rows and _policy.pii != "off":
             _pre_scan_rows = result.rows
             scan = PiiScanner.scan_and_redact(result.columns, result.rows)
-            if scan.redacted_count > 0:
+            # Recorded whether or not anything was found. A rate needs its denominator,
+            # and "checked, nothing there" is the denominator (govern/guardrails.record).
+            guardrails.record("pii", blocked=bool(scan.redacted_count and _policy.pii == "block"),
+                              detail=_policy.pii, agent_id=_agent_id,
+                              observed={"found": int(scan.redacted_count)})
+            if scan.redacted_count > 0 and _policy.pii == "block":
+                # The whole result, not a redacted copy of it. An operator choosing
+                # `block` has decided this agent may not see rows that contain PII at
+                # all — handing back the same rows with holes punched in them would be
+                # the `redact` policy wearing the `block` name.
+                #
+                # Replaced rather than returned: the audit log below is the one record an
+                # operator goes to after an incident, and a block is the single most
+                # important thing for it to contain. An early return would have written
+                # nothing there at all.
+                pii_blocked = scan.redacted_count
+                pii_count = scan.redacted_count
+                # The message carries NO count, and the words the anti-probing guard
+                # watches for stay out of the rebuild below — including out of comments
+                # inside it, since that guard reads the source text. The number of matches
+                # is itself a probing signal: somebody who can ask questions and read how
+                # many values were caught can binary-search a column they were never
+                # shown. The count goes to the audit log, which is out of band.
+                _blocked_message = ("Blocked by this agent's sensitive-data guardrail: "
+                                    "the result contains values this agent is configured "
+                                    "to withhold rather than mask.")
+                result = QueryResult(
+                    hypothesis_id=result.hypothesis_id,
+                    sql=result.sql,
+                    columns=result.columns,
+                    rows=[],
+                    row_count=0,
+                    error=_blocked_message,
+                    caveats=result.caveats,
+                    annotations=result.annotations,
+                )
+            elif scan.redacted_count > 0:
                 result = QueryResult(
                     hypothesis_id=result.hypothesis_id,
                     sql=result.sql,
@@ -265,7 +306,7 @@ def _security_post(
             connection_id=connection_id,
             hypothesis_id=hypothesis_id,
             sql=sql,
-            verdict="safe",
+            verdict="pii_blocked" if pii_blocked else "safe",
             row_count=result.row_count,
             duration_ms=duration_ms,
             pii_redacted=pii_count,
