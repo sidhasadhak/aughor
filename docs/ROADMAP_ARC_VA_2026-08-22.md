@@ -1,19 +1,40 @@
 # Arc VA — the agent platform (2026-08-22)
 
-> **Status: APPROVED and IN FLIGHT (2026-08-22).** Supersedes §4 and §8 of
+> **Status: EIGHT OF TEN WAVES SHIPPED (last checked 2026-08-24).** Supersedes §4 and §8 of
 > `VOLTAGENT_ADOPTION_STUDY_2026-08-22.md` as the build document.
+>
+> One row per WAVE, not per slice. The previous table listed slices, which is how it came
+> to report VA-7 and VA-8 as unstarted two days after they merged, and VA-5's five follow-up
+> items as outstanding after #383 shipped all five.
 >
 > | wave | state |
 > |---|---|
-> | VA-0 Agent Ops control room | ✅ **shipped** — #371 |
-> | VA-5 trace waterfall | ✅ **shipped** — #372 |
-> | VA-6 agent-plane alerting | ✅ **shipped** (rule engine) — #373 |
-> | VA-2 delegation | ✅ **shipped** — #376 |
-> | VA-1 skills plane | ✅ **shipped** — #377 (deliverables 4–5 outstanding) |
-> | VA-5 node view | ✅ **shipped** — #380 (payload inspector · trace logs · feedback · trace API · replay outstanding) |
-> | VA-3 OTLP standardization | ✅ shipped 2026-08-23 |
-> | VA-7 · VA-8 · VA-9 · VA-10 | planned below |
-> | VA-4 automations dataflow | parked (see §2) |
+> | VA-0 Agent Ops control room | ✅ shipped — #371 |
+> | VA-1 skills plane | ✅ shipped — #377 (ingest + gate) · #385 (promotion + the ladder) · rung 0, unpushed (a matched pack is NAMED in the prompt). All five deliverables met |
+> | VA-2 delegation | ✅ shipped — #376 |
+> | VA-3 OTLP standardization | ✅ shipped — #382 |
+> | VA-4 automations dataflow | ⏸ parked (see §2) — `engine.py:581` runs effects independently |
+> | VA-5 trace excellence | ✅ shipped — #372 (waterfall) · #380 (node view) · #383 (payload audit, trace logs, feedback, trace API + MCP tools, replay). ⚠️ #383's thumbs and replay were never given a browser receipt against a restarted API |
+> | VA-6 agent-plane alerting | ✅ shipped — #373 (rule engine) · #385 (storage, trigger wiring, Attention panel) |
+> | VA-7 instruction & prompt management | ✅ shipped — #386 (revision diff, restore, and the backfill that made the plane reachable for agents predating it) |
+> | VA-8 user guardrail plane | ✅ shipped — #386 (per-agent PII mode + token cap, wired and alertable) |
+> | VA-9 integrations plane | ⛔ **not started — deferred by the user 2026-08-24** |
+> | VA-10 multi-user & admin | ⛔ not started |
+>
+> 🗣️ **User scope, stated 2026-08-24 and still standing:** *"Data engines only for now, with
+> an exception for robust Slack OUT. Everything else later."* Both remaining waves fall
+> outside it — VA-9 **is** the Gmail/Slack-inbound/MCP-consumer work, and its own risk note
+> calls it the largest new attack surface in the arc. So Arc VA has no next wave that fits
+> the current directive; what remains inside it is VA-1's deliverable 4.
+>
+> **VA-1 is complete.** d5: six Google data-engine skills imported (#385, promoted per-engine
+> after #388's scoping) plus an authored `duckdb-engine` pack whose every claim is executed by
+> a test. d4: rung 0 of the ladder — a matched pack is named in the prompt for ~137 tokens
+> rather than pasted for ~1,493. ⚠️ Both are on `claude/typed-params-and-cancel` and
+> **unpushed** as of this edit.
+>
+> ⇒ **Arc VA now has NO remaining work inside the standing directive.** VA-9 and VA-10 are
+> both outside it; VA-4 stays parked.
 >
 > Three §4 decisions are LOCKED by the user; the rest remain open.
 > **Thesis:** Aughor's warehouse/AI-BI half is a moat VoltOps does not have. VoltOps's
@@ -74,7 +95,12 @@ against the real store with `AUGHOR_CORS_ORIGINS` set.
 
 ---
 
-### VA-1 — The skills plane (≈1 week)
+### VA-1 — The skills plane — ✅ SHIPPED (#377 ingest+gate · #385 promotion+disclosure)
+*All five deliverables met. Rung 0 (d4) and the `duckdb-engine` pack (d5) are unpushed.*
+> 🔑 **d4's premise, measured on the ledger:** 0 `list_packs` and 0 `read_pack` in 2,672
+> recorded tool calls, while `run_sql` shows 55 — the tools were recorded and simply never
+> reached for. And scoring on DESCRIPTIONS alone, as the deliverable words it, fired on
+> nothing: `intent_tags` are the words a user types, a description is the words we chose.
 
 **Goal:** turn the 1,497-skill MIT library (`awesome-agent-skills`, Anthropic SKILL.md
 format) into Aughor content, and load skills only when relevant.
@@ -125,7 +151,7 @@ changes nothing is a regression); licence hygiene per skill.
 
 ---
 
-### VA-2 — Delegation (≈1–2 weeks) — *the biggest single gap*
+### VA-2 — Delegation — ✅ SHIPPED (#376) — *was the biggest single gap*
 
 **Goal:** custom agents stop being records an ask *impersonates* and become specialists
 the conversation *delegates to*.
@@ -182,7 +208,7 @@ cost multiplication (each hop is a full turn) — surface it in the run's cost.
 
 ---
 
-### VA-3 — OTLP standardization — ✅ SHIPPED 2026-08-23
+### VA-3 — OTLP standardization — ✅ SHIPPED (#382, 2026-08-23)
 
 **Goal:** one telemetry contract, any backend. **BYO-observability — the twin of BYOK.**
 
@@ -244,7 +270,8 @@ and now covered by two tests that fail without it.
 
 ---
 
-### VA-5 — Trace excellence (≈2 weeks) — ✅ FIRST SLICE SHIPPED (#372: waterfall + timeline API + UI)
+### VA-5 — Trace excellence — ✅ SHIPPED (#372 waterfall · #380 node view · #383 the five below)
+*⚠️ #383's thumbs and replay were never given a browser receipt against a restarted API.*
 
 **Goal:** the debugging surface VoltOps is genuinely ahead on. **The tree already exists in
 `session_events` (`span_id`/`parent_span_id`/`duration_ms`) — this is rendering + API.**
@@ -273,7 +300,7 @@ payload redaction must reuse `govern/disclosure`, not a new redactor.
 
 ---
 
-### VA-6 — Agent-plane alerting (≈1 week) — ✅ RULE ENGINE SHIPPED (#373); storage, trigger wiring and the Attention panel outstanding
+### VA-6 — Agent-plane alerting — ✅ SHIPPED (#373 rule engine · #385 storage, trigger wiring, Attention panel)
 
 **Goal:** alerts on **agent behaviour**, not just data KPIs. Both halves exist and point at
 the wrong plane.
@@ -292,7 +319,9 @@ rate-limited one so the storm case is exercised on day one.
 
 ---
 
-### VA-7 — Instruction & prompt management (≈1–2 weeks)
+### VA-7 — Instruction & prompt management — ✅ SHIPPED (#386)
+*Revision diff, restore, and the backfill that made the plane reachable for agents that
+predated it — a plane recording from creation is unreachable for everything that exists.*
 
 **Goal:** users edit and version what their agents say, safely. **`revisions.py` already
 does the hard half.**
@@ -319,7 +348,9 @@ than automatic on every keystroke.
 
 ---
 
-### VA-8 — The user guardrail plane (≈2 weeks)
+### VA-8 — The user guardrail plane — ✅ SHIPPED (#386)
+*Per-agent PII mode + token cap, wired and alertable. Three of its four deliverables
+already existed and needed connecting, not building.*
 
 **Goal:** guardrails users configure per agent. Distinct from our CA-0/CA-2 truthfulness
 guards — those are product logic and stay; this is **user policy**.
@@ -346,7 +377,9 @@ mandatory, never a quiet drop.
 
 ---
 
-### VA-9 — The integrations plane (≈3 weeks) — *the vision's core*
+### VA-9 — The integrations plane (≈3 weeks) — ⛔ NOT STARTED, DEFERRED 2026-08-24
+*Still the vision's core, and outside the standing "data engines only" directive: this
+IS the Gmail/Slack-inbound/MCP-consumer work. Do not start it unscoped.*
 
 **Goal:** users connect their agents to their apps. **Native MCP is the mechanism, so the
 "no more n8n" directive stands.**
@@ -376,7 +409,7 @@ has bitten before), an allowlist of servers, and outbound calls off by default.
 
 ---
 
-### VA-10 — Multi-user & admin observation (≈2 weeks)
+### VA-10 — Multi-user & admin observation (≈2 weeks) — ⛔ NOT STARTED
 
 **Goal:** "users (plural) log into Aughor" — with an admin who can see everything.
 

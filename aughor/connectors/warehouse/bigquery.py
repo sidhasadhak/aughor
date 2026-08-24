@@ -12,6 +12,7 @@ Optional dep:
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
@@ -54,6 +55,46 @@ class BigQueryConnection(Connector):
 
     # ── DatabaseConnection ABC ─────────────────────────────────────────────────
 
+    #: The QueryJob currently in flight, or None. There is no connection-level abort to
+    #: reach on BigQuery — `self._client` is a REST client with nothing to interrupt — so
+    #: cancelling means cancelling the JOB, and that needs the job object. Holding it only
+    #: for the duration of a run is the point: a job kept after it finishes would make
+    #: `interrupt()` return True while cancelling something already over, which is worse
+    #: than returning False.
+    _job = None
+
+    @contextmanager
+    def _running(self, job):
+        """Publish `job` as the cancellable one for as long as it runs."""
+        self._job = job
+        try:
+            yield job
+        finally:
+            self._job = None
+
+    def interrupt(self) -> bool:
+        """Cancel the running query job, from ANOTHER thread.
+
+        The base implementation reaches a driver handle's own `interrupt()`, and a
+        BigQuery client has none — so this connector returned False and Cancel did
+        nothing. `job.cancel()` is a REST call on a separate connection, which is why it
+        works while the thread that started the job is blocked in `result()`.
+
+        Interrupt, never close: the thread that OWNS the run observes the resulting
+        exception and cleans up in its own `finally`. Same rule as every other connector
+        here — `close()` on a live cursor is what segfaulted CI twice (#323).
+        """
+        job = self._job
+        if job is None:
+            return False               # nothing in flight; the honest answer is False
+        try:
+            job.cancel()
+            return True
+        except Exception:
+            # Already finished, already cancelled, or the REST call failed — a caller who
+            # only wants the query to stop gains nothing from an exception here.
+            return False
+
     #: BigQuery names parameters `@name`, and unlike every DBAPI driver here it wants each
     #: one DECLARED with a type rather than inferred from the value on the wire.
     param_style = "at"
@@ -84,9 +125,9 @@ class BigQueryConnection(Connector):
             default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
             query_parameters=declared,
         )
-        rows_it = self._client.query(sql, job_config=job_config).result(
-            max_results=self.max_rows)
-        return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
+        with self._running(self._client.query(sql, job_config=job_config)) as job:
+            rows_it = job.result(max_results=self.max_rows)
+            return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
@@ -105,13 +146,13 @@ class BigQueryConnection(Connector):
             job_config = bigquery.QueryJobConfig(
                 default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None
             )
-            job = self._client.query(sql, job_config=job_config)
-            rows_it = job.result(max_results=MAX_ROWS)
-            columns = [field.name for field in rows_it.schema]
-            rows = [
-                [str(v) if v is not None else "NULL" for v in row.values()]
-                for row in rows_it
-            ]
+            with self._running(self._client.query(sql, job_config=job_config)) as job:
+                rows_it = job.result(max_results=MAX_ROWS)
+                columns = [field.name for field in rows_it.schema]
+                rows = [
+                    [str(v) if v is not None else "NULL" for v in row.values()]
+                    for row in rows_it
+                ]
             result = QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,

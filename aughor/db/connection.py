@@ -658,11 +658,36 @@ class DatabaseConnection(ABC):
         site, the label is internal (internal queries skip the PII/audit post-pass, so
         a typed capture there would be an unredacted side channel), or the security
         post-pass disarmed the capture (fail closed, never a redaction bypass)."""
+        return self._capture_typed(hypothesis_id, lambda: self.execute(hypothesis_id, sql))
+
+    def execute_with_params_typed(self, hypothesis_id: str, sql: str,
+                                  params: dict) -> "tuple[QueryResult, dict | None]":
+        """`execute_with_params` under the same capture. The typed side channel and
+        binding were built in separate waves and never introduced: `/query` chose
+        `execute_with_params` OR `execute_typed`, so parameterising a query returned
+        untyped rows.
+
+        The capture site was never the problem. `_offer_typed_rows` sits AFTER the
+        `if params:` branch in `DuckDBConnection._run`, `PostgresConnection._run` and
+        `LocalUploadConnection._run` — so a bound query was already offering typed rows,
+        into a sink nobody had set. A computed capture is not a delivered one.
+        """
+        return self._capture_typed(
+            hypothesis_id, lambda: self.execute_with_params(hypothesis_id, sql, params))
+
+    def _capture_typed(self, hypothesis_id: str, run) -> "tuple[QueryResult, dict | None]":
+        """Run `run()` with a typed sink armed, and return (result, payload).
+
+        Factored out so the bound and unbound paths cannot drift on the parts that are
+        about SAFETY rather than about execution: the internal-label skip and the
+        fail-closed checks below are the reason a typed payload is not an unredacted
+        side channel, and two copies of them is one copy too many.
+        """
         if _is_internal_query(hypothesis_id):
-            return self.execute(hypothesis_id, sql), None
+            return run(), None
         token = _TYPED_SINK.set({})
         try:
-            result = self.execute(hypothesis_id, sql)
+            result = run()
             sink = _TYPED_SINK.get()
         finally:
             _TYPED_SINK.reset(token)

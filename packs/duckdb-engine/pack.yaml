@@ -1,0 +1,20 @@
+id: duckdb-engine
+name: DuckDB Engine
+version: 1
+domains:
+- DuckDB
+- SQL dialect
+extends: []
+scope:
+  connections:
+  - engine:duckdb
+  - engine:local_upload
+  - engine:motherduck
+  - engine:s3
+  - engine:federated
+  - engine:gsheets
+status: active
+source: aughor
+source_url: ''
+licence: ''
+partial: true

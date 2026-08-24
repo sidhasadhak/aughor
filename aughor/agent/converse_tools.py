@@ -617,7 +617,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
 
     return run_tool_loop(
         provider or get_provider("coder"),
-        converse_system_prompt(connection_id, extra_context),
+        converse_system_prompt(connection_id, extra_context, question=question),
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
                        canvas_id=canvas_id, user_question=question),
@@ -626,7 +626,8 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
     )
 
 
-def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> str:
+def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
+                           question: str = "") -> str:
     """State, not instructions (the plan's rule for this prompt).
 
     It says what is true — who the assistant is, what latitude it has, what the tools
@@ -695,6 +696,22 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None) -> s
             lines += ["", block]
     except Exception:                       # never let the roster break the prompt
         logger.debug("delegation roster unavailable", exc_info=True)
+    # VA-1 deliverable 4 — rung 0 of the disclosure ladder. Both existing rungs are TOOLS,
+    # so both need the model to already suspect a pack might help; measured on the ledger it
+    # never did (0 `list_packs` and 0 `read_pack` in 2,672 recorded tool calls, while
+    # `run_sql` shows 55 — so the tools are recorded, and simply were not being reached
+    # for). Named, not pasted: the deliverable's own risk note is prompt bloat, and a pack
+    # body is ~1,500 tokens against tens for a pointer. Empty unless something matches.
+    if question:
+        try:
+            from aughor.packs.disclosure import disclosure_block
+            block = disclosure_block(question, connection_id)
+            if block:
+                lines += ["", block]
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "pack disclosure is additive; the conversation stands without it",
+                     counter="converse.pack_disclosure")
     if extra:
         lines += ["", extra]
     return "\n".join(lines)

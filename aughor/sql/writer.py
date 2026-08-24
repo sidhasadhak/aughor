@@ -287,7 +287,11 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
             return (
                 "DIAGNOSIS: JULIANDAY is a SQLite function — DuckDB doesn't have it. "
                 "For day differences use datediff('day', date1, date2). "
-                "For date-to-number conversions use epoch_days(date::DATE) or CAST(date AS DATE) arithmetic."
+                # `epoch_days` was recommended here and DOES NOT EXIST in DuckDB — the
+                # repair turned one Catalog Error into another. Verified against the
+                # engine: the epoch family is epoch / epoch_ms / epoch_us / epoch_ns.
+                "For a day NUMBER use date_diff('day', DATE '1970-01-01', d); for seconds "
+                "since the epoch use epoch(d). Both take a DATE or a TIMESTAMP."
             )
         if "to_char" in err_lower:
             return (

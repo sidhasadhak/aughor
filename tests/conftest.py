@@ -22,16 +22,34 @@ os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
 os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
-# Hermetic kernel ledger — tests must never write to data/system.db
-os.environ.setdefault(
-    "AUGHOR_SYSTEM_DB",
-    os.path.join(tempfile.mkdtemp(prefix="aughor-test-ledger-"), "system.db"),
-)
+# Hermetic kernel ledger — tests must never write to data/system.db.
+#
+# ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An
+# INHERITED override punches straight through this wall, and it does so in two different
+# ways depending on where it points:
+#
+#   * at real data — the suite writes it. Every incident described in the comments below
+#     (the emptied registry, the destroyed exploration workspace, the eval-graduation
+#     evidence) is what that costs.
+#   * at a persistent throwaway — the suite becomes STATEFUL ACROSS RUNS, and nothing
+#     catches it: `test_every_store_env_override_is_pointed_at_the_test_dir` asserts the
+#     path is not inside `data/`, which a reused /tmp file satisfies. Measured: four
+#     modules (task_history, agent_alert_plane, kinetic_executor, agent_revision_diff)
+#     accumulate ledger rows and produce 7 failures on the second run against one file,
+#     with the same code that passes on a fresh one.
+#
+# The second is the likelier mistake, because exporting a throwaway ledger is exactly the
+# right habit for a BARE SCRIPT (which would otherwise open data/system.db alongside a
+# running API). Carrying that habit into pytest is what this line refuses. A test that
+# needs a specific store uses `monkeypatch.setenv`, which runs after this and still wins.
+os.environ["AUGHOR_SYSTEM_DB"] = os.path.join(
+    tempfile.mkdtemp(prefix="aughor-test-ledger-"), "system.db")
 # Hermetic connection registry — tests must NEVER mutate data/connections.db (a full
 # suite run once emptied the live registry because these paths were hardcoded).
 _test_registry_dir = tempfile.mkdtemp(prefix="aughor-test-registry-")
-os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(_test_registry_dir, "connections.db"))
-os.environ.setdefault("AUGHOR_CONNECTION_SETTINGS", os.path.join(_test_registry_dir, "connection_settings.json"))
+os.environ["AUGHOR_REGISTRY_DB"] = os.path.join(_test_registry_dir, "connections.db")
+os.environ["AUGHOR_CONNECTION_SETTINGS"] = os.path.join(_test_registry_dir,
+                                                        "connection_settings.json")
 
 # Hermetic remaining stores — history/metastore/workspaces/audit/canvas/... all defaulted to
 # the live data/ dir and were mutated in-place by the suite (OPS-02 / DATA-01, the same class
@@ -107,7 +125,7 @@ for _env, _file in (
     # evidence in a graduation decision.
     ("AUGHOR_EVALS_DB", "evals.db"),
 ):
-    os.environ.setdefault(_env, os.path.join(_test_stores_dir, _file))
+    os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 
 # WP-4 — three stores write into a DIRECTORY (JSONL / JSON files), not a single file, and
 # had no env override: episode collectors (data/episodes_*.jsonl), agent procedural memory
@@ -123,19 +141,16 @@ for _env, _file in (
 # construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                  "AUGHOR_STATE_DIR"):
-    os.environ.setdefault(_dir_env, _test_stores_dir)
+    os.environ[_dir_env] = _test_stores_dir                    # assigned, not setdefault
 
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
 # written by the intelligence build when `ontology.column_config` is on; isolate it so
 # the suite never mutates the live tree (born hermetic, unlike the older data/ stores).
-os.environ.setdefault(
-    "AUGHOR_COLUMN_CONFIG_ROOT", os.path.join(_test_stores_dir, "ontology_column_config")
-)
+os.environ["AUGHOR_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
+                                                       "ontology_column_config")
 # R8a — the documents registry (data/documents.json) is written by every index/delete;
 # isolate it so suite-driven indexing can never mutate the live registry.
-os.environ.setdefault(
-    "AUGHOR_DOCUMENTS_REGISTRY", os.path.join(_test_stores_dir, "documents.json")
-)
+os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
 
 # Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
 # inherited from the developer's machine: it holds the operator's chosen backend AND
@@ -143,9 +158,7 @@ os.environ.setdefault(
 # in the AUGHOR_SECRET_KEY that decrypts them — so a test could resolve a real paid
 # binding without a single key in its own env. Isolated like every other store; the
 # file simply doesn't exist, so tests see the pure env→default precedence.
-os.environ.setdefault(
-    "AUGHOR_LLM_CONFIG_PATH", os.path.join(_test_stores_dir, "llm_config.json")
-)
+os.environ["AUGHOR_LLM_CONFIG_PATH"] = os.path.join(_test_stores_dir, "llm_config.json")
 
 # VA-3 — the telemetry EXPORT switches. `AUGHOR_OTLP_ENDPOINT` (and the Langfuse keys,
 # which ride the same pipeline) turn span export on for the whole process. Without this,
@@ -201,7 +214,7 @@ for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_
     _src = os.path.join(_repo_data, _file)
     if os.path.exists(_src) and not os.path.exists(_dst):
         _shutil.copyfile(_src, _dst)
-    os.environ.setdefault(_env, _dst)
+    os.environ[_env] = _dst                                    # assigned, not setdefault
 
 # The authored pack root, same reasoning one level up: a DIRECTORY of tracked content the
 # suite reads (the sample pack) and could write (promotion rewrites pack.yaml). A copy gives
@@ -210,7 +223,7 @@ _packs_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _packs_dst = os.path.join(_test_stores_dir, "packs-authored")
 if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
     _shutil.copytree(_packs_src, _packs_dst)
-os.environ.setdefault("AUGHOR_PACKS_DIR", _packs_dst)
+os.environ["AUGHOR_PACKS_DIR"] = _packs_dst
 
 
 

@@ -123,7 +123,15 @@ class SQLiteConnection(Connector):
         # survives the rewrite exactly as it does on the unparameterised path.
         cur = self._conn.execute(self.translate(sql), params)
         cols = [d[0] for d in cur.description] if cur.description else []
-        return cols, cur.fetchmany(self.max_rows)
+        rows = cur.fetchmany(self.max_rows)
+        # This connector's `execute` captures typed rows, so its bound path has to as
+        # well — otherwise adding a parameter to a query silently drops the per-column
+        # types, which is the asymmetry the route-level fix exists to remove. Offered
+        # from the same slice the result will carry: `_security_post` mirrors its budget
+        # slice and PII redaction onto this sink POSITIONALLY.
+        from aughor.db.connection import offer_typed_rows
+        offer_typed_rows(rows, truncated=len(rows) >= self.max_rows, types=[])
+        return cols, rows
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         # Gate through the public security interface; the read-only connection

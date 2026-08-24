@@ -223,7 +223,7 @@ def _infer_col_type(values) -> str:
 
 
 def _typed_response(result, payload: dict, limit: int, duration_ms: float,
-                    receipt_id, caveats: list[str]) -> dict:
+                    receipt_id, caveats: list[str], requested_sql: str = "") -> dict:
     """Assemble the format:"typed" response from an execute_typed payload. Rows are
     sliced back to the requested limit (the n+1 probe row never leaves the server);
     the probe row arriving is what makes `truncated` honest."""
@@ -251,7 +251,21 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
         "row_count": len(rows),
         "truncated": truncated,
         "duration_ms": round(duration_ms, 1),
-        "sql": result.sql,
+        # `requested_sql` — what the USER wrote — and not `result.sql`, which is whatever
+        # the executor made of it. Two things happen to a statement between here and the
+        # engine, and neither belongs in a field callers persist:
+        #
+        #   * the row cap wraps it (`SELECT * FROM (…) AS __q LIMIT n`), so a preview limit
+        #     gets baked in and `__q` is a synthetic alias the user never wrote;
+        #   * `DuckDBConnection._run` transpiles through sqlglot, which renders a `:name`
+        #     placeholder as `$name` — so one parameterised query came back spelled one way
+        #     on a duckdb connection and another on the Workspace.
+        #
+        # Not cosmetic: **Pin** (`pinQueryToDashboard`) and **Schedule** both persist this
+        # string, so a card pinned from a 50-row preview was permanently capped at 50 and
+        # wrapped in a subquery. `_write_builder_receipt` already used `body.sql` for
+        # exactly this reason; the response field had never followed it.
+        "sql": requested_sql or result.sql,
         "cached": False,
         "error": result.error,
         "receipt_id": receipt_id,
@@ -335,7 +349,11 @@ async def query_run(body: _QueryRunRequest, request: Request):
                     "row_count": cached.row_count,
                     "truncated": bool(extras.get("truncated")),
                     "duration_ms": 0.0,
-                    "sql": cached.sql,
+                    # The cache stores the RESULT, whose `.sql` is the executor's form —
+                    # so a cache hit used to hand back a different string than the live
+                    # run it is meant to be indistinguishable from. Both answer with what
+                    # the user asked for.
+                    "sql": body.sql,
                     "cached": True,
                     "error": None,
                     "receipt_id": receipt_id,
@@ -347,7 +365,7 @@ async def query_run(body: _QueryRunRequest, request: Request):
                 "rows": cached.rows,
                 "row_count": cached.row_count,
                 "duration_ms": 0.0,
-                "sql": cached.sql,
+                "sql": body.sql,
                 "cached": True,
                 "error": None,
                 "receipt_id": receipt_id,
@@ -385,11 +403,15 @@ async def query_run(body: _QueryRunRequest, request: Request):
                     # subquery wrap hides whether the raw query had more rows, so
                     # row n+1 arriving is the only honest "there was more" signal.
                     sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit + 1 if _typed else _limit}"
-                if _params:
-                    # Parameters and the typed capture do not compose yet: the typed
-                    # side-channel hangs off `execute()`, and binding takes its own
-                    # path. Refusing beats serving strings under a "typed" label —
-                    # the same call SE-0 made for `use_bulk`.
+                if _params and _typed:
+                    # They compose now. The capture site always did fire on the bound
+                    # path — `_offer_typed_rows` sits after the `if params:` branch in
+                    # every connector that has one — but the route picked
+                    # `execute_with_params` OR `execute_typed`, so the rows went into a
+                    # sink nobody had set and a parameterised query came back untyped.
+                    result, typed_payload = db.execute_with_params_typed(
+                        _source, sql, _params)
+                elif _params:
                     result = db.execute_with_params(_source, sql, _params)
                 elif _typed:
                     result, typed_payload = db.execute_typed(_source, sql)
@@ -436,7 +458,8 @@ async def query_run(body: _QueryRunRequest, request: Request):
     caveats = list(getattr(result, "caveats", []) or [])
 
     if _typed and typed_payload is not None:
-        typed = _typed_response(result, typed_payload, _limit, duration_ms, receipt_id, caveats)
+        typed = _typed_response(result, typed_payload, _limit, duration_ms,
+                                receipt_id, caveats, requested_sql=body.sql)
         if body.use_cache and not result.error:
             from aughor.db.matcache import put_cache
             # Cache what the RESPONSE says, not what the cursor returned: `_typed_response`
@@ -462,7 +485,7 @@ async def query_run(body: _QueryRunRequest, request: Request):
         "rows": result.rows,
         "row_count": result.row_count,
         "duration_ms": round(duration_ms, 1),
-        "sql": result.sql,
+        "sql": body.sql,          # the user's, not the executor's — see `_typed_response`
         "cached": False,
         "error": result.error,
         "receipt_id": receipt_id,

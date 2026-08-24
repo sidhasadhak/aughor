@@ -922,10 +922,12 @@ class LocalUploadConnection(Connector):
         q = (
             f'SELECT count(*) FILTER (WHERE "{c}" IS NOT NULL '
             f"AND trim(CAST(\"{c}\" AS VARCHAR)) <> '') AS nn, {probes}, "
-            # DuckDB's TRY_CAST('4.2' AS BIGINT) SUCCEEDS, truncating to 4 — so a rating
-            # or price column probed in _PROBE_TYPES order was suggested as BIGINT, and
-            # accepting that suggestion silently discarded the fractional part of every
-            # value. Count the fractional values so BIGINT can be ruled out below.
+            # DuckDB's TRY_CAST('4.2' AS BIGINT) SUCCEEDS — and it ROUNDS rather than
+            # truncating, which is worse than this comment used to claim: 4.5 and 4.9 both
+            # become 5, -4.9 becomes -5 (verified against the engine). So a rating or price
+            # column probed in _PROBE_TYPES order was suggested as BIGINT, and accepting
+            # that suggestion silently moved every value to the nearest integer rather than
+            # merely dropping a fraction. Count the fractional values so BIGINT is ruled out.
             f'count(*) FILTER (WHERE try_cast("{c}" AS DOUBLE) IS NOT NULL '
             f'AND try_cast("{c}" AS DOUBLE) <> floor(try_cast("{c}" AS DOUBLE))) AS frac '
             f"FROM {src}"

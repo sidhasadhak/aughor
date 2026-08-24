@@ -1,0 +1,54 @@
+# Routing, not documentation. `routing.score_pack` reads intent_tags, and a one-line
+# description is too thin a signal on its own: measured, "why is my revenue column stored as
+# a string?" scored 0.0 against this pack's description — the pack whose whole subject is
+# casting surprises. These are the words a user actually types when they have hit one of the
+# failures the prose explains, not the words the prose uses to explain them.
+intent_tags:
+  # the casting section
+  - cast
+  - varchar
+  - string
+  - text column
+  - decimal
+  - rounding
+  - truncated
+  - fractional
+  # integer division
+  - divide
+  - division
+  - ratio
+  - percentage
+  - average
+  # date arithmetic
+  - date difference
+  - days between
+  - datediff
+  - timestampdiff
+  - interval
+  - date_part
+  - extract
+  - epoch
+  - julianday
+  - to_char
+  - strftime
+  # resolution + file reads
+  - schema qualifier
+  - table does not exist
+  - csv
+  - parquet
+  - read file
+  # sampling and approximation
+  - sample
+  - approx
+  - distinct count
+  # the engine itself
+  - duckdb
+  - dialect
+  - syntax error
+canonical:
+  - Why did my numbers lose their decimals after a cast?
+  - Why is this ratio coming out as a whole number?
+  - How do I get the number of days between two dates?
+  - Why does date_part fail on a date subtraction?
+  - What is the DuckDB equivalent of to_char or TIMESTAMPDIFF?
+  - Why does my query read a file when I meant a table?
