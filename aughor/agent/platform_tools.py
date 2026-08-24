@@ -299,6 +299,19 @@ def read_pack(connection_id: str, args: dict) -> dict:
                 "why": (f"'{pack_id}' is {pack.manifest.status}, not active. Imported "
                         "prose is inert until a person promotes it.")}
 
+    # Active is not sufficient: the pack also has to be FOR this connection. An engine
+    # pack read against another engine is worse than no pack — it is a confident recipe
+    # for a system the reader is not connected to, in a form indistinguishable from one
+    # that fits. Refused with the scope so the model can say why rather than retry.
+    from aughor.packs import scope as pack_scope
+    _ents = pack_scope.entries(pack.manifest.scope)
+    if not pack_scope.applies(pack, connection_id):
+        return {"pack_id": pack_id, "status": pack.manifest.status, "readable": False,
+                "scope": _ents,
+                "why": (f"'{pack_id}' applies to {pack_scope.label(_ents)}, and this "
+                        "connection is not one of them. Its advice is about a different "
+                        "system — do not apply it here.")}
+
     prose = (getattr(pack, PROSE_FIELD, '') or '').strip()
     truncated = len(prose) > _MAX_PACK_PROSE
     return {
@@ -313,6 +326,7 @@ def read_pack(connection_id: str, args: dict) -> dict:
         "source": pack.manifest.source,
         "source_url": pack.manifest.source_url,
         "licence": pack.manifest.licence,
+        "scope": _ents,
         "prose": prose[:_MAX_PACK_PROSE],
         "truncated": truncated,
         "metrics": [{"name": m.name, "definition": m.definition} for m in pack.metrics[:12]],
@@ -331,8 +345,13 @@ def list_packs(connection_id: str, args: dict) -> dict:
     descriptions, then spends a `read_pack` call on the one that matches.
     """
     from aughor.packs import load_binding, load_pack
+    from aughor.packs import scope as pack_scope
     from aughor.packs.roots import all_pack_ids, pack_dir
 
+    # One lookup for the whole roster, and only if some pack actually asks about the
+    # engine: asking per pack would open the connection registry once per installed pack
+    # to learn the same fact, and asking eagerly would do it even when no pack cares.
+    read_conn_type = pack_scope.lazy_conn_type(connection_id)
     packs = []
     for pack_id in all_pack_ids():
         entry: dict = {"id": pack_id}
@@ -341,12 +360,25 @@ def list_packs(connection_id: str, args: dict) -> dict:
             continue
         try:
             pack = load_pack(root)
+            # A pack out of scope here stays LISTED — hiding it makes "no pack for this"
+            # and "no such pack" look identical to anyone asking what is installed — but
+            # it arrives without a description. Rung 1 exists to be scanned cheaply, and
+            # a paragraph about an engine this connection does not speak is the one entry
+            # that costs tokens and can only mislead.
+            ents = pack_scope.entries(pack.manifest.scope)
+            applies = pack_scope.ANY in ents or pack_scope.matches(
+                ents, connection_id=connection_id, conn_type=read_conn_type())
             entry.update({"name": pack.manifest.name, "status": pack.manifest.status,
                           "domains": pack.manifest.domains,
-                          "description": _pack_description(pack),
                           "partial": pack.manifest.partial,
                           "source": pack.manifest.source,
-                          "readable": pack.manifest.status == "active"})
+                          "scope": ents,
+                          "applies_to_this_connection": applies,
+                          "readable": pack.manifest.status == "active" and applies})
+            if applies:
+                entry["description"] = _pack_description(pack)
+            else:
+                entry["why_not"] = f"for {pack_scope.label(ents)}, not this connection"
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "an unloadable pack is listed by id, not hidden",
@@ -662,7 +694,9 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             description=(
                 "Installed specialist packs (domain expertise bundles) and whether "
                 "one is bound to this connection — the bound pack includes its "
-                "playbooks. For 'what domain expertise is active here'."
+                "playbooks. For 'what domain expertise is active here'. Packs carry "
+                "`applies_to_this_connection`: one that is false is about a different "
+                "engine and cannot be read here."
             ),
             parameters=_EMPTY_PARAMS,
             run=lambda a: list_packs(connection_id, a),
@@ -673,7 +707,9 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
                 "The full prose of ONE domain pack, by id. Call it after "
                 "`list_packs` when a pack's description matches the question — that "
                 "two-step is deliberate, so N descriptions stay cheap and only the "
-                "body you need is fetched. Active packs only. A `partial` pack is "
+                "body you need is fetched. Active packs that apply to THIS connection "
+                "only — a pack scoped to another engine is refused with its scope. A "
+                "`partial` pack is "
                 "prose about a domain and knows nothing about this warehouse's "
                 "tables, so ground its advice in real columns before relying on it."
             ),

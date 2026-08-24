@@ -4695,6 +4695,9 @@ export interface PackSummary {
   name?: string;
   status?: string;
   version?: number;
+  /** Which connections this pack is for: `*`, `engine:<type>`, or a connection id.
+   *  Half the reason a pack is or is not in play — status alone is the other half. */
+  scope?: string[];
   domains?: string[];
   metrics?: number;
   roles?: number;

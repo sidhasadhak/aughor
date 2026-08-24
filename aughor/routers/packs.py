@@ -17,6 +17,7 @@ from aughor.packs import (
     schema_facts_from_table_cols, save_binding, load_binding,
 )
 from aughor.packs import roots as _roots
+from aughor.packs import scope as _scope
 from aughor.packs.resolver import binding_report
 
 router = APIRouter(tags=["packs"])
@@ -46,6 +47,10 @@ def _summary(pack_dir: Path) -> dict:
     return {
         "id": pack.id, "name": m.name, "status": m.status, "version": m.version,
         "domains": m.domains, "metrics": len(pack.metrics), "roles": len(pack.entities),
+        # Which connections this pack is FOR. Reported because it now gates reading and
+        # steering: a roster that shows status without scope shows half the reason a pack
+        # is or is not in play.
+        "scope": _scope.entries(m.scope),
         "evals": len(pack.evals), "ok": r.ok,
         "errors": r.errors, "warnings": r.warnings,
     }

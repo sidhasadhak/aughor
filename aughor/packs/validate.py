@@ -51,6 +51,19 @@ def validate_loaded(pack: Pack) -> ValidationReport:
                         f"not in {VALID_GRAINS}")
     if not isinstance(m.scope, dict) or "connections" not in m.scope:
         r.warnings.append("manifest: scope has no 'connections' — defaulting to all")
+    else:
+        # The entries themselves, not just the key's presence. `scope.connections` went
+        # years unread, so nothing ever had a reason to care whether what it held could
+        # mean anything; now that it gates which prose a model may read, an entry that
+        # matches nothing is a silent no-op wearing the shape of a rule.
+        from aughor.packs import scope as pack_scope
+        ents = pack_scope.entries(m.scope)
+        if not ents:
+            r.warnings.append("manifest: scope.connections is empty — this pack applies "
+                              "to NO connection. Omit the key to mean 'all'.")
+        for bad in pack_scope.unknown_engines(ents):
+            r.warnings.append(f"manifest: scope names engine {bad!r}, which is not a "
+                              f"connector type — it will never match a connection")
 
     # ── metrics ↔ entity roles (the binding contract is checkable statically) ───
     declared_roles = set(pack.entities.keys())

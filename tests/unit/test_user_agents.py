@@ -309,7 +309,11 @@ def test_intake_pool_restricted_to_agent_packs(monkeypatch):
     # `partial` is on the manifest of every real Pack; intake filters on it because a
     # prose-only pack cannot inject and would otherwise shadow one that can.
     def _fake(pid):
-        return types.SimpleNamespace(id=pid, manifest=types.SimpleNamespace(partial=False))
+        # `scope` is read for every pack in the pool now; a real manifest always
+        # carries it, so the fake completes rather than the reader loosening.
+        return types.SimpleNamespace(
+            id=pid, manifest=types.SimpleNamespace(partial=False,
+                                                   scope={"connections": ["*"]}))
 
     pack_a, pack_b = _fake("pack-a"), _fake("pack-b")
     monkeypatch.setattr(intake, "active_packs", lambda packs_dir=None: [pack_a, pack_b])

@@ -319,6 +319,36 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
     return existing
 
 
+def get_conn_type(conn_id: str) -> str:
+    """The connector TYPE for a connection, without decrypting anything.
+
+    `get_dsn` is the only way this was previously askable, and it does two things a caller
+    that wants the type alone should not have to pay for: it decrypts the DSN (which needs
+    `AUGHOR_SECRET_KEY`, so a metadata question fails on an install that never set one), and
+    it raises for a builtin that is present-but-unavailable. Neither condition changes what
+    TYPE a connection is — `aughor_ops` is an `aughor_ops` connection whether or not the
+    task table is enabled — so this answers the narrow question narrowly.
+
+    Raises `KeyError` for an id that does not exist, matching `get_dsn`.
+    """
+    builtin = {
+        SAMPLES_ID: "duckdb",
+        WORKSPACE_ID: "local_upload",
+        AUGHOR_OPS_ID: "aughor_ops",
+        BUILTIN_ID: "duckdb",
+        POSTGRES_BUILTIN_ID: "postgres",
+    }.get(conn_id)
+    if builtin:
+        return builtin
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT conn_type FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    if not row:
+        raise KeyError(f"Connection {conn_id!r} not found")
+    return str(row["conn_type"])
+
+
 def get_dsn(conn_id: str) -> tuple[str, str]:
     """Return (conn_type, plain_dsn) for the given connection ID."""
     if conn_id == SAMPLES_ID:
