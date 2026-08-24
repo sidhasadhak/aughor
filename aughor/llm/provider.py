@@ -562,7 +562,25 @@ def endpoint_for(backend: str) -> tuple[str, str]:
     """
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
-    return _active_base_url(backend), (_active_key(backend) if backend in NEEDS_KEY else "")
+    if backend not in NEEDS_KEY:
+        return _active_base_url(backend), ""
+
+    key = _active_key(backend)
+    # A key that could not be DECRYPTED must never be handed to a provider. `decrypt_secret`
+    # returns an undecryptable value as-is — deliberately, so one bad record cannot take
+    # down a read path — which is right for reading config and wrong at the point of use:
+    # the ciphertext then travels as the credential and the provider answers "Please pass a
+    # valid API key", blaming the key rather than the missing secret. Measured: a call with
+    # `AUGHOR_SECRET_KEY` unset sent `enc:…`, 171 characters of Fernet token, to Google and
+    # got a 400 that named the wrong cause.
+    from aughor.secretvault import is_encrypted
+
+    if is_encrypted(key):
+        raise RuntimeError(
+            f"the stored {backend} key cannot be decrypted — AUGHOR_SECRET_KEY is missing "
+            f"or does not match the one it was encrypted with. The key itself is probably "
+            f"fine; nothing was sent to the provider.")
+    return _active_base_url(backend), key
 
 
 def _active_key(backend: str) -> str:
