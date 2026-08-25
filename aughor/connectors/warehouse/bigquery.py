@@ -37,8 +37,9 @@ class BigQueryConnection(Connector):
         from google.oauth2 import service_account
 
         meta = meta or {}
-        # dsn is the project ID (possibly "bigquery://project" or just "project")
-        self._project = dsn.removeprefix("bigquery://").strip("/") or dsn
+        # dsn is the project ID (possibly "bigquery://project" or just "project");
+        # the connect form sends it as meta["project_id"] with an empty dsn
+        self._project = dsn.removeprefix("bigquery://").strip("/") or meta.get("project_id", "") or dsn
         self._dataset = schema_name or meta.get("dataset") or ""
         self._connection_id = connection_id
 
@@ -46,7 +47,10 @@ class BigQueryConnection(Connector):
         if cred_path:
             creds = service_account.Credentials.from_service_account_file(
                 cred_path,
-                scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
+                # Every BigQuery query executes as a jobs.insert; the readonly scope
+                # cannot create jobs, so it would allow listing but never a query.
+                # Read-only-ness is enforced by IAM roles, not the OAuth scope.
+                scopes=["https://www.googleapis.com/auth/bigquery"],
             )
             self._client = bigquery.Client(project=self._project, credentials=creds)
         else:
