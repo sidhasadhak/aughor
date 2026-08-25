@@ -467,10 +467,10 @@ async def connection_freshness(conn_id: str):
 
         max_ts: str | None = None
         max_source: str | None = None
-        # BigQuery and MySQL spell quoted identifiers with backticks; a double-quoted
-        # name is a string literal there, so every probe errored into the except below
-        # and freshness reported null for engines that had timestamps to offer.
-        q = "`" if getattr(db, "dialect", "") in ("bigquery", "mysql") else '"'
+        # Backtick engines read a double-quoted name as a string literal — every probe
+        # then errored into the except below and freshness reported null.
+        from aughor.db.quoting import ident_quote
+        q = ident_quote(db)
         for table, cols in list(table_cols.items())[:12]:
             date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
             for col in date_cols:
@@ -498,9 +498,8 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    safe_table  = table.replace('"', '').replace(';', '')
-    safe_schema = schema.replace('"', '').replace(';', '') if schema else ""
-    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+    safe_table  = table.replace('"', '').replace('`', '').replace(';', '')
+    safe_schema = schema.replace('"', '').replace('`', '').replace(';', '') if schema else ""
     _limit = int(limit)
 
     def _work():
@@ -510,6 +509,8 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         except KeyError:
             raise HTTPException(status_code=404, detail="Connection not found")
         try:
+            from aughor.db.quoting import qualified_table
+            ref = qualified_table(db, safe_table, safe_schema or None)
             result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
             error = result.error
             if error and getattr(db, "_seed_failed", None):
@@ -535,8 +536,8 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
     same lightweight path as the sample reader, so Overview and Sample Data stay
     in sync even when the heavy whole-connection rich schema is unavailable."""
     loop = asyncio.get_running_loop()
-    safe_table = table.replace('"', "").replace(";", "")
-    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    safe_table = table.replace('"', "").replace('`', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace('`', "").replace(";", "") if schema else ""
     ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
 
     def _work():
@@ -630,7 +631,9 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 except Exception:
                     pass
                 try:
-                    res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
+                    from aughor.db.quoting import qualified_table
+                    fq = qualified_table(db, safe_table, safe_schema or None)
+                    res = db.execute("columns", f"SELECT * FROM {fq} LIMIT 0")
                     cols = [{"name": c, "type": ""} for c in res.columns]
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
