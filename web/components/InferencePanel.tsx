@@ -10,16 +10,8 @@ import { useCallback, useEffect, useState } from "react";
 import { addLlmModel, cacheProbe, getLlmConfig, getLlmModels, removeLlmModel, setLlmConfig, testLlmConfig, type CacheProbeResult, type LlmCapability, type LlmConfig, type LlmModelCatalog, type LlmTestReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
+import { BACKEND_LABEL } from "@/lib/llmMeta";
 
-const BACKEND_LABEL: Record<string, string> = {
-  ollama: "Ollama (local)",
-  lmstudio: "LM Studio (local)",
-  groq: "Groq",
-  together: "Together AI",
-  anthropic: "Anthropic",
-  gemini: "Google Gemini",
-  openrouter: "OpenRouter",
-};
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",
   narrator: "Narrator — report prose",

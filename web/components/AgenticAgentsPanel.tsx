@@ -29,15 +29,16 @@ import {
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
   evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
   getConnections, getJobs,
-  getLlmConfig, getLlmModels, getPacks, listAgentGoldens, listAgentRevisions,
+  getLlmConfig, getPacks, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
   type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
-  type DocumentEntry, type PackSummary, type UserAgent,
+  type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { evalChip } from "@/lib/agentEval";
 import { compactNumber, formatTimestamp } from "@/lib/format";
+import { BACKEND_LABEL } from "@/lib/llmMeta";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -823,20 +824,8 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
   onChanged: () => void; onError: (e: string | null) => void;
   range?: TimeRange;
 }) {
-  const [models, setModels] = useState<string[]>([]);
-  const [catalogBackend, setCatalogBackend] = useState("");
   const [busy, setBusy] = useState(false);
   const [charterRuns, setCharterRuns] = useState<TimelineRun[]>([]);
-
-  useEffect(() => {
-    getLlmModels()
-      .then(c => { setModels(c.models.map(m => m.id)); setCatalogBackend(c.backend); })
-      .catch(() => {
-        getLlmConfig()
-          .then(c => setModels([...new Set(Object.values(c.models || {}))].filter(Boolean) as string[]))
-          .catch(() => setModels([]));
-      });
-  }, []);
 
   // A charter's runs are the JOBS of the kinds it owns — one fetch per kind, because
   // /jobs filters on a single kind. A charter that owns none skips the fetch entirely
@@ -864,18 +853,6 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
     try { await patchAgent(charter.id, { ...body, workspace_id: workspaceId }); onChanged(); }
     catch (e) { onError(String((e as Error)?.message || e)); }
     finally { setBusy(false); }
-  };
-
-  // Free-by-default: pinning a paid OpenRouter model is a deliberate act — the
-  // server refuses it without allow_paid; this confirm is how the user grants it.
-  const pinModel = (model: string) => {
-    const paid = catalogBackend === "openrouter" && model && !model.endsWith(":free");
-    if (paid && !window.confirm(
-      `${model} is a PAID OpenRouter model — free (:free) models are the default, ` +
-      "and every call with this pin bills your OpenRouter credit. Pin it anyway?")) {
-      return;
-    }
-    patch(paid ? { model, allow_paid: true } : { model });
   };
 
   const gov = charter.governance;
@@ -934,18 +911,9 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           <span className="aug-label">
             Governance {workspaceId ? "· this workspace" : "· Org (all workspaces)"}
           </span>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-            <span style={{ width: 110, color: "var(--t3)" }}>Model pin</span>
-            <select className="aug-input" value={gov.model ?? ""} disabled={busy}
-              onChange={e => pinModel(e.target.value)}
-              style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260 }}>
-              <option value="">Role default</option>
-              {models.map(m => <option key={m} value={m}>{m}</option>)}
-              {gov.model && !models.includes(gov.model) && (
-                <option value={gov.model}>{gov.model}</option>
-              )}
-            </select>
-          </label>
+          <CharterModelPin pinned={gov.model ?? null} busy={busy}
+            onPin={(model, allowPaid) =>
+              patch(allowPaid ? { model, allow_paid: true } : { model })} />
           {/* No "use recommended" / "apply to all": the charters carried a hardcoded
               model id per agent, and those were removed with every other model list
               (2026-08-15). An agent runs on the operator's pin, or inherits the role
@@ -958,6 +926,98 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** The charter's model pin — a paste field, not a picker (2026-08-25).
+ *
+ *  Settings → Models is the ONE surface where models are chosen: the provider is
+ *  selected there and each role (coder / narrator / fast) is bound there, as free text
+ *  with the provider's catalogue as suggestions. This panel used to render a second,
+ *  closed dropdown over the same catalogue — two routes to the same decision, and the
+ *  roster's copy could gate a model the Models tab accepts. So the list is gone:
+ *  unpinned, an agent runs on the Models-tab bindings (shown here, so the default is
+ *  never a mystery); to override, paste a model id from that same provider. Free text
+ *  for the Models tab's own reason — a stale list must never gate the model you pay for.
+ */
+export function CharterModelPin({ pinned, busy, onPin }: {
+  pinned: string | null;
+  busy: boolean;
+  /** Persist the pin. `""` clears it back to the Models-tab bindings. */
+  onPin: (model: string, allowPaid: boolean) => void;
+}) {
+  const [cfg, setCfg] = useState<LlmConfig | null>(null);
+  const [draft, setDraft] = useState(pinned ?? "");
+
+  useEffect(() => {
+    getLlmConfig().then(setCfg).catch(() => setCfg(null));
+  }, []);
+  // Re-seed when the SAVED pin moves under the field (a save landed, or a reload) —
+  // otherwise the input keeps showing a draft the server never accepted.
+  useEffect(() => { setDraft(pinned ?? ""); }, [pinned]);
+
+  const backend = cfg?.backend ?? "";
+  const provider = BACKEND_LABEL[backend] ?? backend;
+  const roleModels = cfg?.models ?? {};
+  const defaultsLine = (["coder", "narrator", "fast"] as const)
+    .filter(r => roleModels[r])
+    .map(r => `${r} → ${roleModels[r]}`)
+    .join(" · ");
+
+  const trimmed = draft.trim();
+  const dirty = trimmed !== (pinned ?? "");
+
+  const save = () => {
+    // Free-by-default: pinning a paid OpenRouter model is a deliberate act — the
+    // server refuses it without allow_paid; this confirm is how the user grants it.
+    const paid = backend === "openrouter" && !!trimmed && !trimmed.endsWith(":free");
+    if (paid && !window.confirm(
+      `${trimmed} is a PAID OpenRouter model — free (:free) models are the default, ` +
+      "and every call with this pin bills your OpenRouter credit. Pin it anyway?")) {
+      return;
+    }
+    onPin(trimmed, paid);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>Model pin</span>
+        <input className="aug-input" value={draft} disabled={busy}
+          spellCheck={false} autoComplete="off"
+          placeholder={provider ? `paste a model id from ${provider}` : "paste a model id"}
+          style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260,
+            fontFamily: "var(--font-mono)" }}
+          onChange={e => setDraft(e.target.value)} />
+        {dirty && (
+          <Button size="xs" variant="secondary" disabled={busy} onClick={save}>
+            {trimmed ? "Pin" : "Clear pin"}
+          </Button>
+        )}
+        {!dirty && pinned && (
+          <Button size="xs" variant="ghost" disabled={busy}
+            title="Remove the pin — this agent goes back to the models bound in Settings → Models"
+            onClick={() => onPin("", false)}>
+            Use Models default
+          </Button>
+        )}
+      </label>
+      <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+        {pinned ? (
+          <>Pinned — this agent&rsquo;s coder and narrator calls run on the pinned model;
+            its cheap &ldquo;fast&rdquo; calls stay on the Settings → Models binding. </>
+        ) : defaultsLine ? (
+          <>No pin — this agent runs on the models chosen in Settings → Models
+            ({defaultsLine}). </>
+        ) : (
+          <>No pin — this agent runs on the models chosen in Settings → Models. </>
+        )}
+        Paste any model id {provider ? `${provider} serves` : "your provider serves"} to
+        pin this agent — there is no list here to go stale, and the provider itself is
+        chosen in Settings → Models.
+      </div>
     </div>
   );
 }
