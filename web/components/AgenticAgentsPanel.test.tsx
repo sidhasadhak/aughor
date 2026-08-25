@@ -183,14 +183,14 @@ describe("AgentGuardrailsSection", () => {
   });
 });
 
-// ── charter model pin — one route for choosing a model (2026-08-25) ───────────
+// ── built-in agent model pin — one route for choosing a model (2026-08-25) ────
 //
 // Settings → Models is the only surface that lists models; the roster used to render a
 // second, closed dropdown over the same catalogue. These tests pin the replacement: the
 // field is free text, the inherited default is the Models-tab bindings and is SHOWN, and
 // the paid-OpenRouter consent survives the rewrite.
 
-const { CharterModelPin } = await import("@/components/AgenticAgentsPanel");
+const { AgentModelPin } = await import("@/components/AgenticAgentsPanel");
 
 const llmConfig = (over: Record<string, unknown> = {}) => ({
   backend: "groq",
@@ -198,27 +198,27 @@ const llmConfig = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe("CharterModelPin", () => {
+describe("AgentModelPin", () => {
   beforeEach(() => {
     getLlmConfigFn.mockReset();
     getLlmConfigFn.mockResolvedValue(llmConfig());
   });
 
   it("renders no model list — the catalogue lives in Settings → Models alone", async () => {
-    render(<CharterModelPin pinned={null} busy={false} onPin={() => {}} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
     await screen.findByText(/Settings → Models/);
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("shows the Models-tab bindings an unpinned agent inherits", async () => {
-    render(<CharterModelPin pinned={null} busy={false} onPin={() => {}} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
     expect(await screen.findByText(/coder → llama-3.3-70b/)).toBeInTheDocument();
   });
 
   it("pins a pasted model id", async () => {
     const onPin = vi.fn();
-    render(<CharterModelPin pinned={null} busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
     await userEvent.type(await screen.findByRole("textbox"), "my-org/pasted-model");
     await userEvent.click(screen.getByRole("button", { name: "Pin" }));
     expect(onPin).toHaveBeenCalledWith("my-org/pasted-model", false);
@@ -228,7 +228,7 @@ describe("CharterModelPin", () => {
     getLlmConfigFn.mockResolvedValue(llmConfig({ backend: "openrouter" }));
     const onPin = vi.fn();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<CharterModelPin pinned={null} busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
     await screen.findByText(/OpenRouter/);
     await userEvent.type(screen.getByRole("textbox"), "vendor/big-model");
     await userEvent.click(screen.getByRole("button", { name: "Pin" }));
@@ -244,7 +244,7 @@ describe("CharterModelPin", () => {
     getLlmConfigFn.mockResolvedValue(llmConfig({ backend: "openrouter" }));
     const onPin = vi.fn();
     const confirm = vi.spyOn(window, "confirm");
-    render(<CharterModelPin pinned={null} busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
     await screen.findByText(/OpenRouter/);
     await userEvent.type(screen.getByRole("textbox"), "vendor/small:free");
     await userEvent.click(screen.getByRole("button", { name: "Pin" }));
@@ -255,7 +255,7 @@ describe("CharterModelPin", () => {
 
   it("clears a pin back to the Models-tab bindings", async () => {
     const onPin = vi.fn();
-    render(<CharterModelPin pinned="old-model" busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned="old-model" busy={false} onPin={onPin} />);
     await userEvent.click(
       await screen.findByRole("button", { name: /use models default/i }));
     expect(onPin).toHaveBeenCalledWith("", false);
@@ -263,7 +263,7 @@ describe("CharterModelPin", () => {
 
   it("clears via an emptied field too", async () => {
     const onPin = vi.fn();
-    render(<CharterModelPin pinned="old-model" busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned="old-model" busy={false} onPin={onPin} />);
     await userEvent.clear(await screen.findByRole("textbox"));
     await userEvent.click(screen.getByRole("button", { name: /clear pin/i }));
     expect(onPin).toHaveBeenCalledWith("", false);
@@ -273,7 +273,7 @@ describe("CharterModelPin", () => {
     // The default line degrades; the override route must not.
     getLlmConfigFn.mockRejectedValue(new Error("403"));
     const onPin = vi.fn();
-    render(<CharterModelPin pinned={null} busy={false} onPin={onPin} />);
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
     await userEvent.type(await screen.findByRole("textbox"), "typed-anyway");
     await userEvent.click(screen.getByRole("button", { name: "Pin" }));
     expect(onPin).toHaveBeenCalledWith("typed-anyway", false);

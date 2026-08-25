@@ -911,7 +911,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
           <span className="aug-label">
             Governance {workspaceId ? "· this workspace" : "· Org (all workspaces)"}
           </span>
-          <CharterModelPin pinned={gov.model ?? null} busy={busy}
+          <AgentModelPin pinned={gov.model ?? null} busy={busy}
             onPin={(model, allowPaid) =>
               patch(allowPaid ? { model, allow_paid: true } : { model })} />
           {/* No "use recommended" / "apply to all": the charters carried a hardcoded
@@ -942,7 +942,7 @@ function CharterDetail({ charter, workspaceId, onChanged, onError, range }: {
  *  never a mystery); to override, paste a model id from that same provider. Free text
  *  for the Models tab's own reason — a stale list must never gate the model you pay for.
  */
-export function CharterModelPin({ pinned, busy, onPin }: {
+export function AgentModelPin({ pinned, busy, onPin }: {
   pinned: string | null;
   busy: boolean;
   /** Persist the pin. `""` clears it back to the Models-tab bindings. */
