@@ -141,6 +141,21 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         ORDER BY schema_name, table_name
                         """,
                     ).rows
+            elif getattr(db, "dialect", "") == "bigquery":
+                # BigQuery has no pg_stat_user_tables and its INFORMATION_SCHEMA is
+                # dataset-scoped, so the Postgres introspection below can never run
+                # there — every BigQuery catalog rendered empty. __TABLES__ is a
+                # single free metadata scan and carries a real row count.
+                dataset = schema_filter or getattr(db, "_dataset", "")
+                if not dataset:
+                    # A project-wide connection names no dataset to look in. That is
+                    # "could not look", not "nothing there" — never the deleting [].
+                    db.close()
+                    return None
+                rows = db.execute(
+                    "__catalog__",
+                    f"SELECT dataset_id, table_id, row_count FROM `{dataset}.__TABLES__` ORDER BY table_id",
+                ).rows
             else:
                 rows = db.execute(
                     "__catalog__",

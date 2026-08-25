@@ -467,11 +467,15 @@ async def connection_freshness(conn_id: str):
 
         max_ts: str | None = None
         max_source: str | None = None
+        # BigQuery and MySQL spell quoted identifiers with backticks; a double-quoted
+        # name is a string literal there, so every probe errored into the except below
+        # and freshness reported null for engines that had timestamps to offer.
+        q = "`" if getattr(db, "dialect", "") in ("bigquery", "mysql") else '"'
         for table, cols in list(table_cols.items())[:12]:
             date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
             for col in date_cols:
                 try:
-                    result = db.execute("freshness", f'SELECT MAX("{col}") AS max_ts FROM "{table}"')
+                    result = db.execute("freshness", f'SELECT MAX({q}{col}{q}) AS max_ts FROM {q}{table}{q}')
                     if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
                         val = str(result.rows[0][0])
                         if max_ts is None or val > max_ts:
