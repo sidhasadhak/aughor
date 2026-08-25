@@ -100,6 +100,18 @@ def _run_one(automation) -> None:
         with using_org(org):
             run_automation(automation)
 
+    # Serverless: run the work INLINE, before the tick responds. The kernel path
+    # only awaits the SUBMIT — the work itself becomes an asyncio task, and Vercel
+    # freezes the instance the moment /cron/tick returns, so an enqueued delivery
+    # may never start. Worse, its job row then sits PENDING under this
+    # idempotency key and `submit` hands that same job back on every later tick:
+    # one frozen instance wedged the automation permanently. Inline is the
+    # no-loop fallback below, chosen deliberately — the cron route's maxDuration
+    # is the budget, and the run's own automation_runs row stays the record.
+    import os
+    if os.environ.get("VERCEL"):
+        _work()
+        return
     # Metered execution is permanent (flag endgame Wave 2, 2026-08-06; receipt
     # b167bb891764) — the automation runs as a supervised job when the kernel
     # loop is up; _work() stays the no-loop fallback.

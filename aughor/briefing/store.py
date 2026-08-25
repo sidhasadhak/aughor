@@ -1,39 +1,46 @@
-"""Brief subscription persistence — data/brief_subscriptions.json.
+"""Brief subscription persistence — the Ledger, with data/brief_subscriptions.json
+as the legacy file it imports once and falls back to.
 
-Mirrors the Action Hub trigger store: a flat JSON list, upsert-by-id, idempotent.
+Mirrors the Action Hub trigger store: a flat list, upsert-by-id, idempotent. The
+truth moved off the bare file because a serverless bundle ships ``data/`` empty
+and read-only: every deployed instance read an empty list (so the cron tick
+evaluated zero briefs, forever) and creating a subscription failed on the write.
+:class:`~aughor.util.json_store.LedgerListStore` rides the Ledger — Postgres
+behind ``AUGHOR_DB_URL`` on serverless — so a subscription survives the instance
+that created it; local deployments keep working file-first via its fallback.
 """
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from aughor.briefing.models import BriefSubscription
 from aughor.db.sqlite_util import resolve_db_path
+from aughor.util.json_store import LedgerListStore
 
 # Honour an AUGHOR_BRIEFS_FILE override (the conftest points it at a temp dir) so the
 # suite can never mutate the live data/ store — the OPS-02/DATA-01 hermeticity rule.
 _PATH = resolve_db_path("AUGHOR_BRIEFS_FILE", Path("data/brief_subscriptions.json"))
 
 
+def _store() -> LedgerListStore:
+    """Resolved from ``_PATH`` at CALL time, not import time. The path doubles as
+    the store's identity in the Ledger, and tests isolate by monkeypatching
+    ``_PATH`` — a store captured at import would keep every test (and every
+    operator override) on the original identity."""
+    return LedgerListStore(_PATH)
+
+
 from aughor.util.time import now_iso_z as _now
 
 
 def _load() -> list[dict]:
-    try:
-        if _PATH.exists():
-            return json.loads(_PATH.read_text())
-    except Exception as exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "subscription store read is best-effort; a missing/corrupt file degrades to an empty list",
-                 counter="briefs.store.load")
-    return []
+    return _store().all()
 
 
 def _save(rows: list[dict]) -> None:
-    _PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PATH.write_text(json.dumps(rows, indent=2, default=str))
+    _store().save_all(rows)
 
 
 def list_subscriptions(conn_id: Optional[str] = None) -> list[BriefSubscription]:

@@ -10,14 +10,19 @@ from typing import Optional
 from aughor.notifications.models import ActionTrigger, ActionLog, is_secret_header
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.secretvault import encrypt_secret, decrypt_secret
-from aughor.util.json_store import JsonListStore
+from aughor.util.json_store import JsonListStore, LedgerListStore
 
 # WP-4 — env override (AUGHOR_ACTIONS_DIR) for test isolation; both JSON stores were
 # hardcoded to the live data/ dir with no override (a non-hermetic hole).
 _ACTIONS_DIR   = resolve_db_path("AUGHOR_ACTIONS_DIR", Path("data"))
 _TRIGGERS_PATH = _ACTIONS_DIR / "action_triggers.json"
 _LOGS_PATH     = _ACTIONS_DIR / "action_logs.json"
-_triggers = JsonListStore(_TRIGGERS_PATH)
+# Triggers are DELIVERY CONFIGURATION — a serverless instance must see the trigger
+# another instance created, and the file store's silent-swallow write made a
+# trigger look created while every delivery then failed "trigger not found". The
+# Ledger-backed store closes both; logs stay file-first (per-instance episode
+# detail, not configuration).
+_triggers = LedgerListStore(_TRIGGERS_PATH)
 _logs     = JsonListStore(_LOGS_PATH)
 
 

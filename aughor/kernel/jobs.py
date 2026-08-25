@@ -509,10 +509,19 @@ class JobKernel:
 
     def sweep_stale(self, *, stale_after: int = _STALE_SECONDS) -> int:
         """Mark INTERRUPTED any RUNNING job whose heartbeat went silent and whose task
-        is gone — the in-process orphan case (task died without a terminal transition)."""
+        is gone — the in-process orphan case (task died without a terminal transition).
+
+        PENDING is swept too, on its created_at: a job submitted on a serverless
+        instance that froze before the task ever started leaves a PENDING row with
+        no heartbeat, no lease, and no living task anywhere — and because ``submit``
+        returns the existing job for any ACTIVE state under an idempotency key, that
+        one row blocked its automation on every later tick. boot_recovery fails
+        these on the next cold start, but the external-clock deployment sweeps HERE
+        (``/cron/tick``), which only looked at RUNNING — so the wedge outlived every
+        warm tick between boots."""
         n = 0
         cutoff = datetime.now(timezone.utc).timestamp() - stale_after
-        for job in self.ledger.jobs_where(states=[JobState.RUNNING]):
+        for job in self.ledger.jobs_where(states=[JobState.RUNNING, JobState.PENDING]):
             if job["id"] in self._tasks:
                 continue
             hb = job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")
