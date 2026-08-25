@@ -184,6 +184,18 @@ def list_traces(limit: int = 50, offset: int = 0,
                      if s["trace_id"] in set(trace_ids)]
         return {"measured": True, "recording": True, "traces": summaries}
 
+    # An unknown status used to fall through every branch and return the WHOLE set, which
+    # is the worst available answer: it looks like a successful filter and reports the
+    # unfiltered total as the match count. Caught live — `status=running`, the word this
+    # parameter used to accept, answered 73 of 73 after the rename. A stale bookmark or a
+    # typo now says so instead of quietly agreeing.
+    if status not in (None, "", "ok", "error", "unfinished"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown status {status!r} — use ok, error or unfinished. "
+                   f"'unfinished' means no final response was recorded, which is not the "
+                   f"same as still running.")
+
     index = session_log.session_index(
         org_id=org_id, limit=max(1, min(int(limit), 200)), offset=max(0, int(offset)),
         since=since, until=until, status=status, user_id=user_id, agent_id=agent_id,

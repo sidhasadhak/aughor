@@ -152,3 +152,24 @@ def test_the_route_reports_the_match_count_and_its_window(monkeypatch):
 
     assert body["total"] == 87 and body["scanned_events"] == 4000
     assert len(body["traces"]) == 1
+
+
+def test_an_unknown_status_is_refused_rather_than_ignored(monkeypatch):
+    """It used to fall through every branch and return the WHOLE set — a filter that looks
+    successful and reports the unfiltered total as its match count. Caught live: `running`,
+    the word this parameter accepted before the rename, answered 73 of 73."""
+    from fastapi.testclient import TestClient
+
+    from aughor.api import app
+
+    monkeypatch.setattr(session_log, "session_index", lambda **kw: {
+        "rows": [], "total": 0, "limit": 25, "offset": 0, "scanned_events": 4000})
+    client = TestClient(app)
+
+    bad = client.get("/traces", params={"status": "running"})
+    assert bad.status_code == 422
+    assert "unfinished" in bad.json()["detail"]
+
+    for good in ("ok", "error", "unfinished"):
+        assert client.get("/traces", params={"status": good}).status_code == 200
+    assert client.get("/traces").status_code == 200, "no status at all still means all runs"
