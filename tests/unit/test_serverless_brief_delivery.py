@@ -98,8 +98,7 @@ def test_brief_subscriptions_survive_without_their_file(tmp_path, monkeypatch):
     from aughor.briefing import store as briefs
     from aughor.briefing.models import BriefSubscription
 
-    fresh = LedgerListStore(tmp_path / "subs.json")
-    monkeypatch.setattr(briefs, "_store", fresh)
+    monkeypatch.setattr(briefs, "_PATH", tmp_path / "subs.json")
 
     sub = briefs.save_subscription(
         BriefSubscription(name="Daily brief", conn_id="c1", trigger_id="t1"))

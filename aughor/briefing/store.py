@@ -23,18 +23,24 @@ from aughor.util.json_store import LedgerListStore
 # suite can never mutate the live data/ store — the OPS-02/DATA-01 hermeticity rule.
 _PATH = resolve_db_path("AUGHOR_BRIEFS_FILE", Path("data/brief_subscriptions.json"))
 
-_store = LedgerListStore(_PATH)
+
+def _store() -> LedgerListStore:
+    """Resolved from ``_PATH`` at CALL time, not import time. The path doubles as
+    the store's identity in the Ledger, and tests isolate by monkeypatching
+    ``_PATH`` — a store captured at import would keep every test (and every
+    operator override) on the original identity."""
+    return LedgerListStore(_PATH)
 
 
 from aughor.util.time import now_iso_z as _now
 
 
 def _load() -> list[dict]:
-    return _store.all()
+    return _store().all()
 
 
 def _save(rows: list[dict]) -> None:
-    _store.save_all(rows)
+    _store().save_all(rows)
 
 
 def list_subscriptions(conn_id: Optional[str] = None) -> list[BriefSubscription]:
