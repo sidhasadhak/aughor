@@ -279,14 +279,19 @@ def recover_session(trace_id: str, *, org_id: Optional[str] = None,
 
 
 def recent_sessions(*, org_id: Optional[str] = None, limit: int = 50,
-                    scan: int = 2000) -> list[dict]:
+                    scan: int = 2000, since: Optional[str] = None,
+                    until: Optional[str] = None, agent_id: Optional[str] = None,
+                    conn_id: Optional[str] = None) -> list[dict]:
     """One summary row per recent run, newest first.
 
     Derived by folding the raw events rather than kept as a separate table:
     a summary that can disagree with its own event log is worse than no summary.
     """
     from aughor.kernel.ledger import Ledger
-    rows = Ledger.default().session_events(org_id=org_id, limit=scan)
+    # Pushed to the query, not applied after the fold: a window the store can narrow is
+    # one the scan does not have to spend on rows the caller will discard.
+    rows = Ledger.default().session_events(org_id=org_id, limit=scan, since=since,
+                                           until=until, agent_id=agent_id, conn_id=conn_id)
     runs: dict[str, dict] = {}
     for e in reversed(rows):  # oldest-first so `started`/question land correctly
         r = runs.setdefault(e["trace_id"], {
@@ -295,8 +300,19 @@ def recent_sessions(*, org_id: Optional[str] = None, limit: int = 50,
             "investigation_id": None, "session_id": e.get("session_id"),
             "agent_id": e.get("agent_id"), "conn_id": e.get("conn_id"),
             "ok": None, "duration_ms": None,
+            # ── the index's columns ────────────────────────────────────────────────
+            # Folded from the same rows as everything above, for the same reason: a
+            # summary kept beside its event log is a summary that can disagree with it.
+            "user_id": None, "ended_at": e["at"], "answer": "",
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+            # Cost is a FLOOR. `unpriced_calls` is what keeps a $0.00 from reading as
+            # free when it means nobody published a rate for that model.
+            "cost_usd": 0.0, "unpriced_calls": 0, "calls_without_usage": 0,
         })
         r["events"] += 1
+        r["ended_at"] = e["at"]
+        if not r["user_id"] and e.get("user_id"):
+            r["user_id"] = e["user_id"]
         kind = e["kind"]
         if kind == USER_REQUEST:
             r["question"] = (e.get("payload") or {}).get("question", "")
@@ -304,17 +320,108 @@ def recent_sessions(*, org_id: Optional[str] = None, limit: int = 50,
             r["tool_calls"] += 1
         elif kind == LLM_CALL:
             r["llm_calls"] += 1
+            if e.get("total_tokens") is None:
+                # Unknown, not zero — several backends omit usage entirely.
+                r["calls_without_usage"] += 1
+            else:
+                r["prompt_tokens"] += int(e.get("prompt_tokens") or 0)
+                r["completion_tokens"] += int(e.get("completion_tokens") or 0)
+                r["total_tokens"] += int(e.get("total_tokens") or 0)
+                from aughor.obs.usage import cost_of_call
+                usd, priced = cost_of_call(e)
+                if priced:
+                    r["cost_usd"] += usd
+                else:
+                    r["unpriced_calls"] += 1
         elif kind == EXECUTION_ERROR:
             r["errors"] += 1
         elif kind == FINAL_RESPONSE:
             r["ok"] = e.get("ok")
             r["duration_ms"] = e.get("duration_ms")
+            # What the run ANSWERED, as far as the log knows: the headline is the only
+            # answer text a final-response row carries. Named `answer` rather than
+            # `output` so nobody reads it as the full response body.
+            r["answer"] = (e.get("payload") or {}).get("headline", "") or ""
         if e.get("investigation_id"):
             r["investigation_id"] = e["investigation_id"]
         if e.get("conn_id"):
             r["conn_id"] = e["conn_id"]
     out = sorted(runs.values(), key=lambda r: r["started"], reverse=True)
     return out[:limit]
+
+
+def session_index(
+    *,
+    org_id: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
+    scan: int = 4000,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    status: Optional[str] = None,
+    user_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    conn_id: Optional[str] = None,
+    q: Optional[str] = None,
+    min_duration_ms: Optional[float] = None,
+    max_duration_ms: Optional[float] = None,
+    min_tokens: Optional[int] = None,
+) -> dict:
+    """The trace index: filtered, counted, then paginated — in that order.
+
+    Order is the whole contract. Filtering a PAGE and calling the result a filter is the
+    defect this signature exists to prevent: it looks identical to the reader and answers
+    a different question, and a total taken after the slice would confirm the wrong one.
+    So the fold runs over the scan window, every filter applies to all of it, `total` is
+    counted there, and only then does the page get cut.
+
+    ⚠️ `scan` bounds how far back the fold reaches, so `total` is a total WITHIN that
+    window and `scanned_events` is returned to say how wide it was. A count with no stated
+    window is a claim about all of history that nobody checked.
+
+    `status`: ``ok`` · ``error`` · ``unfinished``.
+
+    ⚠️ ``unfinished`` means NO FINAL RESPONSE WAS RECORDED — not that a run is in flight.
+    Only the `/ask` and `/chat` door wrapper emits one, so a run that reached the log by
+    any other path never gets it. Measured on a real install: 53 of 73 runs, the oldest
+    four days old. Calling that "running" would have been wrong about most of them, which
+    is why the word is not used anywhere in this path.
+    """
+    rows = recent_sessions(org_id=org_id, limit=10_000, scan=scan,
+                           since=since, until=until, agent_id=agent_id, conn_id=conn_id)
+
+    def keep(r: dict) -> bool:
+        if status == "ok" and r.get("ok") is not True:
+            return False
+        if status == "error" and not (r.get("ok") is False or r.get("errors")):
+            return False
+        if status == "unfinished" and r.get("ok") is not None:
+            return False
+        if user_id and str(r.get("user_id") or "") != user_id:
+            return False
+        if min_duration_ms is not None and (r.get("duration_ms") or 0) < min_duration_ms:
+            return False
+        if max_duration_ms is not None and (r.get("duration_ms") or 0) > max_duration_ms:
+            return False
+        if min_tokens is not None and int(r.get("total_tokens") or 0) < min_tokens:
+            return False
+        if q:
+            needle = q.lower()
+            hay = " ".join(str(r.get(k) or "") for k in
+                           ("question", "answer", "trace_id", "agent_id", "conn_id"))
+            if needle not in hay.lower():
+                return False
+        return True
+
+    kept = [r for r in rows if keep(r)]
+    start = max(0, int(offset))
+    return {
+        "rows": kept[start: start + max(1, int(limit))],
+        "total": len(kept),
+        "limit": int(limit),
+        "offset": start,
+        "scanned_events": scan,
+    }
 
 
 def tool_reliability(*, org_id: Optional[str] = None, scan: int = 5000) -> list[dict]:

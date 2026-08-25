@@ -5397,6 +5397,20 @@ export interface TraceSummary {
   conn_id: string | null;
   ok: boolean | null;
   duration_ms: number | null;
+  /** Absent on a run recorded before the index carried these. */
+  user_id?: string | null;
+  ended_at?: string | null;
+  /** The final response's headline — the only answer text the log keeps. */
+  answer?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  /** A FLOOR, not a total: `unpriced_calls` is how many calls no rate covered, and
+   *  `calls_without_usage` how many reported no tokens at all. A $0.00 with either of
+   *  those non-zero means "unknown", never "free". */
+  cost_usd?: number;
+  unpriced_calls?: number;
+  calls_without_usage?: number;
 }
 
 export interface TraceSpan {
@@ -5413,7 +5427,35 @@ export interface TraceSpan {
   children: TraceSpan[];
 }
 
-export type TraceList = { measured: true; recording: boolean; traces: TraceSummary[] };
+export type TraceList = {
+  measured: true; recording: boolean; traces: TraceSummary[];
+  /** How many runs MATCHED — not how many are on this page. */
+  total?: number;
+  limit?: number;
+  offset?: number;
+  /** How far back the fold reached. `total` is a total within this window. */
+  scanned_events?: number;
+};
+
+/** Everything the trace index can be narrowed by. Applied server-side, over the whole
+ *  scan window — narrowing a page in the browser looks the same to a reader and answers
+ *  a different question. */
+export interface TraceFilters {
+  limit?: number;
+  offset?: number;
+  investigation_id?: string;
+  agent_id?: string;
+  conn_id?: string;
+  /** "ok" | "error" | "running" */
+  status?: string;
+  user_id?: string;
+  q?: string;
+  since?: string;
+  until?: string;
+  min_duration_ms?: number;
+  max_duration_ms?: number;
+  min_tokens?: number;
+}
 
 /** VA-5 — one laid-out node on the waterfall. Assembled at READ time from every event
  *  the run recorded, not only from rows that happen to carry a span id: `llm_call` never
@@ -5491,13 +5533,11 @@ export type TraceDetail = {
       timeline?: TraceTimeline; flow_edges?: TraceFlowEdge[];
     };
 
-export async function getTraces(params?: {
-  limit?: number; investigation_id?: string; agent_id?: string;
-}): Promise<TraceList> {
+export async function getTraces(params?: TraceFilters): Promise<TraceList> {
   const qs = new URLSearchParams();
-  if (params?.limit) qs.set("limit", String(params.limit));
-  if (params?.investigation_id) qs.set("investigation_id", params.investigation_id);
-  if (params?.agent_id) qs.set("agent_id", params.agent_id);
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
   const res = await fetch(`${getApiBase()}/traces?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch traces (${res.status})`);
   return res.json();

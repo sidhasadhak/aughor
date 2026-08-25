@@ -137,12 +137,32 @@ def _audit_payload_access(trace_id: str, events: list[dict],
 # ── CR1: traces ──────────────────────────────────────────────────────────────────
 
 @router.get("/traces")
-def list_traces(limit: int = 50, investigation_id: Optional[str] = None,
-                agent_id: Optional[str] = None):
+def list_traces(limit: int = 50, offset: int = 0,
+                investigation_id: Optional[str] = None,
+                agent_id: Optional[str] = None, conn_id: Optional[str] = None,
+                status: Optional[str] = None, user_id: Optional[str] = None,
+                q: Optional[str] = None,
+                since: Optional[str] = None, until: Optional[str] = None,
+                min_duration_ms: Optional[float] = None,
+                max_duration_ms: Optional[float] = None,
+                min_tokens: Optional[int] = None):
     """Recent runs, one summary per trace, newest first — the waterfall's index.
 
     ``investigation_id`` / ``agent_id`` narrow to the traces that touched them
     (the H3 drill-in: a run row on the per-agent page opens its trace here).
+
+    Every other parameter filters the INDEX rather than the page. That distinction is the
+    reason they live here at all: the surface used to hold a fixed list and narrow it in
+    the browser, which looks identical to a reader and answers a different question —
+    "the matching runs" versus "the matching runs among the last fifty". `total` counts
+    what matched, and `scanned_events` says how far back the fold reached, because a count
+    with no stated window is a claim about all of history that nobody checked.
+
+    `status` is ``ok`` · ``error`` · ``unfinished``. The last means no final response was
+    RECORDED — deliberately not called "running", because only the `/ask` and `/chat` door
+    emits one and a run arriving by any other path never will. Measured live: 53 of 73
+    runs, the oldest four days old. A reader filtering for live work would have found four
+    days of finished ones.
     """
     org_id = current_org_id() or None
     ledger = Ledger.default()
@@ -164,8 +184,26 @@ def list_traces(limit: int = 50, investigation_id: Optional[str] = None,
                      if s["trace_id"] in set(trace_ids)]
         return {"measured": True, "recording": True, "traces": summaries}
 
-    summaries = session_log.recent_sessions(org_id=org_id, limit=max(1, min(int(limit), 200)))
-    return {"measured": True, "recording": True, "traces": summaries}
+    # An unknown status used to fall through every branch and return the WHOLE set, which
+    # is the worst available answer: it looks like a successful filter and reports the
+    # unfiltered total as the match count. Caught live — `status=running`, the word this
+    # parameter used to accept, answered 73 of 73 after the rename. A stale bookmark or a
+    # typo now says so instead of quietly agreeing.
+    if status not in (None, "", "ok", "error", "unfinished"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown status {status!r} — use ok, error or unfinished. "
+                   f"'unfinished' means no final response was recorded, which is not the "
+                   f"same as still running.")
+
+    index = session_log.session_index(
+        org_id=org_id, limit=max(1, min(int(limit), 200)), offset=max(0, int(offset)),
+        since=since, until=until, status=status, user_id=user_id, agent_id=agent_id,
+        conn_id=conn_id, q=q, min_duration_ms=min_duration_ms,
+        max_duration_ms=max_duration_ms, min_tokens=min_tokens)
+    return {"measured": True, "recording": True, "traces": index["rows"],
+            "total": index["total"], "limit": index["limit"], "offset": index["offset"],
+            "scanned_events": index["scanned_events"]}
 
 
 @router.get("/traces/{trace_id}")
