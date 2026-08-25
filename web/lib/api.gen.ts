@@ -5319,7 +5319,21 @@ export interface paths {
         /** Update Metric */
         put: operations["update_metric_metrics__name__put"];
         post?: never;
-        /** Remove Metric */
+        /**
+         * Remove Metric
+         * @description Remove a metric — the one irreversible verb on this router, and until now the only
+         *     unguarded one.
+         *
+         *     Defining and editing were capability-gated and audited "so defining a governed metric
+         *     leaves a trail"; deleting was neither, and omitting `sql` removes EVERY grain sharing
+         *     the name. Two such calls emptied the catalogue on a live install — including a formula
+         *     carrying `approved_by: Finance` — and nothing anywhere recorded it. The trail endpoint
+         *     below would have shown a metric's whole history with its deletion missing.
+         *
+         *     `metric.delete` is declared HIGH, so this now asks for approval like every other
+         *     destructive verb, and the deletion lands in the same `metric.governance` trail as the
+         *     transitions that preceded it.
+         */
         delete: operations["remove_metric_metrics__name__delete"];
         options?: never;
         head?: never;
@@ -20959,6 +20973,7 @@ export interface operations {
         parameters: {
             query?: {
                 sql?: string | null;
+                connection_id?: string | null;
             };
             header?: never;
             path: {

@@ -51,6 +51,11 @@ _RISK: dict[str, ActionRisk] = {
     "ontology.delete_override": ActionRisk.HIGH,
     "ontology.import": ActionRisk.HIGH,
     "metric.approve": ActionRisk.HIGH,
+    # Declared, not left to `classify`'s unregistered-is-HIGH fail-safe, because that
+    # fail-safe only protects a verb somebody remembered to guard — and this one was not
+    # guarded at all. Deleting a metric removes a formula every later answer was entitled
+    # to reuse, which is the same shape as `ontology.delete_override` above it.
+    "metric.delete": ActionRisk.HIGH,
     # Reversible / additive
     "skill.save": ActionRisk.LOW,
     "metric.define": ActionRisk.LOW,

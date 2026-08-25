@@ -151,12 +151,41 @@ def metric_audit(name: str, limit: int = 50):
     return {"metric": name, "audit": trail[:limit]}
 
 
-@router.delete("/metrics/{name}")
+@router.delete("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def remove_metric(name: str, sql: Optional[str] = None):
-    # `sql` (optional) targets a single grain when a name has several governed
-    # definitions; omitted → remove every entry sharing the name.
+    """Remove a metric — the one irreversible verb on this router, and until now the only
+    unguarded one.
+
+    Defining and editing were capability-gated and audited "so defining a governed metric
+    leaves a trail"; deleting was neither, and omitting `sql` removes EVERY grain sharing
+    the name. Two such calls emptied the catalogue on a live install — including a formula
+    carrying `approved_by: Finance` — and nothing anywhere recorded it. The trail endpoint
+    below would have shown a metric's whole history with its deletion missing.
+
+    `metric.delete` is declared HIGH, so this now asks for approval like every other
+    destructive verb, and the deletion lands in the same `metric.governance` trail as the
+    transitions that preceded it.
+    """
+    from datetime import datetime, timezone
+
+    from aughor import govern
+    from aughor.kernel.ledger import Ledger
+
+    govern.guard("metric.delete", name)
+    # Read BEFORE deleting: the trail should say what was removed, and afterwards there is
+    # nothing left to describe.
+    doomed = get_metric(name)
     if not delete_metric(name, sql=sql):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    Ledger.default().emit("metric.governance", {
+        "metric": name,
+        "action": "delete",
+        "at": datetime.now(timezone.utc).isoformat(),
+        # Which grain, when a name carries several. `null` means every one of them went.
+        "sql": sql,
+        "approved_by": (doomed.approved_by if doomed else None),
+        "owner": (doomed.owner if doomed else None),
+    })
     return {"ok": True, "name": name}
 
 
