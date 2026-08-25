@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 // Always-eager: on the critical path at first render
 import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
+import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
@@ -70,6 +71,8 @@ import {
   seedDemoConnection,
   getWorkspaces,
   createWorkspace as apiCreateWorkspace,
+  updateWorkspace as apiUpdateWorkspace,
+  deleteWorkspace as apiDeleteWorkspace,
   type Workspace,
   addConnection as apiAddConnection,
   deleteConnection as apiDeleteConnection,
@@ -199,157 +202,6 @@ function freshnessLabel(ts: string | null): string | null {
   return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }
 
-// ── Workspace switcher ───────────────────────────────────────────────────────
-// The top-level scope selector. A Workspace is a named grouping of DB
-// connections; switching it re-scopes the whole app (connections, canvases,
-// intelligence) — the Databricks model where everything lives in a workspace.
-function WorkspaceSwitcher({
-  workspaces,
-  selectedWorkspace,
-  connCount,
-  onWorkspaceChange,
-  onCreateWorkspace,
-}: {
-  workspaces: Workspace[];
-  selectedWorkspace: string;
-  connCount: number;
-  onWorkspaceChange: (id: string) => void;
-  onCreateWorkspace: (name: string) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-  const active = workspaces.find(w => w.id === selectedWorkspace);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setCreating(false); }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-
-  const submitNew = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    await onCreateWorkspace(name);
-    setNewName(""); setCreating(false); setOpen(false);
-  };
-
-  return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <Button
-        onClick={() => setOpen(v => !v)}
-        title="Switch workspace"
-        variant="ghost"
-        size="sm"
-        style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "5px 10px", borderRadius: "var(--r2)",
-          background: open ? "var(--bg-sel)" : "var(--bg-2)",
-          border: `1px solid ${open ? "var(--blue2)" : "var(--b1)"}`,
-          color: "var(--t1)", maxWidth: 220,
-        }}
-      >
-        <NavIcon name="layers" size={14} color="var(--blue4)" />
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
-            {active?.name ?? "—"}
-          </span>
-        </span>
-        <NavIcon name="chevd" size={13} color="var(--t3)" />
-      </Button>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
-          minWidth: 260, background: "var(--bg-1)", border: "1px solid var(--b2)",
-          borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
-          padding: 6,
-        }}>
-          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
-            Workspaces
-          </div>
-          {workspaces.map(w => {
-            const on = w.id === selectedWorkspace;
-            return (
-              <Button
-                key={w.id}
-                onClick={() => { onWorkspaceChange(w.id); setOpen(false); }}
-                variant="ghost"
-                size="sm"
-                style={{
-                  display: "flex", alignItems: "center", gap: 9, width: "100%",
-                  padding: "7px 8px", borderRadius: "var(--r2)",
-                  background: on ? "var(--bg-sel)" : "transparent",
-                  border: "1px solid transparent", textAlign: "left",
-                }}
-                onMouseEnter={e => { if (!on) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={e => { if (!on) e.currentTarget.style.background = "transparent"; }}
-              >
-                <NavIcon name="layers" size={14} color={on ? "var(--blue4)" : "var(--t3)"} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 12, fontWeight: on ? 500 : 400, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {w.name}
-                  </span>
-                  <span style={{ display: "block", fontSize: 11, color: "var(--t4)" }}>
-                    {w.connection_ids.length} connection{w.connection_ids.length === 1 ? "" : "s"}{w.is_default ? " · default" : ""}
-                  </span>
-                </span>
-                {on && <NavIcon name="check" size={13} color="var(--blue4)" />}
-              </Button>
-            );
-          })}
-
-          <div style={{ height: 1, background: "var(--b1)", margin: "6px 0" }} />
-
-          {creating ? (
-            <div style={{ display: "flex", gap: 6, padding: "2px 4px 4px" }}>
-              <input
-                autoFocus
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") submitNew(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
-                placeholder="Workspace name…"
-                style={{
-                  flex: 1, padding: "6px 9px", fontSize: 12,
-                  background: "var(--bg-2)", border: "1px solid var(--b2)",
-                  borderRadius: "var(--r2)", color: "var(--t1)", outline: "none",
-                }}
-              />
-              <Button onClick={submitNew} variant="secondary" size="sm" style={{ padding: "6px 12px", fontSize: 12 }}>
-                Create
-              </Button>
-            </div>
-          ) : (
-            <Button
-              onClick={() => setCreating(true)}
-              variant="ghost"
-              size="sm"
-              style={{
-                display: "flex", alignItems: "center", gap: 9, width: "100%",
-                padding: "7px 8px", borderRadius: "var(--r2)",
-                background: "transparent", border: "1px solid transparent",
-                color: "var(--t2)", textAlign: "left",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-            >
-              <NavIcon name="plus" size={14} color="var(--t3)" />
-              <span style={{ fontSize: 12 }}>New workspace</span>
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Topbar ─────────────────────────────────────────────────────────────────────
-
 function Topbar({
   onSearchOpen,
   onNavigate,
@@ -357,8 +209,11 @@ function Topbar({
   selectedConn,
   workspaces,
   selectedWorkspace,
+  allConnections,
   onWorkspaceChange,
   onCreateWorkspace,
+  onUpdateWorkspace,
+  onDeleteWorkspace,
 }: {
   onSearchOpen: () => void;
   onNavigate: (t: NavTab) => void;
@@ -366,8 +221,13 @@ function Topbar({
   selectedConn: string;
   workspaces: Workspace[];
   selectedWorkspace: string;
+  /** The whole org's connections — the switcher's membership editor needs the
+   *  full set, while `connections` above is the workspace-scoped slice. */
+  allConnections: Connection[];
   onWorkspaceChange: (id: string) => void;
-  onCreateWorkspace: (name: string) => Promise<void>;
+  onCreateWorkspace: (name: string) => Promise<Workspace>;
+  onUpdateWorkspace: (id: string, connectionIds: string[]) => Promise<void>;
+  onDeleteWorkspace: (id: string) => Promise<void>;
 }) {
   return (
     <div className="aug-topbar">
@@ -410,9 +270,11 @@ function Topbar({
         <WorkspaceSwitcher
           workspaces={workspaces}
           selectedWorkspace={selectedWorkspace}
-          connCount={connections.length}
+          allConnections={allConnections}
           onWorkspaceChange={onWorkspaceChange}
           onCreateWorkspace={onCreateWorkspace}
+          onUpdateWorkspace={onUpdateWorkspace}
+          onDeleteWorkspace={onDeleteWorkspace}
         />
         <div style={{
           width: 28, height: 28, borderRadius: "var(--r2)",
@@ -1694,8 +1556,12 @@ export default function Home() {
   // active workspace (Databricks-style). The Default workspace tracks every
   // connection, so for users who never create a custom workspace this is a no-op.
   const activeWs = workspaces.find(w => w.id === selectedWorkspace) ?? null;
+  // Filter on the backend's EFFECTIVE set (membership ∪ explicit catalog grants),
+  // not raw membership: the routers already served a granted catalog's rows while
+  // this picker hid the connection, so a grant changed nothing on screen.
   const wsConnections = activeWs
-    ? connections.filter(c => activeWs.connection_ids.includes(c.id))
+    ? connections.filter(c =>
+        (activeWs.accessible_connection_ids ?? activeWs.connection_ids).includes(c.id))
     : connections;
   // The ACTIVE connection, clamped to the workspace and *derived* (not stored) so
   // it can never lag the tenancy boundary. It reads "" until the workspace resolves,
@@ -1713,13 +1579,17 @@ export default function Home() {
   // reselect. Once both lists have actually loaded, fall back to the workspace's first
   // connection. The effect also repairs the persisted LAST_CONN_KEY via the existing
   // persistence effect, so the recovery sticks across reloads.
+  // Membership length is a dep on purpose: the switcher's editor can now add the
+  // first connection to an empty workspace, and without it this effect never
+  // re-fires — the workspace stays selected with no active connection until the
+  // user picks one by hand.
   useEffect(() => {
     if (!activeWs || connections.length === 0) return;   // still loading — keep fail-closed
     if (wsConnections.length === 0) return;              // genuinely empty workspace
     if (wsConnections.some(c => c.id === rawSelectedConn)) return;
     setSelectedConn(wsConnections[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWs?.id, connections, rawSelectedConn]);
+  }, [activeWs?.id, wsConnections.length, connections, rawSelectedConn]);
 
   // Theme effect — apply data-theme to <html>
   useEffect(() => {
@@ -2075,11 +1945,26 @@ export default function Home() {
         selectedConn={selectedConn}
         workspaces={workspaces}
         selectedWorkspace={selectedWorkspace}
+        allConnections={connections}
         onWorkspaceChange={handleWorkspaceChange}
         onCreateWorkspace={async (name) => {
           const ws = await apiCreateWorkspace(name, []);
           await reloadWorkspaces();
           setSelectedWorkspace(ws.id);
+          return ws;
+        }}
+        onUpdateWorkspace={async (id, connectionIds) => {
+          await apiUpdateWorkspace(id, { connection_ids: connectionIds });
+          await reloadWorkspaces();
+        }}
+        onDeleteWorkspace={async (id) => {
+          await apiDeleteWorkspace(id);
+          const ws = await getWorkspaces();
+          setWorkspaces(ws);
+          if (selectedWorkspace === id) {
+            const fallback = ws.find(w => w.is_default) ?? ws[0];
+            setSelectedWorkspace(fallback?.id ?? "");
+          }
         }}
       />
 

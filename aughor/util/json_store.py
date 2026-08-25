@@ -249,3 +249,79 @@ class JsonListStore:
         items = self.all()
         items.append(item)
         self.save_all(items)
+
+
+class LedgerListStore(JsonListStore):
+    """A :class:`JsonListStore` whose truth is the kernel Ledger — list-shaped K0.
+
+    Same API and best-effort contract; the rows live in the Ledger's transactional
+    kv table keyed by ``id_field``, in insertion order (the kv ``seq`` preserves
+    it), so ``all()`` reads back in the order rows were first saved and ``upsert``
+    moves a row to the end exactly as the file version's remove-then-append did.
+
+    Exists for the list stores that must survive a serverless instance. The file
+    version wrote under ``data/``, which a read-only bundle both ships empty and
+    refuses to write — so on Vercel a brief subscription "created" there
+    evaporated with the response, and every cron tick evaluated zero briefs. The
+    Ledger rides ``AUGHOR_DB_URL`` (Postgres on serverless), which is durable.
+
+    The legacy JSON file is imported once (marker in Ledger meta) and then left
+    on disk untouched; every method falls back to the original file behaviour
+    when the Ledger is unavailable, exactly as :class:`KeyedJsonStore` does.
+    """
+
+    def __init__(self, path: Union[str, Path], *, id_field: str = "id", indent: int = 2):
+        super().__init__(path, id_field=id_field, indent=indent)
+        self._store_id = str(self.path)
+        self._migrated = False
+
+    def _key(self, item_or_id: Any) -> str:
+        if isinstance(item_or_id, dict):
+            return str(item_or_id.get(self.id_field))
+        return str(item_or_id)
+
+    def _as_dict(self, items: list[dict]) -> dict:
+        return {self._key(d): d for d in items}
+
+    def _ledger(self):
+        from aughor.kernel.ledger import Ledger
+        led = Ledger.default()
+        if not self._migrated:
+            marker = f"migrated:{self._store_id}"
+            if not led.meta_get(marker):
+                legacy = super().all()          # the file, read the original way
+                if legacy:
+                    led.kv_replace_all(self._store_id, self._as_dict(legacy))
+                led.meta_set(marker, "1")
+            self._migrated = True
+        return led
+
+    def all(self) -> list[dict]:
+        try:
+            return list(self._ledger().kv_load_all(self._store_id).values())
+        except Exception:
+            return super().all()
+
+    def save_all(self, items: list[dict]) -> None:
+        try:
+            self._ledger().kv_replace_all(self._store_id, self._as_dict(items))
+        except Exception:
+            super().save_all(items)
+
+    def get(self, id_: str) -> Optional[dict]:
+        try:
+            return self._ledger().kv_get(self._store_id, self._key(id_), None)
+        except Exception:
+            return super().get(id_)
+
+    def upsert(self, item: dict) -> None:
+        try:
+            self._ledger().kv_put(self._store_id, self._key(item), item)
+        except Exception:
+            super().upsert(item)
+
+    def delete(self, id_: str) -> bool:
+        try:
+            return bool(self._ledger().kv_delete(self._store_id, self._key(id_)))
+        except Exception:
+            return super().delete(id_)

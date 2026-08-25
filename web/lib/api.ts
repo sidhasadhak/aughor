@@ -116,6 +116,10 @@ export interface Workspace {
   name: string;
   description: string;
   connection_ids: string[];
+  /** What this workspace can actually see: membership ∪ explicit catalog grants,
+   *  resolved by the backend's own visibility gate. The picker filters on THIS —
+   *  filtering on `connection_ids` alone hid granted catalogs the API served. */
+  accessible_connection_ids?: string[];
   is_default: boolean;
   settings_override?: Record<string, unknown>;
   created_at: string;
