@@ -310,7 +310,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                       display: "flex", alignItems: "center", gap: 6 }}>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             {total === 0 ? "0 runs" : `${offset + 1}–${Math.min(offset + pageSize, total)} of ${total}`}
-            {scanned != null && <span style={{ color: "var(--t4)" }}> · last {compactNumber(scanned)} events</span>}
+            {scanned != null && <span style={{ color: "var(--t3)" }}> · last {compactNumber(scanned)} events</span>}
           </span>
           <select
             className="aug-input aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
