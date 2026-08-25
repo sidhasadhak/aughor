@@ -82,8 +82,6 @@ import {
   cancelJob,
   getAgents,
   patchAgent,
-  getLlmConfig,
-  getLlmModels,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,

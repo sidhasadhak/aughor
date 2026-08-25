@@ -36,7 +36,7 @@ Catalog Explorer (evolve the existing Catalog screen)
 | # | Feature | Backend | Placement |
 |---|---|---|---|
 | U4 | **Catalog Explorer shell** | metastore (`list_catalogs`, `list_schemas`, UC read API) | the container for U1–U3 — surface catalogs/schemas as first-class instead of the flat connection tree |
-| U5 | **Per-agent LLM model picker** | `PATCH /agents/{id}` accepts `model` | Fleet → **Agents** tab: add a model dropdown next to enable/pause |
+| U5 | **Per-agent LLM model pin** | `PATCH /agents/{id}` accepts `model` | ✅ shipped (2026-08-25) — Agent Ops → Agents, charter detail: a free-text paste field (not a dropdown — Settings → Models is the one surface that lists models); unpinned agents inherit the Models-tab role bindings, shown in place |
 | U6 | **Governed Dives / playbook version history** | playbook `version` + `/playbook/{id}/versions` | Playbook panel → a version timeline / "pinned receipt" badge per entry |
 | U7 | **Monitor anti-flap knob** | `grace_period_hours` in `run_monitor` | Monitor create/edit form → a "grace period" field |
 | U8 | **Post-processing operators** | `tools/postproc.py` (PoP/Pareto/rolling/cumulative) | answer card / Query Builder result → optional "add PoP / rolling avg" transforms (today only auto-injected to the LLM) |

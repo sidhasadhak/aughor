@@ -16,6 +16,7 @@ const listAgentRevisions = vi.fn();
 const restoreAgentRevision = vi.fn();
 const getAgentGuardrails = vi.fn();
 const setAgentGuardrailsFn = vi.fn();
+const getLlmConfigFn = vi.fn();
 
 // One mock for the module. `vi.mock` is hoisted, so a second call for the same specifier
 // silently replaces the first — two of them in one file is a trap for whoever adds the
@@ -28,6 +29,7 @@ vi.mock("@/lib/api", async importOriginal => {
     restoreAgentRevision: (...a: unknown[]) => restoreAgentRevision(...a),
     getAgentGuardrails: (...a: unknown[]) => getAgentGuardrails(...a),
     setAgentGuardrails: (...a: unknown[]) => setAgentGuardrailsFn(...a),
+    getLlmConfig: (...a: unknown[]) => getLlmConfigFn(...a),
   };
 });
 
@@ -178,5 +180,102 @@ describe("AgentGuardrailsSection", () => {
     const { container } = render(
       <AgentGuardrailsSection agent={agent()} onError={() => {}} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+// ── built-in agent model pin — one route for choosing a model (2026-08-25) ────
+//
+// Settings → Models is the only surface that lists models; the roster used to render a
+// second, closed dropdown over the same catalogue. These tests pin the replacement: the
+// field is free text, the inherited default is the Models-tab bindings and is SHOWN, and
+// the paid-OpenRouter consent survives the rewrite.
+
+const { AgentModelPin } = await import("@/components/AgenticAgentsPanel");
+
+const llmConfig = (over: Record<string, unknown> = {}) => ({
+  backend: "groq",
+  models: { coder: "llama-3.3-70b", narrator: "llama-3.1-8b", fast: "llama-3.1-8b" },
+  ...over,
+});
+
+describe("AgentModelPin", () => {
+  beforeEach(() => {
+    getLlmConfigFn.mockReset();
+    getLlmConfigFn.mockResolvedValue(llmConfig());
+  });
+
+  it("renders no model list — the catalogue lives in Settings → Models alone", async () => {
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
+    await screen.findByText(/Settings → Models/);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("shows the Models-tab bindings an unpinned agent inherits", async () => {
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
+    expect(await screen.findByText(/coder → llama-3.3-70b/)).toBeInTheDocument();
+  });
+
+  it("pins a pasted model id", async () => {
+    const onPin = vi.fn();
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
+    await userEvent.type(await screen.findByRole("textbox"), "my-org/pasted-model");
+    await userEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(onPin).toHaveBeenCalledWith("my-org/pasted-model", false);
+  });
+
+  it("asks before pinning a paid OpenRouter model, and passes the consent through", async () => {
+    getLlmConfigFn.mockResolvedValue(llmConfig({ backend: "openrouter" }));
+    const onPin = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
+    await screen.findByText(/OpenRouter/);
+    await userEvent.type(screen.getByRole("textbox"), "vendor/big-model");
+    await userEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(onPin).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    await userEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(onPin).toHaveBeenCalledWith("vendor/big-model", true);
+    confirm.mockRestore();
+  });
+
+  it("pins a :free OpenRouter model without asking", async () => {
+    getLlmConfigFn.mockResolvedValue(llmConfig({ backend: "openrouter" }));
+    const onPin = vi.fn();
+    const confirm = vi.spyOn(window, "confirm");
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
+    await screen.findByText(/OpenRouter/);
+    await userEvent.type(screen.getByRole("textbox"), "vendor/small:free");
+    await userEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onPin).toHaveBeenCalledWith("vendor/small:free", false);
+    confirm.mockRestore();
+  });
+
+  it("clears a pin back to the Models-tab bindings", async () => {
+    const onPin = vi.fn();
+    render(<AgentModelPin pinned="old-model" busy={false} onPin={onPin} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /use models default/i }));
+    expect(onPin).toHaveBeenCalledWith("", false);
+  });
+
+  it("clears via an emptied field too", async () => {
+    const onPin = vi.fn();
+    render(<AgentModelPin pinned="old-model" busy={false} onPin={onPin} />);
+    await userEvent.clear(await screen.findByRole("textbox"));
+    await userEvent.click(screen.getByRole("button", { name: /clear pin/i }));
+    expect(onPin).toHaveBeenCalledWith("", false);
+  });
+
+  it("still takes a pasted id when the config cannot be read", async () => {
+    // The default line degrades; the override route must not.
+    getLlmConfigFn.mockRejectedValue(new Error("403"));
+    const onPin = vi.fn();
+    render(<AgentModelPin pinned={null} busy={false} onPin={onPin} />);
+    await userEvent.type(await screen.findByRole("textbox"), "typed-anyway");
+    await userEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(onPin).toHaveBeenCalledWith("typed-anyway", false);
   });
 });
