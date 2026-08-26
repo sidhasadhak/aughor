@@ -529,18 +529,28 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   function exhibitColor(): Record<string, unknown> | null {
     const mode = exhibit?.color?.mode;
     if (!mode || mode === "neutral") return null;
+    // The binding's `legend` carries a POSITION (right/bottom/top/left) or "none".
+    // Only "none" was ever honoured — the editor's Legend dropdown set positions
+    // that were silently discarded and the legend always sat right, covering the
+    // plot on dense charts. A position now becomes the Vega legend's `orient`.
+    const legendOf = () => {
+      const lp = exhibit?.color?.legend;
+      if (lp === "none") return null;
+      return { title: exhibit?.color?.name ?? null,
+               ...(lp && ["right", "bottom", "top", "left"].includes(lp) ? { orient: lp } : {}) };
+    };
     if (mode === "sign") {
       return { field: measure, type: "quantitative",
                scale: { type: "threshold", domain: [0], range: "diverging" }, legend: null };
     }
     if (mode === "severity") {
       return { field: measure, type: "quantitative", scale: { range: "heatmap" },
-               legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+               legend: legendOf() };
     }
     const field = exhibit?.color?.field;
     if (!field || !columns.includes(field)) return null;
     return { field, type: mode === "continuous" ? "quantitative" : "nominal", sort: null,
-             legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+             legend: legendOf() };
   }
 
   /** Reference lines — context the reader otherwise supplies from memory. */
