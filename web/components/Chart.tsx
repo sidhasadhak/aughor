@@ -157,12 +157,16 @@ export function Chart({
     // stale seed can name columns this finding does not have — the customized
     // resolve then refuses, and the card used to render NOTHING with no way back.
     // Retry bare (auto) before giving up; only truly unchartable data renders none.
-    if (custom || userFormat || exhibit || (chartType && chartType !== "auto")) {
-      // The retreat drops the TYPE HINT too: a finding's hint (e.g. scatter) can fit
-      // the original frame while refusing the reshaped one a saved metric selection
-      // produces — the data is chartable, just not as the hinted form.
+    // The retreat drops hint, exhibit and custom alike — a finding's hint (e.g.
+    // scatter) can fit the original frame while refusing the reshaped one a saved
+    // metric selection produced. And "auto" is not the floor: type inference
+    // refuses a plain [dimension, stringified-measure] frame that an explicit bar
+    // charts fine (measured on theLook's category/total_volume), so bar is the
+    // last rung. Truly unchartable data still refuses everything and renders none.
+    for (const retreat of ["auto", "bar"] as const) {
+      if (retreat === String(chartType ?? "auto") && !custom && !userFormat && !exhibit) continue;
       const bare = resolveVegaSpec({
-        columns, rows, chartType: "auto", showLabels, exhibit: null,
+        columns, rows, chartType: retreat, showLabels, exhibit: null,
         format: null, xTitle: null, yTitle: null, orient: null, transform: null,
       });
       if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };
