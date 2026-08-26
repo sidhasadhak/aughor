@@ -74,6 +74,20 @@ def test_native_dialect_gate_covers_the_right_engines():
         assert foreign not in _NATIVE_PROFILER_DIALECTS
 
 
+def test_every_connector_can_build_intelligence():
+    # The explorer's ontology gate and the birth rite both call
+    # db.build_intelligence(); it lived only on the DuckDB family, so no
+    # warehouse engine could ever build an ontology (or a briefing).
+    from aughor.connectors.base import Connector
+
+    assert hasattr(Connector, "build_intelligence")
+    from aughor.connectors.warehouse.bigquery import BigQueryConnection
+    from aughor.connectors.warehouse.snowflake import SnowflakeConnection
+
+    for cls in (BigQueryConnection, SnowflakeConnection):
+        assert hasattr(cls, "build_intelligence")
+
+
 def test_parse_columns_uses_portable_information_schema_and_connection_schema():
     stub = _StubConn(rows=[("id", "INT64"), ("created_at", "TIMESTAMP")])
     cols = _parse_columns(stub, "orders")
