@@ -308,7 +308,7 @@ const NAV_SECTIONS = [
     label: "Intelligence", // what Aughor knows about your data
     items: [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
-      { id: "recents",      icon: "search",   label: "Deep analyses" },
+      { id: "recents",      icon: "search",   label: "Agent runs" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
       // Documents sit here rather than under Data because the group means "what Aughor
@@ -594,7 +594,9 @@ function HomeScreen({
   // WP-11 — ask-on-Home: the composer as Home's hero. Submitting routes into the chat with
   // the question pre-filled + fired (goToChat), so Home is a launchpad, not a dead dashboard.
   const [homeQ, setHomeQ] = useState("");
-  const [homeMode, setHomeMode] = useState<AskMode>("ask");
+  // Agent is the default everywhere (2026-08-26) — the home composer included, so the
+  // first question a person asks takes the same route as every later one.
+  const [homeMode, setHomeMode] = useState<AskMode>("investigate");
   const submitHome = () => {
     const q = homeQ.trim();
     if (q) { onGoToChat(q, homeMode); setHomeQ(""); }
@@ -662,10 +664,10 @@ function HomeScreen({
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 4, padding: 3, background: "var(--bg-3)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
                   <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Quick</Button>
-                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Deep analysis</Button>
+                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Agent</Button>
                 </div>
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>
-                  {homeMode === "ask" ? "a fast, grounded answer" : "a multi-step deep analysis"}
+                  {homeMode === "ask" ? "a fast, grounded answer" : "a multi-step Agent run"}
                 </span>
                 <div style={{ flex: 1 }} />
                 <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask →</Button>
@@ -685,7 +687,7 @@ function HomeScreen({
               {[
                 { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
                 { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Load a synthetic dataset — 90 days of SaaS revenue with a real outage to find.", cta: demoLoading ? "Loading…" : "Load the demo", accent: "var(--vio3)", action: onTryDemo, busy: demoLoading },
-                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the deep analysis for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
+                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the Agent for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
               ].map(s => (
                 <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -748,7 +750,7 @@ function HomeScreen({
           </div>
           {recentInvs.length === 0 ? (
             <div style={{ padding: "28px 0", textAlign: "center" }}>
-              <p style={{ fontSize: 12, color: "var(--t3)" }}>No deep analyses yet — start by asking a question.</p>
+              <p style={{ fontSize: 12, color: "var(--t3)" }}>No Agent runs yet — start by asking a question.</p>
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
@@ -827,7 +829,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
               border: `1px solid ${filter === f ? "var(--blue2)" : "var(--b1)"}`,
               color: filter === f ? "var(--blue5)" : "var(--t3)", transition: "all .1s",
             }}>
-              {f === "all" ? "All" : f === "investigation" ? "Deep analysis" : "Chat"}
+              {f === "all" ? "All" : f === "investigation" ? "Agent" : "Chat"}
             </button>
           ))}
         </div>
@@ -836,7 +838,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
         {activities.length > 0 && (
           <MiniStatRow>
             <MiniStat value={activities.length} label="Total" />
-            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Deep analyses" tone="var(--blue4)" />
+            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Agent runs" tone="var(--blue4)" />
             <MiniStat value={activities.filter(a => a.status === "complete").length} label="Completed" tone="var(--grn4)" />
           </MiniStatRow>
         )}

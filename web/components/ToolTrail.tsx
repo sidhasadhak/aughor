@@ -27,7 +27,7 @@ const TOOL_LABEL: Record<string, string> = {
   run_sql: "Ran a query through the guard battery",
   list_tables: "Read the schema manifest",
   describe_table: "Inspected a table's columns",
-  deep_analysis: "Launched a deep analysis",
+  deep_analysis: "Launched an Agent run",
   search_graph: "Searched the knowledge graph",
   describe_entity: "Read what's known about an entity",
   list_findings: "Read the stored findings",

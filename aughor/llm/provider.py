@@ -297,17 +297,32 @@ def _in_quota_cooldown(backend: str) -> bool:
 
 
 def _fallback_model_for(backend: str, role: Role) -> str:
-    """The model a fallback backend should use for this role.
+    """The model a fallback backend should use for this role, or "" to SKIP that link.
 
-    Anthropic keeps AUGHOR_FALLBACK_MODEL (the pre-existing contract). Every other backend
-    used to fall back to its own built-in role default; with no defaults shipped, a
-    fallback backend is usable only if the operator configured a model for it. Returning
-    "" makes the chain SKIP that backend (see the caller) rather than dispatch to a
-    vendor with a model id tuned for a different one — which is how a dead binding used
-    to look healthy: the chain answered from somewhere else and nobody saw the failure."""
+    Precedence: the per-backend env pin (``AUGHOR_FALLBACK_MODEL_<BACKEND>``, and
+    ``AUGHOR_FALLBACK_MODEL`` for anthropic — both pre-existing contracts) → the model the
+    operator last bound for that backend in Settings → Models → "".
+
+    That middle step is what makes the chain exist at all. Nothing ships a default, and
+    `models` holds bindings only for the CURRENTLY selected backend, so every non-anthropic
+    link resolved to "" and `_fallback_provider` skipped it. A deployment holding three
+    working keys therefore had NO fallback: a throttled primary took the whole run down
+    while a healthy provider sat unused, and the run reported `fallback: false` with no
+    hint that the chain had never been walked.
+
+    Reading the operator's own remembered choice keeps the rule that no model id is
+    hardcoded here (2026-08-15): the value came from the picker, for that backend, chosen
+    by a person. A backend they have never configured still resolves to "" and is still
+    skipped — better a short chain than a request dispatched to a vendor under a model id
+    tuned for a different one.
+    """
+    env = (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
+    if env:
+        return env
     if backend == "anthropic":
         return _fallback_model()
-    return (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
+    remembered = (_cfg().get("models_by_backend") or {}).get(backend) or {}
+    return str(remembered.get(role) or "").strip()
 
 
 # ── Runtime config (data/llm_config.json) ────────────────────────────────────
@@ -2414,6 +2429,11 @@ def current_config() -> dict:
         "backend": backend,
         # effective values (what calls actually use):
         "models": {r: _active_model(backend, r) for r in ROLES},
+        # What the operator bound for each backend they have configured. Settings restores
+        # these when the provider is switched, instead of clearing to nothing; the fallback
+        # chain dispatches with them. Never secret — model ids, chosen from the picker.
+        "models_by_backend": {b: dict(m) for b, m in
+                              (cfg.get("models_by_backend") or {}).items() if m},
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
         # A key that cannot be DECRYPTED is not a key that is set. `decrypt_secret`
         # returns an undecryptable value as-is — deliberate, so one bad record cannot take
@@ -2490,6 +2510,25 @@ def set_config(patch: dict) -> dict:
             else:
                 models.pop(r, None)
         cfg["models"] = models
+        # Mirror the choice under its backend. `models` is a single role->model map that
+        # belongs to whichever backend is selected right now, so switching provider used to
+        # discard the previous one's bindings entirely — which is why the fallback chain had
+        # nothing to dispatch with (see `_fallback_model_for`), and why re-selecting a
+        # provider made the operator retype models they had already chosen once.
+        by_backend = dict(cfg.get("models_by_backend") or {})
+        remembered = dict(by_backend.get(effective_backend) or {})
+        for r, m in patch["models"].items():
+            if r not in ROLES:
+                continue
+            if m and str(m).strip():
+                remembered[r] = str(m).strip()
+            else:
+                remembered.pop(r, None)
+        if remembered:
+            by_backend[effective_backend] = remembered
+        else:
+            by_backend.pop(effective_backend, None)
+        cfg["models_by_backend"] = by_backend
 
     if isinstance(patch.get("base_urls"), dict):
         urls = dict(cfg.get("base_urls") or {})

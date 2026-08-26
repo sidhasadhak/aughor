@@ -139,7 +139,7 @@ function deriveSteps(state: InvestigationState): Step[] {
   steps.push({
     id: "route",
     label: routeDone
-      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Deep analysis"
+      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Agent"
       : "Classifying question…",
     sublabel: routeDone
       ? (routeReasoning ?? (

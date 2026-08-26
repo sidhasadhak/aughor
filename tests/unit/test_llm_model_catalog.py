@@ -204,6 +204,42 @@ def test_live_failure_surfaces_the_reason_and_shows_nothing(monkeypatch):
     assert out["models"] == []
 
 
+def test_a_bare_array_catalogue_parses_like_the_envelope(monkeypatch):
+    """Together answers `/models` with a BARE ARRAY, not OpenAI's `{"data": [...]}`.
+
+    Assuming the envelope raised `AttributeError: 'list' object has no attribute 'get'`,
+    which `fetch_live_models` faithfully reported as the picker's error — so a backend
+    whose key was VALID (the fetch got a 200) rendered an empty list and could not be
+    selected at all. Both shapes are asserted here, because a fix that only handles the
+    array would break every backend that does send the envelope.
+    """
+    import httpx
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    entries = [{"id": "vendor/a"}, {"id": "vendor/b"}]
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp(entries))
+    bare = M._openai_style_models("https://api.example/v1", "k", timeout=1.0)
+    assert [e["id"] for e in bare] == ["vendor/a", "vendor/b"]
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp({"data": entries}))
+    enveloped = M._openai_style_models("https://api.example/v1", "k", timeout=1.0)
+    assert [e["id"] for e in enveloped] == ["vendor/a", "vendor/b"]
+
+    # Anything else is an empty catalogue, not a crash that poses as a fetch error.
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp("nonsense"))
+    assert M._openai_style_models("https://api.example/v1", "k", timeout=1.0) == []
+
+
 def test_live_results_are_cached(monkeypatch):
     monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
     calls = {"n": 0}

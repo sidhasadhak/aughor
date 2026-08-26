@@ -41,7 +41,7 @@ const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table"
 const SECTION_LABELS: Record<ItemType, string> = {
   command:       "Commands",
   action:        "Navigation",
-  investigation: "Recent deep analyses",
+  investigation: "Recent Agent runs",
   table:         "Tables",
   canvas:        "Canvases",
 };
@@ -132,7 +132,7 @@ export function GlobalCommands({ onNavigate, onGoToChat }: { onNavigate: (t: str
   useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; });
 
   const commands = useMemo<Command[]>(() => [
-    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new deep analysis",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
+    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new Agent run",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
     { id: "cmd-new-canvas",  label: "New Data Canvas",    sublabel: "Create or browse Data Canvases",  icon: "canvas",   accent: "var(--blue3)", keywords: "create canvas new workspace",             run: () => navRef.current("canvases") },
     { id: "cmd-new-monitor", label: "New monitor",        sublabel: "Watch a metric for threshold, drift or staleness", icon: "activity", accent: "var(--grn3)", keywords: "create alert watch threshold notify", run: () => navRef.current("monitors") },
     { id: "cmd-new-query",   label: "Build a query",      sublabel: "Open the visual Query Builder",   icon: "builder",  accent: "var(--t2)",    keywords: "sql query builder new compose",           run: () => navRef.current("builder") },
@@ -192,7 +192,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
     { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
-    { id: "nav-recents",     label: "Deep analysis history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
+    { id: "nav-recents",     label: "Agent history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
     { id: "nav-inbox",       label: "Inbox",                sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
     { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
     { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },

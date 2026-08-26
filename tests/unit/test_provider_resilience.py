@@ -203,19 +203,49 @@ def test_anthropic_keeps_its_pinned_model_others_need_their_own(monkeypatch):
     """The pre-existing AUGHOR_FALLBACK_MODEL contract is Anthropic's alone — a narrator
     falling back to Gemini must not inherit a model id from another vendor.
 
-    Every other backend used to fall back to its own built-in default; with none shipped,
-    a fallback backend is usable only when the operator names a model for it. "" makes
-    the chain SKIP it, which is the honest outcome: the alternative is dispatching to a
-    vendor with an id tuned for a different one, and the chain answering from somewhere
-    else is precisely how a dead binding used to look healthy."""
+    A backend nobody has configured still resolves to "" and is still SKIPPED: the
+    alternative is dispatching to a vendor with an id tuned for a different one, and the
+    chain answering from somewhere else is precisely how a dead binding used to look
+    healthy."""
     monkeypatch.setenv("AUGHOR_FALLBACK_MODEL", "vendor/pinned")
     monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {})
     assert P._fallback_model_for("anthropic", "narrator") == "vendor/pinned"
     assert P._fallback_model_for("gemini", "narrator") == ""
     assert P._fallback_model_for("openrouter", "fast") == ""
 
     monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "operator/choice")
     assert P._fallback_model_for("gemini", "narrator") == "operator/choice"
+
+
+def test_a_backend_configured_in_settings_becomes_a_usable_fallback(monkeypatch):
+    """What made the chain real.
+
+    Nothing ships a default and `models` holds bindings only for the CURRENTLY selected
+    backend, so every non-anthropic link resolved to "" and was skipped — a deployment
+    holding three working keys still had no fallback, and a throttled primary took the
+    whole run down while a healthy provider sat unused. The operator's own remembered
+    choice is read instead; no id is invented, it came from the picker for that backend.
+    """
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "backend": "openrouter",
+        "models_by_backend": {"gemini": {"coder": "g/coder", "narrator": "g/narrator"}},
+    })
+    assert P._fallback_model_for("gemini", "coder") == "g/coder"
+    assert P._fallback_model_for("gemini", "narrator") == "g/narrator"
+    # A role they never bound, and a backend they never configured, both stay skippable.
+    assert P._fallback_model_for("gemini", "fast") == ""
+    assert P._fallback_model_for("together", "coder") == ""
+
+
+def test_an_env_pin_still_outranks_the_remembered_binding(monkeypatch):
+    """The env contract predates the config memory and must keep winning — it is how an
+    operator overrides a deployment they cannot open Settings on."""
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "models_by_backend": {"gemini": {"coder": "from/settings"}}})
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "from/env")
+    assert P._fallback_model_for("gemini", "coder") == "from/env"
 
 
 def test_quota_exhausted_primary_fails_over_to_the_next_backend(monkeypatch):

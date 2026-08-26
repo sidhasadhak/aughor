@@ -328,7 +328,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
               {(reportType === "direct" || reportType === "legacy") && (
                 <>
                   <p className="text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>
-                    {reportType === "direct" ? "Query Report" : "Deep analysis report"}
+                    {reportType === "direct" ? "Query Report" : "Agent report"}
                   </p>
                   <ReportView
                     report={inv.report as Report}

@@ -334,10 +334,14 @@ export function InferencePanel() {
   const keyUnreadable = keyState === "unreadable";
 
   const onBackend = (b: string) => {
-    // Models are backend-specific — reset overrides so a name tuned for the previous
-    // provider cannot ride along. Nothing fills in behind them: pick a model below.
+    // Models are backend-specific — a name tuned for the previous provider must never ride
+    // along. What DID change: the bindings this operator already chose for `b` are restored
+    // rather than cleared. Nothing is invented — an unconfigured backend still fills in
+    // nothing, and the field stays free text — but re-selecting a provider no longer asks
+    // for a model that was chosen here once already, and the same remembered value is what
+    // lets the fallback chain dispatch to that backend at all.
     setBackend(b);
-    setModels({});
+    setModels({ ...(cfg?.models_by_backend?.[b] ?? {}) });
     setResult(null);
     setSaved(false);
   };

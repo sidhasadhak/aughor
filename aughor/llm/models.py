@@ -121,7 +121,15 @@ def _openai_style_models(base_url: str, key: str, *, timeout: float) -> list[dic
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     r = httpx.get(url, headers=headers, timeout=timeout)
     r.raise_for_status()
-    data = r.json().get("data") or []
+    # Two shapes in the wild. OpenAI's is `{"data": [...]}` and most compatibles copy it;
+    # Together answers with the BARE array. Assuming the envelope turned that into
+    # `AttributeError: 'list' object has no attribute 'get'`, which `fetch_live_models`
+    # dutifully reported as the picker's error — so a backend whose key was valid (the
+    # fetch got a 200) showed an empty model list and could not be selected at all.
+    payload = r.json()
+    data = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(data, list):
+        data = []
     out = []
     for m in data:
         mid = m.get("id") or m.get("name")

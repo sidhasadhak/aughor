@@ -3925,6 +3925,10 @@ export interface LlmConfig {
   needs_key: string[];
   local_backends: string[];
   default_models: Record<string, Record<string, string>>;
+  /** What the operator bound for each backend they have configured. Restored when the
+   *  provider is switched, so a previous choice is not retyped; the fallback chain
+   *  dispatches with the same values. Absent on a config written before this shipped. */
+  models_by_backend?: Record<string, Record<string, string>>;
 }
 
 export interface LlmConfigPatch {

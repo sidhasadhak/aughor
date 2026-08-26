@@ -42,7 +42,7 @@ const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] =
 
 const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [
   { value: "notify",         label: "Notify",         desc: "Send through a Notifications trigger" },
-  { value: "investigate",    label: "Investigate",    desc: "Run a deep analysis" },
+  { value: "investigate",    label: "Investigate",    desc: "Run the Agent" },
   { value: "brief",          label: "Deliver briefing", desc: "Deliver a briefing subscription" },
   { value: "kinetic_action", label: "Declared action", desc: "Run a governed KineticAction" },
 ];
@@ -611,7 +611,7 @@ function EffectRow({ e, agents, onChange, onRemove }: { e: AutoEffect; agents: U
         )}
         {e.kind === "investigate" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="deep analysis question" />
+            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="Agent question" />
             {agents.length > 0 && (
               <select style={inputStyle} value={String(e.config.agent_id ?? "")}
                 onChange={ev => set({ agent_id: ev.target.value })}>
