@@ -104,7 +104,11 @@ function derive(
       const v = Number((r as unknown[])[mi]);
       if (!isNaN(v)) groups.get(k)!.vals.push(v);
     }
-    return { columns: [dim, colorField!, outCol], rows: order.map((k) => { const g = groups.get(k)!; return [g.d, g.c, aggregate(g.vals, agg)]; }) };
+    // METRIC before the carried colour column: the resolver plots the FIRST numeric
+    // column, so [dim, colorField, metric] made a colour binding silently hijack the
+    // value axis (bind Color to total_volume and the chart stopped plotting the chosen
+    // measure). The colour consumer finds its column by NAME, so order is free here.
+    return { columns: [dim, outCol, colorField!], rows: order.map((k) => { const g = groups.get(k)!; return [g.d, aggregate(g.vals, agg), g.c]; }) };
   }
 
   const distinct = new Set(rows.map((r) => String((r as unknown[])[di])));
@@ -411,7 +415,9 @@ export function ResultChartCard({
     setDim: (v) => setDimSel(v),
     metricValue: metricSel ?? defaultMetric,
     metricOptions: metricCols.map((c) => ({ v: c, t: cleanLabel(c) })),
-    setMetric: (v) => setMetricSel(v),
+    // A number format is chosen FOR a measure's semantics — .1% on a margin is right
+    // and on a unit count prints 885900.0%. Switching the measure resets it to Auto.
+    setMetric: (v) => { setMetricSel(v); setNumberFormat(""); },
     aggValue: dimHasDups ? agg : null,
     aggOptions: (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
     setAgg: (v) => setAggSel(v as Agg),
