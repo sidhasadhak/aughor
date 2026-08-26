@@ -155,6 +155,9 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
       labelFont: t.font, labelFontSize: 11, labelColor: t.t1,
       symbolSize: 64, symbolStrokeWidth: 0,
       offset: 4, padding: 0, rowPadding: 4, columnPadding: 14,
+      // A top/bottom legend centres under the plot instead of hugging the left —
+      // Vega's legend layout anchor, passed through the Vega-Lite config.
+      layout: { top: { anchor: "middle" }, bottom: { anchor: "middle" } },
     },
 
     title: {
