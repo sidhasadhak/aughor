@@ -88,6 +88,42 @@ def test_every_connector_can_build_intelligence():
         assert hasattr(cls, "build_intelligence")
 
 
+def test_numeric_regex_matches_bigquery_type_names():
+    # \bINT\b has no word boundary before "64", so INT64/FLOAT64 typed as "unknown",
+    # no column was ever a measure on BigQuery, and the Phase-8 coverage manifest
+    # came out empty — the LLM loop then re-asked the same questions with no memory.
+    from aughor.tools.profiler import _NUMERIC_TYPES
+
+    for t in ("INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC", "BIGDECIMAL",
+              "BIGINT", "DOUBLE", "UINTEGER", "DECIMAL(10,2)"):
+        assert _NUMERIC_TYPES.search(t), t
+    for t in ("STRING", "TIMESTAMP", "BOOL", "GEOGRAPHY"):
+        assert not _NUMERIC_TYPES.search(t), t
+
+
+def test_manifest_builds_cells_from_bigquery_shaped_profiles():
+    # A measure with a range + a low-cardinality dimension must yield cells; with
+    # zero cells Phase 8 has no deterministic questions and no coverage memory.
+    from aughor.explorer.coverage_manifest import build_manifest
+
+    tp = {"order_items": SimpleNamespace(date_columns=["created_at"])}
+    cp = {
+        "order_items.sale_price": SimpleNamespace(
+            table="order_items", column="sale_price", semantic_type="measure",
+            is_fk=False, value_range=(0.02, 999.0), unit=None,
+            value_interpretation=None, is_low_cardinality=False, distinct_count=4188),
+        "order_items.status": SimpleNamespace(
+            table="order_items", column="status", semantic_type="dimension",
+            is_fk=False, value_range=None, unit=None, value_interpretation=None,
+            is_low_cardinality=True, distinct_count=5),
+    }
+    cells = build_manifest(tp, cp)
+    assert cells, "BigQuery-shaped profiles must produce manifest cells"
+    axes = {(c.metric, c.axis) for c in cells}
+    assert ("sale_price", "headline") in axes
+    assert any(m == "sale_price" and a == "dimension" for m, a in axes)
+
+
 def test_parse_columns_uses_portable_information_schema_and_connection_schema():
     stub = _StubConn(rows=[("id", "INT64"), ("created_at", "TIMESTAMP")])
     cols = _parse_columns(stub, "orders")
