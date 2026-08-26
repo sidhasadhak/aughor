@@ -255,8 +255,10 @@ def get_or_build_profiles(
                 # SELECT-wrapped DESCRIBE passes the SELECT-only validator
                 sql = f'SELECT COUNT(*) FROM (DESCRIBE {table})'
             else:
-                schema_name = getattr(conn, "_schema_name", "public")
-                sql = (f"SELECT COUNT(*) FROM information_schema.columns "
+                schema_name = getattr(conn, "_schema_name", None) or "public"
+                # Uppercase INFORMATION_SCHEMA: required by BigQuery, folded down
+                # by Postgres — the portable spelling.
+                sql = (f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
                        f"WHERE table_name = '{table}' AND table_schema = '{schema_name}'")
             col_counts[table] = conn.scalar(sql, label="__profiler__", cast=int) or 0
         except Exception:

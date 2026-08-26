@@ -41,6 +41,10 @@ class BigQueryConnection(Connector):
         # the connect form sends it as meta["project_id"] with an empty dsn
         self._project = dsn.removeprefix("bigquery://").strip("/") or meta.get("project_id", "") or dsn
         self._dataset = schema_name or meta.get("dataset") or ""
+        # The profiler, explorer and column routes all resolve a connection's schema
+        # through `_schema_name` (the convention Snowflake follows); without it they
+        # fell back to 'public' and every INFORMATION_SCHEMA filter matched nothing.
+        self._schema_name = self._dataset
         self._connection_id = connection_id
 
         cred_path = meta.get("credentials")

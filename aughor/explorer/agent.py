@@ -1154,9 +1154,13 @@ class SchemaExplorer:
                     schema_filter = "NOT IN ('information_schema', 'pg_catalog', 'temp')"
             else:
                 schema_filter = f"= '{schema or 'public'}'"
+            # INFORMATION_SCHEMA spelled uppercase is the portable form: BigQuery
+            # REQUIRES it (lowercase resolves as a dataset named information_schema
+            # and 404s), Postgres folds unquoted identifiers down, DuckDB/MySQL/
+            # Snowflake are case-insensitive here.
             r = self._conn.execute(
                 "__explorer_catalog__",  # catalog probe, not a data query — stays out of the audit trail
-                f"SELECT table_schema, table_name FROM information_schema.tables "
+                f"SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
             )

@@ -469,10 +469,12 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
                 return []
             return [(row[0], row[1]) for row in r.rows]
         else:
-            schema_name = getattr(conn, "_schema_name", "public")
+            schema_name = getattr(conn, "_schema_name", None) or "public"
+            # Uppercase INFORMATION_SCHEMA is the portable spelling — BigQuery
+            # requires it, Postgres folds unquoted identifiers down to match.
             r = conn.execute(
                 "__profiler__",
-                f"SELECT column_name, data_type FROM information_schema.columns "
+                f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                 f"WHERE table_name = '{table}' AND table_schema = '{schema_name}' "
                 f"ORDER BY ordinal_position",
             )
@@ -1617,6 +1619,41 @@ def build_column_profiles(
 
 # ── Top-level entry point ─────────────────────────────────────────────────────
 
+#: Dialects whose SQL the profiler's hand-built statements already speak. DuckDB is
+#: the flavor they are written in; Postgres accepts nearly all of it by luck of
+#: overlap (double-quoted identifiers, `::` casts, date_trunc('grain', x)).
+_NATIVE_PROFILER_DIALECTS = ("", "duckdb", "postgres")
+
+
+class _TranspilingConnection:
+    """Transpile the profiler's DuckDB-flavored SQL for every other engine.
+
+    BigQuery/MySQL/Snowflake accept none of the profiler's spellings (a
+    double-quoted identifier is a string literal on the backtick engines), so on
+    those engines every scan probe failed and the whole intelligence layer —
+    exploration, briefing, ontology — starved on zero profiles. Transpiling at
+    this one seam beats hand-porting ~20 call sites. A statement sqlglot cannot
+    parse passes through unchanged: per-probe error handling already treats a
+    failed probe as absent data (e.g. the USING SAMPLE → LIMIT-prefix fallback),
+    never as fatal.
+    """
+
+    def __init__(self, conn):
+        self._raw = conn
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+    def execute(self, label, sql):
+        out = sql
+        try:
+            import sqlglot
+            out = sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
+        except Exception:
+            out = sql
+        return self._raw.execute(label, out)
+
+
 def profile_connection(
     conn: "DatabaseConnection",
     tables: list[str],
@@ -1639,6 +1676,8 @@ def profile_connection(
     table_profiles: dict[str, TableProfile] = {}
     column_profiles: dict[str, ColumnProfile] = {}
     dialect = getattr(conn, "dialect", "")
+    if dialect not in _NATIVE_PROFILER_DIALECTS:
+        conn = _TranspilingConnection(conn)
 
     # R11 — when the per-column config exists, its `index` flag decides value-sample
     # eligibility (human override wins; defaults mirror the R5 gate, so an unedited

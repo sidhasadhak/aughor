@@ -218,6 +218,11 @@ async def run_birth(
         db = (open_connection_for_with_schema(conn_id, schema_name)
               if schema_name else open_connection_for(conn_id))
         try:
+            if not hasattr(db, "build_intelligence"):
+                # Only the DuckDB-family connectors carry an eager intelligence pass.
+                # On warehouse engines the AttributeError here read as a FAILED birth
+                # step on every connection; having no pass to run is a skip.
+                return {"ok": True, "stage": "skipped"}
             from aughor import telemetry
             with telemetry.span(f"birth:{conn_id}", "birth.intelligence",
                                 {"connection_id": conn_id, "schema": schema_name or ""}):
