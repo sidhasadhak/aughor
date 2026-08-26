@@ -166,7 +166,7 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
 # name heuristic. Without this, the live answer paths call run_trust_checks with no types and a
 # DATE-named-*_at column produces a false-positive boundary caveat (WP-1f A/B finding).
 _COLTYPE_CACHE: dict[str, dict] = {}
-_COLTYPES_SQL = "SELECT table_name, column_name, data_type FROM information_schema.columns"
+_COLTYPES_SQL = "SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS"
 
 
 def _coltype_cache_key(conn_id: str, db) -> str:

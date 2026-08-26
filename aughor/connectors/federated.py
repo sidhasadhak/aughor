@@ -90,7 +90,7 @@ class FederatedConnection(Connector):
                 )
                 pg_schema = schema or "public"
                 raw = self._duckdb.execute(
-                    f"SELECT table_name FROM information_schema.tables "
+                    f"SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
                     f"WHERE table_catalog = '{ns}' AND table_schema = '{pg_schema}'"
                 ).fetchall()
                 for (tname,) in raw:
@@ -112,7 +112,7 @@ class FederatedConnection(Connector):
                 self._duckdb.execute(f'ATTACH \'{file_path}\' AS "{ns}" (READ_ONLY)')
                 dk_schema = schema or "main"
                 raw = self._duckdb.execute(
-                    f"SELECT table_name FROM \"{ns}\".information_schema.tables "
+                    f"SELECT table_name FROM \"{ns}\".INFORMATION_SCHEMA.TABLES "
                     f"WHERE table_schema = '{dk_schema}'"
                 ).fetchall()
                 for (tname,) in raw:

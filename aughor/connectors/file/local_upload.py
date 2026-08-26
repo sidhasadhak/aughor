@@ -1417,14 +1417,14 @@ class LocalUploadConnection(Connector):
             # Respect schema_name filter if set; otherwise list all non-system schemas.
             if self._schema_name:
                 self._duckdb.execute(
-                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
                     "ORDER BY table_name",
                     [self._schema_name],
                 )
             else:
                 self._duckdb.execute(
-                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'temp') "
                     "AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name"
                 )

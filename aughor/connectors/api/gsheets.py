@@ -225,7 +225,7 @@ class GoogleSheetsConnector(Connector):
         try:
             self._duckdb.execute(
                 "SELECT table_name, column_name, data_type "
-                "FROM information_schema.columns "
+                "FROM INFORMATION_SCHEMA.COLUMNS "
                 "ORDER BY table_name, ordinal_position"
             )
             rows = self._duckdb.fetchall()
@@ -266,7 +266,7 @@ class GoogleSheetsConnector(Connector):
 
     def test(self) -> tuple[bool, str]:
         try:
-            self._duckdb.execute("SELECT table_name FROM information_schema.tables")
+            self._duckdb.execute("SELECT table_name FROM INFORMATION_SCHEMA.TABLES")
             tables = [r[0] for r in self._duckdb.fetchall()]
             if not tables:
                 return False, (

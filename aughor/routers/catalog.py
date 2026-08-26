@@ -76,7 +76,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
-                # Primary: information_schema.tables is the only reliable cross-database
+                # Primary: INFORMATION_SCHEMA.TABLES is the only reliable cross-database
                 # view in MotherDuck — duckdb_tables() leaks tables from ALL attached DBs.
                 # We filter by the current database so the catalog matches the connection scope.
                 rows: list = []
@@ -94,7 +94,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         "__catalog__",
                         f"""
                         SELECT table_schema, table_name, NULL
-                        FROM information_schema.tables
+                        FROM INFORMATION_SCHEMA.TABLES
                         WHERE table_type = 'BASE TABLE'
                           AND table_schema NOT IN ('information_schema','temp','pg_catalog')
                           AND table_catalog = '{safe_db}'
@@ -164,7 +164,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         t.table_schema,
                         t.table_name,
                         s.n_live_tup
-                    FROM information_schema.tables t
+                    FROM INFORMATION_SCHEMA.TABLES t
                     LEFT JOIN pg_stat_user_tables s
                         ON s.schemaname = t.table_schema
                         AND s.relname   = t.table_name

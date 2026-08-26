@@ -78,10 +78,14 @@ def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
         return None
     try:
         safe_schema = schema.replace("'", "''")
-        # information_schema.tables is standard SQL — same query for every dialect.
+        # Uppercase INFORMATION_SCHEMA is the portable spelling — BigQuery REQUIRES it
+        # (lowercase resolves as a dataset named information_schema and 404s), Postgres
+        # folds unquoted identifiers down. The lowercase form returned None here, which
+        # fails the filter closed — so every schema-scoped Briefing/Findings read on a
+        # warehouse engine reported "no exploration has run yet" while the run existed.
         res = db.execute(
             "__schema_filter__",
-            "SELECT table_name FROM information_schema.tables "
+            "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
             f"WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'",
         )
         return {str(r[0]).lower() for r in res.rows}

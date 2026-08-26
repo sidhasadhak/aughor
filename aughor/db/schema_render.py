@@ -57,7 +57,7 @@ def render_raw_schema(
         if current_db:
             tables = [
                 row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
+                    "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
                     "AND table_catalog = ? ORDER BY table_name",
                     [schema_name, current_db],
@@ -66,14 +66,14 @@ def render_raw_schema(
         else:
             tables = [
                 row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
+                    "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
                     [schema_name],
                 ).fetchall()
             ]
         # Fallback: the user may have set schema_name to a database name
         # (common with MotherDuck) rather than a DuckDB schema. In that case,
-        # information_schema.tables returns nothing — fall back to SHOW TABLES.
+        # INFORMATION_SCHEMA.TABLES returns nothing — fall back to SHOW TABLES.
         if not tables:
             tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     else:

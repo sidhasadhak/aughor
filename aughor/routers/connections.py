@@ -571,7 +571,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 3. information_schema.columns with current_database filter — standard SQL,
+                # 3. INFORMATION_SCHEMA.COLUMNS with current_database filter — standard SQL,
                 # but MotherDuck sometimes returns empty data_type here, so we only use it
                 # if it actually yields types.
                 try:
@@ -583,7 +583,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         current_db = str(db_rows[0][0]).replace("'", "''")
                         where += f" AND table_catalog = '{current_db}'"
                     columns, rows, _ = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
@@ -592,13 +592,13 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                             return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 3b. information_schema.columns WITHOUT table_catalog filter.
+                # 3b. INFORMATION_SCHEMA.COLUMNS WITHOUT table_catalog filter.
                 try:
                     where = f"table_name = '{safe_table}'"
                     if safe_schema:
                         where += f" AND table_schema = '{safe_schema}'"
                     columns, rows, _ = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
@@ -622,7 +622,9 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         where += f" AND table_schema = '{safe_schema}'"
                     res = db.execute(
                         "columns",
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        # Uppercase: required by BigQuery, folded by Postgres — the
+                        # lowercase form 404'd there and column types came back empty.
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position",
                     )
                     if res.rows:

@@ -42,7 +42,7 @@ def _columns_of(probe: Probe, table: str) -> list:
     where = f"table_name = '{parts[-1]}'"
     if len(parts) >= 2:
         where += f" AND table_schema = '{parts[-2]}'"
-    rows = probe("SELECT column_name FROM information_schema.columns WHERE " + where) or []
+    rows = probe("SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS WHERE " + where) or []
     return [str(r[0]) for r in rows]
 
 

@@ -839,7 +839,7 @@ class PgConnection:
                     """SELECT ordinal_position - 1, column_name, data_type,
                               CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END,
                               column_default
-                       FROM information_schema.columns
+                       FROM INFORMATION_SCHEMA.COLUMNS
                        WHERE table_schema = %s AND table_name = %s
                        ORDER BY ordinal_position""", (self._schema, table))
                 cols = cur.fetchall()

@@ -121,7 +121,7 @@ class SnowflakeConnection(Connector):
             cur = self._conn.cursor()
             query = """
                 SELECT table_name, column_name, data_type
-                FROM information_schema.columns
+                FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE table_schema = %s
                 ORDER BY table_name, ordinal_position
             """

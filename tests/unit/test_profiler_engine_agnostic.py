@@ -124,6 +124,31 @@ def test_manifest_builds_cells_from_bigquery_shaped_profiles():
     assert any(m == "sale_price" and a == "dimension" for m, a in axes)
 
 
+def test_no_lowercase_information_schema_anywhere():
+    # BigQuery resolves lowercase information_schema as a DATASET NAME and 404s;
+    # queries built with it silently return None/[] on every warehouse read that
+    # uses them — the schema filter's None fail-closed turned that into the
+    # "Briefing says no exploration ran / run exploration / still nothing" loop.
+    # Uppercase works on every engine (DuckDB/MySQL case-insensitive, Postgres
+    # folds down, Snowflake folds up), so lowercase dotted references are banned
+    # outside demo seeds.
+    import pathlib
+    import re
+
+    import aughor
+
+    root = pathlib.Path(aughor.__file__).parent
+    pat = re.compile(r"information_schema\.(tables|columns|schemata)")
+    offenders = []
+    for p in root.rglob("*.py"):
+        if "demo" in p.parts:
+            continue
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if pat.search(line):
+                offenders.append(f"{p.relative_to(root)}:{i}")
+    assert not offenders, f"lowercase information_schema references: {offenders}"
+
+
 def test_parse_columns_uses_portable_information_schema_and_connection_schema():
     stub = _StubConn(rows=[("id", "INT64"), ("created_at", "TIMESTAMP")])
     cols = _parse_columns(stub, "orders")

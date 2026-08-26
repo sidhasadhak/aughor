@@ -375,7 +375,8 @@ def schemas_of_connection(conn_id: str) -> list[str]:
         db = open_connection_for(conn_id)
         res = db.execute(
             "__schemas__",
-            "SELECT DISTINCT table_schema FROM information_schema.tables "
+            # Uppercase INFORMATION_SCHEMA: required by BigQuery, folded by Postgres.
+            "SELECT DISTINCT table_schema FROM INFORMATION_SCHEMA.TABLES "
             "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
             "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
         )

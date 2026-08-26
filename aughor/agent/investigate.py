@@ -3013,7 +3013,7 @@ def _resolve_table_for_column(conn, col: str) -> Optional[str]:
     try:
         r = conn.execute(
             "__col_table_probe__",
-            "SELECT table_schema, table_name FROM information_schema.columns "
+            "SELECT table_schema, table_name FROM INFORMATION_SCHEMA.COLUMNS "
             f"WHERE column_name = '{col}' GROUP BY 1, 2")
         if r and not getattr(r, "error", None) and r.rows and len(r.rows) == 1:
             sch, tbl = r.rows[0][0], r.rows[0][1]
@@ -4713,7 +4713,7 @@ def _unit_conversion_disproved(conn, connection_id: str, metric_table: str, col:
         bare = str(metric_table).replace(";", "").strip().rsplit(".", 1)[-1]
         tres = conn.execute(
             "intake_unit_probe",
-            "SELECT column_name, data_type FROM information_schema.columns "
+            "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
             f"WHERE table_name = '{bare}'",
         )
         if getattr(tres, "error", None) or not getattr(tres, "rows", None):
@@ -5862,7 +5862,7 @@ def run_analysis_phase(
                         continue
                     _p = _ref.split(".")
                     _probe = (
-                        f"SELECT column_name FROM information_schema.columns "
+                        f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE table_name = '{_p[-1]}'"
                         + (f" AND table_schema = '{_p[0]}'" if len(_p) == 2 else "")
                     )
@@ -7766,7 +7766,7 @@ def _db_typed_columns(conn: "DatabaseConnection", schema_name: str) -> dict:
         if not schema_name:
             return {}
         res = conn.execute("__temporal_types__",
-                           "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                           "SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                            f"WHERE table_schema = '{schema_name}'")
         if getattr(res, "error", None) or not getattr(res, "rows", None):
             return {}

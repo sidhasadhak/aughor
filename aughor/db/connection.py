@@ -1539,7 +1539,7 @@ class PostgresConnection(DatabaseConnection):
             with _stage("pg.information_schema"), self._conn.cursor() as cur:
                 cur.execute("""
                     SELECT table_name, column_name, data_type
-                    FROM information_schema.columns
+                    FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE table_schema = %s
                     ORDER BY table_name, ordinal_position
                 """, (self._schema_name,))

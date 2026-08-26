@@ -465,7 +465,7 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
                     where += f" AND table_schema = '{schema_part}'"
                 r = conn.execute(
                     "__profiler__",
-                    f"SELECT column_name, data_type FROM information_schema.columns "
+                    f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                     f"{where} ORDER BY ordinal_position",
                 )
             if r.error or not r.rows:
