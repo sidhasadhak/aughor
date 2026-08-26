@@ -507,7 +507,18 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
   // waterfall and pareto already do this), and on a horizontal bar it swapped the two —
   // typing an X title retitled the measure and vice versa.
-  const valueEnc = { field: valueField, type: "quantitative",
+  // Labels render OUTSIDE the mark (right of a horizontal bar, above a vertical one),
+  // so the longest bar's label walked off the plot into the legend gutter. When labels
+  // are on, the value scale gets headroom via Vega-Lite's own domainMax — the label
+  // then lands inside the plot by construction, whatever the data.
+  let labelHeadroom: { scale?: Record<string, unknown> } = {};
+  if (showLabels) {
+    const mi = columns.indexOf(measure);
+    const vals = rows.map((r) => Number(r[mi])).filter(Number.isFinite);
+    const mx = vals.length ? Math.max(...vals) : 0;
+    if (mx > 0) labelHeadroom = { scale: { domainMax: (pctScaled ? mx / 100 : mx) * 1.12 } };
+  }
+  const valueEnc = { field: valueField, type: "quantitative", ...labelHeadroom,
                      axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
