@@ -2148,7 +2148,7 @@ export default function Home() {
                   layer={intelLayer}
                   onLayerChange={setIntelLayer}
                   initialGraphTable={initialGraphTable}
-                  connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
+                  connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name, schema_name: c.schema_name ?? null }))}
                   onConnectionChange={setSelectedConn}
                   workspaceId={selectedWorkspace}
                 />
