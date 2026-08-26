@@ -35,7 +35,7 @@ export type { ChartCustom };
 // SCHEME_PALETTES (named categorical palettes) now live in @/lib/chartPalettes.
 
 /** Viewer-selectable value-axis formats (d3-format strings; null = automatic).
- *  The first slice of the Tableau-style formatting ask — custom codes, dates and
+ *  The first slice of the spreadsheet-style formatting ask — custom codes, dates and
  *  per-column formats are roadmap §8. */
 const FORMAT_CHOICES: { key: string; label: string; d3: string | null; title: string }[] = [
   { key: "auto",     label: "Auto", d3: null,     title: "Automatic" },

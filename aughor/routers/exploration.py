@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 import re as _re
 
 _SQL_TABLE_RE = _re.compile(
-    # Backticks alongside double quotes: BigQuery/MySQL insights quote tables as
+    # Backticks alongside double quotes: BigQuery/MySQL findings quote tables as
     # `orders`, and a pattern that only knew double quotes extracted NOTHING from
-    # them — so the schema filter dropped every warehouse insight as "not in this
+    # them — so the schema filter dropped every warehouse finding as "not in this
     # schema" and the Briefing emptied itself one fetch after rendering.
     r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:[\"`]?(\w+)[\"`]?\.)?[\"`]?(\w+)[\"`]?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
     _re.IGNORECASE,
@@ -42,9 +42,9 @@ def _tables_from_sql(sql: str) -> set[str]:
     ``ecommerce.orders`` from ``missimi.orders`` (both schemas have an ``orders`` table).
 
     sqlglot first: it excludes CTE aliases and survives every dialect's quoting —
-    BigQuery insights write ``\\`project-id.dataset.table\\`` in one backticked span,
+    BigQuery findings write ``\\`project-id.dataset.table\\`` in one backticked span,
     which no FROM/JOIN regex can read (the regex caught only the CTE names, so the
-    schema filter dropped every warehouse insight and the Briefing emptied itself).
+    schema filter dropped every warehouse finding and the Briefing emptied itself).
     The regex stays as the fallback for SQL sqlglot cannot parse."""
     out: set[str] = set()
     try:
@@ -53,7 +53,7 @@ def _tables_from_sql(sql: str) -> set[str]:
         # `proj.dataset.table` span into catalog/schema/table (the generic read
         # returns it as one identifier, or misses it and reports the CTE alias).
         # Stray refs from the weaker parse are harmless — the filter keeps an
-        # insight when ANY qualified ref matches the schema.
+        # finding when ANY qualified ref matches the schema.
         for dialect in (None, "bigquery"):
             for t in extract_tables(sql, dialect=dialect):
                 name, sch = (t.table or ""), t.schema
@@ -635,11 +635,16 @@ def _metric_moves_provider(conn_id: str, profile):
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
                       workspace_id: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
+    # ⚠ The REQUESTED schema owns `scope_key` (stamped below): it is the client's proof
+    # that a narrative belongs to the scope it is about to paint it under. Canonicalization
+    # applies to the DATA LOOKUPS only — collapsing it into the stamp answered "workspace"
+    # to a request for "workspace:netflix", the exact mismatch the stamp exists to catch.
+    requested_schema = schema
     # READS honour the same invariant as the spawn path: a single-schema connection
     # always resolves to the bare key. Without this, the UI's ?schema= fetch went
     # through the cross-schema post-filter, which (correctly, by its own rules)
-    # dropped insights whose SQL qualifies tables into another namespace — e.g.
-    # BigQuery insights written against `bigquery-public-data.thelook_ecommerce` on
+    # dropped findings whose SQL qualifies tables into another namespace — e.g.
+    # BigQuery findings written against `bigquery-public-data.thelook_ecommerce` on
     # a connection whose mirror schema is `thelook` — and the Briefing rendered its
     # stored content, then emptied itself one fetch later.
     from aughor.routers._shared import canonical_schema
@@ -664,7 +669,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     # The scope this brief is FOR. Stamped onto the response (below) so the client can
     # prove a narrative belongs to the scope it is about to paint it under — without it,
     # a stale brief from another schema is structurally undetectable on the client.
-    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
 
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):

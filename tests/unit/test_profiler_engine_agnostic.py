@@ -125,9 +125,9 @@ def test_manifest_builds_cells_from_bigquery_shaped_profiles():
 
 
 def test_schema_filter_extracts_tables_from_backticked_sql():
-    # BigQuery/MySQL insights quote tables with backticks; the extractor knew only
+    # BigQuery/MySQL findings quote tables with backticks; the extractor knew only
     # double quotes and returned nothing, so the schema post-filter dropped every
-    # warehouse insight and the Briefing emptied itself one fetch after rendering.
+    # warehouse finding and the Briefing emptied itself one fetch after rendering.
     from aughor.routers.exploration import _tables_from_sql
 
     assert _tables_from_sql("SELECT s, COUNT(*) FROM `order_items` GROUP BY 1") == {"order_items"}

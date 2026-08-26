@@ -2698,7 +2698,7 @@ export function BriefingPanel({
               {explorerStatus.paused && " (paused)"}
             </span>
             {/* No run counters here: queries_executed is the CURRENT run's number while
-                insights_found is lifetime, so "1q · 22 insights" read as broken history —
+                insights_found is lifetime, so "1q · 22 findings" read as broken history —
                 and either way it is machinery, not business content. */}
           </>
         ) : (

@@ -174,7 +174,7 @@ def test_the_names_query_no_longer_selects_a_literal_zero(one_duckdb_connection)
     db = _DB(info_rows=[("main", "orders", "NULL")], size_rows=[("main", "orders", "9994")])
     one_duckdb_connection(db)
 
-    names_q = [q for q in db.queries if "information_schema.tables" in q]
+    names_q = [q for q in db.queries if "information_schema.tables" in q.lower()]
     assert names_q, "the names query never ran"
     assert "table_name, 0" not in names_q[0], (
         "the literal zero is back in the names query — it shadows the real estimate")
