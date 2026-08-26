@@ -2000,6 +2000,22 @@ type EmptyReason =
 
 function emptyReason(status: ExplorerStatus | null): EmptyReason {
   const phase = status?.phase;
+  // "pending" is not "never": a queued or boot-resumed run reads pending for its
+  // first seconds while prior findings still exist, and rendering "No exploration
+  // has run yet" over real data was a visible flicker. Pending with ANY recorded
+  // work shows as a run in flight; only a truly blank status means never.
+  if (
+    status &&
+    phase === "pending" &&
+    (status.insights_found > 0 || status.facts_discovered > 0 || status.queries_executed > 0)
+  ) {
+    return {
+      kind: "running",
+      queries: status.queries_executed,
+      insights: status.insights_found,
+      phase,
+    };
+  }
   if (!status || !phase || phase === "pending") return { kind: "never" };
   if (phase === "failed")   return { kind: "failed", error: status.error };
   if (phase === "complete") {
