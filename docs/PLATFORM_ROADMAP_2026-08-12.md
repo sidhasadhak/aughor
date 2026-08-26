@@ -636,3 +636,14 @@ BigQuery connection. Recorded for prioritisation, not yet scheduled.
    never passed it to the Vega resolver since the engine migration — the reason
    ratio charts render 0.598729927282. Rewire it as the DEFAULT the viewer's
    picker overrides.
+7. **Saved viz-configs key by POSITION** (`pinned__N`) while pinned findings
+   reorder across briefing regenerations — a stale seed then styles the wrong
+   finding (observed: a metric selection reshaping a frame its chart hint could
+   not express, blanking the card). Key configs by the finding's `signature`.
+   The Chart fallback ladder (2026-08-26) makes this non-fatal; re-keying makes
+   it correct.
+8. **Auto chart-type inference refuses a plain [dimension, stringified-measure]
+   frame** that an explicit bar charts fine (measured directly on the resolver:
+   auto=NULL, bar=SPEC for theLook's category/total_volume). The connector layer
+   stringifies every cell, so this shape is common. Inference should coerce
+   numeric-looking strings before classifying.
