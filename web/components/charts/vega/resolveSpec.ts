@@ -536,8 +536,13 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
     const legendOf = () => {
       const lp = exhibit?.color?.legend;
       if (lp === "none") return null;
+      // Direction follows placement: a top/bottom legend reads as a ROW, a left/right
+      // one as a column. The global config pins direction: "vertical" (right-side
+      // default), so without this a bottom legend rendered as a column under the plot.
+      const placed = lp && ["right", "bottom", "top", "left"].includes(lp);
       return { title: exhibit?.color?.name ?? null,
-               ...(lp && ["right", "bottom", "top", "left"].includes(lp) ? { orient: lp } : {}) };
+               ...(placed ? { orient: lp,
+                              direction: (lp === "top" || lp === "bottom" ? "horizontal" : "vertical") } : {}) };
     };
     if (mode === "sign") {
       return { field: measure, type: "quantitative",
