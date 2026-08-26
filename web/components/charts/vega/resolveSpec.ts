@@ -493,13 +493,18 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const pct = measureIsPercent(measure);
   const pctScaled = pct && percentAlreadyScaled(measure);
   const valueField = pctScaled ? `${measure}__frac` : measure;
+  // Titles bind to the CHANNEL, not the screen axis: the editor's "X axis" section IS
+  // the dimension and its "Y axis" IS the measure, so each title must follow its field
+  // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
+  // waterfall and pareto already do this), and on a horizontal bar it swapped the two —
+  // typing an X title retitled the measure and vice versa.
   const valueEnc = { field: valueField, type: "quantitative",
-                     axis: valueAxis(axisTitle(horizontal ? xTitle : yTitle, measure),
+                     axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
     field: band,
     type: (dateCol === band ? "temporal" : "nominal") as string,
-    axis: bandAxis(axisTitle(horizontal ? yTitle : xTitle, band)),
+    axis: bandAxis(axisTitle(xTitle, band)),
     // Lead with the largest — the ranking the question implies. Ties break stably.
     // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
     sort: null,
