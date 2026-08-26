@@ -3359,6 +3359,15 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
                 else "Phase findings (no synthesized answer)")
     exec_summary = (" ".join(_summaries))[:900] or \
         "See the individual phase findings below for details."
+    # Did any SQL actually execute? The degraded notice used to assert "the underlying
+    # queries ran" unconditionally, which is true for the case it was written for (synthesis
+    # died AFTER the phases produced results) and false for the one that actually reaches a
+    # user first: every phase failing at PLANNING, so no SQL was ever written. Telling a
+    # reader the queries ran when nothing ran sends them looking for a fault in the
+    # warehouse — the reading is the difference between "the framing is provisional" and
+    # "there is nothing behind this at all".
+    _executed = sum(1 for p in phases for f in (p.get("findings") or [])
+                    if (f.get("sql") or "").strip() and not f.get("error"))
     caveats = [c for p in phases for c in (p.get("caveats") or []) if c]
     if caveats:
         exec_summary = (exec_summary + " ⚠ Caveats: "
@@ -3379,7 +3388,10 @@ def _degraded_report(question: str, phases: list, intake_data: dict, *,
         confidence_justification=(
             "Narrative synthesis was unavailable (the model was slow or failed); this report is "
             "assembled deterministically from the phase findings, so treat the framing as "
-            "provisional even though the underlying queries ran."
+            + (f"provisional even though the underlying queries ran ({_executed} executed)."
+               if _executed else
+               "provisional — and note that NO query ran: every phase failed or was skipped "
+               "before any SQL was executed, so there are no results behind this summary.")
         ),
         recommendations=[],
         data_gaps=[],

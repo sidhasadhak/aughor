@@ -1118,6 +1118,17 @@ _ERROR_HINTS = {
 }
 
 
+def error_hint(reason: str) -> str:
+    """The operator-facing remedy for a :data:`PROVIDER_ERROR_CLASSES` verdict, or "".
+
+    Public because the reliability layer names the same failures from the other side of
+    the call — see :func:`aughor.llm.reliability.classify`. Reaching into `_ERROR_HINTS`
+    from there would be a second reader of a private table, and the hints would drift the
+    first time one of them was reworded.
+    """
+    return _ERROR_HINTS.get(reason, "")
+
+
 def classify_provider_error(exc: BaseException) -> str:
     """One of :data:`PROVIDER_ERROR_CLASSES` for a failed provider call.
 
@@ -2560,7 +2571,7 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
         # authority when the classifier says "unknown".
         reason = classify_provider_error(e)
         return {"model": model, "ok": False, "error": str(e)[:240],
-                "reason": reason, "hint": _ERROR_HINTS.get(reason, ""),
+                "reason": reason, "hint": error_hint(reason),
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 

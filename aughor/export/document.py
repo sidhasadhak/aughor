@@ -254,11 +254,15 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
     # Degraded-report notice FIRST: the specimen PDF's only admission that synthesis
     # failed sat inside confidence_justification on the last page.
     if rep.get("degraded"):
+        # No claim here about whether the QUERIES ran: this banner is a fixed string, and
+        # the fixed string it used to carry ("The queries ran") is false for a report whose
+        # phases all failed at planning. Whether any SQL executed is authored once, by the
+        # report itself, and rendered below as `confidence_justification` — one place that
+        # can actually count, instead of two surfaces asserting it from memory.
         blocks.append(Block(
             "prose", tag="Note",
             text=("⚠ Narrative synthesis was unavailable — this report is assembled "
-                  "directly from the phase findings. The queries ran; the framing is "
-                  "provisional."),
+                  "directly from the phase findings; the framing is provisional."),
         ))
     if rep.get("executive_summary"):
         blocks.append(_h("Executive summary"))
