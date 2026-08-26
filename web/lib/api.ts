@@ -3929,6 +3929,15 @@ export interface LlmConfig {
    *  provider is switched, so a previous choice is not retyped; the fallback chain
    *  dispatches with the same values. Absent on a config written before this shipped. */
   models_by_backend?: Record<string, Record<string, string>>;
+  /** Where calls go when the primary fails. `backend` is "" for the built-in order,
+   *  "none" for no fallback, else the one chosen link; `chain` is what will actually be
+   *  tried (an env pin outranks the choice); `active` is true when the primary is spent
+   *  and runs are landing on the fallback right now. */
+  fallback?: {
+    backend: string; model: string; chain: string[]; active: boolean;
+    /** AUGHOR_FALLBACK_BACKENDS is set and outranks the Settings choice. */
+    env_pinned: boolean;
+  };
 }
 
 export interface LlmConfigPatch {
@@ -3936,6 +3945,8 @@ export interface LlmConfigPatch {
   models?: Record<string, string>;
   base_urls?: Record<string, string>;
   keys?: Record<string, string>;
+  /** {backend?, model?} — "" = built-in order, "none" = no fallback, else one backend. */
+  fallback?: { backend?: string; model?: string };
   /** Free-by-default: required to bind a non-`:free` OpenRouter model. */
   allow_paid?: boolean;
 }

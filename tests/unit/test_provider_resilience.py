@@ -239,6 +239,45 @@ def test_a_backend_configured_in_settings_becomes_a_usable_fallback(monkeypatch)
     assert P._fallback_model_for("together", "coder") == ""
 
 
+def test_settings_can_choose_the_fallback_provider_and_model(monkeypatch):
+    """The chain is an operator decision, not an env-file one.
+
+    Before this it could only be steered by AUGHOR_FALLBACK_BACKENDS /
+    AUGHOR_FALLBACK_MODEL_<BACKEND> — invisible from the product, and on a deployment
+    where nobody had set them the chain silently used the built-in order with no model to
+    dispatch with. One model serves every role, which is what Settings offers.
+    """
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "backend": "openrouter",
+        "fallback": {"backend": "gemini", "model": "vendor/chosen"},
+    })
+    assert P._fallback_backends() == ("gemini",)
+    for role in ("coder", "narrator", "fast"):
+        assert P._fallback_model_for("gemini", role) == "vendor/chosen"
+    # A backend that is not the chosen one is unaffected by that choice.
+    assert P._fallback_model_for("together", "coder") == ""
+
+
+def test_settings_can_switch_the_fallback_off_entirely(monkeypatch):
+    """"none" has to be spelled, because "" already means "the built-in order" — the same
+    reason the env var carries the word."""
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "none"}})
+    assert P._fallback_backends() == ()
+
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": ""}})
+    assert P._fallback_backends() == P._FALLBACK_ORDER, "blank means the default order"
+
+
+def test_the_env_chain_still_outranks_the_settings_choice(monkeypatch):
+    """How a deployment nobody can open Settings on is steered."""
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "gemini"}})
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "groq")
+    assert P._fallback_backends() == ("groq",)
+
+
 def test_an_env_pin_still_outranks_the_remembered_binding(monkeypatch):
     """The env contract predates the config memory and must keep winning — it is how an
     operator overrides a deployment they cannot open Settings on."""

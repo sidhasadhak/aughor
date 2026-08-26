@@ -258,11 +258,20 @@ def _fallback_backends() -> tuple[str, ...]:
     no-key guarantee needs a value that structurally forbids the chain while still letting
     an individual test override the variable to exercise it."""
     raw = os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()
-    if not raw:
-        return _FALLBACK_ORDER
-    if raw.lower() == "none":
-        return ()
-    return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
+    if raw:
+        if raw.lower() == "none":
+            return ()
+        return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
+    # Settings → Models. The env var still outranks it: that is how a deployment nobody
+    # can open Settings on is steered. "none" means the same here as there — an empty
+    # chain, chosen deliberately — which is why the field carries the word rather than
+    # using "" for it ("" has always meant "the default order").
+    chosen = str((_cfg().get("fallback") or {}).get("backend") or "").strip()
+    if chosen:
+        if chosen.lower() == "none":
+            return ()
+        return (chosen,) if chosen in BACKENDS else ()
+    return _FALLBACK_ORDER
 
 
 # A backend that answered "quota exhausted" will answer the same way for every call until
@@ -319,9 +328,15 @@ def _fallback_model_for(backend: str, role: Role) -> str:
     env = (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
     if env:
         return env
+    cfg = _cfg()
+    fallback = cfg.get("fallback") or {}
+    if str(fallback.get("backend") or "").strip() == backend:
+        chosen = str(fallback.get("model") or "").strip()
+        if chosen:
+            return chosen          # one model, every role — what Settings offers
     if backend == "anthropic":
         return _fallback_model()
-    remembered = (_cfg().get("models_by_backend") or {}).get(backend) or {}
+    remembered = (cfg.get("models_by_backend") or {}).get(backend) or {}
     return str(remembered.get(role) or "").strip()
 
 
@@ -2331,6 +2346,33 @@ class LLMProvider:
                 and not _in_quota_cooldown(b)]
 
 
+def _fallback_status(primary: str) -> dict:
+    """The fallback binding as the UI needs it: what is configured, what will be tried,
+    and whether the primary is currently spent so runs are landing on the fallback.
+
+    `active` is best-effort — a cooldown read failing must never take Settings down with
+    it, so an unknown answer is reported as "not active" rather than raised.
+    """
+    fb = _cfg().get("fallback") or {}
+    chain = list(_fallback_backends())
+    try:
+        active = bool(chain) and _in_quota_cooldown(primary)
+    except Exception:                                     # pragma: no cover - defensive
+        logger.debug("provider: fallback cooldown read failed", exc_info=True)
+        active = False
+    return {
+        "backend": str(fb.get("backend") or "").strip(),
+        "model": str(fb.get("model") or "").strip(),
+        "chain": chain,
+        "active": active,
+        # An env pin silently OUTRANKS whatever Settings says. Without surfacing it the
+        # panel would show a chosen provider, the chain would show a different one, and
+        # nothing would explain which is real — a picker that does nothing is worse than
+        # no picker.
+        "env_pinned": bool(os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()),
+    }
+
+
 def _org_cache_scope() -> tuple[str, str]:
     """The (org_id, config-fingerprint) pair a cached provider was built for (CI-5b).
 
@@ -2434,6 +2476,12 @@ def current_config() -> dict:
         # chain dispatches with them. Never secret — model ids, chosen from the picker.
         "models_by_backend": {b: dict(m) for b, m in
                               (cfg.get("models_by_backend") or {}).items() if m},
+        # The fallback binding, and whether it is carrying traffic right now. `chain` is
+        # what will actually be tried (env pin > Settings > default order), so the panel
+        # never has to re-derive that precedence; `active` is true when the PRIMARY is in
+        # quota cooldown, which is the moment a run silently lands on the fallback instead
+        # — the roster reads it so an operator is not left guessing which model answered.
+        "fallback": _fallback_status(backend),
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
         # A key that cannot be DECRYPTED is not a key that is set. `decrypt_secret`
         # returns an undecryptable value as-is — deliberate, so one bad record cannot take
@@ -2529,6 +2577,25 @@ def set_config(patch: dict) -> dict:
         else:
             by_backend.pop(effective_backend, None)
         cfg["models_by_backend"] = by_backend
+
+    if isinstance(patch.get("fallback"), dict):
+        fb = dict(cfg.get("fallback") or {})
+        if "backend" in patch["fallback"]:
+            chosen = str(patch["fallback"]["backend"] or "").strip()
+            # "" = the default order, "none" = no chain at all, else a real backend.
+            if chosen and chosen.lower() != "none" and chosen not in BACKENDS:
+                raise ValueError(f"unknown fallback backend {chosen!r}")
+            fb["backend"] = chosen
+        if "model" in patch["fallback"]:
+            model = str(patch["fallback"]["model"] or "").strip()
+            # A paid fallback bills exactly like a paid primary — same consent, same guard.
+            # Skipping it here would make the fallback the one way to spend money without
+            # meaning to, which is the hole the free-by-default rule exists to close.
+            if model and fb.get("backend") and fb["backend"].lower() != "none":
+                ensure_free_or_allowed(fb["backend"], model,
+                                       allow_paid=bool(patch.get("allow_paid")))
+            fb["model"] = model
+        cfg["fallback"] = fb
 
     if isinstance(patch.get("base_urls"), dict):
         urls = dict(cfg.get("base_urls") or {})

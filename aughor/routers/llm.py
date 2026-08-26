@@ -28,6 +28,10 @@ class _ConfigPatch(BaseModel):
     models: Optional[dict] = None       # {coder?, narrator?, fast?}  ("" clears)
     base_urls: Optional[dict] = None    # {ollama?, lmstudio?}        ("" clears)
     keys: Optional[dict] = None         # {groq?, together?, anthropic?}  ("" clears, masked = unchanged)
+    # Where calls go when the primary fails: {backend?, model?}. "" = the built-in order,
+    # "none" = no fallback at all, a backend name = that one link. One model serves every
+    # role, which is what Settings offers; per-role pins remain an env-only contract.
+    fallback: Optional[dict] = None
     # Free-by-default: binding a non-`:free` OpenRouter model is refused unless
     # this is set — paying must be a deliberate act, never a typo.
     allow_paid: Optional[bool] = None
