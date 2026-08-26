@@ -941,7 +941,17 @@ class SchemaExplorer:
         try:
             tp, cp, jmap = await _loop.run_in_executor(None, self._load_profiler_data)
             if not tp:
-                logger.info(f"[explorer:{self.connection_id}] No profiler data, aborting")
+                # An engine the profiler cannot profile lands here on EVERY run. This was
+                # a bare return — the kernel job then reported SUCCEEDED while status sat
+                # at pending forever, with 0 queries and 0 insights. Absent input is a
+                # failure the user can see, never a success with nothing in it.
+                self._status.phase = ExplorationPhase.FAILED
+                self._status.error = ("no profiler data for this connection — the schema "
+                                      "profiler has not produced table profiles here "
+                                      "(it may not support this engine yet)")
+                self._journal("exploration.phase", {"phase": "failed", "reason": "no_profiler_data"})
+                self._save_state()
+                logger.warning(f"[explorer:{self.connection_id}] No profiler data — marking failed")
                 return
 
             self._status.tables_total = len(tp)
