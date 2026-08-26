@@ -1482,14 +1482,15 @@ def connection_measure_grains_endpoint(conn_id: str):
 
 # ── Distinct values (filter pickers) ───────────────────────────────────────────
 
-def _quote_ident(name: str, schema: "str | None" = None) -> str:
+def _quote_ident(name: str, schema: "str | None" = None, q: str = '"') -> str:
     """Quote a (possibly already schema-qualified) table identifier — each dotted segment
-    separately, never the whole dotted string as one identifier (the beautycommerce bug)."""
+    separately, never the whole dotted string as one identifier (the beautycommerce bug).
+    `q` is the engine's identifier quote (see aughor.db.quoting.ident_quote)."""
     if "." in name:
-        return ".".join(f'"{p}"' for p in name.split("."))
+        return ".".join(f"{q}{p}{q}" for p in name.split("."))
     if schema and schema not in ("main", "public"):
-        return f'"{schema}"."{name}"'
-    return f'"{name}"'
+        return f"{q}{schema}{q}.{q}{name}{q}"
+    return f"{q}{name}{q}"
 
 
 @router.get("/connections/{conn_id}/distinct")
@@ -1502,7 +1503,9 @@ def column_distinct(conn_id: str, table: str, column: str, schema: "str | None" 
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         n = max(1, min(int(limit), 1000))
-        qt, qc = _quote_ident(table, schema), f'"{column}"'
+        from aughor.db.quoting import ident_quote
+        q = ident_quote(db)
+        qt, qc = _quote_ident(table, schema, q), f"{q}{column}{q}"
         res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}")
         if getattr(res, "error", None):
             return {"values": [], "truncated": False}

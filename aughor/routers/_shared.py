@@ -218,6 +218,11 @@ async def run_birth(
         db = (open_connection_for_with_schema(conn_id, schema_name)
               if schema_name else open_connection_for(conn_id))
         try:
+            if not hasattr(db, "build_intelligence"):
+                # Only the DuckDB-family connectors carry an eager intelligence pass.
+                # On warehouse engines the AttributeError here read as a FAILED birth
+                # step on every connection; having no pass to run is a skip.
+                return {"ok": True, "stage": "skipped"}
             from aughor import telemetry
             with telemetry.span(f"birth:{conn_id}", "birth.intelligence",
                                 {"connection_id": conn_id, "schema": schema_name or ""}):
@@ -370,7 +375,8 @@ def schemas_of_connection(conn_id: str) -> list[str]:
         db = open_connection_for(conn_id)
         res = db.execute(
             "__schemas__",
-            "SELECT DISTINCT table_schema FROM information_schema.tables "
+            # Uppercase INFORMATION_SCHEMA: required by BigQuery, folded by Postgres.
+            "SELECT DISTINCT table_schema FROM INFORMATION_SCHEMA.TABLES "
             "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
             "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
         )

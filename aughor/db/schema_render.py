@@ -57,7 +57,7 @@ def render_raw_schema(
         if current_db:
             tables = [
                 row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
+                    "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
                     "AND table_catalog = ? ORDER BY table_name",
                     [schema_name, current_db],
@@ -66,14 +66,14 @@ def render_raw_schema(
         else:
             tables = [
                 row[0] for row in conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
+                    "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
                     "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
                     [schema_name],
                 ).fetchall()
             ]
         # Fallback: the user may have set schema_name to a database name
         # (common with MotherDuck) rather than a DuckDB schema. In that case,
-        # information_schema.tables returns nothing — fall back to SHOW TABLES.
+        # INFORMATION_SCHEMA.TABLES returns nothing — fall back to SHOW TABLES.
         if not tables:
             tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     else:
@@ -254,6 +254,19 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
         if m:
             current = m.group(1)
             table_cols[current] = []
+            # Warehouse connectors render columns inline on the TABLE line —
+            # `TABLE: orders (124934 rows) [id INTEGER, created_at TIMESTAMP]` —
+            # which the line-per-column branch below never sees, so every such
+            # table parsed as zero columns (and freshness, the join map and the
+            # profile all worked from nothing). The name filter drops the
+            # fragments a bare comma-split makes of types like DECIMAL(10,2).
+            bracket = re.search(r"\[(.*)\]\s*$", line)
+            if bracket:
+                for frag in bracket.group(1).split(","):
+                    name = frag.strip().split(" ")[0]
+                    if re.fullmatch(r"[A-Za-z_]\w*", name):
+                        table_cols[current].append(name)
+                current = None
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):

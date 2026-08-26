@@ -128,6 +128,11 @@ export interface ResolveSpecArgs {
   exhibit?: ExhibitSpec | Record<string, unknown> | null;
   /** Authoritative per-column display unit, e.g. {"leakage_rate": "percent"}. */
   columnUnits?: Record<string, string> | null;
+  /** The measure the USER chose (Query Builder / viz editor). When present and in
+   *  `columns`, it wins over type inference — without this, a multi-numeric frame let
+   *  inference pick its own y (binding Color to total_volume silently replaced the
+   *  plotted gross_margin_pct). */
+  measure?: string | null;
 }
 
 export interface ResolvedSpec {
@@ -235,7 +240,7 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
-          transform, exhibit: exhibitRaw, columnUnits } = args;
+          transform, exhibit: exhibitRaw, columnUnits, measure: chosenMeasure } = args;
   // Fail-open on a malformed spec: a bad exhibit costs its semantics, never the chart —
   // the same contract the ECharts resolver held.
   const exhibit = sanitizeExhibit(exhibitRaw as Parameters<typeof sanitizeExhibit>[0]);
@@ -378,7 +383,11 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // spec so it persists with the chart's intent instead of being a mutation applied to the
   // rows before the chart ever saw them.
   const tf = transform && columns.includes(transform.valueCol) ? transformBlocks(transform) : null;
-  const measure = tf ? tf.derived : (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]);
+  // An explicit user choice outranks inference; a transform outranks both (it derives
+  // the column it plots). Only with neither does inference pick the y.
+  const userMeasure = chosenMeasure && columns.includes(chosenMeasure) ? chosenMeasure : null;
+  const measure = tf ? tf.derived
+    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]));
   const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
   const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };
@@ -493,13 +502,29 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const pct = measureIsPercent(measure);
   const pctScaled = pct && percentAlreadyScaled(measure);
   const valueField = pctScaled ? `${measure}__frac` : measure;
-  const valueEnc = { field: valueField, type: "quantitative",
-                     axis: valueAxis(axisTitle(horizontal ? xTitle : yTitle, measure),
+  // Titles bind to the CHANNEL, not the screen axis: the editor's "X axis" section IS
+  // the dimension and its "Y axis" IS the measure, so each title must follow its field
+  // through an orientation flip. This form was the one literal-axis outlier (delta-bar,
+  // waterfall and pareto already do this), and on a horizontal bar it swapped the two —
+  // typing an X title retitled the measure and vice versa.
+  // Labels render OUTSIDE the mark (right of a horizontal bar, above a vertical one),
+  // so the longest bar's label walked off the plot into the legend gutter. When labels
+  // are on, the value scale gets headroom via Vega-Lite's own domainMax — the label
+  // then lands inside the plot by construction, whatever the data.
+  let labelHeadroom: { scale?: Record<string, unknown> } = {};
+  if (showLabels) {
+    const mi = columns.indexOf(measure);
+    const vals = rows.map((r) => Number(r[mi])).filter(Number.isFinite);
+    const mx = vals.length ? Math.max(...vals) : 0;
+    if (mx > 0) labelHeadroom = { scale: { domainMax: (pctScaled ? mx / 100 : mx) * 1.12 } };
+  }
+  const valueEnc = { field: valueField, type: "quantitative", ...labelHeadroom,
+                     axis: valueAxis(axisTitle(yTitle, measure),
                                      pct ? ".1%" : format, pct ? "" : moneyPrefix(measure)) };
   const bandEnc = {
     field: band,
     type: (dateCol === band ? "temporal" : "nominal") as string,
-    axis: bandAxis(axisTitle(horizontal ? yTitle : xTitle, band)),
+    axis: bandAxis(axisTitle(xTitle, band)),
     // Lead with the largest — the ranking the question implies. Ties break stably.
     // Data order, always: see orderedValues above for why an encoding sort cannot be trusted.
     sort: null,
@@ -524,18 +549,33 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   function exhibitColor(): Record<string, unknown> | null {
     const mode = exhibit?.color?.mode;
     if (!mode || mode === "neutral") return null;
+    // The binding's `legend` carries a POSITION (right/bottom/top/left) or "none".
+    // Only "none" was ever honoured — the editor's Legend dropdown set positions
+    // that were silently discarded and the legend always sat right, covering the
+    // plot on dense charts. A position now becomes the Vega legend's `orient`.
+    const legendOf = () => {
+      const lp = exhibit?.color?.legend;
+      if (lp === "none") return null;
+      // Direction follows placement: a top/bottom legend reads as a ROW, a left/right
+      // one as a column. The global config pins direction: "vertical" (right-side
+      // default), so without this a bottom legend rendered as a column under the plot.
+      const placed = lp && ["right", "bottom", "top", "left"].includes(lp);
+      return { title: exhibit?.color?.name ?? null,
+               ...(placed ? { orient: lp,
+                              direction: (lp === "top" || lp === "bottom" ? "horizontal" : "vertical") } : {}) };
+    };
     if (mode === "sign") {
       return { field: measure, type: "quantitative",
                scale: { type: "threshold", domain: [0], range: "diverging" }, legend: null };
     }
     if (mode === "severity") {
       return { field: measure, type: "quantitative", scale: { range: "heatmap" },
-               legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+               legend: legendOf() };
     }
     const field = exhibit?.color?.field;
     if (!field || !columns.includes(field)) return null;
     return { field, type: mode === "continuous" ? "quantitative" : "nominal", sort: null,
-             legend: exhibit?.color?.legend === "none" ? null : { title: exhibit?.color?.name ?? null } };
+             legend: legendOf() };
   }
 
   /** Reference lines — context the reader otherwise supplies from memory. */

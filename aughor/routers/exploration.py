@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 import re as _re
 
 _SQL_TABLE_RE = _re.compile(
-    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
+    # Backticks alongside double quotes: BigQuery/MySQL findings quote tables as
+    # `orders`, and a pattern that only knew double quotes extracted NOTHING from
+    # them — so the schema filter dropped every warehouse finding as "not in this
+    # schema" and the Briefing emptied itself one fetch after rendering.
+    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:[\"`]?(\w+)[\"`]?\.)?[\"`]?(\w+)[\"`]?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
     _re.IGNORECASE,
 )
 
@@ -35,8 +39,36 @@ _SQL_TABLE_RE = _re.compile(
 def _tables_from_sql(sql: str) -> set[str]:
     """Lowercased table refs in a query — BOTH the bare name and, when the query qualifies
     it, the ``schema.table`` form. The qualified form is what lets schema isolation tell
-    ``ecommerce.orders`` from ``missimi.orders`` (both schemas have an ``orders`` table)."""
+    ``ecommerce.orders`` from ``missimi.orders`` (both schemas have an ``orders`` table).
+
+    sqlglot first: it excludes CTE aliases and survives every dialect's quoting —
+    BigQuery findings write ``\\`project-id.dataset.table\\`` in one backticked span,
+    which no FROM/JOIN regex can read (the regex caught only the CTE names, so the
+    schema filter dropped every warehouse finding and the Briefing emptied itself).
+    The regex stays as the fallback for SQL sqlglot cannot parse."""
     out: set[str] = set()
+    try:
+        from aughor.sql.tables import extract_tables
+        # Both parses, unioned: only read=bigquery decomposes a backticked
+        # `proj.dataset.table` span into catalog/schema/table (the generic read
+        # returns it as one identifier, or misses it and reports the CTE alias).
+        # Stray refs from the weaker parse are harmless — the filter keeps an
+        # finding when ANY qualified ref matches the schema.
+        for dialect in (None, "bigquery"):
+            for t in extract_tables(sql, dialect=dialect):
+                name, sch = (t.table or ""), t.schema
+                if "." in name:
+                    parts = name.split(".")
+                    name, sch = parts[-1], (parts[-2] if len(parts) > 1 else sch)
+                if not name:
+                    continue
+                out.add(name.lower())
+                if sch:
+                    out.add(f"{sch.lower()}.{name.lower()}")
+    except Exception:
+        out = set()
+    if out:
+        return out
     for m in _SQL_TABLE_RE.finditer(sql):
         sch, tbl = m.group(1), m.group(2)
         if not tbl:
@@ -78,10 +110,14 @@ def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
         return None
     try:
         safe_schema = schema.replace("'", "''")
-        # information_schema.tables is standard SQL — same query for every dialect.
+        # Uppercase INFORMATION_SCHEMA is the portable spelling — BigQuery REQUIRES it
+        # (lowercase resolves as a dataset named information_schema and 404s), Postgres
+        # folds unquoted identifiers down. The lowercase form returned None here, which
+        # fails the filter closed — so every schema-scoped Briefing/Findings read on a
+        # warehouse engine reported "no exploration has run yet" while the run existed.
         res = db.execute(
             "__schema_filter__",
-            "SELECT table_name FROM information_schema.tables "
+            "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
             f"WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'",
         )
         return {str(r[0]).lower() for r in res.rows}
@@ -352,6 +388,9 @@ def time_to_first_insight_kpi(limit: int = 200):
 
 @router.get("/exploration/{conn_id}/findings")
 def get_exploration_findings(conn_id: str, schema: str | None = None):
+    # Single-schema connections resolve to the bare key — same invariant as the briefing.
+    from aughor.routers._shared import canonical_schema
+    schema = canonical_schema(conn_id, schema)
     state = _load_state(conn_id, schema)
     distributions = state.get("distributions", {})
 
@@ -462,6 +501,9 @@ def _annotate_insights_triage(by_domain: dict, profile, col_types: dict[str, str
 
 @router.get("/exploration/{conn_id}/domains")
 def get_domain_insights(conn_id: str, schema: str | None = None):
+    # Single-schema connections resolve to the bare key — same invariant as the briefing.
+    from aughor.routers._shared import canonical_schema
+    schema = canonical_schema(conn_id, schema)
     state = _load_state(conn_id, schema)
     budgets  = state.get("domain_budgets", {})
     coverage = state.get("domain_coverage", {})
@@ -493,6 +535,9 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
 @router.get("/exploration/{conn_id}/patterns")
 def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | None = None):
     """Return extracted patterns from domain intelligence for this connection."""
+    # Single-schema connections resolve to the bare key — same invariant as the briefing.
+    from aughor.routers._shared import canonical_schema
+    schema = canonical_schema(conn_id, schema)
     from aughor.knowledge.patterns import get_patterns
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
@@ -590,6 +635,20 @@ def _metric_moves_provider(conn_id: str, profile):
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
                       workspace_id: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
+    # ⚠ The REQUESTED schema owns `scope_key` (stamped below): it is the client's proof
+    # that a narrative belongs to the scope it is about to paint it under. Canonicalization
+    # applies to the DATA LOOKUPS only — collapsing it into the stamp answered "workspace"
+    # to a request for "workspace:netflix", the exact mismatch the stamp exists to catch.
+    requested_schema = schema
+    # READS honour the same invariant as the spawn path: a single-schema connection
+    # always resolves to the bare key. Without this, the UI's ?schema= fetch went
+    # through the cross-schema post-filter, which (correctly, by its own rules)
+    # dropped findings whose SQL qualifies tables into another namespace — e.g.
+    # BigQuery findings written against `bigquery-public-data.thelook_ecommerce` on
+    # a connection whose mirror schema is `thelook` — and the Briefing rendered its
+    # stored content, then emptied itself one fetch later.
+    from aughor.routers._shared import canonical_schema
+    schema = canonical_schema(conn_id, schema)
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
@@ -610,7 +669,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     # The scope this brief is FOR. Stamped onto the response (below) so the client can
     # prove a narrative belongs to the scope it is about to paint it under — without it,
     # a stale brief from another schema is structurally undetectable on the client.
-    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
 
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):

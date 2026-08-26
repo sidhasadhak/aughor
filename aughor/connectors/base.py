@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Literal
 
 from aughor.db.connection import DatabaseConnection
+from aughor.db.single_flight import single_flight_build
 
 
 ConnectorCategory = Literal["warehouse", "file", "api", "knowledge"]
@@ -37,6 +38,26 @@ class Connector(DatabaseConnection):
 
     #: Row cap for a bound run, matching what every connector's `execute` already applies.
     max_rows: int = 2000
+
+    @single_flight_build
+    def build_intelligence(self) -> str:
+        """Heavy schema build: run the registered HEAVY annotators (value profiles +
+        the structural/semantic ontology + enrichment) over this connector's schema.
+
+        The method existed only on the DuckDB-family connectors, so the ontology —
+        and with it domain intelligence and the briefing — could never be built for
+        any warehouse engine: the explorer's ontology gate and the birth rite both
+        call ``db.build_intelligence()`` and hit AttributeError. The annotator
+        pipeline itself is connection-agnostic (profiles via ``conn.execute``, the
+        object model from profiles + the join map), so the base default is the same
+        thin wrapper the file connectors use. They keep their overrides (their raw
+        structure comes from ``_schema_string()`` before annotation).
+        """
+        base = self.get_schema()
+        if not base or base.startswith("No tables") or base.startswith("Schema unavailable"):
+            return base
+        from aughor.kernel.registries.schema_annotators import run_annotators
+        return run_annotators(self, base, phase="heavy")
 
     def _driver_handle(self):
         """`self._conn`, or `self._duckdb` for the connectors that keep it there.

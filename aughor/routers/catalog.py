@@ -76,7 +76,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
-                # Primary: information_schema.tables is the only reliable cross-database
+                # Primary: INFORMATION_SCHEMA.TABLES is the only reliable cross-database
                 # view in MotherDuck — duckdb_tables() leaks tables from ALL attached DBs.
                 # We filter by the current database so the catalog matches the connection scope.
                 rows: list = []
@@ -94,7 +94,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         "__catalog__",
                         f"""
                         SELECT table_schema, table_name, NULL
-                        FROM information_schema.tables
+                        FROM INFORMATION_SCHEMA.TABLES
                         WHERE table_type = 'BASE TABLE'
                           AND table_schema NOT IN ('information_schema','temp','pg_catalog')
                           AND table_catalog = '{safe_db}'
@@ -141,6 +141,21 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         ORDER BY schema_name, table_name
                         """,
                     ).rows
+            elif getattr(db, "dialect", "") == "bigquery":
+                # BigQuery has no pg_stat_user_tables and its INFORMATION_SCHEMA is
+                # dataset-scoped, so the Postgres introspection below can never run
+                # there — every BigQuery catalog rendered empty. __TABLES__ is a
+                # single free metadata scan and carries a real row count.
+                dataset = schema_filter or getattr(db, "_dataset", "")
+                if not dataset:
+                    # A project-wide connection names no dataset to look in. That is
+                    # "could not look", not "nothing there" — never the deleting [].
+                    db.close()
+                    return None
+                rows = db.execute(
+                    "__catalog__",
+                    f"SELECT dataset_id, table_id, row_count FROM `{dataset}.__TABLES__` ORDER BY table_id",
+                ).rows
             else:
                 rows = db.execute(
                     "__catalog__",
@@ -149,7 +164,7 @@ async def get_catalog_tree(workspace_id: str | None = None):
                         t.table_schema,
                         t.table_name,
                         s.n_live_tup
-                    FROM information_schema.tables t
+                    FROM INFORMATION_SCHEMA.TABLES t
                     LEFT JOIN pg_stat_user_tables s
                         ON s.schemaname = t.table_schema
                         AND s.relname   = t.table_name

@@ -143,16 +143,21 @@ export function buildVegaConfig(t: VegaTokens): Record<string, unknown> {
     axisBand: { zindex: 0 },
     axisQuantitative: { gridColor: t.grid, gridWidth: 1, zindex: 0 },
 
-    // Top-right, stacked, one row per series — the reference's legend, and the reason it
-    // reads: each entry sits on its own line beside the plot instead of running along the
-    // top edge where it competes with the title. Vega-Lite draws the swatch in the shape of
-    // the mark it stands for, so a bar series gets a square and a line series gets a stroke;
-    // that is the part a circle-for-everything legend throws away.
+    // Right, stacked, one row per series — each entry on its own line BESIDE the plot.
+    // ⚠ Not "top-right": Vega-Lite's corner orients draw INSIDE the data rectangle,
+    // so the old top-right default overlaid the legend on full-width bars (measured on
+    // theLook's margin ranking — the gradient sat on the longest bar). "right" reserves
+    // space outside the plot, which is also Vega-Lite's own non-overlapping default.
+    // Vega-Lite draws the swatch in the shape of the mark it stands for, so a bar
+    // series gets a square and a line series a stroke — kept from the reference.
     legend: {
-      orient: "top-right", direction: "vertical", title: null,
+      orient: "right", direction: "vertical", title: null,
       labelFont: t.font, labelFontSize: 11, labelColor: t.t1,
       symbolSize: 64, symbolStrokeWidth: 0,
       offset: 4, padding: 0, rowPadding: 4, columnPadding: 14,
+      // A top/bottom legend centres under the plot instead of hugging the left —
+      // Vega's legend layout anchor, passed through the Vega-Lite config.
+      layout: { top: { anchor: "middle" }, bottom: { anchor: "middle" } },
     },
 
     title: {
@@ -205,7 +210,8 @@ export function buildVegaRuntimeConfig(t: VegaTokens): Record<string, unknown> {
     legend: {
       labelFont: t.font, labelFontSize: 11, labelColor: t.t1,
       titleFont: t.font, titleFontSize: 11, titleColor: t.t3,
-      symbolStrokeWidth: 0, orient: "top-right", direction: "vertical",
+      // "right", not "top-right" — corner orients draw inside the plot (see tier 1).
+      symbolStrokeWidth: 0, orient: "right", direction: "vertical",
     },
     title: { font: t.font, fontSize: 13, fontWeight: 600, color: t.t1, anchor: "start" },
     // Primitive marks, not encoding names — this is where the two config shapes diverge.

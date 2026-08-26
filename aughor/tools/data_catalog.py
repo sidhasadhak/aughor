@@ -287,7 +287,7 @@ def _fetch_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
     except Exception:
         pass
 
-    # 3. information_schema.columns (standard SQL — Postgres and others)
+    # 3. INFORMATION_SCHEMA.COLUMNS (standard SQL — Postgres and others)
     try:
         parts = [p for p in table.split(".") if p]
         tname = parts[-1].replace("'", "''")
@@ -296,7 +296,7 @@ def _fetch_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
             where += f" AND table_schema = '{parts[-2]}'"
         _, rows = _raw_rows(
             conn,
-            "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+            "SELECT column_name, data_type, is_nullable FROM INFORMATION_SCHEMA.COLUMNS "
             f"WHERE {where} ORDER BY ordinal_position",
         )
         if rows:

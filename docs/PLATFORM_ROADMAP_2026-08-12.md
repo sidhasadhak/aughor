@@ -599,3 +599,51 @@ Langfuse host + project topology · community-node ambition (`n8n-nodes-aughor`
 + verified-node submission vs HTTP/MCP templates only) · a demo n8n instance
 (docker, internal use — license-fine) vs purely user-side · chat feedback UI
 now (LF-3 prerequisite) or judge-only initially.
+
+## 8 · Briefing UX backlog — from the theLook live pilot (added 2026-08-26)
+
+User-requested items surfaced while driving the Briefing page against the live
+BigQuery connection. Recorded for prioritisation, not yet scheduled.
+
+1. **The data table behind a finding.** Each briefing finding's evidence should
+   let the user see the underlying result table the claim is based on — the
+   rows, not just the SQL and the chart. (Evidence drawer already carries the
+   SQL and receipt; the table view is the missing third leg.)
+2. **Chart legend collides with the plot.** On brand-cardinality charts the
+   legend frame overlays the bars (see the profit-margin-by-brand exhibit).
+   The user cannot move or re-orient the legend. Needs either automatic
+   placement (outside the plot area when the series count is high), a
+   density-aware legend collapse, or user-draggable orientation.
+3. **Editable evidence SQL (deliberately controversial).** Allow the user to
+   edit the SQL shown in a briefing finding's evidence and re-run it —
+   turning a static receipt into a starting point. Needs a clear provenance
+   break: an edited query is the USER's derivation, and the finding must stop
+   claiming the explorer's grounding for it (the Program AT delivered-verdict
+   rule applies).
+4. **Status counters mix per-run and lifetime numbers** (found the same day):
+   `queries_executed` resets per run while `insights_found` reads lifetime, so
+   surfaces that join them ("1q · 22 insights") misread as broken history. The
+   explorer status model should carry both run-scoped and lifetime counters,
+   explicitly named. (The Briefing page no longer shows counters at all.)
+5. **Chart number formatting, Tableau-grade** (v1 shipped 2026-08-26: a viewer
+   format picker on every chart's hover toolbar — auto / % / integer / decimal
+   / currency / compact — feeding the resolver's existing d3-format parameter).
+   Remaining: custom format codes, date/month axis formats, per-column formats,
+   org-currency-aware symbols, and persisting the choice on the exhibit.
+   Reference: Tableau's number-formatting model.
+6. **`columnUnits` is dead plumbing** (found same day): Chart.tsx accepts the
+   backend's authoritative per-column unit ("this column is a percent") and has
+   never passed it to the Vega resolver since the engine migration — the reason
+   ratio charts render 0.598729927282. Rewire it as the DEFAULT the viewer's
+   picker overrides.
+7. **Saved viz-configs key by POSITION** (`pinned__N`) while pinned findings
+   reorder across briefing regenerations — a stale seed then styles the wrong
+   finding (observed: a metric selection reshaping a frame its chart hint could
+   not express, blanking the card). Key configs by the finding's `signature`.
+   The Chart fallback ladder (2026-08-26) makes this non-fatal; re-keying makes
+   it correct.
+8. **Auto chart-type inference refuses a plain [dimension, stringified-measure]
+   frame** that an explicit bar charts fine (measured directly on the resolver:
+   auto=NULL, bar=SPEC for theLook's category/total_volume). The connector layer
+   stringifies every cell, so this shape is common. Inference should coerce
+   numeric-looking strings before classifying.

@@ -217,8 +217,11 @@ _GEO_CODE_PATTERN = re.compile(
 _NUMERIC_TYPES = re.compile(
     # `U?` covers DuckDB unsigned ints (UTINYINT/USMALLINT/UINTEGER/UBIGINT/UHUGEINT) —
     # ClickBench stores EventDate as USMALLINT, which the bare \bSMALLINT\b missed.
-    r"\b(U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|INT)|"
-    r"FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|NUMBER)\b",
+    # `(?:64)?` covers BigQuery's INT64/FLOAT64 — `\bINT\b` has no word boundary
+    # before the 64, so every BigQuery numeric typed as "unknown" and no measure
+    # (or manifest cell) could ever exist there. BIGNUMERIC/BIGDECIMAL likewise.
+    r"\b(U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|INT)(?:64)?|"
+    r"FLOAT(?:64)?|DOUBLE|DECIMAL|BIGDECIMAL|NUMERIC|BIGNUMERIC|REAL|NUMBER)\b",
     re.IGNORECASE,
 )
 _TIMESTAMP_TYPES = re.compile(
@@ -462,17 +465,19 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
                     where += f" AND table_schema = '{schema_part}'"
                 r = conn.execute(
                     "__profiler__",
-                    f"SELECT column_name, data_type FROM information_schema.columns "
+                    f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                     f"{where} ORDER BY ordinal_position",
                 )
             if r.error or not r.rows:
                 return []
             return [(row[0], row[1]) for row in r.rows]
         else:
-            schema_name = getattr(conn, "_schema_name", "public")
+            schema_name = getattr(conn, "_schema_name", None) or "public"
+            # Uppercase INFORMATION_SCHEMA is the portable spelling — BigQuery
+            # requires it, Postgres folds unquoted identifiers down to match.
             r = conn.execute(
                 "__profiler__",
-                f"SELECT column_name, data_type FROM information_schema.columns "
+                f"SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                 f"WHERE table_name = '{table}' AND table_schema = '{schema_name}' "
                 f"ORDER BY ordinal_position",
             )
@@ -1418,13 +1423,24 @@ def build_column_profiles(
         CHUNK = 30
         sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         chunks = [missing_cols[i: i + CHUNK] for i in range(0, len(missing_cols), CHUNK)]
+        # The sampled distinct is linearly scaled below — right for COUNT(col),
+        # mathematically wrong for COUNT(DISTINCT col): a 10-value column sampled at
+        # 10% still shows ~10 values, and ×10 scaling made every real dimension read
+        # as high-cardinality (theLook's browser: 10 → 100), so no manifest dimension
+        # could exist. The transpiled engines take APPROX_COUNT_DISTINCT over the
+        # full table instead — unsampled, unscaled; native engines rarely reach this
+        # path (their catalog fast-stats cover it) and keep the old behaviour.
+        approx = large and getattr(conn, "dialect", "") not in _NATIVE_PROFILER_DIALECTS
         for chunk in chunks:
             selects = []
             for col in chunk:
                 qc = _q(col)
                 selects.append(f"COUNT({qc}) AS _nn_{col}")
-                selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
-            sql = f"SELECT {', '.join(selects)} FROM {qt}{sample_clause}"
+                if approx:
+                    selects.append(f"approx_count_distinct({qc}) AS _dc_{col}")
+                else:
+                    selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
+            sql = f"SELECT {', '.join(selects)} FROM {qt}{'' if approx else sample_clause}"
             r = conn.execute("__profiler__", sql)
             if r.error or not r.rows:
                 for col in chunk:
@@ -1435,8 +1451,8 @@ def build_column_profiles(
                 try:
                     nn  = int(row_data[i * 2] or 0)
                     dc  = int(row_data[i * 2 + 1] or 0)
-                    # Scale up sampled counts
-                    if large and _SAMPLE_PCT < 100:
+                    # Scale up sampled counts (never the approx path — those are full-table)
+                    if large and _SAMPLE_PCT < 100 and not approx:
                         factor = 100 / _SAMPLE_PCT
                         nn = min(row_count, int(nn * factor))
                         dc = min(row_count, int(dc * factor))
@@ -1451,12 +1467,18 @@ def build_column_profiles(
         and not _KEY_PATTERN.search(col.lower())
         and col not in value_ranges
     ]
-    if numeric_missing and not large:
+    if numeric_missing:
+        # Large tables used to skip ranges entirely (native engines get them from
+        # catalog fast-stats), so no transpiled-engine measure ever carried a
+        # value_range and the manifest's measure gate could never pass. A sampled
+        # MIN/MAX under-reads the extremes slightly; for "does this measure have a
+        # real range" that is the honest cheap answer.
+        range_sample = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         selects = []
         for col, _ in numeric_missing[:20]:
             qc = _q(col)
             selects.append(f"MIN({qc})::DOUBLE AS _lo_{col}, MAX({qc})::DOUBLE AS _hi_{col}")
-        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {qt}")
+        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {qt}{range_sample}")
         if not r.error and r.rows:
             row_data = r.rows[0]
             for i, (col, _) in enumerate(numeric_missing[:20]):
@@ -1617,6 +1639,41 @@ def build_column_profiles(
 
 # ── Top-level entry point ─────────────────────────────────────────────────────
 
+#: Dialects whose SQL the profiler's hand-built statements already speak. DuckDB is
+#: the flavor they are written in; Postgres accepts nearly all of it by luck of
+#: overlap (double-quoted identifiers, `::` casts, date_trunc('grain', x)).
+_NATIVE_PROFILER_DIALECTS = ("", "duckdb", "postgres")
+
+
+class _TranspilingConnection:
+    """Transpile the profiler's DuckDB-flavored SQL for every other engine.
+
+    BigQuery/MySQL/Snowflake accept none of the profiler's spellings (a
+    double-quoted identifier is a string literal on the backtick engines), so on
+    those engines every scan probe failed and the whole intelligence layer —
+    exploration, briefing, ontology — starved on zero profiles. Transpiling at
+    this one seam beats hand-porting ~20 call sites. A statement sqlglot cannot
+    parse passes through unchanged: per-probe error handling already treats a
+    failed probe as absent data (e.g. the USING SAMPLE → LIMIT-prefix fallback),
+    never as fatal.
+    """
+
+    def __init__(self, conn):
+        self._raw = conn
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+    def execute(self, label, sql):
+        out = sql
+        try:
+            import sqlglot
+            out = sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
+        except Exception:
+            out = sql
+        return self._raw.execute(label, out)
+
+
 def profile_connection(
     conn: "DatabaseConnection",
     tables: list[str],
@@ -1639,6 +1696,8 @@ def profile_connection(
     table_profiles: dict[str, TableProfile] = {}
     column_profiles: dict[str, ColumnProfile] = {}
     dialect = getattr(conn, "dialect", "")
+    if dialect not in _NATIVE_PROFILER_DIALECTS:
+        conn = _TranspilingConnection(conn)
 
     # R11 — when the per-column config exists, its `index` flag decides value-sample
     # eligibility (human override wins; defaults mirror the R5 gate, so an unedited

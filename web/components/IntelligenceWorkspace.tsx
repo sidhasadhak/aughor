@@ -79,7 +79,7 @@ type Props = {
   onLayerChange: (l: IntelLayer) => void;
   /** Briefings-enabled connections for the workspace's connection picker, and the
    *  setter to switch the active one. Omitted/short → the picker hides. */
-  connections?: { id: string; name: string }[];
+  connections?: { id: string; name: string; schema_name?: string | null }[];
   onConnectionChange?: (connectionId: string) => void;
   /** When set, scope-aware layers (Briefing) reflect this Canvas's curated tables rather
    *  than the whole connection — keeps Briefing consistent with the canvas-scoped Domains. */
@@ -117,6 +117,14 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     // briefing request in that window — the exact race WP-5 removes.
     if (canvasId) { setSchemas([]); setSelectedSchema(null); setSchemaResolved(true); return; }
     if (!connectionId) { setSchemas([]); setSelectedSchema(null); setSchemaResolved(false); return; }
+    // Fast path: a connection whose registry meta names its single schema resolves
+    // INSTANTLY — the catalog tree opens EVERY connection (seconds on a cold API,
+    // BigQuery included), and the schema-gated Briefing rendered blank for all of it.
+    const metaSchema = connections?.find(c => c.id === connectionId)?.schema_name ?? null;
+    if (metaSchema) {
+      setSchemas([metaSchema]); setSelectedSchema(metaSchema); setSchemaResolved(true);
+      return;
+    }
     let alive = true;
     setSchemaResolved(false);   // re-gate while this connection's schemas resolve
     getCatalogTree()
@@ -132,7 +140,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       })
       .catch(() => { if (alive) { setSchemas([]); setSchemaResolved(true); } });
     return () => { alive = false; };
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, connections]);
   const schema = selectedSchema ?? undefined;
 
   const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]));
@@ -197,7 +205,16 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // place. Without it the panel keeps every piece of per-scope state it doesn't
         // explicitly reset — which is how one schema's synthesis stayed on screen under
         // another schema's verdict. Belt to the server-side scope_key guard's braces.
-        if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
+        // Mount the brief only once the schema selector has SETTLED. The key includes
+        // the schema, so mounting before it resolves meant: mount bare (fetch wave 1,
+        // content paints) → schema arrives → key change REMOUNTS the panel (blank) →
+        // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
+        // request issued twice under two scope keys. One settled mount, one wave.
+        if (id === "briefing") return (canvasId || schemaResolved)
+          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+          // Never a blank page while the schema resolves (the catalog-tree path can
+          // take seconds on a cold API) — a quiet placeholder holds the space.
+          : <div style={{ minHeight: 360, borderRadius: "var(--r2)", background: "var(--bg-1)", opacity: 0.5 }} />;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;

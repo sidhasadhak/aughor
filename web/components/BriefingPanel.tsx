@@ -1488,14 +1488,14 @@ function VerdictHero({
         {/* the ONE verdict — 24px (the digest row below now shares the hero's weight) */}
         <div style={{
           fontSize: 22, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
-          letterSpacing: "-.02em", maxWidth: "32ch", textWrap: "balance" as const,
+          letterSpacing: "-.02em", maxWidth: "56ch", textWrap: "balance" as const,
           marginBottom: lead ? 10 : 0,
         }}>{title}</div>
 
         {/* one-line proof */}
         {lead && (
           <p className="aug-fs-ui" style={{
-            color: "var(--t2)", lineHeight: 1.6, maxWidth: 740, margin: 0,
+            color: "var(--t2)", lineHeight: 1.6, maxWidth: 880, margin: 0,
             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
           }}>{lead}</p>
         )}
@@ -2000,6 +2000,22 @@ type EmptyReason =
 
 function emptyReason(status: ExplorerStatus | null): EmptyReason {
   const phase = status?.phase;
+  // "pending" is not "never": a queued or boot-resumed run reads pending for its
+  // first seconds while prior findings still exist, and rendering "No exploration
+  // has run yet" over real data was a visible flicker. Pending with ANY recorded
+  // work shows as a run in flight; only a truly blank status means never.
+  if (
+    status &&
+    phase === "pending" &&
+    (status.insights_found > 0 || status.facts_discovered > 0 || status.queries_executed > 0)
+  ) {
+    return {
+      kind: "running",
+      queries: status.queries_executed,
+      insights: status.insights_found,
+      phase,
+    };
+  }
   if (!status || !phase || phase === "pending") return { kind: "never" };
   if (phase === "failed")   return { kind: "failed", error: status.error };
   if (phase === "complete") {
@@ -2681,11 +2697,9 @@ export function BriefingPanel({
               {explorerStatus.phase}
               {explorerStatus.paused && " (paused)"}
             </span>
-            {explorerStatus.queries_executed > 0 && (
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>
-                {explorerStatus.queries_executed}q &middot; {explorerStatus.insights_found} insights
-              </span>
-            )}
+            {/* No run counters here: queries_executed is the CURRENT run's number while
+                insights_found is lifetime, so "1q · 22 findings" read as broken history —
+                and either way it is machinery, not business content. */}
           </>
         ) : (
           <span style={{ fontSize: 11, color: "var(--t4)" }}>unknown</span>

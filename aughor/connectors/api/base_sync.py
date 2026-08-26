@@ -238,7 +238,7 @@ class RestApiSync(Connector):
         try:
             self._duckdb.execute(
                 "SELECT table_name, column_name, data_type "
-                "FROM information_schema.columns "
+                "FROM INFORMATION_SCHEMA.COLUMNS "
                 "WHERE table_schema = 'main' "
                 "ORDER BY table_name, ordinal_position"
             )

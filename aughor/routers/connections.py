@@ -467,11 +467,15 @@ async def connection_freshness(conn_id: str):
 
         max_ts: str | None = None
         max_source: str | None = None
+        # Backtick engines read a double-quoted name as a string literal — every probe
+        # then errored into the except below and freshness reported null.
+        from aughor.db.quoting import ident_quote
+        q = ident_quote(db)
         for table, cols in list(table_cols.items())[:12]:
             date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
             for col in date_cols:
                 try:
-                    result = db.execute("freshness", f'SELECT MAX("{col}") AS max_ts FROM "{table}"')
+                    result = db.execute("freshness", f'SELECT MAX({q}{col}{q}) AS max_ts FROM {q}{table}{q}')
                     if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
                         val = str(result.rows[0][0])
                         if max_ts is None or val > max_ts:
@@ -494,9 +498,8 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    safe_table  = table.replace('"', '').replace(';', '')
-    safe_schema = schema.replace('"', '').replace(';', '') if schema else ""
-    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+    safe_table  = table.replace('"', '').replace('`', '').replace(';', '')
+    safe_schema = schema.replace('"', '').replace('`', '').replace(';', '') if schema else ""
     _limit = int(limit)
 
     def _work():
@@ -506,6 +509,8 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         except KeyError:
             raise HTTPException(status_code=404, detail="Connection not found")
         try:
+            from aughor.db.quoting import qualified_table
+            ref = qualified_table(db, safe_table, safe_schema or None)
             result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
             error = result.error
             if error and getattr(db, "_seed_failed", None):
@@ -531,8 +536,8 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
     same lightweight path as the sample reader, so Overview and Sample Data stay
     in sync even when the heavy whole-connection rich schema is unavailable."""
     loop = asyncio.get_running_loop()
-    safe_table = table.replace('"', "").replace(";", "")
-    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    safe_table = table.replace('"', "").replace('`', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace('`', "").replace(";", "") if schema else ""
     ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
 
     def _work():
@@ -566,7 +571,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 3. information_schema.columns with current_database filter — standard SQL,
+                # 3. INFORMATION_SCHEMA.COLUMNS with current_database filter — standard SQL,
                 # but MotherDuck sometimes returns empty data_type here, so we only use it
                 # if it actually yields types.
                 try:
@@ -578,7 +583,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         current_db = str(db_rows[0][0]).replace("'", "''")
                         where += f" AND table_catalog = '{current_db}'"
                     columns, rows, _ = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
@@ -587,13 +592,13 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                             return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 3b. information_schema.columns WITHOUT table_catalog filter.
+                # 3b. INFORMATION_SCHEMA.COLUMNS WITHOUT table_catalog filter.
                 try:
                     where = f"table_name = '{safe_table}'"
                     if safe_schema:
                         where += f" AND table_schema = '{safe_schema}'"
                     columns, rows, _ = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position"
                     )
                     if rows:
@@ -617,7 +622,9 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         where += f" AND table_schema = '{safe_schema}'"
                     res = db.execute(
                         "columns",
-                        "SELECT column_name, data_type FROM information_schema.columns "
+                        # Uppercase: required by BigQuery, folded by Postgres — the
+                        # lowercase form 404'd there and column types came back empty.
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
                         f"WHERE {where} ORDER BY ordinal_position",
                     )
                     if res.rows:
@@ -626,7 +633,9 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                 except Exception:
                     pass
                 try:
-                    res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
+                    from aughor.db.quoting import qualified_table
+                    fq = qualified_table(db, safe_table, safe_schema or None)
+                    res = db.execute("columns", f"SELECT * FROM {fq} LIMIT 0")
                     cols = [{"name": c, "type": ""} for c in res.columns]
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:

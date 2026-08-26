@@ -92,7 +92,7 @@ def test_version_prefers_the_timestamp_column(duck, request):
 
 def test_probe_is_one_bounded_aggregate_never_a_data_scan(duck, request):
     current_version(_uid(request), duck, "orders")
-    probe_sqls = [s for s in duck.sqls if "information_schema" not in s]
+    probe_sqls = [s for s in duck.sqls if "information_schema" not in s.lower()]
     assert probe_sqls == ["SELECT COUNT(*), MAX(updated_at) FROM orders"]
 
 

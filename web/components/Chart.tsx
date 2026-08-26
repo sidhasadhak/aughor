@@ -34,6 +34,18 @@ export type { ChartCustom };
 
 // SCHEME_PALETTES (named categorical palettes) now live in @/lib/chartPalettes.
 
+/** Viewer-selectable value-axis formats (d3-format strings; null = automatic).
+ *  The first slice of the spreadsheet-style formatting ask — custom codes, dates and
+ *  per-column formats are roadmap §8. */
+const FORMAT_CHOICES: { key: string; label: string; d3: string | null; title: string }[] = [
+  { key: "auto",     label: "Auto", d3: null,     title: "Automatic" },
+  { key: "percent",  label: "%",    d3: ".1%",    title: "Percentage" },
+  { key: "int",      label: "123",  d3: ",d",     title: "Integer" },
+  { key: "float",    label: "1.23", d3: ",.2f",   title: "Decimal" },
+  { key: "currency", label: "$",    d3: "$,.2f",  title: "Currency" },
+  { key: "compact",  label: "12K",  d3: "~s",     title: "Compact (K/M/B)" },
+];
+
 
 export function Chart({
   columns,
@@ -48,6 +60,7 @@ export function Chart({
   fitHeight = null,
   columnUnits,
   exhibit = null,
+  measure = null,
   onSelect,
   onInstanceReady,
 }: {
@@ -80,6 +93,8 @@ export function Chart({
   /** Optional backend exhibit spec (semantic color mode, reference lines, point labels,
    *  quadrant dividers). Absent → rendering is byte-identical to before. */
   exhibit?: ExhibitSpec | null;
+  /** The measure the user chose (viz editor / Query Builder). Wins over inference. */
+  measure?: string | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<ChartInstance | null>(null);
@@ -88,6 +103,12 @@ export function Chart({
   const [userH, setUserH] = useState<number | null>(null);
   const [showLabelsState, setShowLabels] = useState(false);
   const showLabels = showLabelsProp ?? showLabelsState;
+  // The viewer's number format for the value axis + labels. null = automatic.
+  // Overrides custom.format while set — the person LOOKING at the chart outranks
+  // the surface that built it (a margin stored as 0.598… reads as nothing until
+  // the viewer can say "that is a percentage").
+  const [userFormat, setUserFormat] = useState<string | null>(null);
+  const [fmtOpen, setFmtOpen] = useState(false);
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -126,19 +147,40 @@ export function Chart({
     if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
 
     const v = resolveVegaSpec({
-      columns, rows, chartType, showLabels, exhibit,
-      format: custom?.format ?? null,
+      columns, rows, chartType, showLabels, exhibit, measure,
+      format: userFormat ?? custom?.format ?? null,
       xTitle: custom?.xTitle ?? null,
       yTitle: custom?.yTitle ?? null,
       orient: custom?.orient ?? null,
       transform: custom?.transform ?? null,
     });
+    if (v) return { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 };
+    // A customization must never brick the chart. Saved viz-configs key by POSITION
+    // (pinned__N) and pinned findings reorder across briefing regenerations, so a
+    // stale seed can name columns this finding does not have — the customized
+    // resolve then refuses, and the card used to render NOTHING with no way back.
+    // Retry bare (auto) before giving up; only truly unchartable data renders none.
+    // The retreat drops hint, exhibit and custom alike — a finding's hint (e.g.
+    // scatter) can fit the original frame while refusing the reshaped one a saved
+    // metric selection produced. And "auto" is not the floor: type inference
+    // refuses a plain [dimension, stringified-measure] frame that an explicit bar
+    // charts fine (measured on theLook's category/total_volume), so bar is the
+    // last rung. Truly unchartable data still refuses everything and renders none.
+    for (const retreat of ["auto", "bar"] as const) {
+      if (retreat === String(chartType ?? "auto") && !custom && !userFormat && !exhibit) continue;
+      const bare = resolveVegaSpec({
+        // `measure` survives the retreat: it is the user's intent, not styling.
+        columns, rows, chartType: retreat, showLabels, exhibit: null, measure,
+        format: null, xTitle: null, yTitle: null, orient: null, transform: null,
+      });
+      if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };
+    }
     // null is the honest-refusal verdict: data with no chart in it renders none, and the
     // surface's table view carries it. There is no second engine to fall back to.
-    return v ? { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 } : null;
+    return null;
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV, columnUnits, exhibit]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, userFormat, orgV, columnUnits, exhibit, measure]);
 
   if (!built) return null;
   const fill = !!(fitHeight && fitHeight > 0);
@@ -148,6 +190,31 @@ export function Chart({
     <div className="mt-2 w-full group/chart">
       {chrome && (
         <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity gap-1">
+          {/* Number-format picker: the viewer names what the value axis IS. */}
+          <div className="relative">
+            <button
+              onClick={() => setFmtOpen((o) => !o)}
+              title="Number format"
+              className={`h-6 px-1.5 flex items-center justify-center rounded text-[11px] font-mono transition-colors ${userFormat ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
+            >
+              {FORMAT_CHOICES.find((f) => f.d3 === userFormat)?.label ?? "123"}
+            </button>
+            {fmtOpen && (
+              <div className="absolute right-0 top-7 z-20 flex flex-col rounded border border-zinc-700 bg-zinc-900 shadow-lg">
+                {FORMAT_CHOICES.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => { setUserFormat(f.d3); setFmtOpen(false); }}
+                    title={f.title}
+                    className={`px-2.5 py-1 text-left text-[11px] whitespace-nowrap transition-colors ${userFormat === f.d3 ? "bg-blue-500/20 text-blue-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                  >
+                    <span className="font-mono">{f.label}</span>
+                    <span className="ml-2 text-zinc-500">{f.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowLabels((s) => !s)}
             title={showLabels ? "Hide data labels" : "Show data labels"}

@@ -941,7 +941,17 @@ class SchemaExplorer:
         try:
             tp, cp, jmap = await _loop.run_in_executor(None, self._load_profiler_data)
             if not tp:
-                logger.info(f"[explorer:{self.connection_id}] No profiler data, aborting")
+                # An engine the profiler cannot profile lands here on EVERY run. This was
+                # a bare return — the kernel job then reported SUCCEEDED while status sat
+                # at pending forever, with 0 queries and 0 insights. Absent input is a
+                # failure the user can see, never a success with nothing in it.
+                self._status.phase = ExplorationPhase.FAILED
+                self._status.error = ("no profiler data for this connection — the schema "
+                                      "profiler has not produced table profiles here "
+                                      "(it may not support this engine yet)")
+                self._journal("exploration.phase", {"phase": "failed", "reason": "no_profiler_data"})
+                self._save_state()
+                logger.warning(f"[explorer:{self.connection_id}] No profiler data — marking failed")
                 return
 
             self._status.tables_total = len(tp)
@@ -1144,9 +1154,13 @@ class SchemaExplorer:
                     schema_filter = "NOT IN ('information_schema', 'pg_catalog', 'temp')"
             else:
                 schema_filter = f"= '{schema or 'public'}'"
+            # INFORMATION_SCHEMA spelled uppercase is the portable form: BigQuery
+            # REQUIRES it (lowercase resolves as a dataset named information_schema
+            # and 404s), Postgres folds unquoted identifiers down, DuckDB/MySQL/
+            # Snowflake are case-insensitive here.
             r = self._conn.execute(
                 "__explorer_catalog__",  # catalog probe, not a data query — stays out of the audit trail
-                f"SELECT table_schema, table_name FROM information_schema.tables "
+                f"SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
                 f"WHERE table_schema {schema_filter} "
                 f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
             )

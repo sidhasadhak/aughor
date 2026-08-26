@@ -120,7 +120,7 @@ class MySQLConnection(Connector):
             with self._conn.cursor() as cur:
                 cur.execute("""
                     SELECT table_name, column_name, column_type
-                    FROM information_schema.columns
+                    FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE table_schema = %s
                     ORDER BY table_name, ordinal_position
                 """, (self._database,))
