@@ -10868,6 +10868,10 @@ export interface components {
             base_urls?: {
                 [key: string]: unknown;
             } | null;
+            /** Fallback */
+            fallback?: {
+                [key: string]: unknown;
+            } | null;
             /** Keys */
             keys?: {
                 [key: string]: unknown;
