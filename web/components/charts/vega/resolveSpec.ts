@@ -128,6 +128,11 @@ export interface ResolveSpecArgs {
   exhibit?: ExhibitSpec | Record<string, unknown> | null;
   /** Authoritative per-column display unit, e.g. {"leakage_rate": "percent"}. */
   columnUnits?: Record<string, string> | null;
+  /** The measure the USER chose (Query Builder / viz editor). When present and in
+   *  `columns`, it wins over type inference — without this, a multi-numeric frame let
+   *  inference pick its own y (binding Color to total_volume silently replaced the
+   *  plotted gross_margin_pct). */
+  measure?: string | null;
 }
 
 export interface ResolvedSpec {
@@ -235,7 +240,7 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
-          transform, exhibit: exhibitRaw, columnUnits } = args;
+          transform, exhibit: exhibitRaw, columnUnits, measure: chosenMeasure } = args;
   // Fail-open on a malformed spec: a bad exhibit costs its semantics, never the chart —
   // the same contract the ECharts resolver held.
   const exhibit = sanitizeExhibit(exhibitRaw as Parameters<typeof sanitizeExhibit>[0]);
@@ -378,7 +383,11 @@ export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
   // spec so it persists with the chart's intent instead of being a mutation applied to the
   // rows before the chart ever saw them.
   const tf = transform && columns.includes(transform.valueCol) ? transformBlocks(transform) : null;
-  const measure = tf ? tf.derived : (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]);
+  // An explicit user choice outranks inference; a transform outranks both (it derives
+  // the column it plots). Only with neither does inference pick the y.
+  const userMeasure = chosenMeasure && columns.includes(chosenMeasure) ? chosenMeasure : null;
+  const measure = tf ? tf.derived
+    : (userMeasure ?? (inferred?.yCols?.length ? columns[inferred.yCols[0]] : numCols[0]));
   const band = inferred ? columns[inferred.xCol] : (catCols[0] ?? dateCol ?? columns[0]);
   const inferredSeries = inferred?.colorCol != null ? columns[inferred.colorCol] : undefined;
   const base: Record<string, unknown> = { $schema: "https://vega.github.io/schema/vega-lite/v6.json", data };

@@ -60,6 +60,7 @@ export function Chart({
   fitHeight = null,
   columnUnits,
   exhibit = null,
+  measure = null,
   onSelect,
   onInstanceReady,
 }: {
@@ -92,6 +93,8 @@ export function Chart({
   /** Optional backend exhibit spec (semantic color mode, reference lines, point labels,
    *  quadrant dividers). Absent → rendering is byte-identical to before. */
   exhibit?: ExhibitSpec | null;
+  /** The measure the user chose (viz editor / Query Builder). Wins over inference. */
+  measure?: string | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<ChartInstance | null>(null);
@@ -144,7 +147,7 @@ export function Chart({
     if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
 
     const v = resolveVegaSpec({
-      columns, rows, chartType, showLabels, exhibit,
+      columns, rows, chartType, showLabels, exhibit, measure,
       format: userFormat ?? custom?.format ?? null,
       xTitle: custom?.xTitle ?? null,
       yTitle: custom?.yTitle ?? null,
@@ -166,7 +169,8 @@ export function Chart({
     for (const retreat of ["auto", "bar"] as const) {
       if (retreat === String(chartType ?? "auto") && !custom && !userFormat && !exhibit) continue;
       const bare = resolveVegaSpec({
-        columns, rows, chartType: retreat, showLabels, exhibit: null,
+        // `measure` survives the retreat: it is the user's intent, not styling.
+        columns, rows, chartType: retreat, showLabels, exhibit: null, measure,
         format: null, xTitle: null, yTitle: null, orient: null, transform: null,
       });
       if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };
@@ -176,7 +180,7 @@ export function Chart({
     return null;
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType, chartConfig, showLabels, custom, userFormat, orgV, columnUnits, exhibit]);
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, userFormat, orgV, columnUnits, exhibit, measure]);
 
   if (!built) return null;
   const fill = !!(fitHeight && fitHeight > 0);

@@ -476,6 +476,7 @@ export function ResultChartCard({
         <Chart
           columns={effData.columns}
           rows={effData.rows}
+          measure={(metricSel ?? seed.metric) ?? null}
           chartType={hint}
           chartConfig={userChoseChart ? null : chartConfig}
           exhibit={effExhibit}
