@@ -437,7 +437,11 @@ export function ResultChartCard({
     // Color binding (the Databricks "Color" field) — colour by a chosen column.
     colorFieldValue: colorField,
     colorFieldOptions,
-    setColorField: (v: string) => { setColorField(v); if (!v) { setColorScaleSel(""); setColorName(""); } },
+    // A scale type is chosen FOR a field — switching the colour field resets it so the
+    // type-based default re-derives (a measure ramps continuous, a dimension is
+    // categorical). A sticky explicit choice is how sales_volume ended up categorical
+    // with thirty numeric legend entries.
+    setColorField: (v: string) => { setColorField(v); setColorScaleSel(""); if (!v) setColorName(""); },
     colorScaleValue: colorBinding ? (colorBinding.mode as "continuous" | "categorical") : "",
     setColorScale: (v: "continuous" | "categorical") => setColorScaleSel(v),
     colorNameValue: colorName, setColorName,
