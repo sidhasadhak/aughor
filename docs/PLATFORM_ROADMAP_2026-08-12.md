@@ -625,3 +625,14 @@ BigQuery connection. Recorded for prioritisation, not yet scheduled.
    surfaces that join them ("1q · 22 insights") misread as broken history. The
    explorer status model should carry both run-scoped and lifetime counters,
    explicitly named. (The Briefing page no longer shows counters at all.)
+5. **Chart number formatting, Tableau-grade** (v1 shipped 2026-08-26: a viewer
+   format picker on every chart's hover toolbar — auto / % / integer / decimal
+   / currency / compact — feeding the resolver's existing d3-format parameter).
+   Remaining: custom format codes, date/month axis formats, per-column formats,
+   org-currency-aware symbols, and persisting the choice on the exhibit.
+   Reference: Tableau's number-formatting model.
+6. **`columnUnits` is dead plumbing** (found same day): Chart.tsx accepts the
+   backend's authoritative per-column unit ("this column is a percent") and has
+   never passed it to the Vega resolver since the engine migration — the reason
+   ratio charts render 0.598729927282. Rewire it as the DEFAULT the viewer's
+   picker overrides.
