@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 import re as _re
 
 _SQL_TABLE_RE = _re.compile(
-    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
+    # Backticks alongside double quotes: BigQuery/MySQL insights quote tables as
+    # `orders`, and a pattern that only knew double quotes extracted NOTHING from
+    # them — so the schema filter dropped every warehouse insight as "not in this
+    # schema" and the Briefing emptied itself one fetch after rendering.
+    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:[\"`]?(\w+)[\"`]?\.)?[\"`]?(\w+)[\"`]?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
     _re.IGNORECASE,
 )
 

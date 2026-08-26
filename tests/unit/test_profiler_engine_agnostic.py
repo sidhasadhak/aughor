@@ -124,6 +124,18 @@ def test_manifest_builds_cells_from_bigquery_shaped_profiles():
     assert any(m == "sale_price" and a == "dimension" for m, a in axes)
 
 
+def test_schema_filter_extracts_tables_from_backticked_sql():
+    # BigQuery/MySQL insights quote tables with backticks; the extractor knew only
+    # double quotes and returned nothing, so the schema post-filter dropped every
+    # warehouse insight and the Briefing emptied itself one fetch after rendering.
+    from aughor.routers.exploration import _tables_from_sql
+
+    assert _tables_from_sql("SELECT s, COUNT(*) FROM `order_items` GROUP BY 1") == {"order_items"}
+    assert _tables_from_sql("SELECT s FROM `thelook`.`orders`") == {"orders", "thelook.orders"}
+    assert _tables_from_sql('SELECT s FROM "thelook"."orders"') == {"orders", "thelook.orders"}
+    assert _tables_from_sql("SELECT s FROM order_items JOIN `orders` o ON 1=1") == {"order_items", "orders"}
+
+
 def test_no_lowercase_information_schema_anywhere():
     # BigQuery resolves lowercase information_schema as a DATASET NAME and 404s;
     # queries built with it silently return None/[] on every warehouse read that
