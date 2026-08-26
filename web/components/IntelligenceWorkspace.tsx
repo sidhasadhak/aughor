@@ -197,7 +197,14 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // place. Without it the panel keeps every piece of per-scope state it doesn't
         // explicitly reset — which is how one schema's synthesis stayed on screen under
         // another schema's verdict. Belt to the server-side scope_key guard's braces.
-        if (id === "briefing") return <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />;
+        // Mount the brief only once the schema selector has SETTLED. The key includes
+        // the schema, so mounting before it resolves meant: mount bare (fetch wave 1,
+        // content paints) → schema arrives → key change REMOUNTS the panel (blank) →
+        // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
+        // request issued twice under two scope keys. One settled mount, one wave.
+        if (id === "briefing") return (canvasId || schemaResolved)
+          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+          : null;
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;

@@ -151,9 +151,22 @@ export function Chart({
       orient: custom?.orient ?? null,
       transform: custom?.transform ?? null,
     });
+    if (v) return { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 };
+    // A customization must never brick the chart. Saved viz-configs key by POSITION
+    // (pinned__N) and pinned findings reorder across briefing regenerations, so a
+    // stale seed can name columns this finding does not have — the customized
+    // resolve then refuses, and the card used to render NOTHING with no way back.
+    // Retry bare (auto) before giving up; only truly unchartable data renders none.
+    if (custom || userFormat || exhibit) {
+      const bare = resolveVegaSpec({
+        columns, rows, chartType, showLabels, exhibit: null,
+        format: null, xTitle: null, yTitle: null, orient: null, transform: null,
+      });
+      if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };
+    }
     // null is the honest-refusal verdict: data with no chart in it renders none, and the
     // surface's table view carries it. There is no second engine to fall back to.
-    return v ? { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 } : null;
+    return null;
     // orgV: currency / palette / relabel settings feed the resolver via module reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, rows, chartType, chartConfig, showLabels, custom, userFormat, orgV, columnUnits, exhibit]);
