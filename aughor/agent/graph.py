@@ -176,13 +176,21 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("ada_behavioral",  ada.get("behavioral",  lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_synthesize",  ada_synthesize)
 
-    # Parallel multi-lens cross-section (transport-derived, A1 ModelProfile) — a cross-sectional
-    # "why" question runs independent lenses (segment/where ∥ mechanism/why) concurrently instead of
-    # one bundled scan. route_after_intake still returns "ada_cross_section"; we just repoint that
-    # target to the multilens node when the transport allows waves. Serial → the single scan.
+    # Multi-lens cross-section — a cross-sectional question runs independent lenses (segment/where,
+    # mechanism/why, and a temporal WHEN lens when a date axis resolves) instead of one bundled scan.
+    # route_after_intake still returns "ada_cross_section"; we repoint that target to the multilens node.
+    #
+    # This used to be gated on `_ada_parallel_lenses_enabled()`, which made ANALYTICAL COVERAGE a
+    # function of MODEL THROUGHPUT: on a rate-limited binding (`parallel_waves=False`) the node was
+    # never wired, so the temporal trend, the mechanism scan, the WHY×WHERE interaction, the reason
+    # benchmark and the reason drill were all unreachable — a cheaper model silently ran a SMALLER
+    # investigation, not merely a slower one, and the report never said so. Two real reports on the
+    # same question, one per vendor, both came back with a single dimension scan and no time axis.
+    # The transport still decides the WIDTH (see `_ADA_LENS_WIDTH` at the node, which drops to 1 when
+    # waves are off); it no longer decides WHICH LENSES EXIST. Parallelism is a performance decision.
     _xsec_node = ada.get("cross_section_multilens")
     _xsec_target = "ada_cross_section"
-    if _xsec_node is not None and _ada_parallel_lenses_enabled():
+    if _xsec_node is not None:
         graph.add_node("ada_cross_section_multilens", _xsec_node)
         graph.add_edge("ada_cross_section_multilens", "ada_synthesize")
         _xsec_target = "ada_cross_section_multilens"

@@ -5642,6 +5642,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             cross_sectional=bool(intake.cross_sectional),
             dimension_ask=_question_asks_for_dimension(question),
             behavioral=_question_needs_behavioral(question),
+            # The SCHEMA fact, after the join-reachability recovery above — never inferred from
+            # the question's wording. A cross-sectional question over dated data still trends.
+            has_time_axis=(intake.date_column or "").strip().upper() not in ("", "NONE"),
         )
         plan_dict = plan.to_dict()
         from aughor.agent.handoff import emit_handoff
@@ -8768,7 +8771,14 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             return name, [], None, None, None
 
     results: list = []
-    width = min(len(specs), max(1, _ADA_LENS_WIDTH))
+    # Coverage is fixed; only CONCURRENCY follows the transport. A binding that cannot sustain
+    # parallel waves runs the same lenses one after another — slower, never fewer.
+    try:
+        from aughor.llm.profile import parallel_waves_enabled as _waves
+        _parallel = _waves()
+    except Exception:
+        _parallel = False
+    width = min(len(specs), max(1, _ADA_LENS_WIDTH)) if _parallel else 1
     try:
         with _fanout_region("deep_analysis.parallel_lenses"), ContextThreadPoolExecutor(max_workers=width) as pool:
             futs = [pool.submit(_run_spec, s) for s in specs]

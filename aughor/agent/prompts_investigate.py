@@ -57,10 +57,18 @@ TASK: Parse this question into a precise investigation specification.
    GRAIN: the PROFILE states the analytical grain and how much history exists (e.g. "53 weeks of
    history"). Use THAT grain for the observation and comparison periods — do NOT default to months.
    If ambiguous, use the most recent COMPLETE period at that grain.
-   CROSS-SECTIONAL: if the PROFILE says "analyse cross-sectionally" (too few periods for a trend) OR
-   the metric table has no date column OR the question asks where/which/what is weakest / losing money
-   / underperforming, there is no usable time axis — set cross_sectional=true, use the full data range
-   as the observation, and plan to compare across DIMENSIONS (segments / regions / products), not periods.
+   CROSS-SECTIONAL: set cross_sectional=true when the question asks where/which/what is weakest /
+   losing money / underperforming — it asks WHICH SEGMENT, so the answer is a comparison across
+   DIMENSIONS (segments / regions / products) rather than across periods. Use the full data range
+   as the observation.
+   That flag is a statement about the QUESTION. It is NOT a statement about the data, and it must
+   never be used to conclude one: STILL POPULATE date_column whenever the schema has a usable date.
+   "Where are we losing money" is answered better, not worse, by also knowing whether the weakness is
+   GROWING — and an empty date_column silently disables every temporal check downstream, so a schema
+   with ten date columns gets reported as having no time axis.
+   Report NO time axis only when that is a fact about the SCHEMA: the PROFILE says "analyse
+   cross-sectionally" (too few periods for a trend), or the metric table and every population table
+   join-reachable from it genuinely carry no date column.
    DRIVER / RELATIONSHIP (critical): if the question asks whether one thing AFFECTS / RELATES TO /
    DRIVES / LOWERS / RAISES / HURTS / IMPROVES / CORRELATES WITH another — e.g. "do late deliveries
    lower review scores", "do new customers spend more", "does installment count affect cancellations"

@@ -14,12 +14,30 @@ from aughor.agent.orchestrator import (
 # ── plan_phases — mirrors route_after_intake/baseline/decompose/dimensional ──────
 
 def test_cross_sectional_plan_skips_the_temporal_battery():
+    """With no date axis anywhere in reach, there is genuinely nothing to trend."""
     plan = plan_phases(question="which region has the lowest margin?",
-                       cross_sectional=True, dimension_ask=True, behavioral=False)
+                       cross_sectional=True, dimension_ask=True, behavioral=False,
+                       has_time_axis=False)
     assert plan.question_kind == "cross_sectional"
     assert plan.planned_ids == ["intake", "cross_section", "synthesis"]
     # no baseline/decomposition/dimensional in a cross-sectional run
     assert "baseline" not in plan.planned_ids
+    steps = {s.phase_id: s.disposition for s in plan.steps}
+    assert steps["temporal_when"] == "gated_off"
+
+
+def test_a_cross_sectional_question_over_dated_data_still_trends():
+    """"Where are we losing money?" is a question about WHICH SEGMENT — not evidence that the data
+    has no time axis. Conflating the two is how that exact question, against a schema carrying ten
+    date columns, produced a single dimension scan and no temporal check at all. `has_time_axis` is
+    the schema fact, resolved deterministically by the caller; the question's wording cannot set it."""
+    plan = plan_phases(question="where are we losing money?",
+                       cross_sectional=True, dimension_ask=False, behavioral=False,
+                       has_time_axis=True)
+    assert plan.question_kind == "cross_sectional"
+    assert "temporal_when" in plan.planned_ids, "a dated cross-sectional run must still trend"
+    steps = {s.phase_id: s.disposition for s in plan.steps}
+    assert steps["cross_section"] == "planned" and steps["temporal_when"] == "planned"
 
 
 def test_temporal_simple_question_gates_decompose_and_dimensional():
