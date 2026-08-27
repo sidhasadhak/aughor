@@ -1812,6 +1812,90 @@ def _is_num(v) -> bool:
         return False
 
 
+_COUNT_COL_RE = re.compile(r"^(n|records?|row_count|cnt|count|items?|n_\w+|\w+_count)$", re.I)
+_SHARE_COL_RE = re.compile(r"(pct|percent|share)", re.I)
+#: Above this the group holds a disproportionate share of the metric; below its reciprocal it
+#: holds less than its size would predict. Between them the split is proportional — which is the
+#: verdict that turns a "finding" back into a restatement of how big the group is.
+_CONCENTRATION_HI = 1.25
+
+
+def _num(v) -> Optional[float]:
+    """A cell as a float, or None. The connector renders SQL NULL as the literal string 'NULL',
+    so this cannot be a bare float()."""
+    if v is None:
+        return None
+    t = str(v).strip().replace(",", "")
+    if not t or t.upper() == "NULL":
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _concentration_note(columns, rows) -> Optional[str]:
+    """Is the leading group's share of the metric bigger than its share of the POPULATION?
+
+    A cross-sectional scan ranks groups by a total and reports each one's `pct_of_total`. That
+    number alone cannot answer "where are we losing money", because the largest group leads on
+    almost any additive metric BY BEING LARGEST. A shipped report headlined "Men department
+    accounts for over half of total cost" — 53.2% — and Men is 50.2% of the rows: the finding was
+    a restatement of the department's size, and it read as an accusation of the most productive
+    part of the business.
+
+    The scan already selects a per-group count (`n`), so the exposure share needs no extra query —
+    only the division nobody was doing. Returns None whenever the shape is not confidently a
+    group / metric / count triple; a wrong note is worse than none.
+    """
+    try:
+        cols = [str(c) for c in (columns or [])]
+        if not cols or not rows or len(rows) < 2:
+            return None
+        count_idx = next((i for i, c in enumerate(cols) if _COUNT_COL_RE.match(c.strip())), None)
+        if count_idx is None:
+            return None
+        # The metric is the first numeric column that is neither the count nor an existing share.
+        metric_idx = next((i for i, c in enumerate(cols)
+                           if i != count_idx and not _SHARE_COL_RE.search(c)
+                           and _num(rows[0][i]) is not None), None)
+        group_idx = next((i for i, c in enumerate(cols)
+                          if i not in (count_idx, metric_idx) and _num(rows[0][i]) is None), None)
+        if metric_idx is None or group_idx is None:
+            return None
+
+        pairs = [(str(r[group_idx]), _num(r[metric_idx]), _num(r[count_idx])) for r in rows
+                 if len(r) > max(group_idx, metric_idx, count_idx)]
+        pairs = [(g, m, n) for g, m, n in pairs if m is not None and n is not None and n > 0]
+        if len(pairs) < 2:
+            return None
+        total_m = sum(m for _, m, _ in pairs)
+        total_n = sum(n for _, _, n in pairs)
+        if total_m <= 0 or total_n <= 0:
+            return None
+
+        g, m, n = max(pairs, key=lambda t: t[1])
+        share_m = 100.0 * m / total_m
+        share_n = 100.0 * n / total_n
+        if share_n <= 0:
+            return None
+        index = share_m / share_n
+        if index >= _CONCENTRATION_HI:
+            verdict = (f"CONCENTRATED — {index:.2f}× its share of the population, so this is not "
+                       f"explained by how large {g} is.")
+        elif index <= 1.0 / _CONCENTRATION_HI:
+            verdict = (f"UNDER-REPRESENTED — {index:.2f}× its share of the population; {g} carries "
+                       f"LESS of the metric than its size would predict.")
+        else:
+            verdict = (f"PROPORTIONAL — {index:.2f}× its share of the population, i.e. {g} leads "
+                       f"because it is the largest group, not because it is the weakest. Ranking "
+                       f"by this metric restates group size.")
+        return (f"EXPOSURE CHECK: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
+                f"rows — {verdict}")
+    except Exception:
+        return None
+
+
 def _stamp_partial_period_verdicts(findings, results, coverage_end: Optional[str]) -> None:
     """Write the partial-final-period verdict onto each time-series finding's `stat_note` (the
     channel the synthesis evidence log prints as STATISTICAL VERDICT). Findings are aligned to
@@ -1826,6 +1910,7 @@ def _stamp_partial_period_verdicts(findings, results, coverage_end: Optional[str
             continue
         prior = (f.get("stat_note") or "").strip()
         f["stat_note"] = f"{prior} {note}".strip() if prior else note
+
 
 
 def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
@@ -1861,6 +1946,18 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
             _partial = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
             if _partial:
                 parts.append("STATISTICAL VERDICT for this query — " + _partial)
+        # Exposure normalisation, same rationale one column over: the leading group leads almost
+        # any additive metric BY BEING LARGEST, and a narrator handed only `pct_of_total` will
+        # write "X accounts for over half — cost is concentrated in X" about a group that holds
+        # exactly its share. Shown here, not merely stamped afterwards, so the claim is never
+        # written in the first place.
+        if not getattr(r, "error", None) and getattr(r, "rows", None):
+            _conc = _concentration_note(r.columns, r.rows)
+            if _conc:
+                parts.append(
+                    "STATISTICAL VERDICT for this query — it OVERRIDES what the shares below "
+                    "suggest. A PROPORTIONAL split is NOT a finding: do not call it "
+                    "concentration, a driver, or a place to act. " + _conc)
         parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
@@ -2368,6 +2465,15 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             _tie = _extreme_tie_note(r.columns, r.rows)
             if _tie:
                 f["stat_note"] = _tie
+        # Exposure normalisation — the leading group leads almost any additive metric BY BEING
+        # LARGEST, so a share-of-total without a share-of-population beside it restates group size
+        # and reads as a finding. APPENDED, never conditional on stat_note being empty: a tie note
+        # and a proportionality verdict are different facts and the reader needs both.
+        if not r.error and r.rows:
+            _conc = _concentration_note(r.columns, r.rows)
+            if _conc:
+                _prior = (f.get("stat_note") or "").strip()
+                f["stat_note"] = f"{_prior} {_conc}".strip() if _prior else _conc
         # A rate ranking that is only noise says so in its own numbers. This OVERWRITES the
         # narrator's stat_note rather than joining it: the model's version is a paraphrase of
         # this same test ("statistical analysis indicates no significant difference"), and
