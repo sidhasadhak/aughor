@@ -1813,6 +1813,9 @@ def _is_num(v) -> bool:
 
 
 _COUNT_COL_RE = re.compile(r"^(n|records?|row_count|cnt|count|items?|n_\w+|\w+_count)$", re.I)
+#: A TIME BUCKET, by column name or by the shape of its first value.
+_TIME_COL_RE = re.compile(r"(^|_)(period|month|week|day|date|year|quarter|hour)($|_)|_at$|time", re.I)
+_TIME_VALUE_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?")
 _SHARE_COL_RE = re.compile(r"(pct|percent|share)", re.I)
 #: Above this the group holds a disproportionate share of the metric; below its reciprocal it
 #: holds less than its size would predict. Between them the split is proportional — which is the
@@ -1864,6 +1867,15 @@ def _concentration_note(columns, rows) -> Optional[str]:
         if metric_idx is None or group_idx is None:
             return None
 
+        # A TIME BUCKET is not a group with exposure. Every month holds roughly its share of the
+        # rows by construction, so the verdict is vacuous — and it does active harm: a temporal
+        # phase reporting "2026-08 is a 100th-percentile spike vs a 25,028 baseline" carried,
+        # directly beneath it, "2026-08 leads because it is the largest group". A guard that
+        # argues with a correct anomaly detection is worse than no guard.
+        if (_TIME_COL_RE.search(cols[group_idx])
+                or _TIME_VALUE_RE.match(str(rows[0][group_idx]).strip())):
+            return None
+
         pairs = [(str(r[group_idx]), _num(r[metric_idx]), _num(r[count_idx])) for r in rows
                  if len(r) > max(group_idx, metric_idx, count_idx)]
         pairs = [(g, m, n) for g, m, n in pairs if m is not None and n is not None and n > 0]
@@ -1872,6 +1884,12 @@ def _concentration_note(columns, rows) -> Optional[str]:
         total_m = sum(m for _, m, _ in pairs)
         total_n = sum(n for _, _, n in pairs)
         if total_m <= 0 or total_n <= 0:
+            return None
+        # Degenerate split: the whole metric sits in ONE group and every other group is zero.
+        # That is DEFINITIONAL, not concentration — grouping "refunded sales" by order status puts
+        # 100% in 'Returned' because that is what the metric means, and reporting it as a 10×
+        # concentration is noise that teaches a reader to skip the real ones.
+        if len([1 for _, m, _ in pairs if m > 0]) <= 1:
             return None
 
         g, m, n = max(pairs, key=lambda t: t[1])
@@ -8113,8 +8131,20 @@ def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
 _MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
+def _fmt_num_or_raw(v) -> str:
+    """A metric value as a reader sees it, or the value untouched when it is not a number."""
+    try:
+        return _fmt_compact_num(float(str(v).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def _fmt_period(v) -> str:
-    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022")."""
+    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022").
+
+    Also handles the full timestamp a warehouse returns for DATE_TRUNC — BigQuery renders it
+    "2026-08-01 00:00:00+00:00", and 52 of those reached one shipped report's prose and titles.
+    """
     m = re.match(r"^(\d{4})-(\d{2})", str(v))
     if m and 1 <= int(m.group(2)) <= 12:
         return f"{_MONTHS_ABBR[int(m.group(2)) - 1]} {m.group(1)}"
@@ -8273,8 +8303,15 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
             if anomalous:
                 break
     if anomalous:
-        summary = (f"⚠ Period concentration: {anomalous['period']} at {anomalous['value']} vs the "
-                   f"{anomalous['baseline']} baseline (n={anomalous['n']}). " + (summary or ""))
+        # Reader-facing prose, so it wears reader-facing formatting. This line shipped as
+        # "⚠ Period concentration: 2026-08-01 00:00:00+00:00 at 87676.13 vs the 25028.91
+        # baseline" — a raw BigQuery TIMESTAMP and two unrounded floats in the one sentence a
+        # person actually reads. `_fmt_period` and `_fmt_compact_num` already exist for exactly
+        # this and were reaching only the key numbers.
+        summary = (f"⚠ Period concentration: {_fmt_period(anomalous['period'])} at "
+                   f"{_fmt_num_or_raw(anomalous['value'])} vs the "
+                   f"{_fmt_num_or_raw(anomalous['baseline'])} baseline "
+                   f"(n={anomalous['n']}). " + (summary or ""))
     phase = _phase_result(
         "temporal_when", "Temporal Trend — When", "📈",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -8389,7 +8426,9 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
     base_n = len(state.get("investigation_phases", []))
     for name, ldims, pmeta in lens_specs:
         pid, title, emoji = pmeta
-        drill_meta = (f"period_drill_{name}", f"{title} · {anomalous['period']}", "🎯")
+        # The TITLE is read; the directive below is EXECUTED. Only the title gets formatted —
+        # `anomalous['period']` stays raw where the model builds a date filter from it.
+        drill_meta = (f"period_drill_{name}", f"{title} · {_fmt_period(anomalous['period'])}", "🎯")
         try:
             reader = conn.make_reader()
             out = ada_cross_section(state, reader, dims_override=ldims, phase_meta=drill_meta,
