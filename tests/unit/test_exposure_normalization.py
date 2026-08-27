@@ -97,3 +97,31 @@ def test_suppressing_those_two_did_not_silence_the_real_ones():
     assert real and "CONCENTRATED" in real
     men = _concentration_note(*THELOOK_DEPT)
     assert men and "PROPORTIONAL" in men
+
+
+def test_a_non_additive_metric_gets_no_share_of_total():
+    """A share-of-total presumes the parts ADD to the whole. An average, a rate or a ratio does
+    not, so "Standard holds 97% of the metric" is arithmetic nonsense.
+
+    Caught by CI on the full suite, not locally: this fired on a per-mode MEAN delay carrying its
+    standard deviation in the next column, breaking `test_a_clean_result_gets_no_verdict_banner`.
+    The local run that preceded the push was a `-k` filter that never selected that file."""
+    # a mean, betrayed by the dispersion column beside it
+    assert _concentration_note(["mode", "metric_total", "sd", "n"],
+                               [["Same Day", "0.1", "0.4", "4000"],
+                                ["Standard", "3.4", "0.6", "4000"]]) is None
+    # …and by its own name, with no dispersion column present
+    for metric in ("avg_delay_days", "return_rate", "margin_pct", "conversion_ratio"):
+        assert _concentration_note(["seg", metric, "n"],
+                                   [["a", "9", "10"], ["b", "1", "90"]]) is None, metric
+
+
+def test_an_additive_total_is_still_normalised():
+    """The exclusion keys on the METRIC column, not on any column — a ranked scan carries
+    `avg_per_record` and `pct_of_total` beside its additive `metric_total`, and must still be
+    checked."""
+    note = _concentration_note(
+        ["product_department", "metric_total", "n", "avg_per_record", "pct_of_total"],
+        [["Men", "7485064.9", "246775", "30.3", "53.2"],
+         ["Women", "6584682.5", "244003", "27.0", "46.8"]])
+    assert note and "PROPORTIONAL" in note

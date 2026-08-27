@@ -1816,6 +1816,14 @@ _COUNT_COL_RE = re.compile(r"^(n|records?|row_count|cnt|count|items?|n_\w+|\w+_c
 #: A TIME BUCKET, by column name or by the shape of its first value.
 _TIME_COL_RE = re.compile(r"(^|_)(period|month|week|day|date|year|quarter|hour)($|_)|_at$|time", re.I)
 _TIME_VALUE_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?")
+#: A metric that does NOT sum across groups. A share-of-total is arithmetic on the assumption that
+#: the parts add to the whole; an average, a rate or a ratio breaks that assumption outright.
+#: Underscore-delimited, NOT `\b`: `_` is a word character, so `\bavg\b` does not match
+#: `avg_delay_days` — which is precisely the shape a generated column has.
+_NON_ADDITIVE_METRIC_RE = re.compile(
+    r"(^|_)(avg|average|mean|median|rate|ratio|pct|percent|share|index|score)(_|$)", re.I)
+#: A dispersion column beside the metric is the tell that the metric is a MEAN, whatever it is named.
+_DISPERSION_COL_RE = re.compile(r"^(sd|std|stdev|stddev|std_dev|stderr|se|var|variance)$", re.I)
 _SHARE_COL_RE = re.compile(r"(pct|percent|share)", re.I)
 #: Above this the group holds a disproportionate share of the metric; below its reciprocal it
 #: holds less than its size would predict. Between them the split is proportional — which is the
@@ -1865,6 +1873,14 @@ def _concentration_note(columns, rows) -> Optional[str]:
         group_idx = next((i for i, c in enumerate(cols)
                           if i not in (count_idx, metric_idx) and _num(rows[0][i]) is None), None)
         if metric_idx is None or group_idx is None:
+            return None
+
+        # A share-of-total presumes the parts ADD to the whole. An average, a rate or a ratio does
+        # not, so "Standard holds 97% of the metric" is arithmetic nonsense — and that is exactly
+        # what it said about a per-mode MEAN delay carrying its standard deviation in the next
+        # column. Caught by CI on the full suite; my own filtered `-k` run never selected that file.
+        if _NON_ADDITIVE_METRIC_RE.search(cols[metric_idx]) or any(
+                _DISPERSION_COL_RE.match(str(c).strip()) for c in cols):
             return None
 
         # A TIME BUCKET is not a group with exposure. Every month holds roughly its share of the
