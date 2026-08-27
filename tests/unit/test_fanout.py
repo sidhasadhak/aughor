@@ -157,3 +157,52 @@ def test_avgratio_silent_on_constant_scale_and_plain_avg():
 def test_avgratio_excludes_distinct_and_windowed():
     assert _avgratio("SELECT AVG(DISTINCT a / b) FROM t") is None
     assert _avgratio("SELECT AVG(a / b) OVER (PARTITION BY z) FROM t") is None
+
+
+# ── a join onto a PRIMARY KEY is not a chasm ──────────────────────────────────
+
+_THELOOK = {
+    "order_items": ["id", "order_id", "user_id", "product_id", "inventory_item_id",
+                    "status", "created_at", "sale_price", "returned_at"],
+    "inventory_items": ["id", "product_id", "created_at", "sold_at", "cost",
+                        "product_category", "product_department", "product_brand"],
+}
+
+_PK_JOIN = (
+    "SELECT inventory_items.product_department, "
+    "SUM(order_items.sale_price - inventory_items.cost) AS metric_total, COUNT(*) AS n "
+    "FROM order_items LEFT JOIN inventory_items "
+    "ON order_items.inventory_item_id = inventory_items.id "
+    "GROUP BY 1"
+)
+
+
+def test_a_direct_fk_to_a_primary_key_is_not_a_chasm():
+    """The false positive that reached a shipped executive summary.
+
+    `order_items` and `inventory_items` BOTH carry `product_id`, so by schema shape alone they
+    look like two satellites of a `product` hub. They are not joined through `product`: the join
+    is a direct FK onto `inventory_items.id`, which attaches exactly one row. Measured on the real
+    warehouse — 181,721 rows in, 181,721 out, zero multiplication — while the report told the
+    reader its exact totals were "inflated ... directional only" and needed "a grain-correct
+    recompute". A guard that says correct numbers are wrong spends the reader's trust for nothing.
+    """
+    from aughor.sql.fanout import sum_over_chasm_fanout, count_star_chasm_fanout
+
+    assert sum_over_chasm_fanout(_PK_JOIN, _THELOOK, "bigquery") is None
+    assert count_star_chasm_fanout(_PK_JOIN, _THELOOK, "bigquery") is None
+
+
+def test_the_genuine_two_fact_chasm_still_fires():
+    """The demotion must be narrow. A real chasm joins its satellites on the HUB key
+    (`order_id`), never on their own `id` — the ROAS scar this module was built for."""
+    from aughor.sql.fanout import sum_over_chasm_fanout
+
+    cols = {"orders": ["order_id", "user_id"],
+            "order_items": ["id", "order_id", "sale_price"],
+            "attribution": ["id", "order_id", "weight"]}
+    sql = ("SELECT o.order_id, SUM(oi.sale_price * a.weight) AS m FROM orders o "
+           "JOIN order_items oi ON o.order_id = oi.order_id "
+           "JOIN attribution a ON o.order_id = a.order_id GROUP BY 1")
+    hit = sum_over_chasm_fanout(sql, cols, "duckdb")
+    assert hit and "chasm" in hit
