@@ -4520,9 +4520,46 @@ _DIAGNOSTIC_RE = re.compile(
 
 
 def _is_diagnostic_question(q: str) -> bool:
-    """Cross-sectional 'where/which is weakest / where are we losing money' questions —
-    these have no useful time axis and should run a dimensional weakness scan."""
+    """Cross-sectional 'where/which is weakest / where are we losing money' questions — these ask
+    WHICH SEGMENT, so they run a dimensional weakness scan.
+
+    They do NOT imply the data has no time axis. That sentence used to live here (and in the intake
+    prompt) and it was load-bearing in the wrong direction: it turned a property of the QUESTION into
+    a claim about the SCHEMA, and a "where are we losing money?" run over a warehouse carrying ten
+    date columns skipped the entire temporal battery. Whether a time axis exists is resolved
+    deterministically by `_resolve_temporal_axis`; this predicate answers a different question.
+    """
     return bool(_DIAGNOSTIC_RE.search(q or ""))
+
+
+#: A question about money being LOST — a negative outcome — rather than money being SPENT.
+_LOSS_Q_RE = re.compile(
+    r"\b(losing|lose|lost)\s+money\b|\bleak(age|ing|s)?\b|\bbleed(ing)?\b|\bshrinkage\b|"
+    r"\bwrite[-\s]?off\w*|\bwast(e|ed|ing|eful)\b",
+    re.IGNORECASE,
+)
+#: A metric that is nothing but a gross spend total — `SUM(cost)`, `SUM(ii.cogs)`, `SUM(expense)`.
+#: Deliberately anchored and narrow: a margin (`SUM(price - cost)`), a CASE-filtered reversal total
+#: or a ratio must NOT match, because each of those is a real answer to a loss question.
+_BARE_SPEND_RE = re.compile(
+    r"^\s*SUM\s*\(\s*(?:[\w`\"]+\.)?[\w`\"]*(?:cost|cogs|spend|expense)[\w`\"]*\s*\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_loss_question(q: str) -> bool:
+    return bool(_LOSS_Q_RE.search(q or ""))
+
+
+def _spend_measured_as_loss(question: str, metric_sql: str) -> bool:
+    """True when a LOSS question resolved to a bare SPEND total — the measure substitution.
+
+    The INTENT GUARD in the intake prompt admits "cost or spend" as a financial measure, which is
+    right for a cost question and wrong for a loss one, so `SUM(inventory_items.cost)` satisfied it.
+    The result ranks departments by how much they SPEND, which makes the biggest department look
+    like the leakiest — observed on two vendors' models for the same question.
+    """
+    return _is_loss_question(question) and bool(_BARE_SPEND_RE.match((metric_sql or "").strip()))
 
 
 # A TEMPORAL-CHANGE question presupposes a movement over time and asks its cause
@@ -5229,6 +5266,25 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 f"question as non-temporal. " + (intake.intake_notes or "")
             ).strip()
 
+    # MEASURE INTERROGATION — a loss question that resolved to a bare SPEND total. The prompt's
+    # LOSS GUARD asks for a margin / reversal / write-off reading; this is the deterministic
+    # backstop for when the model ignores it, and it ANNOTATES rather than rewrites: substituting a
+    # metric under the reader would be a second silent substitution, which is the failure being
+    # guarded. Making it loud in the displayed spec is the point — the shipped report ranked
+    # departments by spend under a "where are we losing money" title, so the largest department read
+    # as the leakiest, and nothing on the page said the measure had been swapped.
+    if intake is not None and _spend_measured_as_loss(question, getattr(intake, "metric_sql", "")):
+        from aughor.stats import stats as _stats
+        _stats.inc("deep_analysis.measure.spend_as_loss")
+        intake.intake_notes = (
+            f"MEASURE WARNING: the question asks where money is being LOST, but the metric resolved "
+            f"to a bare spend total ({intake.metric_sql}). Spend is not loss — the segment that "
+            f"spends the most is the LARGEST segment, not the leakiest. Read the ranking below as "
+            f"COST CONCENTRATION, not as where value is being destroyed. A margin (revenue − cost) "
+            f"or a reversed-transaction (returned / cancelled / refunded) measure would answer the "
+            f"question that was asked. " + (intake.intake_notes or "")
+        ).strip()
+
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
     # setting the flag, so force it for diagnostic "where/which is weakest / where
     # are we losing money" questions OR when there is no usable time axis (no date
@@ -5496,27 +5552,45 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             "answer_report": None,
         }
 
+    # The displayed spec must describe the run that will ACTUALLY happen. The cross-sectional branch
+    # used to end its Approach line "(no time comparison)" unconditionally and omit the date column
+    # entirely — written when the flag really did mean "no clock". It no longer does: a cross-sectional
+    # question over dated data trends as well as ranks, so that line had a report asserting "no time
+    # comparison" on page one while a baseline phase measured a period-over-period shift inside it.
+    _spec_has_axis = (intake.date_column or "").strip().upper() not in ("", "NONE")
+    if intake.cross_sectional:
+        _spec_rows = [
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is "
+                         "weakest" + (f", and trend it on {intake.date_column} to see whether the "
+                                      "weakness is growing" if _spec_has_axis
+                                      else " (no usable time axis in reach — no temporal check)")],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ]
+        if _spec_has_axis:
+            _spec_rows.insert(2, ["Date column", intake.date_column])
+    else:
+        _spec_rows = [
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
+            ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
+                            if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
+            ["Date column", intake.date_column],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ]
+
     # Store the intake spec in state via a synthetic phase (no SQL, just metadata)
     finding = InvestigationFinding(
         finding_id="intake_spec",
         title="Investigation Specification",
         sql="",
         columns=["field", "value"],
-        rows=([
-            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is weakest (no time comparison)"],
-            ["Primary table", intake.metric_table],
-            ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ] if intake.cross_sectional else [
-            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
-            ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
-                    if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
-            ["Date column", intake.date_column],
-            ["Primary table", intake.metric_table],
-            ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ]),
-        row_count=6,
+        rows=_spec_rows,
+        # Was hardcoded 6 while the cross-sectional branch emitted 4 — a row count that counted rows
+        # nobody rendered. Derived now, so it cannot drift from the list beside it.
+        row_count=len(_spec_rows),
         error=None,
         interpretation=intake.intake_notes or (
             f"Cross-sectional scan of {intake.metric_label} across dimensions."

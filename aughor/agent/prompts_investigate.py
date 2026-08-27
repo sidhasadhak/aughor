@@ -37,6 +37,25 @@ TASK: Parse this question into a precise investigation specification.
    or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
    or losing money, default to the primary revenue / value measure in the schema. A money question
    must never resolve to a sentiment or review metric.
+   LOSS GUARD (critical): the guard above admits "cost or spend", which is right for a COST question
+   and wrong for a LOSS one. "Losing money" / leakage / waste / bleeding / shrinkage asks about a
+   NEGATIVE OUTCOME, and gross spend is not one: SUM(cost) is what the business SPENT, so the
+   department that spends most is simply the BIGGEST department. Ranking cost concentration answers
+   "which is largest", never "where are we losing" — and it reads as an accusation of the most
+   productive part of the business.
+   For a loss question choose the FIRST of these the schema supports, and name the reading in
+   intake_notes so the reader knows which sense of "losing" was measured:
+     (a) an explicit loss / refund / write-off / chargeback AMOUNT column;
+     (b) MARGIN — a revenue column minus a cost column (e.g. `SUM(sale_price - cost)`), which is
+         also the only reading that can go negative;
+     (c) the value of REVERSED transactions — rows whose status / lifecycle column marks them
+         returned, cancelled, refunded or charged back
+         (e.g. `SUM(CASE WHEN status IN ('Returned','Cancelled') THEN sale_price END)`);
+     (d) unsold / obsolete stock — the cost of rows that never reached a sale.
+   Use a bare cost / spend total ONLY when the question itself asks about cost or spend ("where is
+   our cost highest", "what are we spending most on"). If none of (a)–(d) is derivable from the
+   schema, say so in intake_notes and state which sense you fell back to — never present spend as
+   loss silently.
    MAGNITUDE GUARD (critical): when the question names a QUANTITY — a delay, a duration, a lead
    time, an age, a distance, an amount — and the schema records BOTH the measured quantity and a
    0/1 indicator that merely flags it, the metric is the MEASURED QUANTITY. "Shipping delay" over a
