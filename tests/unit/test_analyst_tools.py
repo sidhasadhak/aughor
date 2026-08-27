@@ -405,3 +405,49 @@ def test_an_ad_hoc_query_reaches_the_report_as_a_drawable_phase(monkeypatch, tra
     assert drawable[0]["rows"] == [["GVA-FRA", 42], ["ZRH-BUD", 35]]
     # …and it streamed, so the user watches the slice land
     assert [t for t, _ in frames].count("phase_complete") == 2   # intake + the query
+
+
+# ── ad-hoc phase titles carry their SCOPE ──────────────────────────────────────
+
+def test_two_cuts_of_the_same_shape_get_distinguishable_titles():
+    """The title is derived from the RESULT SHAPE, so one cut run over two periods produced the
+    same name twice — different numbers, nothing saying which was which. An observation/comparison
+    PAIR then reads as redundant compute (it did, to a reader who had not opened the WHERE clauses).
+    Both queries are real and both belong in the report; only the label was ambiguous."""
+    from aughor.agent.analyst import _adhoc_title
+
+    obs = ("SELECT inventory_items.product_brand, SUM(CASE WHEN order_items.status = 'Returned' "
+           "THEN inventory_items.cost ELSE 0 END) as returned_cost FROM order_items "
+           "WHERE order_items.created_at >= '2025-02-01' AND order_items.created_at <= '2025-02-28' "
+           "GROUP BY 1")
+    cmp_ = obs.replace("2025-02-01", "2025-01-01").replace("2025-02-28", "2025-02-01")
+    cols = ["product_brand", "returned_cost"]
+
+    t_obs = _adhoc_title(cols, "Where are we losing money?", obs)
+    t_cmp = _adhoc_title(cols, "Where are we losing money?", cmp_)
+    assert t_obs != t_cmp, "an observation/comparison pair must not share a title"
+    assert "2025-02-01" in t_obs and "2025-01-01" in t_cmp
+    assert t_obs.startswith("returned_cost by product_brand")
+
+
+def test_a_scoping_filter_is_named_but_the_metric_definition_is_not():
+    """A drill into one department must say so. The metric's OWN `status = 'Returned'` must not
+    be echoed — it is in every query of the run and would title them all identically."""
+    from aughor.agent.analyst import _adhoc_title
+
+    sql = ("SELECT inventory_items.product_category, SUM(CASE WHEN order_items.status = 'Returned' "
+           "THEN inventory_items.cost ELSE 0 END) as returned_cost FROM order_items "
+           "WHERE order_items.created_at >= '2025-02-01' "
+           "AND inventory_items.product_department = 'Men' GROUP BY 1")
+    title = _adhoc_title(["product_category", "returned_cost"], "q", sql)
+    assert "product_department = Men" in title
+    assert "Returned" not in title, "the metric's own filter is not the cut's scope"
+
+
+def test_a_query_with_no_scope_keeps_the_bare_title():
+    """Fail-open: an unscoped or unparseable query yields exactly the old title."""
+    from aughor.agent.analyst import _adhoc_title
+
+    assert _adhoc_title(["a", "b"], "q", "SELECT a, SUM(b) FROM t GROUP BY 1") == "b by a"
+    assert _adhoc_title(["a", "b"], "q", "") == "b by a"
+    assert _adhoc_title([], "the question", "") == "the question"

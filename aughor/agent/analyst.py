@@ -97,15 +97,63 @@ class AnalystTurn:
         return fresh
 
 
-def _adhoc_title(columns: list, question: str) -> str:
+#: Date bounds and simple equality filters in a WHERE clause — the two things that make one
+#: ad-hoc cut different from another of the same SHAPE. Bounded and anchored; never a parser.
+_ADHOC_DATE_RE = re.compile(r"""[><]=?\s*(?:TIMESTAMP\s*)?['"](\d{4}-\d{2}-\d{2})""", re.I)
+_ADHOC_EQ_RE = re.compile(r"""(?:\w+\.)?(\w+)\s*=\s*['"]([^'"]{1,40})['"]""")
+_ADHOC_DATEY = re.compile(r"(_at|date|day|month|year|period)$", re.I)
+
+
+def _adhoc_scope(sql: str) -> str:
+    """The date window and equality filters of an ad-hoc query, as a short qualifier.
+
+    The title below is derived from the RESULT SHAPE, so two queries returning the same columns
+    get the same name however differently they were scoped. That is harmless until the loop does
+    what a good analyst does and runs one cut over two periods: the report then shows
+    "returned_cost by product_brand" twice, with different numbers and nothing saying one is
+    February and the other January — an observation/comparison PAIR reads as a repeat. (It read
+    that way to me, and I called it redundant compute before reading the WHERE clauses.)
+
+    Best-effort by construction: an unparsed scope yields "" and the title is exactly what it
+    was before.
+    """
+    try:
+        text = " ".join((sql or "").split())
+        if not text:
+            return ""
+        dates = _ADHOC_DATE_RE.findall(text)
+        parts: list[str] = []
+        if dates:
+            uniq = list(dict.fromkeys(dates))
+            parts.append(uniq[0] if len(uniq) == 1 else f"{uniq[0]} → {uniq[-1]}")
+        for col, val in _ADHOC_EQ_RE.findall(text):
+            # A status/date equality is usually the METRIC's own definition (the CASE WHEN), not
+            # the cut's scope — naming it would title every phase with the same word.
+            if _ADHOC_DATEY.search(col) or col.lower() in ("status", "state"):
+                continue
+            piece = f"{col} = {val}"
+            if piece not in parts:
+                parts.append(piece)
+            if len(parts) >= 3:
+                break
+        return ", ".join(parts)[:60]
+    except Exception:
+        return ""
+
+
+def _adhoc_title(columns: list, question: str, sql: str = "") -> str:
     """A name for a query the model framed itself. It supplies no title — the phase
-    tools get theirs from a plan — so it comes from the shape of what came back."""
+    tools get theirs from a plan — so it comes from the shape of what came back, plus the
+    SCOPE that distinguishes it from another cut of the same shape."""
     cols = [str(c) for c in (columns or []) if str(c).strip()]
     if len(cols) == 2:
-        return f"{cols[1]} by {cols[0]}"
-    if len(cols) == 1:
-        return str(cols[0])
-    return (question or "Query result").strip()[:80]
+        base = f"{cols[1]} by {cols[0]}"
+    elif len(cols) == 1:
+        base = str(cols[0])
+    else:
+        return (question or "Query result").strip()[:80]
+    scope = _adhoc_scope(sql)
+    return f"{base} — {scope}" if scope else base
 
 
 def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
@@ -131,7 +179,8 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             n = len(turn.phase_tools_run) + 1
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
-                "phase_name": _adhoc_title(cols, turn.state.get("question", "")),
+                "phase_name": _adhoc_title(cols, turn.state.get("question", ""),
+                                           (args or {}).get("sql", "")),
                 "phase_icon": "🔎",
                 "status": "complete",
                 # Empty: the narrator writes the prose from the evidence log, and a
@@ -139,7 +188,8 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                 "summary": "",
                 "findings": [{
                     "finding_id": f"adhoc_{n}_1",
-                    "title": _adhoc_title(cols, turn.state.get("question", "")),
+                    "title": _adhoc_title(cols, turn.state.get("question", ""),
+                                          (args or {}).get("sql", "")),
                     "sql": (args or {}).get("sql", ""),
                     "columns": cols,
                     "rows": rows[:50],
