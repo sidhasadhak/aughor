@@ -63,6 +63,14 @@ def _retry_exc(completion, message: str = "1 validation error for Verdict"):
                                     n_attempts=1, total_usage=0)
 
 
+def _transport_exc(message: str):
+    """The shape instructor raises when the REQUEST failed rather than the output: the
+    provider never answered, so there is no completion to attach."""
+    from instructor.core import InstructorRetryException
+
+    return InstructorRetryException(message, last_completion=None, n_attempts=1, total_usage=0)
+
+
 # ── the normalizer: what it repairs ───────────────────────────────────────────
 
 GOOD = '{"verdict": "high", "note": "ok"}'
@@ -197,6 +205,46 @@ def test_empty_and_refusal_are_their_own_classes():
     assert refusal.failure == R.REFUSAL and not refusal.repairable
 
 
+def test_a_refused_request_is_unavailable_not_an_empty_completion():
+    """The regression this class exists for.
+
+    A 429/404/401 leaves NO completion, so the recovered text is empty — byte-identical
+    to a model that ran and said nothing. Classified by that symptom alone, a throttled
+    provider reported itself as "the model returned no content", which points the reader
+    at the model and the prompt when the fault is the binding. Both halves are asserted
+    together: naming the transport failure must not reclassify a genuine empty body.
+    """
+    throttled = R.classify(_transport_exc("Error code: 429 - rate limit exceeded"))
+    assert throttled.failure == R.UNAVAILABLE
+    assert "never reached the model" in throttled.detail
+
+    misrouted = R.classify(_transport_exc("404 page not found"))
+    assert misrouted.failure == R.UNAVAILABLE and "wrong endpoint" in misrouted.detail
+
+    # …and the model that really did run and return nothing is still EMPTY.
+    assert R.classify(_retry_exc(_completion(""))).failure == R.EMPTY
+
+
+def test_unavailable_names_the_remedy_not_just_the_fault():
+    """`detail` is what the operator reads. A class name alone ("rate_limited") says what
+    happened but not what to do, which is the whole reason the hint table exists."""
+    d = R.classify(_transport_exc("Error code: 429 - rate limit exceeded"))
+    assert "retry" in d.detail.lower()
+
+
+def test_unavailable_is_not_repairable_and_carries_no_text():
+    """There is no output to normalize, so a repair request would spend a request to
+    re-learn that the provider is refusing."""
+    d = R.classify(_transport_exc("Error code: 429 - rate limit exceeded"))
+    assert not d.repairable and d.text == ""
+
+
+def test_an_unrecognised_error_with_no_body_stays_empty():
+    """`classify_provider_error` answers "unknown" when nothing matches, and that is not
+    evidence the request never happened — so the conservative class still wins."""
+    assert R.classify(_transport_exc("something nobody has seen before")).failure == R.EMPTY
+
+
 def test_a_narrator_sentence_about_inability_is_not_a_refusal():
     """'I cannot compute a margin without cost data' is a legitimate grounded answer —
     the exact sentence the loss-signal directive exists to produce. Matching it as a refusal
@@ -215,7 +263,8 @@ def test_only_truncation_blocks_the_failover():
     prompt — a different one may well answer, and refusing to try would trade one cheap
     request for a dead investigation. A truncation hits OUR max_tokens on every link."""
     assert not R.should_failover(R.Diagnosis(R.TRUNCATED))
-    for failure in (R.EMPTY, R.UNPARSEABLE, R.SCHEMA_MISMATCH, R.REFUSAL, R.UNKNOWN):
+    for failure in (R.EMPTY, R.UNAVAILABLE, R.UNPARSEABLE, R.SCHEMA_MISMATCH,
+                    R.REFUSAL, R.UNKNOWN):
         assert R.should_failover(R.Diagnosis(failure)), failure
 
 

@@ -60,6 +60,39 @@ def test_degraded_report_with_no_phases_is_still_honest():
     assert rep["headline"] == "Phase findings (no synthesized answer)"
 
 
+def test_degraded_report_never_claims_queries_ran_when_none_did():
+    """The false claim that sent an operator hunting through a warehouse connector.
+
+    The degraded notice asserted "the underlying queries ran" unconditionally. That is true
+    for the case it was written for — synthesis dying AFTER the phases produced results —
+    and false for the one a user meets first: every phase failing at PLANNING, so no SQL was
+    ever written. Both directions are asserted together, because a fix that simply deletes
+    the claim would also stop reporting the case where it IS true.
+    """
+    planned_nothing = [_phase_result("baseline", "Baseline & Anomaly", "📊", "error",
+                                     "Could not plan baseline queries.", [])]
+    rep = _degraded_report("Why did orders drop?", planned_nothing, {})
+    assert "NO query ran" in rep["confidence_justification"]
+    assert "underlying queries ran" not in rep["confidence_justification"]
+
+    executed = [_phase_result("baseline", "Baseline & Anomaly", "📊", "complete",
+                              "Orders fell 12% against the trailing baseline.",
+                              [{"sql": "SELECT COUNT(*) FROM orders", "error": None}])]
+    ran = _degraded_report("Why did orders drop?", executed, {})
+    assert "queries ran (1 executed)" in ran["confidence_justification"]
+    assert "NO query ran" not in ran["confidence_justification"]
+
+
+def test_a_query_that_errored_does_not_count_as_having_run():
+    """`sql` is present on a finding whose execution FAILED too. Counting those would
+    restore the same false reassurance one layer down — the phase produced no results."""
+    failed = [_phase_result("baseline", "Baseline & Anomaly", "📊", "error",
+                            "All baseline queries failed to execute.",
+                            [{"sql": "SELECT COUNT(*) FROM nope", "error": "no such table"}])]
+    rep = _degraded_report("Why did orders drop?", failed, {})
+    assert "NO query ran" in rep["confidence_justification"]
+
+
 # ── 3 · lifecycle stages are not performance peers ───────────────────────────────
 
 _STATUS_ROWS = [["shipped", "25427809.0", "64962"],

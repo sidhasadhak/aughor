@@ -162,7 +162,7 @@ export function DocumentUploader() {
       <div>
         <h2 className="aug-fs-ui font-semibold text-zinc-200">Documents</h2>
         <p className="aug-fs-xs text-zinc-500 mt-0.5">
-          Upload PDFs, Word docs, or Markdown files. Deep analysis and the conversation both
+          Upload PDFs, Word docs, or Markdown files. The Agent and the conversation both
           retrieve relevant snippets.
         </p>
       </div>
@@ -463,7 +463,7 @@ export function DocumentUploader() {
 
       {docs.length === 0 && !uploading && (
         <p className="aug-fs-xs text-zinc-500 text-center py-4">
-          No documents yet. Upload one above to give deep analysis external context.
+          No documents yet. Upload one above to give the Agent external context.
         </p>
       )}
     </div>

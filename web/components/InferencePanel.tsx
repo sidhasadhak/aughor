@@ -262,6 +262,11 @@ export function InferencePanel() {
   // Free-by-default: binding a paid OpenRouter model requires this explicit ack —
   // the server refuses without it, this checkbox is how the user grants it.
   const [paidAck, setPaidAck] = useState(false);
+  // The fallback binding — where calls go when the primary refuses. "" = the built-in
+  // order, "none" = no fallback, else the one chosen backend.
+  const [fallbackBackend, setFallbackBackend] = useState("");
+  const [fallbackModel, setFallbackModel] = useState("");
+  const [fallbackCatalog, setFallbackCatalog] = useState<LlmModelCatalog | null>(null);
 
   const load = () =>
     getLlmConfig()
@@ -271,6 +276,8 @@ export function InferencePanel() {
         setModels({ ...c.models_set });
         setBaseUrls({ ...c.base_urls_set });
         setKeys({});
+        setFallbackBackend(c.fallback?.backend ?? "");
+        setFallbackModel(c.fallback?.model ?? "");
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
 
@@ -285,6 +292,18 @@ export function InferencePanel() {
   }, []);
 
   useEffect(() => { load(); }, []);
+
+  // The fallback's catalogue is a SECOND provider's list — never the primary's. Showing
+  // OpenRouter ids while the fallback is Gemini would suggest models that 404 on the one
+  // backend they would actually be dispatched to.
+  useEffect(() => {
+    if (!fallbackBackend || fallbackBackend === "none") { setFallbackCatalog(null); return; }
+    let ignore = false;
+    getLlmModels(fallbackBackend)
+      .then((c) => { if (!ignore) setFallbackCatalog(c); })
+      .catch(() => { if (!ignore) setFallbackCatalog(null); });
+    return () => { ignore = true; };
+  }, [fallbackBackend]);
 
   // Refetch when the provider changes — a catalogue belongs to its backend, and
   // showing Anthropic's models while OpenRouter is selected would be worse than
@@ -334,19 +353,29 @@ export function InferencePanel() {
   const keyUnreadable = keyState === "unreadable";
 
   const onBackend = (b: string) => {
-    // Models are backend-specific — reset overrides so a name tuned for the previous
-    // provider cannot ride along. Nothing fills in behind them: pick a model below.
+    // Models are backend-specific — a name tuned for the previous provider must never ride
+    // along. What DID change: the bindings this operator already chose for `b` are restored
+    // rather than cleared. Nothing is invented — an unconfigured backend still fills in
+    // nothing, and the field stays free text — but re-selecting a provider no longer asks
+    // for a model that was chosen here once already, and the same remembered value is what
+    // lets the fallback chain dispatch to that backend at all.
     setBackend(b);
-    setModels({});
+    setModels({ ...(cfg?.models_by_backend?.[b] ?? {}) });
     setResult(null);
     setSaved(false);
   };
 
   // Paid bindings among the typed role models (openrouter only — the `:free`
   // suffix is that catalog's tier marker; BYO-key backends are paid by design).
-  const paidBindings = backend === "openrouter"
-    ? Object.values(models).filter(m => m && m.trim() && !m.trim().endsWith(":free"))
-    : [];
+  const paidBindings = [
+    ...(backend === "openrouter"
+      ? Object.values(models).filter(m => m && m.trim() && !m.trim().endsWith(":free"))
+      : []),
+    // The fallback is where calls land when the primary refuses — the moment least likely
+    // to be watched, and so the one that must not be able to start billing unnoticed.
+    ...(fallbackBackend === "openrouter" && fallbackModel.trim()
+      && !fallbackModel.trim().endsWith(":free") ? [fallbackModel.trim()] : []),
+  ];
 
   const save = async () => {
     setSaving(true); setSaved(false); setResult(null);
@@ -356,6 +385,7 @@ export function InferencePanel() {
         models: { coder: models.coder || "", narrator: models.narrator || "", fast: models.fast || "" },
         base_urls: isLocal ? { [backend]: baseUrls[backend] || "" } : {},
         keys: Object.fromEntries(Object.entries(keys).filter(([, v]) => v && v.trim())),
+        fallback: { backend: fallbackBackend, model: fallbackModel.trim() },
         ...(paidBindings.length > 0 ? { allow_paid: paidAck } : {}),
       });
       setCfg(next);
@@ -363,6 +393,8 @@ export function InferencePanel() {
       setModels({ ...next.models_set });
       setBaseUrls({ ...next.base_urls_set });
       setKeys({});
+      setFallbackBackend(next.fallback?.backend ?? "");
+      setFallbackModel(next.fallback?.model ?? "");
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -520,6 +552,80 @@ export function InferencePanel() {
           }
           return null;
         })()}
+      </div>
+
+      {/* Fallback — where calls go when the primary refuses.
+          This used to be reachable only through AUGHOR_FALLBACK_BACKENDS /
+          AUGHOR_FALLBACK_MODEL_<BACKEND>: invisible from the product, so a deployment
+          nobody had set them on ran with a chain that had no model to dispatch with and
+          silently skipped every link. An env pin still wins, and says so below. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Fallback</div>
+
+        <div>
+          <label style={labelStyle}>Provider</label>
+          <select
+            value={fallbackBackend}
+            onChange={(e) => { setFallbackBackend(e.target.value); setFallbackModel(""); }}
+            style={{ ...inputStyle, fontFamily: "inherit" }}
+          >
+            <option value="">Built-in order (try each configured provider)</option>
+            <option value="none">No fallback — fail on the primary</option>
+            {cfg.backends.filter((b) => b !== backend).map((b) => (
+              <option key={b} value={b}>
+                {BACKEND_LABEL[b] ?? b}
+                {cfg.needs_key.includes(b) && !cfg.keys_set[b] ? " — no key set" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {fallbackBackend && fallbackBackend !== "none" && (
+          <div>
+            <label style={labelStyle}>Model</label>
+            <ModelField
+              value={fallbackModel}
+              onChange={setFallbackModel}
+              placeholder={`paste a model id from ${BACKEND_LABEL[fallbackBackend] ?? fallbackBackend}`}
+              catalog={fallbackCatalog}
+              listId={`llm-fallback-models-${fallbackBackend}`}
+              onKeep={() => {}}
+              busy={false}
+            />
+            <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 4 }}>
+              One model, every role. Without one this link is SKIPPED — which is the honest
+              outcome, but it means the fallback does nothing.
+            </div>
+          </div>
+        )}
+
+        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          {cfg.fallback?.chain?.length
+            ? <>Tried in order: {cfg.fallback.chain.join(" → ")}.</>
+            : <>No fallback — a failing primary fails the call.</>}
+          {" "}Agents in Agent Ops inherit this: an unpinned agent whose call fails over
+          answers on the fallback binding.
+        </div>
+
+        {cfg.fallback?.env_pinned && (
+          <div className="aug-fs-xs" style={{
+            lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
+            background: "var(--amb1)", color: "var(--amb5)", border: "1px solid var(--amb2)",
+          }}>
+            <code style={{ fontFamily: "var(--font-mono)" }}>AUGHOR_FALLBACK_BACKENDS</code> is
+            set in the environment and overrides the choice above — the chain shown is the
+            one that will actually be used. Unset it to steer the fallback from here.
+          </div>
+        )}
+
+        {cfg.fallback?.active && (
+          <div className="aug-fs-xs" style={{
+            lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
+            background: "var(--amb1)", color: "var(--amb5)", border: "1px solid var(--amb2)",
+          }}>
+            The primary is spent right now — calls are landing on the fallback.
+          </div>
+        )}
       </div>
 
       {/* Actions */}

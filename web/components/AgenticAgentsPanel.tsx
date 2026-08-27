@@ -961,6 +961,7 @@ export function AgentModelPin({ pinned, busy, onPin }: {
   const backend = cfg?.backend ?? "";
   const provider = BACKEND_LABEL[backend] ?? backend;
   const roleModels = cfg?.models ?? {};
+  const fb = cfg?.fallback;
   const defaultsLine = (["coder", "narrator", "fast"] as const)
     .filter(r => roleModels[r])
     .map(r => `${r} → ${roleModels[r]}`)
@@ -1017,6 +1018,26 @@ export function AgentModelPin({ pinned, busy, onPin }: {
         Paste any model id {provider ? `${provider} serves` : "your provider serves"} to
         pin this agent — there is no list here to go stale, and the provider itself is
         chosen in Settings → Models.
+      </div>
+      {/* Where this agent's calls land when the primary refuses. The binding is chosen in
+          Settings → Models and applies to every agent that is not pinned — shown here
+          because a run that fails over answers on a DIFFERENT model, and the roster was
+          the one place an operator could not tell that had happened. */}
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        {fb?.active && (
+          <span style={{ color: "var(--amb5)", fontWeight: 600 }}>
+            Failing over now —{" "}
+          </span>
+        )}
+        {fb?.backend === "none"
+          ? <>No fallback: a failing call fails this agent&rsquo;s run.</>
+          : fb?.model
+            ? <>Fallback: <code style={{ fontFamily: "var(--font-mono)" }}>{fb.model}</code>{" "}
+              on {BACKEND_LABEL[fb.backend] ?? fb.backend}.</>
+            : fb?.chain?.length
+              ? <>Fallback: the built-in order ({fb.chain.join(" → ")}) — each link needs a
+                model bound for it, or it is skipped.</>
+              : <>No fallback configured.</>}
       </div>
     </div>
   );

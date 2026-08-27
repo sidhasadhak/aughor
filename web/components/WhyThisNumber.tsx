@@ -34,7 +34,7 @@ function guardTone(action: string): { hue: ChipHue; verb: string } {
 }
 
 const MODE_LABEL: Record<string, string> = {
-  quick: "Quick answer", deep: "Deep analysis", builder: "Query Builder",
+  quick: "Quick answer", deep: "Agent", builder: "Query Builder",
   explore: "Exploration", monitor: "Monitor", brief: "Briefing",
 };
 

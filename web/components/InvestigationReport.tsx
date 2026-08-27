@@ -400,6 +400,16 @@ export function InvestigationReportView({
 
   const analysisPhases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped" && !p._hidden);
 
+  // Did any SQL actually execute? The degraded banner below asserted "The queries ran"
+  // unconditionally. That holds for the case it was written for — synthesis dying AFTER the
+  // phases produced results — and is false for the one a user hits first: every phase failing
+  // at PLANNING, so no SQL was ever written. Told the queries ran when nothing ran, a reader
+  // goes looking for a fault in the warehouse connector. Counted over every phase, not just
+  // `analysisPhases`, because a query that ran inside a phase later hidden or marked skipped
+  // still ran.
+  const executedQueries = report.phases.reduce(
+    (n, p) => n + (p.findings ?? []).filter(f => (f.sql ?? "").trim() && !f.error).length, 0);
+
   const periodStr = [
     report.observation_period,
     report.comparison_basis ? `vs ${report.comparison_basis}` : "",
@@ -413,7 +423,13 @@ export function InvestigationReportView({
         <div className="rounded-md border border-amber-700/30 px-3 py-2 aug-fs-xs text-amber-400/90"
              style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
           ⚠ Narrative synthesis was unavailable — this report is assembled directly from the
-          phase findings below. The queries ran; the framing is provisional.
+          phase findings below.{" "}
+          {executedQueries > 0 ? (
+            <>The queries ran ({executedQueries} executed); the framing is provisional.</>
+          ) : (
+            <><strong>No query ran</strong> — every phase failed or was skipped before any SQL
+            was executed, so there are no results behind this summary.</>
+          )}
         </div>
       )}
       <BriefHeadline>{report.headline}</BriefHeadline>

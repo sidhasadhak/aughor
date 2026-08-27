@@ -258,11 +258,20 @@ def _fallback_backends() -> tuple[str, ...]:
     no-key guarantee needs a value that structurally forbids the chain while still letting
     an individual test override the variable to exercise it."""
     raw = os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()
-    if not raw:
-        return _FALLBACK_ORDER
-    if raw.lower() == "none":
-        return ()
-    return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
+    if raw:
+        if raw.lower() == "none":
+            return ()
+        return tuple(b for b in (p.strip() for p in raw.split(",")) if b in BACKENDS)
+    # Settings → Models. The env var still outranks it: that is how a deployment nobody
+    # can open Settings on is steered. "none" means the same here as there — an empty
+    # chain, chosen deliberately — which is why the field carries the word rather than
+    # using "" for it ("" has always meant "the default order").
+    chosen = str((_cfg().get("fallback") or {}).get("backend") or "").strip()
+    if chosen:
+        if chosen.lower() == "none":
+            return ()
+        return (chosen,) if chosen in BACKENDS else ()
+    return _FALLBACK_ORDER
 
 
 # A backend that answered "quota exhausted" will answer the same way for every call until
@@ -297,17 +306,38 @@ def _in_quota_cooldown(backend: str) -> bool:
 
 
 def _fallback_model_for(backend: str, role: Role) -> str:
-    """The model a fallback backend should use for this role.
+    """The model a fallback backend should use for this role, or "" to SKIP that link.
 
-    Anthropic keeps AUGHOR_FALLBACK_MODEL (the pre-existing contract). Every other backend
-    used to fall back to its own built-in role default; with no defaults shipped, a
-    fallback backend is usable only if the operator configured a model for it. Returning
-    "" makes the chain SKIP that backend (see the caller) rather than dispatch to a
-    vendor with a model id tuned for a different one — which is how a dead binding used
-    to look healthy: the chain answered from somewhere else and nobody saw the failure."""
+    Precedence: the per-backend env pin (``AUGHOR_FALLBACK_MODEL_<BACKEND>``, and
+    ``AUGHOR_FALLBACK_MODEL`` for anthropic — both pre-existing contracts) → the model the
+    operator last bound for that backend in Settings → Models → "".
+
+    That middle step is what makes the chain exist at all. Nothing ships a default, and
+    `models` holds bindings only for the CURRENTLY selected backend, so every non-anthropic
+    link resolved to "" and `_fallback_provider` skipped it. A deployment holding three
+    working keys therefore had NO fallback: a throttled primary took the whole run down
+    while a healthy provider sat unused, and the run reported `fallback: false` with no
+    hint that the chain had never been walked.
+
+    Reading the operator's own remembered choice keeps the rule that no model id is
+    hardcoded here (2026-08-15): the value came from the picker, for that backend, chosen
+    by a person. A backend they have never configured still resolves to "" and is still
+    skipped — better a short chain than a request dispatched to a vendor under a model id
+    tuned for a different one.
+    """
+    env = (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
+    if env:
+        return env
+    cfg = _cfg()
+    fallback = cfg.get("fallback") or {}
+    if str(fallback.get("backend") or "").strip() == backend:
+        chosen = str(fallback.get("model") or "").strip()
+        if chosen:
+            return chosen          # one model, every role — what Settings offers
     if backend == "anthropic":
         return _fallback_model()
-    return (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
+    remembered = (cfg.get("models_by_backend") or {}).get(backend) or {}
+    return str(remembered.get(role) or "").strip()
 
 
 # ── Runtime config (data/llm_config.json) ────────────────────────────────────
@@ -1116,6 +1146,17 @@ _ERROR_HINTS = {
     "config": "The client could not be built — usually a missing key or an unknown backend.",
     "unknown": "Unrecognised failure — the provider's own message is in `error`.",
 }
+
+
+def error_hint(reason: str) -> str:
+    """The operator-facing remedy for a :data:`PROVIDER_ERROR_CLASSES` verdict, or "".
+
+    Public because the reliability layer names the same failures from the other side of
+    the call — see :func:`aughor.llm.reliability.classify`. Reaching into `_ERROR_HINTS`
+    from there would be a second reader of a private table, and the hints would drift the
+    first time one of them was reworded.
+    """
+    return _ERROR_HINTS.get(reason, "")
 
 
 def classify_provider_error(exc: BaseException) -> str:
@@ -2305,6 +2346,33 @@ class LLMProvider:
                 and not _in_quota_cooldown(b)]
 
 
+def _fallback_status(primary: str) -> dict:
+    """The fallback binding as the UI needs it: what is configured, what will be tried,
+    and whether the primary is currently spent so runs are landing on the fallback.
+
+    `active` is best-effort — a cooldown read failing must never take Settings down with
+    it, so an unknown answer is reported as "not active" rather than raised.
+    """
+    fb = _cfg().get("fallback") or {}
+    chain = list(_fallback_backends())
+    try:
+        active = bool(chain) and _in_quota_cooldown(primary)
+    except Exception:                                     # pragma: no cover - defensive
+        logger.debug("provider: fallback cooldown read failed", exc_info=True)
+        active = False
+    return {
+        "backend": str(fb.get("backend") or "").strip(),
+        "model": str(fb.get("model") or "").strip(),
+        "chain": chain,
+        "active": active,
+        # An env pin silently OUTRANKS whatever Settings says. Without surfacing it the
+        # panel would show a chosen provider, the chain would show a different one, and
+        # nothing would explain which is real — a picker that does nothing is worse than
+        # no picker.
+        "env_pinned": bool(os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()),
+    }
+
+
 def _org_cache_scope() -> tuple[str, str]:
     """The (org_id, config-fingerprint) pair a cached provider was built for (CI-5b).
 
@@ -2403,6 +2471,17 @@ def current_config() -> dict:
         "backend": backend,
         # effective values (what calls actually use):
         "models": {r: _active_model(backend, r) for r in ROLES},
+        # What the operator bound for each backend they have configured. Settings restores
+        # these when the provider is switched, instead of clearing to nothing; the fallback
+        # chain dispatches with them. Never secret — model ids, chosen from the picker.
+        "models_by_backend": {b: dict(m) for b, m in
+                              (cfg.get("models_by_backend") or {}).items() if m},
+        # The fallback binding, and whether it is carrying traffic right now. `chain` is
+        # what will actually be tried (env pin > Settings > default order), so the panel
+        # never has to re-derive that precedence; `active` is true when the PRIMARY is in
+        # quota cooldown, which is the moment a run silently lands on the fallback instead
+        # — the roster reads it so an operator is not left guessing which model answered.
+        "fallback": _fallback_status(backend),
         "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
         # A key that cannot be DECRYPTED is not a key that is set. `decrypt_secret`
         # returns an undecryptable value as-is — deliberate, so one bad record cannot take
@@ -2479,6 +2558,44 @@ def set_config(patch: dict) -> dict:
             else:
                 models.pop(r, None)
         cfg["models"] = models
+        # Mirror the choice under its backend. `models` is a single role->model map that
+        # belongs to whichever backend is selected right now, so switching provider used to
+        # discard the previous one's bindings entirely — which is why the fallback chain had
+        # nothing to dispatch with (see `_fallback_model_for`), and why re-selecting a
+        # provider made the operator retype models they had already chosen once.
+        by_backend = dict(cfg.get("models_by_backend") or {})
+        remembered = dict(by_backend.get(effective_backend) or {})
+        for r, m in patch["models"].items():
+            if r not in ROLES:
+                continue
+            if m and str(m).strip():
+                remembered[r] = str(m).strip()
+            else:
+                remembered.pop(r, None)
+        if remembered:
+            by_backend[effective_backend] = remembered
+        else:
+            by_backend.pop(effective_backend, None)
+        cfg["models_by_backend"] = by_backend
+
+    if isinstance(patch.get("fallback"), dict):
+        fb = dict(cfg.get("fallback") or {})
+        if "backend" in patch["fallback"]:
+            chosen = str(patch["fallback"]["backend"] or "").strip()
+            # "" = the default order, "none" = no chain at all, else a real backend.
+            if chosen and chosen.lower() != "none" and chosen not in BACKENDS:
+                raise ValueError(f"unknown fallback backend {chosen!r}")
+            fb["backend"] = chosen
+        if "model" in patch["fallback"]:
+            model = str(patch["fallback"]["model"] or "").strip()
+            # A paid fallback bills exactly like a paid primary — same consent, same guard.
+            # Skipping it here would make the fallback the one way to spend money without
+            # meaning to, which is the hole the free-by-default rule exists to close.
+            if model and fb.get("backend") and fb["backend"].lower() != "none":
+                ensure_free_or_allowed(fb["backend"], model,
+                                       allow_paid=bool(patch.get("allow_paid")))
+            fb["model"] = model
+        cfg["fallback"] = fb
 
     if isinstance(patch.get("base_urls"), dict):
         urls = dict(cfg.get("base_urls") or {})
@@ -2560,7 +2677,7 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
         # authority when the classifier says "unknown".
         reason = classify_provider_error(e)
         return {"model": model, "ok": False, "error": str(e)[:240],
-                "reason": reason, "hint": _ERROR_HINTS.get(reason, ""),
+                "reason": reason, "hint": error_hint(reason),
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 

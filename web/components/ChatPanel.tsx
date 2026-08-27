@@ -50,6 +50,20 @@ interface Props {
   capabilities?: React.ReactNode;
 }
 
+/** The modes a person can PICK in the composer. `auto` is deliberately absent: the
+ *  toggle offers Quick and Agent, and Agent is the default (2026-08-26). */
+export type ChatMode = "ask" | "investigate";
+
+/** What `sendQuestion` may route with — the picker's two, plus the internal `auto`.
+ *
+ *  `auto` is not a mode anyone can select any more, but it is not dead: it is the only
+ *  value that reaches the unified `/ask` door, and with it the router receipt, the
+ *  deterministic overview tour and the clarify gate. The starters, the clarify
+ *  follow-ups and the depth re-run route with it deliberately. Collapsing this into
+ *  `ChatMode` would silently delete those three behaviours.
+ */
+type RouteMode = ChatMode | "auto";
+
 /* ── Input box — module-level so React never remounts it on parent re-render ── */
 interface InputBoxProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -57,8 +71,8 @@ interface InputBoxProps {
   input: string;
   setInput: (v: string) => void;
   streaming: boolean;
-  mode: "auto" | "ask" | "investigate";
-  setMode: (m: "auto" | "ask" | "investigate") => void;
+  mode: ChatMode;
+  setMode: (m: ChatMode) => void;
   onSend: () => void;
   onStop: () => void;
   onClear: () => void;
@@ -138,24 +152,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
 
       {/* Toggle row — mode buttons left, actions right */}
       <div className="flex items-center justify-between px-3 pb-2">
-        {/* Mode toggle — Auto decides depth for you; Insight/Deep force it. */}
+        {/* Mode toggle — Quick answers, Agent investigates. Agent is the default. */}
         <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px", background: "var(--bg-0)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
-          <button
-            onClick={() => setMode("auto")}
-            title="Let the agent choose how deep to go"
-            style={{
-              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
-              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: mode === "auto" ? "1px solid var(--blue2)" : "1px solid transparent",
-              transition: "all .12s",
-              background: mode === "auto" ? "var(--blue1)" : "transparent",
-              color: mode === "auto" ? "var(--blue5)" : "var(--t3)",
-              boxShadow: mode === "auto" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
-            }}
-          >
-            <Icon name="spark" size={16} label="Auto" />
-            Auto
-          </button>
           <button
             onClick={() => setMode("ask")}
             style={{
@@ -182,8 +180,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <Icon name="spark" size={16} label="Deep analysis" />
-            Deep analysis
+            <Icon name="spark" size={16} label="Agent" />
+            Agent
           </button>
         </div>
 
@@ -375,7 +373,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
         hue={deep ? "accent" : "info"}
         icon={deep ? <Icon name="spark" size={16} /> : <Icon name="chat" size={16} />}
       >
-        {deep ? "Deep analysis" : overview ? "Overview" : "Quick answer"}
+        {deep ? "Agent" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
       <span style={{ fontSize: 12, color: "var(--t3)" }}>{r.why}</span>
       {r.downgradedFrom && (
@@ -578,7 +576,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, [busy, turns, timings]);
 
   const [input, setInput]           = useState("");
-  const [mode, setMode]             = useState<"auto" | "ask" | "investigate">("auto");
+  const [mode, setMode]             = useState<ChatMode>("investigate");
   // User-defined agents: the roster + the picked persona.
   const [agents, setAgents]         = useState<UserAgent[]>([]);
   const [agentId, setAgentId]       = useState<string>("");
@@ -723,7 +721,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     requestMode?: "investigate" | "explore"; purpose?: string;
   }
 
-  const sendQuestion = useCallback((question: string, m: "auto" | "ask" | "investigate" = "auto", opts: AskOpts = {}) => {
+  const sendQuestion = useCallback((question: string, m: RouteMode = "investigate", opts: AskOpts = {}) => {
     // An interrupt — the user sent this while a turn was still streaming. The SDK
     // abort settles the outgoing turn with whatever it produced (the projection
     // reads a non-streaming message as done), and the new send is its own turn.
@@ -853,7 +851,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     for (const f of files) void takeFile(f);
   }, [takeFile]);
 
-  const handleSend = useCallback(async (q?: string, m?: "auto" | "ask" | "investigate", opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
+  const handleSend = useCallback(async (q?: string, m?: RouteMode, opts?: { skipCache?: boolean; requestMode?: "investigate" | "explore"; purpose?: string }) => {
     const question = (q ?? input).trim();
     // Only an EMPTY question is refused. Sending while a turn streams is not an error —
     // it is the interrupt: `sendQuestion` aborts the in-flight request before starting,
@@ -1012,9 +1010,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               <div className="text-center">
                 <p className="aug-fs-sm font-bold text-zinc-200">Ask your data anything</p>
                 <p className="aug-fs-sm text-zinc-500 mt-1.5">
-                  <span className="text-zinc-400 font-bold">Auto</span> picks the right depth for each question —
-                  or choose <span className="text-zinc-400 font-bold">Quick</span> /{" "}
-                  <span className="text-violet-400/90 font-bold">Deep analysis</span> yourself.
+                  <span className="text-violet-400/90 font-bold">Agent</span> investigates in depth —
+                  switch to <span className="text-zinc-400 font-bold">Quick</span> for a straight answer.
                 </p>
               </div>
             )}

@@ -228,7 +228,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
 
       {/* ── (b) deep-run phase view ── */}
       <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 8 }}>
-        Deep-run phases — the fixed deep analysis topology
+        Deep-run phases — the fixed Agent topology
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ width: 260, flexShrink: 0 }}>
@@ -323,7 +323,7 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
                     <code style={{ fontSize: 11 }} title={graph.interrupt.gate ?? undefined}>
                       {nodeLabel(graph.interrupt.gate ?? "")}
                     </code> —
-                    resume with feedback from the deep analysis view.
+                    resume with feedback from the Agent view.
                   </span>
                   {onOpenInvestigation && (
                     <Button variant="secondary" size="xs"

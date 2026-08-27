@@ -204,6 +204,35 @@ describe("AgentModelPin", () => {
     getLlmConfigFn.mockResolvedValue(llmConfig());
   });
 
+  it("names the fallback binding an unpinned agent falls over to", async () => {
+    getLlmConfigFn.mockResolvedValue(llmConfig({
+      fallback: { backend: "gemini", model: "vendor/fb", chain: ["gemini"],
+                  active: false, env_pinned: false },
+    }));
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
+    await screen.findByText(/vendor\/fb/);
+    // The roster was the one place an operator could not tell a run had answered on a
+    // DIFFERENT model than the one bound above it.
+    expect(screen.getByText(/Fallback:/)).toBeInTheDocument();
+  });
+
+  it("says so when the fallback is carrying traffic right now", async () => {
+    getLlmConfigFn.mockResolvedValue(llmConfig({
+      fallback: { backend: "gemini", model: "vendor/fb", chain: ["gemini"],
+                  active: true, env_pinned: false },
+    }));
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
+    expect(await screen.findByText(/Failing over now/)).toBeInTheDocument();
+  });
+
+  it("says plainly when there is no fallback at all", async () => {
+    getLlmConfigFn.mockResolvedValue(llmConfig({
+      fallback: { backend: "none", model: "", chain: [], active: false, env_pinned: false },
+    }));
+    render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
+    expect(await screen.findByText(/No fallback/)).toBeInTheDocument();
+  });
+
   it("renders no model list — the catalogue lives in Settings → Models alone", async () => {
     render(<AgentModelPin pinned={null} busy={false} onPin={() => {}} />);
     await screen.findByText(/Settings → Models/);

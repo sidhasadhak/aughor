@@ -146,7 +146,7 @@ function CanvasHistory({
             background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
           }}>
             <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
-            {kind === "chat" ? "Chat" : "Deep analysis"}
+            {kind === "chat" ? "Chat" : "Agent"}
           </span>
           <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}

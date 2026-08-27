@@ -53,18 +53,20 @@ T = TypeVar("T", bound=BaseModel)
 
 # ── The canonical failure taxonomy ────────────────────────────────────────────
 # One vocabulary for "why did this structured call not produce an object". The
-# point of naming them is the `repairable` column: three of these six can be
-# fixed by asking again, and three provably cannot. Retrying the latter is how a
+# point of naming them is the `repairable` column: two of these seven can be
+# fixed by asking again, and five provably cannot. Retrying the latter is how a
 # free-tier request budget is spent on a guaranteed-identical failure.
 
 TRUNCATED = "truncated"              # hit the output ceiling — the same prompt hits it again
-EMPTY = "empty"                      # nothing came back; there is nothing to repair
+EMPTY = "empty"                      # the model ran and returned nothing; nothing to repair
+UNAVAILABLE = "unavailable"          # no response was ever produced — refused, throttled, misrouted
 UNPARSEABLE = "unparseable"          # text, but not JSON even after normalization
 SCHEMA_MISMATCH = "schema_mismatch"  # valid JSON, wrong shape — the repairable one
 REFUSAL = "refusal"                  # the model declined; a re-ask gets the same refusal
 UNKNOWN = "unknown"                  # unrecognised — treated as unrepairable on purpose
 
-TAXONOMY: tuple[str, ...] = (TRUNCATED, EMPTY, UNPARSEABLE, SCHEMA_MISMATCH, REFUSAL, UNKNOWN)
+TAXONOMY: tuple[str, ...] = (TRUNCATED, EMPTY, UNAVAILABLE, UNPARSEABLE, SCHEMA_MISMATCH,
+                             REFUSAL, UNKNOWN)
 
 #: The classes where one more request, carrying the specific error, can plausibly help.
 #: `UNKNOWN` is deliberately excluded: an unrecognised failure is not evidence that a
@@ -529,6 +531,41 @@ def _validation_detail(exc: BaseException) -> str:
     return text[:600] if text and not text.startswith("<") else "the response did not match the schema"
 
 
+def _provider_failure(exc: BaseException) -> str:
+    """The provider-error class behind ``exc``, or "" when it is not one we recognise.
+
+    Deferred import on purpose: `provider` imports THIS module (lazily, inside its own
+    functions), so a module-level import back would be circular. Borrowing
+    `classify_provider_error` rather than re-deriving the markers here keeps ONE copy of
+    them — a second copy is precisely how the two would drift apart, and it costs nothing
+    in offline-ness: that classifier is pure string and attribute matching, no network
+    and no clock, so this module's guarantee still holds.
+
+    ``unknown`` is mapped to "" because it is the classifier's own "no evidence" verdict.
+    An unrecognised error is not grounds to claim the request never happened.
+    """
+    try:
+        from aughor.llm.provider import classify_provider_error
+
+        verdict = classify_provider_error(exc)
+    except Exception:                                     # pragma: no cover - defensive
+        logger.debug("reliability: could not classify provider error", exc_info=True)
+        return ""
+    return "" if verdict == "unknown" else verdict
+
+
+def _unavailable_detail(verdict: str) -> str:
+    """A one-line ``detail`` for :data:`UNAVAILABLE` that names the fault AND the remedy."""
+    try:
+        from aughor.llm.provider import error_hint
+
+        hint = error_hint(verdict)
+    except Exception:                                     # pragma: no cover - defensive
+        hint = ""
+    label = verdict.replace("_", " ")
+    return f"the request never reached the model ({label})" + (f" — {hint}" if hint else "")
+
+
 def _looks_like_refusal(text: str) -> bool:
     head = text.strip()[:_REFUSAL_WINDOW].lower()
     return any(marker in head for marker in _REFUSAL_MARKERS)
@@ -548,6 +585,16 @@ def classify(exc: BaseException, *, completion: Any = None, text: str = "") -> D
     if type(exc).__name__ == "IncompleteOutputException" or _is_truncated(completion, raw):
         return Diagnosis(TRUNCATED, "response hit the output token ceiling", raw)
     if not raw.strip():
+        # Nothing came back — but "nothing came back" has two very different causes, and
+        # they are indistinguishable from here unless we ask. EMPTY asserts the model RAN
+        # and produced no content; a refused, throttled, misrouted or unreachable request
+        # produces exactly the same absence without any model having run. Reporting the
+        # second as the first is how a 404 (a base URL missing its `/v1`) surfaced to an
+        # operator as "the model returned no content", and sent them looking for a fault
+        # in the warehouse connector instead of the provider binding.
+        verdict = _provider_failure(exc)
+        if verdict:
+            return Diagnosis(UNAVAILABLE, _unavailable_detail(verdict), "")
         return Diagnosis(EMPTY, "the model returned no content", "")
     if _looks_like_refusal(raw):
         return Diagnosis(REFUSAL, "the model declined to answer", raw)
@@ -573,7 +620,7 @@ def salvage(exc: BaseException, response_model: Type[T], *,
                   or getattr(exc, "raw_response", None))
     raw = response_text(raw_source)
     diagnosis = classify(exc, completion=raw_source, text=raw)
-    if diagnosis.failure in (TRUNCATED, EMPTY, REFUSAL):
+    if diagnosis.failure in (TRUNCATED, EMPTY, UNAVAILABLE, REFUSAL):
         bump(f"llm.failure.{diagnosis.failure}")
         return SalvageResult(diagnosis=diagnosis)
 
