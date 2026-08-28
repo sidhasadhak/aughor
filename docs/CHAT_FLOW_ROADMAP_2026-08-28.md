@@ -139,6 +139,40 @@ Interrupt-latest-wins is a deliberate P5 design. Revisit only with session-log
 evidence that users send multi-fragment turns; if so, burst-merge à la Chat SDK
 (`context.skipped`) *behind the same interrupt semantics*, never a lock.
 
+### FL-5 — In-flight engagement for deep runs (projection/presentation only)
+A deep run's wait should read as an analyst working, not a spinner holding.
+Everything needed is ALREADY ON THE WIRE — `phase_progress`
+(done/total/current), `queries_executed`, `subq_answer`, `phase_complete`,
+`chain_state` (FL-2), guard receipts, delegations — so this item is two
+projection/presentation slices and NO new stream events:
+1. **Narrative interleaving — the actual engagement payload.** `subq_answer`
+   frames arrive incrementally (T3-3: per-subq evidence, "so the wave path
+   isn't a multi-minute silent gap") but today only accumulate into the
+   terminal report. Project them into streamed in-flight prose inside the turn
+   ("So far East and South look flat…") — a `chatTurn.ts` projection change
+   plus ChatMessage rendering.
+2. **Composition pass.** The loading state stacks separate widgets — the B3
+   dimension-scan task list (ChatMessage.tsx ~1549), DelegationTrail,
+   GuardReceiptChain, shimmer. Tighten into ONE compact in-place progress card
+   (spinner line, progress bar, mono meta line) that swaps into its result
+   when the phase lands. Styling and composition only.
+Visual reference: the pending-state card in the second assistant turn of the
+mock at https://claude.ai/code/artifact/6d618590-c64f-479e-b198-29ae4bc4698d.
+- **Constraint (sequencing):** AFTER FL-1 GRADUATES. Engagement raises watch
+  time and therefore the disconnect/reload window. (Recorded 2026-08-28 as
+  "a disconnect still fails a running investigation"; since #403 the K1 job
+  survives the disconnect — but the reattach surface is still flag-dark, so
+  a watcher who reloads mid-run loses the view. This polish must not make
+  people watch longer until reloading can bring the run back.)
+- **Non-goal (rejection of record, 2026-08-28, separate session):** NO
+  generative-UI card registry, NO metric/anomaly tiles à la Chat-SDK cards.
+  Rejected because polished chrome lends false authority to wrong numbers; it
+  duplicates render paths that already exist (ChatMessage.tsx has SqlView,
+  SqlResultTable, open-in-SQL-editor via useOpenInQuery, CSV export,
+  pin-to-dashboard); and this repo's history says presentation planes go
+  inert. The one slice worth keeping renders *process*, not conclusions —
+  that slice is this item. Do not re-propose the catalog.
+
 ## Track RC — Reach (distribution)
 
 *RC-1+ needs user-side setup (a Slack app in their workspace, state store
@@ -169,6 +203,8 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
 
 ## Sequencing (user-decided 2026-08-28)
 **FL-2 → FL-1 (behind a registered flag) → RC-0 → RC-1 → RC-2 → FL-3 → RC-3 → RC-4 → FL-4.**
+FL-5 (added 2026-08-28) is not yet sequenced against the RC track; its one hard
+precondition is FL-1's graduation.
 FL-2 first banks a low-risk additive win; FL-1 then lands BEHIND A REGISTERED
 FLAG (register it properly — `flag_enabled()` is False for unregistered names,
 indistinguishable from "off") so detachment can be flipped off without a revert.
