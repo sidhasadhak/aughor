@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { listUserAgents, recordOverviewDrill, cancelInvestigation, type UserAgent } from "@/lib/api";
+import { listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
@@ -562,6 +562,18 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     timingFor: (id) => timings.get(id),
   }), [messages, busy, status, error, timings]);
 
+  // FL-1b — the still-loading turn, for the job cancel below (a deep run is a
+  // kernel job; the SDK abort stops the watching, not the work — see
+  // `cancelActiveDeepRun`). Ref, not state: read at event time.
+  const activeTurnRef = useRef<ChatTurn | null>(null);
+  useEffect(() => {
+    const last = turns[turns.length - 1]?.turn;
+    activeTurnRef.current = last && last.status === "loading" ? last : null;
+  }, [turns]);
+  const cancelActiveRun = useCallback(() => {
+    cancelActiveDeepRun(activeTurnRef.current);
+  }, []);
+
   // Wall-clock bookkeeping: stamp a turn when its stream opens, freeze it when
   // the stream settles. Mirrors the reducer's ASK / finish() pair.
   useEffect(() => {
@@ -725,7 +737,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // An interrupt — the user sent this while a turn was still streaming. The SDK
     // abort settles the outgoing turn with whatever it produced (the projection
     // reads a non-streaming message as done), and the new send is its own turn.
-    if (busy) sdkStop();
+    // FL-1b: the abort alone no longer stops a deep run (it is a kernel job) —
+    // cancel it too, or the superseded run keeps spending server-side.
+    if (busy) { cancelActiveRun(); sdkStop(); }
     if (status === "error") clearError();
     // The turn's initial mode drives the loading UI until the router's `route`
     // receipt corrects it; a starter's requestMode always routes deep.
@@ -750,11 +764,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
         purpose: opts.purpose ?? "",
       } },
     );
-  }, [busy, status, sdkStop, clearError, sendMessage, agentId]);
+  }, [busy, status, sdkStop, cancelActiveRun, clearError, sendMessage, agentId]);
 
-  const stop = useCallback(() => { sdkStop(); }, [sdkStop]);
+  const stop = useCallback(() => { cancelActiveRun(); sdkStop(); }, [cancelActiveRun, sdkStop]);
 
   const clear = useCallback(() => {
+    cancelActiveRun();
     sdkStop();
     setTimings(new Map());
     eventLogRef.current = [];

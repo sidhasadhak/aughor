@@ -92,5 +92,9 @@ export function useAughorChat({
     [connectionId, sessionId],
   );
 
-  return useChat({ chat });
+  // FL-1b — on mount, ask the transport whether this conversation has an
+  // in-flight run to reattach to (GET /api/chat/{id}/stream → the frame hub's
+  // snapshot-then-tail). A 204 — flag off, nothing running, or a different
+  // serverless instance — resolves to "no stream" and costs one request.
+  return useChat({ chat, resume: true });
 }

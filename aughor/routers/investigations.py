@@ -8,10 +8,10 @@ import os
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Callable, Literal, Optional
+from typing import Any, AsyncGenerator, Callable, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aughor.agent.chart_vocab import answer_chart_payload
@@ -554,10 +554,12 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
                 {next_graph, next_prog}, return_when=asyncio.FIRST_COMPLETED)
             if next_prog in done:
                 _p = next_prog.result()
-                # Three payload types share the sink queue: a report-delta (R6) and a
-                # guard receipt (A4) are self-tagged and pass through verbatim; a
-                # phase-progress marker is wrapped.
-                if isinstance(_p, dict) and ("__report_delta__" in _p or "__guard_receipt__" in _p):
+                # Four payload types share the sink queue: a report-delta (R6), a
+                # guard receipt (A4) and a chain-state transition (FL-2) are
+                # self-tagged and pass through verbatim; a phase-progress marker
+                # is wrapped.
+                if isinstance(_p, dict) and ("__report_delta__" in _p or "__guard_receipt__" in _p
+                                             or "__chain_state__" in _p):
                     yield _p
                 else:
                     yield {"__ada_progress__": _p}
@@ -581,10 +583,12 @@ def _investigation_stream(graph_stream):
     import contextvars
 
     from aughor.agent.progress import set_progress_sink
+    from aughor.util.stream_events import set_chain_sink
     loop = asyncio.get_running_loop()
     q: asyncio.Queue = asyncio.Queue(maxsize=2000)
     ctx = contextvars.copy_context()
     ctx.run(set_progress_sink, loop, q)   # bind the sink INSIDE ctx so nodes run with it visible
+    ctx.run(set_chain_sink, loop, q)      # FL-2 — the provider chain narrates into the same queue
     return _aiter_sync_with_progress(graph_stream, q, ctx)
 
 
@@ -3395,12 +3399,17 @@ async def _stream_analyst(
                         emit("guard_receipt", p["__guard_receipt__"])
                     elif "__report_delta__" in p:
                         emit("report_delta", {"executive_summary": p["__report_delta__"]})
+                    elif "__chain_state__" in p:
+                        emit("chain_state", p["__chain_state__"])
                     elif "phase_id" in p:
                         emit("phase_progress", p)
                 except _CoreCancelled:
                     return None  # the loop's own checkpoint ends the turn; telemetry is disposable
 
         token = set_progress_sink(loop, _SinkShim())
+        # FL-2 — the provider chain narrates through the same shim (platform-safe sink).
+        from aughor.util.stream_events import clear_chain_sink, set_chain_sink
+        chain_token = set_chain_sink(loop, _SinkShim())
         try:
             _memory = (build_history_section(history)
                        + build_prior_answers_section(
@@ -3414,6 +3423,7 @@ async def _stream_analyst(
             )
         finally:
             clear_progress_sink(token)
+            clear_chain_sink(chain_token)
 
         if result.report is None:
             # No synthesized report — the loop concluded in prose (or ran dry). The
@@ -3906,6 +3916,9 @@ async def _stream_investigation(
             if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
                 yield _sse("guard_receipt", event["__guard_receipt__"])
                 continue
+            if "__chain_state__" in event:             # FL-2 - the failover chain narrated a hop
+                yield _sse("chain_state", event["__chain_state__"])
+                continue
             if "__interrupt__" in event:
                 # Distinguish a plan-gate pause (P3 — before the explore fan-out) from the
                 # ada_synthesize HITL pause by checking which node the graph is about to run.
@@ -4317,6 +4330,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
             if "__guard_receipt__" in event:           # A4 - a guard made an intervention visible
                 yield _sse("guard_receipt", event["__guard_receipt__"])
                 continue
+            if "__chain_state__" in event:             # FL-2 - the failover chain narrated a hop
+                yield _sse("chain_state", event["__chain_state__"])
+                continue
             if "__interrupt__" in event:
                 continue
             node_name = next(iter(event))
@@ -4435,6 +4451,34 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 _STREAM_END = object()   # queue sentinel: the investigation generator finished
 
 
+def _open_resume_run(session_id: str):
+    """FL-1b — the frame-hub run mirroring this investigation's SSE for reattach
+    (flag ``ask.resume_stream``; key = the conversation).
+
+    None when the flag is off or the turn has no conversation id — the caller
+    then publishes nothing and behaviour is byte-identical to today. A session
+    runs one turn at a time, so a still-open earlier run is superseded rather
+    than raised on: latest-wins is the hub's contract with the client, and the
+    interrupt path cancels the superseded turn's kernel job separately."""
+    if not session_id:
+        return None
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.resume_stream"):
+        return None
+    from aughor.util.frame_hub import RunExists, hub
+    key = f"ask:{session_id}"
+    try:
+        try:
+            return hub().open_run(key)
+        except RunExists:
+            hub().close_run(key, "superseded by a newer turn in this conversation")
+            return hub().open_run(key)
+    except Exception:
+        # The mirror is an add-on; a hub problem must never block the run itself.
+        logger.debug("resume hub open failed for %s", key, exc_info=True)
+        return None
+
+
 async def _investigation_job_streamed(
     question: str,
     connection_id: str,
@@ -4465,30 +4509,93 @@ async def _investigation_job_streamed(
     coro) — the same supervision the explorer already has. Latency is unchanged:
     the queue hop is in-process and `await queue.put` preserves natural backpressure.
     """
+    async for sse in _job_streamed_body(
+        lambda: _stream_investigation(
+            question, connection_id, request,
+            hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
+            schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
+            insight_id=insight_id, deep=deep, history=history,
+            requested_mode=requested_mode, purpose=purpose,
+            allow_clarify=allow_clarify, session_id=session_id,
+        ),
+        session_id=session_id, conn_id=connection_id, canvas_id=canvas_id,
+        payload={"question": question[:200], **({"purpose": purpose} if purpose else {})},
+    ):
+        yield sse
+
+
+async def _job_streamed_body(
+    body_factory: Callable[[], AsyncGenerator[str, None]],
+    *,
+    session_id: str,
+    conn_id: Optional[str] = None,
+    canvas_id: Optional[str] = None,
+    payload: Any = None,
+) -> AsyncGenerator[str, None]:
+    """The K1 bridge, generalised (FL-1b): run any SSE body inside a supervised
+    kernel job and drain its frames to the request over an in-process queue.
+
+    Extracted from `_investigation_job_streamed` when the CA-3 analyst body
+    joined it — with `ask.converse` on, the analyst serves the deep turn, and a
+    request-driven analyst died with its tab (row orphaned 'running') while the
+    graph path had K1 supervision. One bridge now carries both: job lifecycle +
+    heartbeat, kernel-driven cancellation, `created_by_job` stamping (which is
+    what lets `/investigations/{id}/cancel` find the job), and — behind
+    ``ask.resume_stream`` — the frame-hub mirror `GET /ask/stream/{session_id}`
+    reattaches to. The factory is called INSIDE the job task, so the body's
+    context (metering, identity, artifact stamping) is the job's.
+    """
     from aughor.kernel.jobs import kernel
     queue: asyncio.Queue = asyncio.Queue()
+    # The queue serves THIS request; the hub serves every later one (flag-gated).
+    resume_run = _open_resume_run(session_id)
 
     async def _drive() -> None:
+        err: Optional[str] = None
+        seen_inv: Optional[str] = None
         try:
-            async for sse in _stream_investigation(
-                question, connection_id, request,
-                hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
-                schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
-                insight_id=insight_id, deep=deep, history=history,
-                requested_mode=requested_mode, purpose=purpose,
-                allow_clarify=allow_clarify, session_id=session_id,
-            ):
+            async for sse in body_factory():
+                if seen_inv is None and '"investigation_id"' in sse:
+                    # Sniffed off the frames the way the session log does — the
+                    # bridge carries bodies that never hand it an id directly.
+                    try:
+                        seen_inv = ((json.loads(sse[6:]) if sse.startswith("data: ")
+                                     else {}).get("investigation_id") or None)
+                    except Exception:
+                        seen_inv = None
                 await queue.put(sse)
+                if resume_run is not None:
+                    resume_run.publish(sse)
+        except BaseException as exc:
+            # The stream's own error frames flow above; this catches the ways a
+            # run ends WITHOUT one — chiefly kernel cancellation — so a late
+            # resumer sees a closed-with-reason run, not a silent cliff.
+            err = str(exc)[:200] or type(exc).__name__
+            raise
         finally:
+            if resume_run is not None:
+                resume_run.close(error=err)
+            if err is not None and seen_inv:
+                # Terminal consistency for ANY body the bridge carries: the
+                # graph path reconciles its own row in its finally, but the
+                # analyst body never did — a cancelled analyst run left its
+                # investigation 'running' until the sweep (seen live, FL-1b
+                # receipt). Idempotent: a row already terminal is left alone.
+                try:
+                    _row = get_investigation(seen_inv)
+                    if _row and _row.get("status") == "running":
+                        fail_investigation(seen_inv, status="failed")
+                except Exception:
+                    logger.debug("bridge reconcile failed for %s", seen_inv, exc_info=True)
             # Always release the client drainer, even on cancellation/error.
             queue.put_nowait(_STREAM_END)
 
     job_id = await kernel().submit(
         "investigation", _drive,
-        conn_id=connection_id, canvas_id=canvas_id,
+        conn_id=conn_id, canvas_id=canvas_id,
         # R10 — the starter's purpose tag rides the job row, so Fleet/jobs
         # are queryable per purpose.
-        payload={"question": question[:200], **({"purpose": purpose} if purpose else {})},
+        payload=payload,
     )
     logger.debug("investigation job %s submitted", job_id)
     while True:
@@ -4955,7 +5062,18 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             schema_scope=req.schema_name, origin_finding=_origin,
             purpose=req.purpose,
         )
-        async for sse in _metered_stream(_analyst_body, budget=_insight_budget(conn_id)):
+        # FL-1b — the analyst runs through the same K1 bridge as the graph path:
+        # a supervised job (so a closed tab no longer kills it mid-run and
+        # orphans the row 'running'), cancellable via /investigations/{id}/cancel,
+        # and mirrored for reattach when `ask.resume_stream` is on. The meter
+        # rides INSIDE the job, so the budget holds with nobody watching.
+        _budget = _insight_budget(conn_id)
+        async for sse in _job_streamed_body(
+            lambda: _metered_stream(_analyst_body, budget=_budget),
+            session_id=req.session_id, conn_id=conn_id, canvas_id=req.canvas_id,
+            payload={"question": req.question[:200], "body": "analyst",
+                     **({"purpose": req.purpose} if req.purpose else {})},
+        ):
             yield sse
     elif route.depth == "deep" and not _use_converse:
         async for sse in _investigation_job_streamed(
@@ -5058,6 +5176,50 @@ async def ask_endpoint(req: AskRequest, request: Request):
         raise HTTPException(status_code=404, detail="unified /ask is disabled")
     return StreamingResponse(
         build_ask_stream(req, request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/ask/stream/{session_id}")
+async def ask_resume_stream(session_id: str):
+    """FL-1b — reattach to the conversation's in-flight deep run (flag
+    ``ask.resume_stream``).
+
+    The K1 bridge mirrors a job-streamed run's SSE into the frame hub; this
+    endpoint replays the snapshot and tails the live remainder, byte-identical
+    frames, so the client-side adapter needs no second dialect. ``204`` when
+    there is nothing to resume — flag off, no run for this conversation, or the
+    run already CLOSED (a finished turn reaches a reloading client through the
+    session's persisted history; replaying it here would render it twice)."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.resume_stream"):
+        return Response(status_code=204)
+    from aughor.util.frame_hub import ConsumerLagged, hub
+    try:
+        consumer = hub().attach(f"ask:{session_id}")
+    except KeyError:
+        return Response(status_code=204)
+    if consumer.closed:
+        hub().detach(f"ask:{session_id}", consumer)
+        return Response(status_code=204)
+
+    async def _replay() -> AsyncGenerator[str, None]:
+        for frame in consumer.snapshot:
+            yield frame
+        try:
+            async for frame in consumer.tail():
+                yield frame
+        except ConsumerLagged:
+            # This consumer fell behind the producer and its view is no longer
+            # contiguous. End the stream; the client's next resume GET gets a
+            # fresh, complete snapshot.
+            return
+        finally:
+            hub().detach(f"ask:{session_id}", consumer)
+
+    return StreamingResponse(
+        _replay(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

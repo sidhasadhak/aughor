@@ -1312,6 +1312,23 @@ def _caller_attribution() -> Optional[str]:
     return fallback
 
 
+def _emit_chain_state(event: str, from_backend: str, to_backend: str, *,
+                      model: str = "", role: str = "", detail: str = "") -> None:
+    """FL-2 — surface a chain transition on the run's SSE stream, when one listens.
+
+    Goes through the platform-safe sink (`aughor/util/stream_events.py`, NOT the
+    agent's progress module — the platform must not import the agent). Shielded:
+    a chain that cannot narrate itself must still fail over."""
+    try:
+        from aughor.util.stream_events import emit_chain_state
+        emit_chain_state(event, from_backend, to_backend,
+                         model=model, role=role, detail=detail)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "chain-state narration is disposable; the failover itself must proceed",
+                 counter="llm.chain_state_forward")
+
+
 def _record_llm_call(*, backend: str, model: str, role: str,
                      prompt_tokens: Optional[int], completion_tokens: Optional[int],
                      ms: float, ok: bool = True, error_class: Optional[str] = None,
@@ -1786,6 +1803,8 @@ class LLMProvider:
                 continue
             logger.warning("provider: %s failed on a tool turn (%s); falling back to %s %s",
                            self.backend, str(primary_exc)[:120], backend, fb._model)
+            _emit_chain_state("fallback", self.backend, backend, model=fb._model,
+                              role=str(self.role), detail=str(primary_exc)[:160])
             try:
                 return self._tools_on(fb._client, backend, fb._model,
                                       system, user, tools, temperature,
@@ -1795,6 +1814,8 @@ class LLMProvider:
                     _mark_quota_exhausted(backend)
                 logger.warning("provider: tool-turn fallback %s also failed (%s)",
                                backend, str(fb_exc)[:120])
+                _emit_chain_state("link_failed", self.backend, backend, model=fb._model,
+                                  role=str(self.role), detail=str(fb_exc)[:160])
                 if not _should_failover(fb_exc):
                     break
         raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
@@ -1928,6 +1949,8 @@ class LLMProvider:
                 continue
             logger.warning("provider: %s failed (%s); falling back to %s %s",
                            self.backend, str(primary_exc)[:120], backend, fb._model)
+            _emit_chain_state("fallback", self.backend, backend, model=fb._model,
+                              role=str(self.role), detail=str(primary_exc)[:160])
             try:
                 return self._complete_on(fb._client, backend, fb._model,
                                          system, user, response_model, temperature,
@@ -1949,6 +1972,8 @@ class LLMProvider:
                 else:
                     logger.warning("provider: fallback %s also failed (%s)",
                                    backend, str(fb_exc)[:120])
+                _emit_chain_state("link_failed", self.backend, backend, model=fb._model,
+                                  role=str(self.role), detail=str(fb_exc)[:160])
                 # …unless the failure is one every link reproduces. A truncation walking
                 # the whole chain spends one request per backend to hit the same ceiling
                 # each time — the most expensive way there is to learn nothing.

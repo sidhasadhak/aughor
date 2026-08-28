@@ -22,6 +22,7 @@ import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import type { ChatTurn } from "@/lib/chatTurn";
+import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
@@ -406,6 +407,40 @@ function ResultFigure({
     <BriefFigure caption={sourceTitle} source={source}>
       <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
     </BriefFigure>
+  );
+}
+
+// ── FL-2: the run narrates its own transport (loading state only) ──────────────
+// The failover chain's failure mode is that it WORKS — the primary dies, a
+// fallback answers, and the only witness was a server log line. When the stream
+// carries a `chain_state` hop, say so; when it carries nothing at all for a
+// while, say that too. Quiet lines, not modals: the turn is still succeeding.
+
+function ChainStateNotice({ turn }: { turn: ChatTurn }) {
+  const cs = turn.chainState;
+  if (!cs || !cs.to) return null;
+  const label = (b: string) => BACKEND_LABEL[b] ?? b;
+  const text = cs.event === "link_failed"
+    ? `${label(cs.to)} also failed — trying the next backend…`
+    : `${label(cs.from)} didn’t respond — continuing with ${label(cs.to)}${cs.model ? ` (${cs.model})` : ""}.`;
+  return <p className="aug-fs-xs text-amber-400/90 py-0.5">{text}</p>;
+}
+
+/** Silence detector. Every incoming frame re-projects the thread, so `turn` is
+ *  a fresh object per frame and re-arms the timer; 12s of loading with no frame
+ *  at all is the case the status line cannot describe — name it. */
+function SlowTurnHint({ turn }: { turn: ChatTurn }) {
+  // Remembers WHICH projection went quiet rather than a boolean, so a new frame
+  // (fresh `turn` object) both cancels the pending timer and hides a hint that
+  // already fired — no synchronous setState in the effect body.
+  const [slowFor, setSlowFor] = useState<ChatTurn | null>(null);
+  useEffect(() => {
+    const id = window.setTimeout(() => setSlowFor(turn), 12_000);
+    return () => window.clearTimeout(id);
+  }, [turn]);
+  if (slowFor !== turn) return null;
+  return (
+    <p className="aug-fs-xs text-zinc-500 py-0.5">Taking longer than usual — still working…</p>
   );
 }
 
@@ -1599,6 +1634,9 @@ export function ChatMessage({
           )}
           {/* Live deep analysis phase stream — show completed phases as they arrive */}
           {showStreamingBody && <InvestigateBody turn={turn} />}
+          {/* FL-2 — transport narration: a fallback hop, and silence past 12s */}
+          <ChainStateNotice turn={turn} />
+          <SlowTurnHint turn={turn} />
         </div>
       )}
 

@@ -82,6 +82,7 @@ FLAG_ENV = {
     # honest home: whether a run may pause is a property of the caller, not the env).
     # Receipts on the FLAG_DEFAULT tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
+    "ask.resume_stream": "AUGHOR_ASK_RESUME_STREAM",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
@@ -263,6 +264,16 @@ FLAG_DEFAULT: dict = {
 
 # Human-facing copy for the Settings UI.
 FLAG_META = {
+    "ask.resume_stream": {
+        "label": "Deep runs survive the browser — reload and reattach",
+        "description": "FL-1b. A deep /ask run already executes as a supervised kernel job (K1); "
+                       "this mirrors its stream into an in-process frame hub keyed by the "
+                       "conversation, and adds GET /ask/stream/{session_id} so a reloaded tab "
+                       "reattaches to the live run (snapshot, then tail). Off → today's exact "
+                       "behaviour: the run still completes server-side, but a reload cannot "
+                       "watch it finish. In-memory only: on serverless, resume simply 204s "
+                       "when the GET lands on a different instance.",
+    },
     "ask.converse": {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
@@ -434,6 +445,13 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    "ask.resume_stream": "FL-1b rollout guard. Receipt to graduate: a live soak — start a "
+                         "deep run, kill the tab, reopen the conversation, and watch the "
+                         "SAME run complete on screen via GET /ask/stream/{session_id}; "
+                         "plus the interrupt receipt (stop/interrupt cancels the kernel "
+                         "job — verified by the job row going CANCELLED, not by the UI "
+                         "settling). Graduate ⇒ hardwire the mirror + endpoint and delete "
+                         "the flag; a defect the flag has to hide ⇒ fix or delete the seam.",
     # EMPTY as of batch C (2026-07-31): the Knowledge-Graph and connection-birth
     # bundles graduated on construction claims (a projection cannot precede its
     # ontology; the rite is kick-scoped and Curator-governed; empty stores are

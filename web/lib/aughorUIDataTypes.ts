@@ -70,6 +70,7 @@ export type AughorEvidenceData = {
   "receipt_id": unknown;
   "context_assembled": unknown;
   "guard_receipt": unknown;
+  "chain_state": unknown;
   "playbook_refs": unknown;
   "hypotheses": unknown;
   "score": unknown;
@@ -160,6 +161,7 @@ const DECLARED = [
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
+  "chain_state",
   "inspect_warning",
   "error", "done",
   "unknown_frame",
