@@ -5766,7 +5766,10 @@ def delete_chat_session_route(session_id: str):
     """
     from aughor.db.purge import purge_chat_session_artifacts
     counts = purge_chat_session_artifacts(session_id)
-    if not counts.get("investigations"):
+    # FL-6 — a deep-only thread deletes by UNFILING its runs (they survive for
+    # Fleet/agent history); that is a successful delete of the THREAD, so it
+    # must not read as "not found" just because no chat row died.
+    if not counts.get("investigations") and not counts.get("deep_runs_unfiled"):
         raise HTTPException(status_code=404, detail="Session not found")
 
 
@@ -5792,8 +5795,35 @@ def _turn_to_ui_messages(t: dict) -> list[dict]:
     sentence (kernel/jobs.py UNCERTAIN_RESULT): the partial it produced renders,
     and the tail says plainly that it is missing — a partial presented as complete
     is a worse lie than not restoring it.
+
+    FL-6 — a DEEP row (kind='investigation') restores as the same wire shape the
+    live run streamed: one ``data-answer_report`` part (the client's
+    ``projectDeepReport`` renders the full report from it), a ``data-error`` tail
+    for a non-complete status, and the investigate mode on the user message so
+    the loading chrome keys correctly. A deep row that ended without a report
+    restores as its question + the honest error alone.
     """
     from aughor.kernel.jobs import UNCERTAIN_RESULT
+
+    if (t.get("kind") or "chat") == "investigation":
+        parts = []
+        if t.get("deep_report"):
+            parts.append({"type": "data-answer_report", "data": {
+                "answer_report": t["deep_report"],
+                "query_mode": "investigate",
+                "investigation_id": t["id"],
+            }})
+        status = t.get("status") or "complete"
+        if status != "complete":
+            parts.append({"type": "data-error", "data": {
+                "message": f"This deep analysis ended as {status} — {UNCERTAIN_RESULT}.",
+            }})
+        return [
+            {"id": f"{t['id']}-q", "role": "user",
+             "parts": [{"type": "text", "text": t.get("question") or ""}],
+             "metadata": {"mode": "investigate"}},
+            {"id": t["id"], "role": "assistant", "parts": parts},
+        ]
 
     parts: list[dict] = []
     if t.get("headline"):

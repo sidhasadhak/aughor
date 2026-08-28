@@ -485,15 +485,31 @@ def reconcile_orphaned_investigations() -> int:
     return len(rows)
 
 
+# FL-6 — what counts as a thread's turn. Quick turns (kind='chat') always did;
+# deep runs are FILED under the conversation (CA-0 stamped session_id) but were
+# invisible to every thread read, so an agent-mode conversation reloaded as an
+# empty page. Terminal deep rows now belong to the thread; a LIVE one stays out
+# deliberately — the resume hub (FL-1) owns it, and restoring a running shell
+# would duplicate against the resume stream's synthesized turn.
+_THREAD_TURN_KINDS = ("(kind = 'chat' OR (kind = 'investigation'"
+                      " AND status NOT IN ('running', 'paused')))")
+
+
 def get_session_turns(session_id: str) -> list[dict]:
-    """Return all chat turns for a session, oldest first.
+    """Return all turns for a session, oldest first — quick chat turns AND the
+    thread's terminal deep runs (FL-6, see ``_THREAD_TURN_KINDS``).
     Falls back to looking up by row id for single-turn legacy sessions.
 
     ``status`` rides along because not every saved turn is a finished one any more: a
     turn the user interrupted is filed as ``interrupted`` with whatever it had produced.
     A restore that dropped the column would render a partial answer as a complete one —
     the turn would look finished and simply be missing its tail, which is worse than not
-    restoring it at all."""
+    restoring it at all.
+
+    ``kind`` rides along too: a deep row's ``report_json`` is the DEEP REPORT, not
+    the quick-turn bundle, so it projects as ``deep_report`` (quick fields empty —
+    every existing consumer, ``resolve_history`` included, stays type-stable and a
+    deep turn contributes its question + headline to reconstructed memory)."""
     c = _conn()
     ensure_once(c, _ensure_schema)
     # DATA-06, same predicate `list_investigations` uses: a session's turns belong to the
@@ -505,16 +521,16 @@ def get_session_turns(session_id: str) -> list[dict]:
     _org, _op = ((" AND org_id = ?", [current_org_id()])
                  if require_identity_enabled() else ("", []))
     rows = c.execute(
-        f"""SELECT id, question, headline, report_json, started_at, status
+        f"""SELECT id, question, headline, report_json, started_at, status, kind
            FROM investigations
-           WHERE session_id = ? AND kind = 'chat'{_org}
+           WHERE session_id = ? AND {_THREAD_TURN_KINDS}{_org}
            ORDER BY started_at ASC""",
         (session_id, *_op),
     ).fetchall()
     # Fallback: maybe the caller passed a row id directly (old single-turn items)
     if not rows:
         rows = c.execute(
-            f"""SELECT id, question, headline, report_json, started_at, status
+            f"""SELECT id, question, headline, report_json, started_at, status, kind
                FROM investigations
                WHERE id = ? AND kind = 'chat'{_org}""",
             (session_id, *_op),
@@ -523,16 +539,32 @@ def get_session_turns(session_id: str) -> list[dict]:
     result = []
     for r in rows:
         d = dict(r)
+        d["kind"] = d.get("kind") or "investigation"
         report = json.loads(d.pop("report_json") or "{}")
-        d["sql"]         = report.get("sql", "")
-        d["columns"]     = report.get("columns", [])
-        d["rows"]        = report.get("rows", [])
-        d["chart_type"]  = report.get("chart_type", "auto")
-        d["tables_used"] = report.get("tables_used", [])
-        d["intent"]      = report.get("intent", "")
-        d["approach"]    = report.get("approach", [])
-        d["insight"]     = report.get("insight", None)
-        d["overview_report"] = report.get("overview_report", None)
+        if d["kind"] == "chat":
+            d["sql"]         = report.get("sql", "")
+            d["columns"]     = report.get("columns", [])
+            d["rows"]        = report.get("rows", [])
+            d["chart_type"]  = report.get("chart_type", "auto")
+            d["tables_used"] = report.get("tables_used", [])
+            d["intent"]      = report.get("intent", "")
+            d["approach"]    = report.get("approach", [])
+            d["insight"]     = report.get("insight", None)
+            d["overview_report"] = report.get("overview_report", None)
+            d["deep_report"] = None
+        else:
+            # FL-6 — report_json IS the deep report here. Quick fields stay
+            # present-and-empty so every existing consumer is type-stable.
+            d["deep_report"] = report if isinstance(report, dict) and report else None
+            d["sql"] = ""
+            d["columns"], d["rows"] = [], []
+            d["chart_type"] = "auto"
+            d["tables_used"], d["approach"] = [], []
+            d["intent"] = ""
+            d["insight"] = None
+            d["overview_report"] = None
+            if not d.get("headline") and d["deep_report"]:
+                d["headline"] = str(d["deep_report"].get("headline") or "")
         # Legacy rows predate the column being written by this path; they were all
         # complete by construction, so absence reads as complete rather than unknown.
         d["status"] = d.get("status") or "complete"
@@ -561,7 +593,7 @@ def list_chat_sessions(connection_id: Optional[str] = None, *, limit: int = 30) 
                    MAX(started_at) AS last_at,
                    COUNT(*) AS turns
            FROM investigations
-           WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''
+           WHERE {_THREAD_TURN_KINDS} AND session_id IS NOT NULL AND session_id != ''
                  {_conn_sql}{_org}
            GROUP BY session_id
            ORDER BY last_at DESC
@@ -580,7 +612,7 @@ def list_chat_sessions(connection_id: Optional[str] = None, *, limit: int = 30) 
         ).fetchone()
         first = c.execute(
             f"""SELECT question FROM investigations
-               WHERE session_id = ? AND kind = 'chat'{_org}
+               WHERE session_id = ? AND {_THREAD_TURN_KINDS}{_org}
                ORDER BY started_at ASC LIMIT 1""",
             (d["session_id"], *_op),
         ).fetchone()
@@ -610,7 +642,7 @@ def rename_chat_session(session_id: str, title: str) -> bool:
     _org, _op = ((" AND org_id = ?", [current_org_id()])
                  if require_identity_enabled() else ("", []))
     owned = c.execute(
-        f"SELECT 1 FROM investigations WHERE session_id = ? AND kind = 'chat'{_org} LIMIT 1",
+        f"SELECT 1 FROM investigations WHERE session_id = ? AND {_THREAD_TURN_KINDS}{_org} LIMIT 1",
         (session_id, *_op),
     ).fetchone()
     if not owned:
@@ -632,10 +664,35 @@ def rename_chat_session(session_id: str, title: str) -> bool:
     return True
 
 
+def unfile_session_deep_runs(session_id: str) -> int:
+    """FL-6 — detach a thread's deep runs from it (``session_id`` → NULL).
+
+    Deep runs are FILED under a conversation, not owned by it: they also serve
+    Fleet, agent run history, and the answer receipt surface. Deleting a thread
+    therefore unfiles them instead of deleting them — and must do so BEFORE
+    ``delete_investigation``, whose id-OR-session_id predicate would otherwise
+    take the runs down with the thread. Returns how many rows were unfiled."""
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = ((" AND org_id = ?", [current_org_id()])
+                 if require_identity_enabled() else ("", []))
+    cur = c.execute(
+        f"UPDATE investigations SET session_id = NULL "
+        f"WHERE session_id = ? AND kind = 'investigation'{_org}",
+        (session_id, *_op),
+    )
+    c.commit()
+    n = cur.rowcount or 0
+    c.close()
+    return n
+
+
 def chat_session_turn_ids(session_id: str) -> list[str]:
-    """Every turn id filed under a thread, org-scoped — what a thread delete must
-    purge one by one (each turn owns evidence claims and a vector entry keyed by ITS
-    id, not the session's)."""
+    """Every QUICK turn id filed under a thread, org-scoped — what a thread delete
+    must purge one by one (each turn owns evidence claims and a vector entry keyed
+    by ITS id, not the session's). Deep rows are deliberately absent: a thread
+    delete UNFILES those (``unfile_session_deep_runs``), never purges them."""
     c = _conn()
     ensure_once(c, _ensure_schema)
     from aughor.security.authz import require_identity_enabled
