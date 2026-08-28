@@ -96,6 +96,12 @@ export type AughorProgressData = {
   "converse_step": unknown;
   "mode": unknown;
   "inspect_warning": unknown;
+  // FL-5 (2026-08-28): both were UNRENDERED under CA-1's "incremental only; the
+  // terminal report carries the same arrays" reasoning — which is exactly the
+  // multi-minute silent gap T3-3 added them to end. The plan gives the wait a
+  // real denominator; each answer lands as in-flight prose the moment it exists.
+  "explore_plan": unknown;
+  "subq_answer": unknown;
 }
 
 /**
@@ -162,6 +168,7 @@ const DECLARED = [
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
   "chain_state",
+  "explore_plan", "subq_answer",
   "inspect_warning",
   "error", "done",
   "unknown_frame",
@@ -174,8 +181,9 @@ export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
  * retired the reducer (`investigationStream.ts`), whose own list this used to
  * mirror; the reasons each name is here are preserved from that list:
  *
- *   explore_plan · subq_answer — incremental only; the terminal `explore_report`
- *     carries the same arrays, so the end state is complete.
+ *   explore_plan · subq_answer — LEFT this list 2026-08-28 (FL-5): "the terminal
+ *     report carries the same arrays" was true and beside the point — the wait
+ *     itself rendered nothing. Both are declared progress parts now.
  *   start — the run id it carries is harvested by the adapter for drop-recovery;
  *     the rest is a stream-opening marker.
  *   learning · activations — flag-gated per-run receipts no surface renders.
@@ -195,7 +203,7 @@ export const DECLARED_DATA_PARTS: ReadonlySet<string> = new Set(DECLARED);
  * reaches the shell named.
  */
 export const UNRENDERED_FRAMES: ReadonlySet<string> = new Set([
-  "explore_plan", "subq_answer", "start", "learning", "activations",
+  "start", "learning", "activations",
   "compiled", "fanout", "trusted", "paused",
 ]);
 

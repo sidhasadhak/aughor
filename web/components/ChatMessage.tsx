@@ -35,7 +35,7 @@ import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
 import { FixItForm } from "@/components/FixItForm";
-import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
+import { InFlightFindings, RunProgressCard } from "@/components/RunProgressCard";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
 import { ClarifyGateCard } from "@/components/ClarifyGateCard";
@@ -1579,22 +1579,6 @@ export function ChatMessage({
              nothing when no guard fired (most turns) ── */}
       <GuardReceiptChain receipts={turn.guardReceipts} streaming={turn.status === "loading"} />
 
-      {/* ── B3: live dimension scan as a Task list — the deep run's long silent
-             phase becomes visible per-dimension progress ── */}
-      {isInvestigate && turn.status === "loading" && turn.scanProgress && (
-        <Task defaultOpen className="my-1">
-          <TaskTrigger
-            status="in_progress"
-            title={`Scanning dimensions · ${turn.scanProgress.done}/${turn.scanProgress.total}`}
-          />
-          <TaskContent>
-            {turn.scanItems.map((d) => (
-              <TaskItem key={d}>{d}</TaskItem>
-            ))}
-          </TaskContent>
-        </Task>
-      )}
-
       {/* ── Editable plan gate (P3): review the sub-question plan before the fan-out ── */}
       {turn.planPending && onApprovePlan && onRejectPlan && (
         <PlanGateCard
@@ -1618,25 +1602,39 @@ export function ChatMessage({
           {/* The "Interpreting automatically" banner is removed — users don't value the
               intake/assumptions disclosure in the trace; it read as a stuck human-in-the-loop
               prompt. The thinking trace itself carries what the run is doing. */}
-          {/* Quick (ask) mode has no multi-step trace — a compact thinking cue
-              sits above the shimmer scaffold (rendered below) during the wait */}
-          {!isInvestigate && (
-            <div className="flex items-center gap-3 py-2">
-              <span className="flex gap-1">
-                {[0, 150, 300].map(d => (
-                  <span key={d} className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
-                ))}
-              </span>
-              <span className="aug-fs-sm text-zinc-500">
-                {turn.statusText || defaultStatusText()}
-              </span>
-            </div>
+          {!isInvestigate ? (
+            <>
+              {/* Quick (ask) mode has no multi-step trace — a compact thinking cue
+                  sits above the shimmer scaffold (rendered below) during the wait */}
+              <div className="flex items-center gap-3 py-2">
+                <span className="flex gap-1">
+                  {[0, 150, 300].map(d => (
+                    <span key={d} className="w-1.5 h-1.5 rounded-[var(--r-pill)] bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                  ))}
+                </span>
+                <span className="aug-fs-sm text-zinc-500">
+                  {turn.statusText || defaultStatusText()}
+                </span>
+              </div>
+              {/* FL-2 — transport narration: a fallback hop, and silence past 12s */}
+              <ChainStateNotice turn={turn} />
+              <SlowTurnHint turn={turn} />
+            </>
+          ) : (
+            <>
+              {/* FL-5 — the wait as ONE card: current activity, a progress bar only
+                  when a real denominator exists, a mono line of counts; the FL-2
+                  transport notices ride inside so the wait is one block, not a stack */}
+              <RunProgressCard turn={turn}>
+                <ChainStateNotice turn={turn} />
+                <SlowTurnHint turn={turn} />
+              </RunProgressCard>
+              {/* FL-5 — findings land as prose while the run works */}
+              <InFlightFindings turn={turn} />
+              {/* Live deep analysis phase stream — show completed phases as they arrive */}
+              {showStreamingBody && <InvestigateBody turn={turn} />}
+            </>
           )}
-          {/* Live deep analysis phase stream — show completed phases as they arrive */}
-          {showStreamingBody && <InvestigateBody turn={turn} />}
-          {/* FL-2 — transport narration: a fallback hop, and silence past 12s */}
-          <ChainStateNotice turn={turn} />
-          <SlowTurnHint turn={turn} />
         </div>
       )}
 
