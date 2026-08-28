@@ -1812,6 +1812,124 @@ def _is_num(v) -> bool:
         return False
 
 
+_COUNT_COL_RE = re.compile(r"^(n|records?|row_count|cnt|count|items?|n_\w+|\w+_count)$", re.I)
+#: A TIME BUCKET, by column name or by the shape of its first value.
+_TIME_COL_RE = re.compile(r"(^|_)(period|month|week|day|date|year|quarter|hour)($|_)|_at$|time", re.I)
+_TIME_VALUE_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?")
+#: A metric that does NOT sum across groups. A share-of-total is arithmetic on the assumption that
+#: the parts add to the whole; an average, a rate or a ratio breaks that assumption outright.
+#: Underscore-delimited, NOT `\b`: `_` is a word character, so `\bavg\b` does not match
+#: `avg_delay_days` — which is precisely the shape a generated column has.
+_NON_ADDITIVE_METRIC_RE = re.compile(
+    r"(^|_)(avg|average|mean|median|rate|ratio|pct|percent|share|index|score)(_|$)", re.I)
+#: A dispersion column beside the metric is the tell that the metric is a MEAN, whatever it is named.
+_DISPERSION_COL_RE = re.compile(r"^(sd|std|stdev|stddev|std_dev|stderr|se|var|variance)$", re.I)
+_SHARE_COL_RE = re.compile(r"(pct|percent|share)", re.I)
+#: Above this the group holds a disproportionate share of the metric; below its reciprocal it
+#: holds less than its size would predict. Between them the split is proportional — which is the
+#: verdict that turns a "finding" back into a restatement of how big the group is.
+_CONCENTRATION_HI = 1.25
+
+
+def _num(v) -> Optional[float]:
+    """A cell as a float, or None. The connector renders SQL NULL as the literal string 'NULL',
+    so this cannot be a bare float()."""
+    if v is None:
+        return None
+    t = str(v).strip().replace(",", "")
+    if not t or t.upper() == "NULL":
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _concentration_note(columns, rows) -> Optional[str]:
+    """Is the leading group's share of the metric bigger than its share of the POPULATION?
+
+    A cross-sectional scan ranks groups by a total and reports each one's `pct_of_total`. That
+    number alone cannot answer "where are we losing money", because the largest group leads on
+    almost any additive metric BY BEING LARGEST. A shipped report headlined "Men department
+    accounts for over half of total cost" — 53.2% — and Men is 50.2% of the rows: the finding was
+    a restatement of the department's size, and it read as an accusation of the most productive
+    part of the business.
+
+    The scan already selects a per-group count (`n`), so the exposure share needs no extra query —
+    only the division nobody was doing. Returns None whenever the shape is not confidently a
+    group / metric / count triple; a wrong note is worse than none.
+    """
+    try:
+        cols = [str(c) for c in (columns or [])]
+        if not cols or not rows or len(rows) < 2:
+            return None
+        count_idx = next((i for i, c in enumerate(cols) if _COUNT_COL_RE.match(c.strip())), None)
+        if count_idx is None:
+            return None
+        # The metric is the first numeric column that is neither the count nor an existing share.
+        metric_idx = next((i for i, c in enumerate(cols)
+                           if i != count_idx and not _SHARE_COL_RE.search(c)
+                           and _num(rows[0][i]) is not None), None)
+        group_idx = next((i for i, c in enumerate(cols)
+                          if i not in (count_idx, metric_idx) and _num(rows[0][i]) is None), None)
+        if metric_idx is None or group_idx is None:
+            return None
+
+        # A share-of-total presumes the parts ADD to the whole. An average, a rate or a ratio does
+        # not, so "Standard holds 97% of the metric" is arithmetic nonsense — and that is exactly
+        # what it said about a per-mode MEAN delay carrying its standard deviation in the next
+        # column. Caught by CI on the full suite; my own filtered `-k` run never selected that file.
+        if _NON_ADDITIVE_METRIC_RE.search(cols[metric_idx]) or any(
+                _DISPERSION_COL_RE.match(str(c).strip()) for c in cols):
+            return None
+
+        # A TIME BUCKET is not a group with exposure. Every month holds roughly its share of the
+        # rows by construction, so the verdict is vacuous — and it does active harm: a temporal
+        # phase reporting "2026-08 is a 100th-percentile spike vs a 25,028 baseline" carried,
+        # directly beneath it, "2026-08 leads because it is the largest group". A guard that
+        # argues with a correct anomaly detection is worse than no guard.
+        if (_TIME_COL_RE.search(cols[group_idx])
+                or _TIME_VALUE_RE.match(str(rows[0][group_idx]).strip())):
+            return None
+
+        pairs = [(str(r[group_idx]), _num(r[metric_idx]), _num(r[count_idx])) for r in rows
+                 if len(r) > max(group_idx, metric_idx, count_idx)]
+        pairs = [(g, m, n) for g, m, n in pairs if m is not None and n is not None and n > 0]
+        if len(pairs) < 2:
+            return None
+        total_m = sum(m for _, m, _ in pairs)
+        total_n = sum(n for _, _, n in pairs)
+        if total_m <= 0 or total_n <= 0:
+            return None
+        # Degenerate split: the whole metric sits in ONE group and every other group is zero.
+        # That is DEFINITIONAL, not concentration — grouping "refunded sales" by order status puts
+        # 100% in 'Returned' because that is what the metric means, and reporting it as a 10×
+        # concentration is noise that teaches a reader to skip the real ones.
+        if len([1 for _, m, _ in pairs if m > 0]) <= 1:
+            return None
+
+        g, m, n = max(pairs, key=lambda t: t[1])
+        share_m = 100.0 * m / total_m
+        share_n = 100.0 * n / total_n
+        if share_n <= 0:
+            return None
+        index = share_m / share_n
+        if index >= _CONCENTRATION_HI:
+            verdict = (f"CONCENTRATED — {index:.2f}× its share of the population, so this is not "
+                       f"explained by how large {g} is.")
+        elif index <= 1.0 / _CONCENTRATION_HI:
+            verdict = (f"UNDER-REPRESENTED — {index:.2f}× its share of the population; {g} carries "
+                       f"LESS of the metric than its size would predict.")
+        else:
+            verdict = (f"PROPORTIONAL — {index:.2f}× its share of the population, i.e. {g} leads "
+                       f"because it is the largest group, not because it is the weakest. Ranking "
+                       f"by this metric restates group size.")
+        return (f"EXPOSURE CHECK: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
+                f"rows — {verdict}")
+    except Exception:
+        return None
+
+
 def _stamp_partial_period_verdicts(findings, results, coverage_end: Optional[str]) -> None:
     """Write the partial-final-period verdict onto each time-series finding's `stat_note` (the
     channel the synthesis evidence log prints as STATISTICAL VERDICT). Findings are aligned to
@@ -1826,6 +1944,7 @@ def _stamp_partial_period_verdicts(findings, results, coverage_end: Optional[str
             continue
         prior = (f.get("stat_note") or "").strip()
         f["stat_note"] = f"{prior} {note}".strip() if prior else note
+
 
 
 def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
@@ -1861,6 +1980,18 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
             _partial = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
             if _partial:
                 parts.append("STATISTICAL VERDICT for this query — " + _partial)
+        # Exposure normalisation, same rationale one column over: the leading group leads almost
+        # any additive metric BY BEING LARGEST, and a narrator handed only `pct_of_total` will
+        # write "X accounts for over half — cost is concentrated in X" about a group that holds
+        # exactly its share. Shown here, not merely stamped afterwards, so the claim is never
+        # written in the first place.
+        if not getattr(r, "error", None) and getattr(r, "rows", None):
+            _conc = _concentration_note(r.columns, r.rows)
+            if _conc:
+                parts.append(
+                    "STATISTICAL VERDICT for this query — it OVERRIDES what the shares below "
+                    "suggest. A PROPORTIONAL split is NOT a finding: do not call it "
+                    "concentration, a driver, or a place to act. " + _conc)
         parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
@@ -2368,6 +2499,15 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             _tie = _extreme_tie_note(r.columns, r.rows)
             if _tie:
                 f["stat_note"] = _tie
+        # Exposure normalisation — the leading group leads almost any additive metric BY BEING
+        # LARGEST, so a share-of-total without a share-of-population beside it restates group size
+        # and reads as a finding. APPENDED, never conditional on stat_note being empty: a tie note
+        # and a proportionality verdict are different facts and the reader needs both.
+        if not r.error and r.rows:
+            _conc = _concentration_note(r.columns, r.rows)
+            if _conc:
+                _prior = (f.get("stat_note") or "").strip()
+                f["stat_note"] = f"{_prior} {_conc}".strip() if _prior else _conc
         # A rate ranking that is only noise says so in its own numbers. This OVERWRITES the
         # narrator's stat_note rather than joining it: the model's version is a paraphrase of
         # this same test ("statistical analysis indicates no significant difference"), and
@@ -4520,9 +4660,46 @@ _DIAGNOSTIC_RE = re.compile(
 
 
 def _is_diagnostic_question(q: str) -> bool:
-    """Cross-sectional 'where/which is weakest / where are we losing money' questions —
-    these have no useful time axis and should run a dimensional weakness scan."""
+    """Cross-sectional 'where/which is weakest / where are we losing money' questions — these ask
+    WHICH SEGMENT, so they run a dimensional weakness scan.
+
+    They do NOT imply the data has no time axis. That sentence used to live here (and in the intake
+    prompt) and it was load-bearing in the wrong direction: it turned a property of the QUESTION into
+    a claim about the SCHEMA, and a "where are we losing money?" run over a warehouse carrying ten
+    date columns skipped the entire temporal battery. Whether a time axis exists is resolved
+    deterministically by `_resolve_temporal_axis`; this predicate answers a different question.
+    """
     return bool(_DIAGNOSTIC_RE.search(q or ""))
+
+
+#: A question about money being LOST — a negative outcome — rather than money being SPENT.
+_LOSS_Q_RE = re.compile(
+    r"\b(losing|lose|lost)\s+money\b|\bleak(age|ing|s)?\b|\bbleed(ing)?\b|\bshrinkage\b|"
+    r"\bwrite[-\s]?off\w*|\bwast(e|ed|ing|eful)\b",
+    re.IGNORECASE,
+)
+#: A metric that is nothing but a gross spend total — `SUM(cost)`, `SUM(ii.cogs)`, `SUM(expense)`.
+#: Deliberately anchored and narrow: a margin (`SUM(price - cost)`), a CASE-filtered reversal total
+#: or a ratio must NOT match, because each of those is a real answer to a loss question.
+_BARE_SPEND_RE = re.compile(
+    r"^\s*SUM\s*\(\s*(?:[\w`\"]+\.)?[\w`\"]*(?:cost|cogs|spend|expense)[\w`\"]*\s*\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_loss_question(q: str) -> bool:
+    return bool(_LOSS_Q_RE.search(q or ""))
+
+
+def _spend_measured_as_loss(question: str, metric_sql: str) -> bool:
+    """True when a LOSS question resolved to a bare SPEND total — the measure substitution.
+
+    The INTENT GUARD in the intake prompt admits "cost or spend" as a financial measure, which is
+    right for a cost question and wrong for a loss one, so `SUM(inventory_items.cost)` satisfied it.
+    The result ranks departments by how much they SPEND, which makes the biggest department look
+    like the leakiest — observed on two vendors' models for the same question.
+    """
+    return _is_loss_question(question) and bool(_BARE_SPEND_RE.match((metric_sql or "").strip()))
 
 
 # A TEMPORAL-CHANGE question presupposes a movement over time and asks its cause
@@ -5229,6 +5406,25 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 f"question as non-temporal. " + (intake.intake_notes or "")
             ).strip()
 
+    # MEASURE INTERROGATION — a loss question that resolved to a bare SPEND total. The prompt's
+    # LOSS GUARD asks for a margin / reversal / write-off reading; this is the deterministic
+    # backstop for when the model ignores it, and it ANNOTATES rather than rewrites: substituting a
+    # metric under the reader would be a second silent substitution, which is the failure being
+    # guarded. Making it loud in the displayed spec is the point — the shipped report ranked
+    # departments by spend under a "where are we losing money" title, so the largest department read
+    # as the leakiest, and nothing on the page said the measure had been swapped.
+    if intake is not None and _spend_measured_as_loss(question, getattr(intake, "metric_sql", "")):
+        from aughor.stats import stats as _stats
+        _stats.inc("deep_analysis.measure.spend_as_loss")
+        intake.intake_notes = (
+            f"MEASURE WARNING: the question asks where money is being LOST, but the metric resolved "
+            f"to a bare spend total ({intake.metric_sql}). Spend is not loss — the segment that "
+            f"spends the most is the LARGEST segment, not the leakiest. Read the ranking below as "
+            f"COST CONCENTRATION, not as where value is being destroyed. A margin (revenue − cost) "
+            f"or a reversed-transaction (returned / cancelled / refunded) measure would answer the "
+            f"question that was asked. " + (intake.intake_notes or "")
+        ).strip()
+
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
     # setting the flag, so force it for diagnostic "where/which is weakest / where
     # are we losing money" questions OR when there is no usable time axis (no date
@@ -5496,27 +5692,45 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             "answer_report": None,
         }
 
+    # The displayed spec must describe the run that will ACTUALLY happen. The cross-sectional branch
+    # used to end its Approach line "(no time comparison)" unconditionally and omit the date column
+    # entirely — written when the flag really did mean "no clock". It no longer does: a cross-sectional
+    # question over dated data trends as well as ranks, so that line had a report asserting "no time
+    # comparison" on page one while a baseline phase measured a period-over-period shift inside it.
+    _spec_has_axis = (intake.date_column or "").strip().upper() not in ("", "NONE")
+    if intake.cross_sectional:
+        _spec_rows = [
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is "
+                         "weakest" + (f", and trend it on {intake.date_column} to see whether the "
+                                      "weakness is growing" if _spec_has_axis
+                                      else " (no usable time axis in reach — no temporal check)")],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ]
+        if _spec_has_axis:
+            _spec_rows.insert(2, ["Date column", intake.date_column])
+    else:
+        _spec_rows = [
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
+            ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
+                            if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
+            ["Date column", intake.date_column],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ]
+
     # Store the intake spec in state via a synthetic phase (no SQL, just metadata)
     finding = InvestigationFinding(
         finding_id="intake_spec",
         title="Investigation Specification",
         sql="",
         columns=["field", "value"],
-        rows=([
-            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is weakest (no time comparison)"],
-            ["Primary table", intake.metric_table],
-            ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ] if intake.cross_sectional else [
-            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
-            ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
-            ["Comparison", (f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"
-                    if (intake.comparison_start and intake.comparison_end) else intake.comparison_label)],
-            ["Date column", intake.date_column],
-            ["Primary table", intake.metric_table],
-            ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ]),
-        row_count=6,
+        rows=_spec_rows,
+        # Was hardcoded 6 while the cross-sectional branch emitted 4 — a row count that counted rows
+        # nobody rendered. Derived now, so it cannot drift from the list beside it.
+        row_count=len(_spec_rows),
         error=None,
         interpretation=intake.intake_notes or (
             f"Cross-sectional scan of {intake.metric_label} across dimensions."
@@ -5642,6 +5856,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             cross_sectional=bool(intake.cross_sectional),
             dimension_ask=_question_asks_for_dimension(question),
             behavioral=_question_needs_behavioral(question),
+            # The SCHEMA fact, after the join-reachability recovery above — never inferred from
+            # the question's wording. A cross-sectional question over dated data still trends.
+            has_time_axis=(intake.date_column or "").strip().upper() not in ("", "NONE"),
         )
         plan_dict = plan.to_dict()
         from aughor.agent.handoff import emit_handoff
@@ -7930,8 +8147,20 @@ def _detect_anomalous_period(columns: list, rows: list) -> Optional[dict]:
 _MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
+def _fmt_num_or_raw(v) -> str:
+    """A metric value as a reader sees it, or the value untouched when it is not a number."""
+    try:
+        return _fmt_compact_num(float(str(v).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def _fmt_period(v) -> str:
-    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022")."""
+    """A period value → a compact human label ("2022-07-01" / "2022-07" → "Jul 2022").
+
+    Also handles the full timestamp a warehouse returns for DATE_TRUNC — BigQuery renders it
+    "2026-08-01 00:00:00+00:00", and 52 of those reached one shipped report's prose and titles.
+    """
     m = re.match(r"^(\d{4})-(\d{2})", str(v))
     if m and 1 <= int(m.group(2)) <= 12:
         return f"{_MONTHS_ABBR[int(m.group(2)) - 1]} {m.group(1)}"
@@ -8090,8 +8319,15 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
             if anomalous:
                 break
     if anomalous:
-        summary = (f"⚠ Period concentration: {anomalous['period']} at {anomalous['value']} vs the "
-                   f"{anomalous['baseline']} baseline (n={anomalous['n']}). " + (summary or ""))
+        # Reader-facing prose, so it wears reader-facing formatting. This line shipped as
+        # "⚠ Period concentration: 2026-08-01 00:00:00+00:00 at 87676.13 vs the 25028.91
+        # baseline" — a raw BigQuery TIMESTAMP and two unrounded floats in the one sentence a
+        # person actually reads. `_fmt_period` and `_fmt_compact_num` already exist for exactly
+        # this and were reaching only the key numbers.
+        summary = (f"⚠ Period concentration: {_fmt_period(anomalous['period'])} at "
+                   f"{_fmt_num_or_raw(anomalous['value'])} vs the "
+                   f"{_fmt_num_or_raw(anomalous['baseline'])} baseline "
+                   f"(n={anomalous['n']}). " + (summary or ""))
     phase = _phase_result(
         "temporal_when", "Temporal Trend — When", "📈",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -8206,7 +8442,9 @@ def _run_period_drill(state: AgentState, conn: "DatabaseConnection", axis: dict,
     base_n = len(state.get("investigation_phases", []))
     for name, ldims, pmeta in lens_specs:
         pid, title, emoji = pmeta
-        drill_meta = (f"period_drill_{name}", f"{title} · {anomalous['period']}", "🎯")
+        # The TITLE is read; the directive below is EXECUTED. Only the title gets formatted —
+        # `anomalous['period']` stays raw where the model builds a date filter from it.
+        drill_meta = (f"period_drill_{name}", f"{title} · {_fmt_period(anomalous['period'])}", "🎯")
         try:
             reader = conn.make_reader()
             out = ada_cross_section(state, reader, dims_override=ldims, phase_meta=drill_meta,
@@ -8768,7 +9006,14 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             return name, [], None, None, None
 
     results: list = []
-    width = min(len(specs), max(1, _ADA_LENS_WIDTH))
+    # Coverage is fixed; only CONCURRENCY follows the transport. A binding that cannot sustain
+    # parallel waves runs the same lenses one after another — slower, never fewer.
+    try:
+        from aughor.llm.profile import parallel_waves_enabled as _waves
+        _parallel = _waves()
+    except Exception:
+        _parallel = False
+    width = min(len(specs), max(1, _ADA_LENS_WIDTH)) if _parallel else 1
     try:
         with _fanout_region("deep_analysis.parallel_lenses"), ContextThreadPoolExecutor(max_workers=width) as pool:
             futs = [pool.submit(_run_spec, s) for s in specs]

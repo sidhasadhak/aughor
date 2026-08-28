@@ -143,12 +143,28 @@ def test_multilens_routes_event_dims_to_composition(monkeypatch):
 
 
 def test_multilens_runs_lenses_concurrently(monkeypatch):
+    """Concurrency is the TRANSPORT's decision, so declare the headroom the node keys on."""
+    monkeypatch.setattr("aughor.llm.profile.parallel_waves_enabled", lambda: True)
     _install_stub(monkeypatch, sleep=0.3)
     t0 = time.time()
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     dt = time.time() - t0
     assert len([p for p in out["investigation_phases"]]) == 2
     assert dt < 0.55, f"expected concurrent (~0.3s), got {dt:.2f}s — lenses serialized"
+
+
+def test_a_serial_transport_loses_no_lenses(monkeypatch):
+    """The contract this file exists to defend, restated.
+
+    Coverage used to be gated on throughput: with `parallel_waves` False the multilens node was
+    never wired, so the temporal WHEN lens, the mechanism scan, the interaction cross and the
+    reason benchmark were UNREACHABLE — a rate-limited model ran a structurally smaller
+    investigation, not merely a slower one, and the report never said so. Now the transport sets
+    the WIDTH only: the same lenses run, one after another."""
+    monkeypatch.setattr("aughor.llm.profile.parallel_waves_enabled", lambda: False)
+    _install_stub(monkeypatch)
+    out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
+    assert len(out["investigation_phases"]) == 2, "a serial transport must not drop a lens"
 
 
 def test_multilens_uses_a_reader_per_lens(monkeypatch):
@@ -299,15 +315,14 @@ def _ada_nodes(flag):
         os.environ.pop("AUGHOR_LLM_RPM", None)
 
 
-def test_flag_off_has_no_multilens_node():
-    nodes = _ada_nodes(None)
-    assert "ada_cross_section_multilens" not in nodes
-    assert "ada_cross_section" in nodes
+def test_multilens_node_is_wired_whatever_the_transport():
+    """Analytical coverage must not depend on model throughput.
 
-
-def test_flag_on_registers_multilens_node():
-    nodes = _ada_nodes("1")
-    assert "ada_cross_section_multilens" in nodes
+    The node used to be registered only when the transport declared parallel headroom, which made a
+    cheap binding silently run a shallower investigation. Both directions are asserted together so a
+    future "optimisation" cannot quietly re-couple them."""
+    assert "ada_cross_section_multilens" in _ada_nodes("1")      # declared headroom
+    assert "ada_cross_section_multilens" in _ada_nodes(None)     # undeclared → serial, same lenses
 
 
 # ── WHY×WHERE interaction lens (flag ada.why_where_interaction) ─────────────────

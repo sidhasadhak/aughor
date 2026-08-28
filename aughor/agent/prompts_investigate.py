@@ -37,6 +37,25 @@ TASK: Parse this question into a precise investigation specification.
    or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
    or losing money, default to the primary revenue / value measure in the schema. A money question
    must never resolve to a sentiment or review metric.
+   LOSS GUARD (critical): the guard above admits "cost or spend", which is right for a COST question
+   and wrong for a LOSS one. "Losing money" / leakage / waste / bleeding / shrinkage asks about a
+   NEGATIVE OUTCOME, and gross spend is not one: SUM(cost) is what the business SPENT, so the
+   department that spends most is simply the BIGGEST department. Ranking cost concentration answers
+   "which is largest", never "where are we losing" — and it reads as an accusation of the most
+   productive part of the business.
+   For a loss question choose the FIRST of these the schema supports, and name the reading in
+   intake_notes so the reader knows which sense of "losing" was measured:
+     (a) an explicit loss / refund / write-off / chargeback AMOUNT column;
+     (b) MARGIN — a revenue column minus a cost column (e.g. `SUM(sale_price - cost)`), which is
+         also the only reading that can go negative;
+     (c) the value of REVERSED transactions — rows whose status / lifecycle column marks them
+         returned, cancelled, refunded or charged back
+         (e.g. `SUM(CASE WHEN status IN ('Returned','Cancelled') THEN sale_price END)`);
+     (d) unsold / obsolete stock — the cost of rows that never reached a sale.
+   Use a bare cost / spend total ONLY when the question itself asks about cost or spend ("where is
+   our cost highest", "what are we spending most on"). If none of (a)–(d) is derivable from the
+   schema, say so in intake_notes and state which sense you fell back to — never present spend as
+   loss silently.
    MAGNITUDE GUARD (critical): when the question names a QUANTITY — a delay, a duration, a lead
    time, an age, a distance, an amount — and the schema records BOTH the measured quantity and a
    0/1 indicator that merely flags it, the metric is the MEASURED QUANTITY. "Shipping delay" over a
@@ -57,10 +76,18 @@ TASK: Parse this question into a precise investigation specification.
    GRAIN: the PROFILE states the analytical grain and how much history exists (e.g. "53 weeks of
    history"). Use THAT grain for the observation and comparison periods — do NOT default to months.
    If ambiguous, use the most recent COMPLETE period at that grain.
-   CROSS-SECTIONAL: if the PROFILE says "analyse cross-sectionally" (too few periods for a trend) OR
-   the metric table has no date column OR the question asks where/which/what is weakest / losing money
-   / underperforming, there is no usable time axis — set cross_sectional=true, use the full data range
-   as the observation, and plan to compare across DIMENSIONS (segments / regions / products), not periods.
+   CROSS-SECTIONAL: set cross_sectional=true when the question asks where/which/what is weakest /
+   losing money / underperforming — it asks WHICH SEGMENT, so the answer is a comparison across
+   DIMENSIONS (segments / regions / products) rather than across periods. Use the full data range
+   as the observation.
+   That flag is a statement about the QUESTION. It is NOT a statement about the data, and it must
+   never be used to conclude one: STILL POPULATE date_column whenever the schema has a usable date.
+   "Where are we losing money" is answered better, not worse, by also knowing whether the weakness is
+   GROWING — and an empty date_column silently disables every temporal check downstream, so a schema
+   with ten date columns gets reported as having no time axis.
+   Report NO time axis only when that is a fact about the SCHEMA: the PROFILE says "analyse
+   cross-sectionally" (too few periods for a trend), or the metric table and every population table
+   join-reachable from it genuinely carry no date column.
    DRIVER / RELATIONSHIP (critical): if the question asks whether one thing AFFECTS / RELATES TO /
    DRIVES / LOWERS / RAISES / HURTS / IMPROVES / CORRELATES WITH another — e.g. "do late deliveries
    lower review scores", "do new customers spend more", "does installment count affect cancellations"

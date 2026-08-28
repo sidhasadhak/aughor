@@ -465,6 +465,50 @@ def group_by_continuous_measure(sql: str, table_cols: dict | None = None,
     return None
 
 
+def _pk_attached_tables(tree, root) -> set[str]:
+    """Bare table names the OUTER scope joins onto their OWN primary key.
+
+    ``... JOIN b ON a.b_id = b.id`` attaches AT MOST ONE row of ``b`` per row of ``a`` — the key
+    is unique by definition — so ``b`` multiplies nothing. It is a DIMENSION, not a fan-out
+    satellite, however many hub FKs its schema happens to carry.
+
+    This is the STATIC half of the ``is_unique_on`` oracle, and it closes a false positive that
+    reached a shipped executive summary. ``order_items LEFT JOIN inventory_items ON
+    order_items.inventory_item_id = inventory_items.id`` was called a chasm because BOTH tables
+    carry ``product_id``, so by schema shape alone they look like two satellites of ``product``.
+    They are not joined THROUGH ``product``: the join is a direct FK onto a primary key.
+    Measured on the real warehouse — 181,721 rows in, 181,721 rows out, zero multiplication —
+    while the report told the reader its (exact) totals were "inflated … directional only" and
+    needed "a grain-correct recompute".
+
+    Deliberately narrow: it demotes ONLY the side whose join column is its own key. The genuine
+    ≥2-fact chasm this module exists for joins its satellites on the HUB key (``order_id``), not
+    on their own ``id``, so that detection is untouched.
+    """
+    from sqlglot import exp
+
+    out: set[str] = set()
+    try:
+        cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+        alias_map = _outer_alias_map(root, cte_names)
+        if not alias_map:
+            return out
+        for join in root.expression.find_all(exp.Join):
+            pairs = _equi_join_keys(join, alias_map)
+            if not pairs:
+                continue                      # non-pure ON — say nothing (see _equi_join_keys)
+            for alias, col in pairs:
+                bare = alias_map.get(alias)
+                if not bare:
+                    continue
+                c = (col or "").lower()
+                if c == "id" or c == f"{_singular(bare)}_id":
+                    out.add(bare)
+    except Exception:
+        return set()
+    return out
+
+
 def _chasm_roots(tree, root, table_cols: dict | None, is_unique_on=None) -> dict[str, set[str]]:
     """Hubs that have ≥2 RAW base-table satellites joined directly in the OUTER
     scope — i.e. a chasm. Returns {hub_fk_root: {satellite tables}} with ≥2 sats
@@ -502,8 +546,13 @@ def _chasm_roots(tree, root, table_cols: dict | None, is_unique_on=None) -> dict
     # Satellites of a hub = base tables that carry the hub's FK root but are NOT
     # the hub itself (the hub's singular stem equals the root).
     roots_by_table = {bt: _table_fk_roots(_schema_cols(bt)) for bt in base_tables}
+    # A table joined onto its OWN key attaches one row and cannot fan out — demote it before
+    # shape alone makes it a satellite. See `_pk_attached_tables`.
+    pk_attached = _pk_attached_tables(tree, root)
     sat_by_root: dict[str, set[str]] = {}
     for bt in base_tables:
+        if bt in pk_attached:
+            continue
         for r in roots_by_table[bt]:
             if _singular(bt) != r and bt != r:   # bt is a satellite of hub r, not the hub
                 # Cardinality-aware demotion: a table that is 1:1 on the hub key is a
