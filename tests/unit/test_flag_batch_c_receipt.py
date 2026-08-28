@@ -50,11 +50,19 @@ def test_batch_c_behaviour_is_unconditional_or_still_default_on():
             assert flag not in FLAG_DEFAULT, f"{flag} is deleted; it must not linger"
 
 
-def test_the_queue_and_migrations_are_empty():
-    """The strategy's terminal state: every flag is graduated, auto, an opt-in, an
-    experiment, or in the performance profile. A new queued/migration flag must
-    declare itself with its exit, which these dicts (and the partition test) enforce."""
+def test_the_queue_is_named_and_migrations_are_empty():
+    """The strategy's steady state: every flag is graduated, auto, an opt-in, an
+    experiment, or in the performance profile — and a queued/migration flag must
+    declare itself with its exit AND be named here, so joining the queue is a
+    reviewed decision, not a side effect (this assertion going red on an unnamed
+    entry is the mechanism, and is exactly how FL-1b's entry arrived).
+
+    Current queue: `ask.resume_stream` (FL-1b, 2026-08-28) — its declared
+    receipts (browser-soak reattach + interrupt-cancels-the-job) are DELIVERED;
+    the declared exit is hardwire + delete, so this entry's REMOVAL is the next
+    state this test expects to be edited into."""
     from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
 
-    assert GRADUATION_QUEUE == {}
+    assert set(GRADUATION_QUEUE) == {"ask.resume_stream"}
+    assert "receipt" in GRADUATION_QUEUE["ask.resume_stream"].lower()
     assert MIGRATION == {}

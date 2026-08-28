@@ -45,6 +45,7 @@ import type {
 } from "@/lib/types";
 
 import type { AughorUIDataTypes } from "./aughorUIDataTypes";
+import { synthesizeResumedUserMessage } from "./uiMessageAdapter";
 
 // Re-export so surfaces can keep saying `InvPhase` without naming the types module.
 export type { InvestigationPhase as InvPhase };
@@ -94,6 +95,17 @@ export interface GuardReceipt {
   detail: string;
   before?: string;
   after?: string;
+}
+
+/** FL-2 — one narrated failover-chain hop. `event` is "fallback" (a link took
+ *  over from the primary) or "link_failed" (that link died too; the chain moved
+ *  on). Backends are raw ids ("gemini"); labels resolve via BACKEND_LABEL. */
+export interface ChainState {
+  event: string;
+  from: string;
+  to: string;
+  model: string;
+  detail: string;
 }
 
 /**
@@ -169,6 +181,8 @@ export interface ChatTurn {
   converseSteps: ConverseStep[];
   scanItems: string[];
   scanProgress: { done: number; total: number } | null;
+  /** FL-2 — the failover chain's last narrated hop; null while the primary holds. */
+  chainState: ChainState | null;
 
   // Ask mode
   sql: string | null;
@@ -283,6 +297,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   delegations: [],
   converseSteps: [],
   scanItems: [], scanProgress: null,
+  chainState: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
@@ -367,6 +382,15 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       before: d.before as string | undefined,
       after: d.after as string | undefined,
     }];
+  },
+  chain_state: (t, d) => {
+    t.chainState = {
+      event: (d.event as string) ?? "",
+      from: (d.from as string) ?? "",
+      to: (d.to as string) ?? "",
+      model: (d.model as string) ?? "",
+      detail: (d.detail as string) ?? "",
+    };
   },
   converse_step: (t, d) => {
     t.converseSteps = [...t.converseSteps, {
@@ -602,6 +626,16 @@ export function projectThread(
       if (pendingUser) {
         pairs.push({ userMsg: pendingUser, assistantMsg: m });
         pendingUser = null;
+      } else {
+        // FL-1b — an assistant message with no user partner is a RESUMED run:
+        // the tab reloaded mid-stream and the thread restarted empty. Dropping
+        // it rendered a live run as a blank page; instead, the seam synthesizes
+        // the user side from the question it stashed off the wire's `start`
+        // frame, so the turn renders whole.
+        pairs.push({
+          userMsg: synthesizeResumedUserMessage(m) as AughorUIMessage,
+          assistantMsg: m,
+        });
       }
     }
   }

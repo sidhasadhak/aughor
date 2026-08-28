@@ -197,12 +197,48 @@ export interface AdapterResult {
  * Stateful converter for ONE assistant turn. Feed frames in arrival order and
  * forward the returned chunks. Pure state machine — no I/O.
  */
+/** FL-1b — the user-side message a RESUMED stream lacks.
+ *
+ *  A reloaded tab resumes mid-run: the thread restarts empty and the resume
+ *  stream delivers ONLY the assistant message. The seam owns the repair shape —
+ *  it stashed the question off the wire's `start` frame as message metadata
+ *  (see `feed`), and it knows a resumed run is a deep one (only job-streamed
+ *  deep runs mirror into the hub), so the synthesized side carries the
+ *  investigate mode the loading UI keys on. */
+export function synthesizeResumedUserMessage(assistant: {
+  id: string;
+  metadata?: unknown;
+}): {
+  id: string;
+  role: "user";
+  parts: { type: "text"; text: string }[];
+  metadata: { mode: "investigate" };
+} {
+  const q = ((assistant.metadata as { question?: string } | undefined)?.question ?? "").trim();
+  return {
+    id: `resumed-${assistant.id}`,
+    role: "user",
+    parts: [{ type: "text", text: q || "(resumed conversation)" }],
+    metadata: { mode: "investigate" },
+  };
+}
+
 export class AughorToUIMessage {
   private channels = new Map<string, Channel>();
   private seq = 0;
   private started = false;
   private done = false;
   private invId: string | undefined;
+  private messageId: string | undefined;
+
+  /** `messageId` (FL-1b): a STABLE id for the assistant message this stream
+   *  builds. The resume route passes one derived from the conversation, so a
+   *  repeated reconnect (React strict-mode double-mount fires the resume GET
+   *  twice) reconciles into ONE message instead of appending a duplicate turn.
+   *  First-delivery streams omit it — each turn keeps its own random id. */
+  constructor(opts: { messageId?: string } = {}) {
+    this.messageId = opts.messageId;
+  }
 
   private nextId = () => `aug_${++this.seq}`;
 
@@ -225,7 +261,7 @@ export class AughorToUIMessage {
   private open(): AughorChunk[] {
     if (this.started) return [];
     this.started = true;
-    return [{ type: "start" }];
+    return [this.messageId ? { type: "start", messageId: this.messageId } : { type: "start" }];
   }
 
   /** Close every open text block, then the message. Idempotent via `done`. */
@@ -272,6 +308,13 @@ export class AughorToUIMessage {
       // The wire's `start` carries the run handle; the protocol's `start` opens
       // the message. Same word, different jobs — emit ours here.
       chunks.push(...this.open());
+      // FL-1b — the wire's `start` also carries the QUESTION. Stash it as
+      // message metadata: a resumed stream arrives with no user message in the
+      // thread, and this is what lets the projection synthesize one.
+      const q = data["question"];
+      if (typeof q === "string" && q.trim()) {
+        chunks.push({ type: "message-metadata", messageMetadata: { question: q } });
+      }
       return { chunks, investigationId: this.invId, terminal: false };
     }
 

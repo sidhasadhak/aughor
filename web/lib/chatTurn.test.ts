@@ -114,6 +114,35 @@ describe("quick-path parity (the reducer's ask-mode fields)", () => {
     expect(t.route?.depth).toBe("quick");
   });
 
+  it("renders a resumed run whole — orphan assistant gets a synthesized user side (FL-1b)", async () => {
+    // A reloaded tab resumes mid-run: the thread restarts empty and the resume
+    // stream delivers ONLY the assistant message. Dropping it rendered a live
+    // run as a blank page; the projection now synthesizes the user side from
+    // the question the adapter stashed off the wire's `start` frame.
+    const msg = await messageFrom([
+      { event: "start", data: { question: "Which region leads?" } },
+      { event: "headline", data: { headline: "West leads" } },
+    ]);
+    const projected = projectThread([msg], { streaming: true });
+    expect(projected).toHaveLength(1);
+    expect(projected[0].turn.question).toBe("Which region leads?");
+    expect(projected[0].userMsg.id).toBe(`resumed-${msg.id}`);
+    expect(projected[0].turn.status).toBe("loading");
+  });
+
+  it("carries the failover chain's narrated hop (FL-2)", async () => {
+    const msg = await messageFrom([
+      { event: "chain_state", data: { event: "fallback", from: "gemini", to: "groq",
+                                      model: "llama-3.3-70b", role: "analyst", detail: "429 quota" } },
+    ]);
+    const t = projectTurn("q", msg, { streaming: true });
+    expect(t.status).toBe("loading");
+    expect(t.chainState).toEqual({
+      event: "fallback", from: "gemini", to: "groq",
+      model: "llama-3.3-70b", detail: "429 quota",
+    });
+  });
+
   it("streams the partial while streaming, and only then", async () => {
     const partial = await messageFrom([
       { event: "headline_delta", data: { headline: "West le" } },

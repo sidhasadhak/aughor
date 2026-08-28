@@ -260,6 +260,19 @@ export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
 }
 
+/** FL-1b — cancel the deep run behind a still-loading turn, if it has one.
+ *  A deep run executes as a KERNEL JOB (K1): aborting the HTTP stream stops the
+ *  watching, not the work, so stop/interrupt must also cancel the job. Lives
+ *  here — the backend-contract mirror — so callers need not name the backend's
+ *  frozen `investigation` spelling (the vocabulary ratchet's rule); best-effort,
+ *  like the reject path above. */
+export function cancelActiveDeepRun(
+  turn: { investigationId?: string | null } | null | undefined,
+): void {
+  const id = turn?.investigationId;
+  if (id) void cancelInvestigation(id).catch(() => { /* best-effort */ });
+}
+
 /** Best-effort capture: the user drilled ("explore this fact") an overview card. Feeds the
  *  per-connection notability prior the next tour reads back (backend overview.drills).
  *  Fire-and-forget — a failed capture must never disrupt the drill it accompanies. */

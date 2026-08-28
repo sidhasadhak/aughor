@@ -47,31 +47,13 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { projectTurn, UNCERTAIN_RESULT, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { AughorToUIMessage, type AughorChunk } from "@/lib/uiMessageAdapter";
+import { backendBase, backendHeaders } from "@/lib/chatProxy";
 import { readFrames } from "@/lib/sseFrames";
 
 export const dynamic = "force-dynamic";
 // A deep run's drop-recovery may hold the stream open while it polls; the
 // default serverless budget would kill it mid-poll.
 export const maxDuration = 300;
-
-/** The Python API. Server-side only — never shipped to the client bundle. */
-function backendBase(): string {
-  return (
-    process.env.AUGHOR_API_BASE ||
-    process.env.NEXT_PUBLIC_API_BASE ||
-    "http://127.0.0.1:8000"
-  ).replace(/\/+$/, "");
-}
-
-function backendHeaders(): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    accept: "text/event-stream",
-    ...(process.env.AUGHOR_SECRET_KEY
-      ? { "x-aughor-key": process.env.AUGHOR_SECRET_KEY }
-      : {}),
-  };
-}
 
 interface ChatBody {
   question?: string;
