@@ -184,12 +184,21 @@ def purge_chat_session_artifacts(session_id: str) -> dict[str, int]:
     from aughor.db import history
 
     counts: dict[str, int] = {}
+    # FL-6 — deep runs are FILED under a thread, not owned by it: unfile them
+    # (session_id → NULL) so the runs survive for Fleet / agent history while
+    # the thread stops resurrecting in the rail. MUST run before
+    # `delete_investigation`, whose id-OR-session_id predicate would otherwise
+    # take the runs down with the thread.
+    unfiled = history.unfile_session_deep_runs(session_id)
+    if unfiled:
+        counts["deep_runs_unfiled"] = unfiled
     turn_ids = history.chat_session_turn_ids(session_id)
-    if not turn_ids:
+    if not turn_ids and not unfiled:
         return counts  # nothing owned by this caller — the route turns this into a 404
-    from aughor.kernel.registries.purge_hooks import run_investigations_purge_hooks
-    for k, v in run_investigations_purge_hooks(turn_ids).items():
-        counts[k] = counts.get(k, 0) + v
+    if turn_ids:
+        from aughor.kernel.registries.purge_hooks import run_investigations_purge_hooks
+        for k, v in run_investigations_purge_hooks(turn_ids).items():
+            counts[k] = counts.get(k, 0) + v
     try:
         counts["investigations"] = 1 if history.delete_investigation(session_id) else 0
     except Exception as e:

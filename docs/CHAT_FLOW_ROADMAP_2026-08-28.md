@@ -173,6 +173,33 @@ mock at https://claude.ai/code/artifact/6d618590-c64f-479e-b198-29ae4bc4698d.
   inert. The one slice worth keeping renders *process*, not conclusions —
   that slice is this item. Do not re-propose the catalog.
 
+### FL-6 — A deep run belongs to its conversation (BUILT 2026-08-28)
+The reload story's other half. CA-0 stamped `session_id` on deep runs, but
+every THREAD READ filtered `kind = 'chat'` — so the web's default (Agent) mode
+produced conversations that reloaded as blank pages and a rail of quick
+questions only (measured live: five sessions, all quick-shaped). Fixed on the
+READ side — the write side already worked:
+- `_THREAD_TURN_KINDS` (history.py): terminal deep rows join the thread's
+  turns, rail listing/count/title, rename-ownership, and reconstructed memory
+  (as question + headline, never a fabricated query). A LIVE run stays out
+  deliberately — the resume hub (FL-1) owns it, and restoring a running shell
+  would duplicate against the resume stream's synthesized turn.
+- `_turn_to_ui_messages`: a deep row restores as the live wire shape — one
+  `data-answer_report` part (full report renders via `projectDeepReport`,
+  zero client changes), investigate mode on the user message, and an honest
+  `data-error` tail for failed/timed_out/interrupted (no report-shaped shell
+  around nothing).
+- Delete semantics: a thread delete UNFILES deep runs (`session_id` → NULL —
+  they also serve Fleet and agent history) and must do so BEFORE
+  `delete_investigation`, whose id-OR-session_id predicate would take the
+  runs with it; a deep-only thread now deletes as the thread, not a 404.
+- Tests: `tests/unit/test_fl6_deep_threads.py` (7) + CA-5/CI-1 suites green.
+- **Receipt (zero-LLM, over HTTP):** seeded a completed deep row in a scratch
+  store, drove the REAL endpoints — the rail listed the deep-only thread
+  under its question; `/chat-sessions/{id}/messages` restored the
+  user+assistant pair with the `data-answer_report` part, byte-compatible
+  with the live wire.
+
 ## Track RC — Reach (distribution)
 
 *RC-1+ needs user-side setup (a Slack app in their workspace, state store
