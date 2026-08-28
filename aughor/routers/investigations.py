@@ -4453,17 +4453,15 @@ _STREAM_END = object()   # queue sentinel: the investigation generator finished
 
 def _open_resume_run(session_id: str):
     """FL-1b — the frame-hub run mirroring this investigation's SSE for reattach
-    (flag ``ask.resume_stream``; key = the conversation).
+    (key = the conversation). Unconditional since 2026-08-28: ``ask.resume_stream``
+    graduated on its declared receipt (tombstone in kernel/flags.py).
 
-    None when the flag is off or the turn has no conversation id — the caller
-    then publishes nothing and behaviour is byte-identical to today. A session
-    runs one turn at a time, so a still-open earlier run is superseded rather
-    than raised on: latest-wins is the hub's contract with the client, and the
-    interrupt path cancels the superseded turn's kernel job separately."""
+    None when the turn has no conversation id — the caller then publishes
+    nothing. A session runs one turn at a time, so a still-open earlier run is
+    superseded rather than raised on: latest-wins is the hub's contract with the
+    client, and the interrupt path cancels the superseded turn's kernel job
+    separately."""
     if not session_id:
-        return None
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ask.resume_stream"):
         return None
     from aughor.util.frame_hub import RunExists, hub
     key = f"ask:{session_id}"
@@ -4540,14 +4538,14 @@ async def _job_streamed_body(
     request-driven analyst died with its tab (row orphaned 'running') while the
     graph path had K1 supervision. One bridge now carries both: job lifecycle +
     heartbeat, kernel-driven cancellation, `created_by_job` stamping (which is
-    what lets `/investigations/{id}/cancel` find the job), and — behind
-    ``ask.resume_stream`` — the frame-hub mirror `GET /ask/stream/{session_id}`
-    reattaches to. The factory is called INSIDE the job task, so the body's
-    context (metering, identity, artifact stamping) is the job's.
+    what lets `/investigations/{id}/cancel` find the job), and the frame-hub
+    mirror `GET /ask/stream/{session_id}` reattaches to. The factory is called
+    INSIDE the job task, so the body's context (metering, identity, artifact
+    stamping) is the job's.
     """
     from aughor.kernel.jobs import kernel
     queue: asyncio.Queue = asyncio.Queue()
-    # The queue serves THIS request; the hub serves every later one (flag-gated).
+    # The queue serves THIS request; the hub serves every later one.
     resume_run = _open_resume_run(session_id)
 
     async def _drive() -> None:
@@ -5065,8 +5063,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         # FL-1b — the analyst runs through the same K1 bridge as the graph path:
         # a supervised job (so a closed tab no longer kills it mid-run and
         # orphans the row 'running'), cancellable via /investigations/{id}/cancel,
-        # and mirrored for reattach when `ask.resume_stream` is on. The meter
-        # rides INSIDE the job, so the budget holds with nobody watching.
+        # and mirrored for reattach. The meter rides INSIDE the job, so the
+        # budget holds with nobody watching.
         _budget = _insight_budget(conn_id)
         async for sse in _job_streamed_body(
             lambda: _metered_stream(_analyst_body, budget=_budget),
@@ -5183,18 +5181,14 @@ async def ask_endpoint(req: AskRequest, request: Request):
 
 @router.get("/ask/stream/{session_id}")
 async def ask_resume_stream(session_id: str):
-    """FL-1b — reattach to the conversation's in-flight deep run (flag
-    ``ask.resume_stream``).
+    """FL-1b — reattach to the conversation's in-flight deep run.
 
     The K1 bridge mirrors a job-streamed run's SSE into the frame hub; this
     endpoint replays the snapshot and tails the live remainder, byte-identical
     frames, so the client-side adapter needs no second dialect. ``204`` when
-    there is nothing to resume — flag off, no run for this conversation, or the
-    run already CLOSED (a finished turn reaches a reloading client through the
+    there is nothing to resume — no run for this conversation, or the run
+    already CLOSED (a finished turn reaches a reloading client through the
     session's persisted history; replaying it here would render it twice)."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ask.resume_stream"):
-        return Response(status_code=204)
     from aughor.util.frame_hub import ConsumerLagged, hub
     try:
         consumer = hub().attach(f"ask:{session_id}")

@@ -55,14 +55,11 @@ def test_the_queue_is_named_and_migrations_are_empty():
     experiment, or in the performance profile — and a queued/migration flag must
     declare itself with its exit AND be named here, so joining the queue is a
     reviewed decision, not a side effect (this assertion going red on an unnamed
-    entry is the mechanism, and is exactly how FL-1b's entry arrived).
-
-    Current queue: `ask.resume_stream` (FL-1b, 2026-08-28) — its declared
-    receipts (browser-soak reattach + interrupt-cancels-the-job) are DELIVERED;
-    the declared exit is hardwire + delete, so this entry's REMOVAL is the next
-    state this test expects to be edited into."""
+    entry is the mechanism, and is exactly how FL-1b's entry arrived — and how
+    its removal left, 2026-08-28, when `ask.resume_stream` graduated on its
+    delivered receipts: browser-soak reattach + interrupt-cancels-the-job. The
+    receipt record lives on the GRADUATION_QUEUE tombstone in kernel/flags.py)."""
     from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
 
-    assert set(GRADUATION_QUEUE) == {"ask.resume_stream"}
-    assert "receipt" in GRADUATION_QUEUE["ask.resume_stream"].lower()
+    assert GRADUATION_QUEUE == {}
     assert MIGRATION == {}
