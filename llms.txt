@@ -40,8 +40,20 @@ own queries:
 - **`unknown` is not `fresh`.** Aughor distinguishes "we checked and it holds" from "we
   could not check", everywhere it can.
 
+## Machine-readable surfaces
+
+- Agent skill: `SKILL.md` — the operational guide for a coding agent using a running
+  Aughor: how to connect (MCP or REST), the governed tool workflow, how to read what
+  comes back.
+- Connector catalog: `aughor/connectors/catalog.json` — every connector type, its config
+  fields with secrets flagged, the driver modules it imports, and the pip extra that
+  provides them. The live variant, `GET /connectors/types`, adds per-install driver
+  availability.
+- API schema: `GET /openapi.json` on a running instance.
+
 ## Docs
 
 - Architecture: `docs/PLATFORM_ARCHITECTURE.md`
+- MCP server setup: `docs/MCP_SERVER.md`
 - Roadmap and build status: `ROADMAP.md`
 - Working with this repo as an agent: `AGENTS.md`

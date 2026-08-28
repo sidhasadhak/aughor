@@ -98,6 +98,7 @@ One corpus of intelligence behind many surfaces — the depth, mechanisms, and t
 - **Monitors & notifications** — findings become monitors; alerts deliver to Slack/webhook on guarded evaluations.
 - **Evals** — NL2SQL validated against TPC-H / TPC-DS / ClickBench / a golden set, running the full pipeline (the number reflects the product, not a harness).
 - **MCP server** — Aughor's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL.
+- **Agent skill & catalog** — [`SKILL.md`](SKILL.md) teaches a coding agent the governed workflow; [`llms.txt`](llms.txt) and a machine-readable connector catalog ([`aughor/connectors/catalog.json`](aughor/connectors/catalog.json), secrets flagged) make the platform legible to tools.
 - **Security & RBAC** — fail-closed SQL safety gate, read-only Postgres, SSRF allowlist, prompt-injection fencing; flag-gated org tenancy with a viewer ⊂ analyst ⊂ owner ladder and row-level policy compiled into every connector's WHERE.
 
 ## Stack

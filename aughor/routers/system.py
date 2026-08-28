@@ -331,7 +331,9 @@ def list_connector_types():
     request rather than cached: it is a `find_spec` call per type, and an install can
     change under a running process.
     """
-    from aughor.connectors.registry import REGISTRY, FORM_FIELDS, DSN_PREVIEWS, missing_drivers
+    from aughor.connectors.registry import (
+        CATEGORIES, DSN_PREVIEWS, FORM_FIELDS, REGISTRY, missing_drivers,
+    )
     types = []
     for conn_type in ["duckdb", "postgres"] + REGISTRY.supported_types():
         missing = missing_drivers(conn_type)
@@ -341,12 +343,6 @@ def list_connector_types():
             "fields":      FORM_FIELDS.get(conn_type, []),
             "available":   not missing,
             "missing":     missing,
-            "category":    (
-                "file"       if conn_type in ("local_upload", "s3", "sqlite") else
-                "warehouse"  if conn_type in ("bigquery", "snowflake", "mysql", "motherduck", "exasol") else
-                "api"        if conn_type in ("stripe", "hubspot", "salesforce", "gsheets") else
-                "federation" if conn_type == "federated" else
-                "built-in"
-            ),
+            "category":    CATEGORIES.get(conn_type, "built-in"),
         })
     return {"types": types}
