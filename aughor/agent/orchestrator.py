@@ -89,6 +89,7 @@ _PHASE_META = {
     "dimensional":   ("Dimensional Attribution", "🔬"),
     "behavioral":    ("Behavioral & Operational Diagnostics", "👥"),
     "cross_section": ("Cross-Sectional Weakness Scan", "🧭"),
+    "temporal_when": ("Temporal Trend — When", "📈"),
     "breakdown":     ("Breakdown", "📑"),
     "synthesis":     ("Synthesis", "📋"),
 }
@@ -100,7 +101,8 @@ def _step(phase_id: str, disposition: str, reason: str) -> PhaseStep:
 
 
 def plan_phases(*, question: str, cross_sectional: bool,
-                dimension_ask: bool, behavioral: bool) -> OrchestrationPlan:
+                dimension_ask: bool, behavioral: bool,
+                has_time_axis: bool = False) -> OrchestrationPlan:
     """Declare the phase path the deterministic routers will execute.
 
     Mirrors ``route_after_intake/baseline/decompose/dimensional`` in investigate.py —
@@ -108,17 +110,27 @@ def plan_phases(*, question: str, cross_sectional: bool,
     booleans are exactly the signals those routers key on (computed by the caller with
     the same predicates), so this stays a pure, faithful mirror, not a second opinion.
     """
-    # Cross-sectional / diagnostic questions skip the temporal battery entirely.
+    # Cross-sectional questions compare across DIMENSIONS rather than periods — but that is a
+    # property of the QUESTION, not evidence that the data has no time axis. This branch used to
+    # declare "no usable time axis" and skip the temporal battery outright, which is how "where are
+    # we losing money?" against a schema with ten date columns produced one dimension scan and
+    # nothing else. `has_time_axis` is the schema fact, resolved deterministically by the caller.
     if cross_sectional:
-        return OrchestrationPlan(
-            question_kind="cross_sectional",
-            steps=[
-                _step("intake", "planned", "parse the question into a metric + dimensions"),
-                _step("cross_section", "planned",
-                      "no usable time axis — scan dimensions for where value is weakest"),
-                _step("synthesis", "planned", "assemble the diagnostic report"),
-            ],
-        )
+        steps = [
+            _step("intake", "planned", "parse the question into a metric + dimensions"),
+            _step("cross_section", "planned",
+                  "the question asks WHICH SEGMENT — scan dimensions for where value is weakest"),
+        ]
+        if has_time_axis:
+            steps.append(_step("temporal_when", "planned",
+                               "a date axis resolves — trend the metric so 'where' is answered "
+                               "alongside whether the weakness is growing"))
+        else:
+            steps.append(_step("temporal_when", "gated_off",
+                               "no date column on the metric table or any table join-reachable "
+                               "from it — nothing to trend"))
+        steps.append(_step("synthesis", "planned", "assemble the diagnostic report"))
+        return OrchestrationPlan(question_kind="cross_sectional", steps=steps)
 
     # Temporal path. decompose/dimensional/behavioral are runtime-gated; the only ones
     # the plan can promise are intake, baseline and synthesis. A dimension question forces
