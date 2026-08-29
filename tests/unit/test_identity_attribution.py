@@ -35,7 +35,7 @@ def test_an_absent_actor_is_unattributed_never_the_org():
     from aughor.govern import actions as govern
     from aughor.org.context import current_org_id
 
-    govern.audit("kinetic.refund", "conn-a", "approved")
+    govern.audit("connection.delete", "conn-a", "approved")
     row = govern.recent_audit(5)[0]
 
     assert row["actor"] == UNATTRIBUTED
@@ -47,7 +47,7 @@ def test_a_supplied_actor_survives_unchanged():
     """The fix must not eat information. `automation:<id>` is weak but real, and it is
     what the caller meant."""
     from aughor.govern import actions as govern
-    govern.audit("kinetic.refund", "conn-b", "auto", actor="automation:abc-123")
+    govern.audit("connection.delete", "conn-b", "auto", actor="automation:abc-123")
     assert govern.recent_audit(5)[0]["actor"] == "automation:abc-123"
 
 
