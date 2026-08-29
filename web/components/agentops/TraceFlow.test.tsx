@@ -18,10 +18,11 @@
  * and edges the component computes and passes down. That is where the bug lived: the
  * forest was right and the canvas got nothing. Geometry stays a browser question.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TraceFlow, eventForNode } from "@/components/agentops/TraceFlow";
+import { doorOf, faceOf, guardVerdict, originOf } from "@/components/agentops/RunNodes";
 import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 /** What the component handed the renderer on the most recent render. */
@@ -54,6 +55,13 @@ vi.mock("@xyflow/react", async importOriginal => {
 });
 
 const drawn = () => handoff[handoff.length - 1] ?? { nodes: [], edges: [] };
+
+/** Queries scoped to the CANVAS. VA-4e added a rail that indexes the same nodes by name,
+ *  so an unscoped `getByText("supervisor")` now matches the card AND its rail row — and
+ *  a bare `getAllByText` would pass just as happily if the card had vanished and only
+ *  the rail were left. Scoping keeps each assertion about the surface it names. */
+const canvas = () => within(screen.getByTestId("canvas"));
+const rail = () => within(screen.getByTestId("timeline-rail"));
 
 const node = (id: string, over: Partial<TimelineNode> = {}): TimelineNode => ({
   id, seq: 0, span_id: id, parent_span_id: null, name: id, event_kind: "tool_call",
@@ -106,7 +114,7 @@ describe("TraceFlow", () => {
       />,
     );
     for (const name of ["supervisor", "researcher", "writer"]) {
-      expect(screen.getByText(name)).toBeInTheDocument();
+      expect(canvas().getByText(name)).toBeInTheDocument();
     }
   });
 
@@ -182,7 +190,7 @@ describe("TraceFlow", () => {
         edges={[edge("a", "b"), edge("b", "a")]}
       />,
     );
-    expect(screen.getByText("a")).toBeInTheDocument();
+    expect(canvas().getByText("a")).toBeInTheDocument();
     expect(screen.queryByText(/recorded no nodes to draw/i)).not.toBeInTheDocument();
   });
 });
@@ -265,3 +273,121 @@ describe("node details — the row a card was built from", () => {
     expect(screen.getByText(/prompt_capture was off/)).toBeInTheDocument();
   });
 });
+
+/**
+ * VA-4e — the typed faces.
+ *
+ * These are pure classifications over rows we already store, so they are asserted
+ * directly rather than through the canvas: a face that resolves wrongly renders a
+ * plausible card, and a rendering test would pass on the wrong picture.
+ */
+describe("node faces", () => {
+  const n = (over: Partial<TimelineNode>) => node("x", over);
+
+  it("recognises a guardrail before the timeline's catch-all bucket does", () => {
+    // The timeline files a guardrail under `kind: "event"` because it carries no span.
+    // Consulting `kind` first would draw the run's PII checks as anonymous dots.
+    expect(faceOf(n({ event_kind: "guardrail", kind: "event" }))).toBe("guardrail");
+  });
+
+  it("gives the request and the response their own faces", () => {
+    expect(faceOf(n({ event_kind: "user_request", kind: "frame" }))).toBe("trigger");
+    expect(faceOf(n({ event_kind: "final_response", kind: "frame" }))).toBe("response");
+  });
+
+  it("prefers a delegation over the model it happened to run", () => {
+    // A delegated hop IS a model call; drawn as one, the hand-off disappears.
+    const delegated = n({
+      kind: "model", event_kind: "llm_call",
+      delegation: { path: "a/b", depth: 1, agent_id: "ag", agent_name: "researcher" },
+    });
+    expect(faceOf(delegated)).toBe("delegation");
+  });
+
+  it("reads a guardrail's verdict off the payload the guard wrote", () => {
+    expect(guardVerdict(ev2({ payload: { blocked: true, detail: "refuse", found: 3 } })))
+      .toEqual({ blocked: true, action: "refuse", found: 3 });
+    // A row with no payload is "allowed, nothing found" — not a crash and not a block.
+    expect(guardVerdict(null)).toEqual({ blocked: false, action: "", found: 0 });
+  });
+});
+
+describe("where a run came from", () => {
+  it("names the door from the session id's provider prefix", () => {
+    expect(doorOf("slack:C0BTN5BDUQ1:1788011380.135369")?.service).toBe("Slack");
+    // An unrecognised prefix is the web app — a real answer, not a shrug.
+    expect(doorOf("sess-1291")?.service).toBe("Web");
+    // NO session id is a different fact from "the web", and stays distinguishable.
+    expect(doorOf(null)).toBeNull();
+  });
+
+  it("reports a run started inside the platform as exactly that", () => {
+    // Measured across 14 live runs: only /ask and /chat write a `user_request`. A canvas
+    // exploration opens on a guardrail, a monitor on a tool call. Claiming a trigger for
+    // those would put a head node on the canvas that nothing recorded.
+    const origin = originOf([
+      ev2({ kind: "guardrail", charter_id: "scout", conn_id: "workspace" }),
+    ]);
+    expect(origin.requested).toBe(false);
+    expect(origin.service).toBeNull();
+    expect(origin.charter).toBe("scout");
+    expect(origin.connId).toBe("workspace");
+  });
+
+  it("finds the origin fields on whichever row first carries them", () => {
+    // The head row of a real run carries the session but no charter; the charter arrives
+    // rows later. Reading only `events[0]` returns null for half of them.
+    const origin = originOf([
+      ev2({ kind: "user_request", session_id: "slack:C1:17" }),
+      ev2({ kind: "llm_call", charter_id: "analyst", job_id: "b64b31b9" }),
+    ]);
+    expect(origin).toMatchObject({
+      service: "Slack", charter: "analyst", jobId: "b64b31b9", requested: true,
+    });
+  });
+});
+
+describe("the timeline rail", () => {
+  const three = [node("intake"), node("plan"), node("answer")];
+
+  it("indexes every drawn node, so a canvas wider than the pane stays navigable", () => {
+    render(<TraceFlow timeline={timeline(three)} edges={[]} />);
+    for (const name of ["intake", "plan", "answer"]) {
+      expect(rail().getByText(name)).toBeInTheDocument();
+    }
+  });
+
+  it("opens a node's detail from its rail row", () => {
+    render(
+      <TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]}
+                 events={[ev2({ span_id: "a", payload: { pick: "from-the-rail" } })]} />,
+    );
+    expect(screen.queryByText(/from-the-rail/)).toBeNull();
+
+    fireEvent.click(rail().getByText("a"));
+    expect(screen.getByText(/from-the-rail/)).toBeInTheDocument();
+  });
+
+  it("states the run's origin rather than drawing a trigger nothing recorded", () => {
+    render(
+      <TraceFlow timeline={timeline(three)} edges={[]}
+                 events={[ev2({ kind: "tool_call", charter_id: "worker" })]} />,
+    );
+    expect(rail().getByText(/inside the platform/)).toBeInTheDocument();
+    expect(rail().getByText("worker")).toBeInTheDocument();
+  });
+});
+
+/** A session-event fixture for the blocks above, which sit outside the closure that
+ *  owns the original one. */
+function ev2(over: Partial<SessionEvent> = {}): SessionEvent {
+  return {
+    seq: 0, at: "2026-08-24T10:00:00Z", trace_id: "t1", kind: "tool_call", name: "search",
+    span_id: null, parent_span_id: null, ok: true, duration_ms: 12, error_class: null,
+    investigation_id: null, session_id: null, user_id: null, agent_id: null, conn_id: null,
+    provider: null, model: null, prompt_tokens: null, completion_tokens: null,
+    total_tokens: null, row_count: null, retries: null, job_id: null, charter_id: null,
+    role: null, fallback: null, payload: null,
+    ...over,
+  } as SessionEvent;
+}
