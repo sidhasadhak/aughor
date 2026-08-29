@@ -226,6 +226,16 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   Receipt: @mention answered, streamed, in a real workspace thread.
 - **RC-2 — Investigation streaming into Slack**: stage progress as `task_update`
   cards; platform stop button → `/investigations/{id}/cancel`.
+  *Scope extended 2026-08-29 (user-decided, after RC-1's live receipt): the
+  visual half of the answer joins this wave.* **Charts** — render the turn's
+  `chart_config` through the EXISTING Vega-Lite SSR path (the PDF/PPTX export
+  renderer; one grammar, no second engine) and upload the PNG to the thread.
+  **Tables** — small results inline as GFM/monospace (the Chat SDK's streaming
+  healer already buffers GFM tables), larger ones as an attached CSV; Slack has
+  no table widget, so past ~6 columns the CSV is the honest form. **Deep link**
+  — every answer carries "Open in Aughor →" to the conversation, where the
+  interactive chart, full table, SQL and Trust Receipt live: Slack is the
+  doorway, the platform stays where verification happens.
 - **RC-3 — Durable approval cards**: the `requestApproval` *shape* (card +
   durable wait + timeout + approver identity) ported to Python; unstalls the
   scheduled-task first-run approval trap. Do not import the Workflow runtime.
