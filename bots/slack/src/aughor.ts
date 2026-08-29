@@ -26,6 +26,13 @@ interface Env {
   AUGHOR_API_URL?: string;
   AUGHOR_API_KEY?: string;
   AUGHOR_CONNECTION_ID?: string;
+  /**
+   * RC-5 — the UserAgent this bot answers as. One process serves N bots that differ
+   * ONLY in their connection and their agent: the transport is identical and the
+   * platform decides how each one thinks. Per-BOT rather than per-call because that is
+   * what it is — a property of the record, fixed for the life of the socket.
+   */
+  AUGHOR_AGENT_ID?: string;
 }
 
 const asText = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -42,6 +49,7 @@ export function createAskStream(
 ): AskStream {
   const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
+  const agentId = env.AUGHOR_AGENT_ID ?? "";
 
   return async function* ask(question, { sessionId, signal }) {
     const res = await fetchImpl(`${base}/ask`, {
@@ -57,6 +65,7 @@ export function createAskStream(
         connection_id: connection,
         depth: "auto",
         session_id: sessionId,
+        ...(agentId ? { agent_id: agentId } : {}),
       }),
     });
     if (!res.ok || !res.body) {

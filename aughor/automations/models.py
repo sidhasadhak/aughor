@@ -98,6 +98,10 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     "kinetic_action": ("action_id",),
     "monitor":        ("monitor_id",),
     "agent_alert":    ("rule_id",),
+    # RC-5.4 — post AS a Slack bot. Both keys are required at CONSTRUCTION, like every
+    # sibling: an automation missing its channel would otherwise sit in the DB looking
+    # schedulable and fail at 03:00, which is K1's lesson (reject at parse, never surface).
+    "slack_post":     ("bot_id", "channel"),
 }
 
 
@@ -125,7 +129,8 @@ class Effect(BaseModel):
     the run still drains the one ask path, and the agent's instructions, document/pack scope
     and connection binding are applied by that path, not re-implemented here.
     """
-    kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert"]
+    kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
+                  "slack_post"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")

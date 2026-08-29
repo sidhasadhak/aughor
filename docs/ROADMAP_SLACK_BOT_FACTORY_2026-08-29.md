@@ -1,7 +1,8 @@
 # RC-5 — Bot doors become records (the Slack bot factory)
 
-**Status:** designed, not built — except step 5.0, which RC-2 delivered
-(`a274728b`). Design fixed with the user 2026-08-29.
+**Status:** **BUILT 2026-08-29** (5.0 by RC-2 `a274728b`; 5.1–5.4 in this wave).
+Design fixed with the user 2026-08-29. The step sections below are kept as written,
+with what shipped recorded against each in §6.
 **Audience:** a conversation picking this up cold. Everything needed to build it
 is in this file; no prior session context is assumed.
 **Roadmap integration:** the one-paragraph bullet for
@@ -286,15 +287,35 @@ content.
 
 ---
 
-## 6. Slice/receipt summary
+## 6. Slice/receipt summary — all delivered
 
-| # | Slice | Receipt |
+| # | Slice | What shipped |
 |---|---|---|
-| **5.0** ✅ | File turns server-side in `_stream_converse` | **Banked** — `tests/unit/test_converse_files_turn.py` |
-| **5.1** | `SlackBot` record + `LedgerListStore` + CRUD routes, tokens vaulted | Two bots stored; `GET` shows masks; mask round-trip preserves the secret |
-| **5.2** | Manifest render + guided create (`auth.test` verify) | A user creates a **second** bot end-to-end without touching a file |
-| **5.3** | Registry-driven supervisor, N sockets, reconcile on change | Two bots answer in one workspace, each as its own agent, proven by differing answers |
-| **5.4** | `Effect(kind="slack_post")` | Cron posts as the bot; an `@`-reply threads back onto the same conversation |
+| **5.0** ✅ | File turns server-side | RC-2 `a274728b`; `tests/unit/test_converse_files_turn.py` |
+| **5.1** ✅ | `SlackBot` record | `aughor/slackbots/{models,store}.py` — `LedgerListStore`, no migration; all three tokens encrypted at rest and masked on read; `merge_secrets` keeps the stored secret when the client echoes the mask back |
+| **5.2** ✅ | Manifest + guided create | `manifest.py` renders the JSON **from the scopes the transport actually calls**, so it cannot drift; `verify.py` runs `auth.test` BEFORE the record exists and captures `team_id`/`bot_user_id`; `GET /slack-bots/manifest` returns the JSON plus the paste steps |
+| **5.3** ✅ | Registry-driven supervisor | `bots/slack/src/{registry,supervisor}.ts` + a rewritten `index.ts`. Reconciles rather than restarts; **registry-first with an env fallback**, so the existing single-bot deployment keeps working |
+| **5.4** ✅ | `Effect(kind="slack_post")` | `aughor/slackbots/post.py` + `_dispatch_slack_post`; posts with the BOT's `chat:write` token, returns the thread `ts` |
+
+**27 Python + 23 TypeScript tests.** Guards mutation-tested: the mask round-trip, the
+`enabled` off switch, and `uncertain`-vs-`failed` each fail a named test when disabled.
+
+### What the build changed about the design
+
+* **The supervisor's runtime read is its own route, not a flag.** The spec implied
+  `GET /slack-bots` would serve the supervisor. It cannot: that route masks. A
+  `?reveal=1` flag would put the safe and unsafe forms behind one policy entry and leave
+  the masking default one forgotten parameter from being bypassed, so plaintext lives at
+  `GET /slack-bots/runtime`, gated like an admin write even though it is a GET.
+* **Per-bot config rides the `Env` object `createAskStream` already takes.** The spec
+  said change its signature; it did not need changing — each bot gets its own synthetic
+  env, which kept the diff to `aughor.ts` additive and small while RC-2 and RC-4 both
+  have edits pending in the same file.
+* **`makeBot` is injected into the supervisor.** The wiring a bot needs (chart renderer,
+  deep-link base) differs by deployment and grows wave to wave, so the supervisor never
+  learns it — which is also what lets RC-2 and this land in either order.
+* **A rename must not restart a socket.** The fingerprint deliberately excludes `name`;
+  dropping a live WebSocket for a cosmetic edit would interrupt whoever is mid-thread.
 
 ## 7. Traps that span the wave
 

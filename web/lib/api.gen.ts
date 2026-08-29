@@ -8015,6 +8015,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slack-bots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Slack Bots
+         * @description Every bot, tokens masked.
+         */
+        get: operations["list_slack_bots_slack_bots_get"];
+        put?: never;
+        /**
+         * Create Slack Bot
+         * @description Create a bot. Every credential must be present and must actually work —
+         *     verification happens before the record exists, because a bot stored with a bad token
+         *     is a socket that fails to open at 03:00 with nobody watching.
+         */
+        post: operations["create_slack_bot_slack_bots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/slack-bots/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack Bot Manifest
+         * @description The Slack app manifest to paste at api.slack.com/apps?new_app=1.
+         *
+         *     Rendered rather than documented: the scopes and the socket-mode/agent-view settings
+         *     have to match what the running bot actually does, and a manifest a human retypes
+         *     from a README drifts from the code the first time either changes.
+         */
+        get: operations["slack_bot_manifest_slack_bots_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/slack-bots/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack Bots Runtime
+         * @description The supervisor's door: enabled bots with PLAINTEXT tokens.
+         *
+         *     A deliberately separate route rather than a `?reveal=1` flag on the listing. A flag
+         *     makes the masking default one forgotten parameter away from being bypassed, and puts
+         *     the safe and unsafe forms behind the same policy entry; a distinct path can be
+         *     governed, logged and reasoned about on its own — and it cannot be reached by
+         *     accident from a UI that meant to list bots.
+         *
+         *     A socket cannot be opened with a mask, so this is the one place raw credentials
+         *     leave the server. Everything else masks. Admin-gated in `rbac/policy.py`.
+         */
+        get: operations["slack_bots_runtime_slack_bots_runtime_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/slack-bots/{bot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack Bot */
+        get: operations["get_slack_bot_slack_bots__bot_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Slack Bot */
+        delete: operations["delete_slack_bot_slack_bots__bot_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Slack Bot */
+        patch: operations["update_slack_bot_slack_bots__bot_id__patch"];
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -9442,7 +9540,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post";
         };
         /** EvalIn */
         EvalIn: {
@@ -10381,6 +10479,49 @@ export interface components {
              * @default true
              */
             persist: boolean;
+        };
+        /** SlackBotBody */
+        SlackBotBody: {
+            /**
+             * Agent Id
+             * @default
+             */
+            agent_id: string;
+            /**
+             * Agent View
+             * @default false
+             */
+            agent_view: boolean;
+            /**
+             * App Token
+             * @default
+             */
+            app_token: string;
+            /**
+             * Bot Token
+             * @default
+             */
+            bot_token: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Signing Secret
+             * @default
+             */
+            signing_secret: string;
         };
         /** StatusIn */
         StatusIn: {
@@ -25901,6 +26042,210 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_slack_bots_slack_bots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_slack_bot_slack_bots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackBotBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_bot_manifest_slack_bots_manifest_get: {
+        parameters: {
+            query?: {
+                name?: string;
+                description?: string;
+                agent_id?: string;
+                agent_view?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_bots_runtime_slack_bots_runtime_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_slack_bot_slack_bots__bot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_slack_bot_slack_bots__bot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_slack_bot_slack_bots__bot_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackBotBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -140,7 +140,7 @@ for _env, _file in (
 # it was unrecoverable). One env for the whole family → a new store in it is isolated by
 # construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
-                 "AUGHOR_STATE_DIR"):
+                 "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR"):
     os.environ[_dir_env] = _test_stores_dir                    # assigned, not setdefault
 
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
