@@ -140,8 +140,17 @@ export function createAskStream(
               break;
             }
             case "error": {
-              const msg = asText(frame.message) || asText(frame.error) || "the run failed";
-              yield (sawText ? "\n\n" : "") + `⚠️ ${msg}`;
+              // The error frame carries R4's typed tail (reason/hint) AND the raw
+              // provider text — which for a rate-limited chain is a wall of repeated
+              // 429 JSON (seen live in a thread). A Slack surface gets ONE honest
+              // sentence: the hint if the backend classified the error, else the
+              // first attempt's text, bounded.
+              const hint = asText(frame.hint);
+              const first = (asText(frame.message) || asText(frame.error) || "the run failed")
+                .split(" · ")[0]
+                .trim();
+              const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
+              yield (sawText ? "\n\n" : "") + `⚠️ ${hint || short}`;
               return;
             }
             case "done":

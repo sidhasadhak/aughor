@@ -74,6 +74,23 @@ describe("createAskStream", () => {
     expect(chunks.join("")).toBe("Part\n\n⚠️ the model is in quota cooldown");
   });
 
+  it("a rate-limit wall becomes one bounded sentence — hint first, raw text capped", async () => {
+    const wall = Array(3).fill(`Error code: 429 - ${"x".repeat(400)}`).join(" · ");
+    const withHint = createAskStream({}, async () =>
+      sseResponse([{ type: "error", message: wall, hint: "retry in a minute — the model hit its per-minute limit" }]),
+    );
+    expect((await drain(withHint("q", { sessionId: "s" }))).join(""))
+      .toBe("⚠️ retry in a minute — the model hit its per-minute limit");
+
+    const noHint = createAskStream({}, async () =>
+      sseResponse([{ type: "error", message: wall }]),
+    );
+    const text = (await drain(noHint("q", { sessionId: "s" }))).join("");
+    expect(text.length).toBeLessThan(260);
+    expect(text).toMatch(/^⚠️ Error code: 429/);
+    expect(text).not.toContain(" · "); // one attempt, not the chain's whole retry log
+  });
+
   it("a down API yields one plain sentence, not an exception", async () => {
     const ask = createAskStream({ AUGHOR_API_URL: "http://127.0.0.1:9" }, async () =>
       new Response("", { status: 503 }),
