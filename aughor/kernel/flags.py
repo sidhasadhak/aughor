@@ -272,7 +272,7 @@ FLAG_META = {
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
-        "description": "Let the /ask door send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Unlocks the already-built explore wave from /ask. Off by default.",
+        "description": "Send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Consulted by /ask's auto route AND the chat door (/investigate — the Agent chip's path, which otherwise pins a single investigation; added 2026-08-29 when a live soak found the wave unreachable from the UI). Off by default.",
     },
     "federation.planner": {
         "label": "Cross-source federated planner",
