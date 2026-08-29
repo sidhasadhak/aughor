@@ -406,9 +406,24 @@ reading a value nobody set), and RC-4 is what makes that dimension usable at all
 
 **The wave, re-ordered — smallest real gap first, largest attack surface last.**
 
-* **VA-9a — instrument what already reaches outside.** Spans + cap checks on the existing
-  outbound calls. Small, closes a genuine hole, and it must come first: adding an MCP
-  consumer to a plane that cannot see or budget outbound calls scales the blindness.
+* **VA-9a — instrument what already reaches outside — ✅ BUILT 2026-08-29.**
+  `aughor/govern/outbound.py` is one seam every leaving call passes through: the cap is
+  checked **before** the work (a budget consulted afterwards is an accountant, not a
+  guard), a span wraps it for the waterfall, and an `EXTERNAL_CALL` session event is
+  written **on every path** — success, failure and refusal alike, because a record kept
+  only on success hides exactly the failing counterparty worth noticing. Wired into
+  `slackbots/post.py`, `slackbots/verify.py` and `notifications/executor.py`.
+  Two measurements shaped it: **a span alone leaves the cap plane blind** (`observed_usage`
+  reads session events, not spans — which is why deliverable 5 read as "instrumented"
+  while nothing could be metered), and **the event needed its own kind**: `TOOL_CALL`
+  stands at 2554 live events against `llm_call`'s 3109 because every `mlflow_tool_span`
+  emits one, so reusing it would have nearly doubled `calls` — and double-counted every
+  external call, since the seam's own span emits one too. Counted toward `calls` only:
+  an external call has no tokens and no model cost, and folding it in would invent spend.
+  Caps fail **open** here (a lost budget is no reason to refuse asked-for work) where the
+  approval gate fails closed (it governs permission). 10 tests, both guards
+  mutation-tested. Inert today in the sense that matters: no caps DB exists, so nothing
+  is blocked — but every outbound call is now visible and countable.
 * **VA-9b — per-user connections.** Generalise the `SlackBot` record onto RC-4's
   `identity_links`, so "my Slack" differs from yours. Follows a proven pattern rather
   than inventing one; the vault/mask/verify contract already has tests.

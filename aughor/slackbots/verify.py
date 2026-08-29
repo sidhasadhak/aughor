@@ -35,9 +35,15 @@ def auth_test(bot_token: str) -> tuple[bool, dict]:
         headers={"Authorization": f"Bearer {bot_token}",
                  "Content-Type": "application/x-www-form-urlencoded"},
     )
+    from aughor.govern.outbound import OutboundBlocked, external_call
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
-            body = json.loads(resp.read().decode("utf-8") or "{}")
+        with external_call("slack", "auth.test"):
+            with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
+                body = json.loads(resp.read().decode("utf-8") or "{}")
+    except OutboundBlocked as blocked:
+        # Reported as a failure to VERIFY, not a bad token — the same distinction the
+        # network branch below makes, and for the same reason.
+        return False, {"error": f"not verified: {blocked.reason}"}
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         logger.warning("slack auth.test unreachable: %s", exc)
         return False, {"error": f"could not reach Slack to verify ({exc})"}

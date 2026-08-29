@@ -249,11 +249,16 @@ def test_observed_usage_window_reads_the_real_timestamp_column(monkeypatch):
 
     class _FakeLedger:
         def session_events(self, **kw):
-            return [{"at": datetime.now(timezone.utc).isoformat(), "kind": "llm_call",
+            # Honours `kind`, as the real query does (ledger.py: `if kind: q += " AND kind=?"`).
+            # A fake that ignores its filter reports one row under every kind asked for, which
+            # is how a caller reading two kinds silently double-counts a single event.
+            rows = [{"at": datetime.now(timezone.utc).isoformat(), "kind": "llm_call",
                      "provider": "openrouter", "model": "m:free", "ok": True,
                      "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
                      "org_id": "default", "user_id": "", "duration_ms": 1.0,
                      "payload": {}}]
+            kind = kw.get("kind")
+            return [r for r in rows if not kind or r["kind"] == kind]
 
     import aughor.kernel.ledger as ledger_mod
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: _FakeLedger()))

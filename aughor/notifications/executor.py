@@ -75,6 +75,26 @@ def _retry_after(resp, attempt: int) -> float:
 
 def _post(url: str, headers: dict, payload: dict,
           timeout: int = _TIMEOUT_S) -> tuple[int, str, bool]:
+    """POST through the outbound seam (VA-9a), retrying per :func:`_post_attempts`.
+
+    ONE span per logical send, with every retry inside it, and the cap checked once
+    before the first attempt. A span per attempt would make a rate-limited delivery look
+    like three deliveries in the waterfall — the opposite of what the retry policy exists
+    to make legible.
+    """
+    from aughor.govern.outbound import OutboundBlocked, external_call
+    try:
+        with external_call("webhook", "post", attributes={"attempts_max": _MAX_ATTEMPTS}):
+            return _post_attempts(url, headers, payload, timeout)
+    except OutboundBlocked as blocked:
+        # Nothing left the machine, so this is NOT uncertain — a retry once the window
+        # rolls over is legitimate, and marking it uncertain would suppress a send that
+        # never happened.
+        return 0, f"blocked by a usage cap: {blocked.reason}", False
+
+
+def _post_attempts(url: str, headers: dict, payload: dict,
+                   timeout: int = _TIMEOUT_S) -> tuple[int, str, bool]:
     """POST with a retry policy that matches what each failure MEANS.
 
     Returns ``(status_code, error, uncertain)``; ``uncertain`` is True when the request may

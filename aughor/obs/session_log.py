@@ -48,6 +48,13 @@ LLM_CALL = "llm_call"
 FINAL_RESPONSE = "final_response"
 EXECUTION_ERROR = "execution_error"
 GUARDRAIL = "guardrail"
+#: VA-9a — a call that LEAVES the platform (Slack, a webhook, later an MCP server).
+#: Deliberately its own kind rather than reusing TOOL_CALL: that one is emitted by every
+#: `mlflow_tool_span` (guarded SQL and friends) and stands at 2554 live events against
+#: llm_call's 3109, so folding external calls into it would nearly double the `calls`
+#: metric for reasons unrelated to anything leaving the platform — and every future cap
+#: would trip at half its intended volume.
+EXTERNAL_CALL = "external_call"
 
 EVENT_KINDS = (
     USER_REQUEST, TOOL_CALL, TOOL_CALL_RESULT, LLM_CALL,

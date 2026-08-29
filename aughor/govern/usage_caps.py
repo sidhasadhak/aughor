@@ -238,10 +238,16 @@ def observed_usage(
     from datetime import datetime, timedelta, timezone
 
     from aughor.kernel.ledger import Ledger
-    from aughor.obs.session_log import LLM_CALL
+    from aughor.obs.session_log import EXTERNAL_CALL, LLM_CALL
     from aughor.obs.usage import rollup
 
     rows = Ledger.default().session_events(kind=LLM_CALL, org_id=org_id, limit=scan) or []
+    # VA-9a — calls that LEFT the platform count toward `calls`, and toward nothing else:
+    # an external call has no tokens and no model cost, so folding it into the rollup
+    # would invent spend. Its own kind, never TOOL_CALL, which every mlflow_tool_span
+    # already emits (2554 live events against llm_call's 3109) and which would therefore
+    # nearly double `calls` for reasons unrelated to anything leaving the platform.
+    ext = Ledger.default().session_events(kind=EXTERNAL_CALL, org_id=org_id, limit=scan) or []
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
               ).isoformat()
     # The session-events timestamp column is `at` — reading a key that does not
@@ -256,4 +262,13 @@ def observed_usage(
         totals["calls"] += row.calls
         totals["total_tokens"] += row.total_tokens
         totals["cost_usd"] += row.cost_usd
+
+    # External calls are counted here rather than through `rollup`, which is the LLM
+    # rollup and would have to invent a provider, a model and a price for a Slack post.
+    # Same window and same user filter as above — a metric assembled from two differently
+    # scoped populations is not one metric.
+    ext_in_window = [r for r in ext if str(r.get("at") or "") >= cutoff]
+    if user_id:
+        ext_in_window = [r for r in ext_in_window if str(r.get("user_id") or "") == user_id]
+    totals["calls"] += float(len(ext_in_window))
     return totals

@@ -55,9 +55,19 @@ def post_as_bot(bot_token: str, channel: str, text: str,
         headers={"Authorization": f"Bearer {bot_token}",
                  "Content-Type": "application/json; charset=utf-8"},
     )
+    # VA-9a — through the outbound seam: budgeted before the send, visible in the
+    # waterfall after it. `OutboundBlocked` is caught here because this function
+    # promises never to raise and already has an honest failure shape to return.
+    from aughor.govern.outbound import OutboundBlocked, external_call
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
-            data = json.loads(resp.read().decode("utf-8") or "{}")
+        with external_call("slack", "chat.postMessage",
+                           attributes={"channel": channel, "threaded": bool(thread_ts)}):
+            with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+    except OutboundBlocked as blocked:
+        # Not "uncertain": nothing was sent, so a retry is legitimate once the window
+        # rolls over. Saying uncertain here would suppress a send that never happened.
+        return False, {"error": blocked.reason, "blocked": True}
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         # Distinguished from a Slack refusal on purpose: a transport failure MAY have
         # delivered, and the engine treats "uncertain" differently from "failed" —
