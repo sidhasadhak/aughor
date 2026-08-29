@@ -2,7 +2,7 @@
   "name": "aughor-slack-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "RC-1 — Aughor in Slack: a thin Chat SDK transport over the Python API. The loop, guards, tenancy and metering all stay in Python; this process only carries questions in and streams answers out.",
+  "description": "RC-1/RC-2 \u2014 Aughor in Slack: a thin Chat SDK transport over the Python API. The loop, guards, tenancy and metering all stay in Python; this process only carries questions in and streams answers, progress cards, charts and tables out.",
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file=.env.local src/index.ts",
@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "chat": "4.39.0",
     "@chat-adapter/slack": "4.39.0",
-    "@chat-adapter/state-memory": "4.39.0"
+    "@chat-adapter/state-memory": "4.39.0",
+    "@resvg/resvg-js": "2.6.2",
+    "chat": "4.39.0"
   },
   "devDependencies": {
     "@chat-adapter/tests": "4.39.0",

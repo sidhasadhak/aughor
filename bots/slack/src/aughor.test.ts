@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createAskStream } from "./aughor.js";
+import { createAskStream, type AskChunk } from "./aughor.js";
 
 function sseResponse(frames: Record<string, unknown>[]): Response {
   const body = frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("");
@@ -17,8 +17,16 @@ function sseResponse(frames: Record<string, unknown>[]): Response {
   });
 }
 
-async function drain(iter: AsyncIterable<string>): Promise<string[]> {
+/** The prose half of the stream — the text a reader actually sees. */
+async function drain(iter: AsyncIterable<AskChunk>): Promise<string[]> {
   const out: string[] = [];
+  for await (const chunk of iter) if (typeof chunk === "string") out.push(chunk);
+  return out;
+}
+
+/** Everything, cards included, in wire order. */
+async function drainAll(iter: AsyncIterable<AskChunk>): Promise<AskChunk[]> {
+  const out: AskChunk[] = [];
   for await (const chunk of iter) out.push(chunk);
   return out;
 }
@@ -117,5 +125,117 @@ describe("createAskStream", () => {
       depth: "auto",
       session_id: "slack:C9:42.1",
     });
+  });
+});
+
+describe("createAskStream — RC-2", () => {
+  it("progress frames ride the same stream as the prose, as task cards", async () => {
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "start", investigation_id: "inv-7" },
+        { type: "phase_progress", phase_id: "root_cause", done: 1, total: 3, current: "region" },
+        { type: "phase_complete", phase: { phase_id: "root_cause", phase_name: "Root cause", status: "complete", summary: "Discounting explains 61%." } },
+        { type: "headline", headline: "Discounts drove the dip." },
+        { type: "done" },
+      ]),
+    );
+    const all = await drainAll(ask("q", { sessionId: "s" }));
+
+    // The prose is untouched by the cards riding beside it.
+    expect(all.filter((c) => typeof c === "string").join("")).toBe("Discounts drove the dip.");
+
+    const cards = all.filter((c) => typeof c !== "string");
+    expect(cards).toEqual([
+      { type: "task_update", id: "phase-root_cause", title: "Root cause", status: "in_progress", details: "Scanning region · 1/3" },
+      { type: "task_update", id: "phase-root_cause", title: "Root cause", status: "complete", output: "Discounting explains 61%." },
+    ]);
+  });
+
+  it("the turn's grid and chart reach the caller once it settles", async () => {
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "start", investigation_id: "inv-9" },
+        { type: "columns", columns: ["region", "revenue"] },
+        { type: "rows", rows: [["East", 12], ["West", 9]] },
+        { type: "chart_type", chart_type: "bar" },
+        { type: "chart_config", chart_config: { exhibit: { kind: "ranked" } } },
+        { type: "headline", headline: "East leads." },
+        { type: "done" },
+      ]),
+    );
+    const seen: unknown[] = [];
+    await drain(ask("why?", { sessionId: "slack:C1:1", onTurn: (a) => seen.push(a) }));
+
+    expect(seen).toEqual([{
+      investigationId: "inv-9",
+      question: "why?",
+      sessionId: "slack:C1:1",
+      columns: ["region", "revenue"],
+      rows: [["East", 12], ["West", 9]],
+      chartType: "bar",
+      chartConfig: { exhibit: { kind: "ranked" } },
+    }]);
+  });
+
+  it("a failed turn exhibits nothing — half a grid under a failure reads as an answer", async () => {
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "columns", columns: ["region"] },
+        { type: "rows", rows: [["East"]] },
+        { type: "error", message: "the warehouse refused the query" },
+      ]),
+    );
+    const seen: unknown[] = [];
+    await drain(ask("q", { sessionId: "s", onTurn: (a) => seen.push(a) }));
+    expect(seen).toEqual([]);
+  });
+
+  it("an abandoned run is CANCELLED, not merely dropped", async () => {
+    // Since FL-1 detached the producer from its viewer, closing the stream no
+    // longer stops the work — it only stops anyone watching it spend.
+    const posted: { url: string; aborted: boolean }[] = [];
+    const ctl = new AbortController();
+    const ask = createAskStream({ AUGHOR_API_URL: "http://api.test" }, async (url, init) => {
+      posted.push({ url: String(url), aborted: Boolean(init?.signal?.aborted) });
+      if (String(url).endsWith("/cancel")) return new Response("{}", { status: 200 });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            const enc = new TextEncoder();
+            c.enqueue(enc.encode('data: {"type":"start","investigation_id":"inv-live"}\n\n'));
+            c.enqueue(enc.encode('data: {"type":"headline_delta","headline":"partial"}\n\n'));
+            // Never closed: the run is still going when the reader walks away.
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    });
+
+    for await (const chunk of ask("q", { sessionId: "s", signal: ctl.signal })) {
+      if (typeof chunk === "string") { ctl.abort(); break; }
+    }
+
+    expect(posted.map((p) => p.url)).toEqual([
+      "http://api.test/ask",
+      "http://api.test/investigations/inv-live/cancel",
+    ]);
+    // The kill must outlive the request that was just abandoned.
+    expect(posted[1].aborted).toBe(false);
+  });
+
+  it("a completed run is never cancelled", async () => {
+    const urls: string[] = [];
+    const ctl = new AbortController();
+    const ask = createAskStream({ AUGHOR_API_URL: "http://api.test" }, async (url) => {
+      urls.push(String(url));
+      return sseResponse([
+        { type: "start", investigation_id: "inv-done" },
+        { type: "headline", headline: "Done." },
+        { type: "done" },
+      ]);
+    });
+    await drain(ask("q", { sessionId: "s", signal: ctl.signal }));
+    ctl.abort(); // the turn is over; a later abort must not reach back
+    expect(urls).toEqual(["http://api.test/ask"]);
   });
 });
