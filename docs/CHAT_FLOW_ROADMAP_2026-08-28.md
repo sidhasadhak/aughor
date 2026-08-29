@@ -133,11 +133,45 @@ the quick path gets the silence hint only.
   string someday. The wedged run also produced no `report_delta` frames (the
   fallback synthesis path doesn't stream prose) — pre-existing, not FL-2.
 
-### FL-3 — Streaming-text robustness (measure first)
-Extend `safePartial` to unclosed backticks/fences/table rows *if* narratives
-actually emit them (grep session logs first); adopt render throttling only if a
-measured jank exists (frontier answer lengths at our 13px root — profile, don't
-assume).
+### FL-3 — Streaming-text robustness — **MEASURED 2026-08-29**
+*Original scope: extend `safePartial` to unclosed backticks/fences/table rows if
+narratives actually emit them; adopt render throttling only if a measured jank
+exists. Both were gated on a pre-check. The pre-check ran.*
+
+**Corpus.** `data/history.db`, read-only, 974 stored reports. The streamed
+narrative persists at `insight.narrative` (110) plus top-level `narrative` (5) —
+found by walking every JSON path rather than guessing the shape, after a first
+attempt keyed on the wrong field returned n=5 and would have "proved" the premise
+false on a population too small to prove anything. **Denominator: 115.**
+
+**Half 1 — `safePartial` extension: NOT WARRANTED.** False on both premises.
+
+| markup in streamed narrative | n=115 |
+|---|---|
+| ``` fence · `` ` `` inline code · `\|` table row | **0 (0.0%)** each |
+| `#` heading · `-` bullet · `*italic*` | **0 (0.0%)** each |
+| `**` bold — *already handled* | **112 (97.4%)** |
+
+And structurally inert even if that changed: **`web/` has no markdown dependency
+at all.** Streamed prose renders through `renderEmphasis`
+(`web/components/brief/BriefProse.tsx:24`), a regex split over `**bold**`,
+`*italic*`, signed deltas and numbers. Backticks, fences and pipes are never
+parsed, so closing one changes nothing on screen. `PartsMessage` delegates its
+text to `ChatMessage`, so this is the live path, not a legacy one.
+
+*Latent, unexercised:* `safePartial` closes only `**`, while `EMPHASIS_RE` also
+matches `*italic*` — a dangling single `*` would leak literally. 0/115 narratives
+use single-asterisk italics, so this is a comment-worthy gap, not a fix.
+
+**Half 2 — render throttling: PARKED, not disproven — the corpus is biased short.**
+Lengths: p50 324 · p90 495 · max 1391 chars; **0/115 over 2000**. `useReveal` caps
+its reveal at 1100ms regardless of length, so nothing here can jank. **But the
+filed population systematically excludes converse turns**: `_stream_converse`
+never filed them server-side until RC-2 (`a274728b`) fixed it on 2026-08-29 — and
+conversational turns are exactly the "frontier answer lengths" this half was about.
+Re-measure once RC-2 has merged and that corpus exists; until then this is
+unmeasurable, and building against it would be building on a guess.
+
 
 ### FL-4 — Turn-merging (evaluate, likely park)
 Interrupt-latest-wins is a deliberate P5 design. Revisit only with session-log
@@ -224,7 +258,7 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   Python `/ask` SSE → `thread.post(asyncIterable)`. Python keeps loop, guards,
   tenancy. `@chat-adapter/tests` from day one; pin versions (weekly-minor beta).
   Receipt: @mention answered, streamed, in a real workspace thread.
-- **RC-2 — Investigation streaming into Slack**: stage progress as `task_update`
+- **RC-2 — Investigation streaming into Slack — BUILT 2026-08-29** (`a274728b`): stage progress as `task_update`
   cards; platform stop button → `/investigations/{id}/cancel`.
   *Scope extended 2026-08-29 (user-decided, after RC-1's live receipt): the
   visual half of the answer joins this wave.* **Charts** — render the turn's
@@ -291,6 +325,19 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   25 Python + 2 transport tests; both guards mutation-tested. Merged after RC-2
   2026-08-29: the predicted conflict in `bots/slack/src/{aughor,bot}.ts` was purely
   additive — the asker rides the same `ask(...)` call that carries RC-2's `onTurn`.
+- **RC-5 — Bot doors become records — BUILT 2026-08-29** (`3ae69b26`; design user-decided same day):
+  a Slack bot is a stored {credentials} → {agent_id, connection_id} binding, not
+  an `.env.local`; users create as many as they want via a rendered manifest
+  (one Slack app per bot — route A of three; JSON, never the YAML tab), a
+  registry-driven supervisor runs N sockets in one process, and a new
+  `Effect(kind="slack_post")` lets a cron post AS the bot so the reply threads
+  back onto the same conversation. Its one prerequisite — headless doors leaving
+  holes in their own conversations, because `_stream_converse` never filed turns
+  server-side — was **closed by RC-2** (`a274728b`, chip `task_17fc91f9`), so the
+  factory is unblocked. Full spec, with steps and receipts:
+  `docs/ROADMAP_SLACK_BOT_FACTORY_2026-08-29.md`, whose §6 records what shipped
+  against each slice. Sequenced after RC-4 (user-decided 2026-08-29); merged into
+  main the same day, after RC-2 → RC-3 → RC-4.
 
 ## Parked / other arcs
 - Semantic-layer-as-greppable-YAML + terminator-tool + errors-as-tool-output →
@@ -300,7 +347,12 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   sandboxes → SKIP (each replaces a working Python organ; splits tenancy).
 
 ## Sequencing (user-decided 2026-08-28)
-**FL-2 → FL-1 (behind a registered flag) → RC-0 → RC-1 → RC-2 → FL-3 → RC-3 → RC-4 → FL-4.**
+**FL-2 → FL-1 (behind a registered flag) → RC-0 → RC-1 → RC-2 → FL-3 → RC-3 → RC-4 → RC-5 → FL-4.**
+RC-5 placed after RC-4 (user-decided 2026-08-29): the recorded order holds, and FL-3's
+measure-first pre-check comes before any new surface is added.
+**FL-3's pre-check RAN 2026-08-29** and closed half of it as not-warranted and parked
+the other half on a corpus that does not exist yet — so the next buildable wave in
+this order is RC-3.
 FL-5 (added 2026-08-28) is not yet sequenced against the RC track; its one hard
 precondition is FL-1's graduation.
 FL-2 first banks a low-risk additive win; FL-1 then lands BEHIND A REGISTERED

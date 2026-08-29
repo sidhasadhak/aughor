@@ -757,6 +757,7 @@ from aughor.routers import (
     obs as obs_router,
     control_room,
     charts,
+    slackbots,
 )
 
 app.include_router(consistency.router)
@@ -766,6 +767,7 @@ app.include_router(investigations.router)
 app.include_router(canvas.router)
 app.include_router(workspace.router)
 app.include_router(connections.router)
+app.include_router(slackbots.router)
 app.include_router(exploration.router)
 app.include_router(catalog.router)
 app.include_router(ontology.router)

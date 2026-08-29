@@ -60,6 +60,13 @@ interface Env {
   AUGHOR_API_URL?: string;
   AUGHOR_API_KEY?: string;
   AUGHOR_CONNECTION_ID?: string;
+  /**
+   * RC-5 — the UserAgent this bot answers as. One process serves N bots that differ
+   * ONLY in their connection and their agent: the transport is identical and the
+   * platform decides how each one thinks. Per-BOT rather than per-call because that is
+   * what it is — a property of the record, fixed for the life of the socket.
+   */
+  AUGHOR_AGENT_ID?: string;
 }
 
 const asText = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -78,6 +85,7 @@ export function createAskStream(
   const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
   const authHeaders: Record<string, string> =
     env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  const agentId = env.AUGHOR_AGENT_ID ?? "";
 
   /**
    * Stop the run itself, not just our view of it.
@@ -118,6 +126,7 @@ export function createAskStream(
         depth: "auto",
         session_id: sessionId,
         ...(principalRef ? { principal_ref: principalRef } : {}),
+        ...(agentId ? { agent_id: agentId } : {}),
       }),
     });
     if (!res.ok || !res.body) {

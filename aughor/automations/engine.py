@@ -302,6 +302,48 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
                          message=result.message)
 
 
+def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
+    """RC-5.4 — post into a channel AS the bot, so the message can be replied to.
+
+    The last hop the cron path was missing. `notify` fires an incoming webhook, which
+    arrives under the WEBHOOK's identity with no thread anyone can reply into, so a
+    scheduled run dead-ends on arrival. Posting with the bot's own token arrives as the
+    bot: mentionable, threaded, and — because the transport already uses a thread's id as
+    the Aughor `session_id` — a reply composes on the same conversation, with the same
+    agent, over the same connection.
+    """
+    from aughor.slackbots.post import post_as_bot
+    from aughor.slackbots.store import get_bot_decrypted
+
+    bot_id = str(effect.config.get("bot_id", ""))
+    channel = str(effect.config.get("channel", ""))
+    bot = get_bot_decrypted(bot_id)
+    if bot is None:
+        return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
+                             message=f"unknown Slack bot: {bot_id}")
+    if not bot.enabled:
+        # A verdict, not a fault: the platform's off switch was thrown deliberately, and
+        # retrying would make that switch a lie.
+        return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
+                             message=f"Slack bot '{bot.name}' is disabled")
+
+    ok, info = post_as_bot(
+        bot.bot_token, channel,
+        str(effect.config.get("message") or f"Automation '{automation.name}' fired"),
+        thread_ts=str(effect.config.get("thread_ts") or "") or None,
+    )
+    if ok:
+        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="executed",
+                             message=f"posted as {bot.name} (ts {info.get('ts', '')})")
+    if info.get("uncertain"):
+        # It may have arrived. Saying "failed" would license a retry, and a retried
+        # maybe-delivered message is the duplicate this layer exists to prevent.
+        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="uncertain",
+                             message=f"post timed out — {UNCERTAIN_DELIVERY}")
+    return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="failed",
+                         message=f"Slack refused the post: {info.get('error', 'unknown')}")
+
+
 def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
     from aughor.notifications.executor import fire_action
     from aughor.notifications.models import ActionPayload
@@ -471,6 +513,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "investigate": _dispatch_investigate,
     "monitor": _dispatch_monitor,
     "agent_alert": _dispatch_agent_alert,
+    "slack_post": _dispatch_slack_post,
 }
 
 

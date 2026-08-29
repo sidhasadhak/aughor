@@ -60,6 +60,18 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
 
+    # ── Slack bots (RC-5) ──
+    # A bot record holds three Slack credentials and binds an agent to a workspace, so
+    # creating one is an admin act, not the write floor: anyone who can mint a bot can
+    # make Aughor speak in a channel under a name of their choosing.
+    # The supervisor's door — the ONE route that returns raw Slack credentials, so it is
+    # gated like an admin write even though it is a GET. Reading it is equivalent to
+    # holding every bot token in the org.
+    ("GET", "/slack-bots/runtime"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/slack-bots"): P.ADMIN_MANAGE_ORG,
+    ("PATCH", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+
     # ── Connection lifecycle ──
     ("POST", "/connections"): P.CONNECTION_CREATE,
     # Seeding the demo writes a DuckDB file and makes a new connection appear, which is
