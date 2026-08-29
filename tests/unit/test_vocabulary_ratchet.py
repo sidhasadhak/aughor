@@ -259,9 +259,12 @@ BASELINE: dict[str, int] = {
     "foundry": 0,
     "genie": 23,
     "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
-    # 1967 → 1960 → 1959: the mislabel guard's tests named the emission gate in prose;
+    # 1967 → 1960 → 1959 → 1958: the mislabel guard's tests named the emission gate in
+    # prose; 1958: the chat-door wide-route seam pays for its two unavoidable
+    # `insight_id` field references (the guard clause + its test) by rewording three
+    # prose lines to the glossary's words — a finding references, narrative post-answer.
     # saying "finding" there (the glossary word) paid for the API names they must import.
-    "insight": 1959,
+    "insight": 1958,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,

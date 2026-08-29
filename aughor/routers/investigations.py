@@ -1527,7 +1527,7 @@ def _answer_core(
     _seen: dict = {}
 
     #: Whether this turn already wrote its own history row. The answer path keeps working
-    #: after it emits `done` — narrative, insight and follow-ups are all post-answer — so a
+    #: after it emits `done` — narrative and follow-ups are all post-answer — so a
     #: client that leaves during that tail cancels a turn that is, as far as the user is
     #: concerned, finished and saved. Without this the cancel handler wrote a SECOND row
     #: for it, and the conversation came back with the answer followed by a phantom
@@ -4603,6 +4603,34 @@ async def _job_streamed_body(
         yield item
 
 
+def _investigate_requested_mode(req: "InvestigateRequest") -> str:
+    """The deep mode a ``/investigate`` turn runs — ``"investigate"``, or ``"explore"``
+    when the deterministic wide detector fires under ``explore.route_wide``.
+
+    This door pins DEEP on purpose (the recorded incident: the LLM classifier downgraded
+    "Where are we losing money?" to three flat queries) — but the pin is about depth, not
+    about which deep body. A genuinely broad landscape question ("characterize / profile /
+    how does X vary across …") is served by the multi-cut explore wave, which is deep in
+    exactly the way the pin promises. Without this check the wave was UNREACHABLE from
+    chat entirely (found live 2026-08-29): the Agent chip routes here — never ``/ask``'s
+    auto path — so R9's wide→explore branch in ``ask_router`` had no caller from the UI.
+
+    Same discipline as R9: the wide check is pure and runs first, so a normal question
+    never touches the flag store; no model in the routing path; a causal "why" stays a
+    single investigation (``is_wide_question`` yields to it). A seeded turn — a finding
+    drill, seed SQL, an escalation — keeps the pin: its origin anchors ONE question, not
+    a landscape.
+    """
+    if req.escalate or req.insight_id or req.seed_sql or req.seed_context:
+        return "investigate"
+    from aughor.agent.ask_router import is_wide_question
+    from aughor.agent.complexity import assess_complexity
+    if not is_wide_question(req.question, assess_complexity(req.question or "")):
+        return "investigate"
+    from aughor.kernel.flags import flag_enabled
+    return "explore" if flag_enabled("explore.route_wide") else "investigate"
+
+
 @router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
     conn_id = _resolve_conn(req)
@@ -4613,6 +4641,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
             allow_clarify=req.allow_clarify, session_id=req.session_id,
+            requested_mode=_investigate_requested_mode(req),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

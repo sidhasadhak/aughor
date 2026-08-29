@@ -131,7 +131,7 @@ def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
 
 
 def _insight_refs(ins: dict) -> set[str]:
-    """Lowercased table names an insight references — SQL tables plus declared entities
+    """Lowercased table names a finding references — SQL tables plus declared entities
     (also snake-cased, so CamelCase entity names match snake_case tables)."""
     sql_tables = {t.lower() for t in _tables_from_sql(ins.get("sql", ""))}
     entities = {e.lower() for e in ins.get("entities_involved", [])}
@@ -144,7 +144,7 @@ def _qualified_set(schema: str, bare: set[str]) -> set[str]:
 
 
 def _refs_in_schema(refs: set[str], bare: set[str], qual: set[str]) -> bool:
-    """True if an insight's table refs belong to the schema. When the refs are SCHEMA-
+    """True if a finding's table refs belong to the schema. When the refs are SCHEMA-
     QUALIFIED (e.g. 'ecommerce.orders'), match the QUALIFIED set — so 'missimi.orders' is
     NOT mistaken for 'ecommerce.orders' (both schemas have an 'orders' table). Only when an
     insight is fully unqualified (single-schema connections) do we fall back to bare names."""
