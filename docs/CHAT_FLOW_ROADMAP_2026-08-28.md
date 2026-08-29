@@ -317,7 +317,9 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   15 tests, both guards mutation-tested. Do not import the Workflow runtime.
 - **RC-4 — Identity-keyed transcripts — BUILT 2026-08-29. The plane was not missing;
   it was LYING.** *Original scope: stable identity resolver; the shape for the open
-  Langfuse LF-2 attribution question; prerequisite for Slack↔web thread continuity.*
+  Langfuse LF-2 attribution question (that program is RETIRED as of 2026-08-29 —
+  see PLATFORM_ROADMAP §7; the attribution work stands on its own); prerequisite
+  for Slack↔web thread continuity.*
   The pre-check found the attribution machinery already complete and already reading
   the right value: `telemetry.trace_identity()` reads `current_user_id()` and writes
   it to the trace, and `org/context.py` already carries org/user/session contextvars.

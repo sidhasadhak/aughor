@@ -455,9 +455,7 @@ this document.
 Landed since this doc was written: **Arc CI is complete except CI-1d**
 (#328–#342 — roster, identity, BYOK, depth-as-tool, trail+rail, `/chat`);
 the editor program is through **SE-2 including PR E** (#336, #338, #340,
-PR #343). The current series is therefore the editor tail. Arc OA (§7,
-from `LANGFUSE_N8N_INTEGRATION_STUDY_2026-08-13.md`) queues **after it**,
-with two deliberate exceptions small enough to ride alongside:
+PR #343). The current series is therefore the editor tail.
 
 ```
 CURRENT SERIES (finish first)
@@ -466,21 +464,12 @@ CURRENT SERIES (finish first)
   SE-4 H  multi-statement + params  SE-5a   Quick Fix
   CI-1d   AI-SDK thread model       (the one CI wave left)
 
-RIDE-ALONGSIDE (small, unblocked, independent — slot when a gap opens)
-  OA·N8-0  wire monitors' dead notification_channel → fire_action
-           (an in-repo gap with or without n8n; one small PR)
-  OA·LF-1  repair the silently-dead Langfuse backend (OTLP repoint,
-           delete v2 SDK path, pin >=4,<5, rot-guard test, force_flush)
-
-THEN — ARC OA proper (§7)
-  LF-2 → N8-1 → N8-2 → LF-3
-  N8-3 STRICTLY after CI-1d (tool wiring changes shape there — never
-       build the action tools twice)
 ```
 
-Rationale for the two ride-alongs: N8-0 fixes a documented unwired field
-(`monitors/models.py:108`) and LF-1 fixes a **live silent failure** — both
-are repairs, not features, and neither touches the editor's files.
+Arc OA (Langfuse + n8n) was queued here and is **RETIRED** — see §7. The one
+in-repo item it carried that stands on its own merits: monitors'
+`notification_channel` (`monitors/models.py:108`) is a documented unwired field,
+a repair with or without n8n, and it outlives the program that noticed it.
 
 **House rules that bind every PR here:** SE-0's legacy `/query/run` output
 byte-identical (golden test) · ratchet battery on your own diff · five frontend
@@ -509,96 +498,17 @@ self-review before "done" · prove each wave live against a demo connection.
 
 ---
 
-## 7 · Program C — Arc OA: observe + act (Langfuse + n8n) — added 2026-08-13
+## 7 · Program C — Arc OA (Langfuse + n8n) — **RETIRED 2026-08-29**
 
-**Source study:** `LANGFUSE_N8N_INTEGRATION_STUDY_2026-08-13.md` — every claim
-verified live against the products and this codebase; read it before building
-any wave here. Summary only below.
+Dropped at the user's direction: *"we are not going that way again."* The source
+study (`LANGFUSE_N8N_INTEGRATION_STUDY_2026-08-13.md`) is deleted with it; both are
+recoverable from git history if the question ever returns.
 
-### 7.1 The thesis — the fourth plane
-
-The three planes of §0 share one property: aughor **writes** exhaustively —
-session log, trace ids, cost attribution, audit, receipts — and **reads/acts**
-almost nowhere. The platform-review finding ("features stall at TESTED, not
-LEVERAGED") is structural, not accidental: there is no operator surface over
-the telemetry, and no actuator behind the insights. Arc OA adds the leverage
-plane: **Langfuse is the read side of telemetry that already exists; n8n is
-the act side of an Action Hub that already dispatches.** Neither is a new
-capability so much as a consumer for a producer aughor already built.
-
-### 7.2 The two findings that shaped it
-
-1. **The Langfuse integration exists and is silently dead.**
-   `aughor/telemetry.py` speaks SDK v2 (`lf.trace` :58, `tr.span` :622,
-   `tr.generation` :690); the venv resolves `langfuse>=2.0.0` to **4.7.1**,
-   where none of those methods exist. Init succeeds; every call raises; every
-   raise is swallowed at debug. The richest record never flowed there anyway:
-   `telemetry.log_generation` has had zero call sites ever
-   (`provider.py:1172`) — the real per-call data lives in the session log.
-2. **n8n is NOT open source.** Sustainable Use License: internal business use
-   only; embedding in a commercial product = paid Embed/OEM (execution-billed,
-   branding stays). Aughor ships a licensing module of its own — the embed
-   trap is real. **Hard rule: arm's-length only.** Users run their own n8n;
-   we ship workflow-template JSON, docs, and (optionally) an MIT community
-   node. Never bundle, embed, or resell.
-
-### 7.3 The waves
-
-```
-OA·N8-0  Wire notification_channel → fire_action on alert fire.
-         Closes the documented gap (monitors/models.py:108); alert payload =
-         name, severity, value vs threshold, connection, deep link. 1 small PR.
-OA·LF-1  Repair: point the EXISTING OTel exporter at Langfuse's OTLP endpoint;
-         delete the v2 SDK span path; pin langfuse>=4,<5; SDK-surface
-         rot-guard test; serverless force_flush on response end. 1 PR,
-         net-negative diff.
-OA·LF-2  Data in: generation spans from _record_llm_call (the one chokepoint —
-         model/role/tokens/fallback/org all already there); chat session id →
-         langfuse.session.id; org → user; PRICES → Langfuse model definitions
-         (two cost surfaces must agree to the cent); content only inside the
-         existing capture_prompt windows. 1 PR.
-OA·N8-1  Delivery fabric: integrations/n8n/ workflow templates (alert→Slack,
-         alert→Jira, briefing→email, escalation→PagerDuty) + setup doc.
-         Aughor's native-integration roadmap category collapses into "here is
-         the template." Mostly JSON/docs.
-OA·N8-2  Governed brain: doc + templates for n8n's MCP Client → aughor's MCP
-         server (ask / get_metric / deep_analysis with Trust Receipts — not
-         another raw text-to-SQL node). Verify FastMCP's HTTP transport against
-         n8n live (n8n speaks SSE/streamable-HTTP). Small PR + live test.
-OA·LF-3  The pillars we lack: LLM-as-judge on sampled production traces
-         (drift watch — complements, never replaces, the pre-ship golden-SQL
-         gates), annotation queues, chat 👍/👎 → score_current_trace. 1–2 PRs.
-OA·N8-3  Actions from chat (the closed-loop wave): n8n MCP Server Trigger URLs
-         registered as capability-gated "action packs"; Arc CI's agent gets
-         them as tools; n8n-side human-in-the-loop approval + Action-Hub-style
-         audit. STRICTLY after CI-1d. Flag-gated. Largest lift, largest prize:
-         a system that does, not just knows — without aughor shipping a single
-         connector.
-```
-
-### 7.4 Locked verdicts (from the study — do not relitigate without new facts)
-
-1. **Prompt authoring stays in the repo.** Langfuse's "deploy prompts without
-   code changes" is precisely the property the CI vocabulary ratchets exist to
-   prevent. Patterns only; the playground needs no integration to be useful.
-2. **Aughor's eval framework is untouched.** Pre-ship, execution-grounded,
-   promotion-gated — load-bearing CI. Langfuse judges live traffic for drift;
-   the split is watch-vs-gate, complementary by construction.
-3. **Langfuse never enters the request path or the Vercel perimeter.** Local
-   docker compose now; a small VM when an operator dashboard is wanted; Cloud
-   at most for operator-only, content-off traces. Observer, never load-bearing.
-4. **Tenancy line:** one shared Langfuse project = operator-internal tool with
-   content capture OFF by default. Per-tenant projects (or EE project-RBAC +
-   masking) before any tenant ever sees a trace surface.
-5. **user_id is not mapped until it is populated** — it measures 0% today, and
-   a dimension that is always blank teaches nothing (obs/usage.py's own rule).
-
-### 7.5 Open questions (user input wanted before LF-2 / N8-2)
-
-Langfuse host + project topology · community-node ambition (`n8n-nodes-aughor`
-+ verified-node submission vs HTTP/MCP templates only) · a demo n8n instance
-(docker, internal use — license-fine) vs purely user-side · chat feedback UI
-now (LF-3 prerequisite) or judge-only initially.
+The one finding worth keeping out of it: **the Langfuse backend in `telemetry.py`
+was silently dead** — a v2 SDK span path against a resolved 4.x runtime. Retiring
+the program does not repair that, so treat any Langfuse surface as non-functional
+rather than as telemetry anyone is reading. The n8n hard rule stands unchanged and
+unrelated: arm's-length only, users run their own.
 
 ## 8 · Briefing UX backlog — from the theLook live pilot (added 2026-08-26)
 
