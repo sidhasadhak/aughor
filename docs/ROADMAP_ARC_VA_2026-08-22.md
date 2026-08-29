@@ -517,6 +517,74 @@ technical one. Default to visible-metadata, gated-payloads.
 
 ---
 
+### VA-11 — The connector catalog: direct OAuth — ⛔ NOT STARTED, LOGGED 2026-08-30
+
+**Where this came from.** The user put three screenshots of a current agent product's
+integrations surface beside ours: a searchable catalog under `All` / `Connected`, split
+by **Categories** (Productivity · Developer · Communication · Data · Research), **Apps**
+(Slack & Teams · Arcade), **Workspace** (Computer), and closed with **`+ Custom MCP`**.
+Every entry is a card with one button — **`Connect`** — and roughly forty of them:
+BigQuery, Google Sheets, Hex, Neon, Prisma, Salesforce, ThoughtSpot; Slack, Teams,
+LinkedIn, Pylon, X; Gmail, Outlook, Drive, OneDrive, Sharepoint, Calendar, Docs, Slides,
+Meet, Notion, Linear, Ashby, Close, Wix. *"Newer tools have developed direct OAuth
+connections — we should have it too."*
+
+**Why it is a separate wave and not part of VA-9.** VA-9 is about what an agent may DO
+with a connection — MCP consumption, per-agent grants, propose-not-execute. VA-11 is
+about how a connection is **acquired**. Today every one of ours arrives by paste: a
+service-account JSON for BigQuery, a bot token and a manifest for RC-5's Slack factory, a
+webhook URL that *is* the credential (#385). Paste is why a connection has no owner, no
+scope, no expiry and no revoke — and re-specced VA-9's own measurement says it plainly:
+**no credential store anywhere is user-scoped.**
+
+**What we already have, so this is smaller than it looks** *(to be re-measured before
+building — every wave in this arc moved its own scope at the pre-check)*:
+
+| Piece | Where it already lives |
+|---|---|
+| Vaulted credentials, Fernet at rest, masked on read | `aughor/slackbots/` (RC-5) |
+| A door credential validated before the record exists | RC-5's `auth.test` probe |
+| `provider:external_id` identity refs and link table | `aughor/identity/` (RC-4) |
+| Every outbound call spanned and capped | `aughor/govern/outbound.py` (VA-9a) |
+| Acting-as-an-agent attribution on writes | `Automation.agent_id` (VA-9b) |
+| Permission to propose, never to execute | `UserAgent.tool_grants` (VA-9c) |
+
+**The actual gap is the OAuth dance and the shape it stores into:** an authorization-code
+redirect, a token pair, a refresh loop, a scope set the user consented to, and a revoke —
+per user, not per org. Plus the catalog itself: today a connection is a form, not a thing
+you browse.
+
+**Deliverables**
+1. A `Connection` record that is **user-scoped and provider-typed**, with granted scopes,
+   expiry, and a `revoke()` that actually reaches the provider. Warehouse connections
+   adopt it — *they have no owner at all today, which is the oldest open item here.*
+2. An OAuth broker: redirect, callback, token exchange, refresh-before-expiry, and the
+   error paths that matter (consent denied, scope downgraded by the provider, refresh
+   token revoked upstream).
+3. A **catalog surface** — categorized, searchable, `Connected` filter, one `Connect` per
+   provider — with `+ Custom MCP` as its last entry, which is where VA-9d's consumer
+   surfaces to a user.
+4. Provider adapters, in the order our own product argues for: **Slack** (we already own
+   its record plane), **Google/BigQuery** (replaces the pasted service-account JSON and
+   is the one connection that carries real data), **Gmail/Calendar**, **Notion/Linear**.
+
+**Receipt:** a user clicks Connect on BigQuery, consents in Google's own dialog, and a
+query runs against their warehouse under **their** grant — with the token never rendered,
+the scopes shown back to them, and Revoke removing access at the provider and not merely
+from our table.
+
+**Risks, both real.** (a) A redirect-based OAuth broker needs `state` and PKCE done
+correctly, and a token store that is user-scoped is a **new** hermeticity boundary — the
+allowlist in `tests/conftest.py` must name it in the same commit (this repo has been bitten
+by exactly that). (b) Scope creep by catalog: forty providers is a catalog, not a wave.
+Ship the broker plus two adapters; the rest is content.
+
+**Sequencing:** after VA-9d. VA-9d decides the security posture for talking to *someone
+else's* tools; VA-11 decides how we get permission to. Deciding the second before the
+first would set the posture by accident.
+
+---
+
 ### VA-4 — Automations dataflow + the run canvas — **UNPARKED and BUILT 2026-08-29**
 
 **Automations MOVED to Agent Ops 2026-08-29 (user-decided).** *"The whole Automation
@@ -656,8 +724,12 @@ PLATFORM
   VA-8  guardrail plane         (2 wk)   spans land in VA-5, block-rate feeds VA-6
   VA-9  integrations            (3 wk)   the vision's core; largest risk surface
   VA-10 multi-user + admin      (2 wk)   hardening pass over everything above
+  VA-11 connector catalog       (2 wk)   AFTER VA-9d — 9d sets the posture for talking
+                                         to someone else's tools, 11 is how we get
+                                         permission to. Needs VA-10's user scope to be
+                                         a per-USER grant rather than another org one.
 
-LATER   VA-4 automations dataflow (unpark when VA-9 forces it)
+LATER   VA-4 automations dataflow (unpark when VA-9 forces it) — UNPARKED + BUILT 08-29
 ```
 
 **House rules that bind every PR:** one PR at a time, squash, never push without
@@ -855,6 +927,13 @@ mechanism — **`webhook` | `polling` | `schedule`** — and category: Slack, Gm
 Airtable, Cron, plus **`Request Integration`**. Dashboard: `Success rate`, `Executions`
 with trend. **Active Triggers** table (trigger · connections · status · targets) and
 **Recent Runs** across all connections.
+
+*(2026-08-30 — the user supplied three screenshots of a different product's take on the
+same surface: a categorized catalog where every provider carries a single **`Connect`**
+button doing direct OAuth, closing with **`+ Custom MCP`**. Logged as **VA-11**, above.
+The difference from this entry is worth naming: §6.10 is a catalog of TRIGGERS — what
+starts a run — and VA-11 is a catalog of CONNECTIONS — what a run is permitted to reach.
+They share a surface in both products and are not the same plane.)*
 
 ### 6.11 RAG
 Chunk settings: delimiter, **max chunk length**, **chunk overlap**; pre-processing
