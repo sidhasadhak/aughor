@@ -3498,6 +3498,26 @@ export async function getAutomationRuns(id: string, limit = 50): Promise<Automat
   return (await res.json()).runs;
 }
 
+/** VA-4b — the automation as a graph. `run: "latest"` asks for Execution mode. */
+export interface AutomationGraphNode {
+  id: string; type: string; kind?: string; label: string; detail?: string;
+  status?: string; message?: string; produced?: string[];
+}
+export interface AutomationGraphEdge {
+  from: string; to: string; type: string; label?: string;
+}
+export interface AutomationGraphData {
+  nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
+  mode: string; name?: string; run_missing?: boolean;
+}
+
+export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {
+  const qs = run ? `?run=${encodeURIComponent(run)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/${id}/graph${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch the automation graph");
+  return await res.json();
+}
+
 // ── Proposal inbox + standing grants (Wave A4) ───────────────────────────────────
 
 export interface StagedProposal {

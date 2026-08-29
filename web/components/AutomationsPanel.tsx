@@ -1,5 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+import { AutomationGraph } from "@/components/AutomationGraph";
 import {
   Automation,
   AutomationRun,
@@ -271,6 +273,10 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
   onEdit: () => void; onDelete: () => void; onRuns: () => void;
 }) {
   const muted = isFuture(a.paused_until);
+  // VA-4b — collapsed by default. The one-line summary is the right density for a list;
+  // the graph is what you open when you want to see what feeds what. Mounted only when
+  // open, so a page of automations does not fetch a graph per row.
+  const [showGraph, setShowGraph] = useState(false);
   return (
     <div style={{
       background: "var(--bg-1, var(--bg-2))", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
@@ -299,6 +305,8 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          <Button variant="ghost" onClick={() => setShowGraph(v => !v)} className="h-auto p-0 font-normal"
+                  style={ghostBtn}>{showGraph ? "Hide flow" : "Flow"}</Button>
           <Button variant="ghost" onClick={onRun} className="h-auto" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>Run now</Button>
           <Button variant="ghost" onClick={onRuns} className="h-auto p-0 font-normal" style={ghostBtn}>History</Button>
           <Button variant="ghost" onClick={onPause} className="h-auto p-0 font-normal" style={ghostBtn}>{muted ? "Unmute" : "Mute"}</Button>
@@ -306,6 +314,11 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
           <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
         </div>
       </div>
+      {showGraph && (
+        <div style={{ marginTop: 10, height: 300 }}>
+          <AutomationGraph automationId={a.id} />
+        </div>
+      )}
     </div>
   );
 }

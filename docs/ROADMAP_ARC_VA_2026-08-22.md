@@ -531,10 +531,24 @@ stands for **agent creation**, which is still one record; automations now have r
 method's repr carried the entire config, `bot_token` included, into a UI payload. Only the
 allowlist in `_effect_detail` may label a node now.
 
-**Remaining: the client half.** `AutomationsPanel` still renders effects as
-`effects.map(describeEffect).join(", ")` — a sentence, not a graph. Render from this
-endpoint; do NOT reach for ReactFlow first (jsdom draws zero of its edges, so the
-distinction this wave exists to make would be untestable).
+**✅ CLIENT HALF BUILT 2026-08-29.** `web/components/AutomationGraph.tsx`, mounted
+collapsed behind a *Flow* toggle on each card (a page of automations must not fetch a
+graph per row). Data edges are solid and labelled with the key they carry; sequence edges
+are faint and dashed, so the picture never implies a dependency the engine lacks. Each
+executed node lists what it `produced`.
+
+⚠️ **A correction worth keeping.** The note here previously said "do NOT reach for
+ReactFlow". That was wrong on the facts: **`@xyflow/react` has been a dependency since
+#178 and already drives three canvases** (`GraphCanvas`, `agentops/TraceFlow`,
+`brief/PinnedCardsCanvas`) — and `TraceFlow.tsx` records having made and reversed exactly
+that "avoid the dependency" argument. So this uses the same library, layout discipline
+(deterministic, never force-simulated) and design system as its sibling.
+
+The jsdom caveat is real but is a TESTING constraint, not a reason to avoid the library:
+ReactFlow measures its container, jsdom reports 0×0, so an assertion on rendered edges
+cannot fail — `TraceFlow.test.tsx` proved it by suppressing every edge and staying green.
+The assertions therefore sit on the exported pure `toFlow` handoff. 8 tests; all seven
+frontend gates green.
 
 **Suspend/resume is already built.** The parked note wanted "typed suspend/resume as our
 approval gates"; RC-3's proposal inbox is exactly that — a durable, resolve-once record
