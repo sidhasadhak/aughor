@@ -1,6 +1,7 @@
 # Arc VA — the agent platform (2026-08-22)
 
-> **Status: EIGHT OF TEN WAVES SHIPPED (last checked 2026-08-24).** Supersedes §4 and §8 of
+> **Status: EIGHT OF TEN WAVES SHIPPED. VA-9 RE-SPECCED 2026-08-29** against what the
+> RC track built (three of its five deliverables moved; see VA-9). Supersedes §4 and §8 of
 > `VOLTAGENT_ADOPTION_STUDY_2026-08-22.md` as the build document.
 >
 > One row per WAVE, not per slice. The previous table listed slices, which is how it came
@@ -377,34 +378,57 @@ mandatory, never a quiet drop.
 
 ---
 
-### VA-9 — The integrations plane (≈3 weeks) — ⛔ NOT STARTED, DEFERRED 2026-08-24
+### VA-9 — The integrations plane — **RE-SPECCED 2026-08-29 against what now exists**
 *Still the vision's core, and outside the standing "data engines only" directive: this
-IS the Gmail/Slack-inbound/MCP-consumer work. Do not start it unscoped.*
+IS the Gmail/Slack-inbound/MCP-consumer work. Native MCP is the mechanism, so the
+"no more n8n" directive stands (and Arc OA is now retired outright —
+PLATFORM_ROADMAP §7).*
 
-**Goal:** users connect their agents to their apps. **Native MCP is the mechanism, so the
-"no more n8n" directive stands.**
+**Why re-specced.** VA-9 was written 2026-08-22 and deferred 2026-08-24 at ≈3 weeks.
+The RC track (RC-1…RC-5, all merged 2026-08-29) built a Slack door, a bot-record plane
+with vaulted credentials, and an identity resolver — which lands on three of VA-9's five
+deliverables without ever being aimed at them. Measured before re-planning, as every
+wave here now is:
 
-**Seams:** ⚠️ **no generic MCP client exists** — `mcp/client.py` is an HTTP client for
-Aughor's own API. `secretvault.py` (Fernet) and the approvals plane do exist.
+| # | Original deliverable | Measured 2026-08-29 |
+|---|---|---|
+| 1 | Generic MCP client (`mcp/consumer.py`) — stdio + SSE, registry, discovery, health | ❌ **absent.** `aughor/mcp/` is a *server* exposing Aughor's tools, plus an HTTP client to Aughor's own API. The original seam claim holds exactly. **This is the wave's real remaining core.** |
+| 2 | Per-user app connections, vault-encrypted, health visible | 🟡 **half.** RC-5's `aughor/slackbots/` is this shape — Fernet at rest, masked on read, `auth.test` before the record exists — but ORG-scoped. **No credential store anywhere is user-scoped** (only dashboard card layouts are). RC-4's `identity_links` is precisely the missing half. |
+| 3 | Per-agent tool grants; writes via approvals | ❌ **`UserAgent` has no tool field at all.** Entirely new. The approvals plane and A4 standing grants (+ RC-3's expiry) exist to route writes through. |
+| 4 | Inbound triggers — an app event starts an automation or an agent run | ✅ **substantially delivered.** A Slack mention starts an agent run (RC-1/2), and RC-5.4's `Effect(slack_post)` adds the scheduled direction. Socket Mode is an authenticated WebSocket, so *"signature verification; replay protection"* does not arise for this door — it was a webhook-shaped requirement. |
+| 5 | Every external call a span (VA-5) and counted toward caps (VA-8) | ❌ **zero.** `slackbots/post.py`, `slackbots/verify.py` and `notifications/executor.py` emit no span and consult no cap. Outbound calls are currently invisible and unbudgeted. |
 
-**Deliverables**
-1. **`aughor/mcp/consumer.py`** — a real MCP client (stdio + SSE transports), server
-   registry, tool discovery, health, timeouts, and per-call audit.
-2. **Per-user app connections** — connect a Gmail/Slack/GitHub MCP server; credentials
-   encrypted per user in the vault; connection health visible.
-3. **Per-agent tool grants** — an agent gets *named* tools from a connection, not the
-   whole server. Writes route through the approvals plane (tiered writes hold).
-4. **Inbound triggers** — a webhook/app event starts an automation or an agent run;
-   signature verification; replay protection.
-5. Every external tool call is a span (VA-5) and counts toward caps (VA-8).
+**One finding worth carrying out of the pre-check.** `UsageCap.applies_to` requires
+`bool(user_id)` for a user-scoped cap, and `user_id` was empty on every door until RC-4 —
+so a per-user cap could never have fired. **Latent, not a live loss:** no caps database
+exists on disk, so none was ever configured. Same shape as RC-4's audit defect (machinery
+reading a value nobody set), and RC-4 is what makes that dimension usable at all.
 
-**Receipt:** connect Slack as a user; grant one agent `post_message`; ask it to summarise
-a finding and post; the write pauses at approval; approve; the message lands; the whole
-chain shows in the waterfall with the external call attributed.
-**Risks:** ⚠️ this is the **largest new attack surface in the arc** — third-party servers
-running third-party code with user credentials. Non-negotiables: no implicit write grants,
-every credential in the vault (never in `data/` tracked dirs — the repo is public and this
-has bitten before), an allowlist of servers, and outbound calls off by default.
+**The wave, re-ordered — smallest real gap first, largest attack surface last.**
+
+* **VA-9a — instrument what already reaches outside.** Spans + cap checks on the existing
+  outbound calls. Small, closes a genuine hole, and it must come first: adding an MCP
+  consumer to a plane that cannot see or budget outbound calls scales the blindness.
+* **VA-9b — per-user connections.** Generalise the `SlackBot` record onto RC-4's
+  `identity_links`, so "my Slack" differs from yours. Follows a proven pattern rather
+  than inventing one; the vault/mask/verify contract already has tests.
+* **VA-9c — per-agent tool grants.** A `UserAgent` gets *named* tools from a connection,
+  never a whole server. Writes route through the approvals plane (tiered writes hold).
+* **VA-9d — the MCP consumer.** stdio + SSE, server registry, tool discovery, health,
+  timeouts, per-call audit. The untouched core, and deliberately last.
+
+**Receipt (unchanged, and now partly reachable):** connect Slack as a user; grant one
+agent `post_message`; ask it to summarise a finding and post; the write pauses at
+approval; approve; the message lands; the whole chain shows in the waterfall with the
+external call attributed. *Note the gap this receipt still exposes: RC-5.4 posts from an
+**automation effect**, not from an **agent calling a tool**. VA-9c is what closes it.*
+
+**Risks:** ⚠️ VA-9d remains the **largest new attack surface in the arc** — third-party
+servers running third-party code with user credentials. Non-negotiables unchanged: no
+implicit write grants, every credential in the vault (never in `data/` tracked dirs — the
+repo is public and this has bitten before), an allowlist of servers, outbound off by
+default. **Add one from RC-4/RC-5:** a new store is not hermetic until its env name is in
+`tests/conftest.py`'s allowlist — a store that misses it writes to the live `data/` dir.
 **Note:** VA-9 likely **unparks VA-4** — an app trigger wants a dataflow chain behind it.
 
 ---
