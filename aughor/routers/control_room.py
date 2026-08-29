@@ -384,7 +384,7 @@ def needs_human(limit: int = 100):
     """
     from aughor.automations.store import get_runs
     from aughor.db.history import list_investigations
-    from aughor.actions.inbox import list_proposals
+    from aughor.actions.inbox import expire_stale, list_proposals
 
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
@@ -394,7 +394,18 @@ def needs_human(limit: int = 100):
         return int((now - ts).total_seconds() * 1000) if ts else None
 
     # Source A — kinetic inbox proposals awaiting accept/reject.
+    #
+    # Sweep lapsed proposals BEFORE reading (RC-3). This strip is the "needs a human" queue,
+    # so every row on it is a claim that a human can still act. A proposal past its acceptance
+    # window is one the accept path will now refuse, and listing it would ask someone to do
+    # something the platform has already decided against — the queue would be advertising work
+    # that cannot be done. The sweep is hygiene only: accept_proposal refuses a lapsed proposal
+    # whether or not this ran, so a failure here costs accuracy in the list, never safety.
     inbox_count = 0
+    try:
+        expire_stale()
+    except Exception:
+        logger.warning("needs-human: expiry sweep failed", exc_info=True)
     try:
         for p in list_proposals(status="pending", limit=limit):
             inbox_count += 1
