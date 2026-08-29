@@ -216,7 +216,10 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             onClick={() => setIndexOpen(true)}>
             <Icon name="panel" size={14} />
           </Button>
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", writingMode: "vertical-rl",
+          {/* `--t2`, not `--t4`. This is the only thing on a 30px rail, so it is content
+              rather than a de-emphasised label, and `--t4` is 2.76:1 — below AA even for
+              large text. The Agent Ops readability guard catches exactly this. */}
+          <span className="aug-fs-xs" style={{ color: "var(--t2)", writingMode: "vertical-rl",
             letterSpacing: "0.1em", textTransform: "uppercase" }}>
             {total === 0 ? "runs" : `${total} runs`}
           </span>
@@ -416,8 +419,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                     <span>{compactNumber(detail.events.length)} events</span>
                     {totalMs > 0 && <span>{fmtMs(totalMs)}</span>}
                     {runOrigin?.service && <span>via {runOrigin.service}</span>}
-                    {runOrigin?.charter && <span>charter {runOrigin.charter}</span>}
-                    {detail.agent_id && <span>agent {detail.agent_id}</span>}
+                    {runOrigin?.builtinAgent && <span>{runOrigin.builtinAgent}</span>}
+                    {detail.agent_id && <span>custom agent {detail.agent_id}</span>}
                     {runModel && <span>{runModel}</span>}
                     {invId && <span>deep analysis {invId}</span>}
                   </div>

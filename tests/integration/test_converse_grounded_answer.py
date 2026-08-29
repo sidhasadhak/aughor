@@ -35,11 +35,15 @@ def one_query_turn(monkeypatch):
     from aughor.agent import converse_tools as ct
     real = ct.converse_tools
 
-    def _tools(connection_id, *, emit=None, session_id="", canvas_id=None,
-               user_question=""):
-        specs = [s for s in real(connection_id, emit=emit, session_id=session_id,
-                                 canvas_id=canvas_id, user_question=user_question)
-                 if s.name != "run_sql"]
+    def _tools(connection_id, **kwargs):
+        # `**kwargs`, not a spelled-out signature. This double named every keyword the
+        # real `converse_tools` took, so the day VA-9c added `agent` the stub raised
+        # TypeError, the /ask stream died before any frame, and both tests in this file
+        # failed on `StopIteration` from `next(... "headline")` — a stack trace that
+        # points at the assertion and says nothing about the cause. Forwarding whatever
+        # the caller passes keeps the double faithful to a signature that will grow again.
+        specs = [s for s in real(connection_id, **kwargs) if s.name != "run_sql"]
+        emit = kwargs.get("emit")
 
         def _run(args):
             if emit is not None:

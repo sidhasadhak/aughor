@@ -23,6 +23,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TraceFlow, eventForNode } from "@/components/agentops/TraceFlow";
 import { doorOf, faceOf, guardVerdict, originOf } from "@/components/agentops/RunNodes";
+import { BUILTIN_AGENT_FIELD } from "@/lib/api";
 import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 /** What the component handed the renderer on the most recent render. */
@@ -326,23 +327,23 @@ describe("where a run came from", () => {
     // exploration opens on a guardrail, a monitor on a tool call. Claiming a trigger for
     // those would put a head node on the canvas that nothing recorded.
     const origin = originOf([
-      ev2({ kind: "guardrail", charter_id: "scout", conn_id: "workspace" }),
+      ev2({ kind: "guardrail", [BUILTIN_AGENT_FIELD]: "explorer", conn_id: "workspace" }),
     ]);
     expect(origin.requested).toBe(false);
     expect(origin.service).toBeNull();
-    expect(origin.charter).toBe("scout");
+    expect(origin.builtinAgent).toBe("explorer");
     expect(origin.connId).toBe("workspace");
   });
 
   it("finds the origin fields on whichever row first carries them", () => {
-    // The head row of a real run carries the session but no charter; the charter arrives
-    // rows later. Reading only `events[0]` returns null for half of them.
+    // The head row of a real run carries the session but names no built-in agent; that
+    // arrives rows later. Reading only `events[0]` returns null for half of them.
     const origin = originOf([
       ev2({ kind: "user_request", session_id: "slack:C1:17" }),
-      ev2({ kind: "llm_call", charter_id: "analyst", job_id: "b64b31b9" }),
+      ev2({ kind: "llm_call", [BUILTIN_AGENT_FIELD]: "analyst", job_id: "b64b31b9" }),
     ]);
     expect(origin).toMatchObject({
-      service: "Slack", charter: "analyst", jobId: "b64b31b9", requested: true,
+      service: "Slack", builtinAgent: "analyst", jobId: "b64b31b9", requested: true,
     });
   });
 });
@@ -371,10 +372,10 @@ describe("the timeline rail", () => {
   it("states the run's origin rather than drawing a trigger nothing recorded", () => {
     render(
       <TraceFlow timeline={timeline(three)} edges={[]}
-                 events={[ev2({ kind: "tool_call", charter_id: "worker" })]} />,
+                 events={[ev2({ kind: "tool_call", [BUILTIN_AGENT_FIELD]: "watcher" })]} />,
     );
     expect(rail().getByText(/inside the platform/)).toBeInTheDocument();
-    expect(rail().getByText("worker")).toBeInTheDocument();
+    expect(rail().getByText("watcher")).toBeInTheDocument();
   });
 });
 
@@ -386,7 +387,8 @@ function ev2(over: Partial<SessionEvent> = {}): SessionEvent {
     span_id: null, parent_span_id: null, ok: true, duration_ms: 12, error_class: null,
     investigation_id: null, session_id: null, user_id: null, agent_id: null, conn_id: null,
     provider: null, model: null, prompt_tokens: null, completion_tokens: null,
-    total_tokens: null, row_count: null, retries: null, job_id: null, charter_id: null,
+    total_tokens: null, row_count: null, retries: null, job_id: null,
+    [BUILTIN_AGENT_FIELD]: null,
     role: null, fallback: null, payload: null,
     ...over,
   } as SessionEvent;

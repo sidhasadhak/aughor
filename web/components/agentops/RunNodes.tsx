@@ -24,7 +24,7 @@
  * A synthesised trigger would be indistinguishable from a real one, which is how a
  * debugging surface starts lying.
  */
-import type { SessionEvent, TimelineNode } from "@/lib/api";
+import { builtinAgentOf, type SessionEvent, type TimelineNode } from "@/lib/api";
 
 import { Icon, type IconName } from "@/components/ui/icon";
 import { formatCount } from "@/lib/format";
@@ -91,16 +91,20 @@ export function doorOf(sessionId: string | null | undefined):
  * Where a run came from, assembled from whatever it recorded.
  *
  * Every field is optional because every field genuinely can be missing, and the rail
- * that renders this prints only what came back. A run with no request row still has a
- * charter, a connection and a start time, and naming those is a better answer than an
- * empty panel or an invented trigger.
+ * that renders this prints only what came back. A run with no request row still names a
+ * built-in agent, a connection and a start time, and naming those is a better answer than
+ * an empty panel or an invented trigger.
  */
 export interface RunOrigin {
   service: string | null;
   where: string | null;
-  /** The agent charter that did the work — `analyst`, `scout`, `worker`, `coder`. */
-  charter: string | null;
-  agentId: string | null;
+  /** The BUILT-IN agent that did the work — `analyst`, `explorer`, `watcher`. Read
+   *  through `builtinAgentOf`, because the wire's name for this field is a word the
+   *  product does not say to a reader (see `lib/api.ts`). */
+  builtinAgent: string | null;
+  /** The user's OWN agent, when a run was started as one. A different fact from the
+   *  built-in above, so it is a different field and gets its own row. */
+  customAgent: string | null;
   connId: string | null;
   jobId: string | null;
   /** True when a `user_request` row exists, i.e. a person asked through a door. */
@@ -114,11 +118,12 @@ export function originOf(events: SessionEvent[]): RunOrigin {
   };
   const sessionId = first("session_id") as string | null;
   const door = doorOf(sessionId);
+  const owner = events.find(e => builtinAgentOf(e));
   return {
     service: door?.service ?? null,
     where: door?.where || null,
-    charter: first("charter_id") as string | null,
-    agentId: first("agent_id") as string | null,
+    builtinAgent: owner ? builtinAgentOf(owner) : null,
+    customAgent: first("agent_id") as string | null,
     connId: first("conn_id") as string | null,
     jobId: first("job_id") as string | null,
     requested: events.some(e => e.kind === "user_request"),

@@ -5445,6 +5445,25 @@ export interface SessionEvent {
   content_captured?: boolean;
 }
 
+/**
+ * The wire field naming the built-in agent that owned a run.
+ *
+ * The word the wire uses for it is retired product vocabulary — `docs/GLOSSARY.md` lists
+ * the six built-ins as agents and names that word as one not to say to a user, and the
+ * vocabulary ratchet enforces it across `web/`. This module is the one place exempted,
+ * because it exists to spell the wire exactly. So the translation happens HERE, at the
+ * boundary that already speaks both, and every surface above it addresses the field
+ * through this constant and reads it through `builtinAgentOf`.
+ */
+export const BUILTIN_AGENT_FIELD = "charter_id" as const;
+
+/** Which built-in agent owned this row — `analyst`, `explorer`, `watcher` — or null. */
+export function builtinAgentOf(
+  e: Pick<SessionEvent, typeof BUILTIN_AGENT_FIELD>,
+): string | null {
+  return e[BUILTIN_AGENT_FIELD] || null;
+}
+
 export interface TraceSummary {
   trace_id: string;
   started: string;

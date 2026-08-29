@@ -35,8 +35,9 @@
  *     needs the moment it is bigger than the viewport.
  *
  * Nothing new is recorded and no node is invented: a run with no `user_request` row gets
- * no trigger card, and its origin is stated in the rail from the charter/connection it
- * did record. A synthesised head node would be indistinguishable from a real one.
+ * no trigger card, and its origin is stated in the rail from the built-in agent and
+ * connection it did record. A synthesised head node would be indistinguishable from a
+ * real one.
  *
  * (An earlier version of this file rendered a nested list and argued that avoided a
  * dependency. It did not: `@xyflow/react` has been in this app since #178 and drives two
@@ -440,8 +441,9 @@ function RailSection({ title, children }: { title: string; children: React.React
  * Where the run came from, what it cost, and every node as an index.
  *
  * The origin block is the honest replacement for a synthesised trigger node: a run
- * started inside the platform has no request row, and saying "charter: scout · connection
- * workspace" is a true answer where an invented head card would be a false one.
+ * started inside the platform has no request row, and saying "agent: explorer ·
+ * connection workspace" is a true answer where an invented head card would be a false
+ * one.
  */
 function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
   timeline: TraceTimeline;
@@ -472,8 +474,10 @@ function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
           // started inside the platform, and that is a different fact from "unknown".
           <FieldRow label="Started" value="inside the platform" />
         )}
-        {origin.charter && <FieldRow label="Charter" value={origin.charter} />}
-        {origin.agentId && <FieldRow label="Agent" value={origin.agentId} />}
+        {/* The built-in that ran it and the user's own agent are DIFFERENT facts — a
+            run can have both — so they get two rows rather than one that guesses. */}
+        {origin.builtinAgent && <FieldRow label="Agent" value={origin.builtinAgent} />}
+        {origin.customAgent && <FieldRow label="Custom agent" value={origin.customAgent} />}
         {origin.connId && <FieldRow label="Connection" value={origin.connId} />}
         {origin.jobId && <FieldRow label="Job" value={origin.jobId} />}
       </RailSection>
