@@ -22,6 +22,7 @@ const FleetOverviewPanel = dynamic(() => import("@/components/FleetOverviewPanel
 const AgenticAgentsPanel = dynamic(() => import("@/components/AgenticAgentsPanel").then(m => ({ default: m.AgenticAgentsPanel })), { ssr: false, loading });
 const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").then(m => ({ default: m.NeedsHumanPanel })),       { ssr: false, loading });
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
+const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
 const RunGraphsPanel     = dynamic(() => import("@/components/RunGraphsPanel").then(m => ({ default: m.RunGraphsPanel })),         { ssr: false, loading });
 
 /**
@@ -45,7 +46,8 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type AgenticOpsLayer = "fleet" | "agents" | "attention" | "activity" | "runs";
+export type AgenticOpsLayer =
+  "fleet" | "agents" | "attention" | "activity" | "runs" | "automations";
 
 // Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
@@ -57,10 +59,18 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
   { id: "attention", icon: "hand",     label: "Attention", blurb: "What needs a human, and for how long" },
   { id: "activity",  icon: "activity", label: "Activity",  blurb: "Usage by model · the live tail · one run reconstructed" },
   { id: "runs",      icon: "flow",     label: "Runs",      blurb: "Conditions → effects · deep analysis phases" },
+  // Moved here from Operations 2026-08-29 (user-decided). An automation IS an agent
+  // operating on a schedule — since VA-9b it names the agent it runs as, every step
+  // inherits that agent, and its governed writes are attributed to `agent:<id>` rather
+  // than to a cron. Filing it under Monitors said the opposite: that it was a metric
+  // watch with side effects, next to the agent plane instead of part of it.
+  { id: "automations", icon: "gear",   label: "Automations", blurb: "Scheduled agent work · the proposal queue" },
 ];
 
 type Props = {
   layer: AgenticOpsLayer;
+  /** The connection the Automations layer scopes to — that panel filters by it. */
+  connId?: string;
   onLayerChange: (l: AgenticOpsLayer) => void;
   workspaceId?: string;
   workspaceName?: string;
@@ -76,7 +86,7 @@ type Props = {
  */
 export function AgenticOpsWorkspace({
   layer, onLayerChange, workspaceId, workspaceName,
-  onOpenInvestigation, onOpenAutomations,
+  connId, onOpenInvestigation, onOpenAutomations,
 }: Props) {
   // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
@@ -147,7 +157,10 @@ export function AgenticOpsWorkspace({
         );
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}
-            onOpenAutomations={onOpenAutomations} />
+            // Automations live HERE now, so "Open automation" switches a layer rather
+            // than navigating out to Operations. The prop stays optional for any caller
+            // that still wants to hand its own handler in.
+            onOpenAutomations={onOpenAutomations ?? (() => onLayerChange("automations"))} />
         );
         if (id === "activity") return (
           <AgenticActivityPanel
@@ -155,6 +168,9 @@ export function AgenticOpsWorkspace({
             focusTraceId={traceFocus?.traceId} range={range} />
         );
         if (id === "runs") return <RunGraphsPanel onOpenInvestigation={onOpenInvestigation} />;
+        if (id === "automations") return (
+          <AutomationsPanel connId={connId} workspaceId={workspaceId} />
+        );
         return (
           <FleetOverviewPanel
             range={range} onBrush={setBrush} onClearBrush={clearBrush}

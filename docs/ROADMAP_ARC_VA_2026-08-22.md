@@ -519,6 +519,17 @@ technical one. Default to visible-metadata, gated-payloads.
 
 ### VA-4 — Automations dataflow + the run canvas — **UNPARKED and BUILT 2026-08-29**
 
+**Automations MOVED to Agent Ops 2026-08-29 (user-decided).** *"The whole Automation
+Subtab in the Monitors should be part of Agentic Ops as a sub-tab."* It now sits beside
+Overview · Roster · Attention · Activity · Runs, and Operations is Monitors ·
+Notifications · Security & Audit. This is the placement the code had already half-admitted:
+Agent Ops carried a **Runs** tab blurbed *"Conditions → effects"* and an
+`onOpenAutomations` callback that navigated OUT to Monitors to find them. Since VA-9b an
+automation names the agent it runs as, every step inherits it, and its governed writes are
+attributed to `agent:<id>` — filing that under Monitors said it was a metric watch with
+side effects rather than an agent operating on a schedule. Attention's "Open automation"
+now switches a layer instead of leaving the workspace.
+
 **VA-4c — the run canvas (2026-08-29).** Built against the user's VoltAgent screenshot.
 Measured first: `EffectOutcome` carried **no timing and no tokens**, and nothing tied LLM
 spend to a step — so per-node duration and usage were not a display problem, they were
