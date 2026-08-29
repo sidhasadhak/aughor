@@ -91,6 +91,7 @@ for _env, _file in (
     ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
     ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
     ("AUGHOR_RBAC_DB", "rbac.db"),
+    ("AUGHOR_IDENTITY_DB", "identity_links.db"),
     ("AUGHOR_AGENTS_DB", "agents.db"),
     ("AUGHOR_OVERVIEW_DRILLS_DB", "overview_drills.db"),
     # WP-4 — matcache had NO env override and was hardcoded to data/mat_cache.duckdb, so

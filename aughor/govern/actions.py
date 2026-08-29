@@ -114,10 +114,21 @@ def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: st
 
     ``risk`` overrides the static ``classify`` lookup — needed for DYNAMIC actions (Wave K
     declared actions) whose risk is carried on the action itself, not in the static registry.
-    Existing callers pass nothing and keep classifying as before."""
+    Existing callers pass nothing and keep classifying as before.
+
+    RC-4 — ``actor`` used to fall back to ``current_org_id()``. That put the TENANT in the
+    actor field of a governed decision: on the live ledger 34 of 67 rows say ``default``,
+    which reads as an attributed decision and is not. A blank prompts the question "who?";
+    a plausible wrong value closes it. The absent case is now the named
+    ``UNATTRIBUTED``, and a supplied actor is resolved through the identity table first,
+    so a door that reports ``slack:U…`` files under the platform user it links to.
+
+    ``org_id`` is unchanged and still stamped — the tenant was never the wrong thing to
+    record, only the wrong thing to record AS THE ACTOR."""
+    from aughor.identity.resolver import attribution_key
     Ledger.default().emit(_AUDIT_KIND, {
         "action": action, "risk": (risk or classify(action)).value, "decision": decision,
-        "scope": scope or "", "actor": actor or current_org_id(),
+        "scope": scope or "", "actor": attribution_key(actor),
         "org_id": current_org_id(), "detail": detail,
     }, conn_id=(scope or None))
 

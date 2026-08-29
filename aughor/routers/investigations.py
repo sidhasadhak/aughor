@@ -834,6 +834,11 @@ class AskRequest(BaseModel):
     # instructions lead the prompt, retrieval is scoped to its documents, and its
     # connection binding wins (a conflicting explicit connection is a 409).
     agent_id: Optional[str] = None
+    # RC-4 — who is asking, as a `provider:external_id` ref (e.g. `slack:U08N9EQ80UT`).
+    # For HEADLESS doors only: a bot authenticates as itself and reports the human on
+    # whose behalf it asks, so the turn is attributed to a person instead of to nobody.
+    # NEVER trusted over a real authenticated identity — see `_stream_with_session`.
+    principal_ref: Optional[str] = None
     # Set when the user answered (or dismissed) a clarifying question — bypass the
     # clarify gate so we don't ask again about the now-clarified request.
     skip_clarify: bool = False
@@ -5163,7 +5168,9 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
         stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
         purpose=req.purpose or "", agent_id=req.agent_id or "")
-    stream = _stream_with_session(req.session_id, stream)  # ambient session → trace attribution
+    # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
+    # user field was empty on every headless door — nobody was setting it)
+    stream = _stream_with_session(req.session_id, stream, req.principal_ref or "")
     if agent is not None:
         stream = _stream_as_agent(agent, stream)
     return stream
@@ -5467,17 +5474,37 @@ async def stream_with_session_log(
             )
 
 
-async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],
+                               principal_ref: str = "") -> AsyncGenerator[str, None]:
     """Run the ask stream with the conversation session contextvar active, so the
     telemetry seam can attribute the investigation trace to its session ambiently
     (MLflow Sessions view) — propagates into the deep-run job + waves like the
-    agent persona does. No-op wrapper when there's no session id."""
-    from aughor.org.context import reset_session_id, set_session_id
+    agent persona does. No-op wrapper when there's no session id.
+
+    RC-4 pins the ASKER here too, for the same ambient reason: `trace_identity()` already
+    reads `current_user_id()`, so attributing the turn is one contextvar, not a change to
+    the telemetry seam. That is why a headless door could go unattributed for so long
+    without anything looking broken — the machinery was reading a value nobody set.
+
+    The body-supplied `principal_ref` is honoured ONLY when no authenticated user is
+    already in scope. A request cannot name itself into someone else's identity: with the
+    identity middleware on, `current_user_id()` is already set from a verified header and
+    wins. This is a way for a TRUSTED headless caller to say who it is acting for — never
+    a way for any caller to claim to be someone.
+    """
+    from aughor.org.context import (current_user_id, reset_session_id, reset_user_id,
+                                    set_session_id, set_user_id)
     token = set_session_id(session_id or "")
+    user_token = None
+    if principal_ref and not current_user_id():
+        from aughor.identity.resolver import attribution_key
+        user_token = set_user_id(attribution_key(principal_ref))
     try:
         async for event in stream:
             yield event
     finally:
+        if user_token is not None:
+            reset_user_id(user_token)
         reset_session_id(token)
 
 

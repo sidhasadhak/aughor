@@ -17,6 +17,13 @@
 
 export interface AskOptions {
   sessionId: string;
+  /**
+   * RC-4 — who is asking, as `slack:<user id>`. The bot authenticates as itself and
+   * reports the human on whose behalf it asks, so a turn is attributed to a person
+   * rather than to nobody. Aughor honours it only when no authenticated identity is
+   * already in scope, so this can never be used to claim to BE someone else.
+   */
+  principalRef?: string;
   signal?: AbortSignal;
 }
 
@@ -43,7 +50,7 @@ export function createAskStream(
   const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
 
-  return async function* ask(question, { sessionId, signal }) {
+  return async function* ask(question, { sessionId, signal, principalRef }) {
     const res = await fetchImpl(`${base}/ask`, {
       method: "POST",
       signal,
@@ -57,6 +64,7 @@ export function createAskStream(
         connection_id: connection,
         depth: "auto",
         session_id: sessionId,
+        ...(principalRef ? { principal_ref: principalRef } : {}),
       }),
     });
     if (!res.ok || !res.body) {
