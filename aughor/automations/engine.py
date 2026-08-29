@@ -538,8 +538,15 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         # recorded as `executed`: a tick that answered nothing, filed as a tick that worked.
         return EffectOutcome(kind=effect.kind, target=target, status="failed",
                              message=f"{run.message}{ran_as}")
+    _inv = str(getattr(run, "investigation_id", "") or getattr(run, "id", "") or "")
     return EffectOutcome(kind=effect.kind, target=target, status="executed",
-                         message=f"{run.message}{ran_as}")
+                         message=f"{run.message}{ran_as}",
+                         # VA-4c — the run this step produced. Its TOKENS live on the
+                         # investigation, so carrying the id lets a node reach its own
+                         # spend without this model growing a usage field the other five
+                         # effect kinds could never fill.
+                         investigation_id=_inv,
+                         data={"investigation_id": _inv} if _inv else {})
 
 
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
@@ -710,12 +717,20 @@ def run_automation(
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
             continue
+        step_started = now_iso_z()
+        step_t0 = _time.monotonic()
         outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
                               dispatch_fn, sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
+        step_ms = (_time.monotonic() - step_t0) * 1000.0
         # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
         # set it is six chances to forget, and a step that silently ran as nobody is
         # exactly the gap this wave closes.
-        outcome = outcome.model_copy(update={"agent_id": acting_agent(effect, automation)})
+        outcome = outcome.model_copy(update={
+            "agent_id": acting_agent(effect, automation),
+            # Stamped at the call site for the same reason as the agent: six dispatchers
+            # each remembering to time themselves is six chances to forget, and a step
+            # with no duration is invisible in exactly the view built to find slow ones.
+            "duration_ms": round(step_ms, 1), "started_at": step_started})
         outcomes.append(outcome)
         # Only a step that EXECUTED contributes. A failed step publishing an empty dict
         # would let a downstream binding resolve to nothing and run anyway — the exact

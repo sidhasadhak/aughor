@@ -309,3 +309,18 @@ def test_the_graph_says_which_agent_acts_and_which_step_delegates():
     assert g["agent_id"] == "ag-analyst"
     assert steps[0]["agent_id"] == "ag-analyst" and steps[0]["delegated"] is False
     assert steps[1]["agent_id"] == "ag-reviewer" and steps[1]["delegated"] is True
+
+
+def test_the_ENGINE_stamps_a_duration_on_every_step():
+    """Asserted against the real engine, not a hand-built outcome. The graph tests
+    construct EffectOutcome directly, so removing the engine's stamping left every one of
+    them green — mutation-testing caught that the producer was untested."""
+    def _dispatch(effect, automation):
+        return EffectOutcome(kind=effect.kind, target="t", status="executed")
+
+    run = _run(_automation(_effect(), _effect()), _dispatch)
+    assert all(o.started_at for o in run.effects), "a step with no start is invisible"
+    assert all(isinstance(o.duration_ms, float) for o in run.effects)
+    # >= 0 rather than > 0: a stubbed dispatcher can genuinely take under the clock's
+    # resolution, and asserting a positive number there is how a test becomes flaky.
+    assert all(o.duration_ms >= 0.0 for o in run.effects)

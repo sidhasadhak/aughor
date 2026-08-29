@@ -185,3 +185,69 @@ def test_graph_route_for_an_automation_that_never_ran_is_an_honest_empty(client)
 
 def test_unknown_automation_is_404(client):
     assert client.get("/automations/nope/graph").status_code == 404
+
+
+# ── VA-4c: the run canvas — which step was slow, and what fired it ──────────────
+
+def test_a_step_carries_its_own_duration_and_attempts():
+    """The run had ONE duration_ms for the whole tick, which cannot answer "which step
+    was slow" — the question a run canvas exists to answer."""
+    a = _automation(_effect(), _effect())
+    run = _Run([EffectOutcome(kind="slack_post", target="t", status="executed",
+                              duration_ms=1234.5, attempts=2,
+                              started_at="2026-08-29T09:00:00Z"),
+                EffectOutcome(kind="slack_post", target="t", status="executed",
+                              duration_ms=7.0)])
+    steps = [n for n in build_graph(a, run)["nodes"] if n["type"] == "effect"]
+    assert steps[0]["duration_ms"] == 1234.5 and steps[0]["attempts"] == 2
+    assert steps[1]["duration_ms"] == 7.0
+    # Caught live: the outcome carried started_at and the node did not.
+    assert steps[0]["started_at"] == "2026-08-29T09:00:00Z"
+
+
+def test_the_trigger_says_WHAT_FIRED_IT_not_only_what_it_watches():
+    """On a run, a trigger showing only its schedule is a design element in a view meant
+    to show what happened."""
+    class _R(_Run):
+        def __init__(self):
+            super().__init__([EffectOutcome(kind="slack_post", target="t", status="executed")])
+            self.conditions_fired = ["schedule"]
+            self.started_at = "2026-08-29T09:00:00Z"
+            self.duration_ms = 42
+            self.outcome = "fired"
+
+    trigger = build_graph(_automation(_effect()), _R())["nodes"][0]
+    assert trigger["fired"] == ["schedule"]
+    assert trigger["at"].startswith("2026-08-29")
+    assert trigger["status"] == "fired"
+
+
+def test_a_structure_trigger_claims_no_firing():
+    """A design has not fired. Showing a stale 'fired' on it would be a run nobody made."""
+    trigger = build_graph(_automation(_effect()))["nodes"][0]
+    assert "fired" not in trigger and "at" not in trigger
+
+
+def test_an_investigate_step_carries_the_run_that_holds_its_spend():
+    """Tokens live on the investigation, not on the outcome. Carrying the id lets a node
+    reach its own spend without this model growing a usage field the other five effect
+    kinds could never fill."""
+    a = _automation(_effect())
+    run = _Run([EffectOutcome(kind="investigate", target="t", status="executed",
+                              investigation_id="inv-77")])
+    step = [n for n in build_graph(a, run)["nodes"] if n["type"] == "effect"][0]
+    assert step["investigation_id"] == "inv-77"
+
+
+def test_the_graph_route_offers_the_runs_rail(client):
+    from aughor.automations.store import upsert_automation as save_automation
+    from aughor.automations.engine import run_automation
+    a = save_automation(_automation(_effect()))
+    run_automation(a, persist=True, dispatch=lambda e, au: EffectOutcome(
+        kind=e.kind, target="t", status="executed"),
+        probe=lambda *x, **k: True, sleeper=lambda _s: None, rng=lambda: 0.0)
+
+    body = client.get(f"/automations/{a.id}/graph", params={"run": "latest"}).json()
+    assert body["runs"], "a canvas must be able to ask 'which run?' in one request"
+    assert {"id", "outcome", "at", "steps", "failed"} <= set(body["runs"][0])
+    assert body["run_id"], "and know which one it is currently showing"

@@ -89,6 +89,15 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             o = outcomes[i]
             node["status"] = getattr(o, "status", "")
             node["message"] = getattr(o, "message", "")
+            # VA-4c — which step was slow, and how many attempts it took. The run's single
+            # duration could not answer either.
+            node["duration_ms"] = getattr(o, "duration_ms", 0.0) or 0.0
+            node["attempts"] = getattr(o, "attempts", 1) or 1
+            # The outcome carried this and the node did not — caught live, by reading a
+            # real run rather than a constructed one.
+            node["started_at"] = getattr(o, "started_at", "") or ""
+            if getattr(o, "investigation_id", ""):
+                node["investigation_id"] = o.investigation_id
             # What the step PRODUCED, named. In Execution mode this is what makes a
             # data edge checkable by eye: the key an edge claims to carry is either in
             # this list or the edge is lying.
@@ -113,6 +122,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "agent_id": getattr(automation, "agent_id", "") or "",
     }
     if run is not None:
+        # VA-4c — the trigger node says WHAT fired it and when, not only what it watches.
+        # A trigger that shows its schedule but not its firing is a design element in a
+        # view that is supposed to be showing a run.
+        nodes[0]["fired"] = list(getattr(run, "conditions_fired", []) or [])
+        nodes[0]["at"] = getattr(run, "started_at", "")
+        nodes[0]["duration_ms"] = getattr(run, "duration_ms", 0) or 0
+        nodes[0]["status"] = getattr(run, "outcome", "")
         # WHY this run decorated nothing. Found by driving it: a `not_fired` or `gated`
         # tick carries zero effect outcomes, so Execution mode rendered a graph identical
         # to Structure with nothing to say for itself — the viewer cannot tell whether the

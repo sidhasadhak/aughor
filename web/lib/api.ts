@@ -3502,6 +3502,14 @@ export async function getAutomationRuns(id: string, limit = 50): Promise<Automat
 export interface AutomationGraphNode {
   id: string; type: string; kind?: string; label: string; detail?: string;
   status?: string; message?: string; produced?: string[];
+  agent_id?: string; delegated?: boolean;
+  duration_ms?: number; attempts?: number; investigation_id?: string;
+  fired?: string[]; at?: string;
+}
+
+export interface AutomationRunSummary {
+  id: string; outcome: string; at: string;
+  duration_ms: number; steps: number; failed: number;
 }
 export interface AutomationGraphEdge {
   from: string; to: string; type: string; label?: string;
@@ -3510,6 +3518,7 @@ export interface AutomationGraphData {
   nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
   mode: string; name?: string; run_missing?: boolean;
   run_outcome?: string; run_reason?: string; run_at?: string;
+  agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
 }
 
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {

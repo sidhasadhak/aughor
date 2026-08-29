@@ -281,6 +281,17 @@ class EffectOutcome(BaseModel):
     #: only per run, because a chain may delegate one part to a different agent and a
     #: run-level field could not say which step that was.
     agent_id: str = ""
+    #: VA-4c — how long this step took, and when it began. The run carried a single
+    #: `duration_ms` for the whole tick, which cannot answer "which step was slow" —
+    #: the question a run canvas exists to answer. Measured around the dispatch, so it
+    #: includes the retries a step actually spent.
+    duration_ms: float = 0.0
+    started_at: str = ""
+    #: VA-4c — the investigation this step produced, when it produced one. An
+    #: `investigate` step's TOKENS live on its investigation, not here; carrying the id
+    #: is how a node links to its own spend without this model inventing a usage field
+    #: it cannot fill for the other five effect kinds.
+    investigation_id: str = ""
     #: VA-4a — what this effect PRODUCED, for later effects to consume. Every dispatcher
     #: already held this and discarded it here: the investigate runner had its run, the
     #: declared-action executor its dispatch result, `slack_post` the thread `ts` it was

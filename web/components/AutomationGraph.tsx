@@ -61,6 +61,12 @@ const STATUS_COLOR: Record<string, string> = {
 
 const COL_W = 250;
 
+/** Durations read as durations, not as raw milliseconds. */
+function ms(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 2)}s`;
+  return `${Math.round(n)}ms`;
+}
+
 function StepNode({ data }: { data: Record<string, unknown> }) {
   const status = String(data.status || "");
   const produced = (data.produced as string[]) || [];
@@ -69,7 +75,7 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
     <div style={{
       minWidth: 190, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
       border: "1px solid var(--border)", borderLeft: `3px solid ${accent}`,
-      background: "var(--bg2)",
+      background: "var(--bg-2)",
     }}>
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{String(data.kind || "")}</div>
@@ -83,7 +89,23 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
       {!!status && (
-        <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>● {status}</div>
+        <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
+          ● {status}
+          {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0 && (
+            <span style={{ color: "var(--t4)" }}> · {ms(data.duration_ms as number)}</span>
+          )}
+          {typeof data.attempts === "number" && (data.attempts as number) > 1 && (
+            <span style={{ color: "var(--t4)" }}> · {String(data.attempts)} attempts</span>
+          )}
+        </div>
+      )}
+      {/* Whose work this step is. `delegated` distinguishes a step that named its own
+          agent from one that simply inherited the automation's — the difference between
+          "this agent acts throughout" and "this one part was handed off". */}
+      {!!data.agent_id && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3 }}>
+          {data.delegated ? "delegated to " : "as "}{String(data.agent_id)}
+        </div>
       )}
       {/* What this step PRODUCED. It is what makes a data edge checkable by eye: the key
           an edge claims to carry is either listed here or the edge is lying. */}
@@ -101,12 +123,26 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
   return (
     <div style={{
       minWidth: 170, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
-      border: "1px dashed var(--border)", background: "var(--bg2)",
+      border: "1px dashed var(--border)", background: "var(--bg-2)",
     }}>
       <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>when</div>
       <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 1 }}>
         {String(data.detail || "manual")}
       </div>
+      {/* On a run, a trigger that shows only what it WATCHES is a design element in a
+          view meant to show what happened. */}
+      {Array.isArray(data.fired) && (data.fired as string[]).length > 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-2)", marginTop: 3 }}>
+          fired · {(data.fired as string[]).join(", ")}
+        </div>
+      )}
+      {!!data.at && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+          {String(data.at).replace("T", " ").slice(0, 19)}
+          {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0
+            ? ` · ${ms(data.duration_ms as number)}` : ""}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -161,7 +197,10 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
         : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
                    color: isData ? "var(--chart-1)" : "var(--t4)" },
-      labelStyle: { fontSize: 10, fill: "var(--t3)" },
+      // No `labelStyle`: it takes a style object, so any size here is a raw font-size
+      // literal, and the design-token gate ratchets those. ReactFlow's own stylesheet
+      // (imported above) already sizes `.react-flow__edge-text`, so the label is styled
+      // by the design system's rules rather than by a number smuggled past them.
       data: { edgeType: e.type },
     };
   });
@@ -171,16 +210,20 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
 
 export function AutomationGraph({ automationId }: { automationId: string }) {
   const [mode, setMode] = useState<"structure" | "execution">("structure");
+  // "" = the latest run. A specific id pins the canvas to THAT run, which is what makes
+  // the rail a rail rather than a list of links to somewhere else.
+  const [runId, setRunId] = useState("");
   const [graph, setGraph] = useState<AutomationGraphData | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let live = true;
-    getAutomationGraph(automationId, mode === "execution" ? "latest" : "")
+    const which = mode === "execution" ? (runId || "latest") : "";
+    getAutomationGraph(automationId, which)
       .then((g) => { if (live) { setGraph(g); setError(""); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [automationId, mode]);
+  }, [automationId, mode, runId]);
 
   const flow = useMemo(() => (graph ? toFlow(graph) : { nodes: [], edges: [] }), [graph]);
 
@@ -197,12 +240,12 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
         {(["structure", "execution"] as const).map((m) => (
           <button
             key={m}
-            onClick={() => setMode(m)}
+            onClick={() => { setMode(m); if (m === "structure") setRunId(""); }}
             className="aug-fs-xs"
             style={{
               padding: "2px 8px", borderRadius: 6, cursor: "pointer",
               border: "1px solid var(--border)",
-              background: mode === m ? "var(--bg3)" : "transparent",
+              background: mode === m ? "var(--bg-3)" : "transparent",
               color: mode === m ? "var(--t1)" : "var(--t3)",
             }}
           >
@@ -227,6 +270,37 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
           </span>
         )}
       </div>
+      <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
+      {mode === "execution" && (graph.runs?.length ?? 0) > 0 && (
+        <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
+                      border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
+            runs
+          </div>
+          {(graph.runs ?? []).map((r) => {
+            const active = (runId || graph.run_id) === r.id;
+            return (
+              <button
+                key={r.id}
+                onClick={() => setRunId(r.id)}
+                className="aug-fs-xs"
+                style={{
+                  display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+                  padding: "3px 5px", borderRadius: 5, marginBottom: 2,
+                  border: "1px solid " + (active ? "var(--border)" : "transparent"),
+                  background: active ? "var(--bg-3)" : "transparent",
+                  color: active ? "var(--t1)" : "var(--t3)",
+                }}
+              >
+                <div>{r.at ? r.at.replace("T", " ").slice(5, 16) : r.id.slice(0, 8)}</div>
+                <div style={{ color: r.failed > 0 ? "var(--red4)" : "var(--t4)" }}>
+                  {r.outcome}{r.failed > 0 ? ` · ${r.failed} failed` : ""}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 220, border: "1px solid var(--border)",
                     borderRadius: 8, overflow: "hidden" }}>
         <ReactFlow
@@ -242,6 +316,7 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
           <Background gap={16} color="var(--border)" />
           <Controls showInteractive={false} />
         </ReactFlow>
+      </div>
       </div>
     </div>
   );

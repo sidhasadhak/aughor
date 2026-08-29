@@ -517,6 +517,24 @@ technical one. Default to visible-metadata, gated-payloads.
 
 ---
 
+### VA-4 — Automations dataflow + the run canvas — **UNPARKED and BUILT 2026-08-29**
+
+**VA-4c — the run canvas (2026-08-29).** Built against the user's VoltAgent screenshot.
+Measured first: `EffectOutcome` carried **no timing and no tokens**, and nothing tied LLM
+spend to a step — so per-node duration and usage were not a display problem, they were
+missing data. Now: per-step `duration_ms` / `started_at` stamped by the ENGINE at the call
+site (the run's single `duration_ms` cannot answer "which step was slow"); the trigger node
+says **what fired it** and when, not only what it watches; an `investigate` step publishes
+its `investigation_id`, so a node reaches its own spend without this model growing a usage
+field the other five effect kinds could never fill; and the graph endpoint returns a bounded
+**runs rail** so a canvas can ask "which run?" in one request.
+
+**Deliberately NOT in this wave, and worth naming:** `Add Trigger` / `Add Action` authoring
+(the canvas reads; it does not author), per-node token counts (only a link to where spend
+lives), the composed prompt as its own node, and a stop button for a running automation.
+
+---
+
 ### VA-4 — Automations dataflow — **UNPARKED 2026-08-29 (user-decided), dataflow first**
 
 Unparked on the user's direction after they compared our post-hoc run view with
