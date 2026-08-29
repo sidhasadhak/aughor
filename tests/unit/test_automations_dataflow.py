@@ -198,3 +198,39 @@ def test_an_independent_step_still_runs_after_a_failure():
 
     _run(_automation(_effect(channel="C1"), _effect(channel="C2")), _dispatch)
     assert ran == ["C1", "C2"], "an independent step is not collateral damage"
+
+
+# ── the route reports a bad chain as something the caller can fix ────────────────
+
+def test_a_bad_chain_is_a_422_with_a_readable_message_not_a_500(client):
+    """Found live, not by a test: `exc.errors()` embeds the ORIGINAL exception object
+    under `ctx` for a value_error — which is exactly what a `model_validator` raising
+    ValueError produces. Starlette could not JSON-encode the 422 body, so the response
+    became a 500 and a mistake the user could fix arrived as 'the server broke'.
+
+    Also a check on the message itself: naming which step and which direction is the
+    difference between fixing a name and fixing a mental model.
+    """
+    r = client.post("/automations", json={
+        "name": "bad chain", "conn_id": "workspace",
+        "conditions": [{"kind": "schedule", "config": {"cron": "* * * * *"}}],
+        "effects": [
+            {"kind": "slack_post", "alias": "a",
+             "config": {"bot_id": "b", "channel": "C", "thread_ts": {"$from": "b.ts"}}},
+            {"kind": "slack_post", "alias": "b", "config": {"bot_id": "b", "channel": "C"}},
+        ],
+    })
+    assert r.status_code == 422, r.text
+    assert "runs AFTER it" in r.text
+    r.json()   # the body must be JSON — this is the assertion the 500 failed
+
+
+def test_an_unknown_step_is_also_a_422(client):
+    r = client.post("/automations", json={
+        "name": "typo", "conn_id": "workspace",
+        "conditions": [{"kind": "schedule", "config": {"cron": "* * * * *"}}],
+        "effects": [{"kind": "slack_post", "alias": "a",
+                     "config": {"bot_id": "b", "channel": "C",
+                                "thread_ts": {"$from": "nope.ts"}}}],
+    })
+    assert r.status_code == 422 and "unknown step" in r.text

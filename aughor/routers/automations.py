@@ -78,6 +78,21 @@ def get_one(automation_id: str):
     return a.model_dump()
 
 
+def _validation_detail(exc: ValidationError) -> list[dict]:
+    """Pydantic errors, safe to serialise.
+
+    `exc.errors()` embeds the ORIGINAL exception object under `ctx` for a `value_error`
+    — which is what a `model_validator` raising `ValueError` produces. Starlette then
+    fails to JSON-encode the 422 body and the response becomes a 500, so a mistake the
+    user could fix arrives as "the server broke". Found live: an automation with a
+    forward step reference returned 500 while the validator was working perfectly.
+
+    `include_context=False` drops the object; the message Pydantic already rendered into
+    `msg` is the part a caller needs.
+    """
+    return exc.errors(include_url=False, include_context=False)
+
+
 @router.post("/automations")
 def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
@@ -85,7 +100,7 @@ def create(body: CreateAutomationRequest):
     try:
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     return upsert_automation(automation).model_dump()
 
 
@@ -98,7 +113,7 @@ def update(automation_id: str, body: CreateAutomationRequest):
         automation = Automation(**body.model_dump(), id=automation_id,
                                 created_at=existing.created_at)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     return upsert_automation(automation).model_dump()
 
 

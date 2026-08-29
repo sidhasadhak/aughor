@@ -98,13 +98,23 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             source, key = parse_ref(ref)
             edges.append({"from": source, "to": alias, "type": "data", "label": key})
 
-    return {
+    out = {
         "nodes": nodes,
         "edges": edges,
         "mode": "execution" if run is not None else "structure",
         "automation_id": getattr(automation, "id", ""),
         "name": getattr(automation, "name", ""),
     }
+    if run is not None:
+        # WHY this run decorated nothing. Found by driving it: a `not_fired` or `gated`
+        # tick carries zero effect outcomes, so Execution mode rendered a graph identical
+        # to Structure with nothing to say for itself — the viewer cannot tell whether the
+        # run did nothing or the view is broken. The engine already records the reason
+        # ("schedule(0 9 * * 1): next due …"); it just was not being carried.
+        out["run_outcome"] = getattr(run, "outcome", "")
+        out["run_reason"] = getattr(run, "reason", "")
+        out["run_at"] = getattr(run, "started_at", "")
+    return out
 
 
 def _effect_detail(effect: Any) -> str:

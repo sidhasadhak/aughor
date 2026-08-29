@@ -44,11 +44,13 @@ describe("AutomationGraph handoff", () => {
   });
 
   it("draws a data edge and a sequence edge DIFFERENTLY", () => {
-    // The distinction this whole wave exists to make. Same pair of nodes, two edges:
-    // one carries a value, one only means "runs after".
+    // The distinction this whole wave exists to make: one carries a value, one only
+    // means "runs after".
     const g = graph();
     const [data] = dataEdges(g);
-    const seq = seqEdges(g).find(e => e.source === "ask")!;
+    // trigger->ask, not ask->post: the latter is now correctly dropped because a data
+    // edge already covers that pair.
+    const seq = seqEdges(g).find(e => e.source === "trigger")!;
 
     expect(data.style?.strokeDasharray).toBeUndefined();
     expect(seq.style?.strokeDasharray).toBe("3 3");
@@ -61,11 +63,26 @@ describe("AutomationGraph handoff", () => {
     expect(seqEdges(g).every(e => e.label === undefined)).toBe(true);
   });
 
-  it("gives two edges between the SAME pair distinct ids", () => {
-    // `ask → post` exists twice — once as sequence, once as data. Colliding ids would
-    // make ReactFlow drop one, and the one it drops is the one that carries meaning.
+  it("gives every edge a distinct id", () => {
     const ids = toFlow(graph()).edges.map(e => e.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("drops a sequence edge that a data edge already covers", () => {
+    // Found by driving the browser: both `ask->post` edges rendered on an IDENTICAL path
+    // ("M443,36 C470,36 470,36 497,36"), the dashed one hidden under the solid one. A
+    // data edge already implies "runs after" — you cannot consume what has not run — so
+    // keeping both draws the same claim twice.
+    const g = graph();               // has BOTH a sequence and a data ask->post
+    const pairs = toFlow(g).edges.map(e => `${e.source}->${e.target}:${(e.data as { edgeType?: string })?.edgeType}`);
+    expect(pairs).toContain("ask->post:data");
+    expect(pairs).not.toContain("ask->post:sequence");
+    expect(pairs).toContain("trigger->ask:sequence");   // an uncovered one still draws
+  });
+
+  it("keeps a sequence edge when no data flows across it", () => {
+    const g = graph({ edges: [{ from: "ask", to: "post", type: "sequence" }] });
+    expect(toFlow(g).edges).toHaveLength(1);
   });
 
   it("lays steps out left to right in the order they run", () => {

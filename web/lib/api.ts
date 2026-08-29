@@ -3509,6 +3509,7 @@ export interface AutomationGraphEdge {
 export interface AutomationGraphData {
   nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
   mode: string; name?: string; run_missing?: boolean;
+  run_outcome?: string; run_reason?: string; run_at?: string;
 }
 
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {

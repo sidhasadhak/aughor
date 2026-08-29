@@ -130,7 +130,19 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
     data: { ...n },
   }));
 
-  const edges: RFEdge[] = graph.edges.map((e, i) => {
+  // A data edge already implies "runs after" — you cannot consume what has not run — so a
+  // sequence edge between the same pair is the same claim twice, drawn on an IDENTICAL
+  // path. Measured in the browser: both `open->reply` edges rendered `M443,36 C470,36
+  // 470,36 497,36`, the dashed one hidden under the solid one. Keep the edge that carries
+  // meaning; drop the one that repeats it.
+  const carriesData = new Set(
+    graph.edges.filter((e) => e.type === "data").map((e) => `${e.from}->${e.to}`),
+  );
+  const drawn = graph.edges.filter(
+    (e) => e.type !== "sequence" || !carriesData.has(`${e.from}->${e.to}`),
+  );
+
+  const edges: RFEdge[] = drawn.map((e, i) => {
     const isData = e.type === "data";
     return {
       id: `${e.type}:${e.from}->${e.to}:${e.label || i}`,
@@ -141,11 +153,14 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
       // A data edge carries a value and is drawn as the primary relation. A sequence
       // edge is faint and dashed: it means only "runs after", and a picture that draws
       // both alike teaches a dependency the engine does not have.
+      // `--t4`, not `--border`: measured in the browser, `--border` is #232f39 against a
+      // dark pane and the trigger's edge read as absent — a first step that looks
+      // unconnected to its own trigger. Muted, but visible.
       style: isData
         ? { stroke: "var(--chart-1)", strokeWidth: 1.6 }
-        : { stroke: "var(--border)", strokeWidth: 1, strokeDasharray: "3 3" },
+        : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
-                   color: isData ? "var(--chart-1)" : "var(--border)" },
+                   color: isData ? "var(--chart-1)" : "var(--t4)" },
       labelStyle: { fontSize: 10, fill: "var(--t3)" },
       data: { edgeType: e.type },
     };
@@ -199,6 +214,16 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
         {graph.run_missing && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             never run — showing the design
+          </span>
+        )}
+        {/* A `not_fired` or `gated` tick decorates nothing, so without this the Execution
+            view is indistinguishable from Structure and the viewer cannot tell whether
+            the run did nothing or the view is broken. The engine's own reason, verbatim. */}
+        {mode === "execution" && !graph.run_missing && graph.run_outcome
+          && graph.run_outcome !== "fired" && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            last run {graph.run_outcome}
+            {graph.run_reason ? ` — ${graph.run_reason}` : ""}
           </span>
         )}
       </div>
