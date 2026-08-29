@@ -8733,6 +8733,8 @@ export interface components {
             insight_id?: string | null;
             /** Mode */
             mode?: ("investigate" | "explore") | null;
+            /** Principal Ref */
+            principal_ref?: string | null;
             /**
              * Purpose
              * @default

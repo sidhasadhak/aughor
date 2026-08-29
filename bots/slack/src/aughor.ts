@@ -44,6 +44,13 @@ export interface AskOptions {
   signal?: AbortSignal;
   /** Called once, when a turn settles with a grid worth showing. */
   onTurn?: (artifacts: TurnArtifacts) => void;
+  /**
+   * RC-4 — who is asking, as `slack:<user id>`. The bot authenticates as itself and
+   * reports the human on whose behalf it asks, so a turn is attributed to a person
+   * rather than to nobody. Aughor honours it only when no authenticated identity is
+   * already in scope, so this can never be used to claim to BE someone else.
+   */
+  principalRef?: string;
 }
 
 export type AskChunk = string | StreamChunk;
@@ -96,7 +103,7 @@ export function createAskStream(
     }
   }
 
-  return async function* ask(question, { sessionId, signal, onTurn }) {
+  return async function* ask(question, { sessionId, signal, onTurn, principalRef }) {
     const res = await fetchImpl(`${base}/ask`, {
       method: "POST",
       signal,
@@ -110,6 +117,7 @@ export function createAskStream(
         connection_id: connection,
         depth: "auto",
         session_id: sessionId,
+        ...(principalRef ? { principal_ref: principalRef } : {}),
       }),
     });
     if (!res.ok || !res.body) {

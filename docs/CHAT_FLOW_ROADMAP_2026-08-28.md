@@ -262,9 +262,35 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   7 days — the one proposal the live inbox has ever held sat pending for **three**,
   so 24h would have expired real work before its approver reached it.
   15 tests, both guards mutation-tested. Do not import the Workflow runtime.
-- **RC-4 — Identity-keyed transcripts**: stable identity resolver; the shape for
-  the open Langfuse LF-2 attribution question; prerequisite for Slack↔web
-  thread continuity.
+- **RC-4 — Identity-keyed transcripts — BUILT 2026-08-29. The plane was not missing;
+  it was LYING.** *Original scope: stable identity resolver; the shape for the open
+  Langfuse LF-2 attribution question; prerequisite for Slack↔web thread continuity.*
+  The pre-check found the attribution machinery already complete and already reading
+  the right value: `telemetry.trace_identity()` reads `current_user_id()` and writes
+  it to the trace, and `org/context.py` already carries org/user/session contextvars.
+  **Nobody was SETTING the user on a headless door**, so LF-2's user field was empty
+  while every part looked healthy.
+  Worse, `govern.actions.audit` filled an absent actor with `current_org_id()`.
+  Measured on the live ledger, n=67 governed decisions: **34 (51%) say `default`** —
+  the tenant, not a person; 27 more say `human`/`automation`, which are *kinds*;
+  4 are ad-hoc strings (`me`, `agent-ops`); **2 (3%) carry a resolvable identity.**
+  An audit trail that answers "who approved this refund?" with the org name reads as
+  attributed and carries nothing. A blank prompts the question; a plausible value
+  closes it.
+  Delivered: `aughor/identity/` — an `Identity` (`provider:external_id` + the platform
+  user it links to), a `parse_ref` that **refuses to promote a label to an identity**
+  (`human`, `agent-ops`, `me` all return None), a total `attribution_key` whose unknown
+  case is the named `UNATTRIBUTED` and never anything ambient, and an org-scoped
+  `identity_links` table (rbac/store.py idiom) so linking is an *upgrade*, never a
+  precondition — an unlinked `slack:U…` still attributes. `AskRequest.principal_ref`
+  lets a trusted headless door report who it acts for, pinned next to the session so
+  attribution flows ambiently through the existing telemetry seam; **a body-supplied
+  principal never overrides an authenticated one**, which is the whole security surface.
+  The Slack bot now sends `slack:<author.userId>` — an id it previously read only to
+  STRIP from the question text.
+  25 Python + 2 transport tests; both guards mutation-tested. Merged after RC-2
+  2026-08-29: the predicted conflict in `bots/slack/src/{aughor,bot}.ts` was purely
+  additive — the asker rides the same `ask(...)` call that carries RC-2's `onTurn`.
 
 ## Parked / other arcs
 - Semantic-layer-as-greppable-YAML + terminator-tool + errors-as-tool-output →

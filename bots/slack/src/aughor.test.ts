@@ -126,6 +126,28 @@ describe("createAskStream", () => {
       session_id: "slack:C9:42.1",
     });
   });
+
+  it("carries the asker so a Slack turn is attributed to a person (RC-4)", async () => {
+    let body: Record<string, unknown> = {};
+    const ask = createAskStream({ AUGHOR_API_URL: "http://api.test" }, async (_u, init) => {
+      body = JSON.parse(String(init?.body));
+      return sseResponse([{ type: "done" }]);
+    });
+    await drain(ask("q", { sessionId: "s", principalRef: "slack:U08N9EQ80UT" }));
+    expect(body.principal_ref).toBe("slack:U08N9EQ80UT");
+  });
+
+  it("omits the asker entirely when the door does not know one", async () => {
+    // Absent, a turn must be honestly unattributed. Sending an empty string would put a
+    // blank in the actor field, which is the shape of the defect this wave fixed.
+    let body: Record<string, unknown> = {};
+    const ask = createAskStream({ AUGHOR_API_URL: "http://api.test" }, async (_u, init) => {
+      body = JSON.parse(String(init?.body));
+      return sseResponse([{ type: "done" }]);
+    });
+    await drain(ask("q", { sessionId: "s" }));
+    expect("principal_ref" in body).toBe(false);
+  });
 });
 
 describe("createAskStream — RC-2", () => {

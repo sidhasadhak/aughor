@@ -95,6 +95,16 @@ export function buildBot({
     const stream = ask(question, {
       sessionId: thread.id,
       signal: thread.signal,
+      // RC-4 — the asker, so the turn is attributed to a person. `author.userId` is the
+      // stable per-workspace Slack id and is always on the envelope; before this it was
+      // read only to be STRIPPED from the question text, so every Slack turn filed under
+      // nobody. Absent, the turn is honestly unattributed rather than falsely attributed.
+      //
+      // Not `message.userKey`: the SDK's cross-platform key needs a `ChatConfig.identity`
+      // resolver, which would put identity resolution in the transport. Aughor resolves
+      // `slack:<id>` server-side against its own link table — the Python API stays the
+      // only brain, and one scheme serves every door rather than one per SDK.
+      principalRef: message.author?.userId ? `slack:${message.author.userId}` : undefined,
       onTurn: (a) => { turn = a; },
     });
 
