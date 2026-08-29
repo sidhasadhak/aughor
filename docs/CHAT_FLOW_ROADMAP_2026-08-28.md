@@ -173,10 +173,29 @@ Re-measure once RC-2 has merged and that corpus exists; until then this is
 unmeasurable, and building against it would be building on a guess.
 
 
-### FL-4 — Turn-merging (evaluate, likely park)
-Interrupt-latest-wins is a deliberate P5 design. Revisit only with session-log
-evidence that users send multi-fragment turns; if so, burst-merge à la Chat SDK
-(`context.skipped`) *behind the same interrupt semantics*, never a lock.
+### FL-4 — Turn-merging — **EVALUATED 2026-08-29: PARKED**
+*Original scope: interrupt-latest-wins is a deliberate P5 design; revisit only with
+session-log evidence that users send multi-fragment turns; if so, burst-merge à la
+Chat SDK (`context.skipped`) behind the same interrupt semantics, never a lock.*
+
+**The evidence was asked for and is not there.** `data/history.db`, read-only: 819
+turns carry a session, 17 conversations have 2+ turns, giving **21 consecutive-turn
+gaps** — the real denominator, since only a gap can show a burst.
+
+| gap between consecutive turns | n=21 |
+|---|---|
+| < 2s · < 5s · < 10s | **0 (0.0%)** each |
+| < 30s | 2 (9.5%) |
+
+min **10.3s** · p50 84s · p90 766s. Nobody sends a follow-up before the previous
+answer could plausibly have arrived, so there is no burst to merge and no lock to
+justify. Interrupt-latest-wins stands.
+
+⚠️ **Two caveats, both recorded rather than argued away.** n=21 is small. And the
+filed population was biased short until RC-2 (`a274728b`) began filing converse
+turns server-side *the same day* — the conversational turns most likely to arrive
+in fragments are exactly the ones that went unrecorded. Re-measure if the
+conversation corpus grows and the question comes back; do not build on n=21.
 
 ### FL-5 — In-flight engagement for deep runs (projection/presentation only)
 > **BUILT 2026-08-28** (post-graduation, as sequenced). `explore_plan` +
