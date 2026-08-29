@@ -131,6 +131,10 @@ class Effect(BaseModel):
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
                   "slack_post"]
+    #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
+    #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
+    #: referable steps without being rewritten.
+    alias: str = ''
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -226,6 +230,21 @@ class Automation(BaseModel):
 
 # ── run history ──────────────────────────────────────────────────────────────────
 
+    @model_validator(mode="after")
+    def _validate_chain(self):
+        """VA-4a — a chain that cannot run is refused here, not discovered on a schedule.
+
+        Same rule the conditions and effects already follow (K1: reject at parse, never
+        surface). An automation whose step 2 reads a step that does not exist, or reads a
+        step that runs after it, is not schedulable — and looking schedulable is the
+        expensive part.
+        """
+        from aughor.automations.dataflow import validate_chain
+        problem = validate_chain(list(self.effects or []))
+        if problem:
+            raise ValueError(problem)
+        return self
+
 class EffectOutcome(BaseModel):
     """What happened to one effect on one tick."""
     kind: str
@@ -241,6 +260,11 @@ class EffectOutcome(BaseModel):
     ]
     message: str = ""      # authored criterion message / error, verbatim — never paraphrased
     attempts: int = 1
+    #: VA-4a — what this effect PRODUCED, for later effects to consume. Every dispatcher
+    #: already held this and discarded it here: the investigate runner had its run, the
+    #: declared-action executor its dispatch result, `slack_post` the thread `ts` it was
+    #: putting into a message string. A chain needs it structured, not narrated.
+    data: dict = Field(default_factory=dict)
 
 
 class AutomationRun(BaseModel):

@@ -37,6 +37,7 @@ import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
+from aughor.automations.dataflow import UnresolvedBinding, alias_for, resolve
 from aughor.automations.models import (
     Automation,
     AutomationRun,
@@ -299,7 +300,10 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
         "executed", "criterion_failed", "approval_required", "invalid_params", "dispatch_error",
     } else "failed"
     return EffectOutcome(kind=effect.kind, target=effect.action_id, status=status,
-                         message=result.message)
+                         message=result.message,
+                         # The executor already returns a dispatch result; it was thrown
+                         # away at this boundary.
+                         data=dict(result.outcome or {}))
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -333,8 +337,14 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
-        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="executed",
-                             message=f"posted as {bot.name} (ts {info.get('ts', '')})")
+        return EffectOutcome(
+            kind=effect.kind, target=f"{bot_id}:{channel}", status="executed",
+            message=f"posted as {bot.name} (ts {info.get('ts', '')})",
+            # VA-4a — the thread root, structured. A later step binds `{"$from":
+            # "step1.ts"}` to reply INTO this thread, which is the whole shape of a
+            # conversation an automation starts and then continues.
+            data={"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
+                  "bot_id": bot_id})
     if info.get("uncertain"):
         # It may have arrived. Saying "failed" would license a retry, and a retried
         # maybe-delivered message is the duplicate this layer exists to prevent.
@@ -648,11 +658,34 @@ def run_automation(
     if persist and has_outward_effect(automation):
         claim_delivery(automation.id, started)
     sleep_budget = [MAX_RETRY_SLEEP_SECONDS]
-    outcomes = [
-        _run_effect(effect, automation, dispatch_fn,
-                    sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
-        for effect in automation.effects
-    ]
+
+    # VA-4a — a CHAIN, not a list comprehension. Each effect sees the accumulated output
+    # of every prior step (merged-data, à la `andThen`), which is what makes "post the
+    # answer from step 1 into the thread step 2 opened" expressible at all. Before this,
+    # every effect received only (effect, automation, dispatch): there was no dataflow,
+    # so a designed workflow could draw arrows the engine would not have followed.
+    context: dict[str, dict] = {}
+    outcomes: list[EffectOutcome] = []
+    for i, effect in enumerate(automation.effects):
+        alias = alias_for(effect, i)
+        try:
+            bound = resolve(effect.config, context)
+        except UnresolvedBinding as exc:
+            # SKIPPED, never run-with-a-hole. These steps send messages and write to
+            # systems; a missing channel or a missing thread id is not a value to
+            # default, and `skipped` already exists precisely for "did not run, and
+            # that is not a failure of this step".
+            outcomes.append(EffectOutcome(kind=effect.kind, target=alias, status="skipped",
+                                          message=f"upstream data unavailable: {exc}"))
+            continue
+        outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
+                              dispatch_fn, sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
+        outcomes.append(outcome)
+        # Only a step that EXECUTED contributes. A failed step publishing an empty dict
+        # would let a downstream binding resolve to nothing and run anyway — the exact
+        # silent-hole this guards against.
+        if outcome.status == "executed":
+            context[alias] = dict(outcome.data or {})
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False

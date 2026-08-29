@@ -467,11 +467,50 @@ technical one. Default to visible-metadata, gated-payloads.
 
 ---
 
-### VA-4 — Automations dataflow (PARKED)
+### VA-4 — Automations dataflow — **UNPARKED 2026-08-29 (user-decided), dataflow first**
 
-Kept for completeness. `engine.py:581` runs effects independently; the fix's shape is now
-known (merged-data chaining à la `andThen`, typed suspend/resume as our approval gates).
-**Build nothing until unparked.** VA-9 is the likely trigger to unpark it.
+Unparked on the user's direction after they compared our post-hoc run view with
+VoltAgent's authored workflow graph: *"what we have is a flow after the run is done…
+what you see from VoltAgent is the whole workflow that gets designed by the user."*
+
+**That difference is not the canvas.** Measured before planning:
+
+* `engine.py:652` runs effects as a **list comprehension** — every effect receives only
+  `(effect, automation, dispatch)`. **No effect ever sees a prior effect's output.**
+* `EffectOutcome` carries `kind · target · status · message · attempts` — **no data at
+  all.** There is nothing to pass even if we passed it.
+* **Params are literals.** Nothing interpolates; `probes.py:40` says so explicitly.
+
+So a canvas built first would draw arrows the engine cannot honour — the same
+complete-and-inert shape this codebase has shipped before. **Dataflow first, canvas
+second.**
+
+**The producer gap is one field wide.** Every dispatcher already HAS the data and throws
+it away at the `EffectOutcome` boundary: `_dispatch_investigate` holds the run,
+`_dispatch_kinetic` holds `KineticResult.outcome`, `_dispatch_brief` holds a result dict,
+and `_dispatch_slack_post` puts the thread `ts` in a *message string* rather than a field.
+
+**VA-4a — dataflow (this slice)**
+1. `EffectOutcome.data: dict` — dispatchers populate it from what they already hold.
+2. Effects run **sequentially with an accumulating context** (merged-data, à la `andThen`),
+   not a list comprehension. Step N sees every prior step's data, not just N−1.
+3. Params reference prior output by **explicit binding** (`{"$from": "step1.ts"}`),
+   validated at construction — does that step exist, and does it run *before* this one?
+   Deliberately not string templating: interpolating user text into params is an
+   injection surface, and "reject at parse, never surface" is this plane's own rule.
+   It also renders as an edge in a canvas later, which a template string does not.
+4. A step whose binding cannot resolve because an upstream step failed is **`skipped`** —
+   a status `EffectOutcome` already has.
+
+**VA-4b — the authored graph (after 4a).** One graph, two modes — the *Structure* /
+*Execution* toggle from the user's VoltAgent screenshot is the right model: the design
+and a run through it are the same picture. Note the standing ReactFlow refusal
+(`agent-creation-flow-and-reactflow-verdict.md`) applies to the LIBRARY, not to the idea.
+
+**Suspend/resume is already built.** The parked note wanted "typed suspend/resume as our
+approval gates"; RC-3's proposal inbox is exactly that — a durable, resolve-once record
+where accept IS the approval, now with an expiry. VA-4 should reuse it rather than invent
+a second pause.
 
 ---
 
