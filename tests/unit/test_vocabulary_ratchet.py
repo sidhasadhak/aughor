@@ -101,7 +101,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # that exercises them, which trades readable code for a passing count.
         r"(?i)kinetic", CODE_ROOTS,
         ("web/components/FleetOverviewPanel.tsx",
-         "tests/unit/test_kinetic_inbox_expiry.py"),
+         "tests/unit/test_kinetic_inbox_expiry.py",
+         # VA-9c, same ground: every hit in these two is an identifier the API actually
+         # uses — `graph.kinetic_actions` and the `KineticAction` class — never
+         # reader-facing prose. Renaming the attribute is a separate migration; aliasing
+         # it here would hide the real name from the code that reads it.
+         "aughor/agent/action_tools.py",
+         "tests/unit/test_agent_action_grants.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (

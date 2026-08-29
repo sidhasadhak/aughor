@@ -454,8 +454,31 @@ reading a value nobody set), and RC-4 is what makes that dimension usable at all
   13 tests. Mutation-tested: removing inheritance or the agent attribution fails four.
   ⚠️ Still org-scoped: **warehouse connections themselves have no owner** (`registry.py`
   has `org_id` only). Owning a connection is the remaining piece of "per-user".
-* **VA-9c — per-agent tool grants.** A `UserAgent` gets *named* tools from a connection,
-  never a whole server. Writes route through the approvals plane (tiered writes hold).
+* **VA-9c — per-agent tool grants — ✅ BUILT 2026-08-29.** Measured first, and the gap was
+  wider than "unbuilt": **every tool an agent could call was a READ** (`run_sql`,
+  `answer_question`, `deep_analysis`, `list_tables`, `describe_table`, plus a platform
+  roster documented as *"the read roster for one connection"* and never filtered per
+  agent), and `stage_proposal` was reachable **only from an HTTP route**. An agent had no
+  way to propose anything, so VA-9's receipt was unreachable rather than merely missing.
+
+  `UserAgent.tool_grants` names the actions an agent may propose, and
+  `aughor/agent/action_tools.py` adds the one tool that is not a read. **A grant is
+  permission to PROPOSE, never to EXECUTE**: a granted action still lands in the
+  resolve-once inbox and waits for a human accept (or a target-bound standing grant,
+  minted separately per value). Collapsing those would turn "may suggest a refund" into
+  "may issue refunds", which is the distinction the approvals plane exists to hold — and
+  the live inbox has a `refund_orders` row that makes it concrete.
+
+  **No grants ⇒ no write tool at all**, not a tool that always refuses: the model routes
+  over what it can see, and a visible tool is one it will spend a turn trying. An
+  ungranted action is refused **by name, with the roster**, so it does not guess again. An
+  unreadable agent record means READ-ONLY, never open. Grants are **governing
+  configuration** (`config_rev`, sorted like the other lists) — an agent that gained the
+  power to propose a refund is not the agent an eval chip was earned by.
+
+  12 tests, gate mutation-tested. ⚠️ The `agent_id` now threads through
+  `/ask → _stream_converse → converse → converse_tools`, so the roster is bound by
+  closure and the model cannot name an agent it was not given.
 * **VA-9d — the MCP consumer.** stdio + SSE, server registry, tool discovery, health,
   timeouts, per-call audit. The untouched core, and deliberately last.
 

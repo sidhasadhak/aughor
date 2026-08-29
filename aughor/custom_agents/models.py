@@ -15,7 +15,11 @@ INSTRUCTIONS_MAX = 8000
 # `name` is a label and `enabled` is an on/off switch: neither changes a single token of
 # the prompt or a single document retrieved, so neither mints a revision. Everything here
 # does, which is exactly why the pass chip has to name which of these it measured.
-GOVERNING_FIELDS = ("instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids")
+GOVERNING_FIELDS = ("instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids",
+                    # VA-9c — which actions an agent may propose changes what it can DO,
+                    # so it is governing configuration: an eval chip earned before a grant
+                    # was added was earned by a different agent.
+                    "tool_grants")
 
 # What `eval_basis` can say. The four states exist because "no chip", "a chip from before
 # we tracked this" and "a chip earned by a configuration that no longer exists" are three
@@ -42,6 +46,19 @@ class UserAgent(BaseModel):
     # these when the agent runs — never a deploy-gate bypass (a pack still only
     # steers where a pinned, human-confirmed binding exists). [] = no restriction.
     pack_ids: list[str] = Field(default_factory=list)
+    #: VA-9c — the declared actions this agent may PROPOSE, by id. [] = none, which is
+    #: every agent written before this field and is read-only behaviour byte-for-byte.
+    #:
+    #: **A grant is permission to PROPOSE, never permission to EXECUTE.** A proposal still
+    #: lands in the resolve-once inbox and waits for a human accept (or a target-bound
+    #: standing grant, which is minted separately per value). Conflating the two would
+    #: turn "this agent may suggest a refund" into "this agent may issue refunds", which
+    #: is the entire distinction the approvals plane exists to hold.
+    #:
+    #: NAMED actions, never a whole connection: VA-9's own rule is that an agent gets
+    #: named tools, not the server. A wildcard here would re-create the blanket grant
+    #: that target-bound standing grants were built to avoid.
+    tool_grants: list[str] = Field(default_factory=list)
     owner: str = ""                  # org/user identity when identity is enforced
     enabled: bool = True
     # Latest golden-suite evaluation ({passed, total, at, per_question, config_rev}); None =
@@ -69,6 +86,11 @@ class UserAgent(BaseModel):
             "schema_scope": self.schema_scope,
             "doc_ids": sorted(self.doc_ids),
             "pack_ids": sorted(self.pack_ids),
+            # VA-9c — sorted like the other lists: reordering grants is not a new
+            # configuration, but ADDING one is. `config_rev` is what a pass chip compares
+            # against, and an agent that gained the power to propose a refund is not the
+            # agent that was measured.
+            "tool_grants": sorted(self.tool_grants),
         }
         blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

@@ -377,7 +377,7 @@ _QUESTION_PARAMS = {
 
 def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                    session_id: str = "", canvas_id: Optional[str] = None,
-                   user_question: str = "") -> list[ToolSpec]:
+                   user_question: str = "", agent: Any = None) -> list[ToolSpec]:
     """The tool set for one connection.
 
     Bound to the connection by closure rather than taking it as a model-supplied
@@ -394,7 +394,14 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     is everything else the product knows — findings, the briefing, the knowledge
     graph, monitors, packs, the platform itself — as reads with the same binding
     rule. One list, because the model routes over one list.
+
+    ``agent`` binds by closure for the same reason as everything else, and adds the one
+    tool that is not a read: VA-9c's ``propose_action``, present only when THIS agent has
+    been granted named actions. An agent with no grants gets no write tool at all rather
+    than one that always refuses — the model picks from what it can see, and a tool it
+    can see is one it will spend a turn trying.
     """
+    from aughor.agent.action_tools import action_tools
     from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
 
@@ -464,7 +471,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             run=lambda a: deep_analysis(connection_id, a, emit=emit,
                                         session_id=session_id, canvas_id=canvas_id),
         ),
-    ] + platform_tools(connection_id, session_id=session_id) + delegation_tools(
+    ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + delegation_tools(
         connection_id, emit=emit, session_id=session_id)
 
 
@@ -598,7 +605,7 @@ def converse_available() -> bool:
 def converse(connection_id: str, question: str, *, extra_context: Optional[str] = None,
              provider=None, max_steps: Optional[int] = None,
              on_step=None, tool_emit: Optional[Emit] = None,
-             session_id: str = "", canvas_id: Optional[str] = None):
+             session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
@@ -620,7 +627,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         converse_system_prompt(connection_id, extra_context, question=question),
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
-                       canvas_id=canvas_id, user_question=question),
+                       canvas_id=canvas_id, user_question=question, agent=agent),
         max_steps=max_steps,
         on_step=on_step,
     )
