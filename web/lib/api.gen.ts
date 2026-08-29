@@ -9144,6 +9144,11 @@ export interface components {
             /** Columns */
             columns?: string[];
             /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
              * Height
              * @default 0
              */
