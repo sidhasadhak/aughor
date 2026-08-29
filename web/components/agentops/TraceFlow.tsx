@@ -43,7 +43,7 @@
  * other canvases. The argument was wrong on the facts, so the canvas is the better
  * answer — same library, same design system, and pan/zoom/fit come with it.)
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -619,6 +619,32 @@ export function TraceFlow({
       drawnNodes: (timeline.nodes ?? []).filter(n => drawn.has(n.id)),
     };
   }, [timeline.nodes, timeline.usage, edges, events, openId, answer, origin]);
+
+  /**
+   * Re-fit when the RUN changes.
+   *
+   * `fitView` as a prop applies on first mount only, and this component does not remount
+   * between runs — it takes new props. Measured in the browser: opening a 24-node run,
+   * clicking its last rail row, then switching to a 45-node run left the viewport at
+   * `scale 0.8, x 245.8` — the previous run's pan — so the new run opened wherever the
+   * old one had been left rather than fitted. Nothing errored; it just showed the wrong
+   * part of the right run.
+   *
+   * Keyed on the node IDS, not on `rfNodes`: that array is rebuilt every time a card
+   * opens, and keying on it would yank the viewport back on every click.
+   */
+  const fitKey = rfNodes.map(n => n.id).join("|");
+  useEffect(() => {
+    if (!rf || !fitKey) return;
+    // Deferred a frame: the nodes for the new run have to be measured before there are
+    // bounds to fit to, and ReactFlow measures after commit.
+    const frame = requestAnimationFrame(() => {
+      // The same bounds as the prop it stands in for — an unbounded fit resolves a wide
+      // run to scale 0.2, which is a picture of a run rather than a reading of one.
+      rf.fitView({ minZoom: 0.55, maxZoom: 1, padding: 0.15 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rf, fitKey]);
 
   /** Pick a node from the rail: open it AND bring it into view. A canvas wider than the
    *  viewport makes selection without centring a no-op the reader cannot see. */
