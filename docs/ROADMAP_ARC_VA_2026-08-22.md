@@ -424,9 +424,36 @@ reading a value nobody set), and RC-4 is what makes that dimension usable at all
   approval gate fails closed (it governs permission). 10 tests, both guards
   mutation-tested. Inert today in the sense that matters: no caps DB exists, so nothing
   is blocked — but every outbound call is now visible and countable.
-* **VA-9b — per-user connections.** Generalise the `SlackBot` record onto RC-4's
-  `identity_links`, so "my Slack" differs from yours. Follows a proven pattern rather
-  than inventing one; the vault/mask/verify contract already has tests.
+* **VA-9b — the agent is the actor — ✅ BUILT 2026-08-29.**
+  *Scope widened on the user's direction: "these automations are actually agentic ops,
+  make sure it is so — that arrangement makes the 'agentic' nature of the platform very
+  coherent."* Measured, and the incoherence was real: **only `investigate` consulted an
+  agent**, `AutomationRun` recorded **none**, and every governed action was attributed to
+  `automation:<id>` — a MECHANISM, not an actor with a charter, instructions, bound
+  documents, an eval chip and an owner. An automation was a cron with side effects.
+
+  The chain was already half-built and unconnected: `UserAgent.owner` exists, and
+  `Effect.agent_id` was a generic property reading `config` for **any** kind — documented
+  as investigate-only, consumed by nothing else. So this connects
+  **person → agent → automation → connection**:
+  `Automation.agent_id` (the automation operates as an agent); every effect inherits it,
+  and a step may name its own to delegate; `EffectOutcome.agent_id` per STEP, because a
+  run-level field could not say which step delegated; `AutomationRun.agent_id` on **every**
+  run including gated and not-fired ones, since a run that did nothing still did nothing
+  on someone's behalf; and a governed write now attributes to **`agent:<id>`**, which
+  parses as a principal ref so RC-4's identity plane resolves it like any other.
+  The VA-4b graph shows which agent acts and which step delegates — on the *Structure*
+  view too, because "who will act" is part of the design, not only of a run.
+
+  Per-user half: `SlackBot.owner`, a platform-user id resolvable through
+  `identity_links`, so a linked Slack person is the same subject and "my Slack" differs
+  from yours without a second identity scheme. `bots_for_owner` deliberately includes the
+  org's **unowned** bots — `owner=""` is what every earlier bot carries, and excluding
+  them would make the field a silent migration rather than an addition.
+
+  13 tests. Mutation-tested: removing inheritance or the agent attribution fails four.
+  ⚠️ Still org-scoped: **warehouse connections themselves have no owner** (`registry.py`
+  has `org_id` only). Owning a connection is the remaining piece of "per-user".
 * **VA-9c — per-agent tool grants.** A `UserAgent` gets *named* tools from a connection,
   never a whole server. Writes route through the approvals plane (tiered writes hold).
 * **VA-9d — the MCP consumer.** stdio + SSE, server registry, tool discovery, health,

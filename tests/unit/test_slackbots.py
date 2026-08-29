@@ -309,3 +309,35 @@ def test_slack_post_is_reachable_from_the_engine_dispatch_table():
     the feature does not."""
     from aughor.automations.engine import _DISPATCHERS
     assert "slack_post" in _DISPATCHERS
+
+
+# ── VA-9b: whose credential is being spent ───────────────────────────────────────
+
+def test_a_bot_can_belong_to_a_person():
+    saved = store.save_bot(_bot(owner="amit@example.com"))
+    assert store.get_bot(saved.id).owner == "amit@example.com"
+
+
+def test_owner_scoping_includes_the_orgs_unowned_bots():
+    """`owner=""` is what every bot created before VA-9b carries, and a shared workspace
+    bot is legitimate. Excluding them would make this field a silent migration."""
+    # Asserted by ID and by inclusion, not by an exact set of names: earlier tests in
+    # this file leave bots in the store, so an equality assertion would be measuring the
+    # whole file's history rather than this property.
+    mine = store.save_bot(_bot(name="mine", owner="amit@example.com"))
+    yours = store.save_bot(_bot(name="yours", owner="sam@example.com"))
+    shared = store.save_bot(_bot(name="shared"))
+
+    visible = {b.id for b in store.bots_for_owner("amit@example.com")}
+    assert mine.id in visible
+    assert shared.id in visible, "an unowned bot is the org's and stays visible"
+    assert yours.id not in visible, "another person's credential is not mine to spend"
+
+
+def test_an_owner_is_the_same_subject_the_identity_plane_resolves():
+    """RC-4 maps `slack:U…` → a platform user; this stores that same user. One identity
+    scheme, so 'my Slack' differs from yours without inventing a second."""
+    from aughor.identity import attribution_key, store as ident_store
+    ident_store.put_link("slack", "U0OWNER", "amit@example.com")
+    bot = store.save_bot(_bot(owner="amit@example.com"))
+    assert attribution_key("slack:U0OWNER") == bot.owner

@@ -79,6 +79,12 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             # payload. Caught by the no-spill test. Only the allowlist below may label.
             "detail": _effect_detail(effect),
         }
+        # VA-9b — whose work this step is. On the STRUCTURE graph too, because "which
+        # agent will act" is part of the design, not only of a run.
+        acting = (getattr(effect, "agent_id", "") or getattr(automation, "agent_id", "") or "")
+        if acting:
+            node["agent_id"] = acting
+            node["delegated"] = bool(getattr(effect, "agent_id", ""))
         if i < len(outcomes):
             o = outcomes[i]
             node["status"] = getattr(o, "status", "")
@@ -104,6 +110,7 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "mode": "execution" if run is not None else "structure",
         "automation_id": getattr(automation, "id", ""),
         "name": getattr(automation, "name", ""),
+        "agent_id": getattr(automation, "agent_id", "") or "",
     }
     if run is not None:
         # WHY this run decorated nothing. Found by driving it: a `not_fired` or `gated`

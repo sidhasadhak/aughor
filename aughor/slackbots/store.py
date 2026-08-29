@@ -64,6 +64,16 @@ def delete_bot(bot_id: str) -> bool:
     return _STORE.delete(bot_id)
 
 
+def bots_for_owner(owner: str) -> list[SlackBot]:
+    """Every bot belonging to one person, plus the org's unowned ones.
+
+    Unowned bots are included deliberately: `owner=""` is what every bot created before
+    VA-9b carries, and a shared workspace bot is a legitimate thing to keep. Excluding
+    them would make this field a silent migration rather than an addition.
+    """
+    return [b for b in list_bots() if not b.owner or b.owner == owner]
+
+
 def bots_for_agent(agent_id: str) -> list[SlackBot]:
     """Every bot fronting one agent — the query an agent-delete cascade needs, so a
     deleted agent does not leave a live socket answering as it."""
