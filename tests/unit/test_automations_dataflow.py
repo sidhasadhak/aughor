@@ -324,3 +324,47 @@ def test_the_ENGINE_stamps_a_duration_on_every_step():
     # >= 0 rather than > 0: a stubbed dispatcher can genuinely take under the clock's
     # resolution, and asserting a positive number there is how a test becomes flaky.
     assert all(o.duration_ms >= 0.0 for o in run.effects)
+
+
+# ── VA-4d: an automation run is a run like any other ────────────────────────────
+
+def test_a_run_emits_ONE_TRACE_that_Activity_Runs_can_group_by():
+    """`Activity → Runs` is "one layer over one substrate (session_events)", and an
+    automation emitted NOTHING into it — which is why its runs were invisible there and
+    needed a bespoke canvas. Every step's span now carries the RUN ID as its trace, so
+    the whole run groups, and clicking it lands on exactly this AutomationRun rather than
+    on a second correlation key kept in sync by hand."""
+    seen: list[str] = []
+    import aughor.obs.session_log as slog
+    real = slog.emit
+
+    def _capture(kind, **kw):
+        if kw.get("trace_id"):
+            seen.append(kw["trace_id"])
+        return real(kind, **kw)
+
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+    mp.setattr(slog, "emit", _capture)
+    try:
+        run = _run(_automation(_effect(), _effect()),
+                   lambda e, a: EffectOutcome(kind=e.kind, target="t", status="executed"))
+    finally:
+        mp.undo()
+
+    assert seen, "an automation run must emit into the shared substrate"
+    assert set(seen) == {run.id}, "every step belongs to ONE trace, and it is the run's id"
+
+
+def test_a_broken_telemetry_sink_never_fails_the_run():
+    """Telemetry is best-effort everywhere else in this engine and must be here too."""
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+    mp.setattr("aughor.telemetry.mlflow_tool_span",
+               lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sink down")))
+    try:
+        run = _run(_automation(_effect()),
+                   lambda e, a: EffectOutcome(kind=e.kind, target="t", status="executed"))
+    finally:
+        mp.undo()
+    assert run.effects[0].status == "executed"

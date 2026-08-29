@@ -34,6 +34,8 @@ from __future__ import annotations
 import logging
 import random
 import time as _time
+import uuid as _uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -308,6 +310,52 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
                          # The executor already returns a dispatch result; it was thrown
                          # away at this boundary.
                          data=dict(result.outcome or {}))
+
+
+@contextmanager
+def _step_span(effect: Effect, automation: Automation, alias: str, run_id: str = ""):
+    """One TOOL span for one step. Best-effort — telemetry must never fail a run.
+
+    Named `automation.<kind>` rather than the effect's target: the span name is what a
+    waterfall row reads, and `slack_post` answers "what kind of work" where a channel id
+    answers nothing.
+
+    The span is CONSTRUCTED inside the try and ENTERED outside it. Wrapping the whole
+    `with` instead would swallow the body's own exceptions into the telemetry fallback —
+    and a fallback that yields a second time is a RuntimeError, not a graceful degrade.
+    """
+    span = None
+    bound = None
+    try:
+        from aughor.telemetry import bind_trace, mlflow_tool_span
+        # Bound per STEP rather than once around the loop: same trace id either way, and
+        # this needs no re-indent of the chain, which is the part that must not churn.
+        # `bind_trace` is independent of every observability flag — a trace id is a
+        # correlation fact, not a sink, and making it conditional is how spans end up
+        # orphaned with nothing able to group them.
+        if run_id:
+            bound = bind_trace(run_id)
+            bound.__enter__()
+        span = mlflow_tool_span(f"automation.{effect.kind}", {
+            "automation_id": automation.id, "automation": automation.name,
+            "step": alias, "agent_id": acting_agent(effect, automation),
+        }, span_kind="tool")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "automation step span is best-effort", counter="automation.span")
+    try:
+        if span is None:
+            yield
+        else:
+            with span:
+                yield
+    finally:
+        if bound is not None:
+            try:
+                bound.__exit__(None, None, None)
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "trace unbind is best-effort", counter="automation.span")
 
 
 def acting_agent(effect: Effect, automation: Automation) -> str:
@@ -660,7 +708,12 @@ def run_automation(
         })
         return append_run(run) if persist else run
 
+    # VA-4d — allocated up front so the run id can BE the trace id: clicking a run in
+    # `Activity → Runs` then lands on exactly this AutomationRun, with no second
+    # correlation key to keep in sync.
+    run_id = str(_uuid.uuid4())
     base = {
+        "id": run_id,
         "automation_id": automation.id,
         "automation_name": automation.name,
         "conn_id": automation.conn_id,
@@ -696,6 +749,7 @@ def run_automation(
         claim_delivery(automation.id, started)
     sleep_budget = [MAX_RETRY_SLEEP_SECONDS]
 
+
     # VA-4a — a CHAIN, not a list comprehension. Each effect sees the accumulated output
     # of every prior step (merged-data, à la `andThen`), which is what makes "post the
     # answer from step 1 into the thread step 2 opened" expressible at all. Before this,
@@ -719,8 +773,15 @@ def run_automation(
             continue
         step_started = now_iso_z()
         step_t0 = _time.monotonic()
-        outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
-                              dispatch_fn, sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
+        # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one
+        # layer over one substrate (session_events)", and an automation emitted NOTHING
+        # into it — which is why its runs were invisible there and needed a bespoke
+        # canvas. A span per step makes an automation run a run like any other: waterfall,
+        # events, logs, filters and cost, none of it designed twice.
+        with _step_span(effect, automation, alias, run_id):
+            outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
+                                  dispatch_fn, sleeper=sleeper, rng=rng,
+                                  sleep_budget=sleep_budget)
         step_ms = (_time.monotonic() - step_t0) * 1000.0
         # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
         # set it is six chances to forget, and a step that silently ran as nobody is
