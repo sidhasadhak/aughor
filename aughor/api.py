@@ -756,6 +756,7 @@ from aughor.routers import (
     governance,
     obs as obs_router,
     control_room,
+    charts,
 )
 
 app.include_router(consistency.router)
@@ -797,6 +798,7 @@ app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
+app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
 app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)

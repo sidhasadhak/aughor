@@ -1,6 +1,6 @@
 /**
- * The transport half of RC-1: one Aughor `/ask` turn, folded into an
- * `AsyncIterable<string>` that `thread.post` can stream into Slack.
+ * The transport half of RC-1/RC-2: one Aughor `/ask` turn, folded into an
+ * `AsyncIterable` that `thread.post` can stream into Slack.
  *
  * Deliberately thin. The question goes to the `/ask` door at `depth: "auto"` —
  * the same deterministic router the web chat's auto path uses, so a quick
@@ -13,14 +13,41 @@
  * `thread.post` iterable APPENDS every yield. So this tracks what it already
  * yielded per channel and emits only suffixes — the one non-obvious piece of
  * the whole file.
+ *
+ * RC-2 adds three things that do not change that shape:
+ *   - progress frames become `task_update` chunks (see `progress.ts`), yielded
+ *     into the same stream the text rides;
+ *   - the turn's grid and chart ride out through `onTurn` once the run settles,
+ *     for the caller to post as a table, a CSV and a picture;
+ *   - an abandoned run is CANCELLED, not merely disconnected. Since FL-1
+ *     detached the producer from its viewer, dropping the SSE connection no
+ *     longer stops the work — it just stops anyone watching it burn budget.
  */
+import type { StreamChunk } from "chat";
+
+import { createProgressCards } from "./progress.js";
+
+/** What the turn produced besides prose — the visual half of the answer. */
+export interface TurnArtifacts {
+  investigationId: string;
+  question: string;
+  sessionId: string;
+  columns: string[];
+  rows: unknown[][];
+  chartType: string;
+  chartConfig: Record<string, unknown>;
+}
 
 export interface AskOptions {
   sessionId: string;
+  /** The platform's cancellation signal — Slack's stop button aborts it. */
   signal?: AbortSignal;
+  /** Called once, when a turn settles with a grid worth showing. */
+  onTurn?: (artifacts: TurnArtifacts) => void;
 }
 
-export type AskStream = (question: string, opts: AskOptions) => AsyncIterable<string>;
+export type AskChunk = string | StreamChunk;
+export type AskStream = (question: string, opts: AskOptions) => AsyncIterable<AskChunk>;
 
 interface Env {
   AUGHOR_API_URL?: string;
@@ -42,15 +69,41 @@ export function createAskStream(
 ): AskStream {
   const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
 
-  return async function* ask(question, { sessionId, signal }) {
+  /**
+   * Stop the run itself, not just our view of it.
+   *
+   * FL-1 detached the producer from its SSE consumers so a refresh would stop
+   * killing a deep run. The cost of that win is this: after detachment, walking
+   * away leaves a supervised kernel job running to completion against a budget
+   * nobody is watching. Cancelling the job is the only legitimate kill, and
+   * `/investigations/{id}/cancel` is the door to it.
+   *
+   * Sent WITHOUT the aborted signal — the whole point is that this request must
+   * outlive the one that was just abandoned.
+   */
+  async function cancel(investigationId: string): Promise<void> {
+    try {
+      await fetchImpl(`${base}/investigations/${encodeURIComponent(investigationId)}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+      });
+    } catch {
+      // Best-effort: the run's own budget still bounds it, and there is no
+      // longer a thread to report this into.
+    }
+  }
+
+  return async function* ask(question, { sessionId, signal, onTurn }) {
     const res = await fetchImpl(`${base}/ask`, {
       method: "POST",
       signal,
       headers: {
         "content-type": "application/json",
         accept: "text/event-stream",
-        ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
+        ...authHeaders,
       },
       body: JSON.stringify({
         question,
@@ -67,6 +120,12 @@ export function createAskStream(
     let headline = "";
     let narrative = "";
     let sawText = false;
+    let settled = false;
+    const cards = createProgressCards();
+    const artifacts: TurnArtifacts = {
+      investigationId: "", question, sessionId,
+      columns: [], rows: [], chartType: "", chartConfig: {},
+    };
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -91,7 +150,31 @@ export function createAskStream(
             continue; // a malformed frame must not kill the whole answer
           }
 
+          // Progress frames become task cards; every other frame maps to none.
+          for (const card of cards(frame)) yield card;
+
           switch (frame.type) {
+            case "start":
+              // The run's identity, and the only handle a cancel has.
+              artifacts.investigationId = asText(frame.investigation_id);
+              break;
+
+            // The grid and its chart, kept for the artifacts post. Last-wins: a
+            // conversational turn may run several queries, and the one the
+            // closing prose is about is the one it finished on.
+            case "columns":
+              artifacts.columns = (frame.columns as string[]) ?? [];
+              break;
+            case "rows":
+              artifacts.rows = (frame.rows as unknown[][]) ?? [];
+              break;
+            case "chart_type":
+              artifacts.chartType = asText(frame.chart_type);
+              break;
+            case "chart_config":
+              artifacts.chartConfig = (frame.chart_config as Record<string, unknown>) ?? {};
+              break;
+
             case "headline_delta": {
               const add = suffix(headline, asText(frame.headline));
               if (add) {
@@ -151,17 +234,29 @@ export function createAskStream(
                 .trim();
               const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
               yield (sawText ? "\n\n" : "") + `⚠️ ${hint || short}`;
+              // No artifacts: a failed turn has no result to exhibit, and half a
+              // grid posted under a failure reads as a partial answer.
               return;
             }
             case "done":
+              settled = true;
+              onTurn?.(artifacts);
               return;
             default:
-              break; // progress/receipt frames are web-surface concerns, not Slack text
+              break; // receipt/telemetry frames are web-surface concerns, not Slack text
           }
         }
       }
+      // The stream ended without a `done` — a settled answer that never got its
+      // terminal frame still earned its exhibits.
+      if (!settled && sawText) onTurn?.(artifacts);
     } finally {
       reader.releaseLock();
+      // Abandoned, not finished: the platform's stop button (or any abort)
+      // reached us mid-run, so kill the work rather than merely stop watching.
+      if (!settled && signal?.aborted && artifacts.investigationId) {
+        await cancel(artifacts.investigationId);
+      }
     }
   };
 }

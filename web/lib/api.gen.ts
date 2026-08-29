@@ -1571,6 +1571,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/charts/svg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Chart Svg Route
+         * @description Render one grid to SVG. 204 when the data has no honest chart, or when
+         *     the renderer is unavailable — both mean the same thing to a caller (fall
+         *     back to the table), and `render_charts_svg` already fails open to `None`
+         *     for a missing node, a dead bundle, or a timeout.
+         */
+        post: operations["render_chart_svg_route_charts_svg_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat": {
         parameters: {
             query?: never;
@@ -8996,6 +9019,58 @@ export interface components {
              */
             to_path: string;
         };
+        /**
+         * ChartSvgRequest
+         * @description One chart request, in the vocabulary the `/ask` stream already speaks:
+         *     `columns` + `rows` as the grid frames carry them, `chart_type` as the
+         *     `chart_type` frame names it, and `chart_config` verbatim as the
+         *     `chart_config` frame emits it (the exhibit rides inside — the same place
+         *     the web reads it from).
+         */
+        ChartSvgRequest: {
+            /** Chart Config */
+            chart_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Chart Type
+             * @default auto
+             */
+            chart_type: string;
+            /** Column Units */
+            column_units?: {
+                [key: string]: unknown;
+            } | null;
+            /** Columns */
+            columns?: string[];
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /**
+             * Labels
+             * @default true
+             */
+            labels: boolean;
+            /**
+             * Money Symbol
+             * @default
+             */
+            money_symbol: string;
+            /** Rows */
+            rows?: unknown[][];
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Width
+             * @default 760
+             */
+            width: number;
+        };
         /** ChatHistoryTurn */
         ChatHistoryTurn: {
             /**
@@ -14584,6 +14659,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_chart_svg_route_charts_svg_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChartSvgRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

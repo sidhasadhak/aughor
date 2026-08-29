@@ -1115,7 +1115,7 @@ def _ground_headline(headline, columns, rows):
     return f"{metric}: {fval}"
 
 
-def _resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> str:
+def resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> str:
     """Effective currency symbol for a connection+schema — override-wins over the inferred
     profile, falling back to USD '$'. The app/workspace override applies even when no profile
     is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
@@ -1637,7 +1637,7 @@ def _answer_core(
         # `_es.open()` and the block whose `finally` closes `db`, so a raise here leaked
         # the connection (instrumented: opened=1 closed=0, on the pre-split tree too).
         # Everything that runs after the open belongs under the `finally` that owns it.
-        _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
+        _cur_sym = resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
         from aughor.agent.prompts import CHAT_PROMPT
         from aughor.llm.provider import get_provider
         # Shared grounding producers (Rec 5): the same block functions the
@@ -3298,6 +3298,34 @@ async def _stream_converse(
             # text-only converse answer renders exactly like a definitional one does.
             emit("mode", {"query_mode": "final_text"})
         emit("headline", {"headline": answer})
+
+        # RC-2 — file the exchange when nothing else did. A converse turn that
+        # called a tool already has a row: `answer_core` writes one and returns
+        # its id on the inner `done`, which is what `turn["inv_id"]` holds. A
+        # turn answered from memory, context or the briefing calls no tool and
+        # so writes NOTHING — invisible on the web, where the client holds the
+        # thread until a reload, and a HOLE everywhere else: a headless door
+        # (Slack, MCP) keeps no client-side copy, so the conversation it files
+        # under loses exactly the follow-ups that make it a conversation. Seen
+        # live — an "are you sure?" answered in a Slack thread, then absent
+        # from the conversation the next turn rebuilds its history from.
+        #
+        # Only when nothing was filed, never in addition: two rows for one
+        # exchange would double-count every reader that counts turns, and the
+        # tool's row is the better one (it carries the SQL and the receipt).
+        if not turn["inv_id"]:
+            try:
+                turn["inv_id"] = save_chat_turn(
+                    question=question, connection_id=connection_id,
+                    headline=answer, sql="", session_id=session_id,
+                    canvas_id=canvas_id,
+                )
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "filing a conversational turn is best-effort — the answer "
+                              "has already been sent either way",
+                         counter="converse.file_turn")
+
         emit("done", {"inv_id": turn["inv_id"], "has_receipt": turn["has_receipt"],
                       "body": "converse", "stop_reason": result.stop_reason,
                       "steps": len(result.steps)})
@@ -5692,7 +5720,7 @@ def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False
     try:
         # The router resolves the effective currency (org override → profile) and injects
         # it — the platform-side export must not import agent-side settings itself.
-        _sym = _resolve_currency_symbol(inv.get("connection_id") or "", inv.get("schema_name"))
+        _sym = resolve_currency_symbol(inv.get("connection_id") or "", inv.get("schema_name"))
         data, filename, media_type = export_report(inv, fmt, narrate=narrate, money_symbol=_sym)
     except ExportUnavailable as exc:
         # A deployment without the `export` extra is a CONFIGURATION state, not a fault:

@@ -148,6 +148,33 @@ jobs:
         # command after `npm install` is often `npm run build` — it must work.
         run: npm run build
 
+  slack-bot:
+    name: Slack bot · typecheck + tests
+    # RC-1 shipped bots/slack with a hermetic suite and nothing ran it: a guard
+    # no job executes is decorative. The suite needs no Slack workspace and no
+    # Aughor API — @chat-adapter/tests drives the real Chat pipeline against a
+    # mock adapter, and the chart test rasterizes a real SVG in-process.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bots/slack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: bots/slack/package-lock.json
+      - name: Install dependencies
+        # `chat` and its adapters are pinned EXACT (weekly-minor beta), and the
+        # rasterizer resolves platform-specific prebuilt binaries — `npm ci` is
+        # what keeps both honest across machines.
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+
   lint:
     name: Backend · ruff
     runs-on: ubuntu-latest
