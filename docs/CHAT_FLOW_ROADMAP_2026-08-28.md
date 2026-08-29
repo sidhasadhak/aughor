@@ -236,9 +236,32 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
   — every answer carries "Open in Aughor →" to the conversation, where the
   interactive chart, full table, SQL and Trust Receipt live: Slack is the
   doorway, the platform stays where verification happens.
-- **RC-3 — Durable approval cards**: the `requestApproval` *shape* (card +
-  durable wait + timeout + approver identity) ported to Python; unstalls the
-  scheduled-task first-run approval trap. Do not import the Workflow runtime.
+- **RC-3 — Durable approval cards — BUILT 2026-08-29, and the pre-check moved it.**
+  *Original scope: port the `requestApproval` shape (card + durable wait + timeout
+  + approver identity) to Python; unstall the scheduled-task first-run approval
+  trap.* Three of the four elements already existed as Wave A4's proposal inbox
+  (`aughor/actions/inbox.py`): the **card** is a `staged_proposals` row surfaced at
+  `/control-room/needs-human`, the **durable wait** is that table (idempotent by
+  `(org, run_id, call_id)`, resolve-once by conditional UPDATE), and **approver
+  identity** is `resolved_by` — populated in the live store. **Timeout was the only
+  gap, and it is what this wave built.**
+  The *stall* premise is measured FALSE: `execute_kinetic_action` catches the 428
+  and returns `KineticResult("approval_required")`, and the automation engine lists
+  that among five terminal outcomes it does not retry (`engine.py:299`, "verdicts,
+  not faults"). Nothing holds a scheduler thread; nothing prompts. The
+  "approvals stored per task, first run stalls" note this clause came from is about
+  the *harness's* scheduled tasks, not Aughor's.
+  Delivered: `expires_at` stamped at stage time and then fixed (migration 2 —
+  numbered against the LIVE store's `PRAGMA user_version`, and rehearsed on a
+  `.backup`); a `StagedProposal.expired` predicate that fails CLOSED via
+  `age_hours`; enforcement **inside** `accept_proposal` rather than only in a
+  sweeper, so there is no window where a lapsed proposal is still acceptable;
+  HTTP **410**, not 400, because the caller was late rather than wrong; and
+  `expire_stale()` swept before `/control-room/needs-human` reads, so the queue
+  never advertises work the platform has already decided against. Default TTL is
+  7 days — the one proposal the live inbox has ever held sat pending for **three**,
+  so 24h would have expired real work before its approver reached it.
+  15 tests, both guards mutation-tested. Do not import the Workflow runtime.
 - **RC-4 — Identity-keyed transcripts**: stable identity resolver; the shape for
   the open Langfuse LF-2 attribution question; prerequisite for Slack↔web
   thread continuity.

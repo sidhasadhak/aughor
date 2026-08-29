@@ -94,8 +94,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # The Overview's attention strip switches on `NeedsHumanRow.source`, whose wire
         # value is `kinetic_inbox`. It matches the field, never the reader: the chip that
         # renders from it says "proposal".
+        # RC-3's expiry suite is exempt on the same ground: every hit in it is a Python
+        # identifier from the existing API — `KineticAction`, `KineticResult`,
+        # `execute_kinetic_action`, `kinetic_actions` — and not one is reader-facing prose.
+        # Aliasing them to dodge the pattern would hide the real type names from the test
+        # that exercises them, which trades readable code for a passing count.
         r"(?i)kinetic", CODE_ROOTS,
-        ("web/components/FleetOverviewPanel.tsx",),
+        ("web/components/FleetOverviewPanel.tsx",
+         "tests/unit/test_kinetic_inbox_expiry.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -137,7 +143,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # Same reason as its two siblings: it calls `/control-room/needs-human`, which
          # is one of the frozen routes, and a test cannot assert against a path it is
          # not allowed to spell.
-         "tests/unit/test_attention_broken_automations.py"),
+         "tests/unit/test_attention_broken_automations.py",
+         # RC-3's expiry seam test, for the same reason: it asserts that a lapsed proposal
+         # is absent from `/control-room/needs-human`, which it cannot do without naming it.
+         "tests/unit/test_kinetic_inbox_expiry.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),

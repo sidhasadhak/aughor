@@ -34,7 +34,7 @@ from aughor.ontology.models import KineticAction, SideEffect
 # ── result + errors ──────────────────────────────────────────────────────────────
 
 _Status = str  # "executed" | "criterion_failed" | "approval_required" | "invalid_params"
-#              | "dispatch_error" | "not_found" | "disabled"
+#              | "dispatch_error" | "not_found" | "disabled" | "expired"
 
 
 @dataclass
@@ -52,6 +52,10 @@ class KineticResult:
             "executed": 200, "criterion_failed": 422, "invalid_params": 422,
             "approval_required": 428, "not_found": 404, "disabled": 404,
             "dispatch_error": 502,
+            # 410, not 400 (RC-3): the request was well-formed and the proposal was real —
+            # its acceptance window closed. 400 would blame the caller for the clock, and a
+            # client cannot tell "you sent nonsense" apart from "you were too late".
+            "expired": 410,
         }.get(self.status, 400)
 
 
