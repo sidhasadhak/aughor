@@ -381,3 +381,53 @@ describe("delegated hops", () => {
     expect(t.sql).toBe("SELECT 1");   // and it stays the turn's own work
   });
 });
+
+describe("FL-5: the wave path narrates its wait (explore_plan + subq_answer)", () => {
+  const subq = (id: string, answer: string) => ({
+    event: "subq_answer" as const,
+    data: { subq_id: id, question: `q-${id}`, answer, sql: "SELECT 1",
+            columns: ["c"], rows: [[1]], row_count: 1, error: null },
+  });
+
+  it("the plan is the denominator; each answer lands and counts", async () => {
+    const msg = await messageFrom([
+      { event: "explore_plan", data: { sub_questions: [
+        { id: "s1", question: "a" }, { id: "s2", question: "b" }, { id: "s3", question: "c" },
+      ] } },
+      subq("s1", "East looks flat."),
+      subq("s2", "South is down 4%."),
+    ]);
+    const t = projectTurn("q", msg, { streaming: true });
+    expect(t.subQuestions).toHaveLength(3);
+    expect(t.subqAnswers.map((a) => a.answer)).toEqual(["East looks flat.", "South is down 4%."]);
+    expect(t.statusText).toBe("Answered 2 of 3 sub-questions…");
+  });
+
+  it("re-emission under the same id replaces, never duplicates (refinement, resume replay)", async () => {
+    const msg = await messageFrom([
+      subq("s1", "East looks flat."),
+      subq("s1", "East is flat after excluding returns."),
+    ]);
+    const t = projectTurn("q", msg, { streaming: true });
+    expect(t.subqAnswers).toHaveLength(1);
+    expect(t.subqAnswers[0].answer).toBe("East is flat after excluding returns.");
+    expect(t.statusText).toBe("Answered 1 sub-question…");
+  });
+
+  it("the terminal report still replaces the accumulated array wholesale", async () => {
+    const finalAnswers = [
+      { subq_id: "s1", question: "a", answer: "East settled.", sql: "", columns: [], rows: [], row_count: 0, error: null },
+      { subq_id: "s2", question: "b", answer: "South settled.", sql: "", columns: [], rows: [], row_count: 0, error: null },
+    ];
+    const msg = await messageFrom([
+      subq("s1", "East looks flat."),
+      { event: "explore_report", data: {
+        explore_report: { summary: "done" }, sub_questions: [], subq_answers: finalAnswers,
+        query_count: 2, query_mode: "explore",
+      } },
+    ]);
+    const t = projectTurn("q", msg);
+    expect(t.subqAnswers.map((a) => a.answer)).toEqual(["East settled.", "South settled."]);
+    expect(t.queryMode).toBe("explore");
+  });
+});

@@ -462,6 +462,27 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
     t.scanProgress = { done, total };
     if (current && !t.scanItems.includes(current)) t.scanItems = [...t.scanItems, current];
   },
+  // FL-5 — the wave path's own progress pair. The plan names every sub-question
+  // up front (the wait's real denominator); each answer then lands the moment it
+  // exists instead of accumulating silently for the terminal report.
+  explore_plan: (t, d) => {
+    t.subQuestions = (d.sub_questions as SubQuestion[]) ?? [];
+  },
+  subq_answer: (t, d) => {
+    const a = d as unknown as SubQuestionAnswer;
+    if (!a.subq_id) return;
+    // Last-wins per sub-question: a refinement re-emits under the same id, and
+    // a resume replay re-delivers every frame — both must not duplicate. The
+    // terminal `explore_report` still replaces the whole array.
+    const i = t.subqAnswers.findIndex((x) => x.subq_id === a.subq_id);
+    t.subqAnswers = i >= 0
+      ? [...t.subqAnswers.slice(0, i), a, ...t.subqAnswers.slice(i + 1)]
+      : [...t.subqAnswers, a];
+    const n = t.subqAnswers.length;
+    t.statusText = t.subQuestions.length
+      ? `Answered ${n} of ${t.subQuestions.length} sub-questions…`
+      : `Answered ${n} sub-question${n === 1 ? "" : "s"}…`;
+  },
   hypotheses: (t, d) => { t.hypotheses = (d.hypotheses as Hypothesis[]) ?? []; },
   score: (t, d) => {
     const score = (d.score as Record<string, unknown>) ?? {};

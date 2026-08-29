@@ -145,6 +145,13 @@ evidence that users send multi-fragment turns; if so, burst-merge à la Chat SDK
 (`context.skipped`) *behind the same interrupt semantics*, never a lock.
 
 ### FL-5 — In-flight engagement for deep runs (projection/presentation only)
+> **BUILT 2026-08-28** (post-graduation, as sequenced). `explore_plan` +
+> `subq_answer` left UNRENDERED_FRAMES and project into the turn (plan =
+> denominator, answers = last-wins accumulation + in-flight prose); the wait
+> composes into `RunProgressCard` (spinner line · real-denominator bar · mono
+> meta · FL-2 notices inside) with `InFlightFindings` beneath, replacing the
+> stacked B3 task list. No new stream events, no backend change. Visual
+> receipt against the mock's pending card verified live in the app shell.
 A deep run's wait should read as an analyst working, not a spinner holding.
 Everything needed is ALREADY ON THE WIRE — `phase_progress`
 (done/total/current), `queries_executed`, `subq_answer`, `phase_complete`,
