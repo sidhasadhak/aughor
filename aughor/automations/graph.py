@@ -1,0 +1,124 @@
+"""VA-4b — the automation, as the graph it actually is.
+
+Derived on the SERVER, from the same `collect_refs` the engine resolves against. That is
+the whole point: a picture drawn by a second reader is a picture that can disagree with
+the run, and a workflow view whose arrows are decorative is worse than a list — a list at
+least does not claim.
+
+Two edge kinds, drawn differently on purpose:
+
+* **``data``** — a real ``{"$from": "step1.ts"}`` binding. Output → input. This is the
+  edge that carries meaning, and the reason a canvas is worth having at all: the standing
+  ReactFlow verdict refused a canvas for *agent creation* precisely because an agent is
+  one record with "no producer/consumer relation between its parts, so there is no second
+  node for an edge to terminate on". Automations now have that relation. The refusal's own
+  argument is what licenses this.
+* **``sequence``** — step N runs before step N+1. True, and much weaker. Conflating the
+  two would let a picture imply a dependency the engine does not have, which is how a
+  diagram teaches someone the wrong model of their own automation.
+
+**Structure vs Execution is the same graph, twice.** Passing a run decorates the nodes
+with what happened; passing none describes what is designed. One derivation, two readings
+— never two surfaces that drift.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from aughor.automations.dataflow import alias_for, collect_refs, parse_ref
+
+
+def _condition_label(cond: Any) -> str:
+    kind = getattr(cond, "kind", "")
+    cfg = getattr(cond, "config", {}) or {}
+    if kind == "schedule":
+        return f"schedule · {cfg.get('cron', '')}".strip(" ·")
+    if kind == "metric":
+        return f"metric · monitor {cfg.get('monitor_id', '')}".strip(" ·")
+    if kind in ("source_change", "entity_appears"):
+        return f"{kind} · {cfg.get('table', '')}".strip(" ·")
+    return kind or "condition"
+
+
+def build_graph(automation: Any, run: Any = None) -> dict:
+    """``{"nodes": [...], "edges": [...], "mode": "structure"|"execution"}``.
+
+    ``run`` is an :class:`~aughor.automations.models.AutomationRun`; when given, each
+    effect node carries the status and message from that run. Outcomes are matched
+    POSITIONALLY, which is what the engine produces — it appends exactly one outcome per
+    effect in order, including the skipped ones, before any fallback. Matching on
+    ``target`` instead would silently mis-pair two steps that dispatch the same action.
+    """
+    nodes: list[dict] = []
+    edges: list[dict] = []
+
+    trigger_id = "trigger"
+    conditions = list(getattr(automation, "conditions", []) or [])
+    logic = getattr(automation, "condition_logic", "all")
+    nodes.append({
+        "id": trigger_id,
+        "type": "trigger",
+        "label": "When",
+        "detail": f" {'AND' if logic == 'all' else 'OR'} ".join(
+            _condition_label(c) for c in conditions) or "manual",
+    })
+
+    outcomes = list(getattr(run, "effects", []) or []) if run is not None else []
+    effects = list(getattr(automation, "effects", []) or [])
+
+    for i, effect in enumerate(effects):
+        alias = alias_for(effect, i)
+        node = {
+            "id": alias,
+            "type": "effect",
+            "kind": getattr(effect, "kind", ""),
+            "label": alias,
+            # NEVER `getattr(effect, "target", ...)`: `Effect.target` is a METHOD, and a
+            # bound method is truthy — so an `or` fallback silently never ran and the
+            # method's repr carried the whole config, `bot_token` included, into a UI
+            # payload. Caught by the no-spill test. Only the allowlist below may label.
+            "detail": _effect_detail(effect),
+        }
+        if i < len(outcomes):
+            o = outcomes[i]
+            node["status"] = getattr(o, "status", "")
+            node["message"] = getattr(o, "message", "")
+            # What the step PRODUCED, named. In Execution mode this is what makes a
+            # data edge checkable by eye: the key an edge claims to carry is either in
+            # this list or the edge is lying.
+            node["produced"] = sorted((getattr(o, "data", None) or {}).keys())
+        nodes.append(node)
+
+        # sequence: the trigger starts the first step; each step precedes the next.
+        edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
+                      "to": alias, "type": "sequence"})
+
+        # data: one edge per binding, labelled with the key it carries.
+        for ref in collect_refs(getattr(effect, "config", {}) or {}):
+            source, key = parse_ref(ref)
+            edges.append({"from": source, "to": alias, "type": "data", "label": key})
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "mode": "execution" if run is not None else "structure",
+        "automation_id": getattr(automation, "id", ""),
+        "name": getattr(automation, "name", ""),
+    }
+
+
+def _effect_detail(effect: Any) -> str:
+    """A short, honest label for what this step targets — never the whole config, which
+    can carry a message body or a credential-shaped value."""
+    cfg = getattr(effect, "config", {}) or {}
+    for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
+                "trigger_id", "channel"):
+        val = cfg.get(key)
+        if isinstance(val, str) and val:
+            return val if len(val) <= 80 else val[:80] + "…"
+    return ""
+
+
+def data_edges_only(graph: dict) -> list[dict]:
+    """The edges that carry a value. The sequence scaffolding is not the point."""
+    return [e for e in graph.get("edges", []) if e.get("type") == "data"]

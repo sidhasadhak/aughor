@@ -936,6 +936,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/{automation_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Graph
+         * @description The automation as a graph — the same shape whether it has run or not.
+         *
+         *     `run` selects Execution mode: `latest` decorates the nodes with the most recent run,
+         *     an explicit run id with that one. Omitted, the response is Structure — what is
+         *     designed. One derivation, two readings, so the picture cannot drift from the run.
+         */
+        get: operations["graph_automations__automation_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}/pause": {
         parameters: {
             query?: never;
@@ -9614,6 +9638,11 @@ export interface components {
          *     and connection binding are applied by that path, not re-implemented here.
          */
         Effect: {
+            /**
+             * Alias
+             * @default
+             */
+            alias: string;
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -13387,6 +13416,39 @@ export interface operations {
         parameters: {
             query?: {
                 enabled?: boolean;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    graph_automations__automation_id__graph_get: {
+        parameters: {
+            query?: {
+                run?: string;
             };
             header?: never;
             path: {

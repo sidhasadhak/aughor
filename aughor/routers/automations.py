@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
+from aughor.automations.graph import build_graph
 from aughor.automations.models import Automation, Condition, Effect
 from aughor.automations.store import (
     delete_automation,
@@ -141,6 +142,31 @@ def run_now(automation_id: str):
     if run is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     return run.model_dump()
+
+
+@router.get("/automations/{automation_id}/graph")
+def graph(automation_id: str, run: str = ""):
+    """The automation as a graph — the same shape whether it has run or not.
+
+    `run` selects Execution mode: `latest` decorates the nodes with the most recent run,
+    an explicit run id with that one. Omitted, the response is Structure — what is
+    designed. One derivation, two readings, so the picture cannot drift from the run.
+    """
+    automation = get_automation(automation_id)
+    if automation is None:
+        raise HTTPException(status_code=404, detail="no such automation")
+
+    chosen = None
+    if run:
+        runs_ = get_runs(automation_id=automation_id, limit=1 if run == "latest" else 50)
+        chosen = (runs_[0] if runs_ else None) if run == "latest" else \
+            next((r for r in runs_ if r.id == run), None)
+        if chosen is None:
+            # An honest empty rather than a 404: the automation exists and its STRUCTURE
+            # is exactly what the caller asked to see decorated. Refusing the whole
+            # graph because it has never run would hide the thing they came to look at.
+            return {**build_graph(automation), "run_missing": True}
+    return build_graph(automation, chosen)
 
 
 @router.get("/automations/{automation_id}/runs")

@@ -502,10 +502,39 @@ and `_dispatch_slack_post` puts the thread `ts` in a *message string* rather tha
 4. A step whose binding cannot resolve because an upstream step failed is **`skipped`** —
    a status `EffectOutcome` already has.
 
-**VA-4b — the authored graph (after 4a).** One graph, two modes — the *Structure* /
-*Execution* toggle from the user's VoltAgent screenshot is the right model: the design
-and a run through it are the same picture. Note the standing ReactFlow refusal
-(`agent-creation-flow-and-reactflow-verdict.md`) applies to the LIBRARY, not to the idea.
+**VA-4b — the authored graph — ✅ SERVER HALF BUILT 2026-08-29.**
+`aughor/automations/graph.py` + `GET /automations/{id}/graph`. Derived on the SERVER from
+the **same `collect_refs` the engine resolves against** — a picture drawn by a second
+reader is one that can disagree with the run, and a workflow view with decorative arrows
+is worse than a list, because a list does not claim.
+
+*Two edge kinds, deliberately distinct.* `data` is a real `{"$from": …}` binding
+(output→input, labelled with the key it carries); `sequence` is only "step N runs before
+N+1". Conflating them would let the picture imply a dependency the engine does not have.
+In Execution mode each node lists what it `produced`, so a data edge is checkable by eye:
+the key an edge claims to carry is either in that list or the edge is lying.
+
+*Structure and Execution are the same graph*, not two surfaces — passing a run decorates
+the identical nodes and edges. `?run=latest` on an automation that never ran returns the
+structure with `run_missing: true`, never a 404: refusing the whole graph would hide the
+thing the caller came to look at.
+
+**The ReactFlow refusal is not overturned — it is satisfied.** Its own structural argument
+was that *"a canvas's value is DATAFLOW… an Aughor agent is ONE record with no
+producer/consumer relation between its parts, so there is no second node for an edge to
+terminate on"*, and it named the workflow builder's blocker as a runtime that *"could not
+honour the edges a canvas would draw"*. VA-4a made the runtime honour them. The refusal
+stands for **agent creation**, which is still one record; automations now have real edges.
+
+⚠️ **A live defect this caught:** the node label read `getattr(effect, "target", "")`, but
+`Effect.target` is a **method** — truthy, so the `or` fallback never ran and the bound
+method's repr carried the entire config, `bot_token` included, into a UI payload. Only the
+allowlist in `_effect_detail` may label a node now.
+
+**Remaining: the client half.** `AutomationsPanel` still renders effects as
+`effects.map(describeEffect).join(", ")` — a sentence, not a graph. Render from this
+endpoint; do NOT reach for ReactFlow first (jsdom draws zero of its edges, so the
+distinction this wave exists to make would be untestable).
 
 **Suspend/resume is already built.** The parked note wanted "typed suspend/resume as our
 approval gates"; RC-3's proposal inbox is exactly that — a durable, resolve-once record
