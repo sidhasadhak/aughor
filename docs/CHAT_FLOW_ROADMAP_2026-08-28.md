@@ -242,6 +242,18 @@ choice); sequenced after FL-1 unless the user pulls it forward.*
 - **RC-4 — Identity-keyed transcripts**: stable identity resolver; the shape for
   the open Langfuse LF-2 attribution question; prerequisite for Slack↔web
   thread continuity.
+- **RC-5 — Bot doors become records** (design fixed 2026-08-29, user-decided):
+  a Slack bot is a stored {credentials} → {agent_id, connection_id} binding, not
+  an `.env.local`; users create as many as they want via a rendered manifest
+  (one Slack app per bot — route A of three; JSON, never the YAML tab), a
+  registry-driven supervisor runs N sockets in one process, and a new
+  `Effect(kind="slack_post")` lets a cron post AS the bot so the reply threads
+  back onto the same conversation. Its one prerequisite — headless doors leaving
+  holes in their own conversations, because `_stream_converse` never filed turns
+  server-side — was **closed by RC-2** (`a274728b`, chip `task_17fc91f9`), so the
+  factory is unblocked. Full spec, with steps and receipts:
+  `docs/ROADMAP_SLACK_BOT_FACTORY_2026-08-29.md`. *Not yet sequenced against
+  RC-2..RC-4 — the user's call.*
 
 ## Parked / other arcs
 - Semantic-layer-as-greppable-YAML + terminator-tool + errors-as-tool-output →
