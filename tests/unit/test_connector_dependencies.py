@@ -25,24 +25,9 @@ from pathlib import Path
 
 import pytest
 
-from aughor.connectors.registry import DRIVERS
+from aughor.connectors.registry import DRIVERS, PROVIDED_BY
 
 REPO = Path(__file__).resolve().parents[2]
-
-#: Import module → the distribution that provides it. Hand-maintained on purpose: reading
-#: it from the environment would only describe THIS machine's install, and the defect being
-#: guarded is precisely a module that no install provides.
-PROVIDED_BY = {
-    "duckdb": "duckdb",
-    "psycopg2": "psycopg2-binary",
-    "google.cloud.bigquery": "google-cloud-bigquery",
-    "snowflake.connector": "snowflake-connector-python",
-    "pymysql": "PyMySQL",
-    "pyexasol": "pyexasol",
-    "ibis": "ibis-framework",
-    "connectorx": "connectorx",
-    "requests": "requests",
-}
 
 #: The extras whose contents exist to serve connectors. Other extras (`export`, `docs`, …)
 #: are out of scope here — this file is about the connector plane's packaging.

@@ -188,6 +188,71 @@ DRIVERS: dict[str, tuple[str, ...]] = {
     "stripe":       ("requests",),
     "hubspot":      ("requests",),
     "salesforce":   ("requests",),
+    # Knowledge sync connectors — not SQL connectors (no execute()/get_schema()), so the
+    # picker never painted them and they went unlisted here; both import `requests` at
+    # module level exactly like the three REST connectors above.
+    "confluence":   ("requests",),
+    "notion":       ("requests",),
+}
+
+
+#: Import module → the distribution that provides it. Hand-maintained on purpose: reading
+#: it from the environment would only describe THIS machine's install, and the defect
+#: `tests/unit/test_connector_dependencies.py` guards with it is precisely a module that
+#: no install provides. The connector catalog generator uses the same map to say which
+#: pip extra makes a connector runnable.
+PROVIDED_BY: dict[str, str] = {
+    "duckdb": "duckdb",
+    "psycopg2": "psycopg2-binary",
+    "google.cloud.bigquery": "google-cloud-bigquery",
+    "snowflake.connector": "snowflake-connector-python",
+    "pymysql": "PyMySQL",
+    "pyexasol": "pyexasol",
+    "ibis": "ibis-framework",
+    "connectorx": "connectorx",
+    "requests": "requests",
+}
+
+
+#: Connector type → picker category. `routers/system.py` paints the picker from this and
+#: the catalog generator groups by it; keeping it here means the two cannot disagree.
+CATEGORIES: dict[str, str] = {
+    "duckdb":       "built-in",
+    "postgres":     "built-in",
+    "local_upload": "file",
+    "s3":           "file",
+    "sqlite":       "file",
+    "bigquery":     "warehouse",
+    "snowflake":    "warehouse",
+    "mysql":        "warehouse",
+    "motherduck":   "warehouse",
+    "exasol":       "warehouse",
+    "stripe":       "api",
+    "hubspot":      "api",
+    "salesforce":   "api",
+    "gsheets":      "api",
+    "federated":    "federation",
+    "confluence":   "knowledge",
+    "notion":       "knowledge",
+}
+
+
+#: Environment variables a connector honours as an alternative to a form field. Only
+#: code-verified entries belong here: `motherduck.py` reads MOTHERDUCK_TOKEN when the
+#: token field is empty; BigQuery's client library resolves Application Default
+#: Credentials (GOOGLE_APPLICATION_CREDENTIALS among them) when the credentials field
+#: is blank — that resolution happens in google-auth, not in Aughor.
+ENV_VARS: dict[str, list[dict]] = {
+    "motherduck": [
+        {"name": "MOTHERDUCK_TOKEN", "secret": True,
+         "fallback_for": "token"},
+    ],
+    "bigquery": [
+        {"name": "GOOGLE_APPLICATION_CREDENTIALS", "secret": True,
+         "fallback_for": "credentials",
+         "note": "resolved by the Google client library as part of Application Default "
+                 "Credentials when the credentials field is blank"},
+    ],
 }
 
 

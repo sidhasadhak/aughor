@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "generated_by": "scripts/gen_connector_catalog.py",
+  "notes": {
+    "secrets": "Treat every key in `secret_fields` as a credential: never place it in a URL, a query string, or a log line. Aughor stores the `dsn` in its own Fernet-encrypted column and encrypts the other secret-flagged values in the connection registry.",
+    "install": "`base` means the standard install already carries the driver; any other value is a pip extra — e.g. `pip install 'aughor[warehouse]'`.",
+    "env": "`env` lists environment variables honoured in place of a form field; `fallback_for` names that field.",
+    "knowledge": "`knowledge` connectors index documents for synthesis context; they are not SQL connectors and take no queries.",
+    "live": "GET /connectors/types on a running API returns the same fields plus per-install driver availability."
+  },
+  "types": [
+    {
+      "type": "bigquery",
+      "category": "warehouse",
+      "dsn_preview": "bigquery://project-id",
+      "fields": [
+        {
+          "key": "project_id",
+          "label": "Project ID",
+          "placeholder": "my-gcp-project",
+          "secret": false
+        },
+        {
+          "key": "dataset",
+          "label": "Dataset",
+          "placeholder": "analytics",
+          "secret": false
+        },
+        {
+          "key": "credentials",
+          "label": "Service account JSON path (or blank for ADC)",
+          "placeholder": "/path/to/sa.json",
+          "secret": true
+        }
+      ],
+      "secret_fields": [
+        "credentials"
+      ],
+      "drivers": [
+        "google.cloud.bigquery"
+      ],
+      "install": "warehouse",
+      "env": [
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "secret": true,
+          "fallback_for": "credentials",
+          "note": "resolved by the Google client library as part of Application Default Credentials when the credentials field is blank"
+        }
+      ]
+    },
+    {
+      "type": "confluence",
+      "category": "knowledge",
+      "dsn_preview": "https://org.atlassian.net",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "Base URL",
+          "placeholder": "https://yourorg.atlassian.net",
+          "secret": false
+        },
+        {
+          "key": "username",
+          "label": "Username",
+          "placeholder": "user@example.com",
+          "secret": false
+        },
+        {
+          "key": "api_token",
+          "label": "API token",
+          "placeholder": "ATATT3…",
+          "secret": true
+        },
+        {
+          "key": "space_keys",
+          "label": "Space keys",
+          "placeholder": "ENG,PROD (empty = all)",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "api_token"
+      ],
+      "drivers": [
+        "requests"
+      ],
+      "install": "crm"
+    },
+    {
+      "type": "duckdb",
+      "category": "built-in",
+      "dsn_preview": "*.duckdb",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "File path",
+          "placeholder": "/path/to/file.duckdb",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema (optional)",
+          "placeholder": "main",
+          "secret": false
+        }
+      ],
+      "secret_fields": [],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "exasol",
+      "category": "warehouse",
+      "dsn_preview": "exa://host:8563",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host:Port",
+          "placeholder": "demodb.exasol.com:8563",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "sys",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "RETAIL",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pyexasol"
+      ],
+      "install": "warehouse"
+    },
+    {
+      "type": "federated",
+      "category": "federation",
+      "dsn_preview": "federated://",
+      "fields": [],
+      "secret_fields": [],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "gsheets",
+      "category": "api",
+      "dsn_preview": "gsheet://spreadsheet-id",
+      "fields": [
+        {
+          "key": "spreadsheet_id",
+          "label": "Spreadsheet ID or URL",
+          "placeholder": "https://docs.google.com/spreadsheets/d/…",
+          "secret": false
+        },
+        {
+          "key": "sheets",
+          "label": "Sheet/tab names",
+          "placeholder": "Sheet1,Sheet2 (empty = first sheet)",
+          "secret": false
+        }
+      ],
+      "secret_fields": [],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "hubspot",
+      "category": "api",
+      "dsn_preview": "hubspot://",
+      "fields": [
+        {
+          "key": "access_token",
+          "label": "Access token",
+          "placeholder": "pat-na1-…",
+          "secret": true
+        },
+        {
+          "key": "objects",
+          "label": "Objects to sync (optional)",
+          "placeholder": "contacts,companies,deals,tickets",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "access_token"
+      ],
+      "drivers": [
+        "requests"
+      ],
+      "install": "crm"
+    },
+    {
+      "type": "local_upload",
+      "category": "file",
+      "dsn_preview": "local://uploads/",
+      "fields": [],
+      "secret_fields": [],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "motherduck",
+      "category": "warehouse",
+      "dsn_preview": "md:my_database",
+      "fields": [
+        {
+          "key": "token",
+          "label": "MotherDuck token",
+          "placeholder": "eyJhbGc… (or set MOTHERDUCK_TOKEN)",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "my_database",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "main",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "token"
+      ],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base",
+      "env": [
+        {
+          "name": "MOTHERDUCK_TOKEN",
+          "secret": true,
+          "fallback_for": "token"
+        }
+      ]
+    },
+    {
+      "type": "mysql",
+      "category": "warehouse",
+      "dsn_preview": "mysql://host:3306/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "3306",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse"
+    },
+    {
+      "type": "notion",
+      "category": "knowledge",
+      "dsn_preview": "notion://",
+      "fields": [
+        {
+          "key": "integration_token",
+          "label": "Integration token",
+          "placeholder": "secret_…",
+          "secret": true
+        },
+        {
+          "key": "database_ids",
+          "label": "Database IDs",
+          "placeholder": "id1,id2 (optional)",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "integration_token"
+      ],
+      "drivers": [
+        "requests"
+      ],
+      "install": "crm"
+    },
+    {
+      "type": "postgres",
+      "category": "built-in",
+      "dsn_preview": "postgresql://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:5432/db",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "s3",
+      "category": "file",
+      "dsn_preview": "s3://bucket/prefix",
+      "fields": [
+        {
+          "key": "bucket",
+          "label": "Bucket",
+          "placeholder": "my-data-bucket",
+          "secret": false
+        },
+        {
+          "key": "prefix",
+          "label": "Key prefix",
+          "placeholder": "data/sales/",
+          "secret": false
+        },
+        {
+          "key": "region",
+          "label": "Region",
+          "placeholder": "us-east-1",
+          "secret": false
+        },
+        {
+          "key": "key_id",
+          "label": "Access Key ID",
+          "placeholder": "AKIA…",
+          "secret": true
+        },
+        {
+          "key": "secret",
+          "label": "Secret Access Key",
+          "placeholder": "",
+          "secret": true
+        }
+      ],
+      "secret_fields": [
+        "key_id",
+        "secret"
+      ],
+      "drivers": [
+        "duckdb"
+      ],
+      "install": "base"
+    },
+    {
+      "type": "salesforce",
+      "category": "api",
+      "dsn_preview": "salesforce://",
+      "fields": [
+        {
+          "key": "username",
+          "label": "Username",
+          "placeholder": "user@org.com",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "security_token",
+          "label": "Security token",
+          "placeholder": "token123…",
+          "secret": true
+        },
+        {
+          "key": "domain",
+          "label": "Domain",
+          "placeholder": "login (or test)",
+          "secret": false
+        },
+        {
+          "key": "objects",
+          "label": "Objects to sync (optional)",
+          "placeholder": "Account,Contact,Opportunity,Lead,Case",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password",
+        "security_token"
+      ],
+      "drivers": [
+        "requests"
+      ],
+      "install": "crm"
+    },
+    {
+      "type": "snowflake",
+      "category": "warehouse",
+      "dsn_preview": "snowflake://account.region",
+      "fields": [
+        {
+          "key": "account",
+          "label": "Account identifier",
+          "placeholder": "xy12345.us-east-1",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "analyst",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "PROD",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "PUBLIC",
+          "secret": false
+        },
+        {
+          "key": "warehouse",
+          "label": "Warehouse",
+          "placeholder": "COMPUTE_WH",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "snowflake.connector"
+      ],
+      "install": "warehouse"
+    },
+    {
+      "type": "sqlite",
+      "category": "file",
+      "dsn_preview": "*.sqlite / *.db",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "File path",
+          "placeholder": "/path/to/file.sqlite",
+          "secret": false
+        }
+      ],
+      "secret_fields": [],
+      "drivers": [
+        "ibis"
+      ],
+      "install": "warehouse"
+    },
+    {
+      "type": "stripe",
+      "category": "api",
+      "dsn_preview": "stripe://",
+      "fields": [
+        {
+          "key": "secret_key",
+          "label": "Secret key",
+          "placeholder": "sk_live_…",
+          "secret": true
+        },
+        {
+          "key": "objects",
+          "label": "Objects to sync (optional)",
+          "placeholder": "charges,customers,subscriptions,invoices",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "secret_key"
+      ],
+      "drivers": [
+        "requests"
+      ],
+      "install": "crm"
+    }
+  ]
+}
