@@ -813,14 +813,13 @@ export interface paths {
         };
         /**
          * Ask Resume Stream
-         * @description FL-1b — reattach to the conversation's in-flight deep run (flag
-         *     ``ask.resume_stream``).
+         * @description FL-1b — reattach to the conversation's in-flight deep run.
          *
          *     The K1 bridge mirrors a job-streamed run's SSE into the frame hub; this
          *     endpoint replays the snapshot and tails the live remainder, byte-identical
          *     frames, so the client-side adapter needs no second dialect. ``204`` when
-         *     there is nothing to resume — flag off, no run for this conversation, or the
-         *     run already CLOSED (a finished turn reaches a reloading client through the
+         *     there is nothing to resume — no run for this conversation, or the run
+         *     already CLOSED (a finished turn reaches a reloading client through the
          *     session's persisted history; replaying it here would render it twice).
          */
         get: operations["ask_resume_stream_ask_stream__session_id__get"];

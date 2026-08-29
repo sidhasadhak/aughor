@@ -43,6 +43,11 @@ plus one-shot frames, not the token history.
 ## Track FL — Flow (web surface)
 
 ### FL-1 — Runs survive the connection (BUILT 2026-08-28, flag `ask.resume_stream`)
+> **GRADUATED 2026-08-28**: both declared receipts delivered live the same day
+> (browser-soak reattach; interrupt cancels the kernel job), so the mirror and
+> `GET /ask/stream/{session_id}` are hardwired and the flag, its env var and
+> its off-path are deleted. The receipt record lives on the GRADUATION_QUEUE
+> tombstone in `kernel/flags.py`. FL-5's sequencing precondition is now met.
 **Premise correction (found while wiring):** FL-0's "disconnect fails the run"
 was true only for the ANALYST deep body (`ask.converse` on — this laptop's
 default) and the quick paths. The graph deep path already ran detached under a
