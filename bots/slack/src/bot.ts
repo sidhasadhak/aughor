@@ -20,7 +20,8 @@ const USAGE =
 /** The question, with the bot's own mention tokens stripped off. */
 export function stripMention(text: string, userName: string = BOT_USERNAME): string {
   return text
-    .replace(new RegExp(`<@[A-Z0-9]+>`, "g"), " ") // Slack raw mention tokens
+    .replace(/<@[A-Z0-9]+>/g, " ")   // Slack raw mention tokens
+    .replace(/@[UW][A-Z0-9]{7,}\b/g, " ") // the SDK's normalized form: @ + user id, no brackets
     .replace(new RegExp(`@${userName}\\b`, "gi"), " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -39,7 +40,9 @@ export function buildBot({
     userName: BOT_USERNAME,
     adapters,
     state,
-    logger: "info",
+    // debug shows every incoming envelope — the difference between "Slack never
+    // sent the event" and "it arrived and nothing matched" is invisible at info.
+    logger: (process.env.LOG_LEVEL as "debug" | "info" | undefined) ?? "info",
   });
 
   bot.onNewMention(async (thread, message) => {

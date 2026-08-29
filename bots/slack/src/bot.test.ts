@@ -83,5 +83,10 @@ describe("stripMention", () => {
     expect(stripMention("@aughor why did revenue dip?")).toBe("why did revenue dip?");
     expect(stripMention("<@U0AUGHOR> why did revenue dip?")).toBe("why did revenue dip?");
     expect(stripMention("hey @Aughor — why?")).toBe("hey — why?");
+    // The SDK normalizes a Slack mention to "@" + user id WITHOUT brackets —
+    // seen live: the raw token leaked into the question and the session title.
+    expect(stripMention("@U0BT4QWH0KH why did revenue dip most recently")).toBe(
+      "why did revenue dip most recently",
+    );
   });
 });
