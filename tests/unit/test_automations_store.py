@@ -195,3 +195,31 @@ def test_purge_connection_clears_both_tables():
     assert removed >= 2
     assert list_automations("conn-purge") == []
     assert get_runs(conn_id="conn-purge") == []
+
+
+def test_an_update_moves_the_automation_to_another_connection():
+    """`conn_id` was absent from the upsert's DO UPDATE clause, so a connection change
+    was accepted, returned, and never stored — the API answered with the model it was
+    handed while the row kept the old value. Every other authored field was covered;
+    this one was not, which is why the gap survived: nothing read the row back after
+    changing it."""
+    a = upsert_automation(_automation(conn_id="conn-before", name="movable"))
+    upsert_automation(a.model_copy(update={"conn_id": "conn-after"}))
+
+    assert get_automation(a.id).conn_id == "conn-after"
+    # And the filter follows it — a moved automation must leave its old list.
+    assert [x.id for x in list_automations("conn-before")] == []
+    assert a.id in [x.id for x in list_automations("conn-after")]
+
+
+def test_the_automation_level_agent_survives_a_round_trip():
+    """VA-9b gave `Automation` an `agent_id` and the table never grew the column, so
+    SQLite's named binding ignored it: the API accepted the binding, echoed it back, and
+    every read afterwards said `""`. An automation that runs AS an agent could not be
+    saved as one — and nothing noticed, because the response was right."""
+    a = upsert_automation(_automation(conn_id="conn-agent", name="as an agent",
+                                      agent_id="ua_1234"))
+    assert get_automation(a.id).agent_id == "ua_1234"
+
+    upsert_automation(a.model_copy(update={"agent_id": "ua_5678"}))
+    assert get_automation(a.id).agent_id == "ua_5678"

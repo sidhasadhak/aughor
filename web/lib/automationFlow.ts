@@ -98,6 +98,11 @@ export interface FlowStep {
   /** W1 — this step's guard. A node that omits it draws a step that always runs. */
   when: GuardClause[];
   whenLogic: "all" | "any";
+  /** W2 — how this step's fan-out READS ("EMEA, NA" or "rows.items"), or "" when it
+   *  runs exactly once. A node that omits it draws one send where N happen. */
+  forEach: string;
+  /** W2 — the reference a BOUND fan-out reads, for the edge it draws. */
+  forEachRef: string | null;
 }
 
 export interface FlowEdgeSpec {
@@ -108,10 +113,35 @@ export interface FlowEdgeSpec {
   /** W1 — this edge feeds the step's guard: it DECIDES whether the step runs rather
    *  than filling one of its fields. Drawn to the node's own guard port. */
   guard?: boolean;
+  /** W2 — this edge carries the LIST the step runs once per item of. */
+  fan?: boolean;
 }
 
 /** The pseudo-field a guard edge lands on. Not a config key — the guard is not one. */
 export const GUARD_FIELD = "__guard";
+
+/** W2 — the pseudo-field a fan-out's SOURCE edge lands on. A list is not a config field
+ *  either: it decides how many times the step runs, not what one run says. */
+export const FAN_FIELD = "__for_each";
+
+/** W2 — a fan-out as one line on a node face.
+ *
+ * Mirrors the server's `graph.fan_label` because the design canvas draws the UNSAVED
+ * draft and the server has not seen it yet — the same departure B1 made for ports. Only
+ * the FORMATTING lives in two places; the law (what may be fanned over) stays the
+ * server's, fetched, and is mirrored nowhere.
+ */
+export function fanLabel(source: unknown): string {
+  if (source === null || source === undefined) return "";
+  const ref = bindingRef(source);
+  if (ref !== null) return ref;
+  if (!Array.isArray(source)) return "";
+  const scalars = source.filter(i => typeof i !== "object" || i === null);
+  if (scalars.length !== source.length) return `${source.length} items`;
+  const shown = scalars.slice(0, 3).map(i => String(i).slice(0, 24));
+  const more = scalars.length - shown.length;
+  return shown.join(", ") + (more ? ` +${more} more` : "");
+}
 
 /**
  * The design, as steps-with-ports and the edges its bindings already are.
@@ -137,6 +167,8 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
       config: (e.config ?? {}) as Record<string, unknown>,
       when: e.when ?? [],
       whenLogic: e.when_logic ?? "all",
+      forEach: fanLabel(e.for_each?.source),
+      forEachRef: bindingRef(e.for_each?.source),
       publishes: v.publishes === null ? ["*"] : v.publishes,
       openSet: v.publishes === null,
       inputs,
@@ -165,6 +197,17 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
         if (dot <= 0 || !known.has(ref.slice(0, dot))) continue;
         edges.push({ from: ref.slice(0, dot), key: ref.slice(dot + 1), to: s.alias,
                      field: GUARD_FIELD, guard: true });
+      }
+    }
+    // W2 — a fan-out's source is dataflow too. The server derives it from the same
+    // `effect_refs` as everything else; the canvas that omitted it would draw a step
+    // running once from nothing.
+    if (s.forEachRef) {
+      const dot = s.forEachRef.indexOf(".");
+      const from = s.forEachRef.slice(0, dot);
+      if (dot > 0 && known.has(from)) {
+        edges.push({ from, key: s.forEachRef.slice(dot + 1), to: s.alias,
+                     field: FAN_FIELD, fan: true });
       }
     }
   }

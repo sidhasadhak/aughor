@@ -74,3 +74,138 @@ def test_someone_elses_connection_is_a_404_not_a_403(client, no_provider_calls):
 
     mine = client.get("/integrations/connections").json()["connections"]
     assert all(c["id"] != foreign.id for c in mine)
+
+
+# ── the Set-up form is an EDITOR, not a one-shot ──────────────────────────────────
+
+def test_the_catalog_shows_back_what_was_stored(client):
+    """An Edit form opening on two empty boxes reads as "nothing was ever saved" — the
+    user's own words when they hit it. The client id comes back whole (it travels in the
+    browser's address bar during the dance; it is not a secret), the secret only as a
+    masked preview: enough to say one EXISTS, never enough to read it."""
+    client.put("/integrations/google/app",
+               json={"client_id": "cid-123", "client_secret": "shh-super-secret"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["client_id"] == "cid-123"
+    assert google["secret_preview"] and "shh-super-secret" not in google["secret_preview"]
+    assert "•" in google["secret_preview"]
+
+
+def test_a_blank_secret_keeps_the_stored_one(client):
+    """The secret is never readable, so requiring it back on every edit would force a
+    rotation to fix a typo in the client id."""
+    client.put("/integrations/google/app",
+               json={"client_id": "cid-1", "client_secret": "secret-1"})
+    fixed = client.put("/integrations/google/app", json={"client_id": "cid-2"})
+    assert fixed.status_code == 200, fixed.text
+
+    from aughor.integrations.store import get_app_decrypted
+    app = get_app_decrypted("google")
+    assert app.client_id == "cid-2"
+    assert app.client_secret == "secret-1"      # unchanged, not blanked
+
+
+def test_an_authored_callback_is_stored_and_used(client):
+    client.put("/integrations/google/app", json={
+        "client_id": "cid", "client_secret": "sec",
+        "redirect_uri": "https://tunnel.example.com/oauth/callback"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["redirect_uri"] == "https://tunnel.example.com/oauth/callback"
+
+    url = client.post("/integrations/google/connect").json()["authorize_url"]
+    assert "tunnel.example.com%2Foauth%2Fcallback" in url or \
+           "tunnel.example.com/oauth/callback" in url
+
+
+def test_a_callback_that_cannot_complete_is_refused_at_save(client):
+    """Only one route can finish the exchange; a URI that does not end there is a flow
+    that breaks after the person has already consented."""
+    bad = client.put("/integrations/google/app", json={
+        "client_id": "c", "client_secret": "s", "redirect_uri": "https://example.com/hello"})
+    assert bad.status_code == 422
+    assert "/oauth/callback" in bad.json()["detail"]
+
+
+def test_slack_refuses_an_http_callback_at_save(client):
+    """Slack's own documented rule, enforced before the person walks into its error
+    page — which is how this was found."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "http://localhost:8000/oauth/callback"})
+    assert refused.status_code == 422
+    assert "http://" in refused.json()["detail"]
+
+
+def test_the_providers_own_address_is_refused_as_a_callback(client):
+    """The mistake this field invites, found live: a person asked for "the Slack URL"
+    has their WORKSPACE url in hand, and it passes every other rule — https, ends in
+    /oauth/callback, not http. It then fails silently: consent succeeds, Slack redirects
+    to itself, and nothing reaches the exchange."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://luxexperience-crew.slack.com/oauth/callback"})
+    assert refused.status_code == 422
+    detail = refused.json()["detail"]
+    assert "own address" in detail
+    assert "BACK to Aughor" in detail        # it says WHOSE address it should be
+
+
+def test_a_tunnel_to_this_api_is_accepted(client):
+    ok = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert ok.status_code == 200, ok.text
+
+
+# ── the door a laptop can actually open ───────────────────────────────────────────
+
+def _slack(client):
+    return next(p for p in client.get("/integrations/catalog").json()["providers"]
+                if p["id"] == "slack")
+
+
+def test_slack_oauth_is_not_offered_when_the_callback_cannot_be_https(client):
+    """The whole point: a fresh install is reached over http://, Slack refuses http://,
+    so its OAuth button cannot work — and pointing a new user at it costs them an evening
+    on a tunnel to reach a token nothing consumes yet."""
+    assert _slack(client)["oauth_ready"] is False
+    assert _slack(client)["alt_door"] == "slack_app"
+
+
+def test_a_provider_that_takes_the_loopback_address_is_ready(client):
+    """Google and Microsoft accept `http://localhost`, so nothing changes for them."""
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["oauth_ready"] is True
+    assert google["alt_door"] == ""
+
+
+def test_an_https_override_makes_slack_oauth_available_again(client):
+    """A tunnel (or a real deployment) is the case OAuth was written for — the readiness
+    reads the SAME callback `connect` will send, so the button and the dance agree."""
+    client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert _slack(client)["oauth_ready"] is True
+
+
+def test_a_stored_callback_that_cannot_work_is_not_readiness(client):
+    """The flaw the user's own screen exposed: their stored callback was
+    `https://<workspace>.slack.com/oauth/callback`, saved before the domain rule existed.
+    Readiness looked only at the scheme, saw `https://`, and would have gone on offering
+    the button that cannot open. It asks the validator now, so the two cannot disagree."""
+    from aughor.integrations.models import ProviderApp
+    from aughor.integrations.store import save_app
+
+    # Written directly: the route refuses this now, and the point is a record that
+    # PREDATES the rule.
+    save_app(ProviderApp(id="slack", client_id="c", client_secret="s",
+                         redirect_uri="https://luxexperience-crew.slack.com/oauth/callback"))
+
+    slack = _slack(client)
+    assert slack["oauth_ready"] is False
+    assert slack["alt_door"] == "slack_app"

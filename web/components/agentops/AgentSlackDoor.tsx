@@ -57,12 +57,24 @@ function emphasise(line: string): React.ReactNode[] {
     i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>);
 }
 
-export function AgentSlackDoor({ agentId, agentName, connectionId, onDone }: {
+export function AgentSlackDoor({
+  agentId, agentName, connectionId, onDone,
+  heading = "Give it a Slack door",
+  intro,
+  skipLabel = "Skip — the agent is already created",
+}: {
   agentId: string;
   agentName: string;
   connectionId: string;
   /** Finished or skipped — either way the agent already exists, so this only closes. */
   onDone: () => void;
+  /** The framing, so the same flow can be reached from somewhere that is not agent
+   *  creation. It is the only Slack door a deployment without an HTTPS callback can
+   *  open, so Integrations routes to it — and "Skip, the agent is already created"
+   *  would be a sentence about a step that reader never took. `**bold**` works. */
+  heading?: string;
+  intro?: string;
+  skipLabel?: string;
 }) {
   const [appName, setAppName] = useState(agentName || "Aughor");
   const [manifest, setManifest] = useState<SlackManifest | null>(null);
@@ -145,12 +157,14 @@ export function AgentSlackDoor({ agentId, agentName, connectionId, onDone }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
-        <div className="aug-fs-h2" style={{ fontWeight: 500 }}>Give it a Slack door</div>
+        <div className="aug-fs-h2" style={{ fontWeight: 500 }}>{heading}</div>
         <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 3, maxWidth: 620 }}>
-          Optional. A Slack app lets people @mention <strong>{agentName || "this agent"}</strong> in
-          a channel, and lets a scheduled automation post as it — the “post the daily numbers”
-          step. Aughor renders the app manifest; you create the app in Slack and paste three
-          values back.
+          {intro ? emphasise(intro) : (<>
+            Optional. A Slack app lets people @mention <strong>{agentName || "this agent"}</strong> in
+            a channel, and lets a scheduled automation post as it — the “post the daily numbers”
+            step. Aughor renders the app manifest; you create the app in Slack and paste three
+            values back.
+          </>)}
         </div>
       </div>
 
@@ -247,7 +261,7 @@ export function AgentSlackDoor({ agentId, agentName, connectionId, onDone }: {
 
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant={created ? "default" : "secondary"} size="sm" onClick={onDone}>
-          {created ? "Done" : "Skip — the agent is already created"}
+          {created ? "Done" : skipLabel}
         </Button>
       </div>
     </div>

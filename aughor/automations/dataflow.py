@@ -76,8 +76,15 @@ def _clause_side(clause: Any, side: str) -> Any:
     return clause.get(side) if isinstance(clause, dict) else getattr(clause, side, None)
 
 
+def effect_config(effect: Any) -> dict:
+    """A step's ``config``, whether it arrived as a model or a raw dict."""
+    cfg = effect.get("config") if isinstance(effect, dict) else getattr(effect, "config", None)
+    return cfg or {}
+
+
 def guard_clauses(effect: Any) -> list:
-    return list(getattr(effect, "when", None) or [])
+    clauses = effect.get("when") if isinstance(effect, dict) else getattr(effect, "when", None)
+    return list(clauses or [])
 
 
 def effect_refs(effect: Any) -> list[str]:
@@ -95,11 +102,20 @@ def effect_refs(effect: Any) -> list[str]:
 
     So they all read this, and the guard cannot become a fourth, invisible dataflow.
     """
-    refs = collect_refs(getattr(effect, "config", {}) or {})
+    refs = collect_refs(effect_config(effect))
     for clause in guard_clauses(effect):
         refs.extend(collect_refs(_clause_side(clause, "left")))
         refs.extend(collect_refs(_clause_side(clause, "right")))
-    return refs
+    # W2 — and the LIST it fans out over, for the same three readers: a `for_each`
+    # bound to a deleted step must be refused at save, the step it reads must be
+    # awaited (an `investigate` feeding a fan-out would otherwise hand it a job id),
+    # and the canvas must draw the edge the engine follows.
+    refs.extend(collect_refs(fan_source(effect)))
+    # `item.*` is resolved per ITERATION against the item, not against the chain, so it
+    # is not a chain reference at all. Filtered here rather than at each caller: three
+    # readers walking this list would otherwise each have to know about the loop, and
+    # the one that forgot would report the item as an unknown step.
+    return [r for r in refs if parse_ref(r)[0] != ITEM_ALIAS]
 
 
 def resolve(params: Any, context: dict[str, dict]) -> Any:
@@ -286,6 +302,121 @@ def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
     return True, ""
 
 
+# ── W2: the fan-out ──────────────────────────────────────────────────────────────
+#
+# The engine ran a strictly sequential list — one step, one dispatch — so "post a
+# summary per region" was written as three near-identical steps or not automated. W2
+# binds one step to a list and runs it once per item.
+#
+# It is deliberately the SAME dataflow, not a second one: the item is published under
+# a reserved alias into the same accumulated context every binding already resolves
+# against, so `resolve` needed no change, the canvas draws the source as an ordinary
+# edge, and the engine awaits a producer feeding a fan-out for the same reason it
+# awaits one feeding a param (VA-13's rule, one field over).
+
+#: The alias each iteration publishes its item under. A dict item is read field-wise
+#: (`{"$from": "item.channel"}`); a scalar arrives as `{"$from": "item.value"}`, so the
+#: two shapes are one shape by the time a param resolves.
+ITEM_ALIAS = "item"
+
+#: The key a scalar item is published under. Named rather than positional because
+#: `{"$from": "item"}` alone cannot say "the whole item" in a syntax whose every
+#: reference is `alias.key`.
+ITEM_VALUE = "value"
+
+#: The most items one step may fan out over. A cap on SENDS, not on compute: these
+#: steps post messages and write to systems, and an unbounded fan-out is how one
+#: automation becomes an incident. Exceeding it REFUSES the step — never truncates it,
+#: because posting the first N of a longer list and dropping the rest silently is the
+#: failure a cap exists to prevent.
+MAX_FAN_OUT = 50
+
+#: What a fanned step publishes into the chain, whatever its kind: how many iterations
+#: executed. Its per-item values are NOT bindable — there are N of them and a
+#: downstream `{"$from": "step2.ts"}` could only mean one, which is exactly the kind of
+#: silent hole this plane refuses at save.
+FAN_PUBLISHED: tuple[str, ...] = ("count",)
+
+#: The prefix a fan-out skip carries when the list is empty. One writer, read by
+#: surfaces rather than sniffed for — a matching key that stops matching is how a
+#: reader goes quietly blind (GUARD_SKIP's lesson, same file).
+FAN_EMPTY_SKIP = "nothing to iterate"
+
+
+def fan_source(effect: Any) -> Any:
+    """The list a step runs once per item of, or ``None`` when it runs exactly once.
+
+    Reads models and raw dicts alike: `graph.py` and the routers hand this module
+    unvalidated payloads from the authoring surface, and a picture that could only be
+    drawn for a saved automation is a picture drawn too late.
+    """
+    fe = effect.get("for_each") if isinstance(effect, dict) else getattr(effect, "for_each", None)
+    if fe is None:
+        return None
+    return fe.get("source") if isinstance(fe, dict) else getattr(fe, "source", None)
+
+
+def is_fanned(effect: Any) -> bool:
+    return fan_source(effect) is not None
+
+
+def item_context(item: Any) -> dict[str, Any]:
+    """One iteration's item, as a context entry. A dict is itself; anything else is
+    published under :data:`ITEM_VALUE`."""
+    return dict(item) if isinstance(item, dict) else {ITEM_VALUE: item}
+
+
+class FanRefused(ValueError):
+    """A ``for_each`` source this engine will not iterate.
+
+    Two cases, and both are the step's own fault rather than an upstream absence — which
+    is why they read as ``invalid_params`` and not as ``skipped``: a source that is not a
+    list (iterating ``"EMEA"`` would send four messages, one per character), and one
+    longer than :data:`MAX_FAN_OUT`.
+    """
+
+
+def fan_items(effect: Any, context: dict[str, dict], *,
+              dry_item: Optional[dict] = None) -> Optional[list]:
+    """The items a step runs once per, or ``None`` when it runs exactly once.
+
+    A literal list passes through :func:`resolve` like any other params structure, so a
+    list may itself hold bindings (``["EMEA", {"$from": "step1.answer"}]``) without this
+    function knowing anything new.
+
+    ``dry_item`` is B2's lesson one field over: a preview's context holds SAMPLE strings,
+    never the list tomorrow will produce, so resolving a BOUND source under a dry run
+    would report a sound design as "for_each needs a list". Given one, a preview walks a
+    single representative iteration instead; a LITERAL source is walked for real, because
+    the items are known now and "would post 3 messages: EMEA, NA, APAC" is the answer a
+    preview exists to give.
+    """
+    src = fan_source(effect)
+    if src is None:
+        return None
+    if dry_item is not None and is_binding(src):
+        return [dry_item]
+    items = resolve(src, context)
+    if isinstance(items, str) or not isinstance(items, list):
+        got = type(items).__name__
+        detail = " (a string runs once per character)" if isinstance(items, str) else ""
+        raise FanRefused(f"for_each needs a list to run over — got {got}{detail}")
+    if len(items) > MAX_FAN_OUT:
+        raise FanRefused(
+            f"for_each over {len(items)} items exceeds the {MAX_FAN_OUT}-item cap — "
+            "refused rather than truncated, because a partial send reads as a whole one")
+    return items
+
+
+def item_refs(effect: Any) -> list[str]:
+    """The step's references to its own iteration item — legal only when it is fanned."""
+    refs = collect_refs(effect_config(effect))
+    for clause in guard_clauses(effect):
+        refs.extend(collect_refs(_clause_side(clause, "left")))
+        refs.extend(collect_refs(_clause_side(clause, "right")))
+    return [r for r in refs if parse_ref(r)[0] == ITEM_ALIAS]
+
+
 #: B1 — what each effect kind PUBLISHES into the chain context, DECLARED.
 #:
 #: `EffectOutcome.data` is what a step actually published; this is what a step MAY.
@@ -339,8 +470,21 @@ def validate_chain(effects: list) -> Optional[str]:
         the difference between a user fixing a name and a user fixing their mental model.
     """
     seen: dict[str, str] = {}   # alias → effect kind, for the key check above
+    fanned: set[str] = set()    # W2 — aliases that run once per item
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
+        # W2 — `item.*` means "this iteration's item", so it is only a name on a step
+        # that HAS iterations. On any other step it would read as an unknown step, and
+        # "unknown step 'item'" sends someone hunting for a step they never wrote.
+        stray = item_refs(effect)
+        if stray and not is_fanned(effect):
+            return (f"step '{alias}' reads '{stray[0]}', but it does not run for each "
+                    f"item — give it a `for_each` list, or bind to a step instead")
+        # W2 — the SOURCE must be able to be a list. A closed published set is a
+        # measured fact about a kind (`slack_post` publishes two strings), so fanning
+        # over one is refused here rather than discovered as "cannot iterate a str" on
+        # the morning it runs.
+        source_refs = set(collect_refs(fan_source(effect)))
         # W1 — `effect_refs`, not `collect_refs(config)`: a guard reads the context too,
         # and a guard onto a step that does not exist must be refused at SAVE like any
         # other reference. Before this, `when` was the one dataflow path nothing checked.
@@ -354,8 +498,19 @@ def validate_chain(effects: list) -> Optional[str]:
                 # for kinds with a CLOSED declared set; `None` (the declared-action kind) stays
                 # unchecked because its keys are the action's own outcome shape.
                 producer = seen[target]
-                declared = PUBLISHED_KEYS.get(producer)
+                # W2 — a fanned producer publishes `count`, whatever its kind: there are
+                # N per-item values and `{"$from": "step2.ts"}` could only mean one of
+                # them. Refusing beats picking the last silently.
+                declared = FAN_PUBLISHED if target in fanned else PUBLISHED_KEYS.get(producer)
                 key = parse_ref(ref)[1]
+                if ref in source_refs and declared is not None:
+                    return (f"step '{alias}' fans out over '{ref}', but a {producer} step "
+                            f"publishes {', '.join(declared) or 'nothing'} — none of it is "
+                            f"a list; fan out over a literal list instead")
+                if target in fanned and key not in FAN_PUBLISHED:
+                    return (f"step '{alias}' binds to '{ref}', but step '{target}' runs "
+                            f"once per item — it publishes only "
+                            f"{', '.join(FAN_PUBLISHED)}, not one value to read")
                 if declared is not None and key not in declared:
                     have = f" — it publishes {', '.join(declared)}" if declared else                         " — it publishes nothing"
                     return (f"step '{alias}' binds to '{ref}', but a "
@@ -366,5 +521,7 @@ def validate_chain(effects: list) -> Optional[str]:
                 return (f"step '{alias}' refers to '{ref}', which runs AFTER it — "
                         f"a chain cannot run backwards")
             return f"step '{alias}' refers to unknown step '{target}' ({ref})"
-        seen[alias] = getattr(effect, "kind", "")
+        seen[alias] = effect.get("kind", "") if isinstance(effect, dict) else getattr(effect, "kind", "")
+        if is_fanned(effect):
+            fanned.add(alias)
     return None

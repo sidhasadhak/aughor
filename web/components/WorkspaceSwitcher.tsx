@@ -19,6 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import type { Connection, Workspace } from "@/lib/api";
 
+/** One spacing system for the whole popover. Every row — a workspace, the section
+ *  header, the divider, the footer — shares this horizontal inset, so the icons, the
+ *  names and the trailing controls all sit on the same two vertical lines. Before this
+ *  there were five different paddings in one 280px panel, which is most of what read
+ *  as untidy. */
+const ROW_PAD = "7px 8px";
+/** The trailing check's slot, RESERVED on every row: a mark that appears only on the
+ *  selected row would shift that row's name by its own width. */
+const CHECK_SLOT = 14;
+
 function Glyph({ name, size = 14, color = "currentColor" }: {
   name: string; size?: number; color?: string;
 }) {
@@ -135,6 +145,9 @@ export function WorkspaceSwitcher({
         aria-label="Switch workspace"
         variant="ghost"
         size="sm"
+        /* `h-auto`: the size variants are single-line boxes (`sm` is 28px) and this
+           trigger stacks a label over a name. Constrained, the two lines overlap. */
+        className="h-auto font-normal"
         style={{
           display: "flex", alignItems: "center", gap: 8,
           padding: "5px 10px", borderRadius: "var(--r2)",
@@ -144,9 +157,13 @@ export function WorkspaceSwitcher({
         }}
       >
         <Glyph name="layers" size={14} color="var(--blue4)" />
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start",
+          minWidth: 0, gap: 1 }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase",
+            letterSpacing: ".06em", lineHeight: 1.2 }}>Workspace</span>
+          <span className="aug-fs-sm" style={{ fontWeight: 500, color: "var(--t1)",
+            lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden",
+            textOverflow: "ellipsis", maxWidth: 150 }}>
             {active?.name ?? "—"}
           </span>
         </span>
@@ -175,14 +192,15 @@ export function WorkspaceSwitcher({
                   onClick={() => { setManaging(null); setError(null); }}>Back</Button>
               </div>
               {allConnections.length === 0 ? (
-                <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "6px 8px 8px" }}>
+                <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "6px 8px 8px",
+                  lineHeight: 1.4 }}>
                   No connections in the org yet — add one first, then pick it here.
                 </div>
               ) : (
-                <div style={{ maxHeight: 240, overflowY: "auto", padding: "2px 4px" }}>
+                <div style={{ maxHeight: 240, overflowY: "auto" }}>
                   {allConnections.map(c => (
                     <label key={c.id} className="aug-fs-sm" style={{
-                      display: "flex", alignItems: "center", gap: 8, padding: "6px 6px",
+                      display: "flex", alignItems: "center", gap: 9, padding: ROW_PAD,
                       borderRadius: "var(--r2)", cursor: "pointer", color: "var(--t1)",
                     }}>
                       <input type="checkbox" checked={draft.includes(c.id)}
@@ -192,10 +210,11 @@ export function WorkspaceSwitcher({
                   ))}
                 </div>
               )}
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 8px 6px" }}>
+              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "4px 8px 7px",
+                lineHeight: 1.4 }}>
                 Checked connections belong to this workspace — every panel scopes to them.
               </div>
-              <div style={{ display: "flex", gap: 6, padding: "2px 4px 4px" }}>
+              <div style={{ display: "flex", gap: 6, padding: "0 8px 6px" }}>
                 <Button onClick={saveMembership} variant="secondary" size="sm" disabled={busy}
                   className="aug-fs-sm" style={{ flex: 1 }}>
                   {busy ? "Saving…" : "Save"}
@@ -212,32 +231,52 @@ export function WorkspaceSwitcher({
           ) : (
             /* ── workspace list ── */
             <>
-              <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
+              <div className="aug-fs-xs" style={{ color: "var(--t4)",
+                textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 5px" }}>
                 Workspaces
               </div>
               {workspaces.map(w => {
                 const on = w.id === selectedWorkspace;
                 return (
-                  <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  /* The ROW is the hover unit, not the name button inside it. Hovering
+                     the manage control used to leave the row unlit, so the two halves of
+                     one row highlighted separately — half the untidiness on its own. */
+                  <div
+                    key={w.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 2,
+                      borderRadius: "var(--r2)",
+                      background: on ? "var(--bg-sel)" : "transparent",
+                    }}
+                    onMouseEnter={e => { if (!on) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={e => { if (!on) e.currentTarget.style.background = "transparent"; }}
+                  >
                     <Button
                       onClick={() => { onWorkspaceChange(w.id); setOpen(false); }}
                       variant="ghost"
                       size="sm"
+                      /* `h-auto`: `size="sm"` is a 28px single-line box and this row
+                         stacks a name over a count — constrained, the second line
+                         overlapped the row below it. */
+                      className="h-auto font-normal"
                       style={{
                         display: "flex", alignItems: "center", gap: 9, flex: 1, minWidth: 0,
-                        padding: "7px 8px", borderRadius: "var(--r2)",
-                        background: on ? "var(--bg-sel)" : "transparent",
-                        border: "1px solid transparent", textAlign: "left",
+                        padding: ROW_PAD, borderRadius: "var(--r2)",
+                        background: "transparent", border: "1px solid transparent",
+                        textAlign: "left",
                       }}
-                      onMouseEnter={e => { if (!on) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={e => { if (!on) e.currentTarget.style.background = "transparent"; }}
                     >
                       <Glyph name="layers" size={14} color={on ? "var(--blue4)" : "var(--t3)"} />
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 12, fontWeight: on ? 500 : 400, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ flex: 1, minWidth: 0, display: "flex",
+                        flexDirection: "column", gap: 1 }}>
+                        <span className="aug-fs-sm" style={{ fontWeight: on ? 500 : 400,
+                          color: "var(--t1)", lineHeight: 1.35, whiteSpace: "nowrap",
+                          overflow: "hidden", textOverflow: "ellipsis" }}>
                           {w.name}
                         </span>
-                        <span style={{ display: "block", fontSize: 11, color: "var(--t4)" }}>
+                        <span className="aug-fs-xs" style={{ color: "var(--t4)",
+                          lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden",
+                          textOverflow: "ellipsis" }}>
                           {(() => {
                             // What the workspace SEES (membership ∪ grants), with the
                             // grant-only surplus called out — a row that counted only
@@ -250,15 +289,21 @@ export function WorkspaceSwitcher({
                           })()}
                         </span>
                       </span>
-                      {on && <Glyph name="check" size={13} color="var(--blue4)" />}
+                      <span style={{ width: CHECK_SLOT, display: "inline-flex",
+                        justifyContent: "flex-end", flexShrink: 0 }}>
+                        {on && <Glyph name="check" size={13} color="var(--blue4)" />}
+                      </span>
                     </Button>
                     <Button
                       onClick={() => startManaging(w)}
                       variant="ghost"
-                      size="xs"
+                      size="icon-sm"
                       title={`Manage ${w.name} — connections and deletion`}
                       aria-label={`Manage ${w.name}`}
-                      style={{ padding: "6px 6px", color: "var(--t3)" }}
+                      /* Dimmer than the name it sits beside: three pencils at full
+                         strength in a 280px popover read as three competing actions,
+                         when the row's own job is switching. */
+                      style={{ color: "var(--t4)", flexShrink: 0, marginRight: 2 }}
                     >
                       <Glyph name="edit" size={13} />
                     </Button>
@@ -266,24 +311,25 @@ export function WorkspaceSwitcher({
                 );
               })}
 
-              <div style={{ height: 1, background: "var(--b1)", margin: "6px 0" }} />
+              <div style={{ height: 1, background: "var(--b1)", margin: "7px 8px" }} />
 
               {creating ? (
-                <div style={{ display: "flex", gap: 6, padding: "2px 4px 4px" }}>
+                <div style={{ display: "flex", gap: 6, padding: "2px 8px 6px" }}>
                   <input
                     autoFocus
+                    className="aug-fs-sm"
                     value={newName}
                     onChange={e => setNewName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") submitNew(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
                     placeholder="Workspace name…"
                     style={{
-                      flex: 1, padding: "6px 9px", fontSize: 12,
+                      flex: 1, minWidth: 0, padding: "6px 9px",
                       background: "var(--bg-2)", border: "1px solid var(--b2)",
                       borderRadius: "var(--r2)", color: "var(--t1)", outline: "none",
                     }}
                   />
                   <Button onClick={submitNew} variant="secondary" size="sm" disabled={busy}
-                    style={{ padding: "6px 12px", fontSize: 12 }}>
+                    className="aug-fs-sm">
                     {busy ? "…" : "Create"}
                   </Button>
                 </div>
@@ -292,17 +338,20 @@ export function WorkspaceSwitcher({
                   onClick={() => setCreating(true)}
                   variant="ghost"
                   size="sm"
+                  className="h-auto font-normal"
                   style={{
                     display: "flex", alignItems: "center", gap: 9, width: "100%",
-                    padding: "7px 8px", borderRadius: "var(--r2)",
+                    padding: ROW_PAD, borderRadius: "var(--r2)",
                     background: "transparent", border: "1px solid transparent",
                     color: "var(--t2)", textAlign: "left",
                   }}
                   onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
                 >
+                  {/* Same icon column and inset as a workspace row, so the list and its
+                      one action read as one column rather than two stacked designs. */}
                   <Glyph name="plus" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 12 }}>New workspace</span>
+                  <span className="aug-fs-sm">New workspace</span>
                 </Button>
               )}
             </>

@@ -13,6 +13,7 @@ import {
   StagedProposal,
   StandingGrant,
   getAutomations,
+  getConnections,
   createAutomation,
   updateAutomation,
   deleteAutomation,
@@ -98,6 +99,16 @@ export function AutomationsPanel({ connId }: Props) {
     setTimeout(() => setBanner(b => (b?.text === text ? null : b)), 4000);
   }, []);
 
+  /** W2 follow-up — automations that exist, but not on THIS connection.
+   *
+   *  The empty state used to say "No automations yet · Create first automation" — the
+   *  message for *nothing exists* — while three sat on another connection. This panel is
+   *  connection-scoped (`getAutomations(conn)`) and the scope is chosen on a different
+   *  screen, so "yet" was the one word a reader could not check. Found by a user losing
+   *  time to it. Asked only when the scoped list comes back empty: a second request on
+   *  every load, to answer a question nobody asked, is the wrong trade. */
+  const [elsewhere, setElsewhere] = useState<{ count: number; where: string[] } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -108,6 +119,26 @@ export function AutomationsPanel({ connId }: Props) {
       setLoading(false);
     }
   }, [conn]);
+
+  useEffect(() => {
+    if (loading || automations.length > 0 || !conn) { setElsewhere(null); return; }
+    let live = true;
+    void (async () => {
+      try {
+        const [all, conns] = await Promise.all([getAutomations(), getConnections()]);
+        if (!live) return;
+        const others = all.filter(a => a.conn_id !== conn);
+        const name = new Map(conns.map(c => [c.id, c.name]));
+        setElsewhere({
+          count: others.length,
+          // Named, deduped, in the words the connection picker uses — an id like
+          // `8233e4fd` tells a reader nothing about where to go next.
+          where: [...new Set(others.map(a => name.get(a.conn_id) ?? a.conn_id))],
+        });
+      } catch { /* the empty state degrades to its plain form; it must never fail a panel */ }
+    })();
+    return () => { live = false; };
+  }, [loading, automations.length, conn]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -220,7 +251,8 @@ export function AutomationsPanel({ connId }: Props) {
 
         {view === "list" && !showSpinner && (
           automations.length === 0
-            ? <EmptyState onAdd={() => { setEditing(null); setView("form"); }} />
+            ? <EmptyState onAdd={() => { setEditing(null); setView("form"); }}
+                elsewhere={elsewhere} />
             : <>
                 <MiniStatRow>
                   <MiniStat value={stats.total} label="Automations" />
@@ -602,7 +634,14 @@ function describeEffect(e: AutoEffect): string {
   // "slack_post" on the card, which is the one thing a reader scanning the list wants.
   const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id
     || e.config.question || e.config.channel || "";
-  return `${e.kind}${t ? `(${String(t).slice(0, 24)})` : ""}`;
+  // B1 made these fields BINDABLE, and `String({$from: …})` is "[object Object]" —
+  // found by driving a step whose channel is bound. A reference describes itself.
+  const target = t && typeof t === "object" && "$from" in (t as object)
+    ? String((t as { $from: unknown }).$from) : String(t);
+  // W2 — a step that runs per item says so here too, or the list claims one send where
+  // N happen.
+  const fan = e.for_each ? " · per item" : "";
+  return `${e.kind}${target ? `(${target.slice(0, 24)})` : ""}${fan}`;
 }
 
 function relTime(iso: string): string {
@@ -617,13 +656,36 @@ function relTime(iso: string): string {
   } catch { return iso; }
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({ onAdd, elsewhere }: {
+  onAdd: () => void;
+  /** Automations on OTHER connections, when this one has none. `null` while unknown or
+   *  when there genuinely are none anywhere — the two read differently on purpose. */
+  elsewhere?: { count: number; where: string[] } | null;
+}) {
+  const hidden = elsewhere && elsewhere.count > 0;
   return (
     <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
       <div style={{ fontSize: 28, marginBottom: 12 }}>⚙️</div>
-      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No automations yet</div>
-      <div style={{ fontSize: 12, marginBottom: 20 }}>Bind a condition (a schedule, a metric, a data change) to an effect — investigate, deliver a briefing, notify, or run a governed action.</div>
-      <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first automation</Button>
+      <div className="aug-fs-h2" style={{ fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+        {hidden ? "No automations on this connection" : "No automations yet"}
+      </div>
+      {hidden ? (
+        /* The scope, named, and where the rest of them are. "Yet" would be a lie a
+           reader has no way to check from this screen. */
+        <div className="aug-fs-sm" style={{ marginBottom: 20, lineHeight: 1.5 }}>
+          {elsewhere.count} automation{elsewhere.count === 1 ? "" : "s"} exist on{" "}
+          {elsewhere.where.join(", ")}. This list shows only the connection you have
+          selected — switch to it to see them.
+        </div>
+      ) : (
+        <div className="aug-fs-sm" style={{ marginBottom: 20, lineHeight: 1.5 }}>
+          Bind a condition (a schedule, a metric, a data change) to an effect —
+          investigate, deliver a briefing, notify, or run a governed action.
+        </div>
+      )}
+      <Button variant="ghost" className="h-auto" onClick={onAdd}>
+        {hidden ? "Create one here" : "Create first automation"}
+      </Button>
     </div>
   );
 }

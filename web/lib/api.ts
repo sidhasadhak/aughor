@@ -3422,13 +3422,30 @@ export interface AutomationVocabulary {
    *  whether it takes a second value. `unary` is what tells a form to hide the right
    *  field rather than ask for a value that is then ignored. */
   guardOps: GuardOp[];
+  /** W2 — the fan-out's own vocabulary. `maxItems` is the engine's cap: a form that
+   *  carried its own copy would offer a list the save then refuses, which is the drift
+   *  every fetched vocabulary here exists to prevent. `itemAlias`/`itemValueKey` are
+   *  how an iteration names its item (`item.value`), so a hint can say it without
+   *  hardcoding the reserved word. */
+  forEach: { maxItems: number; itemAlias: string; itemValueKey: string;
+             publishes: string[] };
 }
 
 export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
   const res = await fetch(`${getApiBase()}/automations/vocabulary`);
   if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
   const body = await res.json();
-  return { kinds: body.kinds ?? {}, guardOps: body.guard_ops ?? [] };
+  const fe = body.for_each ?? {};
+  return {
+    kinds: body.kinds ?? {},
+    guardOps: body.guard_ops ?? [],
+    forEach: {
+      maxItems: fe.max_items ?? 0,
+      itemAlias: fe.item_alias ?? "item",
+      itemValueKey: fe.item_value_key ?? "value",
+      publishes: fe.publishes ?? [],
+    },
+  };
 }
 
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
@@ -3455,7 +3472,28 @@ export interface IntegrationProvider {
   blurb: string;
   /** The org registered an OAuth client — flips the card from Set up to Connect. */
   configured: boolean;
+  /** The stored OAuth client id, echoed back so the Set-up form can EDIT rather than
+   *  ask again. Not a secret: it travels in the browser's own address bar during the
+   *  dance. Empty when the provider was never set up. */
+  client_id: string;
+  /** A masked preview of the stored secret ("abcd••••••"), or "". Enough to say one
+   *  exists; never enough to read it. */
+  secret_preview: string;
+  /** The authored callback, when one was set; "" means the derived one applies. */
+  redirect_uri: string;
   console_url: string;
+  /** Whether the OAuth dance can complete on THIS deployment: false when the provider
+   *  refuses `http://` and the callback this API would send is one. The card then routes
+   *  to `alt_door` instead of offering a button that cannot work here. */
+  oauth_ready: boolean;
+  /** A door needing no public callback — `"slack_app"` is Slack's app + Socket Mode,
+   *  which a laptop can complete. `""` when OAuth is the only way in. */
+  alt_door: string;
+  /** This provider REFUSES an `http://` redirect URL, localhost included — Slack says
+   *  so in its own docs, Google and Microsoft accept the loopback address. The Set-up
+   *  form uses it to warn BEFORE the credentials are pasted, instead of after the
+   *  provider's error page. */
+  https_only: boolean;
   connection: IntegrationConnection | null;
 }
 
@@ -3468,7 +3506,14 @@ export async function getIntegrationsCatalog(): Promise<{
 }
 
 export async function setupIntegrationApp(provider: string, body: {
-  client_id: string; client_secret: string;
+  client_id: string;
+  /** Blank on an update = keep the stored secret. It is encrypted at rest and masked on
+   *  every read, so requiring it back would force a rotation to fix a typo elsewhere. */
+  client_secret: string;
+  /** Blank = derive the callback from the request, as every deployment did before this
+   *  field existed. Set it when the API is REGISTERED at an address it is not currently
+   *  being reached at — the case every local Slack setup lands in. */
+  redirect_uri?: string;
 }): Promise<{ redirect_uri: string }> {
   const res = await fetch(`${getApiBase()}/integrations/${provider}/app`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
@@ -3550,6 +3595,24 @@ export async function createSlackBot(body: {
 /** The bots an automation may post AS. Returns [] when the plane is off (404), so a
  *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
  *  uses for the same reason. */
+/** The supervisor's key, minted server-side and returned ONCE. Every later read is a
+ *  status, never a disclosure — a lost key is re-issued, not recovered. */
+export async function issueSupervisorKey(): Promise<{
+  key: string; env_line: string; issued_at: string;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`, { method: "POST" });
+  if (!res.ok) throw new Error(`Could not issue a supervisor key (${res.status})`);
+  return res.json();
+}
+
+export async function getSupervisorKeyStatus(): Promise<{
+  issued: boolean; issued_at: string;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`);
+  if (!res.ok) return { issued: false, issued_at: "" };
+  return res.json();
+}
+
 export async function getSlackBots(): Promise<SlackBotSummary[]> {
   const res = await fetch(`${getApiBase()}/slack-bots`);
   if (res.status === 404) return [];
@@ -3590,6 +3653,15 @@ export interface AutoEffect {
    *  for. `when` is the wire's word; the boundary is where it is translated. */
   when?: GuardClause[];
   when_logic?: "all" | "any";
+  /** W2 — run this step once per item of a list instead of exactly once. Absent = the
+   *  single dispatch every automation written before W2 performs.
+   *
+   *  `source` is a literal list or a `{"$from": "step1.rows"}` binding, and each
+   *  iteration publishes its item under the reserved alias `item` — a dict item read
+   *  field-wise (`{"$from": "item.channel"}`), a scalar as `{"$from": "item.value"}`.
+   *
+   *  Called **"For each" on every surface**, which is also the wire's word. */
+  for_each?: { source: unknown } | null;
   config: Record<string, unknown>;
 }
 

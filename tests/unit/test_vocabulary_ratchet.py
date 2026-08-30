@@ -127,7 +127,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # OPEN set (`PUBLISHED_KEYS[...] is None`), which is precisely what the dry
          # run's sampler has to handle. A test of that behaviour has to name the kind
          # that has it; there is no other.
-         "tests/unit/test_automations_dry_run.py"),
+         "tests/unit/test_automations_dry_run.py",
+         # W2, the same ground and for the same reason as B2's entry above: the OPEN
+         # published set is the only shape a fan-out may bind to, because every closed
+         # one in this plane is strings. A test of "what may a step fan out over" has to
+         # construct an effect of the one kind that has it. Two hits, both the wire
+         # literal; the prose in the file says "declared action".
+         "tests/unit/test_automations_foreach.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (

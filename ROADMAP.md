@@ -53,14 +53,15 @@ plane — see §7.
 | Query workbench | SE-0…SE-5a complete |
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
-| Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-9d, VA-10, VA-11 open |
+| Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
 | Automations | trigger → ordered effects, `{"$from": …}` dataflow, runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**Honest limits, same date:** automations cannot branch, fan out, or parallelise (§3.2); no
+**Honest limits, same date:** automations cannot parallelise, and a fan-out has no list to
+read from any effect kind but the declared action's open outcome (§3.2); no
 user-scoped credential store anywhere; warehouse connections have **no owner**; `telemetry.py`'s
 Langfuse backend is silently dead (v2 path, 4.x runtime); no RBAC on `/agents/custom*`.
 
@@ -113,7 +114,7 @@ is not "everything failed".
 
 ---
 
-## 3 · ACTIVE — Arc VA, remaining
+## 3 · ACTIVE — Arc VA remaining, plus substrate
 
 ### 3.1 · VA-9d — the MCP consumer
 
@@ -139,8 +140,20 @@ over a list, or parallelise. The user named this gap directly; it is real.
   read, so a guard cannot become a fourth, invisible dataflow. Operators are FETCHED from
   `/automations/vocabulary`; the subject is a picker over what upstream steps publish, never
   free text (B1's law, one field over).
-- **W2 · `for_each` on an effect** — bind a step to an upstream list and run it per item,
-  appending one `EffectOutcome` each. `resolve()` already walks lists.
+- ~~**W2 · `for_each` on an effect**~~ — **SHIPPED 2026-08-30.** One step, N dispatches,
+  one `EffectOutcome` each. 🔑 **The pre-check moved the scope again: NOTHING in this
+  plane publishes a list** — `investigate` publishes two strings, `slack_post` two
+  strings, `notify`/`brief`/`monitor`/`agent_alert` nothing at all, and only the
+  declared-action kind has an OPEN outcome shape. So a source is a **literal list** or a
+  binding onto that open kind, and fanning over a closed-set producer is refused at SAVE
+  rather than found at 09:00 as "cannot iterate a str". The item is one more entry in the
+  same accumulated context (`item.value` / `item.<field>`), so `resolve` needed no change
+  and the canvas draws the source as an ordinary edge. The guard runs **per item** — a
+  fan-out whose guard were checked once would be all-or-nothing, and "post the regions
+  that moved" is a filter. ⚠️ It broke a load-bearing assumption: `build_graph` read
+  `outcomes[i]` because the engine appended exactly one outcome per effect, so every node
+  after a fan-out would have shown another step's status — a picture that is *wrong*, not
+  missing. Grouped by `fan_count` instead.
 - **W3 · parallel-safe steps** — lowest priority; nothing measured is latency-bound.
 
 Neither needs a new canvas: VA-12's authoring rail edits whatever the model can express.
@@ -169,7 +182,17 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   conditions are reported rather than enforced, because "disabled" and "not due" are the two
   states a design lives in before it goes live. Guards are reported, never decided.
 
-### 3.4 · VA-11 — the credential becomes a governed object (SPECCED 2026-08-30)
+### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; UNCONSUMED)
+
+> **State, measured 2026-08-30 (after `dadc6f63`).** Deliverables 1, 2 and 4 are BUILT:
+> `aughor/integrations/models.py` (the `Connection` object, Fernet under `AUGHOR_SECRET_KEY`,
+> masked reads), `broker.py` (begin/complete with `state`+PKCE, refresh-before-expiry, revoke,
+> audit), `providers.py` (Google · Slack · Microsoft as pure data), six routes and the
+> Integrations panel in `OperationsWorkspace`. **Deliverable 3 — a live end-to-end Google grant
+> — is not done, and more importantly the plane is INERT: nothing outside
+> `aughor/routers/integrations.py` imports the module, and `broker.fresh_access_token()` has
+> zero callers.** No effect kind, tool or connector runs under a user's grant. §7's recurring
+> failure, verbatim. The remaining work is a CONSUMER, not more vault.
 
 **Decision behind it (§6.1, user-approved 2026-08-30): Aughor owns the vault.** The Databricks
 precedent settled it — a Unity Catalog connection is a *securable object* ("Databricks stores
@@ -196,12 +219,28 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
 2. **The broker — a module, not a service.** Authorize redirect, callback (`state` + PKCE),
    token exchange, refresh-before-expiry, revoke; plus the error paths that matter (consent
    denied, scope downgraded by the provider, refresh token revoked upstream).
-   `http://localhost:8000/oauth/callback` is a redirect URI every major provider accepts, so
-   local hosting needs nothing extra.
+   `http://localhost:8000/oauth/callback` is accepted by Google and Microsoft — **and not by
+   Slack**, whose docs require HTTPS and list `http://` among the rejected examples
+   (measured 2026-08-30, after a user hit Slack's own error page: *"redirect_uri did not
+   match any configured URIs"*). Carried as `Provider.https_only` and warned about in the
+   Set-up form. Local hosting therefore needs nothing extra **for two of the three shipped
+   providers**; Slack needs the API reachable over HTTPS (a tunnel suffices — `_callback_uri`
+   already honours the forwarded proto and host).
 3. **Google first, end to end** — consent → token → refresh → revoke, proven live before any
    second provider. Then **Slack and Microsoft as data, not code.**
 4. **The catalog surface** — categorised, searchable, one `Connect` per provider, with
    `+ Custom MCP` as its last entry (where VA-9d surfaces to a user).
+   🔑 **Decided 2026-08-30, from a live install failure: a card must offer the door THIS
+   deployment can open.** Slack's OAuth needs an HTTPS callback; a laptop has none; so a
+   freshly-cloned Aughor was being pointed at the one door it cannot open — to reach a
+   token **nothing consumes yet** (`broker.fresh_access_token()` still has zero callers,
+   §3.4's own note). Meanwhile RC-5's Slack app path — manifest + three tokens + Socket
+   Mode, an *outbound* socket, no callback, no tunnel — works on a laptop today and is
+   what `slack_post` actually uses. The catalog now computes `oauth_ready` from the same
+   callback `connect` would send, and routes to `Provider.alt_door` when it is false.
+   The user's framing, which is the general rule: *"someone who just installed from
+   GitHub would not know how to start a tunnel."* **A provider gains an `alt_door`
+   whenever one exists that needs no public callback.**
 5. **LATER, not now — `CredentialBackend` seam.** A large deployment that genuinely needs 900
    providers points the same `Connection` at a self-hosted vendor broker (Nango under
    `NANGO_ENCRYPTION_KEY`) and the governance plane never notices — what moves is the vault,
@@ -231,6 +270,40 @@ user traces. **Risk is policy, not code:** an admin reading a user's prompts is 
 Default to visible-metadata, gated-payloads.
 
 ---
+
+### 3.6 · S1 — Qdrant installs WITH the app, not beside it (raised by the user, 2026-08-30)
+
+**Measured, not recalled.** `uv sync` / `pip install '.[semantic]'` installs the *client only*
+— `pyproject.toml` concedes it in its own comment: `qdrant-client` "already needs a Qdrant
+server (`AUGHOR_QDRANT_URL`, default localhost:6333)". The server comes from a **separate**
+`docker compose up` (`docker-compose.yml`, `qdrant/qdrant:latest`, volume `qdrant_data`), and
+that is exactly how it runs on the author's machine today (container `hermes-qdrant-1`, up 7
+days). README says the same out loud: "there is no container image (the only Docker asset
+composes Qdrant)". Without a server the `semantic` extra degrades — reads return no hits,
+writes no-op.
+
+**Half of this is already solved; do not rebuild it.** `vector_store.backend()` routes a
+Postgres deployment to **pgvector** — the index rides inside the platform's one managed
+database, no second service — so the hosted/Vercel shape needs no Qdrant at all. The gap is
+only the **local** shape: with no Postgres `AUGHOR_DB_URL` and no pinned URL, `_client()`
+hardcodes `url=http://localhost:6333`, and on a fresh clone nothing is listening there.
+
+**Direction — make the laptop backend embedded.** `qdrant-client` 1.18.0, already the pinned
+dependency, supports in-process on-disk local mode (`QdrantClient(path=…)`; verified — both
+`path` and `location` are on `__init__`). A third branch in `backend()`/`_client()` defaults to
+`data/qdrant/`: same API, no port, no daemon, no second install step. Three backends behind the
+one seam — **embedded local · Qdrant server (pinned URL) · pgvector (Postgres)** — which is the
+same local-AND-scale test §3.4 applied to the vault.
+
+**The constraint that decides the design:** local mode takes an exclusive lock on its path —
+one process, ever. This repo has corrupted `data/system.db` four times on exactly that rule, so
+the API must be the single writer, the new env name goes into `tests/conftest.py`'s allowlist in
+the SAME commit, and CLI/backfill paths talk to the API rather than open the directory
+themselves. (Compose-the-app-too is the alternative, but it helps only Docker users and leaves
+`uv run` — the documented path — needing a second service.)
+
+**Receipt:** fresh clone → `uv sync` → `uvicorn aughor.api:app` → semantic search returns hits
+with no second process running and no environment variable set.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -295,13 +368,15 @@ NOW
   ✅ B1  SHIPPED `16019b5a` — typed ports (server vocabulary, fetched), drag-to-bind,
         unknown KEYS refused at save; Runs layer retired into Activity → Phases
 
-NEXT — §6.1 decided 2026-08-30: Aughor owns the vault
-  VA-11  Connection object + broker + Google, then Slack/Microsoft as data (§3.4)
-  VA-9d  MCP consumer             (independent again — the vault no longer routes through it;
-                                   still where third-party tools get consumed, posture first)
+  ✅ W2  SHIPPED 2026-08-30 — "For each" on a step: one step, N dispatches, the guard
+        evaluated per item, an empty list a skip that does not page on-call, and a cap
+        that REFUSES rather than sending a truncated part of a list
 
-THEN
-  W2  `for_each`                  (fan-out; wanted by "post per region")
+NEXT
+  VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
+                                   the vault is built and nothing reaches it — §3.4)
+  S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
+  VA-9d  MCP consumer             (posture first — allowlist + outbound off by default)
   VA-10  multi-user + admin       (hardening pass over everything above)
 
 LATER   W3 parallel steps · B3 flow-as-MCP-tool
@@ -323,8 +398,11 @@ the browser** · **measure the premise before building.**
    fails the local-AND-scale test this platform lives by. Specced as §3.4. A vendor broker may
    later sit *behind* a `CredentialBackend` seam for very large deployments — opt-in, the
    record stays ours, and the Elastic Licence gets legal review first.
-2. **Do the workflow primitives (W1/W2) come before VA-11?** They are independent: W1/W2 make
-   what exists properly expressive; VA-11 makes it reach further.
+2. ✅ **DECIDED 2026-08-30 — the primitives come first.** W1 and W2 both shipped; next is the
+   VA-11 CONSUMER (§3.4). Reasoning kept: they are independent — W1/W2 make what exists
+   properly expressive, VA-11 makes it reach further — and W2 needs nothing from outside
+   this repo, while VA-11's live receipt waits on a Google OAuth client only the user can
+   create.
 3. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
 
 ---

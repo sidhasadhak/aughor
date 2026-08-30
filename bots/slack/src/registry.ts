@@ -38,7 +38,14 @@ export function fingerprint(b: BotRecord): string {
 }
 
 export function createRegistry(
-  env: { AUGHOR_API_URL?: string; AUGHOR_API_KEY?: string } = process.env,
+  env: {
+    AUGHOR_API_URL?: string;
+    AUGHOR_API_KEY?: string;
+    /** The supervisor's own key, generated in Integrations → Slack. This route is the
+     *  one that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated
+     *  caller; a scoped key means the whole API does not have to be locked to open it. */
+    AUGHOR_RUNTIME_KEY?: string;
+  } = process.env,
   fetchImpl: typeof fetch = fetch,
 ): FetchBots {
   const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
@@ -47,8 +54,18 @@ export function createRegistry(
       headers: {
         accept: "application/json",
         ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
+        ...(env.AUGHOR_RUNTIME_KEY
+          ? { "x-aughor-runtime-key": env.AUGHOR_RUNTIME_KEY } : {}),
       },
     });
+    // 503 is the platform refusing to hand credentials to an unauthenticated caller —
+    // a configuration answer, not an outage, and worth saying so rather than letting a
+    // supervisor retry-loop against a wall.
+    if (res.status === 503) {
+      throw new Error(
+        "the API refused to serve bot credentials: generate a supervisor key in "
+        + "Integrations → Slack and set it here as AUGHOR_RUNTIME_KEY");
+    }
     if (!res.ok) throw new Error(`registry read failed (HTTP ${res.status})`);
     const body = await res.json() as { bots?: BotRecord[] };
     // Disabled rows are filtered HERE rather than by the caller: "enabled" is the
