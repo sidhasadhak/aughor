@@ -117,31 +117,35 @@ export function buildForest(nodes: TimelineNode[], edges: TraceFlowEdge[]): Flow
   return nodes.filter(n => !claimed.has(n.id)).map(n => byId.get(n.id)!).filter(Boolean);
 }
 
-/* ── folding a repeated stretch ───────────────────────────────────────────────────
+/* ── stacking a run of like nodes ─────────────────────────────────────────────────
  *
- * Measured before any of this was written, over the four longest traces on the live
- * instance: 239, 118, 104 and 71 root nodes. A long run is not long because it does many
- * DIFFERENT things — it is a short cycle repeated. The 239-node trace is
- * `llm · llm · sql.execute · pii`, about forty-eight times over.
+ * The Flow tab drew one card per node, and a long run could not be read end to end at
+ * any zoom. Measured on the live instance: the median trace is 10 nodes; the long ones
+ * are 71, 104, 118 and 239.
  *
- * That measurement chose the design. Stacking *consecutive identical* nodes — the
- * obvious reading of the request — collapses 239 to 144, which is still a sequence
- * nobody can see the end of: the runs of one kind are only ever two or three long
- * because the kinds interleave. Folding the repeated CYCLE collapses the same trace to
- * 12 cards, and every long trace measured lands between 9 and 12.
+ * **A stack means N of the SAME thing.** Two model calls in a row are one stack of two;
+ * two model calls with a tool call between them are two separate cards, however alike
+ * they look. That is the whole rule, and it is what keeps a stack honest: expanding one
+ * can only ever show more of what its face already said.
  *
- * A band is a claim about the run, so it obeys the same rule every other claim on this
- * canvas does — it may compress the picture, never change it:
+ * An earlier draft folded the repeating CYCLE instead — `llm · llm · sql · pii` ×48 as a
+ * single card. It compressed far harder (239 nodes to 12 cards against 144 this way) and
+ * it was wrong: a card standing for four different kinds of work is not a stack, it is a
+ * summary wearing a stack's clothes, and a reader cannot tell from its face what
+ * expanding it will show.
  *
- * * **Contiguous only.** A band occupies one position in a chain that means order.
- *   Gathering scattered nodes of the same kind would draw a sequence that never ran.
- * * **A failure is never folded away.** Any node that did not succeed breaks the run and
- *   is drawn as itself. The alternative — a band with a small "1 failed" on it — puts
+ * The rest of the rules follow from the same place — a stack may compress the picture,
+ * never change it:
+ *
+ * * **Contiguous only.** A stack occupies one position in a chain that means order.
+ *   Gathering like nodes from across the run would draw a sequence that never ran.
+ * * **A failure is never stacked away.** Any node that did not succeed breaks the run and
+ *   is drawn as itself. The alternative — a stack with a small "1 failed" on it — puts
  *   the one thing a reader is looking for one click further away than everything else.
  */
 
-/** What makes two nodes the same STEP for pattern matching: their face and their name.
- *  Never duration — two calls to one model are the same step at any speed. */
+/** What makes two nodes the same THING: their face and their name. Never duration — two
+ *  calls to one model are the same step at any speed. */
 function stepSignature(node: TimelineNode): string {
   return `${node.event_kind || node.kind || ""}\u0000${node.name || ""}`;
 }
@@ -150,93 +154,64 @@ function succeeded(node: TimelineNode): boolean {
   return node.ok !== false && !node.error_class;
 }
 
-/** The longest cycle worth looking for. Measured: the useful period is 5. */
-const MAX_PERIOD = 8;
-/** Two repetitions of a single node is not a stack worth a click. */
-const MIN_BAND_NODES = 4;
+/** Two in a row is a stack. The reference frame stacks identical nodes on sight, and a
+ *  pair already halves what a reader has to scan past. */
+const MIN_STACK = 2;
 
 export interface FlowBand {
   kind: "band";
   id: string;
-  /** The nodes it stands for, in order — `period × reps` of them. */
+  /** The like nodes it stands for, in order. */
   members: FlowNode[];
-  period: number;
   reps: number;
 }
 
 export type FlowItem = { kind: "node"; node: FlowNode } | FlowBand;
 
 /**
- * The root sequence with its repeated stretches folded. Pure, and exported because this
+ * The root sequence with each run of like nodes stacked. Pure, and exported because this
  * is where the whole feature can be wrong — jsdom draws zero edges, so nothing about a
  * canvas can catch it.
  */
 export function foldRepeats(roots: FlowNode[]): FlowItem[] {
-  const sig = roots.map(stepSignature);
   const items: FlowItem[] = [];
   let i = 0;
 
   while (i < roots.length) {
-    let found: { period: number; reps: number } | null = null;
-
-    // A failure anchors the sequence: it is drawn as itself, and no band may start on it
-    // or run through it.
-    if (succeeded(roots[i])) {
-      for (let period = 1; period <= MAX_PERIOD; period++) {
-        if (i + 2 * period > roots.length) break;
-        const same = (a: number, b: number) => {
-          for (let k = 0; k < period; k++) {
-            if (sig[a + k] !== sig[b + k]) return false;
-            if (!succeeded(roots[a + k]) || !succeeded(roots[b + k])) return false;
-          }
-          return true;
-        };
-        if (!same(i, i + period)) continue;
-        let reps = 2;
-        while (i + (reps + 1) * period <= roots.length && same(i, i + reps * period)) reps++;
-        // The smallest ACCEPTABLE period wins — the two conditions are one rule, and
-        // splitting them is how the first draft of this failed: the measured cycle
-        // `llm · llm · sql · pii` matches at period 1 (the two model calls) for a band of
-        // two, which is under the minimum. Stopping at the smallest MATCH rejected that
-        // and never tried period 4, so the 239-node trace folded into nothing. Keep
-        // widening until a period earns a band; `A B A B A B` still folds as three of
-        // `A B`, because period 2 is acceptable and reached first.
-        if (period * reps >= MIN_BAND_NODES) {
-          found = { period, reps };
-          break;
-        }
-      }
-    }
-
-    if (found) {
-      const { period, reps } = found;
-      const members = roots.slice(i, i + period * reps);
-      items.push({ kind: "band", id: `band:${members[0].id}`, members, period, reps });
-      i += period * reps;
-    } else {
+    // A failure anchors the sequence: drawn as itself, and no stack may run through it.
+    if (!succeeded(roots[i])) {
       items.push({ kind: "node", node: roots[i] });
       i += 1;
+      continue;
     }
+    const sig = stepSignature(roots[i]);
+    let end = i + 1;
+    while (end < roots.length
+           && succeeded(roots[end])
+           && stepSignature(roots[end]) === sig) end++;
+
+    const run = end - i;
+    if (run >= MIN_STACK) {
+      const members = roots.slice(i, end);
+      items.push({ kind: "band", id: `band:${members[0].id}`, members, reps: run });
+    } else {
+      items.push({ kind: "node", node: roots[i] });
+    }
+    i = end;
   }
   return items;
 }
 
-/** A band, as the one node the canvas draws in its place.
+/** A stack, as the one node the canvas draws in its place.
  *
  *  Synthetic on purpose: `layoutForest` and the edge filter both key on node ids, so a
- *  band that IS a node needs neither of them changed — the members simply stop being
+ *  stack that IS a node needs neither of them changed — the members simply stop being
  *  drawn, and their edges fall out of the existing `drawn` filter on their own.
  */
 export function bandAsNode(band: FlowBand): FlowNode {
   const first = band.members[0];
   const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
-  return {
-    ...first,
-    id: band.id,
-    name: `${band.reps} × ${band.period} step${band.period === 1 ? "" : "s"}`,
-    duration_ms: total,
-    children: [],
-  };
+  return { ...first, id: band.id, duration_ms: total, children: [] };
 }
 
 /** `{id: {col, row}}` for every node. Pure, and exported so the layout is testable
@@ -564,32 +539,34 @@ function NodeCard({ data }: { data: CardData }) {
   );
 }
 
-/** The data a band card is drawn from. */
+/** The data a stack card is drawn from. */
 interface BandData {
   band: FlowBand;
-  faces: RunFace[];
+  face: RunFace;
   onExpand: () => void;
   [key: string]: unknown;
 }
 
 /**
- * A folded stretch, drawn as one card that says what it stands for.
+ * A run of like nodes, drawn as one card.
  *
- * Deliberately shows the SHAPE of one turn rather than a count alone: "×20" answers how
- * many, and a reader's next question is always what — a card that made them expand to
- * find out would have moved the work rather than saved it. The stacked edges behind it
- * are the affordance the request asked for; they also say, without a word, that this is
- * several nodes and not one.
+ * It wears the FACE of the thing it stacks, because that is what makes a stack readable
+ * without opening it: every node inside is this node, and the only new information is
+ * how many and how long they took together. A card standing for several kinds of work
+ * could not say that, which is why this stacks like with like and nothing else.
+ *
+ * The offset plates behind it are the affordance the request asked for; they also say,
+ * without a word, that this is several nodes and not one.
  */
 function BandCard({ data }: { data: BandData }) {
-  const { band, faces, onExpand } = data;
+  const { band, face, onExpand } = data;
+  const first = band.members[0];
   const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
-  const shape = band.members.slice(0, band.period);
+  const accent = FACE_META[face].color;
 
   return (
     <div style={{ position: "relative", width: CARD_W }}>
-      {/* Two offset plates behind the face, the way a deck of identical cards reads.
-          Inert: `pointerEvents: none`, so the whole target stays the card itself. */}
+      {/* Inert: `pointerEvents: none`, so the whole target stays the card itself. */}
       {[2, 1].map(depth => (
         <div key={depth} aria-hidden style={{
           position: "absolute", inset: 0, pointerEvents: "none",
@@ -601,8 +578,7 @@ function BandCard({ data }: { data: BandData }) {
       <div
         role="button"
         tabIndex={0}
-        aria-label={`Expand ${band.reps} repeats of ${band.period} ${
-          band.period === 1 ? "step" : "steps"}`}
+        aria-label={`Expand ${band.reps} stacked ${first.name || face} nodes`}
         onClick={onExpand}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onExpand(); } }}
         style={{
@@ -610,35 +586,25 @@ function BandCard({ data }: { data: BandData }) {
           background: "var(--bg-2)",
           borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)",
           borderBottom: "1px solid var(--border)",
-          borderLeft: "3px solid var(--chart-3)",
+          borderLeft: `3px solid ${accent}`,
           borderRadius: "var(--r-chip)", overflow: "hidden",
         }}>
         <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 9px",
           borderBottom: "1px solid var(--b1)" }}>
-          <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--chart-3)" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)",
+            flexShrink: 0, background: accent }} />
+          <span className="aug-fs-ui" style={{ fontWeight: 600, overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {first.name || face}
+          </span>
+          <span className="aug-fs-ui" style={{ marginLeft: "auto", fontWeight: 600,
+            color: accent }}>
             ×{band.reps}
           </span>
-          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            repeated {band.period === 1 ? "step" : `${band.period} steps`}
-          </span>
-          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t4)" }}>
-            {band.members.length} nodes
-          </span>
         </div>
-        <div style={{ padding: "7px 9px", display: "flex", flexDirection: "column", gap: 3 }}>
-          {shape.map((m, i) => (
-            <div key={m.id} className="aug-fs-xs" style={{ display: "flex", gap: 6,
-              alignItems: "center", color: "var(--t3)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)",
-                flexShrink: 0, background: FACE_META[faces[i]].color }} />
-              {m.name || faces[i]}
-            </div>
-          ))}
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
-            {ms(total)} total · click to expand
-          </div>
+        <div className="aug-fs-xs" style={{ padding: "6px 9px", color: "var(--t4)" }}>
+          {ms(total)} total · click to expand
         </div>
         <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
       </div>
@@ -865,7 +831,7 @@ export function TraceFlow({
         position: { x: p.col * COL_W, y: p.row * ROW_H },
         data: {
           band,
-          faces: band.members.slice(0, band.period).map(faceOf),
+          face: faceOf(band.members[0]),
           onExpand: () => setExpanded(cur => new Set(cur).add(band.id)),
         } satisfies BandData,
         draggable: true,

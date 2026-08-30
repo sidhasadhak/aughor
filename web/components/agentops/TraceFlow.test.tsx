@@ -399,49 +399,45 @@ function ev2(over: Partial<SessionEvent> = {}): SessionEvent {
   } as SessionEvent;
 }
 
-/* ── folding a repeated stretch ─────────────────────────────────────────────────
+/* ── stacking a run of like nodes ───────────────────────────────────────────────
  *
- * `lib/traceFlow.test.ts` proves the fold itself. These prove the component ACTS on it —
- * the same split this file exists for, and the same defect it was written to catch: a
+ * `lib/traceFlow.test.ts` proves the rule. These prove the component ACTS on it — the
+ * same split this file exists for, and the same defect it was written to catch: a
  * correct pure function whose result never reaches the canvas.
  */
-describe("repeated stretches", () => {
-  /** `reps` turns of the shape every long trace measured has. */
-  const cycle = (reps: number, tag = "x") =>
-    Array.from({ length: reps }, (_, r) => [
-      node(`${tag}m${r}a`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }),
-      node(`${tag}m${r}b`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }),
-      node(`${tag}t${r}`, { event_kind: "tool_call", name: "sql.execute" }),
-      node(`${tag}g${r}`, { event_kind: "guardrail", name: "pii" }),
-    ]).flat();
+describe("stacked nodes", () => {
+  /** A long run of one thing, which is what a stack is for. */
+  const sameKind = (n: number, name = "gemini-3.1-flash-lite") =>
+    Array.from({ length: n }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name }));
 
-  const renderCycle = (reps: number) =>
-    render(<TraceFlow timeline={timeline(cycle(reps))} edges={[]} />);
-
-  it("hands the canvas ONE card for a stretch that repeats, not forty", () => {
-    renderCycle(10);
+  it("hands the canvas ONE card for a run of like nodes", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
     expect(drawn().nodes).toHaveLength(1);
     expect(drawn().nodes[0].type).toBe("bandNode");
   });
 
-  it("counts a single repeated step in the singular", () => {
-    // "9 repeats of 1 steps" is the kind of line a reader trips over and a screen
-    // reader says out loud.
-    // Above the auto-group threshold, or nothing folds and there is no label to read.
-    render(<TraceFlow timeline={timeline(
-      Array.from({ length: 30 }, (_, i) => node(`m${i}`, { event_kind: "llm_call", name: "gemini" })),
-    )} edges={[]} />);
-    expect(canvas().getByLabelText("Expand 30 repeats of 1 step")).toBeInTheDocument();
+  it("wears the face of the thing it stacks, and says how many", () => {
+    // Every node inside is this node; the only new information is how many and how long.
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    expect(canvas().getByText("×30")).toBeInTheDocument();
+    expect(canvas().getByText("gemini-3.1-flash-lite")).toBeInTheDocument();
+    expect(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"))
+      .toBeInTheDocument();
   });
 
-  it("says how many turns it stands for and what one turn is", () => {
-    // "×10" answers how many; a reader's next question is always what. A card that made
-    // them expand to find out would have moved the work rather than saved it.
-    renderCycle(10);
-    expect(canvas().getByText("×10")).toBeInTheDocument();
-    expect(canvas().getByText("40 nodes")).toBeInTheDocument();
-    expect(canvas().getAllByText("gemini-3.1-flash-lite")).toHaveLength(2);
-    expect(canvas().getByText("sql.execute")).toBeInTheDocument();
+  it("does NOT stack like nodes that something else came between", () => {
+    // The rule, in the user's own words: two model calls with an ask between them are
+    // two cards, because they are not one after the other.
+    const nodes = [
+      ...sameKind(12),
+      node("ask", { event_kind: "user_request", name: "ask" }),
+      ...sameKind(12).map(n => node(`b${n.id}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" })),
+    ];
+    render(<TraceFlow timeline={timeline(nodes)} edges={[]} />);
+    const types = drawn().nodes.map(n => n.type);
+    expect(types.filter(t => t === "bandNode")).toHaveLength(2);
+    expect(types.filter(t => t === "traceNode")).toHaveLength(1);
   });
 
   it("leaves a run that already fits completely alone", () => {
@@ -452,38 +448,38 @@ describe("repeated stretches", () => {
   });
 
   it("expands every node in the stack when the card is clicked", () => {
-    renderCycle(10);
-    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
-    expect(drawn().nodes).toHaveLength(40);
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    expect(drawn().nodes).toHaveLength(30);
     expect(drawn().nodes.every(n => n.type === "traceNode")).toBe(true);
   });
 
   it("offers the way back on the first card, and only there", () => {
-    renderCycle(10);
-    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
-    // One chip, not forty — the clutter this feature exists to remove.
-    expect(canvas().getAllByLabelText("Collapse these 10 repeats")).toHaveLength(1);
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    // One chip, not thirty — the clutter this feature exists to remove.
+    expect(canvas().getAllByLabelText("Collapse these 30 repeats")).toHaveLength(1);
   });
 
-  it("re-folds when that chip is used", () => {
-    renderCycle(10);
-    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
-    fireEvent.click(canvas().getByLabelText("Collapse these 10 repeats"));
+  it("re-stacks when that chip is used", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    fireEvent.click(canvas().getByLabelText("Collapse these 30 repeats"));
     expect(drawn().nodes).toHaveLength(1);
     expect(drawn().nodes[0].type).toBe("bandNode");
   });
 
-  it("turns grouping off entirely on request, and shows every node", () => {
-    renderCycle(10);
+  it("turns stacking off entirely on request, and shows every node", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
     fireEvent.click(screen.getByText("Grouped"));
-    expect(drawn().nodes).toHaveLength(40);
+    expect(drawn().nodes).toHaveLength(30);
     expect(screen.getByText("Group repeats")).toBeInTheDocument();
   });
 
-  it("keeps the chain joined across a band", () => {
-    // The run's own `next` edges connect real nodes, so the two reaching into a folded
-    // stretch vanish with its members — leaving the band floating unless replaced.
-    const nodes = [node("head", { event_kind: "tool_call", name: "start" }), ...cycle(8)];
+  it("keeps the chain joined across a stack", () => {
+    // The run's own `next` edges connect real nodes, so the two reaching into a stacked
+    // run vanish with its members — leaving the stack floating unless replaced.
+    const nodes = [node("head", { event_kind: "tool_call", name: "start" }), ...sameKind(30)];
     const edges = nodes.slice(0, -1).map((n, i) => edge(n.id, nodes[i + 1].id, "next"));
     render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
     const ids = new Set(drawn().nodes.map(n => String(n.id)));
@@ -496,16 +492,12 @@ describe("repeated stretches", () => {
   });
 
   it("draws a failed node as itself, never inside a stack", () => {
-    // The one thing a reader is looking for must not be one click further away than
-    // everything else.
-    // Distinct id prefixes per half: node ids are unique in a real trace (span ids),
-    // and a fixture that reuses them collides two bands onto one key.
-    const nodes = [...cycle(4, "a"), node("boom", {
-      event_kind: "tool_call", name: "sql.execute", ok: false }), ...cycle(4, "b")];
+    const nodes = [...sameKind(12),
+      node("boom", { event_kind: "llm_call", name: "gemini-3.1-flash-lite", ok: false }),
+      ...sameKind(12).map(n => node(`b${n.id}`,
+        { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }))];
     render(<TraceFlow timeline={timeline(nodes)} edges={[]} />);
     const cards = drawn().nodes;
-    // Composition and POSITION, not array order: the handoff lists real nodes then
-    // bands, while what a reader sees is where each card sits.
     expect(cards.filter(n => n.type === "bandNode")).toHaveLength(2);
     const failed = cards.filter(n => n.type === "traceNode");
     expect(failed.map(n => n.id)).toEqual(["boom"]);
@@ -513,7 +505,6 @@ describe("repeated stretches", () => {
     const bandXs = cards.filter(n => n.type === "bandNode").map(xOf).sort((a, b) => a - b);
     expect(xOf(failed[0])).toBeGreaterThan(bandXs[0]);
     expect(xOf(failed[0])).toBeLessThan(bandXs[1]);
-    // And it is drawn as the failure it is, not as a card that merely escaped folding.
     const failedData = failed[0].data as { node: TimelineNode };
     expect(failedData.node.ok).toBe(false);
   });

@@ -152,125 +152,112 @@ describe("layoutForest", () => {
   });
 });
 
-/* ── folding a repeated stretch ─────────────────────────────────────────────────
+/* ── stacking a run of like nodes ───────────────────────────────────────────────
  *
- * Measured over the four longest traces on the live instance (239, 118, 104, 71 root
- * nodes): a long run is a SHORT CYCLE repeated, not many different things. The 239-node
- * one is `llm · llm · sql.execute · pii`, forty-eight times.
+ * A stack means N of the SAME thing. Two model calls in a row are one stack of two; two
+ * model calls with a tool call between them are two separate cards, however alike they
+ * look — they are not one after the other, and similarity alone is not a reason to draw
+ * them as one.
  *
- * That is why these test a cycle and not a stack of identical nodes. Folding consecutive
- * IDENTICAL nodes — the obvious reading — takes 239 to 144, because the kinds interleave
- * and no one kind ever runs more than three deep. Folding the cycle takes it to 12.
+ * An earlier draft folded the repeating CYCLE (`llm · llm · sql · pii` ×48 as one card).
+ * It compressed harder — 239 nodes to 12 cards against 144 this way — and it was wrong:
+ * a card standing for four kinds of work is a summary wearing a stack's clothes, and a
+ * reader cannot tell from its face what expanding it will show.
  */
 
-/** One step of the measured cycle. */
 const step = (id: string, kind: string, name: string, over: Partial<TimelineNode> = {}) =>
   node(id, { event_kind: kind, name, ...over });
 
-/** `reps` turns of `llm · llm · sql · pii`, the shape every long trace measured has. */
-const cycle = (reps: number): TimelineNode[] =>
-  Array.from({ length: reps }, (_, r) => [
-    step(`m${r}a`, "llm_call", "gemini-3.1-flash-lite"),
-    step(`m${r}b`, "llm_call", "gemini-3.1-flash-lite"),
-    step(`t${r}`, "tool_call", "sql.execute"),
-    step(`g${r}`, "guardrail", "pii"),
-  ]).flat();
-
 const roots = (nodes: TimelineNode[]) => buildForest(nodes, []);
 
+/** The shape of the rule, in the user's own words. */
+const askLlmLlmAsk = () => [
+  step("ask1", "user_request", "ask"),
+  step("m1", "llm_call", "gemini"),
+  step("m2", "llm_call", "gemini"),
+  step("ask2", "user_request", "ask"),
+];
+
 describe("foldRepeats", () => {
-  it("folds the measured cycle into one band", () => {
-    const items = foldRepeats(roots(cycle(12)));
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ kind: "band", period: 4, reps: 12 });
+  it("stacks the two adjacent nodes and leaves the two separated ones alone", () => {
+    // ask · llm · llm · ask → the llms stack; the asks do not, because they are not one
+    // after the other. Similarity is not adjacency.
+    const items = foldRepeats(roots(askLlmLlmAsk()));
+    expect(items.map(i => i.kind)).toEqual(["node", "band", "node"]);
+    const band = items[1];
+    expect(band.kind === "band" && band.members.map(m => m.id)).toEqual(["m1", "m2"]);
   });
 
-  it("keeps a short run exactly as it is", () => {
-    // The median trace is 10 nodes. Folding must not touch what already fits.
-    const items = foldRepeats(roots([step("a", "llm_call", "m"), step("b", "tool_call", "t")]));
+  it("never stacks like nodes that something else came between", () => {
+    const items = foldRepeats(roots([
+      step("m1", "llm_call", "gemini"),
+      step("t1", "tool_call", "sql.execute"),
+      step("m2", "llm_call", "gemini"),
+    ]));
+    expect(items.map(i => i.kind)).toEqual(["node", "node", "node"]);
+  });
+
+  it("stacks on the NAME as well as the kind — two different models are two cards", () => {
+    const items = foldRepeats(roots([
+      step("a", "llm_call", "gemini"),
+      step("b", "llm_call", "claude"),
+    ]));
     expect(items.map(i => i.kind)).toEqual(["node", "node"]);
   });
 
-  it("prefers the SMALLEST period — three of `A B`, not one of `A B A B A B`", () => {
-    // A reader counting iterations means the small one.
-    const ab = Array.from({ length: 3 }, (_, r) => [
-      step(`a${r}`, "llm_call", "m"), step(`b${r}`, "tool_call", "t"),
-    ]).flat();
-    expect(foldRepeats(roots(ab))[0]).toMatchObject({ period: 2, reps: 3 });
+  it("stacks a long run of one thing into one card", () => {
+    const items = foldRepeats(roots(
+      Array.from({ length: 12 }, (_, i) => step(`m${i}`, "llm_call", "gemini"))));
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "band", reps: 12 });
   });
 
-  it("never folds a stretch that is not contiguous", () => {
-    // A band occupies ONE position in a chain that means order. Gathering scattered
-    // nodes of the same kind would draw a sequence that never ran.
-    const seq = [...cycle(3), step("odd", "tool_call", "export.pptx"), ...cycle(3)];
-    const items = foldRepeats(roots(seq));
-    expect(items.map(i => i.kind)).toEqual(["band", "node", "band"]);
-    expect(items.flatMap(i => (i.kind === "band" ? i.members.map(m => m.id) : [i.node.id])))
-      .toEqual(seq.map(n => n.id));
+  it("leaves a lone node as a lone node", () => {
+    const items = foldRepeats(roots([step("only", "llm_call", "gemini")]));
+    expect(items.map(i => i.kind)).toEqual(["node"]);
   });
 
-  it("preserves the run's order exactly, band or not", () => {
-    const seq = [step("head", "llm_call", "m"), ...cycle(5), step("tail", "tool_call", "t")];
+  it("preserves the run's order exactly, stacked or not", () => {
+    const seq = [...askLlmLlmAsk(), step("t", "tool_call", "sql.execute"),
+                 step("m3", "llm_call", "gemini"), step("m4", "llm_call", "gemini")];
     const flat = foldRepeats(roots(seq))
       .flatMap(i => (i.kind === "band" ? i.members.map(m => m.id) : [i.node.id]));
     expect(flat).toEqual(seq.map(n => n.id));
   });
-
-  it("refuses to fold two nodes into a band nobody would click", () => {
-    const items = foldRepeats(roots([step("a", "llm_call", "m"), step("a2", "llm_call", "m")]));
-    expect(items.map(i => i.kind)).toEqual(["node", "node"]);
-  });
-
-  it("folds a plain repeated node when there are enough of them", () => {
-    // The Blender case — a stack of one repeated step — falls out of the same algorithm
-    // at period 1 rather than needing a rule of its own.
-    const items = foldRepeats(roots(
-      Array.from({ length: 6 }, (_, i) => step(`m${i}`, "llm_call", "gemini"))));
-    expect(items[0]).toMatchObject({ kind: "band", period: 1, reps: 6 });
-  });
 });
 
-describe("a fold never hides a failure", () => {
-  it("draws a failed node as itself and breaks the band around it", () => {
+describe("a stack never hides a failure", () => {
+  it("draws a failed node as itself and breaks the run around it", () => {
     // The one thing a reader is looking for must never be one click further away than
     // everything else.
-    const seq = [...cycle(3), step("boom", "tool_call", "sql.execute", { ok: false }),
-                 ...cycle(3)];
+    const seq = [step("m1", "llm_call", "gemini"), step("m2", "llm_call", "gemini"),
+                 step("boom", "llm_call", "gemini", { ok: false }),
+                 step("m3", "llm_call", "gemini"), step("m4", "llm_call", "gemini")];
     const items = foldRepeats(roots(seq));
     expect(items.map(i => i.kind)).toEqual(["band", "node", "band"]);
-    const alone = items[1];
-    expect(alone.kind === "node" && alone.node.id).toBe("boom");
+    expect(items[1].kind === "node" && items[1].node.id).toBe("boom");
   });
 
   it("treats an error_class as a failure even when ok is true", () => {
-    const seq = [...cycle(3), step("warned", "guardrail", "pii", { error_class: "Refused" }),
-                 ...cycle(3)];
-    const items = foldRepeats(roots(seq));
-    expect(items[1].kind === "node" && items[1].node.id).toBe("warned");
-  });
-
-  it("never puts a failure inside any band, however the run is shaped", () => {
-    const seq = [...cycle(2), step("boom", "llm_call", "gemini-3.1-flash-lite", { ok: false }),
-                 ...cycle(2)];
-    const inBands = foldRepeats(roots(seq))
-      .flatMap(i => (i.kind === "band" ? i.members : []));
-    expect(inBands.every(m => m.ok !== false && !m.error_class)).toBe(true);
+    const seq = [step("g1", "guardrail", "pii"),
+                 step("g2", "guardrail", "pii", { error_class: "Refused" }),
+                 step("g3", "guardrail", "pii")];
+    expect(foldRepeats(roots(seq)).map(i => i.kind)).toEqual(["node", "node", "node"]);
   });
 });
 
 describe("bandAsNode", () => {
-  it("sums what the whole stretch took, so a slow loop still reads as slow", () => {
-    const items = foldRepeats(roots(cycle(10)));
-    const band = items[0];
-    if (band.kind !== "band") throw new Error("expected a band");
-    // 40 members at 1ms each — the fixture's duration.
-    expect(bandAsNode(band).duration_ms).toBe(40);
+  it("sums what the whole stack took, so a slow run of calls still reads as slow", () => {
+    const band = foldRepeats(roots(
+      Array.from({ length: 10 }, (_, i) => step(`m${i}`, "llm_call", "gemini"))))[0];
+    if (band.kind !== "band") throw new Error("expected a stack");
+    expect(bandAsNode(band).duration_ms).toBe(10);
   });
 
   it("carries an id of its own so the layout and the edge filter need no changes", () => {
-    const items = foldRepeats(roots(cycle(10)));
-    const band = items[0];
-    if (band.kind !== "band") throw new Error("expected a band");
+    const band = foldRepeats(roots(
+      Array.from({ length: 4 }, (_, i) => step(`m${i}`, "llm_call", "gemini"))))[0];
+    if (band.kind !== "band") throw new Error("expected a stack");
     expect(bandAsNode(band).id).toBe(band.id);
     expect(bandAsNode(band).id).not.toBe(band.members[0].id);
   });
