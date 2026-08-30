@@ -328,3 +328,33 @@ def test_both_callers_go_through_the_runner():
     for module in (AUGHOR / "automations" / "engine.py", AUGHOR / "actions" / "executor.py"):
         assert any(m.startswith("aughor.runners") for m in _imported_aughor_modules(module)), \
             f"{module.name} no longer runs investigations through the neutral runner"
+
+
+def test_a_streamed_headline_is_captured_from_deltas(monkeypatch):
+    """The deep path types its sentence: `headline_delta` frames with replace semantics,
+    and on some branches no plain `headline` ever follows. A drain that listened for only
+    the plain one waited for the whole run, spent the tokens, and reported no answer —
+    which reads downstream as "upstream data unavailable" and skips the step that needed
+    it. Found live, on a chain whose investigation record HAD the headline."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-1"},
+              {"type": "headline_delta", "headline": "Order volume"},
+              {"type": "headline_delta", "headline": "Order volume dropped 93.1%"})
+
+    run = run_investigation(InvestigationRequest(question="how were sales?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "Order volume dropped 93.1%"     # the LAST delta, whole
+
+
+def test_a_plain_headline_still_wins_when_the_path_sends_one(monkeypatch):
+    """Both events mean the same thing; neither may shadow the other."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "headline_delta", "headline": "partial"},
+              {"type": "headline", "headline": "the whole answer"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"

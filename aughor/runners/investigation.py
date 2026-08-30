@@ -199,11 +199,22 @@ def run_investigation(
                     seen["investigation_id"] = str(payload["investigation_id"])
                 elif kind == "receipt_id" and payload.get("receipt_id"):
                     seen["receipt_id"] = str(payload["receipt_id"])
-                elif kind == "headline" and payload.get("headline"):
+                elif kind in ("headline", "headline_delta") and payload.get("headline"):
                     # The answer itself. Sniffed off the same stream as the ids above and
                     # for the same reason: the door emits it, and re-deriving it from the
                     # investigation record afterwards would be a second reader of a
                     # sentence that already exists.
+                    #
+                    # BOTH events, with replace semantics — the last delta IS the whole
+                    # text, which is the rule `investigations._record` already keeps for
+                    # the same stream. Listening only for the plain `headline` made this
+                    # the second reader that knew half the vocabulary: the deep path
+                    # streams the sentence progressively and, on the branch this took,
+                    # never sent a plain one. Measured live 2026-08-30 — the run waited
+                    # 102 seconds, completed with the headline "Order volume dropped
+                    # 93.1%…" on its investigation record, and handed back "". The step
+                    # that needed the answer was skipped for missing upstream data, so
+                    # the tokens were spent and nothing was delivered.
                     seen["headline"] = str(payload["headline"])
                 elif kind == "error":
                     seen["error"] = str(payload.get("message", ""))[:2000]
