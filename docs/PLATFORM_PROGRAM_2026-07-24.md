@@ -2,7 +2,7 @@
 
 **This is the forward plan of record.** It merges the Foundry study's six-wave roadmap
 ([`PALANTIR_FOUNDRY_STUDY_2026-07-22.md`](PALANTIR_FOUNDRY_STUDY_2026-07-22.md) §5) with the
-five-repo study's adoption tiers ([`FIVE_REPO_STUDY_2026-07-23.md`](FIVE_REPO_STUDY_2026-07-23.md)
+five-repo study's adoption tiers (`FIVE_REPO_STUDY_2026-07-23.md` (absorbed into `ROADMAP.md`; recoverable from git history)
 §3/§5) and the actual build state. **It supersedes both of those documents' sequencing sections**;
 they remain the scoping authority for the content inside each wave. `ROADMAP.md` §0 remains the
 session-level status page and should point here.
@@ -300,7 +300,7 @@ pipeline-as-prompt.
 6. **Strictly `:free` model bindings.** The OpenRouter credit is a threshold-unlock reserve
    (1,000 req/day), never a spend budget; Gemini billing stays OFF (it deletes the free tier).
    Model-heavy gates (K4-style live proofs, E4 batches) budget requests explicitly.
-7. **The anti-patterns table is binding** ([`FIVE_REPO_STUDY_2026-07-23.md`](FIVE_REPO_STUDY_2026-07-23.md) §4):
+7. **The anti-patterns table is binding** (`FIVE_REPO_STUDY_2026-07-23.md` (absorbed into `ROADMAP.md`; recoverable from git history) §4):
    no aisuite dependency, no pipeline-as-prompt orchestration, no hand-written connector monoliths,
    no prefix-match allowlists, **no read-by-default risk fallback** (undeclared ⇒ blocked), no
    convention-based provider discovery, no provenance-free LLM edges, no coercive hook injection.

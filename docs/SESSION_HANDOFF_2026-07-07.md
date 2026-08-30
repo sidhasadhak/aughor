@@ -3,7 +3,7 @@
 *Read this first next session. Everything below is merged to `main`. Latest merged main =
 `9d01de5`. Full unit suite **2336 green · ruff 0**; all new flags default-off. Nothing uncommitted.*
 
-Supersedes [`SESSION_HANDOFF_2026-07-06.md`](SESSION_HANDOFF_2026-07-06.md).
+Supersedes `SESSION_HANDOFF_2026-07-06.md` (absorbed into `ROADMAP.md`; recoverable from git history).
 
 ---
 

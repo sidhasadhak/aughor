@@ -28,7 +28,11 @@ type Mode = "usage" | "stream" | "runs";
 const MODE_BLURB: Record<Mode, string> = {
   usage: "what the fleet spent, and on what",
   stream: "every event as it happens",
-  runs: "one run, reconstructed",
+  // "Traces", not "Runs". Agent Ops already has a top-level Runs layer, so this
+  // sub-tab was the second control labelled "Runs" in one header. It is also the
+  // more precise word for what this shows: the top layer lists runs, and this
+  // reconstructs one from the telemetry `session_events` kept about it.
+  runs: "one run, reconstructed from its trace",
 };
 
 export function AgenticActivityPanel({ focusInvestigationId, focusTraceId, onTraceOpened,
@@ -77,7 +81,7 @@ export function AgenticActivityPanel({ focusInvestigationId, focusTraceId, onTra
         <Button variant={mode === "stream" ? "secondary" : "ghost"} size="xs"
           onClick={() => show("stream")}>Stream</Button>
         <Button variant={mode === "runs" ? "secondary" : "ghost"} size="xs"
-          onClick={() => show("runs")}>Runs</Button>
+          onClick={() => show("runs")}>Traces</Button>
         <span className="aug-fs-sm" style={{ color: "var(--t2)", marginLeft: 8 }}>
           {MODE_BLURB[mode]}
         </span>

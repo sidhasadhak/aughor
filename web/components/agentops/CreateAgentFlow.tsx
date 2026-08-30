@@ -34,6 +34,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +45,7 @@ import {
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
-type Step = "start" | "scope" | "define" | "prove";
+type Step = "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
 
 const STEPS: { id: Step; label: string; blurb: string }[] = [
@@ -52,6 +53,11 @@ const STEPS: { id: Step; label: string; blurb: string }[] = [
   { id: "scope",  label: "Scope",  blurb: "where it may look" },
   { id: "define", label: "Define", blurb: "how it should think" },
   { id: "prove",  label: "Prove",  blurb: "how you'll know it works" },
+  // VA-14 — a bot IS an agent's door (`SlackBot.agent_id` binds them, and a bot with no
+  // agent answers as nobody), so "how do people reach it" is the same question as "how
+  // should it think" continued. Reached only after the agent exists: the bot record needs
+  // its id, so this step cannot be a form field earlier in the flow.
+  { id: "reach",  label: "Reach",  blurb: "how people reach it (optional)" },
 ];
 
 /** Tables covered by a (connection, schema) choice, from the real catalogue. */
@@ -107,6 +113,9 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set once the agent EXISTS. The Reach step needs its id, and its presence is also what
+   *  makes closing the flow safe at any point after: the agent is already saved. */
+  const [createdAgent, setCreatedAgent] = useState<UserAgent | null>(null);
 
   useEffect(() => {
     listAgentTemplates().then(setTemplates).catch(() => setTemplates([]));
@@ -165,7 +174,10 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
         setError(`Agent created. ${failed.length} golden(s) were refused (the SQL must parse `
           + `and be read-only): ${failed.join(" · ")}`);
       }
-      onCreated(agent);
+      // NOT `onCreated` — that closes the flow, and the Reach step needs the agent's id.
+      // The agent is saved either way, so leaving now loses nothing.
+      setCreatedAgent(agent);
+      setStep("reach");
     } catch (e) {
       setError(String((e as Error)?.message || e));
     } finally { setBusy(false); }
@@ -185,7 +197,13 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             should think about what it finds.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        {/* Past the Reach step the agent EXISTS, so there is nothing left to cancel —
+            closing must still tell the caller, or the roster it refreshes would not show
+            the agent that was just created until something else reloaded it. */}
+        <Button variant="ghost" size="sm"
+          onClick={() => (createdAgent ? onCreated(createdAgent) : onCancel())}>
+          {createdAgent ? "Close" : "Cancel"}
+        </Button>
       </div>
 
       <ol style={{ display: "flex", gap: 6, listStyle: "none", padding: 0, margin: "0 0 16px" }}>
@@ -457,6 +475,15 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
               onClick={create}>{busy ? "Creating…" : "Create agent"}</Button>
           </div>
         </>
+      )}
+
+      {step === "reach" && createdAgent && (
+        <AgentSlackDoor
+          agentId={createdAgent.id}
+          agentName={createdAgent.name}
+          connectionId={connectionId}
+          onDone={() => onCreated(createdAgent)}
+        />
       )}
     </div>
   );

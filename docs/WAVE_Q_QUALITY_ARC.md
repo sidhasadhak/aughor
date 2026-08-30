@@ -5,7 +5,7 @@ than per-PR, because the program says so and because the survey below shows exac
 easy it would be to break.
 
 **Plan of record:** [`PLATFORM_PROGRAM_2026-07-26.md`](PLATFORM_PROGRAM_2026-07-26.md) §5.
-**Read with:** [`WAVE_O_ONTOLOGY_ARC.md`](WAVE_O_ONTOLOGY_ARC.md) (O6 already produces
+**Read with:** `WAVE_O_ONTOLOGY_ARC.md` (absorbed into `ROADMAP.md`; recoverable from git history) (O6 already produces
 caveats; Q4 must not invent a second kind) and
 [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) (the five-surfaces lesson
 that J12 exists to prevent repeating).

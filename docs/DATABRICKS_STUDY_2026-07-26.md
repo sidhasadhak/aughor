@@ -13,7 +13,7 @@ Wren, Vanna, Elementary, Palantir).
 **Companion docs:** the plan of record is
 [`PLATFORM_PROGRAM_2026-07-24.md`](PLATFORM_PROGRAM_2026-07-24.md) (A→R→E→C→V→G→S; G next).
 This study feeds the roadmap that comes after it. Method follows
-[`FIVE_REPO_STUDY_2026-07-23.md`](FIVE_REPO_STUDY_2026-07-23.md).
+`FIVE_REPO_STUDY_2026-07-23.md` (absorbed into `ROADMAP.md`; recoverable from git history).
 **Page-level deep dive:** [`GENIE_DOCS_TEARDOWN_2026-07-26.md`](GENIE_DOCS_TEARDOWN_2026-07-26.md)
 — the full ~50-page Genie docs tree (Agents, One, Code, Omnigent, UC semantics, budgets)
 torn down with exact limits, UI-pattern screenshots, API contracts, and the per-feature

@@ -5,7 +5,7 @@ here in the same PR that introduces it.
 
 This is the authority for names in code, UI copy, LLM prompts, flag labels and docs. The
 plan that produced it — with the file:line evidence and the phased burn-down — is
-[`VOCABULARY_UNIFICATION_2026-08-01.md`](VOCABULARY_UNIFICATION_2026-08-01.md). The
+`VOCABULARY_UNIFICATION_2026-08-01.md` (absorbed into `ROADMAP.md`; recoverable from git history). The
 "don't use" column is enforced by `tests/unit/test_vocabulary_ratchet.py`: a baseline may
 fall, never rise.
 
@@ -41,6 +41,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Claim** | A statement a human has verified | — |
 | **Briefing** | The periodic narrative artifact, and its subscription | brief (as the artifact), digest, Intelligence Digest |
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
+| **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
 | **Segment** | A saved, named filter over an entity's rows | ObjectSet |
 | **Query template** | A reusable governed SQL template | OntologyAction |
 

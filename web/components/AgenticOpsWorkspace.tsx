@@ -140,13 +140,18 @@ export function AgenticOpsWorkspace({
       headerControls={
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
-          <Button variant="secondary" size="xs"
-            title="Create a custom agent — a scope and a stance"
-            onClick={() => { onLayerChange("agents"); setCreateSignal(n => n + 1); }}
-            style={{ whiteSpace: "nowrap" }}>
-            + Create agent
-          </Button>
         </div>
+      }
+      headerTrailing={
+        // `default`, not a hand-rolled blue: `--primary` IS `--blue3`, so the design
+        // system's own CTA variant is the blue this asks for — and it brings the hover
+        // and focus states an inline `background` would silently drop.
+        <Button variant="default" size="xs"
+          title="Create a custom agent — a scope and a stance"
+          onClick={() => { onLayerChange("agents"); setCreateSignal(n => n + 1); }}
+          style={{ whiteSpace: "nowrap" }}>
+          + Create agent
+        </Button>
       }
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {

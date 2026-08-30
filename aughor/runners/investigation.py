@@ -66,6 +66,14 @@ class InvestigationRequest:
     schema_name: Optional[str] = None
     agent_id: Optional[str] = None
     depth: str = "deep"
+    #: VA-13 — drain the run to completion instead of submitting it and returning.
+    #:
+    #: Default False, so every existing caller keeps the fire-and-forget behaviour it was
+    #: written against, byte for byte. It exists for ONE case: a chained automation whose
+    #: next step binds to this one's answer. There is no answer to bind to until the run
+    #: has produced one, and a step that publishes a value it does not have is exactly the
+    #: silent hole `UnresolvedBinding` was added to refuse.
+    wait: bool = False
 
 
 @dataclass
@@ -84,6 +92,10 @@ class InvestigationRun:
     investigation_id: str = ""
     receipt_id: str = ""
     basis: str = ""                  # "" | "inline" | "submitted"
+    #: The answer's headline, when the run was WAITED for. Empty on a submitted run —
+    #: not because the answer is unavailable, but because nobody has waited to see it,
+    #: and "" is the honest value for a question this call cannot answer yet.
+    headline: str = ""
 
     @property
     def ok(self) -> bool:
@@ -187,25 +199,44 @@ def run_investigation(
                     seen["investigation_id"] = str(payload["investigation_id"])
                 elif kind == "receipt_id" and payload.get("receipt_id"):
                     seen["receipt_id"] = str(payload["receipt_id"])
+                elif kind == "headline" and payload.get("headline"):
+                    # The answer itself. Sniffed off the same stream as the ids above and
+                    # for the same reason: the door emits it, and re-deriving it from the
+                    # investigation record afterwards would be a second reader of a
+                    # sentence that already exists.
+                    seen["headline"] = str(payload["headline"])
                 elif kind == "error":
                     seen["error"] = str(payload.get("message", ""))[:2000]
 
         asyncio.run(_drain())
         _note_dispatch(caller, req, seen)
 
+    def _inline(reason: str) -> InvestigationRun:
+        """Drain to completion and report what came back — the only path that has waited,
+        and therefore the only one that can report a failure or an answer."""
+        _work()
+        if seen.get("error"):
+            return InvestigationRun("failed", seen["error"], basis="inline",
+                                    investigation_id=seen.get("investigation_id", ""),
+                                    receipt_id=seen.get("receipt_id", ""),
+                                    headline=seen.get("headline", ""))
+        return InvestigationRun("executed", reason, basis="inline",
+                                investigation_id=seen.get("investigation_id", ""),
+                                receipt_id=seen.get("receipt_id", ""),
+                                headline=seen.get("headline", ""))
+
+    # VA-13 — a caller that needs the ANSWER has to wait for it. Checked BEFORE the
+    # submit, not after: `submit_background_tick` hands the work to the kernel loop and
+    # returns a job id, and there is no way to wait on that id from here. Submitting and
+    # then waiting would be two runs of the same question.
+    if req.wait:
+        return _inline("ran inline (caller waited)")
+
     from aughor.kernel.jobs import submit_background_tick
     job_id = submit_background_tick(
         _KIND, _work, conn_id=req.connection_id, idempotency_key=idempotency_key,
     )
     if job_id is None:
-        # No live loop — run inline, as the monitor/brief schedulers do. This is the only
-        # path that can report a failure, because it is the only one that has waited.
-        _work()
-        if seen.get("error"):
-            return InvestigationRun("failed", seen["error"], basis="inline",
-                                    investigation_id=seen.get("investigation_id", ""),
-                                    receipt_id=seen.get("receipt_id", ""))
-        return InvestigationRun("executed", "ran inline (no kernel loop)", basis="inline",
-                                investigation_id=seen.get("investigation_id", ""),
-                                receipt_id=seen.get("receipt_id", ""))
+        # No live loop — run inline, as the monitor/brief schedulers do.
+        return _inline("ran inline (no kernel loop)")
     return InvestigationRun("executed", f"job {job_id}", job_id=job_id, basis="submitted")

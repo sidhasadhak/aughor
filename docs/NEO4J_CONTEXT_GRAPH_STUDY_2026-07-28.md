@@ -9,8 +9,8 @@ MCP surface, examples) · create-context-graph.dev scaffold.
 
 **Companion docs:** plan of record
 [`PLATFORM_PROGRAM_2026-07-26.md`](PLATFORM_PROGRAM_2026-07-26.md) (L done → G next).
-Method follows [`FIVE_REPO_STUDY_2026-07-23.md`](FIVE_REPO_STUDY_2026-07-23.md).
-Read with [`WAVE_L_ACTIVATION_ARC.md`](WAVE_L_ACTIVATION_ARC.md) §L2/§L3 — this study exists
+Method follows `FIVE_REPO_STUDY_2026-07-23.md` (absorbed into `ROADMAP.md`; recoverable from git history).
+Read with `WAVE_L_ACTIVATION_ARC.md` (absorbed into `ROADMAP.md`; recoverable from git history) §L2/§L3 — this study exists
 because L2 left `graph.readback` unproven, and the question "is our memory graph built wrong?"
 deserved an outside reference point.
 

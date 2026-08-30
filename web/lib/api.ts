@@ -3375,10 +3375,105 @@ export async function getDigest(connId: string, period: "week" | "day" = "week")
 // (and the inbox on `automations.proposals`) → a 404 means the plane is off.
 
 export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_appears";
-export type EffectKind = "investigate" | "brief" | "notify" | "kinetic_action";
+/** The effect kinds a PERSON may author.
+ *
+ *  Narrower than the server's `Literal` on purpose: `monitor` and `agent_alert` are
+ *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
+ *  it — the model's own docstring says they are "not authored by hand". */
+export type EffectKind =
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post";
+
+/**
+ * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
+ * `_EFFECT_REQUIRED` in `aughor/automations/models.py`.
+ *
+ * Here rather than in a component for the same reason the rest of this module is here:
+ * it is the backend contract spelled field-for-field, and a UI that re-states a contract
+ * in its own words is a UI that drifts from it. `tests/unit/test_automation_required_keys.py`
+ * asserts this object against the Python one, so the mirror cannot go stale silently —
+ * which is the failure mode a hand-copied map has by default.
+ */
+export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
+  schedule: ["cron"], metric: ["monitor_id"],
+  source_change: ["table"], entity_appears: ["table"],
+  investigate: ["question"], brief: ["subscription_id"],
+  notify: ["trigger_id"], kinetic_action: ["action_id"],
+  slack_post: ["bot_id", "channel"],
+};
+
+/** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
+ *  usable credential — the mask is what the client renders and sends back. */
+export interface SlackBotSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  team_id: string;
+  bot_user_id: string;
+}
+
+/** The Slack app manifest to paste at api.slack.com, plus the steps that follow it.
+ *
+ *  Rendered by the SERVER, never assembled here: the scopes and socket-mode settings have
+ *  to match what the running bot actually does, and a manifest a client re-types from a
+ *  README drifts from the code the first time either changes. */
+export interface SlackManifest {
+  manifest: Record<string, unknown>;
+  instructions: string[];
+}
+
+export async function getSlackBotManifest(params: {
+  name?: string; description?: string; agentId?: string; agentView?: boolean;
+}): Promise<SlackManifest> {
+  const qs = new URLSearchParams();
+  if (params.name) qs.set("name", params.name);
+  if (params.description) qs.set("description", params.description);
+  if (params.agentId) qs.set("agent_id", params.agentId);
+  if (params.agentView) qs.set("agent_view", "true");
+  const res = await fetch(`${getApiBase()}/slack-bots/manifest?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Could not render the manifest (${res.status})`);
+  return res.json();
+}
+
+/** Create a bot record. The server VERIFIES every credential against Slack before the
+ *  record exists — a bot stored with a bad token is a socket that fails to open at 03:00
+ *  with nobody watching — so a rejection here is Slack's answer, not a local guess. */
+export async function createSlackBot(body: {
+  name: string; agent_id?: string; connection_id?: string;
+  bot_token: string; app_token: string; signing_secret: string; agent_view?: boolean;
+}): Promise<SlackBotSummary> {
+  const res = await fetch(`${getApiBase()}/slack-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    // The server's own reason, verbatim — "invalid_auth" and "missing credential(s)" call
+    // for different fixes and a generic message would hide which one happened.
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack bot (${res.status})`);
+  }
+  return res.json();
+}
+
+/** The bots an automation may post AS. Returns [] when the plane is off (404), so a
+ *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
+ *  uses for the same reason. */
+export async function getSlackBots(): Promise<SlackBotSummary[]> {
+  const res = await fetch(`${getApiBase()}/slack-bots`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch Slack bots");
+  return (await res.json()).bots ?? [];
+}
 
 export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
-export interface AutoEffect { kind: EffectKind; config: Record<string, unknown>; }
+export interface AutoEffect {
+  kind: EffectKind;
+  /** VA-4a — this step's name, which `{"$from": "<alias>.<key>"}` bindings point AT.
+   *  Optional because the server defaults it to the step's 1-based position, and every
+   *  automation written before VA-4a has none. Declared here because a client that
+   *  cannot see the field is a client that drops it on save. */
+  alias?: string;
+  config: Record<string, unknown>;
+}
 
 export interface Automation {
   id: string;

@@ -1,1644 +1,294 @@
-# Aughor — Roadmap & Build Status
+# Aughor — Roadmap and Plan of Record
 
 **Product:** Aughor — Autonomous Intelligence Platform ("your warehouse, always thinking")
-**Repo:** https://github.com/sidhasadhak/aughor
-**Stack:** LangGraph · FastAPI (SSE) · Next.js (App Router, Turbopack) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · Qdrant · instructor over 5 LLM backends · uv
+**Stack:** LangGraph · FastAPI (SSE) · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot ·
+Qdrant · instructor over 5 LLM backends · uv
 
-> **This file is the single source of truth: what we set out to build → what's built (✅) → what's left.**
-> Reconciled **2026-06-24**, grounded against git history + code (not prose). The detailed
-> per-feature record lives in [`FEATURES.md`](FEATURES.md), the design docs under [`docs/`](docs/),
-> and the git log; this file stays at the at-a-glance altitude. Trust the verdicts here over any
-> older narrative — a prior backlog had drifted (it listed the already-shipped UNIFY and #14 as pending).
+**Consolidated 2026-08-30.** This is the single roadmap. It replaces both the stale build-status
+file that used to live here (last reconciled 2026-06-24, pointing at a plan two months old) and
+the eleven per-arc roadmaps and adoption studies under `docs/`. §9 lists what was absorbed.
 
----
+The per-feature record stays in [`FEATURES.md`](FEATURES.md); this file stays at the
+at-a-glance altitude.
 
-## 0 · Immediate next action ⏭️
+**How to read this.** §1–2 are state — measured, not recalled. §3 is the only *active* arc.
+§4 is what has been decided AGAINST, with the evidence, because re-litigating those has cost
+this project more than building. §6 is the short list of things only the user can decide.
 
-### ⏭️ 2026-08-08 — the forward plan of record is now [`docs/UNIFIED_ADOPTION_PLAN_2026-08-08.md`](docs/UNIFIED_ADOPTION_PLAN_2026-08-08.md) (v2)
-
-The Prime Agent + Open-WebUI adoption program: durable knowledge (Continual Harness),
-conversational aliveness, the `_stream_converse` body, platform robustness, frontend
-steerability. **v2 is reconciled against PR #271** (flag endgame → registry of 2,
-Track A1–A6, A4 guard receipts, B2/B3 organs, S1/S3/S5): four of its items got their
-first half shipped there — guard-receipt emission, follow-up frames, model-derived
-output budgets, and the fix-it capture pattern — and the plan's waves are re-scoped
-accordingly. It composes with (not replaces) `docs/ROADMAP_INTELLIGENCE_AND_CHAT_2026-08-01.md`:
-Layer 3 lands on the existing shell first, then Track C's C2–C4 adopt it; Layer 5 merges
-into Tracks B/C. Flag policy: ≤5 new EXPERIMENT loans, each naming its exit in the plan.
-
-### ⏭️ Previous session pointer (2026-07-26 program — Waves L→G→O→Q→S now COMPLETE through S)
-
-**📋 The forward plan of record is [`docs/PLATFORM_PROGRAM_2026-07-26.md`](docs/PLATFORM_PROGRAM_2026-07-26.md)**
-— the v2 wave roadmap (**L → G → O → Q → S**), built from the Databricks
-ecosystem study ([`docs/DATABRICKS_STUDY_2026-07-26.md`](docs/DATABRICKS_STUDY_2026-07-26.md))
-and the Genie docs teardown ([`docs/GENIE_DOCS_TEARDOWN_2026-07-26.md`](docs/GENIE_DOCS_TEARDOWN_2026-07-26.md)).
-It supersedes the forward sections (§2–§4) of
-[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md), which remains the
-authority on completed waves and J1–J8; this §0 stays the session-level status page.
-
-> ⛔ **PUSH DISCIPLINE (standing, non-negotiable): NEVER `git push`, open a PR, or merge without the
-> user saying so IN the current request — and even when authorized, do ONE push/PR/merge, then PAUSE
-> and report before the next.** Commit locally and stop. This is the load-bearing rule for this repo;
-> batching multiple pushes on one "push everything" instruction caused friction on 2026-07-24.
-
-**`main` is at `e122fe5` (reconciled 2026-08-01 against `git log`).** Since the stale `4195eef`
-this §0 last claimed, these merged: **Waves H1–H6** (hired agents over the governed substrate,
-#233–#237/#239/#240), **`agents.user_defined` graduation** (#241), **Wave CR → Agentic Ops**
-(#238), **Waves S2/S4** (#242/#232), and — most recently — **the feature-flag strategy** (#243,
-`e122fe5`): the registry is now dispositioned and ratchet-enforced (89 flags, every one in
-exactly one CI-enforced kind; the graduation-queue and migration sets are empty).
-
-> ⚠️ **The wave table below (A–L states) is OLDER than this header and was NOT re-reconciled this
-> session** — the H/CR/S waves above merged after it was written. Trust `git log --oneline | grep
-> -iE "Wave|#2"` over the table until someone reconciles it fully; §0's header is current.
-
-### ⏭️ Two open threads for the next session
-
-1. **Feature-flag experiment queue (active).** The flag strategy is merged; what remains is
-   **Group D — 12 experiment-queue flags** that need measurement to graduate/delete/keep-off. The
-   free tier is banked on branch **`worktree-flag-experiment-queue`** (2 commits, UNPUSHED, both
-   full-CI-matching green): `snapshot_receipts` graduated (cost measured) and `search.rrf` settled
-   OFF on a measured negative. **The 12 remaining are budget-bound LLM A/B grids (~1/day at the
-   1,000-req cap) or coupled decisions** — see `docs/FLAG_STRATEGY_2026-07-31.md` §D/§7 for the
-   per-flag plan. Any grid needs the env in the ⚠️ note below + `deepseek/deepseek-v4-flash` for
-   fast iteration. Decide push/PR for the two banked commits first.
-2. **The v2 platform program** ([`docs/PLATFORM_PROGRAM_2026-07-26.md`](docs/PLATFORM_PROGRAM_2026-07-26.md),
-   **L → G → O → Q → S**) — the broader wave arc; check `git log` for which of G/O/Q/S have landed
-   before planning the next wave (this §0's wave table is stale on exactly this).
-
-| Wave | What | State |
-|---|---|---|
-| **A1–A4** | the automation plane · source-version probes · resolve-once inbox + standing grants | ✅ merged (#204/#206/#207) |
-| **A5** | adopt monitors/briefs onto the one engine (behind `automations.adopt_legacy`) | ✅ **merged (#208, `774098c`)** |
-| **A6** | the Automations frontend surface (+ a css-var KIND gate & 18 pre-existing colour-token fixes) | ✅ **merged (#211, `9f1649c`)** |
-| **R (R1–R5)** | the transport plane made structural — reliability · provider plane · ADA context budget · answer-path · declared parallel-safety | ✅ **merged (#209, `31732a5`)** |
-| **E1–E3** | session log · evaluator library · suites/runs consolidation | ✅ merged (#196 and earlier) |
-| **E4 (E4a/b/c)** | override plane · J3 fidelity harness · brittleness axis + request budget | ✅ merged (#210, `33070b4`) |
-| **E4 loose ends** | proxy-inversion audit · grids from a scheduler | ✅ **merged (#215, `31f697a`)** |
-| **E5** | the Evals surface (Suites / Runs workspace) | ✅ **merged (#212, `7f63766`)** |
-| **E6 (part 1)** | the flag promotion gate — graduate a flag on receipted evidence | ✅ **merged (#214, `8bdb8b8`)** |
-| **E6 (part 2)** | "add as test case" — a real answer → a regression case | ✅ **merged (#213, `25f096f`)** |
-| **C (C1–C5)** | the connection knowledge graph — artifact · grep-the-graph-first read-back · freshness · anti-hairball surface · tour | ✅ **merged (#217, `50d387f`)** |
-| **docs audit** | install-doc drift (the port warning was inverted; 2 backends undocumented) | ✅ **merged (#218, `f25432f`)** |
-| **C6** | distribution — the committed artifact + the offline skills pack (`graph.export`) | ✅ **merged (#219, `9584931`)** |
-| **V (V1–V6)** | artifact lifecycle — freshness kernel · resolved rebuild · save≠publish · freeze · purge ratchet · serving surface | ✅ **merged (#219, `9584931`)** — V3b/V6b deferred (→ L7/S5) |
-| **L (L1–L7)** | activation — graph on the live path · a harness that refuses to lie · `automations.engine` graduated on MEASURED equivalence · L3 measured and REFUSED · L6 voided by reachability | ✅ **merged (#221, #224, #225)** |
-| **N1** | answer divergence — the same question answered two ways (`consistency.divergence`); €1.84M spread on one revenue question, and the platform never picks the winner | ✅ **merged (#226, `4195eef`)** |
-| **N2** | the panel already existed (a bad grep claimed otherwise) → built `content_drift` + `GET /graph/drift` instead, rebuilt the graphs (findings 0→100), and gave the Graph tab a `d3-force` Map view | ✅ **merged (#226, `4195eef`)** |
-| **N3** | finding consolidation + reachability ageing (`graph.consolidate`), graduated on a deterministic artifact claim and the graphs rebuilt | ⏳ **this PR** |
-| **G1–G2** | governance — `govern.guard` reaching every action it was declared for · governed tags + clearances as a third authorization axis | 🔨 **local**, stacked on this branch as `2026-07-28-wave-g-governance` |
-
-**⏭️ NEXT: Wave G — start with G1.** Wave L is closed and Wave N is complete locally.
-The plan of record's §3 is the scope; nothing about it has changed, and it is enriched by
-the studies (budget algebra, permission-trimmed retrieval, sealed programs).
-
-- **G1 is the cheapest start and costs zero model quota** — `govern.guard` reaches only ~4
-  call sites today (`connection.delete`, `ontology.override` ×2, `ontology.delete_override`)
-  while `_RISK` in [`aughor/govern/actions.py`](aughor/govern/actions.py) declares **11**
-  actions. The rest are declared and unenforced. Deterministic to build and to test.
-- **Wave N carried two lessons worth reusing in G:** measure whether the thing you are about
-  to build is a no-op *before* building it (N3's pre-check moved its design), and read the
-  detector's OUTPUT rather than its count (comparing headline prose called 45 of 100 findings
-  contested; comparing the numbers they assert called 9, and the 9 were real).
-- **Two flags are measured and stay OFF, which is evidence rather than absence of it:**
-  `graph.readback` (+0.023 against a 0.182 sampling floor, a 3-case shuffle, +44% wall time
-  at temp 0) and `closed_loop` (L3, a no-op on ~90% of the corpus).
-- V3b and V6b stay deferred: V3b is L7 (optional) or S5; V6b lands in S5.
-
-⚠️ **Any measured grid needs:** `AUGHOR_EVALS_EXPERIMENTS=1 AUGHOR_FALLBACK_DISABLED=1
-AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2` + `freeze=True`.
-
-**Wave V — artifact lifecycle (versions, publish, staleness).** Scoping doc written
-FIRST, as for Wave C: **[`docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md`](docs/WAVE_V_ARTIFACT_LIFECYCLE_ARC.md)**
-— PR arc V1–V6, ≈110 tests. **The finding that set the scope: there are already _13 incompatible
-dialects_ of "this is out of date" in the tree** (only C3's is typed), so **V is CONSOLIDATION, not
-invention** — the shape Wave E took for evals. The schema fingerprint alone has **5 incomparable
-implementations**, two of which met the identical structure-vs-identity hazard and solved it by
-*different conventions*. Then G → S.
-
-> ⚠️ **Wave C caveat that outlived C1–C5:** the graph is built on demand by the C4 surface routes
-> (`routers/ontology.py:231`), but **no background/explore path builds it yet** — so read-back (C2)
-> only fires for a connection whose graph someone has already materialized. Worth closing in V.
-
-### ✅ Wave E4 is COMPLETE (E4a/b/c) — grid experiments you can trust
-
-**The measurement discipline the Spider work proved, made a product plane.** E4 lets an eval suite
-run the same cases under several configurations in ONE process, and refuses to report a delta it
-cannot stand behind.
-
-| | What | The load-bearing idea |
-|---|---|---|
-| **E4a** `d1ffcf3` | **the run-scoped override plane** — `Cell` · `applied()` · run-scoped flag/temperature contextvars · `run_experiment` | The override is easy; **not lying about it** is the work. Three loud refusals (unknown flag · live failover chain · flag-off), and `run_experiment` takes a target *factory* so a compile-time topology flag can't bake in before the cell's context. |
-| **E4b** `f6d96c5` | **the J3 fidelity harness** — `noise_floor` · `compare` · harmonic composite · `assess` | **The floor comes before the delta.** A cell is compared against *itself* first; a `+0.053` delta is attributed against a quiet baseline (band 0.010) and REFUSED against a noisy one (band 0.140). One replicate = no floor, not a floor of zero. |
-| **E4c** `22312d6` | **the brittleness axis + request budget** — `perturb.py` · `RunSummary.robustness` · `estimate_requests` | Pass rate says *right*; robustness says *right for a reason* (an honest replay and a phrasing-dependent target both score 1.000 pass, 1.0 vs 0.75 robust). No LLM judge — result-set equality. The budget guard refuses a grid that would exhaust the day's allowance mid-run. |
-| **fix** `36372ba` | **test-suite hermeticity** | Two copied phase-8 tests fell through to the real provider under a 120s `wait_for` and failed intermittently under load (on plain `main`). Made hermetic (the fake now *raises*), then flipped the suite-wide `AUGHOR_AUTOSEED=false` E4b measured: **full suite 4521✓, ~14 min → ~3 min** — the missing 11 min was live-LLM latency no test intended to spend. |
-
-**Six customers still waiting on a real A/B** (E4 exists to serve them): the five flags the
-graduation audit named, plus `ada.evidence_stubs` — which trades rows for tokens with the saving
-measured and the answer-quality effect not. ⚡ ~105 new tests.
-
-<details><summary>Wave R (R1–R5) — ✅ merged #209, kept for reference</summary>
-
-Branch `2026-07-24-wave-r2-provider-plane` (stacked on `2026-07-24-wave-r1-structured-reliability`).
-**Merged as PR #209, squash `31732a5`.**
-
-| | What | State |
-|---|---|---|
-| **R1** `ff76b08` | **The structured-call reliability layer** — deterministic normalizer · classify-before-retry · ONE bounded repair · a gate on optional calls | 🔨 local commit |
-| **R2** `18ebb52` | **The provider plane** — error-body classification (a guessed model id fails loudly) · the vouched model matrix · a health check that names its failure | 🔨 local commit |
-| **R3** `79106dc` + `9fa2c4d` | **Context-budget discipline for ADA** — the wandering detector · the two-tier schema catalog with error-path autoload · fresh-full/stale-stub evidence | 🔨 local commits |
-| **R4** `1d78cd6` + `ba524be` | **Answer-path hardening** — the typed error tail through ONE choke point (15 hand-assembled sites) + a Retry the user can act on · the anti-probing rule pinned as a ratchet | 🔨 local commits |
-| **R5** `60b9fb0` | **Declared parallel-safety** — a fan-out declares itself, the K-plane executor asks; 7 regions wired, the ratchet found the 7th | 🔨 local commit |
-
-**Two pre-existing leaks were found by MEASURING the real transport stack, and both are fixed in R1:**
-
-1. **Instructor's default is THREE attempts and we had never overridden it.** Every structured
-   failure re-sent the entire prompt — evidence block and all — three times before our code saw the
-   error, then the fallback chain spent a fourth on another provider. Measured: a trailing comma
-   cost 3 requests. `AUGHOR_LLM_STRUCTURED_ATTEMPTS` now defaults to 1.
-2. **A validation error bought a "the shim rejected the reasoning extras" retry.** That degrade is
-   for a 4xx, but its guard admitted anything neither transient nor quota-blocked — and a Pydantic
-   error is neither. So on OpenRouter (the only backend sending `extra_body`, and the primary) every
-   structured failure re-sent the prompt to test a hypothesis that was already false. 2 → 1 request.
-
-**Measured before → after**, on a local stub returning genuine OpenAI-shaped bodies so every layer
-below our code is real: trailing comma · Python literals · smart quotes · Python repr · enum case
-all went from **3 requests, FAILED → 1 request, SUCCEEDED**; misspelled enum · uppercased key · no
-JSON stayed **FAILED** (as they must — the normalizer never guesses) at 2 requests instead of 3.
-
-New flags: `llm.structured_salvage` (on) · `llm.bounded_repair` (on — it *replaces* the two
-requests R1 removed). New counters at `GET /dev/stats`: `llm.salvage.*` · `llm.failure.*` ·
-`llm.repair.*` · `llm.gate.*` — **J8 is now satisfiable**, so the next cost claim can cite
-measurement instead of call-count arithmetic.
-
-**R2's matrix is vouched, not asserted.** 33 entries; 20 confirmed by fetching the provider's own
-live catalogue while writing it (openrouter 14/14, gemini 3/3, ollama 3/5 pulled locally).
-anthropic/groq/together have no key on this machine so they carry `verified_on=""` and are **not**
-vouched — a matrix that laundered a guess into a date would be worse than none. CI now fails if a
-shipped default or picker suggestion is absent from it. Live drift run: `gone=0` everywhere
-reachable; Gemini needed `models/` prefix normalization or **all three** of its bindings false-alarm
-on every startup.
-
-**R3 measured, on real inputs:** the two-tier schema catalog cut the repair prompt **12,200 → 4,229
-chars (65%)** on the real 57-table workspace schema, with the error-named table pulled in and all 57
-still listed in the manifest. Evidence stubbing cut a realistic synthesis block **34,848 → 14,746
-chars (57%)**; its lossless dedup sibling saved 4% (one repeat in nineteen — a first pass reported
-57%, which was a *fixture artifact*: its "distinct" queries differed only by a SQL comment, which the
-fingerprint strips by design).
-
-⚠️ **`ada.evidence_stubs` carries an explicit debt.** It drops rows a narrator could otherwise cite;
-the token saving is measured, the **answer-quality effect is not**, and no local harness can price
-it. It must not graduate until **Wave E4** can A/B it against the full-evidence baseline. The other
-five R3 flags carry no such debt (all deterministic and lossless or byte-identical when off).
-
-**R4's headline:** the `error` SSE frame was assembled by hand at **fifteen** sites as
-`{"message": str(e)}` — so a rate limit, a wrong API key, a retired model id and a timed-out run all
-reached the user as the same red line, and **every bit of the classification R1/R2 built stopped at
-the provider boundary**. One function now owns the shape (a test forbids inline assembly), carrying
-`reason` · `retryable` · `recovery` · `hint`, and the UI offers the one recovery that applies.
-Running it on the real route caught a genuine misclassification: a missing connection read as
-`unknown` → *"retrying is usually safe"*, which is false — it fails identically every time.
-
-R4b audited the anti-probing rule and **found nothing to fix** — PII counts go to the audit log,
-the row policy filters inside the SQL, and the model-facing renderer reads neither `caveats` nor
-`annotations`. It is now a 7-test ratchet, because a property that holds only because nobody has yet
-added *"tell the model 3 rows were hidden"* is one refactor from being false, and the failure is
-silent (a visible suppression **count** lets a model binary-search the hidden set).
-
-✅ **R4 verified in the browser** (`e29f291`): against a real backend with the LLM binding pointed at
-a dead endpoint and the fallback chain disabled, the failed turn renders its hint AND its Retry
-button, and Retry **appends a new turn** while the failed one keeps its error, hint and button —
-the no-orphan contract, seen rather than argued. Looking at it caught one thing every test and the
-ASGI-level check had missed: the most prominent line was instructor's raw `<failed_attempts>`
-transcript with the two-word cause buried inside. `legible()` now unwraps it.
-
-**R5's design decision — where the check lives.** Aughor's parallel-safety was real but
-*accidental*: all seven fan-outs happen to dispatch reads, and the SQL gate proves reads safe.
-Nothing declared it, so nothing could notice when something unsafe was fanned out — and the growing
-surface, the K-plane, is invisible to the SQL gate (no SQL involved). A guard every fan-out must
-remember to call is one the fifth fan-out forgets — this repo has that shape twice already (the
-~5-site guard battery; R4's 15 error frames). So the burden is inverted: **a concurrent region
-declares itself, and the dangerous operation asks**, in one place inside the K executor. Proven on
-real threads: an undeclared write action fanned out three ways → three `parallel_refused`, **zero
-side effects**; the same action declaring `parallel_safe=True` → three executions.
-The ratchet ("no `ContextThreadPoolExecutor` without a declared region") **found a seventh fan-out
-I had missed** — `ada.preflight`, in a file my grep never looked at.
-
-**New flags from Wave R** (all off by default except the two R1 ones): `llm.structured_salvage` (on) ·
-`llm.bounded_repair` (on) · `explore.wandering_detector` · `schema.two_tier_catalog` ·
-`ada.evidence_dedup` · `ada.evidence_stubs`. Counters at `GET /dev/stats`: `llm.*`,
-`explore.wandering.*`, `schema.two_tier.*`, `ada.evidence.*`.
-
-</details>
-
-⚡ **Quota unblocked (2026-07-23).** $11 on OpenRouter crossed the credit **threshold** → the free-model
-cap went **50 → 1,000 requests/day, permanently**. Policy: **strictly `:free` models** — the credit is a
-threshold-unlock reserve, never a spend budget, and the app's bindings are all `:free`. The 20 RPM
-per-minute cap is UNCHANGED (bursty fan-out can still trip it). Do NOT enable Gemini billing — it
-deletes its free tier.
-
-### The arc order (from the program doc)
-
-**A (finish) → R → E (finish) → C → V → G → S.** Rationale, joints (J1–J8), and per-item homes:
-[`docs/PLATFORM_PROGRAM_2026-07-24.md`](docs/PLATFORM_PROGRAM_2026-07-24.md) §2–§5. Wave K
-follow-ons are dispositioned there (§5): K2b rides A5/G · K5's "persisted proposal queue" is
-**superseded by A4** · the 9 unenforced `_RISK` actions → Wave G · the `trigger_investigation`
-seam is CLOSED (Wave H5 — `aughor/runners/investigation.py`, the runner automations and kinetic
-both call) · the ontology-overrides env override is a filed task chip.
-
-### Still open from earlier sessions
-
-4. **Flag graduation Batches 2+.** Batch 1 merged in #199;
-   [`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md) dispositions
-   all 19 — 2 intentionally off, **5 that Wave E4 must measure**, 4 cost-vs-latency operator choices,
-   4 needing their own call. ✅ **`agents.user_defined` graduated 2026-07-31** — receipt
-   `df89c044999a`, run `234be1fbb62b` of `aughor/evals/user_agents_receipt.py` (9/9 stable over 3
-   iterations, bar 1.0, no baseline). The claim is **data-gated**, not "better answers": with no
-   agent named on a request the prompt, retrieval scope and resume path are byte-identical, and the
-   flip's only fresh-clone effect is that `/agents/custom` returns an empty roster instead of 404.
-   No A/B grid was bought — "does the flag change the prompt?" was decidable by construction.
-5. **`ask.brief_context` + `ask.conversation_context` soak, then graduate.** Both read `off` in the
-   live ledger. Turn on (`PUT /system/flags/<name> {"state":"on"}` — no restart), ask follow-ups from
-   the Briefing, confirm the answers inherit the brief's grounding, then mark `AUTO_ELIGIBLE`.
-6. **Re-measure LLM spend from our OWN log.** `obs.session_log` is ON but `session_events` still has
-   **0 rows** — the API server must be RUNNING to collect. Every cost figure to date is
-   call-counts-from-code × token-size *arithmetic*, not measurement.
-   ⚠️ To make a live LLM call from a **bare script**, first
-   `export AUGHOR_SECRET_KEY=$(grep ^AUGHOR_SECRET_KEY= .env | cut -d= -f2-)` — provider keys are stored
-   encrypted (`enc:v1`), and without it the call 401s *silently* (the fail-open makes it look like the
-   model "abstained"). This cost real debugging time in the K4 live proof.
-7. **Sub-1 shares still read `0.275985`, not `27.6%`** (#189). 6dp is the tested contract and protects
-   small rates; turning shares into percents is a semantic change (is `0.27` a share or a correlation?).
-8. **Retire the 7 remaining stale rejects in `data/exploration_workspace.json`** — the `SUM(signup_fy)`
-   half needs live column types, which fail open because the luxexperience tables are gone from the
-   current workspace DB.
-9. Older queue: P7 frontier *tier* (same-tier bakeoff decided — keep `glm-5.2:cloud`) · Platform
-   WP-5/8/9/12–16 (WP-1/2/3/4 shipped; 7/10/11 partial) · Direction B follow-ons.
+> **63 documents under `docs/` were deliberately KEPT.** They are cited from module docstrings,
+> tests, `FEATURES.md` or `AGENTS.md` as design rationale — `docs/GLOSSARY.md` is enforced by
+> `tests/unit/test_vocabulary_ratchet.py` and named in its failure message; `docs/PITFALLS.md`
+> has its own contract test; `docs/MCP_SERVER.md` is operator documentation for a shipped
+> surface. Those are **reference material, not plans**, and folding them in here would break 63
+> citations across the codebase. Only plans, roadmaps, adoption studies, wave arcs and
+> superseded handoffs were absorbed.
 
 ---
 
-### ✅ 2026-07-23 · Wave K — the kinetic plane, and five cost/correctness fixes
+## 0 · Thesis — one platform, three planes
 
-**#201 `ba06f6d` + #202 `817e9ec` — both merged, all 4 CI jobs green on each.** The session started
-from a cost question ("how long does $10 last on OpenRouter / Gemini?") and ended with the kinetic
-loop shipped and five root-cause fixes landed. Full per-PR detail in §2.
+Aughor's shape is validated externally: Databricks is assembling the same stack (Unity Catalog
++ Ontos business semantics + Lakebase Postgres + Electric sync + a first-class SQL editor).
+Aughor has all five in miniature — **plus the piece they lack: an agent that answers with the
+semantics, not just governs them.** The moat is the ontology→agent loop.
 
-**Durable lessons earned:**
-- **A permission ceiling is not a balance, and a threshold is not a spend.** OpenRouter's $10 is a
-  one-time **threshold** that lifts the free cap 50 → 1,000 req/day permanently; the money is never
-  spent while every binding is `:free`. Gemini is the opposite — enabling billing DELETES its free tier.
-- **Syntactic vs SEMANTIC tautology.** `self_ratio_tautology` only sees same-expression-text. The
-  "100% return rate" was two *different* aggregates the join geometry forced equal — a `LEFT JOIN`
-  demoted by `GROUP BY` on its null side. A guard reasoning about expression text cannot see a defect
-  that lives in the join/grain geometry.
-- **A delete guarded only by a filesystem op succeeding is not durably deleted.** The tombstone
-  (intent) must be the authority, not the file's presence (state).
-- **Prove it on the REAL path — twice this session the unit tests were green and wrong.** K3's overlay
-  merge returned nothing through `execute_guarded` because the tests *mocked* the org id; K4's proposer
-  looked like it "abstained" when it was really a swallowed 401 (encrypted key, no `AUGHOR_SECRET_KEY`
-  in a bare script). Both were invisible to hermetic tests by construction.
-- **The guard battery is FRAGMENTED** — ~5 re-assembled sites split by path, no registry. Add a guard
-  only to `Verifier.scan` and the *explorer* silently skips it.
+1. **The human plane** — a pro surface where a person does data work directly. Human SQL and
+   agent SQL are peers in one provenance system: same `/query/run`, same guards, same receipts,
+   same audit.
+2. **The agent plane** — a conversation that feels like a frontier model, because it is one:
+   general, multi-turn, platform-wide, with the guard battery *underneath* it rather than in
+   front of it.
+3. **The substrate** — serverless-correct, honest-signalled, measured-not-inferred.
+
+**The rule that generalises across all three:** a capability is not shipped when it is tested,
+it is shipped when something *consumes* it. Repeatedly, the gap has been a complete and inert
+plane — see §7.
 
 ---
 
-### ✅ 2026-07-22 (later) · The request budget — four PRs, and what measuring changed
+## 1 · What is true today (measured 2026-08-30)
 
-**#197 → #198 → #199 → #200.** Started as "full synthesis is not being generated" and ended as a
-measured account of where every LLM request goes.
+| Plane | State |
+|---|---|
+| Query workbench | SE-0…SE-5a complete |
+| Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
+| Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
+| Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-9d, VA-10, VA-11 open |
+| Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
+| Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
+| Automations | trigger → ordered effects, `{"$from": …}` dataflow, runs visible in Activity as traces |
+| Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
+| Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**#197 — the reported bug was never in `briefing.py`.** Every model bound to the app was
-rate-limited, and the fallback that should have absorbed it could not run: `_fallback_client()` was
-hardcoded to **Anthropic** and returned `None` without an Anthropic key, so an install without one
-had no fallback at all. Now a configured chain (`AUGHOR_FALLBACK_BACKENDS`), quota-aware fast-fail,
-and a self-healing cooldown. Two more things fell out: `_coverage_digest` was spending **~5 model
-calls to compress 1,291 characters** for a narrator with a 32k window — replaced with a deterministic
-listing (**a brief now makes 1 model call, was ~6**) — and the synthesis was capped at "exactly 2-3
-sentences" in **five** places while the UI card said "Full synthesis" and offered "Read full
-synthesis". Now a lede + 2-4 paragraphs, one field, no schema or cache change.
-
-**#198 — all four glossary-scoping gaps #193 documented and did not fix.** One bug shape in four
-layers: *a store keyed without the dimension that distinguishes its owners.* The exploration writer
-took a `conn_id` it never read and wrote bare keys on **every exploration run** (81 bare vs 77
-qualified keys on the live file, 61 colliding leaves) · the Qdrant index keyed points by table alone,
-so two connections wrote ONE point and the later index silently replaced the other's embedding · the
-dbt merge unioned on exact keys so a dbt annotation never met a qualified YAML entry · the autoseed
-fingerprint hashed structure only, so a same-DDL schema inherited "already seeded".
-
-**#199 — 19 features were ON in one developer's runtime ledger while the code shipped them OFF.**
-So **CI was validating a configuration nobody ran**, and the daily-driver configuration was tested by
-nothing. Batch 1 graduated the four that are deterministic AND byte-identical when off.
-`intake.loss_signals` is the load-bearing one — it fixes a **wrong answer** (a revenue ranking calling
-the business "broadly healthy" over 2.4M CHF of refund leakage). Full disposition of all 19 in
-[`docs/FLAG_GRADUATION_AUDIT_2026-07-22.md`](docs/FLAG_GRADUATION_AUDIT_2026-07-22.md).
-
-**#200 — then we measured, and the measurement corrected the plan.** The OpenRouter export and the
-Google AI Studio dashboard together said: **the constraint is REQUEST RATE, not tokens.**
-
-    Gemini 3.1 Flash Lite    RPM 19/15 (OVER)    RPD 422/500    TPM 109K/250K (44%)
-
-That **retired prompt caching** (cost-only) and **prompt trimming** (a limit at 44% utilisation) as
-answers — both of which had been proposed on architecture alone an hour earlier. Five fixes instead:
-`gemini-flash-latest` resolves to Gemini 3.6 Flash at **5 RPM / 20 requests per DAY** → rebound to
-`gemini-3.1-flash-lite` (**500 RPD, 25×**) · `max_tokens` on the OpenAI-compatible path, which had
-**never** carried one (three requests ran the full 600s emitting 13.5k–18.9k tokens of pure reasoning
-with no finish_reason: **4 requests = 6% of traffic = 58% of all output tokens**) · OpenRouter
-`reasoning.effort`, since **93% of every completion token was reasoning** · a rate limit now gets
-**ONE** retry, because every retry is itself another request against the limit that just refused
-(that is the 19-vs-15 spiral) · health-check verdicts cached, since those 113-token probes were
-**12 of 62 requests** against a 50/day cap.
-
-**🔑 Durable lessons, each earned the hard way:**
-- **"Quota exceeded" does not mean one thing.** A day cap and a per-minute throttle arrive as the
-  same 429 and need OPPOSITE handling. Google's `quotaId` is the authority; its "retry in 36s" prose
-  lies about a day-long block.
-- **A permission ceiling is not a balance.** `GET /api/v1/key`'s `limit` is the key's *spend cap*,
-  not money available — misread once, corrected by the user.
-- **The data beat the reasoning, twice.** The 90s deadline first proposed would have killed a
-  legitimate 86.7s call (shipped 180s); and the levers that looked obvious from architecture were
-  the wrong ones entirely.
-- **Flipping a default runs the whole suite in the new configuration** — which is how three tests
-  that had silently encoded the old one were found.
-- **Verify on the live path.** The final run proved every piece at once: OpenRouter 429 → automatic
-  Gemini failover → **1,563 chars, 4 paragraphs, 8 citations in 19.9s**, from an HTTP 500 at session
-  start.
+**Honest limits, same date:** automations cannot branch, fan out, or parallelise (§3.2); no
+user-scoped credential store anywhere; warehouse connections have **no owner**; `telemetry.py`'s
+Langfuse backend is silently dead (v2 path, 4.x runtime); no RBAC on `/agents/custom*`.
 
 ---
 
-### 🚨 2026-07-21 · `data/` hermeticity — an ordinary `pytest` run destroyed live user data
+## 2 · Shipped
 
-**A full-suite run DELETED `data/exploration_workspace.json` (89 findings — the luxexperience
-Briefing's own source), `episodes_workspace.jsonl`, `business_profile_workspace*.json`, and 2 of the
-4 `briefing_cache.json` scopes. Unrecoverable: `data/*.json` is gitignored, no APFS snapshot, newest
-backup 3 weeks stale.** Second time this has happened (the registry, 2026-07-02, `806ad6e`).
+**Arc CI · conversational intelligence** — platform tool roster (#335), AI SDK UIMessage/parts
+in `web/`, chat-first home, tiered write-scope (personal artifacts direct, org-shared semantic
+state proposal-only).
 
-**Cause.** `explorer/store.py` — and `profile/store.py`, `knowledge/briefing.py`, `patterns.py`,
-`explorer/watermark.py` — each hard-coded `Path("data")` with no env override, unlike their WP-4
-siblings (`AUGHOR_EPISODES_DIR`/`_MEMORY_DIR`/`_ACTIONS_DIR`). **And a second, subtler half:
-`db/purge.py` resolved its OWN `data/` dir**, so it unlinked from the LIVE directory even when a test
-had redirected the store it was purging — *a redirect the deleter doesn't share is not isolation*.
-That is why `episodes_workspace.jsonl` died despite `AUGHOR_EPISODES_DIR` being redirected.
+**SQL editor (SE-0…SE-5a)** — the human plane, peer to the agent's.
 
-**Fix.** One resolver, one env, whole family: `aughor/db/paths.py::state_dir()` / `AUGHOR_STATE_DIR`,
-adopted by all six stores **plus purge and the router/api readers** — so a NEW store in this family is
-isolated by construction rather than one env var at a time. Registered in `tests/conftest.py`.
-Deliberately NOT a global `data/` switch: authored, version-controlled files (`glossary.yaml`, `kb/`,
-`global_rules.md`) keep their own resolvers and stay repo-readable during tests.
-6 sentinels in `test_store_hermeticity.py`, including `purge._DATA_DIR == store._DATA_DIR` and a
-ratchet that fails if any of those modules re-hardcodes the dir. Also fixed a leaked global:
-`test_multischema_wiring.py` did a bare `store._DATA_DIR = tmp_path` inside a helper — no teardown,
-so it leaked one test's tmp dir into the rest of the session (now an autouse `monkeypatch` fixture).
+**Program AT · answer truthfulness** — guards key on claims and verdicts, never on vocabulary.
 
-**⚠️ OPS (durable): snapshot `data/` — size+mtime+md5 per file — BEFORE any full-suite run and diff
-after.** Cheap, and the only thing that would have caught either incident at the time. "The stores
-look isolated" is not evidence; this exact gap was written down in an audit on 2026-07-05 and sat
-unfixed for two weeks.
+**Arc CA · conversational analyst** — CA-1.
 
----
+**Track FL · flow** (#403–#409) — plan bar, in-flight findings prose, provider-hop narration,
+landscape report. *FL-3 measured and closed: `web/` has no markdown renderer — chat prose is a
+regex split, so backend markdown is inert. FL-4 parked: 0/21 turn gaps under 10s.*
 
-### ✅ 2026-07-21 (later) · Second screenshot round — and a real wrong number
+**Track RC · reach** (#410) — the Slack bot factory: bot records with vaulted credentials,
+manifest render, N-socket supervisor, `Effect(slack_post)`, identity attribution
+(`provider:external_id` + `identity_links`), proposal-inbox expiry, charts as Vega SSR PNGs,
+GFM/CSV tables, deep links.
 
-Four more defects off Briefing screenshots. **#3 was a genuine correctness bug that had shipped a
-number to the reader: attributed GMV of €102,870,539,329.**
+**Arc VA · the agent platform** — skills plane (VA-1), delegation (VA-2), OTLP (VA-3),
+automations dataflow + run canvas (VA-4a…4e), trace excellence (VA-5), agent alerting (VA-6),
+instruction/prompt management (VA-7), guardrail plane (VA-8), outbound seam (VA-9a),
+automations-run-as-agents (VA-9b), per-agent tool grants (VA-9c).
 
-- **Duplicate findings.** "Numbers that moved" and the FINDINGS ledger were reading the SAME expression
-  — `dedupeSignals([...signals, ...allSignals])` minus the headline — so the tiles WERE the ledger's
-  first rows. The tiles win (they lead the page and, since #190, expand in place into the same detail),
-  so the ledger now excludes them by identity. `7 of 47` → `7 of 41`. The tiles' `finding →` deep-link
-  went with them (nothing left to jump to), and the whole external ledger-focus mechanism it fed was
-  dead code once removed — the ledger's own jump menu is untouched.
-- **K/M/B out of data cells.** New `formatTableNumber` (`web/lib/format.ts`); `formatMetricValue` is now
-  explicitly the TILE/BADGE formatter. A column is read down, and a per-row magnitude suffix makes two
-  cells incomparable at a glance — one cell "980K", the next "1.02M". `€2.80B` → `€2,798,626,484`.
-- **🔑 #3 — the fan-out, and why every guard missed it.** `marketing_campaigns ⋈ brand_collaborations
-  ON platform` — a categorical column, not a key — so each group was `SUM(all that platform's GMV) ×
-  (collaborations of that type)`. The tell was in the rendered table: two campaign types with
-  byte-identical totals and a third at exactly 3.0×. **Two independent root causes, both silent:**
-  **(a) The FK-shaped assumption.** All seven detectors in `sql/fanout.py` route through `fk_root()`,
-  which recognises a key by its NAME (`order_id` → `order`). `fk_root('platform')` is None, so every
-  one returned None. New `join_key_fanout` closes it — EXECUTION-GROUNDED (the existing cardinality
-  oracle must have PROBED the joined table and returned a definite "not unique on this key"), so it
-  can't flag a correct query on a naming guess. All-or-nothing on the ON clause: an extra predicate
-  (`AND d.type='capsule'`) can make a join 1:1 even when the table is non-unique on the key, so a
-  whole-table probe stops being sound evidence and the guard bails. Wired into `verify_insight`.
-  **(b) `grain_guard.py` was structurally disabled on the majority of real SQL.** It builds its probe
-  from `right.name`, which sqlglot returns WITHOUT the schema — so every schema-qualified query (what
-  the explorer always writes) probed a table that doesn't exist, errored, hit `if not ok: continue`,
-  and returned no findings. It had been failing silent, not passing. Probe text is now locked by test.
-  *(Also removed a `_alias_to_table(tree)` call whose result was discarded.)*
-- **Synthesis panel.** Dropped the `maxWidth: 72ch` measure cap — it wrapped the prose into a ribbon
-  down the left of a wide panel. Removed the trust-gate "held back" strip: it read as an error log
-  (red `Implausible ×7 — SUM() over the text column 'signup_fy'`) at the foot of the brief, and those
-  are **decisions already made** — nothing actionable for a reader. **The entries were also stale:**
-  all 14 were generated 2026-06-30, and the explorer's emission gate has rejected that class ever
-  since — every brief was re-deriving the same rejects from findings nobody was producing. Fixed at
-  source: `explorer/revalidate.py` now quarantines a stored finding the current plausibility gate
-  rejects (the mechanism already existed for fabricated dimensions), so a reject is retired ONCE
-  instead of re-derived on every read. `held_back` still ships on the response for the Trust Receipt,
-  where a provenance trail belongs.
-
-**🔑 Durable:** *a guard that builds its own probe SQL must preserve the schema qualifier* — and a
-guard whose failure mode is `continue` reports "clean" when it is broken, which is why this one sat
-dead. **Prefer an execution-grounded oracle to a name-shaped heuristic**: `fk_root()` gave the fan-out
-battery its precision AND its blind spot, and the fix was not a better name regex but a probe. And
-**an audit trail of suppressed signals is provenance, not content** — it belongs in the receipt, and
-it needs a retirement path or it accumulates forever.
+**VA-12/13/14 (2026-08-30)** — canvas authoring (Add Trigger / Add Action), the
+`investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
+inside Create Agent.
 
 ---
 
-### ✅ MERGED 2026-07-21 · The briefing arc — six PRs, one screenshot
+## 3 · ACTIVE — Arc VA, remaining
 
-One user screenshot of the Netflix briefing reported six defects. All six shipped, in order, each
-squash-merged CI-green: **[#188](https://github.com/sidhasadhak/aughor/pull/188)** `e716a00` →
-**[#189](https://github.com/sidhasadhak/aughor/pull/189)** `867c819` →
-**[#190](https://github.com/sidhasadhak/aughor/pull/190)** `4607bda` →
-**[#191](https://github.com/sidhasadhak/aughor/pull/191)** `a0b8359` →
-**[#192](https://github.com/sidhasadhak/aughor/pull/192)** `55e35c8` →
-**[#193](https://github.com/sidhasadhak/aughor/pull/193)** `ef887ef`. Suite 3369 → **3444** (+75 tests).
+### 3.1 · VA-9d — the MCP consumer
 
-**🔑 The pattern worth remembering: five of the six had their real cause one layer BELOW the symptom,
-and in four the fix was to stop discarding something the platform already had.**
+`aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
+API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.
 
-- **#188 · Trust plane.** A NETFLIX-headed brief rendered luxexperience's prose. Reproduced from
-  `data/briefing_cache.json`, which disproved the obvious theory — the server cache was CORRECT and
-  per-`conn:schema`. The leak was client-side retention. The response carried **no scope identity**, so
-  a retained brief was undetectable; it now stamps `scope_key` and the client refuses any narrative that
-  doesn't claim the scope it is rendering under. **Durable: a fail-OPEN filter is a cross-schema leak** —
-  `_filter_by_schema` returned data unfiltered when a schema's table set couldn't be resolved, justified
-  as *"over-inclusion is safe"*. True for a superset of the SAME scope, false when the superset is another
-  schema's data. Now `SchemaScopeUnavailable`, all four call sites fail CLOSED. Held-back reasons grouped
-  (a reason derives from the SQL idiom, so one bad idiom emitted 7 identical lines). Graph lens deleted
-  (−1,241 lines); ⚠️ `@xyflow/react` STAYS — the cockpit canvas uses it.
-- **#189 · Number-format authority.** `…is 43.959061407888164%` was **never a frontend bug**;
-  `web/lib/format.ts` was already canonical and simply bypassed. `str(row)` → prompt → the interpret
-  prompts *require* quoting a value from the result → the model copied all 17 digits → persisted →
-  narrated → rendered verbatim by a UI whose rule is "never invent a number". Fixed at BOTH ends:
-  `aughor/util/format.py` (prevent at prompt input via `rows_for_prompt`, guarantee at every
-  persist/response boundary). Two contexts kept deliberately different — prose 2dp/6dp, data cells 4dp.
-- **#190 · Chart edits persist · movers expand.** NOTHING a user edited on a chart persisted; 16 bare
-  `useState`s and strictly inbound props. The ledger is single-open, so expanding a second row destroyed
-  the first row's edits *without a reload*. The durable slot already existed and was **uncalled**:
-  `PUT /cards/{id}` shipped with the cockpit and had no frontend client. New `viz_configs` store for
-  card-less charts, keyed by insight + the same `scope_key`. `<FindingDetail>` extracted so digest tiles
-  expand in place.
-- **#191 · Ask this briefing.** The old box was neither a conversation nor an insight-mode ask — it ran
-  `POST /investigate` with `deep: true` per question. Now one `useChat` thread pinned to `depth:"quick"`
-  in a side panel that pushes the brief left. **Gap found: a quick answer was NEVER schema-scoped**
-  (`schema_name` forwarded only on the deep branch) — which also meant a user agent's `schema_scope`
-  binding didn't constrain quick answers. Grounding read server-side from the same cache entry the
-  Briefing rendered, behind `ask.brief_context` (default off).
-- **#192 · The brief's subject is the DATASET.** Org settings are workspace-global, so every schema's
-  brief was stamped `ORGANIZATION: LuxExperience, HQ Munich — industry: Ecommerce; reports in EUR`.
-  Root cause an OMISSION: the narrator got the org's identity and never the dataset's, though
-  `BusinessProfile.industry`/`summary` were loaded per schema and dropped. Netflix now opens *"The
-  streaming platform…"*; luxexperience still writes *"our womenswear category"*.
-- **#193 · Glossary scoped per schema** (closes `task_170ac04a`). The store was never "bare-keyed" — it
-  was **inconsistently** keyed (81 bare + 70 qualified, 61 colliding leaves; `orders` had five competing
-  entries) because the connectors disagree on the `TABLE:` header. The schema dimension was already
-  half-present in the data and invisible to an exact-string `.get()`. Canonical on write, tolerant on
-  read via the existing `tools/table_names.resolve_in`. **⚠️ Regression caught before shipping:**
-  `retriever._filter_schema` matched exact strings, so more qualified keys would have made bare-header
-  connectors filter their own tables OUT of the retrieved schema.
+VA-9's own risk note calls this *"the largest new attack surface in the arc"*. **Agree the
+allowlist and the outbound-off-by-default posture with the user before starting.**
 
-**⚠️ OPS lessons earned (all now in memory):** `read_console_messages` **replays the pre-restart buffer**
-— a stale `ReferenceError` caused two false diagnoses; `tsc` + the file on disk + the *served chunk* are
-the authority · never `git stash` with the web dev server running (wedges Turbopack; `rm -rf web/.next`,
-restart, then **navigate**) · CI's `API client · codegen drift` job fails if you add an endpoint without
-`cd web && npm run gen:api` · **stacked-merge recipe:** `git rebase --onto <new-parent> <OLD-parent-sha>
-<branch>` per child (replays only its own commits, so the squash-duplicate conflict never arises), verify
-`git diff origin/<branch> HEAD` is EMPTY before `--force-with-lease` · **RETARGET the child before
-DELETING the merged base** — deleting it auto-CLOSES the child, and a closed PR with a missing base can
-be neither reopened nor retargeted (recover by re-pushing the SHA) · **a retargeted PR gets NO CI run for
-its new head** — verify run SHA == head SHA before merging; a green tick is not proof it ran on this code.
+**Promoted in importance 2026-08-30:** the Langflow study (§4.2) found that the connector
+platforms which solve the OAuth problem — Arcade, Composio — expose their tools **over MCP**.
+VA-9d is therefore no longer an abstract capability; it is the delivery mechanism for the
+most-wanted feature on this list.
 
-### 🧭 Session handoff — 2026-07-18→19 · Briefing cockpit — the self-explaining briefing + UX polish — PR [#178](https://github.com/sidhasadhak/aughor/pull/178) OPEN (35 commits)
+### 3.2 · W1/W2 — the two workflow primitives
 
-**All pushed to `2026-07-18-briefing-cockpit` / PR [#178](https://github.com/sidhasadhak/aughor/pull/178); tsc 0 · web gates green (raw-button ratchet 92→73) · live-verified on the real app.** Turned the Briefing into "the dashboard that explains itself": a STANDING layer (co-authored KPI/chart/note cards + explorer findings on a drag/resize/snap-to-grid React-Flow cockpit, layout persisted server-side) + a NARRATIVE layer (findings + a React-Flow argument-graph lens), wired together. Full design + build + follow-on detail: [`docs/BRIEFING_COCKPIT_2026-07-18.md`](docs/BRIEFING_COCKPIT_2026-07-18.md).
-- **Initiative (Slices 0–4):** the `dashboard_cards` SQLite store + 3 authoring **doors** (pin-insight / Query-Builder / inline composer — all routed through `execute_guarded`) + refresh/sparkline grip-over-time + the **argument-graph lens** (`@xyflow/react`, built server-side deterministically) + `relates_to` card↔finding edges + watch→monitor graduation.
-- **Follow-on UX (2026-07-19):** bounded snap-to-grid **bin-pack cockpit** with server-side account-keyed layout (`gridLayout.ts`, `GET/PUT /cards/layout`); full **design unification** onto the shared `.aug-*`/type-scale system + skeleton loaders; a reusable **toast** system wired into the cockpit's silent side-effects; a one-click **Tidy up**; **button-system unification** (root-cause below) + full `.aug-btn`→`<Button>` migration; a **⌘K command palette** (global + per-view contextual action verbs via a `commandRegistry` module-store).
-- **🔑 Durable finding:** the two button systems existed because an **unlayered** `button{}` reset in `app/globals.css` silently stripped every base-ui `<Button variant>` (unlayered CSS beats Tailwind's *layered* utilities); `.aug-btn` classes won on specificity, `<Button>` lost. Fix = exempt `[data-slot="button"]` from the reset — a global correction across all 27 `<Button>` files.
+Measured: our engine runs a strictly sequential list. It cannot branch between effects, fan out
+over a list, or parallelise. The user named this gap directly; it is real.
 
-**⏭️ NEXT:** merge PR #178 · remaining Mobbin polish (scope chips · hover-row actions · sticky TOC · one stat-tile spec). **GOTCHA:** `aughor-api` now runs WITHOUT `--reload` (rapid multi-file edits wedged its event loop → data views render empty while :3000 stays 200) — restart it manually to apply backend `.py` changes.
+- **W1 · `when` on an effect** — a guard evaluated against the accumulated `context`, so a step
+  can be skipped by condition rather than only by a missing binding. The chain loop already
+  holds `context`; smallest change, largest payoff.
+- **W2 · `for_each` on an effect** — bind a step to an upstream list and run it per item,
+  appending one `EffectOutcome` each. `resolve()` already walks lists.
+- **W3 · parallel-safe steps** — lowest priority; nothing measured is latency-bound.
 
-### 🧭 Session handoff — 2026-07-18 · Report presentation (Genie parity) + design uplift (Du Bois tokens · card catalogs · neutral nav) — PR [#177](https://github.com/sidhasadhak/aughor/pull/177)
+Neither needs a new canvas: VA-12's authoring rail edits whatever the model can express.
 
-**5 commits on `2026-07-18-report-presentation-polish` (PR [#177](https://github.com/sidhasadhak/aughor/pull/177)); tsc 0 · ruff clean · web gates green (raw-button 92) · unit suite green.** Two arcs from the user grading a live "Where are we losing money?" deep report vs Databricks Genie, then the app chrome vs the **Du Bois** design language. Every item live-verified in the browser + on fresh `/investigate` runs (`skip_cache`).
-- **Report presentation — Genie parity (`636aade`, 12 fixes across 2 rounds):** header 4→2 chrome rows (tabs into the header, "← Back" into the Report/Evidence bar, "New"→compact "+"); the agent trace + a **named** per-exhibit Source-data icon now render in history; removed the Methodology & Details disclosure (kept Recommended actions, uncollapsed); stripped fan-out repair process-speak; **one font + one color** (figures inherit the body color, weight-only bold, signed deltas keep green/red); new `closing_summary` → a "Bottom line" before the recs; **adaptive % chart precision** (2.76% vs 2.80% never sit beside different-length bars); synthesis now **requires recommendations even without cost data**; fixed the "0.0%events" key-number glitch (+regression test in `test_pct_formatting.py`; updated `test_ratio_grain_repair`).
-- **Design uplift:** **Du Bois-lifted dark tokens** (`a85a881`, `web/aughor-v2/theme/tokens-v2.css`: canvas `#0A0A0E→#10161D` soft-dark blue-tint, ladder/borders/chart-axis/code-well lifted proportionally, primary text `#F2F3F6→#E8ECF0`) · **card catalogs** matching the Genie pattern on **Data Canvas** (`a85a881`, `CanvasBrowser.tsx`, + a card/list toggle) and **Investigations / Agents personas / Fleet roster** (`d2da860`, `RecentsScreen`+`AgentsPanel` in `app/page.tsx`, `AgentsAdminPanel.tsx`) — rich tiles (icon + title + description/headline + signal chips + hover-lift) · **neutral grey active-nav** (`0aa3876`, `.aug-nav-item.active` in `app/globals.css`).
-- **Du Bois learnings (durable):** two-anchor theming + `var(--new,fallback)` migration seam (Aughor already does this); soft contrast > maximum; elevation via surface-steps not shadow; near-invisible borders (Aughor keeps visible hairlines by choice); color = signal only; state-complete tokens; semantic soft-surfaces (16% tint + saturated text).
+### 3.3 · B1/B2 — borrowed from Langflow
 
-**⏭️ NEXT:** flags-on soak (the loss/lens flags are ON in the live runtime ledger only, still default-off in code) · reuse the card primitive on any remaining list surfaces · the report headline is LLM-stochastic (a P7 lever). **GOTCHA (cost 2 killed runs this session): uvicorn `--reload` watches broadly → editing ANY repo file (even a `.tsx`) reloads the worker and KILLS a running `/investigate` mid-stream; run investigations with zero concurrent file edits, and `preview_stop`+`preview_start` the api server if the event loop wedges.**
+- **B1 · Typed bindings.** `validate_chain` catches an unknown *step* at save but **not an
+  unknown key** — that surfaces at 09:00 as a skipped step. VA-13 shipped the binding as free
+  text. A picker over "what each upstream step publishes" closes it. **Weakest seam in VA-12/13.**
+- **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
+  `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
 
-### 🧭 Session handoff — 2026-07-17 (later) · Opportunity wiring → fan-out repair → report relevance (branch `2026-07-17-opportunity-wiring`)
+### 3.4 · VA-11 — the connector catalog (RE-SCOPED — mostly a BUY)
 
-**16 commits; suite 3281; ruff + tsc + eslint clean. The arc from "I'm not happy with the output and the
-decomposition" to a report that answers the question in one clear beat.** Every accuracy fix causally
-validated read-only against the real airline CSVs and on the live path; the flags `intake.loss_signals` /
-`lens.decision_grade` / `report.argument_style` were flipped **on** in the live ledger (they'd been off — the
-user was grading work that never ran).
-- **Decision-grade opportunity, wired end-to-end** — the R15 gap × volume number is now computed on the loss
-  path (was left to the model), with two guards the wiring exposed: **scale** (the lens SQL emits `100·SUM/SUM`,
-  so the rate arrives at 77.7 not 0.777 — normalised before gap×volume) and **direction** (a cost-like rate's
-  laggard is the *highest* segment; the renderers already derived this for the red ramp, the math never
-  consumed it). Materiality re-based on the **addressable** base (empty seats) with the gap's **sampling error**
-  as the floor (a flat 3% silenced the real 1.7pp-over-66k-seats case). A/Bs on the real workspace, only the
-  prompt varying, driven through `run_analysis_phase`: **grouping 0/4→4/4** (claim pinned to a low-cardinality
-  class, named units as evidence), **leakage `n`=COUNT(*)→SUM(gross) 1/4→4/4** (money, not a unitless count).
-- **"Sold" pinned from probed values** — `_probe_lifecycle_values` reads DISTINCT off the status columns and
-  `lifecycle_guard.py` **enforces** `WHERE segment_status='flown'` into the planned SQL (the prose pin was
-  ignored in both plan positions; the real root cause was `_table_columns` blind to the deep path's markdown
-  Data-Catalog schema format). Reading pinned = 74.5%/77.2% = the industry load factor = the Databricks pair.
-- **Fan-out REPAIRED, not just suppressed** (`aughor/sql/ratio_grain.py`) — the conditioned-denominator scan is
-  recomputed at the correct grain and accepted only when its whole-population level matches the true global
-  within 2%; what the checksum rejects is suppressed **terminally** (no tile/chart/table/prose leak; caveat
-  once). Resolves the losing-money **coin-flip**: clean planner SQL *or* fanned→repaired both yield a correct
-  answer. `task_4b6b7d77` **DONE**.
-- **Report relevance + ranking** — drops findings that move no conclusion (suppressed · zero-variance
-  100%-everywhere · self-declared inconclusive), hides emptied phases (flag, not delete), re-ranks so the
-  opportunity phase **leads**. Result: 13 findings → 8, the utilization gap headlines. The user's five noise
-  classes (trust-advisory box, "could not be computed", chart-restating captions, 100%-uniform, no-peer) are
-  all gone.
-- **Thinking-trace rework (web)** — typewriter, no box, clickable query nodes, intake/banner removed, leads
-  with the thought (see FEATURES §9).
+| Deliverable | Verdict |
+|---|---|
+| OAuth broker (redirect, callback, refresh, revoke) | **Buy** — this is Arcade/Composio's entire product |
+| User-scoped `Connection` with granted scopes | **Build** — it is what `govern/` attributes against |
+| Catalog surface (categorised, `Connect` per provider) | **Build**, thin, over the vendor's list |
+| ~40 per-provider adapters | **Buy** — the item that made this look like a quarter |
 
-**⏭️ NEXT:** flags-on soak in the live app now that the pipeline is clean · headline phrasing is
-LLM-stochastic (always answer-first via the ranking, exact words vary — a P7 lever) · machinery section
-titles · explore-path exhibits + real waterfall · `task_6de6f10b` (starter mode vs plan.program) · P7
-bakeoff. **GOTCHA (recurred all session): uvicorn `--reload` serves stale code on the first run after a
-restart — verify live on a run that isn't #1 post-restart, and check `ps lstart` > file mtime.**
+Warehouse connections adopt the same record — *they have no owner at all today, the oldest open
+item in this arc.* **Gated on the policy question in §6.1.**
 
-### 🧭 Session handoff — 2026-07-17 · Chart grammar + report quality + loss-lens methodology (PR #174)
+### 3.5 · VA-10 — multi-user & admin
 
-**MERGED to `main` (squash, PR [#174](https://github.com/sidhasadhak/aughor/pull/174); 14 commits, suite 3222, CI green).**
-The full arc from "our charts feel rookie vs the two Databricks reference PDFs" to a causally-validated
-accuracy fix. Three themes, everything flag-gated default-off unless it was a defect:
-- **Chart grammar** (`chart.exhibit_grammar`) — one additive `exhibit` payload carries chart SEMANTICS to
-  BOTH renderers (web ECharts `web/components/charts/exhibit.ts` ↔ export matplotlib `aughor/export/charts.py`
-  — mirrored constants, keep in sync): combo demotion (the renderer's `scoreDualAxis` is the only door to a
-  dual axis; an explicit `bar_horizontal` hint renders one ranked bar), severity ramps for rate rankings
-  (red family for cost-like metrics), deterministic ref lines (weighted avg · R15 benchmark · peer median;
-  range-AND-visibility clipped), `exhibit.order` (the finding's own `ORDER BY … ASC LIMIT` leads with the
-  weakest row), entity scatters (ID labels · category hue · quadrants), ungraphable shapes → tables (stats
-  grids, entity profiles, wide/no-label/degenerate-x grids), export parity (light chart tokens, percent +
-  `currency:XXX` units, router-injected effective currency). The explore report **had no export builder**
-  (evidence silently dropped) → `_build_explore`.
-- **Clean-output policy** — process-speak OUT of the body: significance badges/stat notes/confidence chip
-  live in Details/Trust Receipt; explore planner directives ("→ Q5 should…", the `refinement` field)
-  stripped from reader prose web+export; head dedup; per-measure compact key numbers; source currency on
-  `column_units` so no surface relabels CHF data with the org's €.
-- **Loss-lens methodology** (`intake.loss_signals`) — a live A/B showed "Where are we losing money?"
-  answered "broadly healthy, no losses" over **2.38M CHF refund leakage + a 1.2M CHF utilization gap**
-  (verified read-only against the same CSVs). A revenue ranking can never find losses. Deterministic
-  detector (loss intent × schema loss signals) → intake directive naming the actual columns + honesty
-  clause; **multi-lens playbook** forward-chains a phase per uncovered signal class (leakage ↔ utilization)
-  through the shared phase harness. Validated live ×2 — the playbook run's utilization numbers matched
-  ground truth exactly (77.7% vs 79.4%, 1,136-seat ceiling).
-
-**⏭️ NEXT:** flags-on soak of `chart.exhibit_grammar` + `intake.loss_signals` (+ `lens.decision_grade` /
-`starters.library`, still off in the live ledger) · the two chips: utilization-ratio join fan-out grain
-guard (`task_4b6b7d77` — the one remaining accuracy hole: per-segment ratios across fanning joins) and
-starter `mode` swallowed by the plan.program short-circuit (`task_6de6f10b`) · exhibit grammar for the
-explore path · real waterfall geometry · **P7 frontier-coder decision** (re-confirmed: synthesis fallback
-prose + metric-choice drift are model-side; the bakeoff harness is one command).
-
-### 🧭 Session handoff — 2026-07-16 · Databricks-HAR program (R1–R15)
-
-**R1–R9 ALL MERGED to `main`** (squash-merged PRs #163–166 → `f42ced4`, then **R9** #167 `0958ce2`, study-#2
-docs #169 `9595f4f`, **R8** #168 `6bb659c`; CI green): R1/R2 (upload birth rite), R3 (ground-once/run),
-R5 (persisted value index), R6 (stream the deep report; wiring verified — live eyeball still open),
-R7 (unique-alias compile), R8 (ontology docs as a Merkle-checksummed build artifact: `ontology/doctree.py`
-+ `aughor ontology-docs` CLI + flag `ontology.autodoc`), R9 (route wide→explore wave; flag
-`explore.route_wide`). **R4 moot.** Both new flags default-off.
-
-**✅ R11–R15 MERGED (PR [#171](https://github.com/sidhasadhak/aughor/pull/171) `53d67b8`), R-program leftovers MERGED (PR [#172](https://github.com/sidhasadhak/aughor/pull/172) `a7acf90`), R16 presentation MERGED (PR [#173](https://github.com/sidhasadhak/aughor/pull/173) `d757400`).**
-Sequence ran R11 → R12 → R14 → R13 → R15; every feature flag-gated default-off / byte-identical when off;
-each committed with its tests green + swallow/private-import ratchets at baseline. New flags:
-`ontology.column_config` · `birth.job` · `obs.popularity` · `starters.library` · `lens.decision_grade`.
-- **R11** `10f2108` — `ontology/column_config.py`: persisted+editable per-column `{visible,sample,index}`
-  YAML tree (fingerprint-independent, human-wins), deterministic defaults (index == the R5 gate); consumed
-  by schema-prune (`apply_schema_enrichment`), `inject_value_annotations`, the profiler capture gate,
-  `answer_resolution` sample-retire, R8 doc-tree marks; `GET/PUT /ontology/column-config`.
-- **R12** `d8ab2dd` — birth as ONE observable kernel job (kind `profile`; the Curator charter GRADUATED
-  from reserved, budgeted): `run_birth`/`spawn_birth` in `routers/_shared.py` — eager intelligence →
-  exploration handoff, `birth.step`/`birth.done` on the K2 spine; elevation at the `kickoff_exploration`
-  chokepoint (connect + upload re-arms) AND canvas creation (previously triggered nothing).
-- **R14** `5c5cc4e` — `sql/popularity.py`: query history (SQL-examples store + task_history inputs) mined
-  once into a persisted per-table/column counter (birth-job `popularity` step); one signal, four consumers
-  (R11 visible-protect · R8 doc-tree facts+rank · overview prior fold · /suggestions block).
-- **R13** `32d1d56` — `aughor/starters.py`: named deterministic playbooks (outlier_entities /
-  where_are_we_losing_money / data_quality_scan) + per-space curated questions from R8 doc-tree analyst
-  questions (popularity-ranked, round-robin); `AskRequest.mode` ("investigate"|"explore") honored FIRST in
-  `decide_ask_route` + `purpose` tag on the route receipt; explore starters PHRASED wide so R9 routes them
-  even without the field (test-locked); surfaced via /suggestions `starters` + web chips.
-- **R15** `b6ab9e6` — decision-grade lenses: `agent/opportunity.py` benchmark-gap × volume key number on
-  cross-section findings (materiality floors, ratio-aware, hedged "ceiling not forecast") + the overview
-  named-outlier-ENTITY probe (whale by ID, "potential causes" hedge, drill SQL, existing card styling).
-
-**✅ R-PROGRAM LEFTOVERS ALL CLOSED (2026-07-16 later, branch `2026-07-16-r-leftovers`, stacked on the
-wave branch — 6 commits).** AG-UI mode/purpose threading `4c800b1` (+ a latent R13 tsc fix) · **R8a**
-`3df8c19` doc tree → knowledge store with FQN provenance (DocumentChunk gains fqn/kind/source_url — the
-inert `index_text(source_url=)` gap fixed; `index_doc_tree` deterministic-doc_id replace-on-rebuild;
-formatter cites the ontology node; registry env-isolated) · **R5 deferreds** `42a52c8` (filter guard
-binds OFFLINE from the persisted value sample with a 1-row ghost-check + live fallback; `POST
-/connections/{id}/prewarm` = composer-open warm as an idempotent Curator job, ChatPanel fires it) ·
-**R10** `493189a` (purpose → run row Migration-4 + job payload; deterministic canvas auto-name on empty
-name; THUMBS→priors: /chat/feedback helpful → drills table prior + web 👍/👎 on quick answers) · **R8b**
-`1032162` (per-node LLM polish as a content_hash-keyed DECORATION — Merkle invalidates it for free;
-width-routed fast/coder; `aughor ontology-docs --enrich` estimate-then-confirm; R8a embeds the polish) ·
-**R7 deferred** `1e058dc` (the grounded-literal contract enforced post-generation: near-miss re-spellings
-of a BOUND value rewritten to the verified value, dry-run-vetted, self-gating on ask.resolve_first —
-true named-param execution deliberately rejected: every adapter for no added safety).
-
-**⏭️ Remaining from this program: R6 live eyeball (user-side, ~5 min — ask any deep question and watch
-the report prose stream into the InvestigationReport card); the flags-on pass for the wave flags; the
-task_history-recovery flake chip.** (The push/PR/merge steps completed as #171–#173; the 2026-07-17
-chart-grammar arc above then landed R16's presentation ideas end-to-end.)
-
-**NEW — Wire study #2 (canvas-birth + 2 Deep-Research runs on our airline dataset) →
-[`docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md`](docs/DATABRICKS_HAR_CANVAS_BIRTH_STUDY_2026-07-16.md).**
-Databricks turns "pick tables" into a documented/profiled/indexed/curated space in ~40 s *before* the first
-question. Five new recommendations:
-- **R11 · Per-column `{visible, sample, index}` config** (their `column-configs`, 17 KB persisted). Highest
-  leverage — unifies R5 (their `is_indexing` == our `_ENTITY_DIM_RE` gate) + R8 + nao overrides + **column
-  pruning** (hide noise columns from the prompt = DB-info compression). `ontology/column_config.py`.
-- **R12 · Canvas birth = ONE observable "knowledge-mining" job** (their `knowledge/start-mining`). Unify R1
-  re-arm + ontology build + R8 doc-tree + R11 config + R13 questions into one K1/`obs.task_table` job.
-- **R13 · Named research-starter playbooks** (their `curated-questions` + `research_agent_outliers` starter):
-  `outlier_entities` / `where_are_we_losing_money` one-click, routing via R9/R10. Deep-research sibling of overview.
-- **R14 · Popularity/usage as a unified notability signal** (their `TableMetadataPreviewPopularityData`):
-  `query_log_miner` + `obs.task_table` → per-table/column score feeding R11 visibility, R8 ranking, overview priority.
-- **R15 · Decision-grade output lenses:** opportunity-cost/benchmark ($ gap × volume) + named-outlier-entity
-  lens (surface extreme entities by ID + hedged "potential causes"). Extends ADA lenses + overview.
-
-Sequence: R11 → R12 → R14 → R13 → R15 (R11 the structural keystone; R11 & R15 highest leverage). **DON'T adopt:**
-polling transport, the 13.8 s silent LLM column-config spend (do R11 deterministically first), empty `instructions`.
-
-### 🧭 Session handoff — 2026-07-13 (later) · branch `agentic-platform` — the unification wave
-
-The two branches below (plus `2026-07-08-ui-ux-uplift`) are now **CONSOLIDATED onto one branch,
-`agentic-platform`** (NOT pushed), and the first unification wave shipped on top of it. Program +
-graduation policy + deletion roadmap: [`docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md`](docs/AGENTIC_PLATFORM_UNIFICATION_2026-07-13.md).
-Highlights: capability graduation (`capabilities.auto` + receipts + `obs.task_table` +
-`ada.progress_events` default-ON; `ask.resolve_first` + `ada.pin_canonical_metric` AUTO-elevated;
-explicit `=0`/override still wins everywhere); the superseded `grain.feasibility` post-hoc verdict
-REMOVED; CK-0.1 feel branch merged; CK-0.2 insight token streaming (`ask.stream_text`,
-`insight_delta` dual-emit + `LLMProvider.complete_streaming`); `aughor up` one-command setup +
-/health LLM readiness. **2026-07-14 LIVE-PROVEN** on the real workspace connection (glm-5.2:cloud,
-isolated stack): the Mytheresa month-wise question binds the right table at the honest grain with no
-fiscal_month invention (found-entity path ✓), and the insight streams as 21 `insight_delta` frames
-(after fixing instructor-partial's preamble fragility with raw first-brace jiter streaming — commit
-`5a7022d`). **NEXT:** guard deletions after a real-traffic soak of the resolution verdict; CK-1
-AG-UI seam; P7 decision run.
-
-### 🧭 Session handoff — 2026-07-13 (answer-quality / the "Mytheresa disconnects")
-
-Two branches off `main`, **both NOT pushed, NO PR yet**, all work flag-gated / default-off /
-byte-identical-when-off. `main` and `origin` are untouched.
-
-- **`ground-first-resolution` (3 commits) — the current, recommended direction.** A single
-  deterministic resolution runs BEFORE SQL generation, constrains it, and speaks through the whole answer —
-  *replacing* post-hoc guards instead of adding more. `aughor/semantic/answer_resolution.py` +
-  `_stream_chat` wiring (flag `ask.resolve_first`) + Phase-3 first deletion (skip the redundant semantic
-  `inspect`). **Measure-first** (bind the entity + read grain from the table that carries the asked-for
-  measure — caught a real-data bug where Mytheresa bound to a `brand_collaborations` decoy). **Validated on
-  the REAL luxexperience connection** (read-only). Full detail + resume steps:
-  [`docs/GROUND_FIRST_RESOLUTION_2026-07-13.md`](docs/GROUND_FIRST_RESOLUTION_2026-07-13.md).
-  - **NEXT:** (1) enable `ask.resolve_first` and confirm end-to-end on the real canvas with a *responsive*
-    LLM (the found-entity path still needs the coder; the abstain path is already proven LLM-free); (2) work
-    down the deletion roadmap (the other ~6 guards the verdict subsumes); (3) adopt the verdict in the deep
-    path via `build_data_understanding`.
-- **`2026-07-13-task-history` (8 commits) — the earlier answer-quality arc** (superseded in spirit by
-  ground-first, but independently useful): Rec 4 `task_history` spans-as-a-table (`obs.task_table`) + recovery
-  API/CLI + `aughor_ops` self-investigation connection; Rec 5 grounding-context receipt
-  (`ask.context_receipt`, backend + "Show grounding" UI + `_stream_chat` convergence); the grain-feasibility
-  disconnect fix (`grain.feasibility`, a post-hoc guard now superseded); and the time-series `computeSummary`
-  fallback fix. Detail in [`docs/PLATFORM_STUDIES_COMBINED_2026-07-11.md`](docs/PLATFORM_STUDIES_COMBINED_2026-07-11.md).
-  - **NEXT:** decide push/PR (or land selectively); Wave 2 #7 A1-P3 lifecycle · **#8 the P7 decision run**
-    (still the single biggest answer-quality lever; harness ready).
-
-**Process note (learned this session):** do NOT edit the API dev server while the user is using it —
-`uvicorn --reload` cancels their in-flight requests and makes the app look broken. Verify with deterministic
-tests + read-only real-data checks, not by driving the live app.
+Untouched. User analytics over `session_events`, per-user and per-org quotas, an admin view of
+every user's agents/runs/connections, RBAC on the agent plane, and audit of admin access to
+user traces. **Risk is policy, not code:** an admin reading a user's prompts is a real question.
+Default to visible-metadata, gated-payloads.
 
 ---
 
-**🚧 IN FLIGHT (2026-07-11) — the Databricks-OSS arc, phase 1: MLflow investigation tracing
-(`obs.mlflow`).** Study + full sequencing in
-[`docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md`](docs/DATABRICKS_OSS_AND_AGENTIC_PLATFORM_STUDY_2026-07-11.md)
-(Part A verdicts: MLflow=adopt · UC=interop-as-client · lakehouse connector family=build ·
-Redash=mine patterns; Part B: the agentic-platform direction — user-created domain agents over
-packs/volumes/charters with MLflow as the lifecycle plane). Phase 1 shipped on branch
-`2026-07-11-obs-mlflow-tracing`: the third backend of the one telemetry seam (`aughor/telemetry.py`) —
-autolog trace roots, node spans via the existing `node_span` seam, guarded SQL as `TOOL` spans,
-`tags.investigation_id` search; `mlflow-skinny` client (the full distribution would downgrade
-pandas/cryptography in the lock), compose `obs` profile server on :5001, cooldown-retry init,
-autolog unpatch on flag-off. Off by default = byte-identical. **A1-P2 also shipped: the P7
-bake-off instrument** — `evals/model_bakeoff.py` runs candidate coder models through
-`mlflow.genai.evaluate` with deterministic scorers only (`evals/mlflow_scorers.py`: the golden
-execution-accuracy comparator + the Trust-plane guard battery + exec-success), one env-isolated
-subprocess arm per model, tokens/latency from kernel metering, comparable runs in the
-`aughor-bakeoff` MLflow experiment + a printed ranking. LIVE-verified (glm-5.2:cloud, 2 questions:
-exec_acc 0.85 · trust 1.0 · 7.6k tok/q). **P7 itself is now one command:**
-`uv run --extra observability python -m evals.model_bakeoff --models "glm-5.2:cloud,<candidate>"`.
-**B4-P1 slices 1+2 also shipped: user-defined agents** (flag `agents.user_defined`) — the Agent
-entity (`aughor/custom_agents/`: model + `agents.db` store + contextvar), CRUD under
-`/agents/custom`, `/ask?agent_id` binding (pinned instructions lead the quick-path prompt
-rules_block-style; document retrieval scoped to the agent's bound docs, fail-closed: an agent
-with none sees none; connection binding wins, conflicting explicit connection → 409; an `agent`
-SSE receipt opens the stream), **and the builder UI**: the Intelligence-rail **Agents** panel
-(`web/components/AgentsAdminPanel.tsx` — roster + create/edit form with connection select +
-document multi-attach + enable toggle), the composer agent picker (ChatPanel → `agent_id` on
-/ask), and the `AgentBadge` "Answering as …" receipt on each turn. **LIVE-verified end-to-end**
-(flag flipped at runtime, a Churn Analyst created + asked → agent receipt → answer → Trust
-Receipt; panel screenshot-verified, 0 console errors). **Slice 3 (deep path) shipped too**: the
-persona persists in graph state (`AgentState.agent_id`) so a plan/clarify-gate **resume
-re-activates it** (the feedback door reads it via `graph.read_checkpoint_values` — resume never
-passes through /ask; fail-open, never blocks a resume), the agent brief leads the ADA synthesis
-prompt, and deep document retrieval was already agent-scoped (it routes through
-`build_external_context_section`). **Slice 4 (pack bindings + schema scoping) shipped**:
-`UserAgent.schema_scope` (the agent answers within its schema; a conflicting explicit schema is a
-409 — live-verified) and `UserAgent.pack_ids` — a pack **preference** that restricts specialist-pack
-selection to the agent's packs when it runs, never a deploy-gate bypass (the pinned-binding
-requirement in `packs/intake.py` applies unchanged; an agent bound to an undeployed pack steers
-nothing rather than guessing). Builder form gained Schema scope + Expertise packs. **Deliberately
-deferred — per-agent ledger crystallization**: an agent bound to a connection inherits that
-connection's crystallized resolutions, which is the correct default; partitioning the Ambiguity
-Ledger per agent needs a scope-column schema change + a product decision (do two agents on one
-connection WANT different metric readings?) — revisit with A1-P4. **Slice 5 (measured agents)
-shipped + LIVE-verified**: per-agent GOLDEN QUESTIONS (`user_agent_goldens`, CRUD under
-`/agents/custom/{id}/goldens`, read-only reference SQL enforced) + `POST
-/agents/custom/{id}/evaluate` — generates SQL AS the agent with the current coder model,
-executes generated vs reference on the agent's connection, compares result sets
-deterministically (`user_agents/quality.py`, no LLM judges; order/type tolerant, a richer
-correct answer passes), stamps `last_eval` (the "n/m passing" chip on the roster); the builder
-gained a Goldens editor + Run-evaluation (live: golden → evaluate → 1/1 passing → stamped,
-glm-5.2:cloud). NEXT: auto-eval-on-edit (async suite run after instruction/document PATCHes),
-the uploaded-PDF exit-criterion run (needs Qdrant + embedder live), A1-P3 lifecycle, then the
-Part-A lakehouse connector family as its own PR.
+## 4 · Decided AGAINST — do not re-propose without new facts
 
-**🚧 IN FLIGHT (2026-07-11) — E6 item (1): the MLflow-underneath Agent Workspace**, branch
-`2026-07-11-mlflow-agent-workspace` (own PR off main, per E6's each-its-own-PR sequencing). Five
-slices, all flag-gated / default-off, full unit suite green (2660), live-verified end-to-end.
-**(1)** `agent_id` is a first-class `investigations` column (additive Migration(3), persisted from
-the active-persona contextvar) — per-agent run history is joinable (the E1/E5 schema fix).
-**(2)** MLflow traces carry `mlflow.trace.session` / `mlflow.trace.user` + an `agent_id` tag,
-ambient from request-scoped contextvars (new `session` contextvar pinned by an `/ask` stream
-wrapper) — MLflow's Sessions / user / per-agent / cost views populate with no graph threading.
-**(4a)** `GET /agents/custom/{id}/observability` — per-agent run history + optional MLflow trace
-stats (count/errors/tokens/cost/latency, filtered by the `agent_id` tag), degrading to
-history-only when tracing is off (B3's one-directional rule). **(4b)** the **Agent Workspace**
-(`web/components/AgentWorkspace.tsx`) — one perspective-switched surface: **Overview** (native
-cards over the observability endpoint — MLflow stays backend-only, the "native cards first"
-decision), **Manage** (the existing builder), **Fleet** (the built-in fleet folded in; Agents +
-Fleet are now two deep-links into one workspace). **Deferred by that decision**: per-agent MLflow
-experiments (slice 3 — only needed for iframe deep-linking; feasible via context-local
-`set_destination`) and embedded iframe views (slice 5 — E1's no-per-user-auth caveat). NEXT per
-E6: (2) Learning Receipt + Memory layer, (3) Capabilities Auto-mode, (4) double-texting +
-reviewer-loop; lakehouse connectors queued in parallel.
+### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
 
-**NEXT (queued 2026-07-11) — the post-head-to-head backlog.** The Databricks Genie head-to-head
-(same question, same bakehouse data) drove two shipped arcs (see §2); what remains, in leverage order:
-1. **P7 — pin a frontier `coder` model** (ops/config, non-code). Every remaining rough edge —
-   intake variance, flat narrative prose, missed enumerations, run-to-run drift — is the
-   current glm-5.2 planner. Groq + Together keys are configured; one model id away.
-2. **Flip the repo public** (owner, one click) + the §6 post-flip checklist (most importantly
-   enable private vulnerability reporting — SECURITY.md promises it). OSS-readiness is merged.
-3. **Narrative beat generation in the thinking trace** — first-person beats ("I found a
-   critical issue!") between the nested query steps. Deliberately deferred until after P7
-   (it's LLM prose quality; the structure is already shipped).
-4. ~~**Glossary** + document stores per-connection/schema scoping~~ — **glossary DONE 2026-07-21
-   (#193, `task_170ac04a` closed)**: canonical-on-write / tolerant-on-read via
-   `tools/table_names.resolve_in`, no connector changes and no data migration. **Documents remain
-   global** — same treatment still to do. Four glossary follow-ons stay open (Qdrant namespacing,
-   `_learn_from_exploration`, dbt key form, `compute_fingerprint`) — see §0.
-5. **Live verification pass** on the repaired canvas: criterion-complete tie note (all three
-   \$3.00/txn franchises), daily temporal grain, humanized chart labels — all shipped, each
-   needs one fresh Deep run to confirm visually.
+An Aughor agent is **one record** — a scope and a stance — with no producer/consumer relation
+between its parts, so there is no second node for an edge to terminate on. Evidence: OpenAI's
+Agent Builder canvas shut down; **Flowise sunset** citing *"rigid workflow low code quickly hits
+the limit"*; Sierra and Decagon explicitly rejected flowcharts; Copilot Studio keeps a **form**
+for the agent and reserves its canvas for conversation flow. Licence was never the issue
+(`@xyflow/react` is MIT and drives four canvases here).
 
-**✅ SHIPPED (2026-07-09) — Deep-Analysis quality backlog COMPLETE (P1–P6) + interactive clarify + store hermeticity.**
-The 2026-07-09 audit's remaining backlog is fully built (all flag-gated, **default-off byte-identical**;
-full study + per-item detail in [`docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md`](docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md)).
-Three PRs (review + merge pending): **[#123](https://github.com/sidhasadhak/aughor/pull/123)** P1–P6 ·
-**[#124](https://github.com/sidhasadhak/aughor/pull/124)** interactive clarify (stacked on #123) ·
-**[#125](https://github.com/sidhasadhak/aughor/pull/125)** store hermeticity (off main).
-- **P1** canonical-metric pinning at ADA intake (`ada.pin_canonical_metric`) — a governed metric supersedes a
-  run-varying LLM formula (fail-open: distinctive-token match + bare-substitutable-aggregate + dry-run), and
-  crystallizes to the Ambiguity Ledger. **P6** hermetic **end-to-end answer-quality gate** locking every
-  deterministic gain (`tests/integration/test_ada_ground_truth.py`, no live LLM).
-- **P2** live per-dimension scan progress (`ada.progress_events`) — a NEW mid-node→SSE channel so a long scan
-  reports "scanning brand · 3/6…" instead of a silent spinner. **P3** fraction↔percent prose consistency
-  (self-grounded). **P5** adversarial HIGH→MEDIUM cap exercised + a materiality-gated tier (`ada.adversarial_high_stakes`).
-- **P4** metric-ambiguity RESOLUTION + the deep-mode clarify UX: ledger crystallization on the pin, the de-trapped
-  banner, AND the **full interactive clarify** (`ada.clarify_gate`) — a real interrupt/resume gate (sibling of the
-  plan gate) that pauses on a governed-vs-parsed metric divergence, asks with probed previews, binds + remembers the
-  choice (source=user, hard-bound on later runs). **A live pass** on the luxexperience dataset verified P2 end-to-end
-  and surfaced + fixed a real probe bug (metric-alias stripping).
-- **Store hermeticity (`task_213affac`)** — the glossary + metrics **file** stores now honour
-  `AUGHOR_GLOSSARY_PATH`/`AUGHOR_METRICS_PATH` (conftest → temp copy), so the test suite can no longer mutate the live
-  `data/` files; the full suite leaves them byte-identical.
-- **Remaining from the audit:** only **P7** (pin a stronger `coder` model for real investigations — an ops/config
-  decision, non-code).
+**What changed, and what did not:** automations *do* have a producer/consumer relation now
+(VA-4a's bindings), which is exactly why VA-4b/4c/12 built that canvas. The refusal was never
+about canvases in general — it was about drawing edges a record does not have.
 
-**✅ SHIPPED (2026-07-08) — external-sources study → four features, merged to main.** Studied the SOTA
-data-agent research (DocETL · Palimpzest · Hasura/PromptQL · the DataAgentBench benchmark) and translated
-it into concrete capability. All flag-gated, **default-off byte-identical**, each built-wired-tested and put
-through a fresh-eyes review. Full study + per-item detail:
-[`docs/EXTERNAL_SOURCES_STUDY_AND_RECOMMENDATIONS_2026-07-07.md`](docs/EXTERNAL_SOURCES_STUDY_AND_RECOMMENDATIONS_2026-07-07.md).
-- **Guarded extraction** (`semops.guarded_extract`) — the semantic extract operator validates each pulled
-  value against an inferred type and re-extracts off-type cells (DocETL gleaning) — the DAB axis where every
-  frontier model scores 0%.
-- **Ill-formatted join-key reconciliation** (`join.key_reconciliation`) — when a value-domain mismatch fires,
-  deterministic normalizations (`bid_123`↔`bref_123`) reconcile same-entity keys, in-source and cross-source.
-- **Champion cost/quality cascade** (`semops.champion_validate`) — re-judge a sample of the cheap tier's
-  filter verdicts on the strong model, escalate only on disagreement (Palimpzest/LOTUS, label-free).
-- **Cross-source federation** (`federation.remote_join` · `federation.planner`) — answer a question spanning
-  2+ databases end-to-end: a deterministic selector picks the sources → an LLM plans per-source sub-queries →
-  the batched-foreach engine joins them N+1-free (self-healing keys, cap-lifted fetches, N-source chains,
-  driver auto-selection) → `/ask` auto-federates a plain chat question. New: `aughor/connectors/remote_join.py`,
-  `aughor/agent/federated_planner.py`, `aughor/agent/connection_selector.py`; `POST /query/cross-source-join`,
-  `/query/federated-answer`, `/query/auto-federated-answer`. Suite 2663 → **2744 green**.
+### 4.2 · Langflow — REFUSED as a framework (2026-08-30)
 
-**✅ FOLLOW-ON RECS (2026-07-08, on open PRs) — Rec 4 + Rec 6 + Rec 7 complete the study (all 7 built).**
-- **Plan-as-program + artifacts** (`plan.program`) — an investigation as a deterministic, replayable typed
-  PROGRAM: the LLM emits the plan once; a runner executes DATA (grounded SQL) + SEMOP steps over named ledger
-  artifacts, validating each step. Includes DATA-reads-artifact dataflow, live `/ask` wiring, and
-  `closed_loop` trusted-plan replay. `aughor/agent/program_planner.py`, `semantic/trusted_programs.py`;
-  `POST /query/plan-run` · `/query/plan-answer` (PR #119, PromptQL transfer).
-- **Connector-capability contract** (`capability.contract`) — a per-dialect footgun descriptor
-  (`db/capabilities.py`) that seeds an "AVOID on {dialect}" line into the SQL-writer prompt and names the exact
-  unsupported construct in the repair prompt (fewer dry-run round trips; Hasura-NDC).
-- **RBAC row-level policy** (`rbac.row_policy`) — per-role row filters AST-compiled into the WHERE at **every**
-  connector's execution gate; triple-gated (identity + `RBAC_SSO` + flag) and **fail-closed**
-  (`rbac/row_policy.py`, `sql/rls.py`; Hasura permissions). Rec 6 + Rec 7 = PR #120, suite **2773 green**.
+Studied on the user's question. Full study: git history, `LANGFLOW_STUDY_2026-08-30.md`.
 
-**⏭️ NEXT SESSION — start here:** [`docs/SESSION_HANDOFF_2026-07-07.md`](docs/SESSION_HANDOFF_2026-07-07.md)
-lays out the state, the decision, and the ready-to-build. Design specs remain
-[`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)
-(probe-and-repair + the ledger) and
-[`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md) (the umbrella).
+- **Its OAuth story is Composio.** Langflow's own Google OAuth component was **deprecated in
+  1.4.0**; docs route to the Composio bundle keyed by `COMPOSIO_API_KEY`, with *"service provider
+  authentication managed through the Composio platform"*. "Adopt Langflow for Gmail/Slack" means
+  "sign up for Composio" — a buy decision about a connector runtime, independent of canvases.
+- **Its workflow ceiling is documented by its own vendor.** If-Else and Loop exist and are
+  *"not compatible"* with each other, and branches cannot be merged — *"any merging component
+  will wait for branches that has been stopped by the conditional router"*. That is the Flowise
+  ceiling in §4.1, restated.
+- **Its governance posture is the opposite of ours.** Its docs: *"These settings do not provide
+  full user isolation"*; default CORS *"can be a security risk in production"*; tracing
+  *"process-wide, not per user"*; no audit logging or approval gate documented.
+- **Structural:** every Langflow component is an executable node. Our `Effect` **references
+  something that already exists** — *"no fourth action concept and, critically, no second write
+  path."* Importing their model puts a write path outside `govern/`.
 
-**SHIPPED (2026-07-06/07) — the SOMA-leverage arc, merged to main (PR
-[#112](https://github.com/sidhasadhak/aughor/pull/112), `1e1243b`; live-wiring fix PR
-[#113](https://github.com/sidhasadhak/aughor/pull/113)):**
-- **B1 probe-and-repair** ✅ (eval) — deterministic AST-diff disagreement extraction + deterministic-first
-  probes + 4-gate evidence-typed repair, **monotonic by construction**. Finding: the residual Spider2
-  misses are AmbiIntent grain-of-intent that execution probing structurally can't resolve → the durable
-  answer is the ledger, not more inference machinery. Doc: `docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`.
-- **The Ambiguity Ledger (I1/I4/I6)** ✅ (product) — resolutions crystallize per connection (idempotent
-  burn-down, override-wins verdict>user>probe), read back as the leading plan-time prior on the **live**
-  answer path (`build_corrections_section`), user clarify + reviewer verdict write sources, surfaced on the
-  Trust Receipt, soma clarify chips carry result previews. **Burn-down validated** (resolved-once →
-  served-N through the real seam). Doc: `docs/AMBIGUITY_LEDGER_2026-07-06.md`.
+**Borrowed instead:** B1, B2 (§3.3). **Bought instead:** the connector runtime (§3.4).
 
-**The hard-won conclusion (measured, not asserted, still governing):** on glm-5.2 @ temp-0 the endpoint
-has a **±7–10-instance noise floor per full run**, so every cheap inference-time lever landed within
-noise (4th confirmation of the June meta-pattern). What the evidence supports is now BUILT: B1's
-monotonic evidence-gated repair, and the ledger's amortization (which converts scarce model capability
-into durable substrate). **The one remaining accuracy lever is a stronger inference endpoint** — a
-distribution-level change the ledger complements but cannot replace. Cheap-lever whack-a-mole is done.
-Remaining ledger polish (n_signatures-on-receipt, corrections→ledger consolidation) is low-priority.
-**Never submit to the leaderboard, and never send the Secure-Data-Share email, without explicit user permission.**
+### 4.3 · Arc OA — Langfuse + n8n — RETIRED (2026-08-29)
 
-**Part 2 of the architecture review — SHIPPED through Wave 3 (PRs #101 → #100 → #102 → the U9 PR).**
-- **Wave 1** four enforced web CI gates (design-token · formatting · raw-element · tsc) + one-palette.
-- **Wave 2** renderer registry · chart source-footers · `StatusChip` · the `<Workspace>` shell + the
-  Operations & Data workspace folds (live-verified).
-- **Wave 4** all three AL planes (Trust `aughor/trust` · Capability `aughor/pipeline` · Semantic
-  `aughor/semantic/context.py`) built, conformance-tested, AND live-wired flag-gated; one shared
-  `sql_generate`; the `metadata` Capability domain. Live-verified (`/query/capability-answer`).
-- **Wave 3 (2026-07-05):** **NOM-11** `ExecutionScope` (4 router call sites → one value object, −62
-  lines, salvage/resume sibling-schema leak fixed) · **U10 first slice** `SemanticContract` (+
-  `SemanticContext.contracts()`, catalog ∪ ontology deduped on `/query/semantic-context`) · **U9
-  slices 1–2** — the web report type `ADAReport`→`AnswerReport` AND the wire rename
-  `ada_report`→`answer_report` (SSE event + field, all 3 emit sites, lockstep across web + MCP client,
-  old name kept `@deprecated` one release; **live-verified**: real SSE capture emits `answer_report`
-  with zero old-name leaks, and a fresh Deep run rendered end-to-end in the browser, 0 console errors).
-- Plus **DATA-06 depth** + the react peer-dep `overrides` fix (PR #100 — strict `npm ci`, README
-  install simplified back to plain `npm install`).
-Full log: [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).
+Dropped at the user's direction: *"we are not going that way again."* The n8n rule stands:
+arm's-length only, users run their own. **Keep known:** `telemetry.py`'s Langfuse backend is
+silently dead — retiring the program did not repair it, so treat any Langfuse surface as
+non-functional rather than as telemetry someone is reading.
 
-**✅ U9 follow-ups DONE (2026-07-05, branch `2026-07-05-u9-followups-internal`, 3 themed commits).**
-The internals no longer say ADA: **(1a)** renamed `AgentState.ada_report`→`answer_report` (every
-graph/router/cli state read) + backing TypedDicts `ADAReport`/`ADARecommendation`→`AnswerReport`/
-`AnswerRecommendation` + the LLM `ADARecommendationModel`→`AnswerRecommendationModel`; **(1d)** web
-`ADARecommendation`→`AnswerRecommendation` (+ `@deprecated` alias, incl. the duplicate local interface
-in `InvestigationReport.tsx`); **(1c)** de-ADA'd the trust-receipt route `/ada/…/receipt`→
-`/answer/…/receipt` (canonical) with `/ada` kept as a `deprecated=True` delegating alias one release,
-+ surgical `api.gen.ts` add. **Verified:** full suite 2467 pass, ruff 0, tsc + 3 web gates green, both
-receipt routes 404 identically (TestClient), no live `data/` writes.
-- **Deliberately NOT done — two judgement calls:** *(1b) strip `hypothesis_id`* — **skipped**: it is
-  load-bearing, not an ADA leak. The web actively reads it (`ReportView` links findings↔hypotheses,
-  `HistoryDetailPanel`/`SecurityAuditPanel` display it) off the classic `report`/`score` events — it is
-  the evidence/citation model. Stripping breaks real UI. *Deprecated `ada_report` wire alias drop* —
-  deferred by its own "after one release" qualifier (added last release; still soaking).
-- **Untouched by design (persisted identity):** the artifact `kind="ada_report"` + `natural_key="ada:…"`
-  receipt keys (looked up by natural_key only; renaming orphans persisted rows).
-- **New finding → separate follow-up:** `web/lib/api.gen.ts` is **~5,700 lines stale** (missing ~40
-  routes: `/ask`, `/jobs`, `/rbac`, `/packs`, `/verify`, `/query/*`, …) → `npm run gen:api` isn't
-  CI-wired. Catch it up + add a codegen CI gate in its own PR (not nomenclature churn).
-**✅ U10 invasive half — MERGED (PR #108, 2026-07-05).** The two redundant metric-unification types
-(`canonical.CanonicalMetric` ∥ `semantic.SemanticContract`) now collapse onto one at the root, behind
-`semantic.contract_live` / `AUGHOR_SEMANTIC_CONTRACT_LIVE` (default off = byte-identical). Contract grew
-the third `"profile"` source + `from_north_star_metric`, a `rank` mirroring `_SOURCE_RANK`, an
-`injectable` property equal to legacy `CanonicalMetric.verified` byte-for-byte, + a shared
-`dedup_by_rank`; planning (`unified_metric_grounding`/`canonical_metrics_block`) + display
-(`/query/semantic-context` contract list) repointed; 2501 green.
+### 4.4 · A TypeScript agent runtime — REFUSED
 
-**✅ P-A+ wider parallel waves — MERGED (PR #109, 2026-07-05).** The parallel-explore win was capped at
-1.48× by the *planner's* sequential bias (deep `depends_on` chains → narrow waves). Under
-`explore.parallel_subq` (byte-identical off): a flag-only wide-DAG decompose guidance + a deterministic
-`_normalize_depends_on` (a `landscape` can't depend on a sibling) + `_wave_schedule` observability.
-**Measured:** decompose A/B (real LLM) — mean max wave width **1.17 → 3.67**, #waves **5.83 → 4.00**;
-executor A/B (real executor, fixed leaf latency) — baseline serial+chains 12.0s → wave+chains 10.7s
-(**1.12×**, executor alone) → wave+wide **8.0s (1.50×)** — the prompt is what unlocks the executor.
-
-**⏭️ Immediate next — now sequenced inside the 10x + Spider 2.0 program (see the block at the top of §0):**
-1. **Continue P-A** — ✅ the **ADA WHY-lens wave** shipped (2026-07-07, flag `ada.parallel_why_lenses`,
-   default off): the forward-chained WHY lenses (interaction ∥ benchmark ∥ drill) — independent, depend
-   only on the WHERE/WHY summaries — now run as one concurrent wave, byte-identical merge (endpoint-gated
-   A/B for the wall-clock win). Joins the shipped `ada.parallel_phases` + `explore.parallel_subq` wide-DAG
-   waves. Investigate-mode multi-hypothesis testing is dormant in the live graph (skip until reactivated).
-   ✅ **P-B** also shipped (2026-07-07, flag `preflight.parallel`, default off): `plan_queries`' four
-   independent plan-time retrievals (schema ∥ KB ∥ causal ∥ corrections) now run concurrently,
-   byte-identical prompt — a near-free deterministic wall-clock win (no endpoint A/B needed). *→ program WS1.*
-2. ~~**`web/lib/api.gen.ts` is stale** — regen + add a codegen CI gate.~~ **✅ DONE** (WS4, PR #111):
-   `api.gen.ts` regenerated (16,143 lines) + offline `scripts/dump_openapi.py` + the `codegen` CI gate
-   (`ci.yml` "API client · codegen drift").
-3. ~~**Retire `CanonicalMetric`** — repoint the `semantic/compiler.py` structured consumer (U10 tail).~~
-   **✅ DONE** (2026-07-07, PR #114): the compiler's 3 resolution sites now call `resolve_planning_metrics`,
-   which under `semantic.contract_live` resolves the one `SemanticContract` (via `_ContractMetricView`,
-   mapping the compiler's `verified` gate to the contract's `injectable` == legacy field), byte-identical
-   off. Proven at the resolver boundary AND the `synthesize_sql` binding path. Remaining catalog-only
-   consumers (`build_metrics_block` text / `/health-scorecard` / `/metrics` CRUD) are out of scope.
-*Deferred with reasons (see the log): `CanvasWorkspace` re-express (rich header + eager-mount don't fit
-the `<Workspace>` primitive), U3b (legacy `ReportView`), U7-part2 (needs a synthesis-anchor experiment),
-NOM-07 (`PlaybookEntry` doesn't fit the scheduled-check mold; touches persisted models).*
-
-**Also queued — parallelize the investigation loop with LangGraph's map-reduce / multi-agent primitives.**
-The womenswear-returns investigation took **~8.4 min** — not from slow SQL (dimension queries
-already run in parallel via `_parallel_execute_safe`), but from **~7–12 sequential frontier-model
-LLM calls across serial phases**. We're on LangGraph 1.2 with the `Send` map-reduce API *available
-but unused*, and our state already uses `operator.add` reducers (fan-out is low-friction). First
-task: **map-reduce the explore sub-question chain via `Send`** (independent sub-questions run in
-parallel, bounded by the P6 budget governor), then hypothesis testing and cross-section. Prefer
-**deterministic fan-out over an LLM supervisor/swarm** — consistent with our deterministic-first
-thesis. Full analysis + plan + guardrails: [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md).
-
-**✅ Shipped 2026-07-05** (branch `2026-07-05-investigation-quality`, both investigation-framework
-follow-ups as one additive, flag-gated feature `AUGHOR_CAUSAL_DRILL`; default-off = byte-identical;
-full suite 2475 green): **metric-aware dimension priority** — `_prioritize_dimensions(causal_first=)`
-floats diagnostic dims (reason/condition/defect/fit) ahead of the descriptive taxonomy so they survive
-the per-phase query cap instead of falling to "other"; **auto-drill WHERE→WHY** — after the rate scan,
-`_causal_split` peels event-only dims (tautological as a rate) into the existing (live-proven)
-`_run_composition_lens` WHY lens, emitting a "Mechanism / Reason Scan — Why" phase instead of stopping
-at WHERE. Reuses `_is_event_dim`/`_run_composition_lens`; no graph change; fires only on a clean
-top-level scan. **LIVE-VALIDATED** on the canonical womenswear-returns question (real `/investigate` on
-the `workspace`/luxexperience connection, `AUGHOR_CAUSAL_DRILL=1`): routed investigate (conf 0.95);
-`cross_section` localised WHERE ("40.5% luxury-segment platforms vs 27.0% off-price"); the auto-drilled
-`cross_section_mechanism` WHY phase fired ("size/fit issues = 42% of all returns, 2× the next reason");
-synthesis headline led with BOTH — "driven by luxury platform segment and size/fit issues, **not brand
-or tier**" (item 1's causal dims surfaced over the descriptive ones). No live-store pollution
-(write-stores isolated).
-*Follow-on (same branch): the serial-drill feature above is **inert when `ada.parallel_lenses` is on**
-(the live default) — so its causal-relevance idea was landed where it actually runs: **causal-relevance
-ranking in the WHY composition lens** (`_select_why_dims` in `_run_composition_lens`). The multilens WHY
-composed every event dim uniformly (womenswear → 4 findings, 3 of them ops noise: carrier/refund-method
-scored non-significant); now it leads with the causal dims (reason/condition) and drops the pure-ops
-dims (`_OPERATIONAL_DIMENSION_KEYWORDS`) when a causal dim is present — fail-safe keeps all when nothing
-looks causal. Improves BOTH paths (shared lens). **Real-path verified** (multilens womenswear run: WHY
-4 findings → 2, ops noise gone, summary leads with size/fit).
-**✅ #2 WHY×WHERE interaction lens** (flag `ada.why_where_interaction`, default-off): after the
-parallel WHERE+WHY lenses, `_run_interaction_lens` forward-chains one LLM-planned query crossing the
-leading reason with the WHERE lens's high-impact segment (the reason's share of the subject's returns
-by that segment) — turning two independent findings into the actionable "does the cause concentrate
-where the metric is worst?" verdict. Runs only when both a WHERE and a WHY finding exist; fail-open.
-**Real-path verified** (womenswear, both flags on): 5th phase crosses size_fit × platform segment
-WITHIN womenswear → luxury 42.59% vs off-price 41.83% → honest "UNIFORM: broad product-level sizing
-issue, not a luxury concentration".
-**✅ Deepen-the-WHY lenses** (flag `ada.why_deepen`, default-off): `_run_reason_benchmark_lens` (is the
-leading reason abnormal for the subject or a brand-wide baseline? — reason share across subject + peers)
-+ `_run_reason_drill_lens` (which brands/products drive it? — reason returns composed by a finer product
-dim). **Real-path verified** (womenswear): benchmark → size_fit 42.2% squarely in the 39.6–44.5% peer
-range (brand-wide baseline, not womenswear-specific); drill → size_fit spread across 70 brands, top ~2%
-(systemic, not a few-brand problem). With #1/#2 the four WHY additions conclude a coherent, honest,
-actionable story: womenswear's high returns are a **systemic, brand-wide, segment-uniform sizing
-problem → platform-wide fit initiative**, not brand/segment/category targeting — every verdict honestly
-"uniform/spread", never a fabricated concentration. Multilens forward-chain refactored to compute the
-WHY phase once and fan interaction+benchmark+drill off it (`_forward` helper, fail-open).*
-
-**⏭️ REWORK — confidence-triggered activation of the deeper WHY lenses (`ada.why_deepen` /
-`ada.why_where_interaction`).** Live-run assessment (2026-07-07, luxexperience) confirmed these lenses
-add *genuine, decision-changing* value — the peer benchmark actively busts the "size_fit is high for
-womenswear" premise ("it's high everywhere across all categories"), and the drill proves the fix is
-systemic (70 brands, top ~2%), not product-specific. **But they stay default-OFF** because each adds an
-LLM-planned query (~2–3 min extra on a throttled endpoint) and, on data where WHERE/WHY already converge,
-they mostly confirm "within noise." Decision (with the user): do **not** blanket-enable — instead build an
-**activation policy that fires them only when the user needs more confident analysis.** Design space to
-work through: (a) an explicit **"deepen / high-confidence" affordance** in the answer UI (opt-in per run);
-(b) a **deterministic trigger** — run the deepen lenses only when the WHY finding is strong enough to be
-worth pressure-testing (a leading-reason share above a materiality floor) AND the cheaper lenses left real
-ambiguity, so a clean converged answer skips them; (c) reuse the **ReFoRCE confidence-tiered triggering**
-idea ([[reforce-agent]]) — probe only the hard/ambiguous minority. Gate the rollout on the parallel-WHY
-wave (`ada.parallel_why_lenses`, PR #115) landing so the added latency is capped, and on the two 2026-07-07
-precision fixes below. Prereq for a default-on-for-cross-sectional-why decision.
-
-**Shipped 2026-07-03** (branch `2026-07-02-ada-temporal-intake-grain`, merged; deterministic, full suite
-green — the **Deep Analysis report-quality arc**, see the "What we've built" entry below):
-**(B)** event-rate-aware temporal-axis recovery wired into `ada_intake` itself so *every* path recovers
-a join-reachable population date instead of `date_column=NONE`; **(A)** the WHERE/WHY/WHEN lenses share
-**one canonical grain** (the metric table's unit, a denominator-pinning plan directive) so a report can't
-show per-order 40% next to per-line-item 76%; **consistent percentages end-to-end** (a backend per-column
-unit hint → chart axis, labels, key numbers all read "41.0%"); **intent-driven chart selection**
-(composition → donut, trend → line, ranking → bar); **one frontend inference source of truth**; **100%-
-stacked + small-multiples**; and the **Source-data panel** (data + SQL 50/50 + Query Builder) on report
-charts. See `docs/CHART_SELECTION_GUIDE.md` + `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md` §0e.
+VoltAgent's runtime is TS. Aughor's is Python and holds the ontology, the guards and the
+governance plane. Adopting the runtime would mean two answer paths. What was imported from that
+study is the *feature inventory*, not the stack — Arc VA is the result.
 
 ---
 
-## 1 · What we set out to build
+## 5 · Sequencing
 
-An **autonomous data-analysis platform** that replaces the dashboard-and-analyst loop. The mandate (see [`README.md`](README.md)):
+```
+NOW
+  B1  typed bindings              (small — closes the weakest seam in VA-12/13)
+  W1  `when` guard on an effect   (small — largest expressive payoff)
+  B2  dry-run an automation       (small — reuses evals' inert dispatch)
 
-- **Connect any warehouse and explore it continuously in the background** — no prompts, no dashboards to maintain.
-- **Build a living business ontology from the data** — entities, relationships, metrics, lifecycles — with no docs required.
-- **Answer hard analytical questions with evidence** — citations, real numbers, and statistical confidence; "numbers you can act on," not plausible-looking ones.
-- **Know *when* matters** — Adaptive Temporal Scope discovers the right window (regime, cost, sufficiency) instead of `MAX(date)`.
-- **Surface intelligence at three altitudes** — Domains (raw) → Hub (structured) → Briefing (narrative) — all over one trusted substrate.
-- **Be trustworthy and deployable** — deterministic correctness guards, audit/lineage, secrets at rest, capability tiers.
+NEXT — gated on §6.1
+  C1  evaluate Arcade vs Composio (self-hosting · token custody · defer-to-our-gate)
+  VA-9d  MCP consumer             ← the delivery mechanism for C1
+  VA-11  connection record + catalog, thin, over the vendor
 
-*No dashboards to maintain. No SQL to write. No analyst backlog.*
+THEN
+  W2  `for_each`                  (fan-out; wanted by "post per region")
+  VA-10  multi-user + admin       (hardening pass over everything above)
 
----
+LATER   W3 parallel steps · B3 flow-as-MCP-tool
+```
 
-## 2 · What we've built ✅
-
-### Wave K — the kinetic plane: declared, governed actions (2026-07-23, #201, `ba06f6d`)
-Scope + per-PR decision gates: [`docs/WAVE_K_KINETIC_PLANE_ARC.md`](docs/WAVE_K_KINETIC_PLANE_ARC.md). Closes Palantir's data→decision→**write-back** loop **without surrendering read-only safety on source data** — a "kinetic action" is an annotation, a side effect, or a governed read, never an INSERT/UPDATE/DELETE (the `sql/readonly.py` AST gate stays in front). All behind default-off flags (`kinetic.actions` · `kinetic.overlay` · `kinetic.agent_actions`), so `main` is byte-identical until switched on.
-- **K1 — declare.** `KineticAction` (typed params, **submission criteria whose authored failure messages are shown verbatim to humans AND the model**, side effects, risk tier defaulting fail-safe HIGH) declared as a per-connection ontology override (`target_kind:"action"`) and overlaid onto the graph at read time — version-controllable, survives fingerprint rebuilds. Malformed specs rejected at parse, never at execute. Resolves the three-way "action" naming collision (`OntologyAction` read-templates vs ActionHub `ActionTrigger` webhooks vs the new `KineticAction`).
-- **K2 — execute.** ONE governed executor (`kinetic/executor.py`): coerce params → evaluate criteria → graduated-approval gate → dispatch → audit. Criteria run **before** approval (a criterion failure outranks "needs approval") and **no side effect fires on any rejection**. Criteria use a safe restricted-predicate evaluator (ast-walk; calls/attributes/comprehensions structurally impossible), fail-closed. Extended `govern.guard/audit` with a backward-compatible `risk` override so a *dynamic* action's declared tier is honoured (unregistered would otherwise classify HIGH, making a declared LOW action demand approval). `POST /kinetic-actions/{id}/execute` → 200 / 422+authored message / 428 / 404.
-- **K3 — overlay.** The edits-as-overlay ledger: human annotations/corrections merged onto query results **at read time**, never mutating source. Clones the ambiguity-ledger/verdicts store idiom (SQLite, org+connection scoped) with the same override-wins authority — a machine edit never clobbers a human one. Grain = cell / column / table; merged via `_attach_caveats` into a new additive `QueryResult.annotations` channel. Survives refreshes by construction (the store is independent of the connection cache).
-- **K4 + K4b — propose.** The agent returns **structured** proposals, each dry-run validated (params + criteria) and **staged — never executed**; a human accepts and runs them through K2. Auto-invoked after deep-investigation synthesis (`answer_report["proposals"]`, riding the existing SSE event). The proposer binds the **strong** reasoner, not `fast` — proposing a governed action is judgment. **Proven live on free models only** (`:free` bindings, guarded to abort otherwise): valid typed-param proposals 3/3, correct abstention on criterion-violating and non-actionable cases.
-- **K5 — the surface.** `PUT /ontology/kinetic-actions/{id}` authors a declared action (validated at author time → 422, not a silent drop); `POST/GET /kinetic-actions/annotate|annotations`; and `web/components/KineticPanel.tsx` — a three-tab panel (Actions · Propose · Annotations) wired into the Intelligence workspace as the "Actions" layer. Approve drives the existing app-wide ApprovalModal (428 → `/approvals/allow` → retry). Browser-verified against the real API.
-- ~100 hermetic tests; suite **3697** at merge. Deferred and noted: K2b `query`-kind dispatch · K5 polish (inline annotate-this-cell, persisted proposal queue) · wiring `govern.guard` into the 9 pre-existing unenforced `_RISK` actions (Wave G).
-
-### The cost/correctness batch — five root-cause fixes (2026-07-23, #202, `817e9ec`)
-Began as "how long does $10 of credit last?"; measuring where every LLM request goes surfaced five defects.
-- **Streamed output cap.** #200 bounded LLM output on the **blocking path only** — the three highest-volume calls (quick headline, post-answer insight, deep synthesis) all *stream* and were unbounded. Also fixed: `budget = 1 if rate_limited` was a *floor* not a ceiling (defeating `max_retries=0`, the health check's contract), and streamed calls logged `role=""`.
-- **Fast-tier pin.** The per-agent model pin is a scalar contextvar that short-circuited the *role*, forcing **every** role — including the deliberately-cheap `fast` — onto the 550B model on job-borne runs (~10× on the most frequent call in a run). The implicit pin now skips `fast`; heavy roles still take it.
-- **Null-side GROUP BY guard.** New deterministic `group_by_outer_null_side` — the *semantic* twin of `self_ratio_tautology` — wired into the explorer emission gate, the interactive verifier, and the eval registry. Closes the parked "100% return rate" (proven an artifact on the real CSVs; the true ranking was **inverted**).
-- **Upload-resurrection tombstone.** A deleted uploaded schema/table silently returned if any backing file survived the delete. Reload now honours the tombstone, every delete tombstones (uploads too), and ingest lifts it.
-- **Deterministic evidence condensation.** Dropped the `fast`-tier `partitioned_reduce` synthesis digest: this evidence feeds synthesis, which *grounds* on it, so a model paraphrasing it was a fabrication surface. Now **0 LLM calls** and structurally impossible to alter a number synthesis will cite. (Left `aughor/llm/reduce.py` orphaned — removed separately.)
-
-### The briefing arc — six PRs off one screenshot (2026-07-21, #188–#193, `e716a00`…`ef887ef`)
-Full per-PR detail + the ops lessons in §0. Suite 3369 → **3444** (+75 tests).
-- **Trust plane (#188)** — the briefing response stamps `scope_key` and the client refuses a narrative that doesn't claim the scope it renders under; `_filter_by_schema` fails **CLOSED** (`SchemaScopeUnavailable`) instead of serving another schema's findings; trust-gate reasons grouped with counts; the React-Flow **argument-graph lens removed** (−1,241 lines, `@xyflow/react` retained for the cockpit).
-- **Number-format authority (#189)** — `aughor/util/format.py` is the one precision policy (prose `|v|≥1`→2dp, `|v|<1`→6dp; data cells keep 4dp), applied at BOTH ends: `rows_for_prompt` rounds on the way INTO the prompt, `round_long_decimals` at every persist/response boundary. Mirrored by `normalizeNumberPrecision` in `web/lib/format.ts`.
-- **Viz-config persistence (#190)** — `VizConfig` + a controlled `ResultChartCard`; pinned cards persist to `DashboardCard.render` via the previously-uncalled `PUT /cards/{id}`; card-less charts (ledger rows, digest tiles, KPI trends) to a new `viz_configs` store keyed by insight + `scope_key`. `<FindingDetail>` shared so "Numbers that moved" tiles expand in place.
-- **Ask this briefing (#191)** — a scoped side panel: one conversation pinned to `depth:"quick"`, grounded server-side in the cached brief (`ask.brief_context`, default off). Fixed a real gap — a quick `/ask` answer was never schema-scoped, which also broke user-agent `schema_scope` bindings.
-- **Brief subject (#192)** — the dataset's own `BusinessProfile` characterization now reaches the narrator; the org block is relabelled "ORGANIZATION reading this brief". A Netflix catalog no longer opens "LuxExperience has…".
-- **Glossary schema-scoping (#193)** — canonical-on-write / tolerant-on-read; closes `task_170ac04a`. `PUT /glossary/{table}[/{column}]?schema=`; the Catalog UI stops discarding the schema.
-
-### Trust-plane closure — WP-1 of the platform review (2026-07-12, branch `2026-07-12-wp1-trust-caveats`)
-Source: [`docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-1, the review's #1 finding: guard findings computed then dropped).
-- **1a — the caveat carrier.** `QueryResult.caveats` (additive, default `[]`): `execute_guarded` now attaches every guard finding the retry could NOT clear (deterministic-only mode + rejected fixes) instead of dropping it; ADA folds live caveats into `trust_caveat` (→ the existing HIGH→MEDIUM confidence cap now fires on live-detected findings); the program planner surfaces them as step warnings.
-- **1b — guarded monitors (flag `monitors.guarded`).** Create/update: AST mutation gate (unconditional) + best-effort dry-run bind check → explicit 422 instead of a silently-never-fires monitor (live-proven: rejected a real `DOUBLE×VARCHAR` bind). Run: deterministic id-arithmetic/fan-out probes attach a `caveat` to the fired alert (never rewrite, never block); alerts store migrated (v2, now on the migration framework); MonitorsPanel renders the caveat. **Live-verified end-to-end** on the workspace connection (SUM(id) monitor → alert + amber caveat rendered, 0 console errors).
-- **1c — gate coverage.** `__agent_eval_ref__`/`__agent_eval_gen__`/`__brief_metric_move__`/`__ground__` promoted into `_AUDITED_AGENT_LABELS` — model-generated + stored-SQL paths now pass the AST mutation gate (the `SELECT … INTO` class that slipped the keyword screen is blocked + proven by test). Golden `reference_sql` fails CLOSED on unparseable SQL (was: parse failure → accepted).
-- **1d — recorded read-only posture.** `DatabaseConnection.engine_read_only` (True/False/None-unknown): remote DuckDB now ATTEMPTS read-only and records the fallback instead of silently opening read-write; Postgres stamps True.
-- **1e — E1 on live answers (flag `trust.e1_live`).** The E1 function-semantics battery (date-boundary/lexicographic/text-numeric) runs on the FINAL SQL of chat answers (headline caveat + receipt key) and every guarded execution (caveats) — previously validate-endpoint-only. WARN-only, never rewrites.
-- **1f — default promotion (the LEVERAGE step, branch `2026-07-12-wp1f-trust-promotion`).** `FLAG_DEFAULT` now carries `trust.verify_live` / `trust.e1_live` / `trust.verify_facade` = True after a deterministic live A/B over 1,837 real executed statements (`workspace` + `fixture`, verdict='safe'): **0** would-be verify_live blocks; the E1 live checks now read **real column types** (new cached `connection_column_types`) so a DATE column named like a timestamp (`acquired_at`) is no longer false-flagged — the one heuristic false positive vanished, leaving only genuine timestamp-boundary footguns. Rode-along fix: the executor keyed the col-types cache on a non-existent `connection_id` attr (→ `""` for every conn, cross-serving types) — corrected to `_connection_id`, empty ids skip the cache. Operators can still disable via env `=0` / runtime override. Live-verified: `/query/validate` blocks a DELETE by default, the fixture DATE column raises no caveat, a real `/ask` answered clean.
-- +23 tests (executor caveats · wiring/gate · guarded monitors · planner warning · golden 422 · E1 real-types no-FP regression); api.gen.ts regenerated; ratchets flat. WP-1 COMPLETE (1a–1f).
-
-### Meter the background — WP-7 of the platform review (2026-07-13, branch `2026-07-13-wp7-metered-background`, flag `ops.metered_monitors`, default-off)
-Source: [`docs/PLATFORM_REVIEW…2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-7; §1.2: monitor/brief warehouse SQL ran directly on the scheduler thread — unmetered + uncancellable).
-- **Watcher/Briefer wired** — the two charters go non-reserved with real per-run budgets (Watcher 50k tok / 120s for a scalar check; Briefer 400k / 300s for tree-reduce synthesis), governable per-agent like Scout/Analyst.
-- **Kernel-routed ticks** — the monitor + brief cron `_job`s submit through `kernel().submit(...)` under the flag, via a new thread→loop bridge `submit_background_tick` (`kernel/jobs.py`): the APScheduler thread hands a supervised job to the main loop (captured at startup), whose context-propagating executor carries the run's metering accumulator + Org into the monitor/brief SQL. Result: background SQL is metered (`GET /jobs?kind=monitor` shows `cost`), counts against the agent budget, and is heartbeat-supervised. `kernel().submit` gained an explicit `org_id` so a cross-thread submit stamps the right tenant.
-- **Live-verified** — a per-minute fixture monitor ran as a `SUCCEEDED` **Watcher** job with `cost={query_count:1, rows_returned:1}`. +4 tests; byte-identical when off. **Follow-ups:** promote default-ON after a large-workspace A/B (the Briefer budget must not cancel a legitimate wide brief — WP-6's large-workspace-budget thread); per-connection `max_monitor_runs_per_hour` cap (lower value — the per-run budget already caps a runaway tick).
-
-### Public Trust Receipt — WP-10 of the platform review (2026-07-13, branch `2026-07-13-wp10-public-receipt`)
-Source: [`docs/PLATFORM_REVIEW…2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-10; ROADMAP §3 "single highest-leverage open bet" — the moat, made inspectable). **Backend core shipped + live-verified.**
-- **One id, one contract** — a receipt **id** (the kernel ledger artifact id) + `GET /receipt/{receipt_id}` (`aughor/routers/receipt.py`) resolve any answer mode into one public contract (`aughor/trust/receipt.py`): executed SQL · input tables · guards that fired (each named + action) · caveats · governed-metric enforcement · confidence · model · cost. Ledger gained `artifact_by_id`/`receipt_by_id` (exact version = immutable link).
-- **Signed + RBAC'd** — HMAC-SHA256 over the canonical body proves server issuance + detects tampering (per-install secret); a receipt outside the caller's org 404s identically to a missing one (fail-closed, no existence leak).
-- **Answers carry it** — `_write_answer_receipt` stamps the coder model + returns the `receipt_id`; the chat path streams a `receipt_id` SSE event. **Live-verified**: `/ask` → `receipt_id` → `GET /receipt/{id}` returned the signed contract; signature verifies. +6 tests; `gen:api` regenerated; FEATURES §3 updated.
-- **"Why this number" drawer SHIPPED** (branch `2026-07-13-wp10-why-this-number`) — reusable `web/components/WhyThisNumber.tsx`: a trigger under an answer opens a right-side drawer resolving the answer's receipt id (`getPublicReceipt`) into the signed contract — executed SQL (copyable) · guards that fired (with action) · caveats · governed metrics · confidence · connection/model/cost · **server-signed 🔏**. The chat stream captures the `receipt_id` event onto `ChatTurn.publicReceiptId`; wired in `ChatPanel`. Browser-verified end-to-end (SQL, metrics, `16.6K tok · 4.4s` cost, HMAC badge; Escape closes; 0 console errors); `<Button>`/StatusChip/`lib/format` conventions; ratchet flat 204.
-- **Extended to more surfaces** (branch `2026-07-13-wp10-receipt-surfaces`) — **Deep/ADA answers**: the deep stream emits `receipt_id` at completion, reusing the chat capture + ChatPanel render (no frontend change). **Query Builder**: `POST /query/run` writes a signed `builder` receipt (user's original SQL + input tables, SQL-hash-keyed) and returns `receipt_id`; `<WhyThisNumber>` renders in the ResultsPane toolbar. +2 tests; backend curl-verified; tsc + gates green. **Browser-verified on a richer quick insight** (Insight mode): a ranked revenue-by-category answer → the drawer showed the real multi-table JOIN SQL, input tables, cost, HMAC signature, and a live `⚠ revenue · non-governed` metric-drift chip. **Not extended (by design):** briefing figures already have receipt inspection (`getInsightReceipt`) — unifying it onto `<WhyThisNumber>` is a separate "merge two receipt surfaces" slice.
-
-### IA: ask-on-Home + a11y — WP-11 of the platform review (2026-07-13, branch `2026-07-13-wp11-ask-on-home`)
-Source: [`docs/PLATFORM_REVIEW…2026-07-12.md`](docs/PLATFORM_REVIEW_AND_IMPLEMENTATION_PROGRAM_2026-07-12.md) (WP-11; §1.7-2 no ask box on Home · §1.7-7 nav buttons unnamed / hidden panels in the AX tree).
-- **Ask-on-Home** — a composer hero atop `HomeScreen` (`app/page.tsx`): textarea + Insight/Deep depth pills + Ask, firing the question into the chat via the existing `goToChat(q, mode)` (pre-fill + auto-fire). Home becomes a launchpad, not a dead dashboard. **Live-verified**: a real question typed on Home routed into the chat + fired in Insight mode, 0 console errors.
-- **A11y** — every sidebar nav button now exposes an accessible name (`aria-label` + `aria-current`), verified in the AX tree (anonymous `button [ref]` → named "Home"/"Briefing"/…); keep-alive hidden Workspace layers get `inert` + `aria-hidden` so a hidden panel's controls leave the tab order + AX tree (`components/Workspace.tsx`).
-- **Copy** — the Home health empty-state's nonexistent "Metrics panel" → "Semantic Layer". New buttons use the `<Button>` primitive (raw-button ratchet flat at 204); tokens/format/tsc green. **Follow-ups:** the U5 fold (16 nav → ~5 workspaces) + full a11y sweep (separate slices).
-
-Grouped by area; each ✅ is verified shipped (git + code). Representative commits/PRs in parentheses.
-
-### SOTA answer quality — the Databricks Genie head-to-head (2026-07-10, PR #136 + branch `2026-07-10-genie-parity-presentation`)
-*Same question ("Where are we losing money?"), same data, Aughor vs Genie. Every gap traced to a deterministically checkable defect; fixes live-A/B'd (two post-fix runs converge on ground-truth-exact dollars).*
-- ✅ **Unit-conversion guard** — the planner's invented "stored in cents" ÷100 (every number 100× off) is detected at intake AND at every phase's fresh SQL; one probe (multiplicative sibling relation) proves the unit, strips the conversion or caveats it. **Money-coherence retry** re-parses a COUNT-only metric on a money question.
-- ✅ **Explicit Deep Analysis binds** — `/investigate` stamps `requested_mode`; the LLM route classifier can never downgrade a deliberate deep run to a `direct` lookup (the fake-H1 / `phases: NONE` incident).
-- ✅ **Charts never plot identifiers** — shared camelCase-aware `isIdLike()` across classifier, inference, LLM-config validation, captions, and the PDF export renderer (which also gained scale-gap series filtering and name-over-id axes). **Join-coverage guard** (deflation — a missing guard class) caveats INNER JOINs that drop base rows. **Stats**: shares are compositions, not rates; internal QA diagnostics go to the journal, not the report.
-- ✅ **Genie-parity presentation** — nested named query steps in the collapsible trace; numbered per-finding Sources; criterion-complete extreme-tie enumeration; clean-output policy (no phase-machinery headers); full-panel-width answers; adaptive temporal grain (17-day window → daily buckets, not one monthly point); humanized scan aliases ("revenue", never "Metric Total"); one-currency metric cards; canvas-scope label; live-refreshing Recents.
-- ✅ **Insight/Deep schema parity** — the quick path filtered a stale conn-keyed schema snapshot (upload never invalidated it), silently dropping new tables; it now builds the canvas schema fresh like Deep, and uploads invalidate the cache (the canvas-creation picker had offered a partial table list for the same reason).
-- Suite 2,590 green · +16 tests incl. a miniature-bakehouse guard battery (`test_sota_quality_guards.py`).
-
-### First-run honesty + audit coherence + multi-schema wiring (2026-07-10, branch `2026-07-10-first-run-and-ui-coherence`)
-*One arc, one root-cause pattern: subsystems already computed the right signals; readers and writers weren't wired to the same key.*
-- ✅ **W14+W15 (first-run bugs from the OSS audit).** The outage scenario (`aughor/demo/scenario.py`, single source of truth: 800 customers, dated APAC gateway outage, verified −38.8% APAC/SMB drop, NA-promo red herring) is now what `ensure_fixture_db()` auto-seeds AND what `aughor seed --db` writes to `data/aughor.duckdb` — the noise fixture and the `hermes.duckdb` split are gone. Fixture/samples paths honour `AUGHOR_FIXTURE_DB`/`AUGHOR_SAMPLES_DB` (conftest → temp; the suite no longer touches live `data/` DuckDBs).
-- ✅ **Every agent's data queries are audited.** `_AUDITED_AGENT_LABELS` in `db/connection.py` — Scout (`__explorer__`), Watcher (`__monitor__`/`__monitor_window__`), revalidate/fix-save, federation now flow through gate+PII+budget+audit; `/query/semantic` was ungated AND unaudited → same endpoint gate as `/query/run`. Security & Audit gains an **Approvals tab** (approvals card out of the query trail) and an **Agent column** mapping labels to the Fleet roster.
-- ✅ **Schema-wise separation.** OntologyPanel finally passes the workspace schema (backend was per-schema all along; the UI rendered an arbitrary cached schema); org-intel promotions record `connection_id`+`schema` and the Hub lists only its own scope (Org layer stays org-wide); promote/dismiss search per-schema stores (both buttons 404'd on multi-schema findings).
-- ✅ **Multi-schema reader/writer wiring.** Episodes feed merges `episodes_{conn}__*` (Activity was empty on multi-schema); exploration annotations + ontology lifecycle/join merge read the aggregate (ADA planner was starved); boot recovery checks the aggregate phase; the digest's insights section was dead for ALL connections (nonexistent import + stale shape) — now reads real aggregated insights.
-- ✅ **UI action feedback sweep.** Action Hub Test/delete/toggle, allowlist Revoke, Playbook status, Fleet Cancel, Monitors delete/toggle/ack, Metastore grants, Glossary save, Briefing explorer controls — every user-triggered mutation now surfaces failure instead of silently reverting; Command Palette table quick-jump un-broken (`/schema/rich`).
-- Suite 2575 green · +14 tests · live-verified on an isolated instance (auto-seed → real audit rows → UI).
-*Four live deep analyses vs hand-computed ground truth on the beautycommerce fixture surfaced two number-correctness failures a strong model produced despite clean grounding scaffolding — both deterministic wiring/guard gaps, per the proven "guards > machinery / suspect the wiring" pattern. Five fixes, +27 unit tests, full suite green.*
-- ✅ **Global-ratio plausibility guard (fix 1+2).** The catastrophic miss: a "why is the Fragrance refund RATE so high?" scan generated per-dimension SQL that inner-joined the denominator (revenue) *through* the numerator's event table (refunds), so every segment counted only refunded orders → a 73% refund rate (true ≈10%), and the report told the user their premise was *inverted*. No fan-out/saturation guard caught it (values inside [0,100], no row multiplication). The metric's true global is recomputed independently (each aggregate over its own full table); when every segment sits ≥2.5× above it, the corrupted ratio is suppressed and the caveat states the true global. `_global_ratio_plausibility_guard` in `agent/investigate.py`.
-- ✅ **Sustained level-shift detection (fix 3).** A real −6.4% YoY revenue decline was dismissed as "within normal variance" because the baseline used single-point anomaly detection (blind to a gradual multi-period shift) and divided the two-year mean gap by a single-month σ (wrong by √n). A Welch two-sample test (`mean_shift_significance`, `tools/stats.py`) on the series' halves now runs alongside; a material, statistically-real shift is reported as significant so the gate proceeds.
-- ✅ **Decompose-under-abstention (fix 5).** A "why did X change?" question with a material aggregate move (≥5% between series halves) now runs one dimensional decomposition instead of a Tier-0 "it's just noise" abstention that lists the dimensions it never queried; a genuinely-flat false-premise question still stops cleanly. `route_after_baseline`.
-- ✅ **Structural trust caveat (fix 4 + T3-1 scoping).** A computation-error trust check now leads the executive summary with an honest reframe and floors confidence to LOW — but only when a flagged finding's numbers are actually *headlined* (checked via numeric grounding); a peripheral flagged finding is surfaced in data-gaps instead of nuking a grounded answer. `_reframe_on_trust_caveat`.
-- ✅ **Tier 3 presentation/trust-UX.** Render-boundary number hygiene (`round_long_decimals` — no raw 17-digit floats in prose, both paths); inspectable exploration traces (forward every sub-question's SQL/rows, per-step progress events on the wave path, and a chart per step via the existing per-result renderer). `tools/executor.py`, `routers/investigations.py`.
-- ✅ **Tier 4 intent/data grounding.** Intake data-coverage probe (real `MIN/MAX(date)` → the report states the coverage window even for a cross-sectional scan; `_observation_window_is_wrong` replaces an out-of-span guess); metric-definition receipt (`_metric_definition_receipt` — plain-language "how this was measured", ratio interpretation surfaced; new `AnswerReport.metric_definition`, rendered in `InvestigationReport.tsx`); verdict↔recommendation self-coherence (`detect_verdict_recommendation_incoherence` folded into `contradiction_report`); and opt-in ReFoRCE-style tiered adversarial verification (`ada.adversarial_verify`, default-off — refute a decision-changing verdict before shipping). `agent/investigate.py`, `agent/orchestrator.py`.
-
-### SOMA leverage — B1 probe-and-repair + the Ambiguity Ledger (2026-07-06/07, PRs #112 · #113)
-*The measured conclusion — cheap inference-time levers are exhausted on glm-5.2 (±7–10 noise floor, 4×) — pointed at two moves the evidence still supported: a monotonic evidence-gated repair, and amortization that converts scarce model capability into durable substrate. Both built. Specs: [`docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md), [`docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`](docs/SPIDER2_B1_PROBE_REPAIR_2026-07-06.md), [`docs/AMBIGUITY_LEDGER_2026-07-06.md`](docs/AMBIGUITY_LEDGER_2026-07-06.md).*
-- ✅ **B1 probe-and-repair (eval)** — SOMA's missing back half (I2+I3+I7): deterministic sqlglot AST-diff disagreement extraction → the paper's (dimension, options, evidence) triples with **zero model calls**; a deterministic-first probe battery reusing the owned value/grain guards; evidence-typed `resolve()` behind **four gates** (executes · clears-the-probe · no-regress at subject granularity · AST-faithful) — any fails ⇒ keep the seed. Monotonic by construction. `evals/spider2_probes.py`, `--probes`, 19 pure tests. **The finding** (5 live instances, zero regressions): every disagreeing miss is AmbiIntent grain-of-intent the deterministic probes can't resolve → the residual accuracy lives in *intent resolution*, not machinery.
-- ✅ **The Ambiguity Ledger (I1/I4/I6, product)** — resolutions crystallize per connection (`aughor/semantic/ambiguity_ledger.py`, house SQLite idiom, `AUGHOR_AMBIGUITY_LEDGER_DB`): idempotent natural key (one row per dimension = burn-down), **override-wins** authority (verdict > user > probe). **Read path** leads the plan-time prior block on the **live** answer path (`verify/priors.build_corrections_section`; the direct `retrieve_priors` was dead — fixed in #113). **Write sources**: the user's clarify choice (`crystallize_user_choice`, `_stream_ask`), a reviewer verdict (`crystallize_verdict`, `record_verdict` bridge), and B1 probes. **I6** surfaces the applied resolution on the Trust Receipt (`_write_answer_receipt` lineage + `TrustReceipt.tsx`). **soma** clarify chips now carry result previews (`= 68` vs `= 1131`). Gated `closed_loop`. **Burn-down validated** through the real seam: 2 classes resolved once → served 3× with zero further asks. Remaining: n_signatures-on-receipt for soma turns; consolidate corrections into the ledger.
-
-### One metric contract + wider parallel investigation waves (2026-07-05, PRs #108 · #109)
-*Two flag-gated, default-byte-identical improvements to the answer engine — one to the metric type, one to investigation latency.*
-- **U10 — one `SemanticContract` (PR #108).** A governed metric lived as *two* pydantic shapes (`canonical.CanonicalMetric`, wired into planning, and `semantic.SemanticContract`, the richer type). U10's invasive half collapses them onto one behind `semantic.contract_live` / `AUGHOR_SEMANTIC_CONTRACT_LIVE`: the contract grew the third `"profile"` (north-star) source, a source-precedence `rank`, and an `injectable` render-authority signal equal to the legacy behaviour byte-for-byte. Planning (`unified_metric_grounding`) renders from the contract when the flag is on — proven byte-identical across the toggle on a three-source fixture; display (`/query/semantic-context`) now surfaces the unified contract list. The three source loaders were extracted so the old and new resolvers share them and can't drift.
-- **P-A+ — wider parallel waves (PR #109).** The parallel-explore executor's speedup was capped at 1.48× by the *planner's* sequential bias (deep `depends_on` chains → nothing to parallelize). Under `explore.parallel_subq`: a flag-only wide-DAG decompose guidance (independent cuts of one landscape depend only on the landscape, never each other), a deterministic `_normalize_depends_on` (a landscape can't depend on a sibling), and a `_wave_schedule` observability layer that logs the realized wave widths. **Measured on the real path:** decompose A/B (real LLM) moved mean max wave width **1.17 → 3.67** (#waves 5.83 → 4.00); an executor-level wall-clock A/B (real executor, controlled leaf latency) showed the executor *alone* on the old chains buys only **1.12×** while the wide-DAG prompt lifts it to **1.50×** — the prompt is what unlocks the executor.
-
-### Part 2 of the architecture review — the enforced design layer + gen-UI seam (2026-07-04, branch `2026-07-04-part2-recU1-design-layer`)
-*The frontend had SOTA abstractions (a token system, the `Brief*` "answer is a document" family, a chart-inference engine) but 15 months of feature branches left them unenforced. Part 2 finishes the consolidations. Scoping + progress: [`docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md).*
-- **Wave 1 — one enforced design layer.** Three new blocking web CI gates + tsc, each baseline-zero (the ruff-gate discipline for the frontend): a **design-token gate** (no raw radius / `text-[Npx]`; codemod of 711 sites onto `--r*` + a size-only `aug-fs-*` family), a **formatting gate** (all number/date rendering through `lib/format.ts` — the "45.3K vs 45,300" fix), and a **raw-`<button>` ratchet** (freeze the pre-primitive-layer count, convert down over time). Plus **one palette source** — the dead `AUG_PALETTE` deleted; card chrome now derives from the `--chart-*` brand ramp via `color-mix`, so it flips with dark/light and matches the charts.
-- **Wave 2 — composites, structure, gen-UI (in progress).** A **turn renderer registry** (`TURN_RENDERERS` + `registerTurnRenderer`) replaces ChatMessage's if-chain — a pack can now contribute an answer surface without editing the god-component (the LAYER-05 gen-UI seam). **Chart source-footers** ("Source: table · N rows · date range" under every exhibit). A single **`StatusChip`** vocabulary folding three copy-pasted chip style maps. And **follow-up composition on the deep/direct path** — a follow-up in a Direct-lookup canvas now builds on the previous query (parity with the quick Insight path). *Live-verified on the luxexperience workspace.*
-
-### Security perimeter, tenancy & operational hardening — the 2026-07-03 architecture review (2026-07-03/04, PRs #93–#98)
-*A senior two-part architecture review (`docs/architecture-review-2026-07-03/`) drove a full security/ops hardening arc. Part 1 (REC-01…10) plus the tenant-enforcement + migration + lint follow-ups, delivered as **6 stacked, CI-green PRs** (≈130 new tests). Everything multi-tenant is flag-gated on `AUGHOR_REQUIRE_IDENTITY` — default off, so single-user/localhost behaviour is byte-identical.*
-- **Security (Part 1, PR #93):** fail-**closed** SQL safety gate (a gate that errors now BLOCKS, not allows); Postgres opened session-read-only; **SSRF allowlist** on outbound webhook URLs (create + send-time); **prompt-injection fencing** of untrusted DB content in LLM prompts; global exception handler (no stack leaks); a **request-identity + object-level-authz seam** (`security/authz.py`, owner-checks on by-id routes); gated `/llm/config`; `Idempotency-Key` on create endpoints.
-- **Data layer:** every SQLite store tuned (WAL + `busy_timeout`) and made test-isolated; a real **versioned migration framework** (`db/migrations.py`, `PRAGMA user_version`, forward-only + additive) that all migrating stores + the kernel ledger now run through (**DATA-05**, PRs #95/#96).
-- **Tenancy (DATA-06, PRs #94/#98):** org-scoping enforced on the connections + investigations read paths; a pure-ASGI **`_OrgContextMiddleware`** that actually binds `current_org_id()` to the request (a latent bug — the prior dependency-based binding never reached handlers); and kernel jobs re-bind their own org at execution (survives restart/boot-recovery).
-- **Tenancy depth (DATA-06, 2026-07-04):** extended the same `resource → connection → org` enforcement to the **monitor / alert / brief-subscription / canvas / saved-query** surfaces — router-level owner-guards (403 cross-org by-id), `org_visible_conn_ids()` read-path filtering on every list route, connection owner-checks on the create/digest paths, and org-binding of the **monitor + brief background schedulers** (a background tick now stamps the connection's tenant, not `'default'`). Kept the Platform↔Agent boundary green via a new `kernel/registries/resource_org.py` resolver registry (the agent plugs monitor/alert/brief resolvers in at bootstrap; the platform never imports the agent's stores). +11 tests, real-process uvicorn smoke verified.
-- **Ops (PRs #93/#97):** first-ever **CI** (`.github/workflows/ci.yml` — pytest + `tsc`), now with **ruff at zero and blocking** (a sane ruleset that also surfaced + fixed 5 real latent `NameError`s); first `PRAGMA user_version` schema markers.
-
-### Role-based access control (RBAC) — the review's biggest remaining perimeter gap (2026-07-04, PR #99)
-*The follow-on to REC-05 (which stopped at identity + owner-checks) closes COMP-04. A **second authorization axis orthogonal to licensing** (a capability is what the org's plan unlocks; a permission is what the user may do), **additive + double-gated** on `AUGHOR_REQUIRE_IDENTITY` **and** the `RBAC_SSO` capability, so localhost / non-RBAC tiers are byte-identical. New package `aughor/rbac/` + `routers/roles.py` + `web/components/RolesPanel.tsx`; ~70 tests, full suite green.*
-- **Model + store + resolver (P1):** a `Permission` taxonomy, the built-in role ladder **viewer ⊂ analyst ⊂ owner** (owner = every permission; unknown role fails closed), an org-scoped `role_assignments` store, and `resolve_roles(principal)` (localhost = owner · unassigned = least-privilege default · assigned = their roles).
-- **Enforcement + roster + bootstrap (P3):** a `require_permission` → 403 gate, a **first-user-is-owner** bootstrap (enabling identity never locks out admin), and an admin roster router (`GET /rbac/roles`, `GET /rbac/me`, org-scoped `GET/POST/DELETE /rbac/assignments`).
-- **Whole-surface enforcement (P4a):** one auditable **declarative policy table** (`rbac/policy.py`, `(method, route-template) → permission`) consulted by a global dependency — safe methods open, mutations default to a `resource.write` floor, admin/connection/analysis/export raised by name. A viewer reads anything but mutates nothing anywhere; owner-only verbs stay owner-gated — replacing scattered per-route decorators with a single source of truth.
-- **Role-aware capabilities (P2):** a role→capability **ceiling** so the effective feature set is `tier_caps ∩ role_ceiling`, surfaced through a now role-aware `GET /capabilities` (returns `roles`) — the UI reflects role, not just plan. Tier still gates 402; role gates 403.
-- **Roster UI (P4b):** a **Settings → Access** surface (`RolesPanel.tsx`) — "Your access" + the role catalogue + (for `admin.manage_roles` holders) an assign/revoke roster. Browser-verified end-to-end (render, all `/rbac/*` 200, live assign→revoke round-trip).
-
-### Deep Analysis report quality — grain · consistent %s · adaptive charts (2026-07-03, branch `2026-07-02-ada-temporal-intake-grain`)
-*A live-grounded arc: reading the womenswear-returns report exposed a chain of correctness + rendering bugs, each fixed at the root and verified on a fresh run. Full suite green; docs: [`docs/CHART_SELECTION_GUIDE.md`](docs/CHART_SELECTION_GUIDE.md).*
-- ✅ **Temporal-feasibility into `ada_intake`** — the event-rate-aware axis finder (`_resolve_temporal_axis`) runs at intake (conn-bound), so EVERY path recovers a join-reachable purchase date instead of declaring the metric non-temporal (the metric sits on a dateless child table; the parent order date is join-reachable). A "what drove the change" question no longer misroutes to cross-sectional.
-- ✅ **One canonical grain across WHERE/WHY/WHEN** — `_canonical_grain` pins the metric table's unit into every lens (a denominator-pinning plan directive), so a report can't show per-order 40% next to per-line-item 76% for the same rate. (The earlier visible `[per <unit>]` summary tag was removed — it polluted the synthesised headline; the grain stays enforced numerically.)
-- ✅ **Consistent percentages end-to-end (approach a)** — `InvestigationFinding.column_units` tags a rate column as `percent` when the metric is a percentage; the frontend's one scale-aware formatter renders "41.0%" on the axis, data labels, AND key numbers (a fraction ×100, an already-scaled % left). Key numbers rebuilt to one scale + precision, collapsing the LLM's `~0.328 (32.8%)` / `34.5%(34.5%)` duplicates; a temporal peak/trough/avg/range is **recomputed from the full series** so it matches the chart (the interpret LLM only saw a capped window).
-- ✅ **Intent-driven chart selection** — `_chart_type_for_finding(finding, intent)` picks the chart from the finding's narrative, not a data-shape guess: composition → **donut** (≤6 parts) / ranked bar, trend → **line**, ranking → **sorted bar**, relationship → scatter; shape-verified so a mislabelled intent degrades to `auto`. A composition renders the SHARE only — no redundant count-bar + share-line combo.
-- ✅ **One frontend inference source of truth** — the column-role regexes + `classifyColumns` live once in `columnRoles.ts`; both `inferChartType` (toggle/gallery) and `Chart.tsx` (renderer) import them, ending a three-way drift. **100%-stacked** (composition-over-time) + **small-multiples** (many-group trends) builders added.
-- ✅ **Chart legibility + the Source-data panel** — fixed bar thickness (`barMaxWidth`) + count-adaptive height + on-by-default labels with `hideOverlap` + a clean themed halo (bars AND pie/donut). The **"Source data"** trigger is on every report finding chart (and the quick answer), opening a right-side drawer with the data + SQL **50/50** + an **"Explore with Query Builder"** hand-off.
-
-
-### Parallel explore waves — P-A of the multi-agent groundwork (2026-07-02, branch `2026-07-02-explore-parallel-subq`)
-*The explore mode's serial sub-question chain is the wall-clock bottleneck (7–12 serial frontier-LLM round-trips). P-A of [`docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`](docs/PARALLEL_MULTIAGENT_GROUNDWORK.md) makes independent sub-questions run concurrently in **dependency-respecting waves**. Flag `explore.parallel_subq` (default off → byte-identical). Full unit suite green (+15 tests); live-verified.*
-- ✅ **Wave fan-out over the existing `operator.add` state** — `plan_and_execute_wave` (`aughor/agent/explore.py`) computes the ready set (`_ready_subqs`: not done + every `depends_on` done) and runs it concurrently; `route_after_wave` loops until the chain is exhausted. The per-sub-question work is extracted into reusable, state-pure cores (`_scan_one_subq`/`_execute_one_subq`/`_reason_one_subq`) the sequential nodes still call (behavior-preserving). `_apply_wave_results` marks done + injects each refinement into its **dependents** + appends promotions.
-- ✅ **The SOTA engine call: in-process `ContextThreadPoolExecutor`, not LangGraph `Send`** — grounding revealed LangGraph drops contextvars into its branch threads (verified), which would **silently break the metering accumulator + P6 token budget + job-id** (all contextvar-borne). `ContextThreadPoolExecutor` copies context per submit (the reason `_parallel_execute_safe` uses it) and `RunMetrics` is already lock-guarded — so all five guardrails (budget-abort, determinism via post-merge sort, failure isolation + serial fallback, width cap, HITL/checkpointer untouched) hold by **reusing proven infra**. Each branch runs on its own `make_reader()` clone. `Send` stays a clean future migration (the reusable core is the seam).
-- ✅ **Live-verified (luxexperience, 33 tables, glm-5.2 cloud)** — a question decomposed into a **width-3 parallel wave** (region ∥ product-line ∥ channel); serial **172.6s** → wave **116.9s** = **1.48× / −55.7s on one wave**, identical answers, zero errors. *Realized win is gated by planner independence — the P-A+ follow-up is teaching the decompose prompt to emit accurate `depends_on` for wider waves.*
-- ✅ **ADA parallel multi-lens cross-section** (flag `ada.parallel_lenses`) — a cross-sectional Deep-Analysis ("why is X high?") is a *serial* pipeline (`intake→cross_section→synthesize`), so the win is **depth-per-second, not raw speedup**: `_partition_dimensions` splits the intake dims into **segment/WHERE ∥ mechanism/WHY** lenses and `ada_cross_section_multilens` runs one `ada_cross_section` per group concurrently (own reader, all guards reused, budget-abort + isolation + serial fallback); `ada_synthesize` already reasons over every phase so the extra lens is free. Controlled A/B: **69.5s/1 phase/6 findings → 56.4s/2 phases/9 findings (0.81×, +50% evidence)**. **Live-verified in the platform canvas** on "Why are womenswear returns so high?" — rendered "Cross-Sectional Scan — Where" (luxury 40.5% vs off-price 27%) + "Mechanism / Reason Scan — Why" (reason/carrier/condition/refund uniform → systemic) as distinct phase cards. +10 tests. *Caveat: a single throttled cloud endpoint can erase the flat-latency benefit under load; grain reconciliation between lenses is a follow-up.*
-- ✅ **Temporal WHEN lens + forward-chain period drill** (same `ada.parallel_lenses` flag) — fixes a real blindness (the intake declared "why returns high" non-temporal — `date_column=NONE` — because `order_items` has no date, even though the purchase date is join-reachable). Deterministic **`_resolve_temporal_axis`** DB-probes (`information_schema`) for a **population/order date**, *excluding the event table's own date* for an event-RATE metric (a return rate trends on `orders.order_date`, not `returns.return_date`); a **WHEN lens** runs the trend concurrently with WHERE/WHY; **`_detect_anomalous_period`** flags a period only when materially above baseline (>20% & >1.5σ) on a material sample; if flagged, a **forward-chain drill** re-runs the segment/mechanism scan **scoped to that period**. +8 tests. **Live-verified**: recovered `orders.order_date`, computed the real monthly return-rate trend (flat **31–35%**, 2020–2025), reported "no material period concentration" → drill honestly did NOT fire (drill-on-spike is unit-tested). The agent now *looks* at WHEN.
-- ✅ **Output-quality fixes — event-dim composition + scoped fan-out caveat** (same `ada.parallel_lenses` flag) — a live womenswear run surfaced "a lot of calculations could not be computed." Root cause: **event-only dimensions analysed as rates**. `reason`/`condition`/`carrier`/`refund_method`/`restocked` live only on returned rows, so "return rate by them" is **tautologically 100%**; the agent detected the garbage but only caveated it (retry fires on SQL errors, not clean-but-meaningless results). Fix: **`_partition_dimensions` now classifies by event-TABLE** (`_is_event_dim`, not a name regex — which had mis-routed `restocked`), sending event dims to a new **`_run_composition_lens`** (share-of-returns) instead of a rate. **Live-verified**: the WHY lens now returns **size_fit 42.2%, not_as_expected 21.9%, changed_mind 19.9%…** (the actual "why") instead of 100%/100%/100%. Also **scoped the fan-out caveat** (#3): the numeric backstop is now per-SQL, so a genuinely-fanned finding no longer tars its clean siblings — the correct platform answer (40% vs 27%) renders **un-caveated**. +5 tests.
-- ✅ **Output-quality fixes, part 2 — population-attribute discovery + reattempt-on-saturation** (same flag). **(#4)** `_discover_population_dims` deterministically surfaces discriminating population attributes the intake missed — a joinable dimension table's low-card categoricals (season) + an item price to band — gated by a **uniqueness probe** (only a fan-out-free 1:1 join) and restricted to product/order tables (tangential satellites excluded). Wired into the rate lens (`extra_dims`/`extra_schema`/price-band directive + a widened query cap). **Live-verified**: the WHERE lens now surfaces *"return rate by retail price band"* = **31.3% → 39.6% (climbs with price)** and *by season* — the driver the agent previously called nonexistent. **(#2)** `_is_saturated` flags a result where every group is pinned at a boundary (~0/100% = tautology/fan-out, distinct from legit uniformity like 32.4/32.8) → the rate lens **reattempts once** with a grain correction, keeping the re-plan only if it clears (its main trigger — the event tautology — is now fixed at the root by the composition lens, so it's a safety net). +9 tests.
-### Unified answer path — one conversational `/ask` agent (2026-06-30, PR #89)
-*Merged Insight + Deep into one conversational entry that decides depth itself, clarifies instead of guessing, carries context across turns, and escalates when a quick answer falls short. BIRD-INTERACT-driven (arXiv 2510.05318). The whole phased arc 0–5 shipped + the 3b deepening; every interaction feature gated by an eval harness (measure-before-trust). **2039 tests green.** Doc: [`docs/UNIFIED_ANSWER_PATH.md`](docs/UNIFIED_ANSWER_PATH.md).*
-- ✅ **P0 · the door** — `POST /ask` + a **deterministic-first** router (`agent/ask_router.py`): clear lookup → quick, causal/complex → deep with no model call; LLM tiebreak only on the borderline; a `route` SSE receipt; **license-safe degrade** (deep→quick when no `DEEP_ANALYSIS`, never bypass). `/chat` + `/investigate` kept as back-compat shims; behind `AUGHOR_UNIFIED_ASK`.
-- ✅ **P1 · auto + transparency** — the frontend defaults to **Auto → /ask**; a depth banner ("answered directly / investigating because…") with a one-click re-run at the other depth. §5 render-selector found already satisfied by `ResultFigure` (output shape adapts to the result: scalar→KPI, ranking→chart, else→table).
-- ✅ **P2 · interactive eval harness** — rebuilt `evals/interactive.py` (AMB/LOC/**UNA** function-driven simulator + episode runner scoring submitted SQL vs executable gold under a clarification budget) — the measurement substrate, built **before** the features.
-- ✅ **P3 · ask-vs-guess clarification** — `agent/clarify.py` two-source detection (under-spec via the complexity flag + value/term via a qualifier lexicon) → a `clarify` SSE gate (behind `AUGHOR_ASK_CLARIFY`, `skip_clarify` bypass) + a frontend **ClarifyCard**; deterministic time-window chips for the under-spec case; harness-measured 0%→100%.
-- ✅ **P4 · conversational session state** — `agent/followup.py` `is_followup` + an extracted, testable `build_history_section` carrying a **result digest** (`key_rows`) + a "compose on the base query" directive; deep-turn context carried too (`deepHistoryEntry`). Live: "now break that down by status" → correct `GROUP BY` composition.
-- ✅ **P5 · progressive escalation (ITS)** — `agent/escalate.py`: a quick answer that errored / returned no rows on an analytical question (the 'Womenswear' shape) / answered a causal "why" with one figure → an `escalate` SSE event → a frontend **"Investigate this →"** bar that re-runs at `depth=deep`. Offers, never forces.
-- ✅ **3b · SOMA candidate-disagreement** (the deepening, measure-before-trust) — `evals/ambiguity_eval` proved the deterministic detector is **blind to STRUCTURAL ambiguity (0/6)**; `evals/its_structural` proved asking recovers it (**0/3 → 3/3** on the real model); then `agent/soma.py` built it: generate N labelled readings, execute them, ask **only when results materially diverge** (labels become grounded chips). Behind `AUGHOR_SOMA_CLARIFY`. Live: "top product?" → by revenue/units/order-count → all diverge → clarify with those chips.
-- ✅ **Conversation UX** — quick/deep/explore answers fold SQL, Open-in-Query-Builder, recommended actions, and validate/copy/feedback into one quiet **Details** toggle; direct lookups get an on-demand **"Explain the data"** (the narrative rides the free follow-ups narrator call).
-- ✅ **Scout/explorer filter-literal fix** — `check_filter_value_domains` was blind to **case** (`'Womenswear'` vs stored `'womenswear'` → 0 rows, silent); now exact→leave, case-only→bind to the stored casing, fuzzy→difflib — fixing **all** callers (Insight/ADA via `preflight_repair`) + wiring `bind_filter_literals` into the explorer path.
-
-### Platform ↔ Agent separation + NL2SQL winning formula (2026-06-30, branch `2026-06-29-platform-agent-separation`)
-*The Data Intelligence Platform (the home) is now structurally separated from the Aughor Agent (the intelligence) with a machine-enforced one-way boundary; then the 2025/26 NL2SQL SOTA was mined into a shipped lever. **1969 tests green.** See FEATURES #172.*
-- ✅ **Enforced boundary** — `tests/unit/test_platform_agent_boundary.py` (stdlib-`ast` ratchet, **empty allowlist**): the Agent may import the Platform, never the reverse. ~50 platform→agent edges inverted into four plug-in registries the Agent fills at startup (`agent/bootstrap.register_agent_plugins()`): the `QueryResult` **contract** (`platform/contracts/execution.py`), **purge hooks** (delete cascade), **ingestion/event sinks** (connector/history/registry reach-ins), and the **schema-annotator registry** — the “god file” (`db/connection.py` get_schema/build_intelligence + Postgres + sqlite) now renders raw schema (`db/schema_render.py`) + Agent annotators, three divergent recipes unified. `ai_sql` → execution hooks.
-- ✅ **Plug-and-play contract** — `HostCapabilities` Protocol (`platform/contracts/host.py`) + `kernel.registries.manifest()`; with no agent registered the platform renders schemas + runs the cascade agent-free (`test_plug_and_play.py`). Net −800 lines (god-file duplication collapsed). Docs: [`docs/PLATFORM_AGENT_SEPARATION.md`](docs/PLATFORM_AGENT_SEPARATION.md) (+ Invariant #8 in [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md)).
-- ✅ **NL2SQL complexity-aware cost-tiered routing** — mined the 2025/26 SOTA (Handbook, SQLBot, Oracle MCP, BIRD-INTERACT = arXiv 2510.05318 / OpenReview `nHrYBGujps`) → shipped a deterministic difficulty assessor (`agent/complexity.py`) that cost-tiers the robust routing DECISION (simple→`fast` model) while keeping the user-facing SQL answer on the frontier model + guards; tier + `ambiguous` flag surface on the Trust Receipt. Docs: [`docs/NL2SQL_WINNING_FORMULA_2026.md`](docs/NL2SQL_WINNING_FORMULA_2026.md).
-
-
-### Audit hardening + investigation delete (2026-06-27, branch `2026-06-27-audit-fixes`)
-*Verified an external coding-agent audit ([`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md)) against code and fixed findings #1–#11. 1859 tests green.*
-- ✅ **Closed the Query Builder / `bulk_read` SQL-safety bypass (Critical)** — user SQL was dispatched under the `__querybuilder__`/`__bulk__` dunder ids that match the internal-query bypass, so `DROP`/`DELETE` ran ungated+unaudited; the runner's subquery-wrap also defeated the inner gate and `bulk_read` reaches ConnectorX directly. New `gate_user_sql()` gates RAW user SQL at `/query/run` before wrap/dispatch (+regression tests).
-- ✅ **Bounded the system** — `asyncio.Semaphore(AUGHOR_MAX_CONCURRENT_JOBS)` on user-initiated kernel jobs (explorers exempt); scheduled `matcache.evict_expired` hourly + purge-on-delete; `AUGHOR_MAX_UPLOAD_MB` upload cap (413).
-- ✅ **Discipline + safety** — restored the silent-swallow ratchet (302→**265**, 38 `tolerate()` conversions, baseline only moves down); stopped leaking exception detail to clients; wired the optional `AUGHOR_API_KEY` front-door gate; `get_event_loop`→`get_running_loop` (39 sites); Pydantic `schema`→`schema_name` (alias-preserved); deleted dead `aughor-v2/charts/` + `_ConnectionsScreen_DEPRECATED` + renamed `useLearnedSkill`.
-- ✅ **Delete investigations (user feature)** — per-investigation delete now cascades the history row + evidence claims + RAG vector entry (was row-only, leaving deleted runs steering future analysis); new bulk `DELETE /investigations` (platform-wide or workspace-scoped) + a "Clear all" UI button beside the per-row delete.
-
-### Investigation hardening, verification substrate & Specialist Agents (2026-06-26/27)
-- ✅ **Investigation correctness/honesty (13 fixes)** — sub-question id canonicalization (dup-key crash + state-corruption), segment-uniformity significance test + no-signal guard (also un-broke a dead `_attach_stats`), early-stop on convergence, pre-flight temporal prune, raw-COUNT-over-join cardinality guard, synthesis coherence/value-lever, column-currency (CHF) + temporal-keys-as-dimensions. See FEATURES #169.
-- ✅ **Bet 0 — verification substrate** — run **verification manifest** (liveness assertions), **computed earned-confidence + data-trust**, **triangulation**, **adversarial refutation**, **human-verdict capture**, and the executable **trust gate** (`is_compoundable` / `can_act_autonomously`). Surfaced on the report (confidence chip + Verification panel + Accept/Partly/Reject). Docs: [`docs/DOMAIN_EXPERTISE_PACKS_10X.md`](docs/DOMAIN_EXPERTISE_PACKS_10X.md) §0.
-- ✅ **Specialist Agents (Domain Expertise Packs) — Phase A** (behind `specialist_packs` flag): pack spec/loader/validator, **entity-binding resolver** (+ dtype-aware profiler adapter, prefix-tolerant matching, per-schema bindings), routing + intake **steering**, **evals-as-spec** activation gate, **trust economy**, **flywheel** (deterministic + LLM distiller, propose-only), the other bets' logic (org/standing/marketplace/instruments), `/packs` API + System deploy console. **Live-verified on missimi**: grounds, steers a cohort-aware plan, evaluates, activates. Docs: [`docs/DOMAIN_EXPERTISE_PACKS.md`](docs/DOMAIN_EXPERTISE_PACKS.md), [`_10X.md`](docs/DOMAIN_EXPERTISE_PACKS_10X.md). **NEXT:** P1b recipe dry-run depth, fleet of packs (Supply-Chain/Finance/Airline), marketplace import.
-
-### Foundation — the Aughor Kernel
-- ✅ **K0 Ledger** — one transactional state store + append-only event journal (`2631d4e`).
-- ✅ **K1 Job Kernel** — supervised state machines over background work; heartbeat + crash-recovery (`82c5b4d`); investigations/monitors/briefs run as first-class jobs (`78ee842`, `cf853e1`).
-- ✅ **K2/K3 Event Spine** — single lifecycle seam to the UI + lineage with Trust Receipts (`9b6b97e`).
-- ✅ **K4 Contracts** — `tolerate()` error taxonomy, ratchet lints (no new silent swallows), API wiring contract (`c5d6b31`).
-
-### Autonomous explorer & correctness
-- ✅ **Phase-8 grounding gate (70→0 binder errors)** — layered deterministic pre-flight (qualify → cross-dataset guard → identifier repair → unresolved-check) with **`dry_run`/EXPLAIN as the universal binder backstop** (`4e47ce3`, `340103e`, `790da0a`, `5bfec56`).
-- ✅ **Explorer yield & diversity** — deterministic **semantic column repair** (`6a923ec`), structural-duplicate gate (`d89c7b9`), spurious-join fix (entity-naming join roots, `272a30d`), angle-diversity nudge (`33a2466`), dataset-scoped per-domain context (`8505761`, `1abf5b6`).
-- ✅ **Measure-additivity layer** — per-unit vs per-line grain detection + prevention/caveat/feasibility gates (`a1048d5`, `8e137de`, `4587418`, `e2f4055`).
-- ✅ **Fan-out de-fan** — deterministic parent + chasm rewrites of product-of-aggregates; AVG/COUNT/**SUM**-over-chasm drops + the **grain-mismatch-CTE** drop (two CTEs joined on only the coarser one's grain, accumulating its measure — caught a fabricated −149% margin) (`4449733`, `88c7703`, `15d8484`, branch `2026-06-17-briefing-trust-guards`); core shapes covered.
-- ✅ **Value-domain join guard ("fool-proof joins")** (#65) — every prior join safeguard reasons about column **names / types / ontology**; this catches the case they can't — a join whose two keys share a name-shape but hold **value-disjoint domains** (`orders.customer_id` vs `campaigns.campaign_id`, both `VARCHAR` ids, 0% overlap). `aughor/sql/join_guard.py` samples both sides (DuckDB `USING SAMPLE` containment) and, below 15% overlap, **regenerates the query once** and adopts the rewrite only if it executes *and* clears the mismatch (never goes backwards). Wired with active repair on **all three SQL-execution surfaces** — direct (`execute_planned_queries`), ADA (`_execute_safe`), explore (`plan_and_execute_subq`); fail-open via `tolerate`. Proven live on `beautycommerce` (wrong join → correct FK → real rows). *Also fixed a latent `FIX_SQL_PROMPT.format()` `metrics_section` `KeyError` that had silently disabled ADA self-correction and could crash the explore node.*
-- ✅ **Finding-trust ladder** — narration-inversion guard, quarantine, dismiss-with-reason, semantic-drift guards (`caa82b9`, `a0a8e24`).
-- ✅ **Adaptive Temporal Scope (USP)** — Tier 0 activity-anchored window, Tier 1 regime/changepoint, Tier 2 macro+micro, Tier 3 cost governor ([`docs/ADAPTIVE_TEMPORAL_SCOPE.md`](docs/ADAPTIVE_TEMPORAL_SCOPE.md)).
-
-### Semantic & governance layer
-- ✅ **Metric unification (UNIFY)** — one registered `revenue` metric (order-grain, net-of-cancelled), the global-metric leak into foreign schemas fixed, and a **convention-neutral eval scorer** (`3c97559`).
-- ✅ **B-7 metric-enforcement hard gate** + propose-to-define (`1c26189`); **B-8 metric governance** lifecycle + audit-trail UI (`9b84b81`, `c2664e6`).
-- ✅ **Semantic Compiler** — typed `QueryIntent` IR + deterministic `synthesize_sql` fast-path for the safe intents.
-- ✅ **Shared `analyze()` facade** over SQLGlot; AST-based product-of-aggregates detection (`32d00cc`, `15d8484`).
-
-### Intelligence surfaces
-- ✅ **Briefing → Hub → Domains** — three altitudes over one substrate; shared schema selector; citations open finding-actions ([`docs/INTELLIGENCE_UNIFICATION.md`](docs/INTELLIGENCE_UNIFICATION.md), `2296ffd`, `f5a03a5`, `102ebd3`).
-- ✅ **Briefing dashboard** — live charts + KPI tiles from each finding's own query, auto chart-type, fail-safe (`7823ff1`).
-- ✅ **Ontology board** — zoomable org/entity graph, legend, every profiled table an entity.
-- ✅ **Trust Receipts** on every chat answer + ADA report; evidence drill-through (`b7bb66f`, `2a57290`).
-
-### Industry-aware intelligence & briefing trust (2026-06-16/17)
-- ✅ **Industry-aware `BusinessProfile`** — per-connection LLM-inferred industry/vertical + north-star metrics + key questions, grounded to real columns; resolved against a **per-industry metric KB** (`data/kb/industry/*.json` — retail/airline/saas/logistics/food-delivery/manufacturing, ~50 formula+grain+anti-pattern recipes). Drives Phase-8 angle selection and injects authoritative computation recipes (cart-to-order conversion fixed 1.36 → ~18%). `aughor/business_profile/` + `routers/profile.py`. *(merge `af9b95e` + branch `2026-06-17-briefing-trust-guards`)*
-- ✅ **Build-time audited metric SQL** — each north-star metric carries an audited `value_sql` (KPI), `chart_sql` (trend/breakdown explainer) and each key-question a `key_question_sql`, all routed through the fan-out/grain + join-domain + range/shape guards (`aughor/business_profile/validate.py`) and **recipe-grounded-regenerated** when a draft fails. A **pinned key-questions pass** asks the curated questions deterministically every run so high-value findings are reproducible, not LLM-chance.
-- ✅ **SQL-trust guards (new classes)** — **SUM-over-chasm** drop (the $48T-ROAS fan-out `defan()` couldn't rewrite), **grain-mismatch-CTE** drop (the −149% margin), and a **profile-declared-range degenerate gate** (drops a bounded conversion at 1.41 / 100%, exempts an unbounded ROAS at 2.3 — uses the profile's declared range, not a text guess). `aughor/sql/fanout.py`, `agent._is_degenerate_result`.
-- ✅ **Three-tier finding dedup** — structural (grain+measures) → **token/semantic** (same claim, different SQL) → **embedding/paraphrase** (`aughor/semantic/finding_dedup.py`, cosine ≥ 0.85 via `nomic-embed-text`; calibrated paraphrase-dupes 0.87–0.93 drop, distinct ≤0.78 survive; fail-open).
-- ✅ **Briefing overhaul** — AI synthesis top → live **Industry KPI strip** → **top-3 key-metric explainer charts** (trends/breakdowns, when-to-use mark selection) → impact-ranked **finding text cards**; redundant citation list + Domain-Coverage/Org-Intelligence sections removed. `web/components/brief/*`, `BriefingPanel.tsx`, `charts/chartTypeInference.ts`.
-
-### Design v2 & conclusion-first Briefing (2026-06-17)
-- ✅ **Design language v2 (token-first re-skin)** — additive `web/aughor-v2/` package: Tier 1 primitive **token override** (deeper surfaces, real elevation, rounded panels) imported after `styles/tokens.css` so every Tailwind/shadcn bridge + `.aug-*` class inherits via `var()`; Tier 2 `.aug-*` re-skin (gradient primary, lifted cards, pill tags, focus rings) loaded after `globals.css`; Tier 3 central Vega theming in `VegaChart.tsx` — `vegaV2Config()` merged at the one spec chokepoint + a `remapLegacyColors()` deep-walk (legacy mark hexes → `--chart-*` tokens, no per-builder edits) + a `MutationObserver` re-embedding charts on dark/light flip. *(Verified live both themes; tsc clean.)*
-- ✅ **Conclusion-first Briefing** — new `VerdictHero` leads with the synthesized verdict + the top finding + proof-stat tiles (domains/findings/lead-confidence) + primary action; falls back to the deterministic top finding with no AI narrative. A `SupportingSignals` 3-up confidence-meter row from real `briefing.signals`; full prose + citations demoted to "Full synthesis". `BriefingPanel.tsx`.
-- ✅ **Nav IA** — default landing is now the Briefing; **Investigations** promoted into the Intelligence nav (→ existing Recents/investigations history). `page.tsx`.
-- ✅ **Section polish** — shared `components/ui/MiniStat.tsx`; real-count summary rows on Inbox / Investigations / Monitors (guarded, no fabricated stats — deliberately *no* "Tracked ARR" since recs are free-text); Query Builder `valid`/`error` SQL badge. Derived from an external "Aughor v2" mockup whose other screens (Catalog/QB/Semantic/Playbook/Health/Canvas) **already existed richer** in-app — adopted presentation, skipped fake controls.
-
-### Multi-schema intelligence, verification & editable ontology (2026-06-18/19)
-- ✅ **Per-schema intelligence — true multi-schema isolation** — the unit of intelligence is now **(connection × schema)**. A multi-schema connection (`workspace` = ecommerce/missimi/bakehouse/netflix) gets a fully isolated profile, ontology, exploration state and briefing per schema, plus an **"All schemas"** aggregate. Profile store writes `business_profile_{conn}__{schema}.json`; exploration/ontology stores key by `{conn}__{schema}`; `_gather_context` opens via `open_connection_for_with_schema` so inference only sees one schema; `kickoff_exploration` fans out across `schemas_of_connection`. Findings are matched on **schema-qualified** `schema.table` and a `_leaks_schema` guard drops any finding whose SQL references a *different* schema (a scoped DuckDB can still physically execute another schema's tables). Full-stack wiring: `/start?schema=`, `/status?schema=` (`per_schema`), `getBusinessProfile/getExplorerStatus/startExplorer(connectionId, schema?)`, `BriefingPanel` threads `schema` into KPI strip + dashboard + poll. **Live-verified:** a clean fan-out re-run produced four distinct, correctly-grounded profiles (e-commerce / beauty / bakery / SVOD streaming) with zero cross-contamination. *(branch `nao-editable-ontology-overrides`)*
-- ✅ **Pre-emission insight verification gate** — a last-line-of-defense screen every candidate finding passes before entering a briefing: **self-ratio tautology** (`X/X`), **fan-out** (`detect_fanout` + a **live cardinality oracle** `make_uniqueness_oracle`, `COUNT(*)=COUNT(DISTINCT key)`, re-run on CTE bodies with a normalized-weight carve-out), **scale-robust boundary saturation**, **part > whole**, and **claim-grounding**. Wired at all three `verify_insight` sites. `aughor/explorer/agent.py`, `aughor/sql/fanout.py`, `aughor/sql/validate.py`; `tests/unit/test_insight_gate.py`.
-- ✅ **Briefing-trust round 2 (BeautyCommerce cold-trace, F1–F10)** — distilled from approaching a rich warehouse cold and diffing against the live pipeline: **F1** per-question SQL retry (1/8 → 8/8 answered), **F2** cardinality-aware chasm guard, **F3** structural-vs-noise NULL classification, **F4** audited-value range calibration, **F5** cross-domain + key-question seeding, **F6** glossary keyed per connection/column-fingerprint (re-seed on drift, no cross-warehouse bleed), **F7** evidence-cited business model, **F8** direction-aware join guard (child ⊂ parent valid). Plus **observability**: `_save_state()` mirrors live phase to disk mid-run; a shared semaphore (`AUGHOR_MAX_CONCURRENT_EXPLORERS`) caps concurrent explorers.
-- ✅ **Human-editable, version-controlled ontology overrides** — the auto-built ontology is serialized to a **YAML tree** a human can open, diff and edit in a PR; on re-inference, machine output merges **under** the human overrides (**override-wins**, Nao-inspired) so a checked-in human correction always wins. Fixes two confirmed override-wins drifts and gives the ontology the same review/rollback story as code.
-
-### CEO-grade Briefing triage & universal trust gates (2026-06-19)
-- ✅ **Impact-ranked, plausibility-gated Briefing** — the synthesis now leads with the biggest *business move* (`impact_score` = magnitude-of-change × north-star membership × confidence, **risk-tilted** so a margin/AOV/revenue/retention decline edges out an equal-magnitude gain — "lead with the fire"), not by novelty/recency. A **plausibility gate** suppresses impossible magnitudes (an **operating-band KB** for open metrics the bounded-rate guard can't catch — inventory turnover > ~100×) and demotes anti-causal inverse-monotonic correlations, surfacing both in a **held-back audit strip**. North-star metric **trends** (margin 50%→34%, AOV €75→€56) run as first-class candidates; every figure renders in the business **currency** (€ not $). `aughor/knowledge/{triage,metric_moves,briefing}.py`, `profile/models.py`.
-- ✅ **Trust gates universalized to the emission gate** — the impossible-magnitude check + a new **vacuous-CASE guard** (a `CASE` that collapses entirely into its `ELSE` default — caught the missimi 96,295× turnover whose hardcoded brand-tier names matched no rows, ignoring a real `brand_tier` column) now live in `verify_insight`, so they protect **every** consumer (brief + insight cards + domains), not just the brief. The dashboard cards and the panel's deterministic synthesis builder (headline + supporting signals + key-questions) drop only the impossible and rank by impact; **ADA / deep analysis** carries non-blocking advisory `trust_caveat`s. **Live-verified on missimi:** "Growth Levers…" → **"Margin Erosion Demands Channel Optimization"**, turnover suppressed, € throughout. `aughor/explorer/agent.py`, `agent/investigate.py`, `web/components/brief/*`, `BriefingPanel.tsx`.
-
-### Interactive briefings + intelligence-trust hardening (2026-06-19)
-- ✅ **Interactive briefings** — the Briefing became a surface you interrogate, one model **Explain / Drill / Ask**: **pull-the-thread** (click a finding/citation → ADA streams in place, seeded with its SQL), **drill-down charts** (click a bar → decompose the slice or filter), **show-the-receipt** (click any number → re-run the cited query live, show the grounding cell), **time-lens** (trailing window over trend charts), **living brief** (anchored ask box). Shared SSE machinery (`investigationStream.ts` + `useInvestigationThread`), `InvestigateRequest{schema,seed_sql,seed_context}` → `scan_context` (zero graph change), `grounding.ground_numerals` + `/briefing/ground`, Vega `View`-click `onSelect`. *(commit `994bc71`)*
-- ✅ **Briefing intelligence trust — gate on governed metrics + live re-validation** — a parallel hardening pass that closed six root causes the interactive surface exposed (96,295× turnover headlining, a "50%→34%" decline in no data, ADA rewriting a governed formula into a broken one, attribution from failed queries, "Top Return Reason 0.4%", cross-business blending, "47% critically low"). **RC1** feasibility gate (no cost → no fabricated margin) in Phase-8 gen + `ada_intake`; **RC2** ADA binds to the governed `north_star_metrics` formula (`canonical` injects `profile_governed` + intake binding rule — kills the invented `quantity`); **RC4** implausible turnover/ratio guard in `verify_insight` (complements the operating-band/vacuous-CASE guards above); **RC5a** suppress fabricated waterfall/recs on empty evidence + **RC5b** `revalidate_live` re-runs the top-N findings before a brief refresh and flags failures `invalid` (reversible); **RC3** name↔SQL coherence (category-named metric ≠ scalar %); **RC6** aggregate brief tags `source_schema` + forbids cross-business synthesis; **severity** grounding ("lowest ≠ weak"); `restart`/`reset` now purge **per-schema** state + fan re-run per schema; composite aggregate React keys. **Live-verified:** a full from-scratch re-run produced clean per-schema findings (zero garbage), fresh per-business "All schemas" brief; 1020 tests + 16 new guard tests. *(commits `7860ea1`, `4bce086`, `20dedb8`, `e649f06`)*
-
-### Finding Dossier + ADA grounding (2026-06-19)
-- ✅ **Finding Dossier — drill-down is a read, not a second analysis** — the explorer already does the deep analysis behind every finding; that derivation is now **captured once at emit** (question, SQL, interpreter rationale, grounded cells, Phase 3-7 structural facts) into the finding's K3 ledger artifact, so understanding a finding is a **$0 read**. The Evidence drawer renders the full trace from the read-only receipt; **Investigate** serves a **Tier-0** dossier (0 steps / 10ms, no ADA), and **"Investigate deeper"** escalates to a seeded ADA. **Live re-validate** re-runs the finding's SQL once to confirm/flag drift; the briefing narrator pass attaches a per-finding "why it matters". The two ways an investigation can originate from a finding (dossier drill + "pull the thread") are unified onto **one first-class `origin_finding`** in `AgentState` that the ADA branch consumes directly — `ada_intake` anchors metric/tables/window/filters on the finding instead of re-deriving (also fixing a latent `scan_context`-overwrite no-op), and `origin_insight_id` is persisted on the investigation row (finding → investigation → report lineage). *(PR #72)*
-- ✅ **ADA grounding & driver-question routing** — surfaced by a 10-question Deep-Analysis stress test on the 13-table `missimi` warehouse (every number verified against the DB; 8/10 grounded, all flat-signal traps held). Two fixes: synthesis **never manufactures a percentage** (state a share only if a query returned it — kills the "4.6% of gross margin" fabrication), and **driver questions** ("do late deliveries lower reviews") now compare the metric **across the derived condition** instead of a blind temporal trend (re-run found late 4.23 vs on-time 4.45, −0.22, matching ground truth). Additive prompt changes. *(PR #72)*
-
-### Mode cross-pollination — one SQL-safety pipeline + one data-understanding context (2026-06-25)
-- ✅ **Shared SQL-safety pipeline** (#168, PR #83) — `aughor/sql/safety.py: preflight_repair` is the one chain every mode calls: identifier repair → dry-run → **deterministic candidate-binding substitution** (parse DuckDB's `Candidate bindings`, substitute the closest match, no LLM) → typed `SqlWriter.fix`. Wired into **Insight** (before the user-facing execute — fixes the raw `order_purchase_timestamp` binder crash) and **ADA** (`_execute_safe`). Insight and Deep had each grown a *different* subset of the same safeguards; this ends the drift.
-- ✅ **Shared data-understanding builder** (#168) — `aughor/semantic/data_understanding.py` bundles measure-grain + trusted-query patterns (extensible to metric/date-range), consumed by both the ADA phase planner and Insight, so they can't carry a different understanding. Plus measure-grain *prevention* + trusted-query *reuse* in ADA phases (R5/R3, Deep learns from Insight) and the full **Verifier chasm battery** in Insight (R6, Insight learns from Deep).
-- ✅ **Synthesis reliability + id-arithmetic repair** (#168) — the synthesis LLM call is **bounded by a timeout with a deterministic phase-summary fallback** (a slow cloud narrator can no longer leave the user with no report); ADA now **repairs** `SUM(measure × id/key)` rather than only caveating it. Live-verified on both modes; models configurable per role (`data/llm_config.json: models`). Design: [`docs/MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](docs/MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md).
-
-### Investigation quality & honesty — answer the question that was asked (2026-06-25)
-- ✅ **Temporal-change routing** (#167, PR #82, merged `60cfe44`) — *"what drove the **change**?"* is detected and **overrides** the intake LLM's frequent cross-sectional misclassification, running a real period-over-period decomposition instead of a static weakness scan (live: surfaced a Nov–Dec margin crash the scan missed).
-- ✅ **Data-range-anchored windows** — the `_measure_date_span` probe resolves the date column's *own* table (the date often lives in `orders`, not the metric table), so a blind probe no longer pins the window to the oldest year vs a non-existent prior year; it now compares the latest full period vs the prior (live: 2022→2025 data → 2025 vs 2024).
-- ✅ **Honest under uncertainty** — reframe when a change can't be measured; **suppress the fabricated "share of total change" waterfall** on cross-sectional runs; `_neutralize_baseless_contribution` strips a driver claim computed from a NULL baseline; key numbers recomputed from the finding's own rows; truncated-population honesty; currency-from-settings (€), float-noise rounding, dedupe export exec-summary, rich CLI render, progressive streaming.
-
-### Explorer intelligence — grounded generation, synthesis, frontier & forward-chaining (2026-06-24)
-- ✅ **Grounded generation — column hallucination eliminated at the root** (#166, PR #80) — Phase 8 generated SQL **free-form** and invented columns (`line_total` 150+× on missimi), caught only by a post-hoc gate that discarded **~40% of the token budget**. The new grounded path (`aughor/explorer/probe.py` + `_grounded_probe_nq`, **default-on**, free-form fallback) makes invention **structurally impossible**: the LLM CHOOSES measures/dimensions/filters from the connection's REAL columns, validated by set-membership and **compiled** to grain-safe SQL (single-table · star-join · COUNT-by-dimension). **THE actual root cause** (`566a40c`): the ontology's bare `entity.source_tables` never matched `sql_writer.table_cols`'s qualified keys → `domain_table_cols` was EMPTY for every domain → the generator got an empty schema → it invented everything. **Measured (missimi): `line_total` 150+→0, invented-identifier drops ~38/run→0, Phase-8 ROI ~190k-tokens/finding → ~176k/3–9 findings, runs budget-CANCELLED→complete.** Plus persisted negative knowledge (`_dead_refs`), unbound-recipe dropping (`_recipe_binds`). *Follow-up: grounded compiler **scope B** (full cross-table joins via pre-agg CTEs) to retire the free-form fallback.*
-- ✅ **Cross-finding synthesis — Phase 9** (#166) — `aughor/explorer/synthesis.py` composes pairs of existing findings sharing a join key into emergent claims neither parent holds, via 5 operators (share/tension/concentration/confound/chain); every emergent number is **proven by a confirming query** through the same guards+grounding a normal finding runs (never narrated). End-of-run + opt-in `explorer.synthesis_incremental`; cross-run pair dedup; novelty≥2 gate. Live: novelty-5 ops insights (top-20 SKUs = 8.13% of all out-of-stock days).
-- ✅ **Cut-level frontier + playbook + forward-chaining** (#166) — coverage tracked at concrete `measure×dimension` cells (`aughor/explorer/frontier.py`), not coarse angles; the 392-entry causal **playbook wired into Scout** (was Analyst-only) to steer what to look for; a notable finding **forward-chains** into a targeted "why" drill (`drill_of`-tagged); **pinned reproduce-by-read** stops re-running identical pinned SQL when the activity watermark hasn't moved (the visible repetition).
-
-### Ratio-aware cross-sectional scan (2026-06-20)
-- ✅ **Stop summing a percentage** — a 3/10 freight-cost Deep Analysis exposed that the cross-sectional weakness scan used an **additive-SUM** SQL template for *every* metric, so a **ratio** metric (`SUM(freight)/SUM(order_value)*100`) had its **denominator silently dropped** — the coder reported `SUM(freight)/COUNT(*)` ($/order) and synthesis mislabeled **$1.48/order as "1.48%"**, overwriting a correct origin finding (Germany 2.17%) at *High confidence*. A unit error the numeric guard can't catch ($1.48 is a real cell). Fix: `ada_cross_section` **branches by metric kind** via a deterministic `_metric_is_ratio` gate (÷ between aggregates / `*100` / AVG / %-rate-ratio label) + an `IntakeOutput.metric_is_ratio` hint — a ratio is computed **`SUM(num)/SUM(den)` per group** (numerator & denominator kept and surfaced, never SUM'd or ÷COUNT), interpreted **direction-aware** (a low cost/freight ratio is a **strength**, not "weakest"), and charted on the ratio. Additive path is byte-for-byte unchanged. Also fixed the cross-section phase to **stream live** to the UI. Live-verified on `missimi`: Germany 2.17% lowest, others 4.25–4.34%, matching direct-SQL ground truth to the decimal. *(branch `2026-06-20-ratio-metric-cross-section`)*
-
-### Query Builder (Superset-class)
-- ✅ Visual builder (dimensions + metrics), **saved queries**, first-class **time range + grain**, **HAVING** + distinct-value filter picker, **CSV export**, **pivot** cross-tab, **chart-type gallery + Customize** (color/format/legend/axes), real **SQL editor** (highlight + format), grain-misuse warnings, "Open in Query Builder" from Insights/Deep-Analysis (the `feat(query-builder)` arc).
-
-### Product surface (the 5 directions, 2026-06-14)
-- ✅ **BeautyCommerce demo seed** (`2b8f00d`) · ✅ **Onboarding first-run funnel** (`afeb018`) · ✅ **Briefing dashboard** (`7823ff1`) · ✅ **PDF/PowerPoint export** for Insight + Deep-Analysis (`9c86cd6`, `31fd188`) · ✅ **Runtime LLM provider switching** (`d6afb28`).
-
-### Trust, security, licensing
-- ✅ **First-class SQLite connector** (#66) — `SQLiteConnection` (`dialect="sqlite"`, stdlib `sqlite3`) joins DuckDB/Postgres as a real backend: read-only by construction (`file:…?mode=ro`, never creates a DB for a missing path), `sqlite_master`/`PRAGMA` introspection, `EXPLAIN` validation, DuckDB→SQLite transpile, and the two-tier fast `get_schema` + heavy `build_intelligence` (profiles + ontology). Registry-wired (`FORM_FIELDS`/`DSN_PREVIEWS`, `file` category). Added public forwarders `security_pre`/`security_post` + `compute_join_map` so connectors import the public interface (private-import ratchet stays green). Built as a proper product feature — not a benchmark shim — so the agent's real path runs on the real engine (unblocks Spider 2.0-Lite's 135 SQLite DBs).
-- ✅ **Secrets-at-rest vault** — Fernet-encrypted DSNs, trigger URLs/headers, connector tokens (`aed5640`, `af7138b`).
-- ✅ **Licensing capability gate** — `gate()` wired across actions/briefs/metrics/monitors (`3a8da8b`) and **extended** to investigations / exploration / ontology / semantic writes (25 gates), with a frontend **402 → upsell** modal that surfaces any locked capability via a one-time `fetch` interceptor (#46). Reads/deletes stay open; lands dark at the default enterprise tier.
-- ✅ **Workspace data-path tenancy isolation** — every connection-tied surface (pickers, `/canvases`, `/investigations`, Recommendation Inbox, Catalog tree, **Monitors/Alerts**, and the **Home-dashboard first-load flash**) scoped to the active workspace via a fail-closed `workspace_connection_ids` gate + a derived workspace-clamped `selectedConn`; both UI + server layers (#38, #39, #41, #42, #45). An empty workspace shows none of another's data. See [FEATURES](FEATURES.md).
-- ✅ **Query cancellation** + orphaned-run reconciliation (kernel).
-
-### Adaptive Inference (2026-06-14/15)
-- ✅ **Adaptive-inference research + plan** — [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) (#48): model cascades · prompt optimization · semantic operators — what's borrowable (and what isn't — *not* NL2SQL), plus a naming-spine consolidation of Aughor's capabilities. Main coder model set to `qwen3-coder-next:cloud` (won the golden-SQL bake-off at acceptable latency).
-- ✅ **Model-cascade core — built (#49), then removed** — shipped as an opt-in cascade on hypothesis scoring + a generic Hoeffding threshold learner, then **deleted from the codebase** as not worth its weight: every accessible *cheap* proxy proved miscalibrated, so the best case was a ~15% call saving contingent on a model that doesn't exist on any reachable backend (the recall guarantee always held — the math was fine, the *models* weren't). The ~150-line core is reconstructable from git (#49) + the [plan doc](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) Part VII if a cheap+calibrated proxy ever lands.
-
-### UX & platform
-- ✅ **Motion system** — tokens + primitives (`web/components/ui/motion.tsx`) + ~12 keyframes, rolled out to the worst offenders (`245b166`).
-- ✅ **#14 UX polish** — ontology legend at top, canvas History-tab empty-state, Configure panel, Recents surface, completed-status tags, light/dark legible themes (`6f17393`, `364e117`, `3f31d33`).
-- ✅ **WCH hardening** — Investigate→blank-canvas fix, sample-data honesty chain, data-shape-aware temporal planning (`419112c`, `ea4110f`, `1a10918`).
-
-### Superset study & integration (2026-06-20)
-*Deep-studied Apache Superset (Apache-2.0); imported the high-leverage wins, skipped the redundant ones. Full record: [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md). Branch `2026-06-20-superset-integration`, 11 commits, tested.*
-- ✅ **Charts → Apache ECharts** — replaced Vega-Lite end-to-end: token theme + pure `transformProps` builders + `buildAutoOption` (reuses `inferChartType`); flipped `Chart.tsx` (same props — 9 consumers untouched) and removed `vega`/`vega-lite`/`vega-embed` (`b275e2d`,`086bf3f`,`3175000`,`aa69c8b`).
-- ✅ **Answer-card UX** — `ResultChartCard`: inline **grain-aware** control strip (Metric/Dimension/Aggregation/Display — re-pivot in place) + chart⇄table toggle, in Insight + Deep Analysis; SUM-of-a-rate warned, not silently allowed (`421a902`). Headline figures emphasized + repeated per-finding confidence decluttered (`749ae16`).
-- ✅ **AST SQL read-only gate** — `is_mutating`/`is_destructive`/disallowed-fns + CTE-safe `extract_tables`, wired into `SafetyChecker`; catches `lo_export()`/`EXPLAIN ANALYZE <dml>`/CTE-masked writes/`SELECT…INTO`/`pg_read_file()` the regex passed (`114ec60`). All three table-guards consolidated onto it (`2d4dd2a`).
-- ✅ **Per-dialect NL2SQL rules** — `writer_rules(db)` + `writes_native_sql` flag: DuckDB rules on the transpile path, native rule blocks for verbatim-execution warehouses (`32c74da`). *(A time-grain table proved redundant — sqlglot already transpiles `date_trunc` correctly.)*
-- ✅ **Post-processing operators** — pure `(columns,rows)` PoP/contribution/rolling/cumulative, surfacing gated period-over-period + Pareto signals to the LLM (`36582f6`).
-- ✅ **Monitor anti-flap** — `grace_period_hours` debounce centralized in `run_monitor`; sustained breach alerts once/grace-window, escalations immediate, manual test bypasses (`339db19`).
-
-### Workspace settings, pivot & briefing UX (2026-06-20)
-*Branch `2026-06-20-workspace-settings-pivot` (stacked on the Superset branch), 13 commits; backend pytest green, frontend tsc + `/chart-lab` verified.*
-- ✅ **Org/Workspace settings** — `aughor/orgsettings/` app-wide `OrgSettings` singleton (identity: company/website/HQ/industry · localization: currency/timezone/date-format/fiscal-year · appearance: chart-palette) + a per-workspace override. **Hybrid** scope (workspace ▸ app ▸ default) with **override-wins** over the inferred `BusinessProfile` (`""` = use the inferred value). Wired: currency → briefing + metric-moves; industry → ontology/metric-KB/explorer steering; identity → an `org_context()` prompt block. Routes `/org-settings(/effective)`; Settings ▸ "Organization & Localization" UI. 28 tests + briefing override-wins tests.
-- ✅ **Pivot in answer cards** — the Query-Builder `PivotTable` cross-tab surfaced as a third view in `ResultChartCard` (Insight + Deep Analysis), grain-aware defaults.
-- ✅ **ThoughtSpot-style KPI scorecard + click-to-expand** — `IndustryKpiStrip`: colored left border + big value + **direction-aware** delta badge (rising CAC / falling margin red, rising repeat-rate / ROAS green) + sparkline + caption; **clicking a card expands it into a rich trend chart** (master-detail). Retired the redundant standalone metric-chart grid in `BriefingDashboard` (−337 lines).
-- ✅ **Currency/date formatting from settings (override-wins)** — money columns carry the effective currency symbol in tables, pivot AND charts (tooltip values + relabeled series, `cac_usd`→"CAC €…"); `date_format` in `fmtDate`/table cells; a `lib/orgSettings` cache the pure formatters read + a `useOrgSettings` (`useSyncExternalStore`) subscription so charts rebuild reactively when the cache lands.
-- ✅ **Shared favorability** (`lib/favorability.ts`) used by the scorecard + `Brief.tsx` inline deltas (fixes the old hardcoded minus=red). **Chart palette** (`lib/chartPalettes.ts`) named palettes applied to charts (per-chart Customize wins; default = theme).
-- ✅ **LLM default fix** — Ollama default now `qwen3-coder-next:cloud` for coder+fast, `kimi-k2.6:cloud` for narrator (retires the uninstalled-`qwen2.5-coder:32b` silent-404 footgun); `fast` resolves to its own role default.
-
-### Briefing trend-window & answer-chart fixes (2026-06-21)
-*Three bugs a `missimi` live read surfaced. Branch `2026-06-20-briefing-chart-fixes`, 1 commit (`a44d67e`); unit suite green (1158, +19 trend-window + additivity-gate tests; the 2 pre-existing-red ratchets unchanged), tsc clean, **live-verified on missimi**.*
-- ✅ **KPI trend was frozen on year-one, not the latest data** — a metric's trend `chart_sql` ends `ORDER BY <bucket> LIMIT N` (ascending), which returns the **OLDEST** N buckets; `missimi` spans 2022–2025 so the sparkline/expand-chart **and the period-over-period delta** were stuck on Jan–Dec 2022. New deterministic, idempotent, fail-open **`aughor/sql/trend_window.py`** re-anchors any provably-ascending LIMITed time trend to the **most-recent N buckets, ascending for display**, applied at the single profile read chokepoint (`store.load_raw`) so the KPI strip *and* backend metric-moves both get it and **existing stored profiles are corrected without a re-inference**; generation prompt updated so new profiles are born correct. Live: trend → `2025-01..2025-12`.
-- ✅ **Live answer chart rendered broken (measure on the x-axis) while History rendered fine** — `Chart.tsx` trusted the LLM `chart_config` blindly; History drops it and falls back to correct inference. Chart now **validates the config's field roles** (x & y real columns, y numeric, x≠y, x a dimension/date except scatter) and falls back to the data-shape inference when incoherent. Live: "AOV by order status" renders `canceled`/`delivered` on the category axis.
-- ✅ **"Concentration" claimed for an AVERAGE metric** — `computeSummary()` summed five per-group **averages** into a fake 346.89 total and reported each as a "share" ("credit_card accounts for 20% of 346.89 … 60%"). Share-of-total/concentration is now **gated on measure additivity** (`web/lib/measureKind.ts` + `aughor/tools/postproc.py:is_additive_measure`, SQL-authoritative — `AVG()`/ratio ⇒ non-additive even behind an alias); a non-additive measure describes spread+leader instead ("AOV is roughly flat across 5 payment types"). The backend stats concentration operator is gated the same way (`sql` threaded into `analyze_query_result`) so the LLM evidence never carries a false Pareto signal.
-
-### Canvas/Settings IA, schema removal, industry steering & verdict lede (2026-06-21)
-*Same branch `2026-06-20-briefing-chart-fixes`, 5 commits (`d9495ef`, `554084f`, `4bc37f3`, `9743b53`); tsc clean, live-verified.*
-- ✅ **Canvas Intelligence tab removed** — the per-canvas Intelligence tab duplicated the global Briefing; canvas tabs are now Chat / History / Artifacts (`CanvasWorkspace.tsx`).
-- ✅ **Settings → left-sidebar tab with sub-tabs** — moved off the top-right gear into the sidebar; the screen is grouped into Organization / Appearance / Models / System sub-tabs instead of one long scroll (`app/page.tsx`).
-- ✅ **Remove a schema/table from a workspace** — `LocalUploadConnection.delete_table` + `DELETE /connections/{conn}/schemas/{schema}` (drops the schema + backing files, purges the schema's profile/exploration) and `…/tables/{table}`; Catalog "Remove schema" / "Remove" buttons with confirm; `main` guarded. Live-verified create→delete round-trip.
-- ✅ **Industry select → explorer steering** — when the org/workspace industry override differs from a dataset's inferred industry, the explorer Phase-8 steering pulls the SELECTED industry's curated KB (`match_industry`) and steers by ITS metrics; an industry change invalidates stored profiles for re-capture. Fixed a KB alias collision (`food_delivery` claimed `logistics`).
-- ✅ **Briefing verdict lede** — the hero now leads with one bold verdict + a one-line proof + a confidence RING + the primary action; scope/provenance demoted to a quiet footer (`BriefingPanel.tsx` `VerdictHero` + `ConfidenceRing`).
-
-### Agentic architecture ideation + missimi quality eval (2026-06-21)
-- ✅ **Agentic architecture plan** (no code) — [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md): maps the implicit agents already running (explorer/ADA/monitors/briefer) on the `JobKernel` + event spine, the gap, a supervisor+blackboard model with background/active lanes, and a phased roadmap (registry + fleet view first).
-- ✅ **MotherDuck study & synthesis** (no code) — [`docs/MOTHERDUCK_LEARNINGS.md`](docs/MOTHERDUCK_LEARNINGS.md): deep-studied the closest "AI + SQL + analytics" platform (AI functions, agent-builder guide, 28-tool MCP, Dives/Flights/Skills, hypertenancy/DuckLake), **grounded against Aughor's real code**. Key finding: their own DABstep benchmark hits 100% only with a **governed semantic layer** + their trust pitch ("every answer shows its SQL") *is* Aughor's Trust Receipts → **external validation of the moat**. Two surfaces to borrow (Flights job-API contract → fleet view; MCP tool contract → external reach, but exposing *governed intelligence* tools not raw `query`). Recommendations R1–R8 threaded into [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md) §6–7 and §3 below.
-- ✅ **Missimi quality eval (Option B, 30 runs)** — [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md): the session's fixes held; surfaced 3 critical + 1 false-conclusion defect with root causes. Findings feed §3 below. **Did NOT scale to 50+50** — fix the criticals first, then re-run as a regression.
-
-### Eval-derived critical fixes (2026-06-21)
-- ✅ **All 3 critical eval defects fixed + live-verified on missimi** (build→wire→test→leverage; zero net ratchet debt; +18 unit tests):
-  - **id-arithmetic guard** `measure_times_key_arithmetic` (`aughor/sql/fanout.py`) — kills `SUM(measure × id/key)` fabrication across every SQL guard path (explorer, ADA, profile-audit, chat). Live: Q5 → `SUM(unit_price)`.
-  - **chat-headline grounding** — `_ground_headline` grounds every number for a scalar result, scale-tolerant. Live: Q6 → `28.49%` (was 42.3%).
-  - **explore/deep schema scoping** — derive effective schema + scope the catalog expansion + `_rescope_sql_to_schema` drop/repair in `explore.py`. Live: Q25/Q21 stayed missimi-scoped (0 leaks).
-- ✅ **Eval-derived 🟠 high-priority fixes** (build→wire→test→leverage; +14 unit tests; zero net debt):
-  - **`cancelled→canceled` on `!=`/`NOT IN`** — extended the filter value-domain guard (op-aware) AND wired it into the DEEP paths (ADA + explore), where it was previously chat-only. Live: deep Q29 no longer reports "zero cancellations".
-  - **currency in chat prose** — `$`→org-symbol post-pass on the chat headline + narrative. Live: "€107.42M".
-  - **ratio-of-sums enforcement** (`avg_of_row_ratios` guard) — catches `AVG(a/b)`; the freight Insight-vs-Deep gap was reclassified as a metric-DEFINITION difference (→ UNIFY).
-- ✅ **Eval-derived 🟡 time-series fix** — chat narrator now recent-weights a long time series (`_narrator_sample`) so the narrative leads with current state, not year-one (Q15 led with 2022 → now "1.12 in December 2025"). The paired `parallelize score_evidence` item was investigated and found to be a misdiagnosis (single call; hot-path LLM work already parallel) — see §3.
-- ✅ **UNIFY metric-definition consistency** — `/chat` and Deep now route through ONE `unified_metric_grounding` resolver, so a governed metric resolves to the SAME SQL in both (chat previously saw only the global catalog and re-derived north-star metrics). Live-verified on missimi (gross margin, ROAS). The whole eval backlog is now closed bar the user-deferred 50+50.
-
-### Backlog hardening batch (2026-06-21) — FEATURES #155
-- ✅ **Correctness + localization + dev-velocity batch** (build→wire→test→leverage; zero net debt; 1,215 unit tests): per-workspace briefing currency override; profiler composite-PK detection (`grain_columns`); metric wrong-column leak fix (re-filter after the ontology overlay); generated typed API client (`gen:api`); org-settings reactivity for tables + KPI cards; FAN-b **AVG-decomposition de-fan** (numerically verified); declarative metric additivity; localization (fiscal-year buckets + timezone labels, no-op at defaults). Also corrected two stale ROADMAP claims (chart-axis currency already done; `score_evidence` parallelization a misdiagnosis). Per-item ✅ status is in §3.
-
-### Agentic fleet — registry · metering · governance · hand-offs (2026-06-21)
-*From the MotherDuck synthesis ([`docs/MOTHERDUCK_LEARNINGS.md`](docs/MOTHERDUCK_LEARNINGS.md), [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md)). Branch `2026-06-21-agentic-fleet-metering` (off `5ff1800`), **41 commits, committed — NOT pushed** (R1–R8 fleet + quality #157 + correctness #158 + the missimi "ROAS mess" fixes #159 **+ its 3 follow-ups #160: Fix A dim-ratio de-fan, registry formula-drift, relabel-and-keep + #161: identity-context breadth + joinable_with ontology edges**, §3); 1,535 tests, zero net ratchet debt; every step live-verified on the real path. Detailed per-item record + the deferred follow-ups live in §3 "MotherDuck-derived backlog".*
-- ✅ **R1 · cost metering** — every run records real compute (tokens · queries · rows · time; no fabricated $) into the Trust Receipt + job row, via a context-propagating default executor that carries the accumulator across the `run_in_executor` boundary (`aughor/kernel/metering.py`, `concurrency.py`). *(`bb90894`)*
-- ✅ **R2 · Fleet view** — `/jobs` API (list/get/logs/cancel, mirrors MotherDuck's Flights) + a **Fleet** UI showing named agents (Scout/Analyst) with live status + cost. *(`bb90894`)*
-- ✅ **Phase 0 · agent registry + governance** — charters (role · goal · lane · tools · budget) + per-Org enable/pause + budget (override-wins, ledger-kv) + a Fleet **Agents** management tab. *(`57113ee`)*
-- ✅ **Budget enforcement (jobs + chat) + per-workspace** — the kernel heartbeat cancels an over-budget job (cancel = the reliable kill); the synchronous chat path enforces in-context via `BudgetExceeded(BaseException)` at the LLM funnel; a connection resolves to its workspace for per-workspace governance. *(`6a7c8aa`, `04ed47f`)*
-- ✅ **Phase 2 · ADA specialist hand-offs (foundation)** — the SQL-Engineer → Verifier → Narrator micro-cycle inside `run_analysis_phase` made explicit, typed, and journaled (`agent.handoff`) — additive, no pipeline rewrite (`aughor/agent/handoff.py`). *(`08fb29e`)*
-- ✅ **R3 · typed SQL-error taxonomy** — `parser | binder | semantic | runtime`, routing repair by type across all three repair paths (`tools/error_classifier.py`, `FixResult.error_class`). *(`e4035f6`)*
-- ✅ **R5 · governed-intelligence MCP server** — the fleet's external-reach surface: a standalone [MCP](https://modelcontextprotocol.io) server (`aughor/mcp/`, official `mcp` SDK, stdio + streamable-HTTP) exposing **11 governed tools** (`ask`+Trust-Receipt · `deep_analysis`+`get_investigation` · `get_metric` governed-value · `list_findings` · `get_briefing` · `explore` · `list_jobs`/`get_job`/`cancel_job`) — deliberately **no raw `query`**. Built as a thin `httpx` client over the running REST API so every tool runs the EXACT governed path (metering · budgets · gating · receipts in the API process; no second kernel). One backend add: `GET /metrics/{name}/value` (governed value with declared filters applied). Live-verified over the real stdio MCP protocol on `workspace`/missimi: `ask` bound to the governed revenue def (`… WHERE status <> 'cancelled'`) + returned a full Trust Receipt (artifact·lineage·job·cost). +19 tests; 1,286 green; zero net debt. See [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
-- ✅ **R4 · semantic-layer ablation eval** — the moat made measurable (`53ebf69`; [`docs/R4_ABLATION_EVAL_2026-06-21.md`](docs/R4_ABLATION_EVAL_2026-06-21.md)). 3-arm ablation + a `--traps` demo: the **deterministic guards** are the durable moat (0 regressions; canonical traps caught — fan-out $199.5M→$108.5M, etc.), while LLM-context injection **regressed to 58%** (the drift confound) — the danger is silent-wrong and the guards eliminate it.
-- ✅ **standalone Verifier node + typed error_class on the hand-off** — the detector battery + R3 failure classification extracted into `aughor/agent/verifier.py` (behavior-preserving); `error_class` rides the journaled hand-off → receipt (`30d1adc`).
-- ✅ **R7 · hybrid retrieval + R7a canonical-metric retrieval** — dependency-free BM25⊕vector rerank (`aughor/semantic/lexical.py`) wired into both retrievers (+ fixed a latent broken connection-KB search); `rank_metrics_for_question` promotes the governed metric the question is about (`7c742ea`, `5fc1813`). R7b/R7c deferred-with-cause.
-- ✅ **build-time join prevention** — value-verify name-inferred joins at catalog-build time → an explicit DO-NOT-JOIN for value-disjoint coincidences, so the model can't draw them (`b1878a9`; live-verified on missimi).
-- ✅ **R8 · AI-as-a-governed-SQL-operator** — `ai_prompt` + a governed DuckDB `prompt()` UDF (model-pinned · temp-0 · row-capped · provenance receipt; MotherDuck parity, governed) (`1c13048`; live in-SQL AI column).
-- ⛔ **hypothesis-eval parallelization** — verified a **misdiagnosis** (the score loop runs N=1; `generate_hypotheses` unwired; the costly work already parallel) — recorded, no fabricated change (`4af4675`).
-
-**Correctness + agentic back-to-back batch (#158, 9 commits, each live-verified):**
-- ✅ **Phase-2 structural** — a deterministic **Orchestrator** (`aughor/agent/orchestrator.py`) declares the ADA phase plan at intake (mirrors the routers from the same signals — *not* an LLM decision, per the R4 finding) + a typed **ContradictionReport** replacing the throwaway string detector (`to_prompt_section()` byte-identical → synthesis unchanged) + planned-vs-actual seam reconciliation; journaled as hand-offs, surfaced on the report ("Cross-phase checks") (`f54f6d0`).
-- ✅ **R8 +1 · governed `embedding()`** — completes MotherDuck's prompt()/embedding() pair: `ai_embed` + `register_embedding_udf` (model-pinned · row-capped · provenanced); live in-DuckDB `list_cosine_similarity` ranking (`0e1414a`).
-- ✅ **R6 · per-workspace compute isolation** — a DuckDB **lane** (`aughor/db/lanes.py`): a `memory_limit`+`threads` envelope applied on connection open (no-op at defaults) + a per-workspace concurrency gate inside the global ceiling; live threads 10→3 / memory→1.8 GiB (`d8b5d8f`).
-- ✅ **per-agent LLM model** — governed override-wins `model` on `Governance`, applied per-run via a `_run_model` contextvar set in kernel `_run` and propagated to LLM worker threads by the ContextThreadPoolExecutor (like metering); `/agents` PATCH accepts it (`ddf372e`).
-- ✅ **join-prevention precompute + MinHash/HLL** — `aughor/sql/sketches.py` (MinHash + HLL inclusion-exclusion); `join_guard._probe_overlap_hll` + `table_rows`-gated routing + `seed_verified_cache` (explorer phase-4 warms the catalog DO-NOT-JOIN cache; orphan check HLL-estimated above 1M rows) (`4824d15`).
-- ✅ **FAN-b · satellite-WHERE split** — a single-satellite predicate is pushed into that satellite's pre-agg CTE instead of bailing (INNER-join semantics preserved); live 81/1800 fanned → 37/1500 exact; still bails on cross-table/OR/unqualified (`c32f07b`).
-- ✅ **Query Builder Layer-3** — reverse-compile raw SQL → chips (`aughor/sql/decompile.py`, SQLGlot; aliases→real tables; honest bails on CTE/set-op/subquery); `POST /query/decompile` + an "Import → builder" action (`6ccaa35`).
-- ✅ **Reference-UX · Validate + feedback** — `POST /query/validate` re-runs the guard battery live (disjoint join 0% + `cancelled`→`canceled`); `InsightActions` row + `POST /chat/feedback` (`307a368`).
-- ✅ **profiler large-table PK** — verified via an HLL **ratio** test (a PK's `approx_count_distinct` ≈ row_count; a non-unique key's is far smaller) where the exact `COUNT(DISTINCT)` was skipped above 500k rows; live 600k order_id verified, non-unique rejected (`1c1a4ab`). *(Scope→CanvasScope + Recents deep-link found already shipped.)*
-*Next (un-started): **#12 enterprise auth** (needs a product call) · **Spider 2.0 benchmark** (SQLite on-ramp ready) · onboarding-for-new-Orgs · R8 further surfaces (embedding in agent SQL-gen, Dives, DuckLake) · MCP resources/prompts. Before any PR: rebase onto GitHub `main` (which already has `5ff1800` via PR #75).*
-
-### Inference Plane + manifest-driven explorer (2026-06-23) — PR #79
-*Explorer optimisation is behind a default-OFF flag (`explorer.manifest_driven`), opt-in pending broad multi-connection validation. Full record: [`docs/EXPLORER_INTELLIGENCE_FIXES.md`](docs/EXPLORER_INTELLIGENCE_FIXES.md) + [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md) §5b. FEATURES #158–#159.*
-- ✅ **Inference Plane** — LLM access vended like storage/compute: `vend_llm(role) → InferenceCapability` (profile: cache_mode · tooling · structured_output · token_accounting · max_context · privacy_class · cost), bound **Org → Workspace → Agent**; surfaced in Settings → Inference (capability chips + a public-API governance banner). A **prefix-cache probe** measures real KV reuse and feeds the verdict back — found `qwen3-coder-next:cloud` does **not** reuse prefixes across requests (Ollama Cloud multiplexes workers), so backend-specific prefix alignment is dead for the cloud default. **Layer A**: ADA intake context sizes to the bound model's window + a warn-only overflow guard at `complete()`.
-- ✅ **Manifest-driven explorer (opt-in)** — replaces Phase-8 LLM trial-and-error generation with a data-derived **L2 coverage manifest** → deterministic baseline SQL (91/91 cells bind on real data), **KPI-led** (bind-validated `value_sql` first); the existing trust guards still *dispose*, so a naïve proposal is skipped, never wrong. **Live-verified ~17.5× cheaper** (~3,086 vs ~54,000 tokens/finding), grounded, completes instead of budget-cancelled; a **coverage tracker** persists covered cells so re-runs skip them and advance the frontier.
-- ✅ **Platform bugs fixed (independent of the flag)** — budget-cancel **wedge** (a cancelled run left the explorer stuck "running", blocking restarts); the bare-vs-per-schema **key split** (the root cause behind wedge/coverage/stop) — `/stop` now resolves all keys, and a single-schema connection always uses the canonical bare key.
+**House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
+ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route
+changes · `PYTHONPATH="$PWD"` in worktrees · one writer per `data/` · **prove each wave live in
+the browser** · **measure the premise before building.**
 
 ---
 
-## 3 · What's left
+## 6 · Open decisions — the user's, not the builder's
 
-Verified pending against code/git. `⬜` not started · `◑` partial.
-
-### ▶ Deep-Analysis quality — remaining backlog (2026-07-09 audit; full detail: [`docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md`](docs/DEEP_ANALYSIS_QUALITY_2026-07-09.md))
-*Tiers 1–4 from the audit are SHIPPED (see §2). Everything **demonstrated** is fixed; the below is adjacent polish, the deeper grounding direction scoped down during Tier 4, and one meta gap. Ranked by value.*
-- ✅ **P1 — canonical-metric pinning at ADA intake (highest value; a real quality bug) — SHIPPED (2026-07-09, flag `ada.pin_canonical_metric`, default-off).** A live run's intake picked `COUNT(DISTINCT refund_id)/COUNT(DISTINCT order_id)*100` and the scan returned no dimensional breakdown → "cause remains unidentified". `_pin_canonical_metric` (`agent/investigate.py`) now resolves the governed metric (`semantic/canonical.py:resolve_canonical_metrics`) and pins the intake's `metric_sql` to it — fail-open, only when a governed metric matches the label on **distinctive tokens**, its SQL is a **bare substitutable aggregate** (no SELECT/FROM/`;`), AND a **dry-run probe** confirms it runs over the metric table; updates `metric_is_ratio` + emits a transparency note; runs after the safety fallback. Deterministic, byte-identical default. **+14 tests** (two drive `ada_intake` end-to-end). Closes the loop between T4-1's *disclosure* and *accuracy*. *Remaining: live A/B on beautycommerce → consider default-path promotion.*
-- ✅ **P2 — internal ADA progress events — SHIPPED (2026-07-09, flag `ada.progress_events`, default-off).** The cross-section/decompose scan ran ~5 min silently as ONE node. FOUND: the cited `_explore_subq_event` template is a post-node drain, not live streaming — filling the gap needed a NEW mid-node channel (none existed). Built it: a best-effort progress sink (`agent/progress.py`) emits per-completed-dimension from `_parallel_execute_safe`; `routers/investigations.py` binds the sink inside the copied `Context` each node runs in (propagates via `ContextThreadPoolExecutor`; `run_in_executor` alone doesn't) and `_aiter_sync_with_progress` interleaves `phase_progress` markers; frontend drives a live status line ("Scanning brand · 3/6…") via existing `STATUS_TEXT`. Byte-identical default (plain `_aiter_sync`); both main + resume paths; +9 tests. *Remaining: live-verify the status line during a real multi-minute scan.*
-- ✅ **P3 — fraction↔percent unit consistency in prose — SHIPPED (2026-07-09).** `unify_percent_fractions` (`tools/executor.py`), sibling of `round_long_decimals`, composed after it at the synth render boundary, gated on `_metric_is_percent`. **Self-grounded:** rewrites a bare fraction ("0.208") to the percent form only when its ×100 value already appears as an explicit percent ("20.8%") in the same prose (reusing the twin's exact string) — so a correlation/p-value/`$0.50`/`0.36 pp`/`v≥1` is never rescaled. Deterministic, +10 tests. Byte-identical for non-percent metrics.
-- ✅ **P4 — metric-ambiguity RESOLUTION (deeper SOMA loop) + deep-mode clarify UX — COMPLETE (2026-07-09).** The interactive clarify shipped (2026-07-09, flag `ada.clarify_gate`, default-off): a real interrupt/resume `clarify_gate` (sibling of `plan_gate`) — at intake, when a ratio metric's governed vs parsed readings both run but diverge ≥5%, PAUSE and ask (probed previews per reading); the choice binds the metric + `crystallize_user_choice` (source=user, override-wins); a subsequent run HARD-BINDS the resolution (precedence resolution > clarify > P1 pin) and never re-asks. Backend (`_detect_metric_clarify`/`_apply_clarify_choice`/`_apply_resolved_metric_reading` + `clarify_gate` graph node + `clarify_pending` SSE + `FeedbackRequest.clarify_choice`) + frontend (`ClarifyGateCard`). +19 tests incl. a LangGraph interrupt→resume round-trip; suite 2942 green; byte-identical off. Earlier halves also shipped: ✅ **Ledger crystallization:** when P1 pins a governed metric over a materially-different parsed reading, `_crystallize_metric_resolution` records it in the Ambiguity Ledger (source=probe, override-wins → never clobbers user/verdict; fail-safe) so the definition burns down per connection + feeds the plan-time prior on chat + future ADA (+5 tests). ✅ **De-trapped the banner:** `ClarifyingQuestionsBanner` (`ChatMessage.tsx`) reframed "Clarifying questions"+clickable pills → "Interpreting automatically" + "resolving these itself and continuing — no action needed" + muted non-actionable list (removes the stuck-HITL trap). ⬜ **DEFERRED:** the full interactive clarify — actually PAUSE on a material ambiguity (arm interrupt in `agent/graph.py` beside `plan_gate` → emit paused → clickable chips → `POST /investigations/{id}/feedback` → `_stream_resume` → `crystallize_user_choice`); a large graph+streaming+frontend arc on the shared deep path. See [[ambiguity-ledger]], [[soma-sql-ambiguity]].
-- ✅ **P5 — T4-3 confidence-floor path + earning-its-keep — SHIPPED (2026-07-09).** Extracted the apply logic to a pure `_apply_adversarial_refutation` (records objection + caps HIGH→MEDIUM) so the previously-unexercised cap is unit-tested deterministically (no LLM). Added a deterministic materiality gate `_adversarial_should_run` + flag `ada.adversarial_high_stakes` (default-off): the cheaper tier fires the refuter ONLY on a HIGH-confidence decision-changing verdict (the costly-if-wrong minority, where the cap bites) — confidence-triggered activation, earning a default-path place without an LLM call on every verdict. Full tier `ada.adversarial_verify` unchanged; default byte-identical. +10 tests. *Remaining: live-verify a real HIGH→MEDIUM cap → consider promoting high-stakes tier to default-on.*
-- ✅ **P6 — ground-truth regression harness (highest-leverage meta) — SHIPPED (2026-07-09).** `tests/integration/test_ada_ground_truth.py` — hermetic (temp DuckDB with closed-form ground truth + isolated registry, **no live LLM**), mirrors `test_golden_reference.py`. **11 tests, ~1.5s**, locking every deterministic gain: A1 global-ratio guard (true 10% global recomputed, fires on inflated segments, silent on plausible spread), A2 Welch level-shift significant + decompose-under-abstention routing + named driver (Meta −1800), A3 flat-series abstention (not-significant + no anomalous period + clean `ada_synthesize` stop), P1 pin dry-run against the real fixture (runnable → pinned; missing column → fail-closed). Drives the guards/routers/stats directly (synthesis text is LLM-authored, not ground-truthable; every locked gain is deterministic). Adding an archetype = seed rows + one assertion.
-- ✅ **P7 — model budget — DECIDED (2026-07-12, bake-off run).** Full 3-model bake-off (`evals/model_bakeoff.py`, 53q golden, deterministic scorers): **kimi-k2.7-code:cloud 63.3% · minimax-m2.5:cloud 63.1% · glm-5.2:cloud 63.0%** exec-accuracy — a three-way statistical tie (spread ≈ ⅙ of one question at n=53), all 100% exec-success + trust. **Decision: KEEP `glm-5.2:cloud` pinned** — no candidate beats the incumbent, and switching would re-pin the WS3 live-ratchet baseline for zero proven gain. Raw results: `evals/bakeoff_out/*.json` + MLflow experiment `aughor-bakeoff`. The open lever remains a genuinely stronger *tier* (frontier thinking model), not same-tier swaps.
-
-### ▶ The 10x + Spider 2.0 program (2026-07-06 — the active umbrella; spec: [`docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md))
-*Order: WS4 → WS3 → WS5-P0 (gated) → WS1 ∥ WS5-P1–3 → WS2. Baseline to beat is the doc's §0
-(2,508 tests/97s · ruff 0 · deep path ~8.4 min · Lite-local 56.30% w/ glm-5.2). Constraints: additive
-API only · suite green every commit · no new runtime deps · flag-gated default-off · ratchets only down.*
-- ✅ **WS4 — hygiene batch — SHIPPED (branch `2026-07-06-10x-program`, 4 commits).** api.gen.ts
-  regen 12,929→16,128 + offline `scripts/dump_openapi.py` + a blocking CI `codegen` drift gate;
-  the 4 bypass flags registered in `FLAG_ENV` (`ada.premise_check`/`ada.causal_drill`/`ask.clarify`/
-  `closed_loop`) with a `FLAG_DEFAULT` map preserving ask-clarify default-ON byte-for-byte; 47 silent
-  swallows in the 2 hot files → `tolerate()`, `SILENT_SWALLOW_BASELINE` 263→214; FEATURES.md §13 fixed.
-- ✅ **WS3 — accuracy measurement — SHIPPED (2 commits + pinned baseline).** Hermetic
-  `tests/integration/test_golden_reference.py` gate (53/53) — surfaced + fixed real scorer bugs
-  (empty-result / unordered-row false docks) and 6 tie-nondeterministic golden records (one scored
-  0.653 vs its OWN sql); guard fire/repair counters (`aughor.stats.bump`); **live ratchet baseline
-  pinned mean 0.6551 / exec 1.00 / 420.6k tok** (model `glm-5.2:cloud` — runtime config pins
-  coder=glm-5.2 over the .env default); protocol in `evals/README.md`.
-- ◑ **WS5 — Spider 2.0 top-3 campaign — P0 harness done (deferred by the user: "spider later").**
-  ✅ `evals/spider2.py` rebuilt through the product pipeline (guards + closed-loop + external-knowledge
-  docs + timestamped submission traces); the full 135 local SQLite ran **135/135 exec-success, official
-  evaluate.py 72/135 = 53.3%** (**glm-5.2:cloud** — same model as June; June ref 56.3% = glm-5.2 + a
-  tuned ANSWER_SHAPE config, so the ~3pt gap is prompt-config, not model). Data-Share request DRAFTED
-  — drafted locally, **not sent**.
-  Remaining (Snowflake access ready — the June "dead credential" was a template + the 2025-11 MFA/PAT
-  policy change): the grounding-lift A/B that decides scale · substrate-on-benchmark · the budgeted
-  loop (ANSWER_SHAPE + `condition_cols` + superset-projection · SOMA-style disagreement probing on
-  `agent/complexity.py`) → climb + drafted submission. Key evidence: SOMA probing +9.0 over majority
-  vote, **+30.6 EX where zero candidates were right**; eval is column-CONTAINMENT (extra columns free);
-  ~66% of Snow open-gold has annotation errors (ceiling ~75–85 Lite).
-- ◑ **WS1 — fast deep path — SHIPPED + LIVE-MEASURED (honest: 1.23×, not 2×).** ✅ `ada.parallel_phases`
-  wave (`aughor/agent/phase_waves.py`): baseline∥decompose∥dimensional concurrent (in-process executor
-  NOT `Send`), serial tier-router early-stop semantics applied post-hoc, behavioral stays serial (hard
-  dep); 6 tests. Profiling **refuted** the metric-block/ontology caches (15ms/5ms warm — not built).
-  **Live A/B (real /investigate on luxexperience, n=1 each, isolated stores): serial 373s → wave 304s =
-  1.23×, both 14 LLM calls / same phases / same MEDIUM confidence (equal quality).** Below the aspirational
-  2× — the 3 wave phases are only part of the calls; intake + synthesis are serial-by-necessity and
-  dominate. Real free win, modest end-to-end. Bigger remaining levers (deferred): parallelize intake's
-  internal calls + the cross-section multilens + synthesis; per-role LLM concurrency cap; P-B pre-flight.
-- ✅ **WS2 — one SQL executor — SHIPPED (3 commits), with a scope judgement.** The three paths'
-  POST-execute repair loops are legitimately divergent (ADA id-arith+trust · explore R3+KB+triangulation ·
-  quick B-7+consistency) — force-merging would degrade them. What was genuinely duplicated AND
-  missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair): extracted to
-  `aughor/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + shared `preflight_harden`),
-  wired into ALL THREE paths (explore + quick GAINED de-fan + preflight they never had), enforced by
-  `test_guard_parity_all_three_paths_share_the_hardening` + an import-boundary test. +16 tests.
-
-### ▶ Report-quality wiring gaps — three deterministic fixes (next up; source: the GMV brand-tier case, 2026-07-05)
-*Diagnosed from a real "why did total GMV change across brand tiers?" report that led with a +€39.9M / +1,506% headline that its own trust advisory flagged as ungrounded. Root cause is NOT grounding maturity — the trust check fired correctly and the z-score normalization correctly debunked the artifact. These are three wiring gaps between subsystems that already compute the right signals but don't talk to each other. **Impact/dependency order: #1 (independent) → #3 → #2 (#2 depends on #3, else it amplifies #3's false positives).**
-- ✅ **#1 — degenerate-window guard + enforcing reframe (highest impact; BUILT+TESTED+VERIFIED 2026-07-05).** For an unbounded temporal question the intake invented "last 56 months vs prior 56 months" on ~59 months of data; `_clamp_intake_to_coverage` (`agent/investigate.py`) clipped the prior window to the ~3 real months that exist but kept the stale "Prior 56 months" label and flagged no mismatch, so the synthesis headlined an ~18× duration artifact. **(a) Detection:** after the comparison clip, detect when the prior window is far shorter than the observation (`_POP_DURATION_MISMATCH`), relabel it honestly, and emit a coverage note carrying a stable `_POP_MISMATCH_SIGNATURE`. **(b) Enforcing (this session's lesson — soft gates get ignored):** `_reframe_on_pop_duration_mismatch` reads the signature back in synthesis and DETERMINISTICALLY neutralises the absolute-change waterfall + reframes the executive summary to run-rate (mirrors the cross-sectional reframe), rather than trusting the narrator to heed the note. **Verified end-to-end on real luxexperience data** (isolated registry, live `/investigate` on glm-5.2): guard correctly SILENT on a healthy balanced window (no false positive), and the real-data guard→note→reframe chain proven deterministically. *Remaining follow-up:* consume the profiler's `n_periods`/`trailing_partial` (`tools/profiler.py:305`) for data-DENSITY validation (a window whose date-span looks fine but is sparsely populated) — distinct, undemonstrated failure mode, deferred until it shows up.
-- ✅ **#3 — derived-number-aware claim grounding (VERIFIED end-to-end 2026-07-05: on a real run it fired a correct TRUE-positive on a z-score finding narrated with another query's numbers, and did not suppress it).** `_claim_numbers_grounded` (`explorer/verify.py:300`) matched narrative numbers to raw result cells (±1% + percent↔fraction) but didn't credit a legitimate derivation (a % change computed from raw totals), so it cried wolf on valid arithmetic — training users to ignore the one advisory that here was directionally right. **✅ BUILT+TESTED 2026-07-05:** a `derived_grounded` pass credits % change ((b-a)/a·100), share (b/a·100) and raw delta (b-a) over a deduped/bounded (≤48) cell subset before flagging; +2 tests in `test_insight_gate.py`. Wired live (via `verify_insight`); live-verify pending. Prerequisite for #2 — now satisfied.
-- ✅ **#4 — narrator↔query numeric binding (found by the #3 end-to-end run; BUILT+TESTED+VERIFIED 2026-07-05).** Root cause of "z-score card shows PoP numbers": `_align_narrator_findings` bound narrator findings to queries by DIMENSION token only, so two queries over the same dimension but a different measure (z-score-by-tier vs PoP-change-by-tier) tied on `{tier}` and the index tie-break could swap them — then the title is overwritten to the query's, masking it. Fix: break the tie by NUMERIC grounding (`grounded_fraction`, `explorer/verify.py`, shared with #3) — bind each finding to the query whose cells actually contain its numbers. **Real-data proof:** the actual mis-attributed interpretation scored grounded_fraction **0.00** vs the z-score cells and **1.00** vs the PoP cells → routed to the PoP query, never the z-score card. +1 regression test (`test_cross_section_binding.py`), 116 unit tests green.
-- ✅ **#5 — density guard (the deferred #1 follow-up; BUILT+TESTED+VERIFIED 2026-07-05).** Catches what the date-SPAN guard structurally cannot: a comparison window whose calendar span survived the clamp but is SPARSELY populated (an internal gap / slow ramp) — still a thin PoP baseline. A cheap dialect-robust probe (`_populated_month_count`, COUNT DISTINCT of the 'YYYY-MM' text prefix; shares `_resolve_probe_ref` with the span probe) counts populated months in the final comparison window; `_sparse_comparison_decision` fires when populated < `_POP_DURATION_MISMATCH`·span (span ≥ `_MIN_SPARSE_SPAN_MONTHS`), relabelling the window and emitting a note carrying the SAME `_POP_MISMATCH_SIGNATURE` — so #1's enforcing reframe applies for free. Skips when the span guard already fired (no double-flag), cross-sectional, or no distinct prior. **Real-data proof (synthetic gap: dense Jan–Mar 2022 + all 2023):** probe counted 3 populated of a 12-month window; date-span guard correctly silent (equal spans); density guard fired with the honest relabel; no false-fire on a dense window. +8 tests, 74 unit tests green.
-- ✅ **#6 — trailing-partial-period guard (BUILT+TESTED+VERIFIED 2026-07-05).** Completes the window-guard family (span → density → trailing-partial). The profiler computes `trailing_partial` for the whole table but the intake never consumed it, so an INCOMPLETE final observation month reads as a false sharp drop. `_monthly_counts` probes the observation window's per-month volumes; pure `_trailing_partial_decision` flags the last month when its rows < `_TRAILING_PARTIAL_RATIO` (0.5) · the window's median month (over ≥ `_MIN_TRAILING_MONTHS`=3), relabels the observation and emits an honest note (a real crash looks the same → asks the reader to verify completeness, doesn't overclaim). Skips cross-sectional / no-date windows. Real-data proof (synthetic: full Apr/May + under-filled Jun): flagged the final month vs a typical ~28/month; +6 tests, 79 unit tests green, ruff clean.
-- ✅ **#2 — reconcile confidence with the trust advisory (VERIFIED end-to-end 2026-07-05: correct no-op — the LLM self-selected MEDIUM, nothing to demote; cap logic unit+guard-proven).** Confidence is set once by the synthesis LLM (`prompts_investigate.py:669`) and was only floored to LOW on zero data; the `trust_caveat` (`investigate.py:983`) was stored advisory-only and never read back, so "High confidence" rendered beside "claim not grounded". **✅ BUILT+TESTED 2026-07-05:** extracted `_cap_confidence_on_trust_advisory(synth, phases)` — caps HIGH→MEDIUM when any finding carries a `trust_caveat`, preserving the LLM's justification — called at the synthesis floor; +5 tests in `test_trust_confidence_floor.py`. Built downstream of #3 so a valid % derivation (no longer a caveat) never costs confidence. Wired; live-verify pending.
-
-### ▶ Architecture-review hardening — remaining (next up; source: [`docs/architecture-review-2026-07-03/`](docs/architecture-review-2026-07-03/))
-*Part 1 (REC-01…10) + DATA-05/06 + the tenancy/lint follow-ups shipped as PRs #93–#98 (merged). What the review scoped but we deliberately left for a focused effort:*
-- ✅ **Item 2b — react peer-dep + strict `npm ci` — SHIPPED (2026-07-04).** `@atlaskit/icon@35` (and `@atlaskit/skeleton`/`@atlaskit/tile`) peer react `^18.2.0` while the app is on react `19.2.4`, so a strict install ERESOLVE'd and CI carried `--legacy-peer-deps`. Fix: a package.json **`overrides`** block pinning `react`/`react-dom` to a single version (`19.2.4`) across the whole tree — the offending atlaskit peers now resolve to the app's react 19 (`npm ls react` → every node deduped to 19.2.4, zero react@18), regenerated `web/package-lock.json`, and dropped `--legacy-peer-deps` from CI (now a plain `npm ci`). **Gotcha found:** the `$react` self-reference override form is **npm-11-only** and CI runs node 20 / npm 10 (`npm@10.9.8` errors "Unable to resolve reference $react") — so the override versions are **explicit** and must be kept in lockstep with the react/react-dom deps if either is bumped. **Verify (against the real source, npm 10, isolated from the live dev server):** strict `npm ci` exit 0, `npx tsc --noEmit` exit 0, full `next build` exit 0 (compiled + TypeScript + 5 static pages). Bonus: the README's documented `cd web && npm install` now works strict on a fresh clone (it would have ERESOLVE'd before).
-- ✅ **Item 4 — full RBAC — SHIPPED (PR #99, 2026-07-04; see the "What we've built" entry above).** The review's biggest remaining perimeter gap (REC-05 deliberately stopped at identity + owner-checks). Delivered as one phased branch (`2026-07-04-rbac`, 5 commits):
-  - ✅ **P1 — role/permission model + org-scoped assignment store + resolver seam** *(2026-07-04, `aughor/rbac/`, additive, no enforcement wired → zero blast radius)*. A **second authorization axis orthogonal to licensing** (capability = what the org's *plan* unlocks; permission = what the *user* may do; a request needs both). `permissions.py` (`Permission` verbs: resource read/write/delete/export · connection create/delete · analysis.run · admin.manage_roles/org/billing), `roles.py` (built-in ladder **viewer ⊂ analyst ⊂ owner**, owner == every permission; fail-closed unknown role), `store.py`+`models.py` (org-scoped SQLite `role_assignments` PK `(org_id,user_id,role)`; idempotent assign/revoke/roles_for_user/list_assignments; `AUGHOR_RBAC_DB` hermetic + `tune()`), `resolver.py` (`resolve_roles(principal)` → **None/identity-off = owner** = byte-identical to today · unassigned = least-privilege default `AUGHOR_RBAC_DEFAULT_ROLE`/viewer · assigned = their roles · **fail-closed to default on store error**; `permissions_for`/`has_permission` = the seam P2/P3 consume). 18 tests, full suite 2324 green, cross-tenant isolation live-verified.
-  - ✅ **P2 — role-aware capability resolution** *(2026-07-04)*. `rbac/capabilities.py` adds a role→capability **ceiling** so the effective feature set is `tier_caps ∩ role_ceiling` (owner = all · analyst = all − governance/audit · viewer = an explicit read/consume allowlist; ceilings defined by exclusion so a new capability flows to analyst/owner automatically and is withheld from viewer by default). `effective_capabilities(principal)` no-ops in localhost / on a tier without `RBAC_SSO` (unchanged), and is surfaced through **`GET /capabilities`** (now role-aware + reports `roles`) — so a viewer's UI shows only what its role permits, not just what the plan unlocks. Layering stays clean (`rbac` → `licensing`, never the reverse; tier still gates 402, the role ceiling shapes *resolution*, and the surface is enforced by the P4 policy table's 403). 11 tests; full suite 2353 green; live `/capabilities` verified.
-  - ✅ **P3 — enforcement + admin roster + bootstrap** *(2026-07-04)*. `rbac/deps.py` `require_permission(perm)`/`gate_permission` (mirrors `licensing/deps.require_capability` → **403**), a **double no-op**: inert unless BOTH `AUGHOR_REQUIRE_IDENTITY` is on (a principal is bound) AND the org's tier grants `Capability.RBAC_SSO` (default enterprise → on; a lower tier keeps REC-05 identity+owner-checks but no per-permission RBAC). **First-user-is-owner bootstrap** (`resolver.maybe_bootstrap_owner`, per-process cached, `AUGHOR_RBAC_AUTO_BOOTSTRAP=0` off-switch for IdP-pre-seeded deployments) so flipping identity on never locks everyone out of admin. New **admin roster router** `routers/roles.py`: `GET /rbac/roles` (catalogue), `GET /rbac/me` (caller's effective roles+permissions, for UI gating), `GET/POST/DELETE /rbac/assignments` (org-scoped via `current_org_id()`, gated `admin.manage_roles`). Enforcement wired onto a curated destructive/create set: connection create/delete, investigation delete/export (the pattern to extend across the surface). **Verify:** ruff clean; `test_rbac_enforcement.py` 11/11 (no-op localhost + no-op-without-RBAC_SSO, 403 viewer on admin/resource/connection gates, owner passes, bootstrap first-user-owner + second-user-viewer, roster CRUD + org-scoping); full suite **2335 pass** (+11, 0 regressions — the identity-on `test_authz`/`test_data06` suites unaffected); real-process end-to-end smoke (401 no-header → founder bootstrapped owner → assigns bob=viewer → bob 403 on roster+connection-delete).
-  - ✅ **P4 — broad enforcement + roster UI** *(2026-07-04)*. **4a (backend):** rather than scatter `gate_permission` across 150+ decorators, a single declarative **`rbac/policy.py`** table maps `(METHOD, route-template) → Permission` for the whole surface (safe methods open; mutations default to a `resource.write` floor; admin/connection/analysis/export raised by name), consulted by a global **`enforce_rbac`** dependency (registered in `api.py`, resolves the matched route template from `request.scope["route"]`, same double-no-op + bootstrap as the per-route gate). The P3 per-route decorators were retired in favour of the central table (one auditable source of truth; `gate_permission` stays as a one-off primitive). Net: with RBAC on, a viewer reads anything but mutates nothing anywhere; owner-only verbs stay owner-gated. **4b (frontend):** a **Settings → Access** tab (`web/components/RolesPanel.tsx`) reading `GET /rbac/me` (your roles/permissions), `GET /rbac/roles` (catalogue), and — when you hold `admin.manage_roles` — the `GET/POST/DELETE /rbac/assignments` roster with an assign/revoke UI (admin surface hidden otherwise). **Verify:** ruff + `test_rbac_policy.py` 5/5 + 2 broad write-floor integration tests; full suite **2342 pass** (+7, 0 regressions); tsc + eslint clean; backend `/rbac` routes live via curl (localhost→owner). *(A rendered screenshot was blocked by a parallel dev-server holding the only Next slot; static + backend verification complete.)* Enforcement breadth beyond the policy floor and multi-tenant IdP token extraction remain incremental follow-ups.
-- ✅ **DATA-06 depth — SHIPPED (2026-07-04).** Extended the tenant read-path enforcement past connections/investigations to the monitor, alert, brief-subscription, canvas and saved-query surfaces, and org-bound the background schedulers. Every one of these resources keys by `conn_id` and carries no `org_id` of its own, so its tenant is its connection's org — the resolution stays uniform (`resource → connection → org`, the same seam DATA-06 established). **Owner-checks (403 cross-org):** router-level guards on the monitors (`_monitor_owner_guard` — monitor + alert ids), briefs (`_brief_owner_guard`) and query (`_saved_query_owner_guard`) routers, mirroring the canvas guard; plus explicit connection owner-checks on the body/query-param create paths (`create_monitor`, `create_brief_subscription`, `saved_queries_create`) and `GET /monitors/digest`, so you can't attach a monitor/subscription/saved-query to — or read a digest of — a connection your org can't see. **Read-path org-scoping (`WHERE org_id` equivalent):** a new `authz.org_visible_conn_ids()` (the org's connection set, `None` in localhost) filters `GET /monitors`, `/alerts`, `/briefs/subscriptions`, `/canvases` and `/saved-queries` so another org's rows never surface. **Scheduler org-binding:** the monitor and brief background jobs (and `trigger_now`) re-bind the connection's org for the run via `using_org(get_connection_org(conn_id))` — the same re-bind the kernel does for a boot-recovered job — so an alert emitted by a background tick (no request context) stamps the right tenant instead of `'default'`. **Boundary-clean:** `security/authz.py` (platform) must not import the agent's monitor/brief stores, so the monitor/alert/brief resolvers plug in through a new **`kernel/registries/resource_org.py`** resolver registry the agent registers at bootstrap (Pattern C, like the purge hooks) — the Platform↔Agent ratchet stays green. Also made the **briefs JSON store test-isolatable** (`AUGHOR_BRIEFS_FILE`, the `resolve_db_path` convention — it was the last hardcoded `data/` store). **Verify:** +11 tests (`test_data06_depth.py`), full suite **2365 pass** (0 regressions), ruff clean, plug-and-play + boundary ratchets green, and a real-process uvicorn smoke (identity on: 401 no-header → orgB 403 on read/delete/foreign-create, orgA 200/204, org-filtered list). *Remaining incremental follow-ups:* the same owner-check pattern across the rest of the by-id surface (Action Hub triggers, artifacts, packs/ontology/semantic stores) as they matter; and org-binding any other background scheduler that gains one.
-- ◑ **Part 2 of the review — UI/design layer, nomenclature, eight-plane architecture — IN PROGRESS.** Scoped + sequenced in [`PART-2-SCOPING-AND-SEQUENCING.md`](docs/architecture-review-2026-07-03/PART-2-SCOPING-AND-SEQUENCING.md) (4 tracks → 4 waves; every count re-grounded vs HEAD). **Shipped on branch `2026-07-04-part2-recU1-design-layer`:**
-  - ✅ **Wave 1 — the enforced design layer.** **REC-U1** design-token lint gate (`web/scripts/check-design-tokens.mjs`, `npm run lint:tokens`, blocking CI, baseline 0) + codemod **711 sites** (radius → `rounded-[var(--r3)]`/`[var(--r-pill)]`; `text-[Npx]` → a NEW size-only `aug-fs-*` family). **REC-U8** formatting gate (`check-formatting.mjs`) + 22 sites routed through `lib/format` (new `formatTimestamp`). **REC-U4** one palette source (deleted the dead `AUG_PALETTE`; card chrome now derives from `--chart-*` via `color-mix`). **REC-U2** primitive polish + a raw-`<button>` ratchet (`check-raw-elements.mjs`, baseline 204). *Four blocking web CI gates now: tokens · format · elements · tsc.*
-  - ◑ **Wave 2 — composites + structure + gen-UI.** **REC-U6** turn renderer registry (`TURN_RENDERERS` + `registerTurnRenderer` — the LAYER-05 gen-UI seam). **REC-U7** chart source-footers (`BriefFigure` `source` prop → `<FigureCaption>`; live-verified on luxexperience). **REC-U5** the one `<Workspace>` shell — the generic header/switcher/keep-alive-body chrome extracted into `components/Workspace.tsx`; `IntelligenceWorkspace` re-expressed as a thin instance (144→62-line body, DOM-identical). **REC-U3a** one `StatusChip` vocabulary (folded ReportView's 3 chip style maps, zero-visual-change). **LAYER-04** resolved (not an orphan). Plus **deep/direct-path follow-up composition** — a follow-up in a Direct-lookup canvas now composes on the prior query (parity with the quick Insight path; live-verified). *Discoveries: the live theme is `aughor-v2/theme/tokens-v2.css` (shadows the legacy `styles/tokens.css`); Tailwind-v4 breaks the `[--var]` shorthand → use `[var(--x)]`.*
-  - ◑ **Wave 4 — the eight functional planes (AL, backend, pytest-verifiable).** **AL-01** the **Trust plane** — `aughor/trust:verify(artifact, scope) -> Verdict` hoists the ~9 diffused validation modules (`sql/{readonly,safety,grain_guard,join_guard,trust_checks}` + `agent`/`tools` guards) behind one façade: `readonly` → BLOCK (mutation gate the generation paths never ran — closes **SEC-02** at the plane), E1 `trust_checks` → WARN, conn-gated `preflight_repair`/`join`/`grain` → repair/WARN. Flag-gated (`trust.verify_facade`); first consumer wired at `/query/validate` (additive `mutation_blockers`). *13 conformance + 2 integration tests.* **AL-02** the **Capability plane** — `aughor/pipeline`: a `CapabilityPipeline` template (`generate→validate→execute→interpret`, `validate` = `trust.verify` so it consumes AL-01, BLOCK short-circuits before execute) + a registry + a real `SqlCapability` (domain `"data"`) delegating to `conn.execute` + `format_result_for_llm`. Purely additive. *8 conformance tests incl. the "register a toy capability" bar + real-DuckDB end-to-end.* **AL-05** the **Semantic plane** — `aughor/semantic/context.py`: `resolve(question, connection_id, scope) -> SemanticContext` composing the ad-hoc consultations (metrics · ontology · cached profile · KB-match) fail-open; tied into `CapabilityRequest.semantic` (Question × Scope × SemanticContext); consumer `/query/semantic-context`. *7 conformance tests.* **All three AL planes now exist, each conformance-tested.** **AL live wires (all three, flag-gated, default-off):** **AL-01 live** (`trust.verify_live`) — `_execute_safe` routes generated SQL through `trust.verify` before execute (readonly BLOCK → blocked result); **AL-05 live** (`semantic.resolve_live`) — a deep investigation resolves the Semantic plane at seed onto `AgentState.semantic_context`; **AL-02 live** (`capability.pipeline_live`) — `SqlCapability` is now complete (real NL→SQL `generate` via `capability/sql_generate.py` reusing `WRITE_SQL_PROMPT`), the Data domain runs end-to-end through the template at a new `POST /query/capability-answer`. *12 AL-live tests; 2406 collect clean; ratchets green.*
-  - ◑ **Wave 4 convergence:** the deep ADA `nodes._gen_sql` now delegates to the shared `capability/sql_generate.py` (one `WRITE_SQL_PROMPT` call site for both the Capability plane and the ADA path; `WRITE_SQL_PROMPT`/`SQLOutput` dropped from `nodes.py`). *483 agent-path tests green; ratchets green.*
-  - ◑ **U5 panel-folds (2 of 3 sidebar sections):** the **Operations** rail (Monitors / Action Hub / Security & Audit) → `OperationsWorkspace`, and the **Data** rail (Catalog / Query Builder / Semantic Layer) → an inline `<Workspace>` in `page.tsx` — each a `<Workspace>` instance with `LEGACY_*_LAYER` deep-links + a computed sidebar `activeNav`; Security's nested lens + the insight→builder handoff preserved. *Both live-verified on the running app; tsc + 3 gates green.*
-  - ◑ **AL-05 consumer:** `nodes._metrics_for_state` — the first live *reader* of the resolved Semantic plane: the B-7 metric-targeting reads `semantic_context.metrics` (schema-filtered, resolved once) instead of re-consulting `list_metrics()`, falling back when the flag is off. *3 tests; 347 agent-path tests green.*
-  - ◑ **Capability metadata domain:** a second real `MetadataCapability` (schema/catalog Q&A, no SQL — the review's Metadata Handler→Interpret) registered alongside SQL; `/query/capability-answer` routes by `domain` (`data` | `metadata`). *Proves the template generalizes on a real path; 4 tests. (The "code" kind is deferred — the platform has no code-execution path to wrap.)*
-  - ⬜ **Remaining:** **U5** last fold — re-express `CanvasWorkspace` (richer header/eager-mount → poor primitive fit, likely deferred); **Wave 3** nomenclature — U9 (~49-file `ADA` rename, highest-risk, LAST), U10 (`SemanticContract`), NOM-07/11; U3b + U7-part2 (deferred, see log). (fold ~23 panels → ~5 workspaces + re-express Canvas/Operations on the new `<Workspace>` shell — touches deep-links, separate slice), U3b (ReportView structural `Brief*` migration — a legacy renderer, deferred), U7 part 2 (rec→origin_finding chips — needs a synthesis-anchor experiment, deferred); **Wave 3** nomenclature — U9 (the `ADA` leak across ~49 files, highest-risk), U10 (`SemanticContract`), NOM-07/11. See the scoping doc's progress log.
-- ⬜ *Small follow-ups:* keep ruff at zero (now blocking + pinned); the explorer diversity-nudge `domain_table_cols` dormant bug (noqa'd, tracked); convert base-only stores to the migration framework as they gain their first migration.
-
-### ▶ Platform ↔ Agent separation — follow-ons (branch `2026-06-29-platform-agent-separation`)
-*The logical boundary is shipped + enforced ([`docs/PLATFORM_AGENT_SEPARATION.md`](docs/PLATFORM_AGENT_SEPARATION.md)). The remaining moves are now cheap given the boundary.*
-- ⬜ **Physical two-package split** — `dip/` (Data Intelligence Platform) + `aughor_agent/`, agent depends on platform. A near-mechanical move now that the import boundary is green; do it when a packaging/distribution driver appears.
-- ⬜ **Interactive clarification arc** (BIRD-INTERACT direction — the #1 NL2SQL challenge) — the deterministic `ambiguous` flag (`agent/complexity.py`) is the seam; gate a budget-aware clarification (ask vs. guess) on it, then build the interactive eval harness.
-- ⬜ **Answer-path cost-tiering** — route the user-facing SQL generation (not just the routing decision) to a cheaper model, *after* binding the `fast` role to a quality-validated cheap model and confirming the trust guards absorb the grain risk. The framework (`model_role_for`) is in place.
-- ⬜ **Route the agent’s platform access through `HostCapabilities`** at call sites (currently direct module functions — already the allowed direction).
-- ◑ **Large-workspace exploration budget** — the Scout exploration time budget (`time_budget_s=600`, `kernel/agents.py`) cancels before a big multi-schema workspace (e.g. the 33-table `luxexperience`) finishes its briefing → no KPIs surface. Raise the budget for large catalogs and/or fan exploration out per-schema with independent budgets.
-- ✅ **Scout/explorer filter-literal binding — wrong-case enum VALUES silently fail** *(user-reported 2026-06-30; FIXED same day)*. **Two-part fix.** (1) **The guard itself was blind to case:** `check_filter_value_domains` (`sql/join_guard.py`) did `if lit.lower() in present: continue` — i.e. it treated a case-insensitive match as "fine" and never bound it, even though SQL `=` is case-sensitive so `'Womenswear'` vs stored `'womenswear'` returns **zero rows**. Now: an exact match is left alone, a **case-only** difference binds to the stored casing, and a fuzzy near-miss still uses difflib. This strictly improves **all** callers (Insight + ADA via `preflight_repair` too). (2) **Wired `bind_filter_literals` into the explorer** (`explorer/agent.py`, after the identifier/semantic-column repairs + unresolved-identifier check, before execute) — the same CHESS value-index correction Insight/ADA get, dry-run-gated. End-to-end test on a real SQLite connection (`'Womenswear'` → 0 rows → bound to `'womenswear'` → 2 rows); full suite green; no regression on normal queries (the binding fires only when a literal matches no exact value).
-
-
-### ▶ Trust Receipt — make verification externally inspectable (10x, from [`AUDIT_2026-06-27.md`](AUDIT_2026-06-27.md) #5b)
-*The single highest-leverage open bet. The guard substrate (Trust Receipt / Evidence Ledger — `_write_answer_receipt`, `kernel/ledger.py`) is far ahead of its surface area: it's enforced internally but not exposed. The move is to turn "trustworthy by construction" into "trustworthy by inspection" — the one thing a competitor can't copy with a prompt.*
-- ⬜ **Public `GET /receipt/{id}`** returning the signed lineage for *every* answer (chat, Query Builder, monitor, deep): the executed SQLs, input tables, which guards fired, earned-confidence + data-trust. There are already per-mode receipt routes (`/ada/{conn}/{inv}/receipt`, `/chat/{conn}/{turn}/receipt`) — unify them behind one id-addressable endpoint and extend to the Query Builder path (now gated, so it can carry a receipt too).
-- ⬜ **Inline "why this number"** — a one-click receipt view rendered on every answer/KPI/briefing figure, reading the unified endpoint.
-- ⬜ *Effort ~1 week. Impact: the trust story becomes externally verifiable, not just internally asserted.*
-
-### ▶ Platform direction — org tenancy + lakehouse (active arc)
-*Decided 2026-06-22 — see [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md). Aughor is a platform provider; catalog & storage belong at the **Org/metastore** level, workspaces are grant-scoped boundaries that own no storage (Databricks / Unity-Catalog model). Build single-org now but **tenant-key everything** and split **control plane** from **data plane**, so multi-tenant SaaS is a config flip, not a rewrite. All work below on branch `2026-06-22-org-tenant-spine`, build→wire→test→live-verify, zero net ratchet debt (293==HEAD).*
-- ✅ **Phase 1 — the Org/tenant spine** *(2026-06-22/23)*. `aughor/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + `ensure_default_org` bootstrap); `org_id` column + stamping on every persisted store (workspaces · connections · jobs · artifacts · lineage · audit_log) + metering `RunMetrics`; **storage re-pathed** `data/uploads/{conn}`→`{org}/{conn}` via the new **`aughor/control_plane/` control plane** (`vend_storage()`/`StorageCapability` — access vended, never ambient, Invariant #2) with a crash-safe idempotent on-disk migration; control-plane / data-plane split explicit in code. Real-data migration back-fills every row/file to `default` (0 unkeyed); the real workspace connector reads all 13 migrated missimi tables. +25 tests.
-- ✅ **Phase 2 — the metastore** *(2026-06-23)*. New **`aughor/metastore/`**: `Catalog` (= a connection within an org, the isolation unit) + `Grant` (workspace→catalog USAGE) + `Schema` (the `catalog.schema.table` middle level, synced from live introspection), SQLite `data/metastore.db`, derived/reconciled from the connection registry + workspace membership. **The live data-path gate is flipped onto grants**: the five visibility gates (catalog/canvases/investigations/monitors/alerts) resolve through **`accessible_catalog_ids()`** — reconcile-on-read, **provably equal** to the legacy `workspace_connection_ids()` gate (real-data verified), so the metastore is on the live path with byte-identical behavior. A **UC-compatible read surface** (`/api/2.1/unity-catalog/{catalogs,schemas,tables}`) exposes the three-level namespace for external-engine interop (in-process HTTP-verified). **Grants are fully authoritative** — an independent access-control layer (`/metastore/workspaces/{id}/grants` grant/revoke/list), so the gate is `membership ∪ explicit grants` (no reconcile-on-read); an explicit grant widens access beyond membership, durable across membership edits. +30 tests. *Later:* enforce schema/table-level grants; the four control-path reverse lookups (governance/compute) stay on the workspace store by design.
-- ◑ **Phase 3 — storage maturity (Volumes shipped)** *(2026-06-23)*. **`aughor/files/`** — the governed unstructured tier (the "SQL over any object" requirement): catalog-scoped Volumes holding files/images/PDFs/video, bytes vended to the tenant path (`{root}/{org}/{catalog}/_volumes/…`, Invariant #2), a queryable `volume_objects` metadata catalog, and a `/metastore` API (create/list volume · multipart put · list/download/delete object). +7 tests, HTTP-verified end-to-end. *Remaining:* wire `extracted_text` to the R8 `prompt()`/`embedding()` operators; managed vs external locations; real S3/GCS credential vending.
-- ✅ **UI surfacing of shipped-but-invisible features** *(2026-06-23 — see [`docs/UI_BACKLOG.md`](docs/UI_BACKLOG.md))*. A 3-doc audit (the last-2-days work · ROADMAP · FEATURES, cross-referenced against `web/`) found the backend all-live but a cluster of capabilities with **no UI**. All now surfaced, browser-verified, on a **Databricks Catalog-Explorer IA**: the **Catalog Explorer** gains **Volumes** (browse/upload objects), **Permissions** (workspace grant/revoke) and **Comments** (the Business Glossary); plus a **per-agent LLM-model** picker (Fleet→Agents), a **monitor grace-period** field, **playbook version history**, user-driven **post-proc transforms** (`POST /query/postproc`, additivity-gated), and **runtime feature-flag** toggles (Settings→System; `aughor/kernel/flags.py`, override>env for `AUGHOR_AI_SQL`/`AUGHOR_SNAPSHOT_RECEIPTS`).
-- ⬜ **Phase 4/5 (deferred — local-first)** — the multi-tenant flip (Postgres metastore · S3/GCS credential vending · IdP/SSO · billing) · scale & interop (UC-OSS server + a Delta lane). Wait for a SaaS driver. Strategic calls settled (doc §12): local-first · two-lane (DuckLake + Delta-under-UC) · UC model+API now / server later.
-
-### Eval-derived quality fixes (2026-06-21 — from [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md), do these BEFORE the full 50+50 re-run)
-- ✅ **🔴 Block arithmetic on id/key columns** — `measure_times_key_arithmetic` (AST guard in `aughor/sql/fanout.py`) detects `SUM/AVG(<measure> * <id/key>)` and `SUM/AVG(<id>)`; wired into all sibling guard bundles (explorer ×3 loops, ADA scan, profile-audit ×3, chat repair-hint + backstop caveat). Live: Q5 now emits `SUM(unit_price)` (was `SUM(unit_price * order_item_id)`).
-- ✅ **🔴 Chat-headline number grounding** — `_ground_headline` now grounds EVERY number for a single-row (scalar) result (not just ≥100), scale-tolerant for fraction↔percent, year-safe. Live: Q6 headline `Repeat Purchase Rate: 28.49%` matches the cell (was a fabricated 42.3%).
-- ✅ **🔴 Pin `explore`/deep search_path to the canvas schema** — deep path now derives the effective schema from table prefixes (was `scope_schema=None` for a table-list canvas), scopes the catalog FK/temporal expansion, and `explore.py` rescopes/drops any cross-schema sub-query (`_rescope_sql_to_schema`). Live: both explore-mode deep runs (Q25, Q21) stayed fully missimi-scoped (0 leak terms; Q21 returned real P000545 not "Mechanical Keyboard").
-- ✅ **🟠 `cancelled→canceled` value-domain repair on `!=`/`NOT IN`** — `_extract_filter_literals` now captures `!=`/`<>`/`NOT IN` (op-tagged), `FilterDomainWarning` is operator-aware ("excludes NO rows" for negations), and the guard is now wired into the DEEP paths too (ADA `_execute_safe` + explore `plan_and_execute_subq` — it was chat-only). Live: deep Q29 flipped from "cancellation rate is zero / no driver" to "rates uniform across all eight dimensions" (analyses real cancellations).
-- ✅ **🟠 Currency symbol in chat prose** — `_resolve_currency_symbol` (override-wins) + `_apply_currency` `$`→symbol post-pass on the chat headline + narrative. Live: "Total Delivered Revenue: **€**107.42M" (was `$`). Deep ledes already rendered `€`.
-- ✅ **🟠 Ratio-of-sums enforcement** — shipped `avg_of_row_ratios` (AST guard: `AVG(a/b)` → use `SUM(a)/NULLIF(SUM(b),0)`), wired into all sibling guard bundles. The freight Insight-vs-Deep "disagreement" was a **metric-DEFINITION difference** (freight % of order value 2.17% vs freight per order 1.48 — two valid metrics for two questions), handled by the UNIFY fix below, not the guard.
-- ✅ **UNIFY metric-definition consistency** — root cause: the two NL2SQL paths used DIFFERENT metric resolvers — `/chat` injected only `build_metrics_block` (global catalog, no north-star) while Deep injected `canonical_metrics_block` (catalog + GOVERNED north-star + ontology), so chat re-derived gross margin / ROAS / AOV and could disagree with Deep. Fix: one `unified_metric_grounding` (governed catalog NEVER-rules + north-star value_sql + verified ontology) that **both** paths now call. Live: chat now emits the EXACT governed formulas — gross margin `SUM(unit_price - unit_cost)/SUM(unit_price)` (47.02%), ROAS `SUM(attributed_revenue)/SUM(spend)` — that Deep already used. (Freight stays LLM-derived in both: it isn't a registered metric — a coverage item, not a consistency one.)
-- ✅ **🟡 Insight time-series recent-window** — the chat post-answer narrator got `rows[:20]` (oldest), so a multi-year series narrated year-one and never reached today (Q15 led with 2022). `_narrator_sample` now recent-weights a long time series (series start + the most-recent rows) + a "lead with the most recent period" instruction. Live: Q15 now leads with "**1.12** in December 2025 … above the **0.23** in Jan 2022".
-- ◑ **🟡 Deep-mode latency** — INVESTIGATED: `parallelize score_evidence` was a **misdiagnosis** — it's a single LLM call on the *direct* path (one "direct" hypothesis; `generate_hypotheses` isn't wired into the graph). The genuinely-slow paths already parallelize the costly LLM work (direct parallelizes SQL generation; ADA parallelizes query execution via `_parallel_execute_safe`); explore/ADA control flow is sequential **by design** (adaptive, early-stopping). No safe high-leverage parallelization remains — left as-is rather than risk the search_path scoping fix.
-- ⬜ **Then (deferred):** run the full 50+50 missimi eval as a regression — all criticals + 🟠 + the 🟡 time-series item are closed; remaining is the metric-definition consistency (UNIFY). *(User deferred the 50+50 for now.)*
-
-### Superset-derived backlog (see [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md))
-- ◑ **Error-registry enrichment** — ✅ the **R3 typed-enum half is DONE** (`e4035f6`): `SqlErrorClass(parser|binder|semantic|runtime)` + `classify_error_type` **routes repair by type** across all three repair paths, and `30d1adc` threads the class onto the Verifier hand-off → receipt. *Remaining: the Superset-style **per-dialect SQL-error regex** enrichment for richer FIX_SQL repair + user messages — needs live BigQuery/Snowflake to verify warehouse patterns.*
-- ✅ **Declarative metric additivity** — `additivity` field on `MetricDefinition` + `metric_additivity()` resolver (a DECLARED value overrides the SQL inference both ways; else infers via the same `is_additive_measure` gate the answer-summary uses). Leveraged: `build_metrics_block` now tags a non-additive metric ("never sum / share-of-total") so the generator can't Pareto a ratio. A curated metric can override a wrong inference.
-- ✅ **MCP server** — **SHIPPED as R5** (see Tier 2 below + [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)): FastMCP + per-tool Pydantic, exposing **governed *intelligence* tools, not raw `query`** — `ask`+Trust-Receipt, `deep_analysis`, `get_metric` (governed value), `list_findings`, `get_briefing`, `explore`, + the `jobs` fleet tools. MD makes the client smart; Aughor makes the *tool* smart. *(Remaining from the Superset blueprint: layered auth depth — rides on #12 — and streaming progress.)*
-- ⬜ **DialectCaps flags / durable `SQLAlchemyJobStore`** — low priority (jobstore: `scheduler.start()` already reloads monitors from the store on boot; only misfire-recovery is gained).
-- ✅ **Reference-UX follow-ups** *(#158, `307a368`)* — opt-in **Validate** action (`POST /query/validate` re-runs the guard battery live — disjoint join + wrong-literal) + a feedback/remember row (`POST /chat/feedback`), on the chat answer (`InsightActions`).
-- ⚠️ **Transpile-vs-native split** *(deeper)* — explorer/investigate emit DuckDB SQL but native warehouses run it verbatim; route all connectors through `translate()` or give the explorer native dialect rules. Needs live-warehouse testing.
-- ⬜ **Licensing** *(deferred)* — adapted files carry inline Apache-2.0 attribution; add a top-level `NOTICE`/`THIRD_PARTY` entry + an MIT `LICENSE` file before distribution.
-
-### MotherDuck-derived backlog (see [`docs/MOTHERDUCK_LEARNINGS.md`](docs/MOTHERDUCK_LEARNINGS.md))
-*From the 2026-06-21 MotherDuck study. Ordered by the Agentic roadmap (Phase 0/1 first); several items **enrich existing backlog entries** rather than add new ones — cross-referenced inline. Each is grounded against current code.*
-
-**Tier 1 — sharpen the planned Phase 0+1**
-- ✅ **R1 · Cost/compute metering in the Trust Receipt + job row** *(NEW; Agentic Phase 0)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** A contextvar accumulator (`aughor/kernel/metering.py`) records **real compute — tokens · LLM calls · queries · rows · time** (no fabricated `$`; deferred to R1.1 pending a price table). Instrumented at the two chokepoints (`llm/provider.py::_complete_on` via instructor `create_with_completion`; `db/connection.py::_security_post`), flushed onto the job row in `JobKernel._run` and stamped into the answer artifact in `_write_answer_receipt`; `ledger.receipt()` exposes one normalized `cost`. The enabler: a **context-propagating default executor** (`aughor/kernel/concurrency.py`, installed at startup + used by the 2 ad-hoc pools) so the accumulator crosses the `run_in_executor` boundary — also repairs the latent `current_job_id()`-in-executor `None` attribution. Live: exploration `7261 tokens/6 queries`, chat `13540 tokens/1 query` from the real LLM. +17 tests; zero net ratchet debt.
-- ✅ **R2 · `/jobs` REST + Fleet view over the existing ledger** *(Agentic Phase 1)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** New `aughor/routers/jobs.py` (`GET /jobs`, `/jobs/{id}`, `/jobs/{id}/logs`, `POST /jobs/{id}/cancel` — mirrors MotherDuck's Flights tools; the same layer is the future MCP job surface, R5), enriched with a **kind→agent registry seed** (`aughor/kernel/agents.py`: exploration→**Scout**, investigation→**Analyst**) + per-run cost + title + duration. Frontend **"Fleet"** screen (`web/app/page.tsx`, Intelligence nav) reuses the Recents table + `MiniStat` + status badges + `subscribeKernelEvents` live refresh; cost line via shared `web/lib/cost.ts`. Honestly notes Monitors/Briefings (APScheduler, not kernel) aren't listed yet + links to Monitors. Live-verified rendering Scout runs with real cost; zero console errors.
-- ✅ **Phase 0 · Agent registry + per-Org governance** *(Agentic Phase 0 proper; builds on R1/R2)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** The kind→agent seed grew into a first-class **charter registry** (`aughor/kernel/agents.py`: `AgentCharter` role · goal · lane · job_kinds · tools · default budget; Scout + Analyst live, Watcher/Briefer/Curator reserved) + **governance** (enable/pause + per-run token budget, override-wins workspace > app > charter default, stored in the ledger kv). New `aughor/routers/agents.py` (`GET /agents` roster + effective governance + **recent spend aggregated from the metered job rows** — leverages R1; `PATCH /agents/{id}`). The **Scout enable-gate** wires governance into `kickoff_exploration(auto=True)` so an Org can pause background exploration (explicit user Start still runs). Frontend: the Fleet view gained an **Activity | Agents** tab toggle; the Agents tab is the management roster (enable/pause toggle for background agents, "Always on" for interactive, "Reserved · wiring soon" for the future three, budget + real spend per agent). Live: `/agents` shows Scout `209 runs / 65.3K tokens`; UI toggle → `PATCH` → persisted. +13 tests; zero net ratchet debt (1245 unit tests green). *(This is what makes the platform manageable by new Orgs — the fleet is now a governed roster, not opaque processes.)*
-- ✅ **Phase 0 · Budget enforcement + per-workspace governance** *(builds on the above)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** Budgets are now **enforced**, not just displayed: `kernel/metering.py` registers each run's live metrics by `job_id` (`_by_job`) so the `JobKernel` **heartbeat** (a separate task) can read them; `_heartbeat_loop` resolves the run's governance once and each 15s tick checks `_over_budget` (tokens + wall-time) — on breach it stamps the reason, emits `budget.exceeded`, and **`cancel()`s the job**. Cancel is the *reliable* kill: `CancelledError` unwinds past the agents' pervasive fail-open `try/except` (a plain `raise` would be swallowed). **Per-workspace:** `workspace/store.py::workspace_for_connection` resolves a connection → its workspace, wired into the Scout enable-gate + budget resolution; the Fleet **Agents** tab is now scope-aware ("Governing your Org (all workspaces)" vs a specific workspace, `getAgents`/`patchAgent` carry `workspace_id`). **Live demo:** Scout budget set to 10 tokens → an exploration hit 4,551 tokens → **auto-cancelled "budget exceeded: token budget (10 tokens)"** → budget restored. +4 tests (incl. an integration test driving the real heartbeat→cancel path); 1249 green; zero net ratchet debt; tsc clean.
-- ✅ **Phase 0 · Chat-path budget enforcement** *(closes the synchronous-path gap)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** The chat/insight path has no heartbeat, so it enforces in-context: `metering.set_budget`/`check_budget` + a new **`BudgetExceeded(BaseException)`** raised at the LLM funnel (`provider._complete_on`, after `record_llm`) — a `BaseException` so it unwinds past the answer path's fail-open `except Exception` (same reliability trick as the kernel's cancel). A new **`Insight`** charter (interactive, no job-kind, 150K-token default) backs it; `chat_endpoint` resolves its workspace-aware budget and `_metered_stream` arms it + catches `BudgetExceeded` → a clean SSE `error` event. **Live:** Insight budget set to 10 → a chat answer stopped with `"Answer stopped — token budget (10 tokens) exceeded"`. +5 tests; 1254 green; zero net debt. *(Remaining follow-up: per-workspace filtering on the Activity tab.)*
-- ◑ **Phase 2 · ADA specialist hand-offs (foundation)** *(Agentic Phase 2 — careful, additive first move)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** Each ADA phase already runs a **SQL-Engineer → Verifier → Narrator** micro-cycle inside `run_analysis_phase` (plan+execute → trust-guards → interpret); those hand-offs were implicit locals. Made them **explicit typed contracts** (`aughor/agent/handoff.py`: `SqlEngineerHandoff`/`VerifierHandoff`/`NarratorHandoff`) and **journaled** each as an `agent.handoff` event so the collaboration is legible in the Fleet view / receipt — **one additive, fail-open insertion at the phase's clean seam; zero pipeline-logic change.** Specialists registered (`kernel/agents.SPECIALISTS`) for hand-off identity (kept out of the governable roster — they run within Analyst's budget). **Live (real deep-analysis run):** `sql_engineer→verifier {queries:5, ok:5, rows:43}` → `verifier→narrator {caveats:[], passed:true}` → `narrator→analyst {findings:5}`; ADA completed normally (unaffected). +5 tests; committed `08fb29e`. **✅ Standalone Verifier node + typed error_class SHIPPED** (`30d1adc`): the deterministic detector battery + R3 failure classification extracted into `aughor/agent/verifier.py` (behavior-preserving), and `FixResult`-style `error_class` threaded onto `EngineeredQuery`/`VerifierHandoff` so the typed repair signal rides the hand-off → receipt. ✅ **Phase-2 structural SHIPPED** *(#158, `f54f6d0`, `aughor/agent/orchestrator.py`)*: a deterministic **Orchestrator** declares the phase plan at intake (mirrors the routers from the same signals — *not* an LLM decision, per R4); a typed **ContradictionReport** replaces the throwaway string detector (`to_prompt_section()` byte-identical → synthesis unchanged); planned-vs-actual **seam reconciliation** journaled as an `agent.handoff`; all surfaced on the ADA report ("Cross-phase checks"). *(Immutable premise correction = verified already correct.)*
-- ⬜ **Per-agent LLM model** *(agent-fleet enhancement; backlog — not yet studied)* — let each agent run on its own LLM (e.g. Scout on a cheap/fast model, Analyst/Verifier on a stronger one), as a charter default + per-Org/workspace governance override. Mechanics sketch: an optional `model`/`role` on `AgentCharter` + governance, resolved at the agent's entry and threaded into `get_provider(...)`; surfaced in the Agents tab. *Defer the design.*
-- ✅ **R3 · Typed SQL-error taxonomy** *(Agentic Phase 2 — the Verifier's typed signal)* — **SHIPPED + LIVE-VERIFIED (not yet committed).** New `SqlErrorClass` (`ok|parser|binder|semantic|runtime`) + `classify_error_type()` + `error_class_guidance()` in `tools/error_classifier.py` (works across DuckDB-prefixed / Postgres / SQLite errors; order-aware so `operator does not exist` is `semantic`, not `binder`). **Routes repair by type** — the class guidance is prepended to the FIX diagnosis in all three repair paths (`SqlWriter.fix` retry loop, chat `nodes.py`, `explore.py`), and the class rides on `FixResult.error_class`. **Live:** real DuckDB errors classified correctly — `Parser Error→parser`, `Binder Error: Referenced column not found→binder`, `Conversion Error→semantic`. +8 tests; 1267 green; zero net debt. *(Follow-up: thread `FixResult.error_class` into the ADA Verifier hand-off so the receipt shows the typed repair signal.)*
-- ✅ **Phase 2 · Immutable premise correction — verified already correct** — the map flagged `ada_intake`'s premise check as mutating `_ada_intake` mid-run (race risk); reading the code (`investigate.py:2307`) shows it already does `dict(intake_data)` (a copy), modifies the copy, and `ada_baseline` returns it as a LangGraph state-replace (`ret["_ada_intake"]`). No in-place mutation anywhere (verified by grep). **No change needed.**
-- ✅ **R4 · Semantic-layer *ablation* eval** — **SHIPPED** (`53ebf69`; `evals/ablation_eval.py` + `docs/R4_ABLATION_EVAL_2026-06-21.md`). 3-arm ablation on missimi (raw / raw+deterministic-guards / full-injection) + a `--traps` deterministic demo. The honest, non-obvious finding: the **deterministic guards** are the durable moat (0/12 regressions; canonical traps caught — fan-out $199.5M→$108.5M, cancelled-filter 0→15,737, id-arith $150.1M→$104.8M, all execute-clean-but-wrong), while the **LLM-context-injection arm REGRESSED to 58%** (the #13 exploration-drift confound the frozen-state guard forbids). The danger is silent-wrong, and the guards eliminate it — the moat made measurable.
-
-**Tier 2 — external surface**
-- ✅ **R5 · MCP server (governed-intelligence tools)** — **SHIPPED + LIVE-VERIFIED (not yet committed).** A standalone MCP server (`aughor/mcp/`, official `mcp` SDK, stdio default + `--http` streamable-HTTP) exposing 11 governed tools — `ask`+Trust-Receipt / `deep_analysis`+`get_investigation` / `get_metric` (governed value, declared filters applied) / `list_findings` / `get_briefing` / `explore` / `list_jobs`·`get_job`·`cancel_job` — **not raw `query`**. Implemented as a thin `httpx` client over the running REST API (`AughorClient`, SSE-folds `/chat`+`/investigate`), so every tool runs the exact governed path the web app runs (metering/budgets/gating/receipts in the API process). One backend add: `GET /metrics/{name}/value`. Verified over the real stdio MCP protocol on `workspace`/missimi (governed revenue answer + Trust Receipt; live briefing/findings/fleet-cost). +19 tests; 1,286 green; zero net debt. Full design + client config snippets (Claude Desktop/Code/Cursor): [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
-
-**Tier 3 — architecture & product**
-- ◑ **R6 · Per-workspace compute isolation + embedded DuckDB lane** *(complements `#12` tenancy; M–L)* — ✅ **lane SHIPPED** *(#158, `d8b5d8f`, `aughor/db/lanes.py`)*: a per-workspace DuckDB resource envelope (`memory_limit`+`threads` on connection open, no-op at defaults, live threads 10→3 / memory→1.8 GiB) + a per-workspace concurrency gate inside the existing global ceiling, fail-open. *Remaining (⬜): a first-class **MotherDuck connector** (read-scaling/`session_name` aware) as an optional isolated serving backend, and dual-execution of high-frequency low-volume tiles in-process.*
-- ◑ **R7 · Retrieval sharpening on the existing Qdrant layer** — ✅ **hybrid lexical⊕vector rerank SHIPPED** (`aughor/semantic/lexical.py`: dependency-free BM25 + `hybrid_rerank`, `alpha·vector + (1-alpha)·BM25` over the over-fetched pool — recovers the exact-term hit pure cosine buries; the vector still leads, so zero regressions on no-lexical-signal). Wired at the two retrieval seams: `kb_retriever._search` (planning/fix/decompose) and `connection_kb.retrieve_for_question`. **Also fixed a latent bug**: `connection_kb` passed `embed(question)` (a string → a NESTED `[[…]]` vector) to Qdrant, which errored into the silent all-entries-unordered fallback — its semantic retrieval was never actually ranking; now `embed_one` + the hybrid rerank rank correctly. +7 hermetic tests (`test_lexical.py`).
-  - ✅ **R7a · retrieve the canonical metric for the question** *(the UNIFY tie-in)* — `aughor/semantic/metric_retrieval.py` `rank_metrics_for_question` ranks the governed catalog by relevance to the question (hybrid embedding⊕BM25, cached metric embeddings, fail-open), so `unified_metric_grounding` PROMOTES the canonical metric (the catalog intro flags "the FIRST is the most relevant") and, above 8 metrics, trims the tail. Conservative — keeps catalog order when there's no signal, never omits below the trim threshold. Threaded `question` through `build_metrics_block`→`unified_metric_grounding`→both call sites. **Live-verified**: "total revenue"→REVENUE promoted, "average order value"→AOV promoted (real embeddings). +5 tests. *(`5fc1813`)*
-  - ⬜ **R7b · HyDE** — DEFERRED with cause: its natural target `generate_hypotheses` is **unwired** (confirmed during the hypothesis-parallelization investigation) and the KB collection is **empty in this env** (`AUGHOR_KB_PATH` unset), so a HyDE pass would be dark + unverifiable + add an LLM call per retrieval. Revisit once a KB is indexed and/or `generate_hypotheses` is wired.
-  - ⬜ **R7c · LLM-as-judge rerank of explorer findings** — DEFERRED with cause: the briefing's finding ranking is a **deterministic, heavily-tuned `impact_score` triage** (risk-tilt + plausibility gate). The **R4 ablation this session showed the deterministic layer IS the trust moat and LLM-derived context drifts/regresses** — so injecting an LLM judge into the *final trust ranking* is the wrong direction unless gated behind a finding-ranking eval that proves it doesn't regress. Architecturally, keep the trust ranking deterministic.
-- ◑ **R8 · Leapfrog +1s (keep on the board)** — ✅ **AI-as-a-governed-SQL-operator FOUNDATION SHIPPED**: `aughor/semops/ai_sql.py` — `ai_prompt(values, template, …)` applies an LLM per value (an "AI column") **governed**: model-pinned + **temperature 0** (reproducible), an explicit **row cap** (refused + surfaced, never silent), batched + **fail-open per row**, cost-metered (R1), and **provenanced** via `AIColumnReceipt` (model · template · rows · truncated) + `emit_ai_receipt` (an `ai.column` ledger event → Trust Receipt). Plus `register_prompt_udf(duck_conn)` — a governed **`prompt(instruction, text)` DuckDB UDF** (MotherDuck parity) with a hard per-registration **call cap** (a runaway scan raises, not silently costs). **Live-verified**: `ai_prompt(['…late & broken','…love it','…fine'], 'classify sentiment')` → `[negative, positive, neutral]` + receipt; the in-SQL UDF computed an AI sentiment column inside a DuckDB query (`positive`/`negative`). +7 hermetic tests (`test_ai_sql.py`: pinning, cap-refusal, fail-open, provenance, UDF cost-gate). ✅ **`embedding()` operator SHIPPED** *(#158, `0e1414a`)*: `ai_embed` + `register_embedding_udf` (`embedding(text) -> DOUBLE[]`, model-pinned · row-capped · provenanced) completes MotherDuck's prompt()/embedding() pair — pair with DuckDB's `list_cosine_similarity` to rank by semantic similarity in SQL (live-verified). ✅ **Agent-Skills packaging SHIPPED** *(#162, `572b830`+`2d242c2`)* — the `aughor/memory` procedural-memory subsystem (was inert stubs) is now real: a finished investigation's grounded, read-only SQL **crystallizes** into a reusable, governed `OntologyAction` (origin='learned'), conservatively parameterized (WHERE literals → `{param}`), saved EXPLAIN-gated into a `{conn}:{schema}` store the ontology overlay re-enters; plus an **earned L0–L3 autonomy ladder** (`memory/trust.py`) computed from the run signals `record_run` persists — a connection that earns L2+ **auto-crystallizes** strong runs (double-gated), everyone starts at L0 (manual-confirm). Live-verified on missimi (skill round-trip incl. the EXPLAIN-gate rejecting a bad skill; 22 clean runs → L2). +28 tests. **Skills UI** (`01a8846`): a "Learned skills" drawer in the Ontology panel (earned-autonomy badge + each skill's parameterized SQL/`{params}`/reuse count + Use/Delete) + a "Save as skill" action on a finished investigation (propose → EXPLAIN-gated save); live-verified in-browser (Use 2→3, Delete 200, empty-state) — caught+fixed a busy-state bug. ✅ **AI operators wired into generation** *(`6ba7c18`)* — the governed `prompt()`/`embedding()` UDFs are now reachable from agent-GENERATED SQL: registered on every DuckDB connection at the per-connection chokepoint (skipped for MotherDuck, which has them natively), the chat/ADA generator gets a conservative operator hint (text-only, always row-bounded), and `_security_post` journals an `ai.column` receipt when a query computes one. Opt-in (`AUGHOR_AI_SQL=1`, default off — per-row LLM calls); live-verified end-to-end (a real connection ran `prompt('classify sentiment', msg)` inline + emitted the receipt). +10 tests (`test_ai_sql_wiring.py`). ✅ **Governed Dives SHIPPED** *(`8a10336`)* — the playbook system now carries immutable, receipt-pinned versions: `compute_receipt` fingerprints a play's CONTENT (not its volatile success-rate/status), `save_entry` is version-aware (a content change bumps the version + appends a frozen snapshot to an append-only log; a meta-only outcomes save carries the pin forward — versions track advice, not bookkeeping), `GET /playbook/{id}/versions` exposes the history, and `build_playbook_prompt_section` emits a `playbook.use` receipt (entry · version · receipt) so a finding's reliance on org knowledge is auditable. +6 tests. ◑ **Snapshot-pinned receipts — spike SHIPPED** *(`6e1df4e`)*: a finding is now pinned to the DATA VERSION it ran against, so re-validate can tell a MOVED dataset apart from a MIS-DERIVED finding (the ambiguity a bare `cells_changed` flag couldn't resolve). `aughor/db/snapshot.py::data_version` returns a token — a NATIVE snapshot id when the storage is version-aware (`_native_snapshot` = the DuckLake/warehouse forward-compat seam, None today) else a portable per-table fingerprint that works on a plain DuckDB file now; `build_dossier` stamps it at emit (opt-in `AUGHOR_SNAPSHOT_RECEIPTS`, fail-open) and `revalidate_finding` compares pinned-vs-current → `data_moved` + an honest interpretation. Live-verified (same finding re-validated "stable", then "data has moved … not a mis-derivation" after a row landed); +9 tests. ✅ **NATIVE DuckLake path SHIPPED** *(`bf93bf7`)* — upgrades the attribution from *inferred* to *proven*: `aughor/db/ducklake.py::DuckLakeConnection` (a DuckDB connection backed by a DuckLake catalog — data as Parquet, metadata in a SQL catalog, every write an immutable snapshot); `_native_snapshot` detects it (`duckdb_databases` type `ducklake`) → an EXACT `dl:<catalog>:<id>`; `execute_as_of` reproduces a query `AT (VERSION => n)` (sqlglot rewrite, version in `Table.args["when"]`); `revalidate_finding` re-runs the SQL AT the pinned snapshot → reproduces there = CONFIRMED-correct-as-computed + live drift is genuinely new data, doesn't reproduce = PROVEN mis-derivation (new `reproduced` field). `apply_lane_envelope` made public for the out-of-module lane. Live-verified on a real DuckLake catalog (exact `dl:lake:2` pin; "CONFIRMED correct … data has since moved" vs "does NOT reproduce even at its own pinned snapshot"); +5 tests (skip when the extension can't load). *Remaining (⬜): wire DuckLakeConnection into ingestion/registry so uploads land in DuckLake (versioned by default) — everything downstream already consumes the token; that makes the Finding Dossier a true $0 time-machine for every real finding.*
-
-### Workspace-settings / briefing-UX follow-ups (memory: `workspace-settings-pivot`)
-- ✅ **Localization wiring** — `fiscal_year_start_month` now shifts quarter/year buckets in the semantic compiler's time-series (`aughor/sql/fiscal.py:fiscal_period_expr`, wired at the `synthesize_sql` chokepoint) — a strict no-op at the January default + non-quarter/year grains, DuckDB-targeted (calendar fallback for other dialects). `timezone` now applies to time-bearing (`minute`/`hour`) date labels via `effectiveTimezone()` in `fmtDate` (no-op when unset; date buckets unshifted to avoid off-by-one). `currency` + `date_format` were already wired. *(Remaining: fiscal in LLM-authored chart_sql — covered by the `org_context` prompt hint; per-workspace fiscal resolution.)*
-- ✅ **Per-workspace override into the backend briefing** — `workspace_id` now threads endpoint → `get_briefing` → `generate_narrative` → `_profile_signals`/`resolve_currency` (FE: `selectedWorkspace` → IntelligenceWorkspace → BriefingPanel → both briefing API calls), so a workspace-scoped currency override wins over the app default in the brief's prose. Deterministically tested. *(Industry override already reaches the explorer; the briefing narrative uses currency + north-star, not industry.)*
-- ✅ **Currency on continuous chart axes** — verified the ECharts y-axis `axisLabel` formatters already route through the currency-aware `valueFormatter` (`builders.ts`), and `Chart.tsx` subscribes via `useOrgSettings` so axes rebuild on currency change. (The ROADMAP claim was stale.)
-- ✅ **Identity-context breadth** *(`964c113`)* — `org_context()` (company/website/HQ/industry) now prepends to the **briefing narrator** prompt (workspace-scoped, override-wins) and the **profile-inference** prompt (app-level), beyond the explorer-steering-only usage; unconditional, fail-open, '' when unset. Live-verified: real org settings flow into the narrator prompt. +5 tests.
-- ✅ **org-settings reactivity for tables/KPI cards** — `SqlResultTable` + `PivotTable` now call `useOrgSettings()` (re-render → re-read currency); `IndustryKpiStrip` threads the cache version into its data-fetch effect deps (the symbol is baked in there). Live: app renders, KPI strip shows €.
-- ◑ **Live briefing verification on real warehouse data** — the KPI strip + each metric's `chart_sql` trend are now live-verified on `missimi` (surfaced & fixed the trend-window bug, 2026-06-21); the full narrative briefing on a *non-DuckDB* warehouse still isn't exhaustively eyeballed.
-
-### Commercialization / deploy
-- ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — **Workspace data-path isolation is now comprehensive** across every connection-tied surface: connection pickers (#38), `/canvases` + `/investigations` (#39), Recommendation Inbox (#41), Catalog tree (#42), Monitors/Alerts + the Home-dashboard flash (#45) — all via the fail-closed `workspace_connection_ids` gate; an empty workspace shows none of another's data. Genuinely-remaining tenancy: connection-registry **ownership** (`/connections` is still a *shared* registry — the frontend filters it; per-tenant ownership belongs with auth), and platform **OAuth2/OIDC login + user RBAC** (still unbuilt — only connector-level OAuth exists). Shared resources (metrics catalog, action triggers, org-intelligence) are global *by design*, not leaks. The remainder needs the auth/ownership model decided first.
-
-### Adaptive Inference (next)
-- ✅ **Semantic operators over SQL** *(Borrow 3 · **shipped, all phases**)* — LLM `filter / extract / top-k / aggregate` over the **text** columns of a SQL result set (tickets, reviews, notes, incident write-ups — what SQL can't reason over). The highest-upside borrow, now fully landed: SQL push-down for the structured 99% + an LLM only on the text residue. **Cost-bounded by push-down + explicit row caps** (not a cascade — that was removed): the warehouse filters first so only a small text residue reaches the LLM, and each operator carries a surfaced row cap (never a silent truncation). Both surfaces wired: the **Query Builder** (user) and the **ADA agent** (autonomous). See the [plan doc](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) §4.
-  - ✅ **Phase 1 — backend (`filter` + `extract`)** — `aughor/semops/` operators (value-based text-column detection + batched, fail-open LLM calls on role `fast`) + `POST /query/semantic` and `/query/semantic/text-columns` (re-run SQL server-side, then operate), gated by a new Pro `SEMANTIC_OPERATORS` capability. Unit + integration tested end-to-end through the real app.
-  - ✅ **Phase 2a — ADA agent tool** — every ADA investigation phase can now attach an opt-in semantic step to a query (`PhaseQueryPlan.semantic`), applied in the shared `run_analysis_phase` executor after the SQL runs so the phase interpreter reasons over text-derived evidence. **Opt-in** (no-op unless the planner emits a step), **guarded** (skipped unless the target column actually reads as text — a misattached step never corrupts numeric evidence), and **fail-open**. The field's own description teaches the planner when to use it — no phase-prompt edits.
-  - ✅ **Phase 2b operators** — `top_k` (rank rows by an NL criterion, keep the best *k*) + `aggregate` (synthesize many text rows → one answer) shipped across the operator core, the `apply_step` dispatcher, `POST /query/semantic`, and the ADA `SemanticStep` — same opt-in / guarded / fail-open contract as filter/extract. The four-operator set is complete.
-  - ✅ **Phase 2b UI** — the Query Builder **"Semantic step"** panel under any result: pick an operator + a (client-side-detected) text column, fill the params, **Apply** → `POST /query/semantic` transforms the table in place, with surfaced notes (`8 → 6 rows`, the op note) and **Revert**. Verified end-to-end in the browser on real review data. The user path now matches the agent path.
-- ✅ **Hierarchical tree-reduce synthesis** *(Borrow 4 · **shipped**)* — reusable pure map-reduce-over-context-windows primitive `aughor/llm/reduce.py` (`hierarchical_reduce` pack → summarize → recurse, depth-bounded; `partitioned_reduce` keeps groups isolated), wired into the briefing: when findings exceed the cited top-8, `_coverage_digest` folds **every** finding into a per-domain digest (tree-reduced within each domain) so the narrative reflects the whole picture instead of dropping findings 9+. **Partition-aware** (domains never blended) and **fail-open** (digest error → top-8-only prompt).
-  - ✅ **Leveraged in `ada_synthesize`** — the investigation report's evidence log no longer truncates at 6 000 chars: `_phases_evidence_budgeted` keeps phases **verbatim** up to the budget (exact numbers preserved for grounding) and folds **overflow** phases into a number-preserving per-phase digest (`partitioned_reduce`) instead of dropping them. Fail-open to the old truncation; nothing-fits → truncate (never digest-only, to keep verbatim grounding). The primitive is reusable for the Hub next.
-- ✅ **Embedding entity dedup — detection** *(Borrow 5a · **shipped**)* — `aughor/ontology/dedup.py`: a pure embedding self-similarity join + **connected-components** clustering (`cluster_by_similarity`, transitive) + `detect_duplicate_entities` (embeds name+description+tables via `aughor/semantic/embedder.py`, conservative 0.85 default, fail-open when embeddings are unavailable), exposed read-only at `GET /ontology/duplicate-entities` as merge **suggestions**. Detection only — it never mutates the graph, because a wrong merge would corrupt the ontology (and the SQL on it).
-  - ✅ **Embedding entity dedup — merge-on-confirm (backend)** — `merge_entities` ([dedup.py](aughor/ontology/dedup.py)) is a pure, deterministic rewrite that collapses a cluster into a canonical entity and **repoints every cross-reference** — relationships (regenerated ids, self-loops dropped, deduped), interfaces' `implementing_entities`, metrics'/actions' `entity`, and the three reverse maps — then `store.apply_entity_merge` persists. Exposed at `POST /ontology/entities/merge` (gated `ONTOLOGY_EDIT`, validates ≥2 distinct + canonical-in-cluster). **Explicit + user-confirmed, never automatic.** Original graph untouched (pure).
-  - ✅ **Ontology-board UI** — a **"Find duplicates"** action in the `OntologyPanel` header opens a drawer that calls `GET /ontology/duplicate-entities`, lists each near-duplicate cluster (entities + source tables + similarity), and lets the user pick which entity each cluster **merges into** (`POST /ontology/entities/merge`), then reloads the graph. Detection verified live in-browser on `beautycommerce` (clusters the three Order-* entities at 0.82). Borrow 5 fully landed.
-- ⛔ **Calibrated confidence via logprobs** *(Borrow 5b · **blocked**)* — finding-trust numbers are self-reported by the LLM + clamped by a deterministic evidence-depth ceiling ([nodes.py:806](aughor/agent/nodes.py:806)); the `P(true)/(P(true)+P(false))` logprob technique can't be built because the provider layer (instructor over OpenAI-compat) doesn't expose `top_logprobs` — **the same wall that killed the cascade**. Needs a logprob-surfacing provider first.
-- ✅ **Model cascade — removed** — built (#49) then deleted as not worth its weight (see *Recently shipped* above and the plan doc Part VII). **The learning, kept:** every accessible *cheap* model (gemma4:31b, qwen2.5-coder:14b, command-r7b) is **miscalibrated** — self-reported confidence clusters high → ~85% escalation → only ~15% call saving; the well-calibrated models are slow/costly; the cheap+calibrated candidate is access-gated. The accuracy guarantee *always held* (recall 1.0); the blocker was always the proxy model, not the method. PR #50 (the calibration harness) closed unmerged.
-- ⬜ **Prompt optimization — dropped (revisit later)** — a GEPA-style reflective optimizer was built then dropped: it **overfit** the already-strong hand-tuned `CHAT_SQL_SYSTEM` (train +0.029, held-out ~0 — the held-out gate correctly refused the fake win). The hand-built prompt is the better one. Revisit needs a larger eval set (>53 golden pairs) + held-out selection + a less-tuned target prompt.
-
-### Strategic arc
-- ⬜ **M12 — Org Intelligence** *(XL)* — entirely unbuilt; no `aughor/org/` package. Lineage ingestor → multi-source federation → org knowledge graph → graph-traversal tools → structural-question router. Plan in [`M12_ORG_INTELLIGENCE_ROADMAP.md`](M12_ORG_INTELLIGENCE_ROADMAP.md).
-- ⬜ **Multi-connection canvas** *(M, gated on M12a federation)* — `aughor/canvas/store.py:70` still raises on `len(scopes) > 1`.
-
-### Feature depth
-- ✅ **Query Builder Layer-3** *(#158, `6ccaa35`)* — reverse-compile raw SQL → semantic chips: `aughor/sql/decompile.py` (SQLGlot; columns/DATE_TRUNC→dimensions, aggs→measures, predicates→filters; aliases→real tables; honest bails on CTE/set-op/subquery) + `POST /query/decompile` + an "Import → builder" action in the QB SQL toolbar.
-- ⛔ **Hypothesis-eval parallelization — INVESTIGATED, a misdiagnosis** *(2026-06-21; same class as the `score_evidence` misdiagnosis)* — the `score_evidence` loop (`aughor/agent/nodes.py`, `current_hypothesis_idx += 1`) *is* serial, but it runs **N=1 in practice**: `route_question` seeds exactly ONE `"direct"` hypothesis on the direct path (nodes.py:131), `final_text`→0, and `explore` routes to the **adaptive ADA phases** (which don't use `score_evidence` at all). `generate_hypotheses` (which would yield multiple competing hypotheses to score) **is not defined or wired** anywhere. Meanwhile the genuinely-costly LLM work is already parallel — SQL **generation** via `ContextThreadPoolExecutor` (nodes.py:536) and query **execution** via `_parallel_execute_safe` (investigate.py:699) — and the ADA phase flow is sequential **by design** (adaptive early-stopping). So there is no safe parallelization to do here. *The real prerequisite win (a separate M–L feature, not a "quick win"): wire multi-hypothesis generation, THEN parallel-score the resulting set.* No code change — fabricating a no-op parallelization would violate the verify-it-actually-runs principle.
-- ✅ **FAN-b — chasm-rewrite breadth** *(#158, `c32f07b`)* — parent + chasm + AVG-decomposition de-fan ship; **satellite-WHERE-splitting now lands** too: a single-satellite WHERE conjunct is pushed (alias-stripped) into that satellite's pre-agg CTE so its rows are filtered before aggregation — reproduces the original fanned semantics incl. INNER-join row dropping (live 81/1800 fanned → 37/1500 exact). Still bails high-precision on a cross-table/OR/unqualified conjunct it can't attribute.
-
-### Briefing / ADA correctness — the missimi "ROAS mess" arc (#159, 2026-06-22)
-*The root cause was a **mislabel**, not math: the explorer computed AOV (`SUM(order_value)/COUNT(DISTINCT order_id) AS aov`) and the narrator called it "ROAS 6.23", poisoning the Briefing + making every drill-down chase a revenue÷spend ratio with no clean grain. Branch `2026-06-21-agentic-fleet-metering`. **Deployed + live-verified on missimi 2026-06-22** (API restarted clean — a stale `--reload` worker held `:8000` with old code; `./start.sh --api-only` kills by-port too); a clean re-run produced 3 label-SQL-coherent findings (the AOV bug site narrated "AOV $69.15", not "ROAS 6.23"). **All 3 follow-ups below now SHIPPED** (Fix A + formula-drift + relabel-and-keep, +35 tests, zero net debt).*
-- ✅ **Metric-name ↔ SQL coherence (industry-KB-driven)** *(`3e68114`, replacing stopgap `c745421`)* — the explorer trust gate (`verify_insight`) rejects a finding whose result is ALIASED as one metric while the prose asserts a DIFFERENT one. The vocabulary comes from `profile/metric_kb.py` `metric_vocabulary(industry)` (curated `data/kb/industry/*.json` matched to the connection's BusinessProfile) + org-registered metrics — **no hardcoded list**; a new metric is a KB/registry entry, a new vertical is a JSON file. `retail.json` already carries ROAS/AOV/CAC.
-- ✅ **ADA cross-section ratio-over-chasm** *(`ca343ef`)* — Fix C: `run_analysis_phase(preplanned=)` reuses a drilled finding's grain-correct SQL instead of re-deriving it; Fix B: `_suppress_fanned_ratio` drops chart/values/narrative when a ratio fans out rather than rationalising the 0.0–0.01 artifact.
-- ✅ **Seed-schema removal sticks** *(`8fae2b0`)* — a bundled sample (`ecommerce`) re-materialised on every `local_upload` build; a persisted `_removed_seeds.json` tombstone skips it on re-seed (+ `restore_seeds()` / `POST /connections/{id}/restore-samples` / Catalog "Restore sample data").
-- ✅ **Fix A — general ratio-across-a-dimension-join de-fan** *(`4ce7130`)* — `dimension_ratio_chasm` detector + `build_dim_ratio_rewrite` cure for the shape the FK-root chasm guards miss: two fact tables joined on the categorical dimension they're grouped by, with a ratio drawing its numerator from one table and denominator from the other. Pre-aggregates each side to the dimension grain in its own CTE, 1:1-joins, divides — correct for ANY cardinality (no oracle), high-precision. Dispatched via `defan()`, ORed into all 3 detect→defan→adopt sites + a drop-backstop in the explorer gate & ADA Verifier. **Live on missimi:** the fanned drill-down gives 0.004–0.014; the de-fan recovers ROAS 6.23/4.75/4.49/4.11 (the true values). +16 tests.
-- ✅ **Registry formula-drift coherence layer** *(`0611169`)* — `_drifted_registered_metric` wired into `verify_insight`: a finding asserting a *registered* metric whose SQL drifts from its governed formula is caught even with no revealing alias. Alias-INSENSITIVE signature match (parse → strip column quals → normalize) eliminates `check_metric_enforcement`'s false-drift on a correct `SUM(o.total_amount)`; a hard reject fires only when a wrong-usage column the metric warns against is present. **Live:** rejects `SUM(line_total)` revenue, accepts governed `SUM(o.total_amount)`. +9 tests.
-- ✅ **Relabel-and-keep mislabeled findings** *(`d5e9820`)* — `relabel_mislabeled_finding` rewrites an AOV-labelled-"ROAS" finding to what the SQL computes and KEEPS the signal, as a pre-pass before `verify_insight` at both explorer emission sites. Safe by a STRICT internal grounding gate (rescue only when the asserted value is in the rows) so a fabricated `ROAS 6.23` over `~69` rows is NOT rescued. **Live on missimi:** influencer AOV 69.81 mislabelled "ROAS" → relabelled & kept; fabricated 6.23 → not rescued. +10 tests.
-
-### Infra / code health
-- ◑ **K4 follow-ups** — ✅ generated typed TS client (`web/lib/api.gen.ts` now generated from `/openapi.json` via the `gen:api` script + `api.schema.ts` re-export). ◑ **explorer/agent.py god-file split** (was 4,241 lines → now **3,157**; the remaining mass is the cohesive ~1.5k-line Phase-8 method, see below), behavior-preserving, cross-module surface kept PUBLIC: **module 1** `explorer/metric_coherence.py` (the #159 metric-naming/drift/relabel cluster, 13 funcs, `bb39b91`, ratchet-neutral). **module 2** `explorer/verify.py` (the pre-emission trust gate `verify_insight` + structural guards, `34b0bf1`) — and it **paid down the private-import ratchet 77→72** by publicizing the 5 guards `fix_persist`/`revalidate` imported privately; 8 importers repointed (the live suite caught + relocated 2 mis-placed constants `_NO_DATA_RE`/`_METRIC_GROUPS`). **module 3 — three more cohesive cuts** (`2619eb0`/`95b97a2`/`ed64d8a`): `explorer/windowing.py` (Tier-0 role-aware temporal-window anchoring, 11 funcs + 6 consts, ratchet-neutral); `explorer/scope.py` (the dataset-isolation guard `crosses_datasets`/`tables_in_sql`/`dataset_of`, paid down 1 via the investigations router); `explorer/feasibility.py` (the Phase-8 angle/temporal-SQL feasibility gates `is_temporal_angle`/`angle_feasible`/`has_temporal_sql`/`has_vacuous_temporal`, paid down 2 via `fix_persist`). **Private-import ratchet 72 → 69 — now UNDER baseline, so `test_no_new_private_cross_imports` is GREEN; `PRIVATE_IMPORT_BASELINE` lowered 70 → 69 to lock it.** **`_phase8_domain_intelligence` decompose — done conservatively** (`ab4c2cf`): extracted the pure per-dataset domain-pass construction (the "every dataset gets understood" guarantee) into module-level `_build_domain_passes` + **5 new unit tests** (`test_domain_passes.py`) covering the netflix-vanishing regression that previously had ZERO direct coverage. **Deliberately stopped there:** the method's remaining bulk is a ~1,180-line async curiosity *while*-loop (deterministic gates + LLM/DB calls + mutated local state, with `continue`/`break` escapes) and self/async-bound profile-steering setup — splitting either is high-risk and unverifiable by unit tests, so it's left intact (a cohesive algorithm, not every long method should be carved up); revisit only with live-run verification if ever. Full suite 1474 green (the lone red is the pre-existing silent-swallow ratchet, 293 vs stale baseline 268, untouched). ✅ **Domain-interface module splits — the two dominant boundaries cleaned** (`72f6c1a`/`61eccdb`): `tools.schema` already exposed public `parse_schema_tables`/`compute_join_map` wrappers but 16 call sites still imported the underscore internals — repointed all + added `norm_type`/`fk_root`/`SECTION_STOP` aliases (boundary → 0 private imports); likewise all 10 connectors now route through the public `security_pre`/`security_post` gate instead of `_security_pre`/`_security_post`. **Private-import ratchet 69 → 22** (the two most reached-into modules, fully cleaned; `PRIVATE_IMPORT_BASELINE` lowered 69→42→22 to lock it). Remaining 22 are a scattered long tail (≤3 each, some genuinely internal). Still open: the ontology-domain `api.py` facade (the doc's canonical example — heterogeneous names, lower-leverage), WCH-8 `.duckdb` write-coordination.
-- ✅ **Profiler composite-PK detection** — `build_table_profile` now probes key-like candidate PAIRS (bounded: only when no single PK, ≤4 pairs, ≤5M rows, one-time/cached) and records a PROVEN composite grain in a new `TableProfile.grain_columns`, surfaced in the data portrait (`| grain: (order_id, order_item_id) ✓`). Separate signal from `grain_column`/`grain_verified` (unchanged for their single-col consumers). Live: missimi `order_items` (2.37M rows, no single PK) → `(order_id, order_item_id)` in 0.03s.
-- ⬜ **B-10 — bigger benchmark run** *(S, compute-bound)* — the UNIFY lift run is done; the larger real-warehouse deterministic-decode run isn't recorded yet.
-
-### Parked ideas (2026-06-15 — discussed, not yet scheduled)
-- ◑ **Value-domain join guard — promote to *prevention*** *(M)* — the query-time guard + active repair shipped across all three SQL paths (#65). ✅ **Build-time prevention SHIPPED**: `aughor/sql/join_guard.py` `verify_join_edges`/`verified_join_edges` (cached) value-verify the NAME-inferred join candidates (`_compute_join_map`) via the existing `_probe_overlap` containment probe — bounded (only name-matched candidates), cached per connection, fail-open (an unprobeable edge is kept). Wired into `build_data_catalog` (the catalog is already 1-hour-cached, so probes run at build time): a value-disjoint name coincidence is rendered as an explicit **DO NOT JOIN** block (with the % overlap), and the verified FKs as "use these exact keys" — so the model never sees the bogus join as valid and can't draw it. **Live-verified on missimi**: `orders.order_id = order_items.order_id` → verified (100%); `orders.order_id = products.product_id` → rejected (0%). +4 hermetic tests (`test_joinable.py`). ✅ **Precompute + MinHash/HLL SHIPPED** *(#158, `4824d15`)*: explorer phase-4 now `seed_verified_cache`s the catalog DO-NOT-JOIN cache from its FK checks (no first-question probe), and huge tables (>1M rows) are HLL-estimated via `_probe_overlap_hll` (approx_count_distinct inclusion-exclusion) instead of the sampled probe; `aughor/sql/sketches.py` also ships MinHash (Jaccard/containment) as the persistable-signature foundation. ✅ **Persisted as first-class ontology edges** *(`da1d029`)*: `get_or_build_ontology` value-verifies each relationship's join edge at build time (reusing the connection it already opens) and persists the verdict — a real FK gets `join_confidence='verified'` + a stamped `OntologyRelationship.value_overlap`, a value-disjoint coincidence is DROPPED from the graph (index rebuilt from survivors) — so the durable, cross-process, reviewable ontology never carries a fabricating edge. Pure fail-open overlay (`builder.apply_join_verifications`); live-verified on missimi (10 relationships persisted value-verified at overlap 1.00). +6 tests.
-- ⬜ **External NL2SQL benchmarking** *(M–L)* — prove the NL2SQL harness on **external, contamination-resistant** suites beyond the internal 53-pair golden_sql (self-authored → not externally comparable): **Spider 2.0** (enterprise; Snowflake/BigQuery/SQLite, 1000+-col schemas, 100+-line SQL — brutally hard, top models ~17% EX) and **LiveSQLBench** (continuously-refreshed, memorization-proof; Postgres/SQLite). Run `generate_sql_chat` against each suite's (NL, DB, gold) triples with execution-match scoring + a per-suite dialect adapter; also report Aughor's grounded-**refusal** correctness (which the suites don't credit). **Decided: Lite-first (broader dialects, lower bar to a first listing) then Snow (beat Genloop's official #1 @ 96.70 EX).** ✅ The **SQLite reader is now in place** (#66), so the cheapest on-ramp — the 135 local SQLite instances — runs on the real engine; remaining work is the BigQuery/Snowflake connectors + the prediction/scoring harness (a draft lives at `evals/spider2_lite.py`, scoring via Spider's own `evaluate.py --mode sql`; official submission = email the address published in the upstream Spider 2.0 repo). Distinct from B-10's internal warehouse run. See memory `nl2sql-scientific-benchmarking`.
-
-### Small polish
-- ✅ Small polish *(#158, `1c1a4ab`)* — Recents **deep-link** (rows already `onOpenInvestigation` to the specific run, home + RecentsScreen) and `Scope`→`CanvasScope` (backend already on `CanvasScope` throughout) were found **already shipped**; the real gap, **profiler large-table PK misses**, is fixed — uniqueness verified via an HLL ratio test where the exact `COUNT(DISTINCT)` was skipped above 500k rows (live 600k order_id verified; non-unique key rejected).
-
-### Deferred follow-ups from the 5 shipped directions
-- Onboarding step-completion checklist · export live fixtures for the ADA/explore report shapes (parser handles both) · briefing dashboard saved-metric KPI tiles + server-side citation-tied figures · provider per-connection scoping + OpenAI-direct/OpenRouter backends.
+1. 🔴 **Is a third-party custodian of your users' Gmail/Slack tokens acceptable?**
+   This gates the entire shape of §3.4. If **no**, the OAuth broker reverts to a build and VA-11
+   is a quarter-sized wave. Arcade documents Helm self-hosting, which may change the answer.
+2. **Self-hosted or SaaS** for that connector runtime, if (1) is yes.
+3. **Do the workflow primitives (W1/W2) come before the connectors?** They are independent:
+   W1/W2 make what exists properly expressive; the connectors make it reach further.
+4. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
 
 ---
 
-*Next up (after this point):* **multi-schema intelligence + pre-emission verification + editable ontology shipped** (2026-06-18/19 — per-schema (connection×schema) isolation with `_leaks_schema` guard + "All schemas" aggregate, the pre-emission insight gate, BeautyCommerce cold-trace F1–F10, human-editable version-controlled ontology overrides; branch `nao-editable-ontology-overrides`), on top of **industry-aware intelligence + briefing trust** (2026-06-16/17 — BusinessProfile + per-industry metric KB, build-time audited metric SQL, the SUM-over-chasm / grain-mismatch-CTE / declared-range guards, three-tier dedup, metric-explainer briefing). Open follow-ups: extend the SQL-trust guards fully to the ADA/investigation paths, re-index the new industry KB into Qdrant for vector retrieval, stabilize `key_questions` across rebuilds, and a cross-vertical (airline) proof. Separately, the **SQLite connector shipped** (#66), clearing the engine blocker for **external NL2SQL benchmarking** (Spider 2.0-Lite, SQLite-first) — the live next step. Also remaining: promoting the value-domain join guard (#65, shipped query-time on all three SQL paths) to **prevention** (verified `joinable_with` ontology edges). The whole adaptive-inference borrow list is now worked through (semantic operators, tree-reduce, and entity dedup all shipped; only logprob-calibrated confidence is blocked, on a provider that exposes `top_logprobs`). *Also available standalone:* **hypothesis-eval parallelization** (the quickest perf win — `score_evidence` runs serially today). **#12 enterprise auth** remains gated on the auth/tenancy product call.
+## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
+
+- **Measure the premise before building.** Every wave in this arc moved its own scope at the
+  pre-check. "Authoring is missing" (VA-12) and "we need a workflow builder" (§4.2) were both
+  false as stated.
+- **Check whether an existing view's SUBSTRATE is simply unfed before building a new view.**
+  VA-4d bought the entire Runs surface with ~40 lines.
+- **Features stall at TESTED, not at LEVERAGED.** A complete and inert plane is the recurring
+  failure — the governed-action plane shipped complete and unreachable.
+- **A guard goes blind when its matching key stops matching**, and blind reads as green.
+- **The measurement lies more often than the code.** Screenshot before believing a probe.
+- **A capability added to one connector class misses the others** (×3).
+- **Prove it live.** Most defects in this project were found by driving the product, not by tests.
+
+---
+
+## 8 · Not in scope
+
+A second application · a TS runtime · an n8n dependency · a low-code flow engine · a canvas for
+anything without a producer/consumer relation · model ids hardcoded anywhere in `aughor/`.
+
+---
+
+## 9 · What this document absorbed
+
+**48 files, consolidated 2026-08-30 and removed from `docs/`.** Every one is recoverable:
+`git log --diff-filter=D --name-only -- docs/` finds the deleting commit, and
+`git show <commit>^:docs/<file>` prints it back.
+
+**Roadmaps and plans of record**
+`AGENT_OPS_CONTROL_ROOM_2026-08-17` · `CHAT_FLOW_ROADMAP_2026-08-28` · `HOSTED_DEMO_SCOPE` · `INSTALL_ACCURACY_PLAN_2026-08-18` · `KNOWLEDGE_BASE_WAVE_2026-08-24` · `PLATFORM_ROADMAP_2026-08-12` · `PRIME_AGENT_ADOPTION_2026-08-08` · `REBUILD_ANOMALIES_AND_IMPROVEMENT_PLAN` · `ROADMAP_ARC_VA_2026-08-22` · `ROADMAP_CONVERSATIONAL_ANALYST_2026-08-19` · `ROADMAP_SLACK_BOT_FACTORY_2026-08-29` · `RUNTIME_API_BASE_SCOPE` · `SQL_EDITOR_DATABRICKS_PARITY_2026-08-12` · `SQL_EDITOR_IMPLEMENTATION_ROADMAP_2026-08-12` · `SQL_EDITOR_PARADIGM_PLAN_2026-08-12` · `UI_ELEVATION_2026-07-14` · `VOCABULARY_UNIFICATION_2026-08-01` · `WAVE5_CLOSURE_PLAN_2026-08-09` · `WAVE5_EXTRACTION_MAP_2026-08-09`
+
+**Adoption studies — verdicts now live in §4**
+`COGNEE_STUDY_2026-07-28` · `CONVERSATIONAL_AGENT_STUDY_2026-08-08` · `DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15` · `FIVE_REPO_STUDY_2026-07-23` · `LANGFLOW_STUDY_2026-08-30` · `MASTRA_STUDY_2026-07-29` · `SPICEAI_STUDY_AND_ADOPTION_PLAN_2026-07-11` · `VOLTAGENT_ADOPTION_STUDY_2026-08-22`
+
+**Completed wave arcs**
+`WAVE_CR_CONTROL_ROOM` · `WAVE_C_CONTEXT_GRAPH_ARC` · `WAVE_H_HIRED_AGENTS` · `WAVE_L_ACTIVATION_ARC` · `WAVE_O_ONTOLOGY_ARC` · `WAVE_S_SURFACE_ARC`
+
+**Superseded handoffs, probes and one-off analyses**
+`BRIEFING_DESIGN_HANDOFF` · `CONTEXT_ENCODING_ARCHITECTURE` · `EXPLORER_GROUNDED_GENERATION` · `EXPLORER_SYNTHESIS_AND_FRONTIER` · `FLAG_QUEUE_HANDOFF_2026-08-01` · `FLAG_VERDICT_SHEET_2026-08-01` · `INTERACTIVE_DATA_AGENT_VISION_2030` · `OVERVIEW_INTERESTING_FACTS_2026-07-14` · `PIPELINE_QUALITY_ASSESSMENT` · `REPORT_QUALITY_DEEP_DIVE_2026-08-19` · `SESSION_HANDOFF_2026-07-06` · `SESSION_HANDOFF_2026-08-11` · `SESSION_HANDOFF_2026-08-12` · `SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06` · `SPIDER2_REATTEMPT_2026-06-28`
+
+**Deliberately KEPT (63)** — cited from module docstrings, tests, `FEATURES.md` or `AGENTS.md`,
+and therefore reference material rather than plans: `docs/GLOSSARY.md`, `docs/PITFALLS.md`,
+`docs/PLATFORM_ARCHITECTURE.md`, `docs/KERNEL_ARCHITECTURE.md`, `docs/AGENTIC_ARCHITECTURE.md`,
+`docs/UNIFIED_ANSWER_PATH.md`, `docs/MCP_SERVER.md`, `docs/DOMAIN_EXPERTISE_PACKS*.md`,
+`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md` and 54 others.

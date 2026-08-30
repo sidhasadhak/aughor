@@ -6,7 +6,7 @@ winners. This is the working spec for the upcoming sessions: baseline numbers to
 per-workstream scope with file:line anchors, the Spider 2.0 campaign runbook, and the sequencing.
 Companion prior art: [`SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md`](SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md)
 (the concluded June campaign — read §14 before touching anything benchmark-related),
-[`SPIDER2_REATTEMPT_2026-06-28.md`](SPIDER2_REATTEMPT_2026-06-28.md), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md).*
+`SPIDER2_REATTEMPT_2026-06-28.md` (absorbed into `ROADMAP.md`; recoverable from git history), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md).*
 
 **Standing constraints (apply to every workstream):**
 1. Don't break the public API (additive routes/flags only).
