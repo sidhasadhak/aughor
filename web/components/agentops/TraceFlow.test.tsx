@@ -616,3 +616,77 @@ describe("the viewport when a stack opens", () => {
     await waitFor(() => expect(fits).toContain("fit"));
   });
 });
+
+/* ── the guardrail filter ───────────────────────────────────────────────────── */
+describe("guardrails that allowed", () => {
+  const withGuards = () => {
+    // Distinct `seq` per node: `eventForNode` matches on span first and SEQUENCE second,
+    // so a fixture where every node is seq 0 hands one event to all of them — which is
+    // how the blocked-guardrail case first "passed" for the wrong reason.
+    const nodes = [
+      node("q", { seq: 1, event_kind: "user_request", name: "ask" }),
+      node("g1", { seq: 2, event_kind: "guardrail", name: "pii", span_id: "g1" }),
+      node("m1", { seq: 3, event_kind: "llm_call", kind: "model", name: "gemini" }),
+      node("g2", { seq: 4, event_kind: "guardrail", name: "pii", span_id: "g2" }),
+      node("t1", { seq: 5, event_kind: "tool_call", name: "sql.execute" }),
+    ];
+    const edges = nodes.slice(0, -1).map((n, i) => edge(n.id, nodes[i + 1].id, "next"));
+    return { nodes, edges };
+  };
+
+  it("hides them by DEFAULT — a third of every canvas, carrying no decision", () => {
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = drawn().nodes.map(n => String(n.id));
+    expect(ids).not.toContain("g1");
+    expect(ids).not.toContain("g2");
+    expect(ids).toEqual(expect.arrayContaining(["q", "m1", "t1"]));
+  });
+
+  it("says how many it took away, and brings them back on request", () => {
+    // A control that vanishes once it has done its job leaves the reader unable to ask
+    // what it removed.
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    fireEvent.click(screen.getByText("2 guardrails hidden"));
+    expect(drawn().nodes.map(n => String(n.id))).toEqual(
+      expect.arrayContaining(["q", "g1", "m1", "g2", "t1"]));
+    expect(screen.getByText("Guardrails shown")).toBeInTheDocument();
+  });
+
+  it("NEVER hides one that blocked", () => {
+    // A filter about noise must not swallow an outcome.
+    const { nodes, edges } = withGuards();
+    render(
+      <TraceFlow timeline={timeline(nodes)} edges={edges}
+                 events={[ev2({ seq: 2, span_id: "g1", kind: "guardrail",
+                                payload: { blocked: true } })]} />,
+    );
+    const ids = drawn().nodes.map(n => String(n.id));
+    expect(ids).toContain("g1");
+    expect(ids).not.toContain("g2");
+  });
+
+  it("never hides one that FAILED either", () => {
+    const { nodes, edges } = withGuards();
+    nodes[1] = node("g1", { seq: 2, event_kind: "guardrail", name: "pii", ok: false });
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    expect(drawn().nodes.map(n => String(n.id))).toContain("g1");
+  });
+
+  it("keeps the chain joined across what it removed", () => {
+    // The run's own `next` edges ran THROUGH the hidden nodes, so without a bridge the
+    // cards either side are left floating with no line into them.
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = new Set(drawn().nodes.map(n => String(n.id)));
+    for (const e of drawn().edges) {
+      expect(ids.has(String(e.source))).toBe(true);
+      expect(ids.has(String(e.target))).toBe(true);
+    }
+    // q → m1 → t1: every card after the first has something pointing at it.
+    for (const id of ["m1", "t1"]) {
+      expect(drawn().edges.some(e => String(e.target) === id)).toBe(true);
+    }
+  });
+});

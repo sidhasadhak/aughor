@@ -146,6 +146,20 @@ export function buildForest(nodes: TimelineNode[], edges: TraceFlowEdge[]): Flow
  *   the one thing a reader is looking for one click further away than everything else.
  */
 
+/**
+ * Is this node a guardrail that ALLOWED — a check that ran and found nothing to do?
+ *
+ * The distinction is the whole feature. A guardrail that BLOCKED changed the run and is
+ * never hidden by a filter about noise; one that allowed is the plane working, and on
+ * every trace measured (71, 118 and 239 nodes) that was every single one of them. They
+ * are a third of the cards on the canvas and none of them carries a decision.
+ */
+export function isQuietGuardrail(node: TimelineNode, event: SessionEvent | null): boolean {
+  if (faceOf(node) !== "guardrail") return false;
+  if (node.ok === false || node.error_class) return false;
+  return !guardVerdict(event).blocked;
+}
+
 /** What makes two nodes the same THING: their face and their name. Never duration — two
  *  calls to one model are the same step at any speed. */
 function stepSignature(node: TimelineNode): string {
@@ -931,11 +945,23 @@ export function TraceFlow({
   /** Bands the reader has opened. Ids, not indices: folding is recomputed whenever the
    *  run changes, and an index would reopen whatever landed in that slot. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  /** Guardrails that allowed. OFF by default: they are a third of the cards on every
+   *  trace measured and not one of them carried a decision. The ones that BLOCKED are
+   *  never hidden by this — a filter about noise must not swallow an outcome. */
+  const [showGuardrails, setShowGuardrails] = useState(false);
 
   const origin = useMemo(() => originOf(events), [events]);
 
-  const { rfNodes, rfEdges, nested, drawnNodes, bandCount, foldedAway } = useMemo(() => {
-    const forest = buildForest(timeline.nodes ?? [], edges ?? []);
+  const { rfNodes, rfEdges, nested, drawnNodes, bandCount, foldedAway,
+          hiddenGuardrails } = useMemo(() => {
+    const wholeForest = buildForest(timeline.nodes ?? [], edges ?? []);
+    // Filtered BEFORE folding, so a run of guardrails never becomes a stack the reader
+    // then cannot see the point of, and so the stacks that remain are stacks of what is
+    // actually on screen.
+    const forest = showGuardrails
+      ? wholeForest
+      : wholeForest.filter(n => !isQuietGuardrail(n, eventForNode(n, events)));
+    const hiddenGuardrails = wholeForest.length - forest.length;
 
     // A collapsed band stands in the layout as ONE synthetic node, so neither
     // `layoutForest` nor the edge filter below needs to know bands exist: its members
@@ -959,7 +985,7 @@ export function TraceFlow({
     // honest reading of three rejections is that the problem is not the shape of the
     // block: it is that sixty-eight cards is too many cards, which is a question about
     // what to DRAW, not where to put it.
-    const nestedRun = forest.some(n => n.children.length > 0);
+    const nestedRun = wholeForest.some(n => n.children.length > 0);
     const pos: Map<string, { x: number; y: number }> = new Map(
       [...layoutForest(laidOut)].map(([id, p]) =>
         [id, { x: p.col * COL_W, y: p.row * ROW_H }]));
@@ -1046,12 +1072,19 @@ export function TraceFlow({
         : expanded.has(item.id)
           ? { in: item.members[0].id, out: item.members[item.members.length - 1].id }
           : { in: item.id, out: item.id });
+    // A bridge wherever the run's own `next` edge cannot be drawn — because a stack
+    // swallowed its ends, or because a filtered-out node sat between them. Derived from
+    // what is MISSING rather than from a list of reasons it might be: the first version
+    // keyed on "is either side a stack", and hiding guardrails then broke the chain
+    // wherever one had been, leaving cards floating with no line into them.
+    const realEdge = new Set((edges ?? [])
+      .filter(e => e.kind === "next")
+      .map(e => `${e.from}->${e.to}`));
     const bridged: RFEdge[] = [];
     for (let i = 0; i + 1 < items.length; i++) {
-      const spansBand = items[i].kind === "band" || items[i + 1].kind === "band";
-      if (!spansBand) continue;
       const from = anchors[i].out;
       const to = anchors[i + 1].in;
+      if (realEdge.has(`${from}->${to}`)) continue;
       if (!drawn.has(from) || !drawn.has(to)) continue;
       bridged.push({
         id: `band-next-${from}-${to}`,
@@ -1090,10 +1123,11 @@ export function TraceFlow({
       nested: nestedRun,
       drawnNodes: (timeline.nodes ?? []).filter(n => drawn.has(n.id)),
       bandCount: bands.length,
+      hiddenGuardrails,
       foldedAway: bands.reduce((n, b) => n + b.members.length - 1, 0),
     };
   }, [timeline.nodes, timeline.usage, edges, events, openId, answer, origin,
-      grouped, expanded]);
+      grouped, expanded, showGuardrails]);
 
   /**
    * Re-fit when the RUN changes.
@@ -1169,8 +1203,27 @@ export function TraceFlow({
         )}
         {/* Grouping is offered only when there is something to group — a control that
             reports "0 stacks" on a six-node run is a question the reader did not have. */}
+        {/* Offered whenever the run HAS any, whether they are on screen or not — a
+            control that vanishes once it has done its job leaves the reader unable to
+            ask what it took away. */}
+        {(hiddenGuardrails > 0 || showGuardrails) && (
+          <Button variant="ghost" size="xs" className="aug-fs-xs"
+            aria-pressed={showGuardrails}
+            title={showGuardrails
+              ? "Hide the guardrail checks that allowed"
+              : "Show the guardrail checks that allowed — the ones that blocked are always shown"}
+            style={{ color: showGuardrails ? "var(--chart-3)" : "var(--t3)",
+                     marginLeft: "auto" }}
+            onClick={() => { setShowGuardrails(g => !g); setExpanded(new Set()); }}>
+            <Icon name="shield" size={11} />
+            {showGuardrails
+              ? "Guardrails shown"
+              : `${formatCount(hiddenGuardrails)} guardrail${hiddenGuardrails === 1 ? "" : "s"} hidden`}
+          </Button>
+        )}
         {(bandCount > 0 || expanded.size > 0 || (drawnNodes.length > GROUP_THRESHOLD)) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4,
+            marginLeft: hiddenGuardrails > 0 || showGuardrails ? undefined : "auto" }}>
             {grouped && foldedAway > 0 && (
               <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
                 {formatCount(foldedAway)} repeats folded
