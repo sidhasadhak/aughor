@@ -135,17 +135,59 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 - **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
   `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
 
-### 3.4 · VA-11 — the connector catalog (RE-SCOPED — mostly a BUY)
+### 3.4 · VA-11 — the credential becomes a governed object (SPECCED 2026-08-30)
 
-| Deliverable | Verdict |
-|---|---|
-| OAuth broker (redirect, callback, refresh, revoke) | **Buy** — this is Arcade/Composio's entire product |
-| User-scoped `Connection` with granted scopes | **Build** — it is what `govern/` attributes against |
-| Catalog surface (categorised, `Connect` per provider) | **Build**, thin, over the vendor's list |
-| ~40 per-provider adapters | **Buy** — the item that made this look like a quarter |
+**Decision behind it (§6.1, user-approved 2026-08-30): Aughor owns the vault.** The Databricks
+precedent settled it — a Unity Catalog connection is a *securable object* ("Databricks stores
+the credentials and handles OAuth flows and token refresh, so the agent never sees them"), and
+our thesis is UC in miniature. Every vendor fails the local-AND-scale test: Nango self-hosted
+needs ~9 CPU / ~19GB across 8 services, Arcade needs Kubernetes, Composio's vault is
+cloud-only — while this platform must run on a laptop (`uvicorn` + DuckDB) and on
+Vercel/Supabase with **identical code**.
 
-Warehouse connections adopt the same record — *they have no owner at all today, the oldest open
-item in this arc.* **Gated on the policy question in §6.1.**
+**The scope correction that makes this a wave, not a quarter:** the "~40 adapters" are mostly
+DATA — authorize URL, token URL, scopes, refresh quirks. Ship **three providers** (Google,
+Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
+
+**Deliverables, in build order:**
+
+1. **`Connection` — the governed object.** User-scoped, provider-typed, granted scopes,
+   expiry, and a `revoke()` that reaches the provider. Generalised from the pattern
+   `slackbots/models.py` already proves in production: `SECRET_FIELDS`, Fernet under
+   `AUGHOR_SECRET_KEY`, `encrypt_secrets`/`decrypt_secrets`, masked on every read
+   (`credentials.py`: a credential "is an access token that reading grants" — masked for every
+   reader, not gated by role). It is what `govern.audit` attributes against.
+   **Warehouse connections adopt it** — they have no owner at all today, the oldest open item
+   in this arc.
+2. **The broker — a module, not a service.** Authorize redirect, callback (`state` + PKCE),
+   token exchange, refresh-before-expiry, revoke; plus the error paths that matter (consent
+   denied, scope downgraded by the provider, refresh token revoked upstream).
+   `http://localhost:8000/oauth/callback` is a redirect URI every major provider accepts, so
+   local hosting needs nothing extra.
+3. **Google first, end to end** — consent → token → refresh → revoke, proven live before any
+   second provider. Then **Slack and Microsoft as data, not code.**
+4. **The catalog surface** — categorised, searchable, one `Connect` per provider, with
+   `+ Custom MCP` as its last entry (where VA-9d surfaces to a user).
+5. **LATER, not now — `CredentialBackend` seam.** A large deployment that genuinely needs 900
+   providers points the same `Connection` at a self-hosted vendor broker (Nango under
+   `NANGO_ENCRYPTION_KEY`) and the governance plane never notices — what moves is the vault,
+   never the record. Deliberately unbuilt until a second implementation is actually wired:
+   seams built before their second implementation are usually wrong. (If that day comes,
+   Nango's Elastic Licence is a question for a lawyer first.)
+
+**The authorization rule, decided once:** our graduated approval gate is the POLICY authority;
+any vendor's per-action authz is transport. Two gates that can disagree is strictly worse than
+one.
+
+**Receipt:** a user clicks Connect on Google, consents in Google's own dialog, and a governed
+action runs under **their** grant — token never rendered, scopes shown back, and Revoke removes
+access at the provider, not merely from our table.
+
+**Risks, carried in rather than discovered:** (a) a new token store is a new hermeticity
+boundary — its env name goes into `tests/conftest.py`'s allowlist **in the same commit** (this
+repo has been bitten by exactly that); (b) `state` + PKCE must be right, not approximately
+right; (c) Vercel preview deployments have per-commit URLs and OAuth providers pin redirect
+URIs — the callback must live on the stable production origin, verified before build.
 
 ### 3.5 · VA-10 — multi-user & admin
 
@@ -215,10 +257,10 @@ NOW
   W1  `when` guard on an effect   (small — largest expressive payoff)
   B2  dry-run an automation       (small — reuses evals' inert dispatch)
 
-NEXT — gated on §6.1
-  C1  evaluate Arcade vs Composio (self-hosting · token custody · defer-to-our-gate)
-  VA-9d  MCP consumer             ← the delivery mechanism for C1
-  VA-11  connection record + catalog, thin, over the vendor
+NEXT — §6.1 decided 2026-08-30: Aughor owns the vault
+  VA-11  Connection object + broker + Google, then Slack/Microsoft as data (§3.4)
+  VA-9d  MCP consumer             (independent again — the vault no longer routes through it;
+                                   still where third-party tools get consumed, posture first)
 
 THEN
   W2  `for_each`                  (fan-out; wanted by "post per region")
@@ -236,13 +278,16 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-1. 🔴 **Is a third-party custodian of your users' Gmail/Slack tokens acceptable?**
-   This gates the entire shape of §3.4. If **no**, the OAuth broker reverts to a build and VA-11
-   is a quarter-sized wave. Arcade documents Helm self-hosting, which may change the answer.
-2. **Self-hosted or SaaS** for that connector runtime, if (1) is yes.
-3. **Do the workflow primitives (W1/W2) come before the connectors?** They are independent:
-   W1/W2 make what exists properly expressive; the connectors make it reach further.
-4. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
+1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
+   The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
+   provider registry and (b) the vault, and only (a) is worth having from outside. Databricks
+   refused to outsource (b) and made the credential a securable catalog object; every vendor
+   fails the local-AND-scale test this platform lives by. Specced as §3.4. A vendor broker may
+   later sit *behind* a `CredentialBackend` seam for very large deployments — opt-in, the
+   record stays ours, and the Elastic Licence gets legal review first.
+2. **Do the workflow primitives (W1/W2) come before VA-11?** They are independent: W1/W2 make
+   what exists properly expressive; VA-11 makes it reach further.
+3. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
 
 ---
 
