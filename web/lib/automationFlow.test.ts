@@ -215,3 +215,59 @@ describe("upstreamKeys", () => {
     expect(upstreamKeys(effects, 1, VOCAB)).toEqual([]);
   });
 });
+
+describe("a preview never wears a real run's words", () => {
+  it("marks every node so a chip can say 'would run' instead of 'executed'", async () => {
+    // The engine's honest word for a dry-run step is `executed` — it ran to completion,
+    // through an inert dispatcher. On screen, under a banner reading "nothing was sent",
+    // that is exactly the wrong word. Found by driving it.
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { nodes } = toFlow({
+      nodes: [{ id: "s1", type: "effect", label: "s1", status: "executed" }],
+      edges: [], mode: "execution", dry_run: true,
+    });
+    expect(nodes[0].data.dryRun).toBe(true);
+  });
+
+  it("leaves a REAL run's nodes unmarked", async () => {
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { nodes } = toFlow({
+      nodes: [{ id: "s1", type: "effect", label: "s1", status: "executed" }],
+      edges: [], mode: "execution",
+    });
+    expect(nodes[0].data.dryRun).toBe(false);
+  });
+});
+
+describe("one arrow per claim, not per reference", () => {
+  it("draws a key bound BOTH as a field and in a guard exactly once", async () => {
+    // `build_graph` reports both — they are different claims about the chain — but an
+    // execution edge has no per-field handle to land on, so the two are one arrow drawn
+    // twice under one id. React logged a duplicate-key error; found by driving it.
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { edges } = toFlow({
+      nodes: [{ id: "numbers", type: "effect", label: "numbers" },
+              { id: "step2", type: "effect", label: "step2" }],
+      edges: [
+        { from: "numbers", to: "step2", type: "data", label: "answer", guard: false },
+        { from: "numbers", to: "step2", type: "data", label: "answer", guard: true },
+      ],
+      mode: "execution",
+    });
+    expect(edges).toHaveLength(1);
+    expect(new Set(edges.map(e => e.id)).size).toBe(edges.length);
+  });
+
+  it("keeps two edges when they carry DIFFERENT keys", async () => {
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { edges } = toFlow({
+      nodes: [{ id: "a", type: "effect", label: "a" }, { id: "b", type: "effect", label: "b" }],
+      edges: [
+        { from: "a", to: "b", type: "data", label: "answer" },
+        { from: "a", to: "b", type: "data", label: "investigation_id" },
+      ],
+      mode: "execution",
+    });
+    expect(edges).toHaveLength(2);
+  });
+});

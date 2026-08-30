@@ -33,9 +33,9 @@ import {
   ConditionRow, EffectRow, effectsForWire, labelStyle, missingKeys, newCondition, newEffect,
 } from "@/components/automations/AutomationRows";
 import {
-  getSlackBots, listUserAgents, updateAutomation,
-  type Automation, type AutoCondition, type AutoEffect, type NewAutomation,
-  type SlackBotSummary, type UserAgent,
+  dryRunAutomationDraft, getSlackBots, listUserAgents, updateAutomation,
+  type Automation, type AutomationGraphData, type AutoCondition, type AutoEffect,
+  type NewAutomation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 
 /** A pending draft, and whether it differs from what is stored. */
@@ -82,15 +82,19 @@ export function updatePayload(a: Automation, draft: Draft): NewAutomation {
   };
 }
 
-export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
+export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPreview }: {
   automation: Automation;
   draft: Draft;
   onDraft: (d: Draft) => void;
   /** Called after a successful save, so the canvas can refetch the SERVER's graph — which
    *  is the authority again the moment there is nothing pending. */
   onSaved: () => void;
+  /** B2 — hand the canvas a preview graph to draw. Not stored anywhere, so the canvas
+   *  holds it directly rather than refetching by id. */
+  onPreview: (g: AutomationGraphData) => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState("");
   const [agents, setAgents] = useState<UserAgent[]>([]);
   const [bots, setBots] = useState<SlackBotSummary[]>([]);
@@ -116,6 +120,28 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
     });
     return out;
   }, [draft]);
+
+  /** B2 — walk the DRAFT, dispatching nothing.
+   *
+   *  The draft, not the stored record: "try it before you arm it" is worth most on the
+   *  edit you have not committed. The payload is `updatePayload`'s, so what is previewed
+   *  is exactly what Save would send — a second assembly here could preview a design the
+   *  save does not make.
+   *
+   *  Offered whether or not the draft is dirty, unlike Save/Discard: a design nobody has
+   *  touched today is still one nobody has ever seen run. */
+  const dryRun = async () => {
+    setPreviewing(true);
+    setError("");
+    try {
+      const { graph } = await dryRunAutomationDraft(updatePayload(automation, draft));
+      onPreview(graph);
+    } catch (e) {
+      setError((e as Error).message || "Dry run failed");
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -193,28 +219,35 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
         ))}
       </div>
 
-      {(dirty || error) && (
-        <div style={{ borderTop: "1px solid var(--b1)", padding: "8px 10px",
-          display: "flex", flexDirection: "column", gap: 6 }}>
-          {incomplete.length > 0 && (
-            <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
-              {incomplete.join(" · ")}
-            </div>
-          )}
-          {error && <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</div>}
-          <div style={{ display: "flex", gap: 6 }}>
-            <Button variant="default" size="xs"
-              disabled={saving || incomplete.length > 0}
-              onClick={save}>
-              {saving ? "Saving…" : "Save design"}
-            </Button>
-            <Button variant="ghost" size="xs" disabled={saving}
-              onClick={() => { setError(""); onDraft(stored); }}>
-              Discard
-            </Button>
+      <div style={{ borderTop: "1px solid var(--b1)", padding: "8px 10px",
+        display: "flex", flexDirection: "column", gap: 6 }}>
+        {(dirty || error) && incomplete.length > 0 && (
+          <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
+            {incomplete.join(" · ")}
           </div>
+        )}
+        {error && <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {dirty && (
+            <>
+              <Button variant="default" size="xs"
+                disabled={saving || previewing || incomplete.length > 0}
+                onClick={save}>
+                {saving ? "Saving…" : "Save design"}
+              </Button>
+              <Button variant="ghost" size="xs" disabled={saving || previewing}
+                onClick={() => { setError(""); onDraft(stored); }}>
+                Discard
+              </Button>
+            </>
+          )}
+          <Button variant="ghost" size="xs" style={{ marginLeft: dirty ? "auto" : undefined }}
+            disabled={saving || previewing || incomplete.length > 0}
+            onClick={dryRun}>
+            {previewing ? "Walking…" : "Dry run"}
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -31,7 +31,12 @@ from aughor.automations.dataflow import (
 )
 
 
-def _condition_label(cond: Any) -> str:
+def condition_label(cond: Any) -> str:
+    """One condition, in the words the canvas uses.
+
+    Public since B2: a dry run describes conditions instead of evaluating them, and the
+    trigger node and the preview must not word the same condition differently.
+    """
     kind = getattr(cond, "kind", "")
     cfg = getattr(cond, "config", {}) or {}
     if kind == "schedule":
@@ -63,7 +68,7 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "type": "trigger",
         "label": "When",
         "detail": f" {'AND' if logic == 'all' else 'OR'} ".join(
-            _condition_label(c) for c in conditions) or "manual",
+            condition_label(c) for c in conditions) or "manual",
     })
 
     outcomes = list(getattr(run, "effects", []) or []) if run is not None else []
@@ -80,7 +85,7 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             # bound method is truthy — so an `or` fallback silently never ran and the
             # method's repr carried the whole config, `bot_token` included, into a UI
             # payload. Caught by the no-spill test. Only the allowlist below may label.
-            "detail": _effect_detail(effect),
+            "detail": effect_detail(effect),
         }
         # VA-9b — whose work this step is. On the STRUCTURE graph too, because "which
         # agent will act" is part of the design, not only of a run.
@@ -165,9 +170,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
     return out
 
 
-def _effect_detail(effect: Any) -> str:
+def effect_detail(effect: Any) -> str:
     """A short, honest label for what this step targets — never the whole config, which
-    can carry a message body or a credential-shaped value."""
+    can carry a message body or a credential-shaped value.
+
+    Public since B2: a dry run reports what each step WOULD target, and this allowlist is
+    the vetted way to name it. A second labeller would be a second chance to spill.
+    """
     cfg = getattr(effect, "config", {}) or {}
     for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
                 "trigger_id", "channel"):

@@ -877,6 +877,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Draft
+         * @description B2 — walk an UNSAVED design. The one a canvas needs.
+         *
+         *     "Try it before you arm it" is worth most before the thing exists at all, and the
+         *     editor holds a draft the store has never seen. Validation is the create route's,
+         *     unchanged: a draft that could not be saved is refused here with the same 422, so a
+         *     preview can never be more permissive than the thing it previews.
+         */
+        post: operations["dry_run_draft_automations_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/runs": {
         parameters: {
             query?: never;
@@ -940,6 +965,31 @@ export interface paths {
         post?: never;
         /** Remove */
         delete: operations["remove_automations__automation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Stored
+         * @description B2 — walk a STORED automation without dispatching anything.
+         *
+         *     Distinct from `POST /{id}/run`, which is the real thing through the real gates: this
+         *     one answers "what would it do" for an automation that is not armed, on a day its
+         *     schedule is not due — the two states a design spends all of its life in before it
+         *     goes live.
+         */
+        post: operations["dry_run_stored_automations__automation_id__dry_run_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -13462,6 +13512,39 @@ export interface operations {
             };
         };
     };
+    dry_run_draft_automations_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAutomationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     all_runs_automations_runs_get: {
         parameters: {
             query?: {
@@ -13581,6 +13664,37 @@ export interface operations {
         };
     };
     remove_automations__automation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_stored_automations__automation_id__dry_run_post: {
         parameters: {
             query?: never;
             header?: never;

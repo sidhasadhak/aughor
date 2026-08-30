@@ -140,3 +140,86 @@ def test_a_guard_onto_an_unknown_step_is_422_not_stored(flag_on):
          "when": [{"left": {"$from": "ghost.answer"}, "op": "truthy"}]},
     ])
     assert client.post("/automations", json=body).status_code == 422
+
+
+# ── B2 · the dry run ─────────────────────────────────────────────────────────────
+
+DRY_CHAIN = {
+    "conn_id": "conn-dry",
+    "name": "Preview me",
+    "conditions": [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}],
+    "effects": [
+        {"kind": "investigate", "alias": "numbers", "config": {"question": "how were sales?"}},
+        {"kind": "slack_post", "config": {"bot_id": "b1", "channel": "#ops",
+                                          "message": {"$from": "numbers.answer"}},
+         "when": [{"left": {"$from": "numbers.answer"}, "op": "truthy"}]},
+    ],
+}
+
+
+def test_an_UNSAVED_draft_can_be_previewed(flag_on):
+    """The state a design spends all of its life in before it goes live: not stored, not
+    armed, not due. A preview that needed any of those would answer nothing."""
+    r = client.post("/automations/dry-run", json=DRY_CHAIN)
+    assert r.status_code == 200, r.text
+    run = r.json()["run"]
+    assert run["outcome"] == "fired"
+    assert "nothing was sent" in run["reason"]
+    assert [e["status"] for e in run["effects"]] == ["executed", "executed"]
+
+
+def test_the_chain_FLOWS_in_a_preview(flag_on):
+    """The measured reason the existing inert dispatcher could not be reused: it
+    published nothing, so every step after the first read "upstream data unavailable" —
+    a working chain reported as broken."""
+    run = client.post("/automations/dry-run", json=DRY_CHAIN).json()["run"]
+    assert run["effects"][0]["data"]["answer"] == "«numbers.answer»"
+    assert "upstream data unavailable" not in run["effects"][1]["message"]
+
+
+def test_a_guard_is_REPORTED_never_decided(flag_on):
+    """A sample cannot answer "will tomorrow's number clear this threshold". A preview
+    that guessed would show a sound design as mostly held."""
+    run = client.post("/automations/dry-run", json=DRY_CHAIN).json()["run"]
+    step2 = run["effects"][1]
+    assert step2["status"] == "executed"
+    assert "only if numbers.answer is set — checked when it runs" in step2["message"]
+
+
+def test_a_draft_that_could_not_be_SAVED_is_not_previewed_either(flag_on):
+    """A preview must never be more permissive than the thing it previews, or it teaches
+    a design the store would refuse."""
+    bad = dict(DRY_CHAIN, effects=[{"kind": "notify", "config": {"trigger_id": "t"},
+                                    "when": [{"left": {"$from": "ghost.x"}, "op": "truthy"}]}])
+    assert client.post("/automations/dry-run", json=bad).status_code == 422
+
+
+def test_a_preview_leaves_NO_run_in_the_history(flag_on):
+    """`Activity` reads runs. A preview that appeared there is a run that happened."""
+    created = client.post("/automations", json=DRY_CHAIN)
+    aid = created.json()["id"]
+    before = len(client.get(f"/automations/{aid}/runs").json()["runs"])
+    assert client.post(f"/automations/{aid}/dry-run").status_code == 200
+    assert len(client.get(f"/automations/{aid}/runs").json()["runs"]) == before
+    client.delete(f"/automations/{aid}")
+
+
+def test_a_DISABLED_automation_still_previews_and_says_so(flag_on):
+    """You dry-run precisely because it is not armed yet. Gating on `enabled` would
+    answer "disabled" to every question a preview exists to ask — but hiding that it is
+    disabled would be its own lie."""
+    created = client.post("/automations", json=dict(DRY_CHAIN, enabled=False))
+    aid = created.json()["id"]
+    run = client.post(f"/automations/{aid}/dry-run").json()["run"]
+    assert run["outcome"] == "fired"
+    assert "disabled" in run["reason"]
+    client.delete(f"/automations/{aid}")
+
+
+def test_the_preview_returns_the_graph_an_execution_view_reads(flag_on):
+    """A dry run is never stored, so there is no id for the graph route to look up.
+    Returning both is what let the canvas render a preview with no second drawing path."""
+    g = client.post("/automations/dry-run", json=DRY_CHAIN).json()["graph"]
+    assert g["mode"] == "execution" and g["dry_run"] is True
+    steps = [n for n in g["nodes"] if n["type"] == "effect"]
+    assert [n["status"] for n in steps] == ["executed", "executed"]

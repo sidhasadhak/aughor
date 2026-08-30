@@ -3743,6 +3743,39 @@ export interface AutomationGraphData {
   mode: string; name?: string; run_missing?: boolean;
   run_outcome?: string; run_reason?: string; run_at?: string;
   agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
+  /** B2 — this graph is a PREVIEW: nothing in it happened. */
+  dry_run?: boolean;
+}
+
+/** B2 — what this design WOULD do, dispatching nothing.
+ *
+ *  Returns the run AND the graph, because a dry run is never stored: there is no id for
+ *  `getAutomationGraph` to look up afterwards. The graph is the same shape an execution
+ *  view already renders, which is the whole reason a preview returns an `AutomationRun`
+ *  rather than a report of its own. */
+export interface AutomationDryRun {
+  run: AutomationRun;
+  graph: AutomationGraphData;
+}
+
+/** Preview a DRAFT — the unsaved one in the editor. The payload is `updatePayload`'s, so
+ *  a preview previews exactly what Save would send, never a second assembly of it. */
+export async function dryRunAutomationDraft(body: NewAutomation): Promise<AutomationDryRun> {
+  const res = await fetch(`${getApiBase()}/automations/dry-run`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
+  return parsed;
+}
+
+/** Preview a STORED automation, exactly as it sits. */
+export async function dryRunAutomation(id: string): Promise<AutomationDryRun> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/dry-run`, { method: "POST" });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
+  return parsed;
 }
 
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {

@@ -186,6 +186,50 @@ def run_now(automation_id: str):
     return run.model_dump()
 
 
+def _dry_run_payload(automation: Automation) -> dict:
+    """``{"run": …, "graph": …}`` — the run AND the same graph an execution view reads.
+
+    The graph is built here rather than fetched afterwards because a dry run is never
+    stored: there is no id for `GET /automations/{id}/graph?run=…` to look up. Returning
+    both means the canvas renders a preview through the code path it already uses for a
+    real run, which is the whole reason a dry run returns an `AutomationRun` at all.
+    """
+    from aughor.automations.engine import run_automation
+    run = run_automation(automation, dry_run=True)
+    return {"run": run.model_dump(), "graph": {**build_graph(automation, run), "dry_run": True}}
+
+
+@router.post("/automations/{automation_id}/dry-run")
+def dry_run_stored(automation_id: str):
+    """B2 — walk a STORED automation without dispatching anything.
+
+    Distinct from `POST /{id}/run`, which is the real thing through the real gates: this
+    one answers "what would it do" for an automation that is not armed, on a day its
+    schedule is not due — the two states a design spends all of its life in before it
+    goes live.
+    """
+    automation = get_automation(automation_id)
+    if automation is None:
+        raise HTTPException(status_code=404, detail="no such automation")
+    return _dry_run_payload(automation)
+
+
+@router.post("/automations/dry-run")
+def dry_run_draft(body: CreateAutomationRequest):
+    """B2 — walk an UNSAVED design. The one a canvas needs.
+
+    "Try it before you arm it" is worth most before the thing exists at all, and the
+    editor holds a draft the store has never seen. Validation is the create route's,
+    unchanged: a draft that could not be saved is refused here with the same 422, so a
+    preview can never be more permissive than the thing it previews.
+    """
+    try:
+        automation = Automation(**body.model_dump())
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    return _dry_run_payload(automation)
+
+
 @router.get("/automations/{automation_id}/graph")
 def graph(automation_id: str, run: str = ""):
     """The automation as a graph — the same shape whether it has run or not.

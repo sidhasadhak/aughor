@@ -121,8 +121,12 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
       )}
       {!!status && (
         <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
-          ● {data.guarded ? "held · condition not met" : status}
-          {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0 && (
+          ● {data.dryRun && status === "executed" ? "would run"
+              : data.guarded ? "held · condition not met" : status}
+          {/* A preview's duration is how long the INERT dispatcher took — "0ms" next to
+              "would run" is noise dressed as a measurement. */}
+          {!data.dryRun && typeof data.duration_ms === "number"
+            && (data.duration_ms as number) > 0 && (
             <span style={{ color: "var(--t4)" }}> · {ms(data.duration_ms as number)}</span>
           )}
           {typeof data.attempts === "number" && (data.attempts as number) > 1 && (
@@ -182,7 +186,11 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
     id: n.id,
     type: n.type === "trigger" ? "trigger" : "step",
     position: { x: i * 250, y: 0 },
-    data: { ...n },
+    // B2 — the preview flag rides on every node. The status a dry run produces is
+    // `executed`, which is the engine's honest word for "this step ran to completion"
+    // and exactly the wrong one to put on screen when nothing ran: found by driving it,
+    // with "● executed" sitting under a banner reading "nothing was sent".
+    data: { ...n, dryRun: !!graph.dry_run },
   }));
 
   // A data edge already implies "runs after", so a sequence edge on the same pair is
@@ -190,9 +198,22 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
   const carriesData = new Set(
     graph.edges.filter((e) => e.type === "data").map((e) => `${e.from}->${e.to}`),
   );
-  const drawn = graph.edges.filter(
-    (e) => e.type !== "sequence" || !carriesData.has(`${e.from}->${e.to}`),
-  );
+  // W1 + B2 — a step can bind the SAME upstream key twice: once into a field and once
+  // in its guard (`message: {$from: numbers.answer}` beside `only if numbers.answer is
+  // set`). `build_graph` reports both, correctly — they are different claims — but in
+  // Execution mode there are no per-field handles to land on, so the two arrows are one
+  // arrow drawn twice, with one id. React logged a duplicate-key error and the second
+  // edge was liable to be dropped. Deduped by what an execution edge actually says:
+  // "this key flows from here to there". The guard is stated on the node either way.
+  const seenData = new Set<string>();
+  const drawn = graph.edges.filter((e) => {
+    if (e.type === "sequence") return !carriesData.has(`${e.from}->${e.to}`);
+    if (e.type !== "data") return true;
+    const key = `${e.from}->${e.to}:${e.label ?? ""}`;
+    if (seenData.has(key)) return false;
+    seenData.add(key);
+    return true;
+  });
 
   const edges: RFEdge[] = drawn.map((e, i) => {
     const isData = e.type === "data";
@@ -490,6 +511,11 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const [mode, setMode] = useState<"design" | "execution">("design");
   const [runId, setRunId] = useState("");
   const [graph, setGraph] = useState<AutomationGraphData | null>(null);
+  /** B2 — a dry run's graph. Held rather than refetched, because a preview is never
+   *  stored: there is no run id for the graph route to look up. It takes precedence over
+   *  the server's graph while it is on screen, and any move that asks for a REAL run
+   *  clears it — a preview must never be mistaken for something that happened. */
+  const [preview, setPreview] = useState<AutomationGraphData | null>(null);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   /** Drag-time refusals — `applyConnect`'s sentence, shown then cleared. */
@@ -514,13 +540,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
-    if (mode !== "execution") return;
+    // A preview owns the canvas while it is up; refetching here would replace it with
+    // the last REAL run the moment it was shown.
+    if (mode !== "execution" || preview) return;
     let live = true;
     getAutomationGraph(automationId, runId || "latest")
       .then((g) => { if (live) { setGraph(g); setError(""); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [automationId, mode, runId, reloadKey]);
+  }, [automationId, mode, runId, reloadKey, preview]);
 
   /* ── design-mode graph, drawn from the draft ── */
   // Positions survive dragging but reset per automation — session-local by design:
@@ -636,7 +664,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Could not load the graph: {error}</div>;
   }
 
-  const execution = mode === "execution" && graph ? toFlow(graph) : null;
+  const shown = preview ?? graph;
+  const execution = mode === "execution" && shown ? toFlow(shown) : null;
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
@@ -646,17 +675,26 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           background: "var(--bg-1)" }}>
           {(["design", "execution"] as const).map((m) => (
             <Button key={m} variant={mode === m ? "secondary" : "ghost"} size="xs"
-              onClick={() => { setMode(m); if (m === "design") setRunId(""); }}>
+              onClick={() => {
+                setMode(m); setPreview(null);
+                if (m === "design") setRunId("");
+              }}>
               {m === "design" ? "Design" : "Execution"}
             </Button>
           ))}
         </div>
-        {mode === "execution" && graph?.run_missing && (
+        {mode === "execution" && preview && (
+          <span className="aug-fs-xs" style={{ color: "var(--chart-3)" }}>
+            preview — nothing was sent{preview.run_reason?.includes(";")
+              ? ` · ${preview.run_reason.split(";").slice(1).join(";").trim()}` : ""}
+          </span>
+        )}
+        {mode === "execution" && !preview && graph?.run_missing && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             never run — showing the design
           </span>
         )}
-        {mode === "execution" && graph && !graph.run_missing && graph.run_outcome
+        {mode === "execution" && !preview && graph && !graph.run_missing && graph.run_outcome
           && graph.run_outcome !== "fired" && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             last run {graph.run_outcome}
@@ -665,7 +703,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
-        {mode === "execution" && (graph?.runs?.length ?? 0) > 0 && (
+        {mode === "execution" && !preview && (graph?.runs?.length ?? 0) > 0 && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
                         border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
             <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
@@ -675,7 +713,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               const active = (runId || graph?.run_id) === r.id;
               return (
                 <Button key={r.id} variant="ghost" size="sm" className="aug-fs-xs"
-                  onClick={() => setRunId(r.id)}
+                  onClick={() => { setPreview(null); setRunId(r.id); }}
                   style={{
                     display: "block", width: "100%", height: "auto", textAlign: "left",
                     padding: "3px 5px", marginBottom: 2,
@@ -747,7 +785,11 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                 </span>
               </Panel>
             </ReactFlow>
-          ) : !graph ? (
+          // B2 — `shown`, not `graph`: a PREVIEW is a graph this canvas was handed rather
+          // than one it fetched, and gating the body on the fetched one left a dry run
+          // reading "Loading…" underneath its own "nothing was sent" banner. Found by
+          // driving it — the banner and the body were reading two different states.
+          ) : !shown ? (
             <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
           ) : (
             <ReactFlow
@@ -768,6 +810,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
 
         {authoring && (
           <AutomationAuthor
+            onPreview={(g) => { setPreview(g); setMode("execution"); }}
             automation={automation!}
             draft={draft}
             onDraft={setDraft}

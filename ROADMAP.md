@@ -96,6 +96,11 @@ automations-run-as-agents (VA-9b), per-agent tool grants (VA-9c).
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
 inside Create Agent.
 
+**B2 · dry run (2026-08-30)** — "try it before you arm it", on the draft in the editor.
+A preview returns an `AutomationRun` and the graph beside it, so the Execution canvas
+renders it unchanged; steps read "would run", a guard reads "checked when it runs", and
+the banner says "preview — nothing was sent" alongside whatever would gate it today.
+
 **W1 · `when` on an effect (2026-08-30)** — a step runs ONLY IF its guard holds against what
 earlier steps published. Structural clauses (`{"left": {"$from": "s1.answer"}, "op": "truthy"}`),
 never an expression string, for this plane's three standing reasons: validated at save, not an
@@ -153,8 +158,16 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   are the same feature — the port IS the typed binding, drawn. Reference for the
   redesign (user-supplied): https://docs.langflow.org/concepts-components — their component
   anatomy (header/inputs/outputs, port types, tool-mode toggle) is the vocabulary to beat.
-- **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
-  `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
+- ~~**B2 · Dry-run.**~~ — **SHIPPED 2026-08-30.** `run_automation(dry_run=True)` returns an
+  ordinary `AutomationRun`, so the existing run canvas draws a preview with no second way
+  of showing a chain. ⚠️ **The plan's premise was half true**: `evals/equivalence.py`'s inert
+  dispatcher publishes NOTHING, so every step after the first read "upstream data
+  unavailable" — a working chain reported as broken. Four more side effects had to be
+  suppressed, each measured off the engine: the delivery CLAIM (would have silenced the
+  real run), the source BASELINE (runs regardless of `persist` — a preview would consume
+  the change), the SPAN (VA-4d made the run id the trace id), and the stored run. Gates and
+  conditions are reported rather than enforced, because "disabled" and "not due" are the two
+  states a design lives in before it goes live. Guards are reported, never decided.
 
 ### 3.4 · VA-11 — the credential becomes a governed object (SPECCED 2026-08-30)
 
@@ -274,7 +287,8 @@ study is the *feature inventory*, not the stack — Arc VA is the result.
 
 ```
 NOW
-  B2  dry-run an automation       (small — reuses evals' inert dispatch)
+  ✅ B2  SHIPPED 2026-08-30 — "Dry run" on the design rail: the chain walked with sample
+        values, nothing dispatched, claimed, committed, spanned or stored
   ✅ W1  SHIPPED 2026-08-30 — "Only if" on a step: guard clauses over the chain context,
         evaluated before the dispatch, drawn on both canvases, refused at save like any
         other reference; a guarded-off run no longer pages on-call
