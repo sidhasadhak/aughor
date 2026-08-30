@@ -219,8 +219,13 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
 2. **The broker — a module, not a service.** Authorize redirect, callback (`state` + PKCE),
    token exchange, refresh-before-expiry, revoke; plus the error paths that matter (consent
    denied, scope downgraded by the provider, refresh token revoked upstream).
-   `http://localhost:8000/oauth/callback` is a redirect URI every major provider accepts, so
-   local hosting needs nothing extra.
+   `http://localhost:8000/oauth/callback` is accepted by Google and Microsoft — **and not by
+   Slack**, whose docs require HTTPS and list `http://` among the rejected examples
+   (measured 2026-08-30, after a user hit Slack's own error page: *"redirect_uri did not
+   match any configured URIs"*). Carried as `Provider.https_only` and warned about in the
+   Set-up form. Local hosting therefore needs nothing extra **for two of the three shipped
+   providers**; Slack needs the API reachable over HTTPS (a tunnel suffices — `_callback_uri`
+   already honours the forwarded proto and host).
 3. **Google first, end to end** — consent → token → refresh → revoke, proven live before any
    second provider. Then **Slack and Microsoft as data, not code.**
 4. **The catalog surface** — categorised, searchable, one `Connect` per provider, with
