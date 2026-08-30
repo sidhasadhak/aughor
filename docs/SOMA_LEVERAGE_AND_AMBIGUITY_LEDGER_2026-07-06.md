@@ -6,7 +6,7 @@ plus this session's own controlled measurements. This document is the design spe
 next accuracy phase: what to adopt from the paper, and — the larger half — seven
 improvisations where Aughor's architecture goes structurally beyond it.*
 
-*Companions: [`SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md`](SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md)
+*Companions: `SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md` (absorbed into `ROADMAP.md`; recoverable from git history)
 (the measured evidence this builds on) · [`10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](10X_AND_SPIDER2_PROGRAM_2026-07-06.md)
 (the umbrella program) · memory `soma-sql-ambiguity` (the June read of the same paper).*
 

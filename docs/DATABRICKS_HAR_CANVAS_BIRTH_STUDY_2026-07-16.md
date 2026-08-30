@@ -1,6 +1,6 @@
 # Databricks wire study #2 — canvas birth + two Deep-Research investigations → R11–R15
 
-**Companion to** [`DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md`](DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md)
+**Companion to** `DATABRICKS_HAR_SQLX_AUTODOC_STUDY_2026-07-15.md` (absorbed into `ROADMAP.md`; recoverable from git history)
 (which produced R1–R10). This study reads two more HAR captures taken on the **same airline dataset we
 have** (`workspace.airlines.*`, 18 tables — apples-to-apples with our `tickets.csv` fixture), plus the two
 rendered outputs:

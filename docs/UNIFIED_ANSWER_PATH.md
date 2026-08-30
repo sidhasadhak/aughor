@@ -10,7 +10,7 @@ value): the 4b tail (deep-turn reload, explicit bindings, CTE). Companion to
 [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
 (what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
 (the ASSESS→ROUTE formula this productizes), and
-[`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) (the
+`INTERACTIVE_DATA_AGENT_VISION_2030.md` (absorbed into `ROADMAP.md`; recoverable from git history) (the
 BIRD-INTERACT direction this is the first concrete step toward).*
 
 ---
@@ -170,7 +170,7 @@ SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the docum
 
 **Harness-first discipline (non-negotiable).** Per the arc's deepest lesson — *let evidence pick the
 lever* — and the judgment call already recorded in
-[`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) §6, the **interactive
+`INTERACTIVE_DATA_AGENT_VISION_2030.md` (absorbed into `ROADMAP.md`; recoverable from git history) §6, the **interactive
 eval harness is rebuilt before this feature is trusted**. It was prototyped (`evals/interactive.py`:
 function-driven `AMB`/`LOC`/**`UNA`** user simulator + episode runner scoring *submitted* SQL under a
 clarification budget — rewarding good clarification, penalizing blind guessing) then removed in the
@@ -380,7 +380,7 @@ router. The merged front door works *before* any of the hard parts (memory, clar
 - BIRD-INTERACT — arXiv [2510.05318](https://arxiv.org/abs/2510.05318) (Huo et al., ICLR 2026 Oral).
 - [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md) — the shared spine.
 - [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md) — the ASSESS→ROUTE formula.
-- [`INTERACTIVE_DATA_AGENT_VISION_2030.md`](INTERACTIVE_DATA_AGENT_VISION_2030.md) — the long-horizon direction + harness design.
+- `INTERACTIVE_DATA_AGENT_VISION_2030.md` (absorbed into `ROADMAP.md`; recoverable from git history) — the long-horizon direction + harness design.
 - [`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md) — why the router stays deterministic.
 - Code spine: `agent/complexity.py`, `agent/nodes.py` (`classify_question`), `agent/orchestrator.py`,
   `sql/safety.py` (`preflight_repair`), `semantic/data_understanding.py`,

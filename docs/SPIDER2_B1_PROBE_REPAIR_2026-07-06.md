@@ -1,7 +1,7 @@
 # B1 — probe-and-repair (SOMA's back half), built + the empirical finding
 
 *2026-07-06. Companion to [`SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)
-(the design spec) and [`SESSION_HANDOFF_2026-07-06.md`](SESSION_HANDOFF_2026-07-06.md) (the program
+(the design spec) and `SESSION_HANDOFF_2026-07-06.md` (absorbed into `ROADMAP.md`; recoverable from git history) (the program
 state). This records what shipped for **Option A / B1** and the live evidence it produced — which
 turns out to matter more than the code.*
 
