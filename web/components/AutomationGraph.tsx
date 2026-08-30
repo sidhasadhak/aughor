@@ -1,41 +1,38 @@
 "use client";
 
 /**
- * VA-4b · the client half — an automation drawn as the graph it is.
+ * VA-4b/VA-12/B1 · the automation canvas — Design you can touch, Execution you can trust.
  *
- * Until now this surface rendered `effects.map(describeEffect).join(", ")`: a
- * comma-joined sentence. The user's framing was exact — "what we have is a flow after the
- * run is done… what you see from VoltAgent is the whole workflow that gets designed by
- * the user."
+ * Two modes, two authorities, on one canvas:
  *
- * **The server owns the graph.** Nodes and edges come from `GET /automations/{id}/graph`,
- * derived from the same `collect_refs` the engine resolves against. This file lays out
- * and paints; it never infers an edge. Two readers deriving the graph differently is how
- * a picture and its run come to disagree, and a workflow view with decorative arrows is
- * worse than a list — a list at least does not claim.
+ * **Design** draws the DRAFT — the one deliberate departure from "the server owns the
+ * graph": an editor that cannot show your unsaved edit is not an editor. Nodes drag
+ * freely, primary fields edit in place, and the ports are the server's own vocabulary
+ * drawn as dots (`/automations/vocabulary`, the same `PUBLISHED_KEYS` that
+ * `validate_chain` refuses against). Dragging an output dot onto an input dot WRITES a
+ * `{"$from": "alias.key"}` binding into the draft; the edge is the binding, not a
+ * picture of one. What the canvas refuses at drag time and what the server refuses at
+ * save are the same law (`applyConnect` mirrors `validate_chain`), so the canvas never
+ * teaches a rule the engine does not have. This is B1: the unknown KEY that used to
+ * surface at 09:00 as a skipped step now cannot be drawn, typed, or saved.
  *
- * **Two edge kinds, drawn differently, because they mean different things.** A `data`
- * edge is a real `{"$from": …}` binding — output→input, labelled with the key it carries,
- * and the only reason a canvas beats a list. A `sequence` edge is just "runs after":
- * true, much weaker, and drawn faint and dashed so it never reads as a dependency the
- * engine does not have.
+ * **Execution** stays exactly what VA-4b built: the SERVER's graph, decorated with a
+ * run, read-only. A run is evidence; nothing on it is editable and nothing about it is
+ * derived client-side.
  *
- * **Structure and Execution are one graph, two readings** — the same toggle the user's
- * VoltAgent screenshot shows. Execution asks the server for the same graph decorated with
- * a run; it is never a second surface that could drift from the first.
- *
- * Layout is DETERMINISTIC, never simulated — the same automation opened twice looks
- * identical, which is what a design surface needs and a force cannot promise. Steps form
- * a left-to-right spine in the order they run, because that is the order they run in.
- * (Same reasoning, and the same library, as `agentops/TraceFlow.tsx`: `@xyflow/react` has
- * been in this app since #178 and drives three canvases.)
+ * The look leans on the frames the user pointed at (Langflow's component anatomy,
+ * VoltAgent's Execution/Structure toggle) — visible left/right port dots, labeled
+ * output rows, free drag — built on `@xyflow/react`, the library already driving four
+ * canvases here. Design investment, not adoption.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  type Connection as RFConnection,
   Controls,
   Handle,
   MarkerType,
+  Panel,
   Position,
   ReactFlow,
   type Edge as RFEdge,
@@ -43,9 +40,17 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { getAutomationGraph, type Automation, type AutomationGraphData } from "@/lib/api";
-
-import { AutomationAuthor, type Draft, sameDraft } from "@/components/automations/AutomationAuthor";
+import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
+import { EFFECT_KINDS, newCondition, newEffect } from "@/components/automations/AutomationRows";
+import { Button } from "@/components/ui/button";
+import { Icon, type IconName } from "@/components/ui/icon";
+import {
+  getAutomationGraph, getAutomationVocabulary,
+  type Automation, type AutomationGraphData,
+} from "@/lib/api";
+import {
+  aliasFor, applyConnect, clearBinding, draftToFlow, type Vocabulary,
+} from "@/lib/automationFlow";
 
 export type { AutomationGraphData };
 
@@ -61,13 +66,20 @@ const STATUS_COLOR: Record<string, string> = {
   skipped: "var(--t4)",
 };
 
-const COL_W = 250;
+const KIND_ICON: Record<string, IconName> = {
+  investigate: "search", slack_post: "send", notify: "bell",
+  brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
+};
+
+const COL_W = 300;
 
 /** Durations read as durations, not as raw milliseconds. */
 function ms(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 2)}s`;
   return `${Math.round(n)}ms`;
 }
+
+/* ═══════════════════ EXECUTION MODE (server graph, read-only) ═══════════════════ */
 
 function StepNode({ data }: { data: Record<string, unknown> }) {
   const status = String(data.status || "");
@@ -101,16 +113,12 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
           )}
         </div>
       )}
-      {/* Whose work this step is. `delegated` distinguishes a step that named its own
-          agent from one that simply inherited the automation's — the difference between
-          "this agent acts throughout" and "this one part was handed off". */}
       {!!data.agent_id && (
         <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3 }}>
           {data.delegated ? "delegated to " : "as "}{String(data.agent_id)}
         </div>
       )}
-      {/* What this step PRODUCED. It is what makes a data edge checkable by eye: the key
-          an edge claims to carry is either listed here or the edge is lying. */}
+      {/* What this step PRODUCED — the run's own answer to the design's `gives`. */}
       {produced.length > 0 && (
         <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3 }}>
           gives {produced.join(" · ")}
@@ -131,8 +139,6 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
       <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 1 }}>
         {String(data.detail || "manual")}
       </div>
-      {/* On a run, a trigger that shows only what it WATCHES is a design element in a
-          view meant to show what happened. */}
       {Array.isArray(data.fired) && (data.fired as string[]).length > 0 && (
         <div className="aug-fs-xs" style={{ color: "var(--chart-2)", marginTop: 3 }}>
           fired · {(data.fired as string[]).join(", ")}
@@ -150,29 +156,20 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-const NODE_TYPES = { step: StepNode, trigger: TriggerNode };
-
 /**
- * Nodes and edges in ReactFlow's shape.
- *
- * Exported and pure so it can be asserted directly: ReactFlow measures its container
- * before drawing an edge and jsdom reports every element as 0×0, so a test that asserts
- * on RENDERED edges cannot fail — `TraceFlow.test.tsx` proved that by suppressing every
- * edge and watching 260 tests stay green. The assertion belongs on this handoff.
+ * Server graph → ReactFlow, for EXECUTION. Exported and pure so it stays asserted on
+ * the handoff (jsdom draws zero edges no matter what it is given).
  */
 export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RFEdge[] } {
   const nodes: RFNode[] = graph.nodes.map((n, i) => ({
     id: n.id,
     type: n.type === "trigger" ? "trigger" : "step",
-    position: { x: i * COL_W, y: 0 },
+    position: { x: i * 250, y: 0 },
     data: { ...n },
   }));
 
-  // A data edge already implies "runs after" — you cannot consume what has not run — so a
-  // sequence edge between the same pair is the same claim twice, drawn on an IDENTICAL
-  // path. Measured in the browser: both `open->reply` edges rendered `M443,36 C470,36
-  // 470,36 497,36`, the dashed one hidden under the solid one. Keep the edge that carries
-  // meaning; drop the one that repeats it.
+  // A data edge already implies "runs after", so a sequence edge on the same pair is
+  // the same claim twice on an identical path — keep the one that carries meaning.
   const carriesData = new Set(
     graph.edges.filter((e) => e.type === "data").map((e) => `${e.from}->${e.to}`),
   );
@@ -188,21 +185,11 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
       target: e.to,
       label: isData ? e.label : undefined,
       animated: false,
-      // A data edge carries a value and is drawn as the primary relation. A sequence
-      // edge is faint and dashed: it means only "runs after", and a picture that draws
-      // both alike teaches a dependency the engine does not have.
-      // `--t4`, not `--border`: measured in the browser, `--border` is #232f39 against a
-      // dark pane and the trigger's edge read as absent — a first step that looks
-      // unconnected to its own trigger. Muted, but visible.
       style: isData
         ? { stroke: "var(--chart-1)", strokeWidth: 1.6 }
         : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
                    color: isData ? "var(--chart-1)" : "var(--t4)" },
-      // No `labelStyle`: it takes a style object, so any size here is a raw font-size
-      // literal, and the design-token gate ratchets those. ReactFlow's own stylesheet
-      // (imported above) already sizes `.react-flow__edge-text`, so the label is styled
-      // by the design system's rules rather than by a number smuggled past them.
       data: { edgeType: e.type },
     };
   });
@@ -210,27 +197,254 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
   return { nodes, edges };
 }
 
+/* ═══════════════════ DESIGN MODE (the draft, editable) ═══════════════════ */
+
+const NODE_W = 280;
+
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "6px 9px", borderRadius: "var(--r2)",
+  border: "1px solid var(--b1)", background: "var(--bg-1)", color: "var(--t1)",
+};
+
+/** A port dot, half over the card edge the way the reference frames draw them.
+ *  Output = green ("gives"), input = blue; a bound input fills solid. */
+const PORT = 10;
+const portStyle = (kind: "in" | "out", bound: boolean): React.CSSProperties => ({
+  width: PORT, height: PORT, borderRadius: "var(--r-pill)",
+  background: bound ? "var(--chart-1)" : "var(--bg-2)",
+  border: `2px solid ${kind === "out" ? "var(--chart-2)" : "var(--chart-1)"}`,
+  boxShadow: "0 0 0 3px var(--bg-0)",
+});
+
+interface DesignNodeData {
+  alias: string;
+  kind: string;
+  config: Record<string, unknown>;
+  publishes: string[];
+  openSet: boolean;
+  inputs: { field: string; boundTo: string | null }[];
+  onPatch: (field: string, value: unknown) => void;
+  onClear: (field: string) => void;
+  /** Remove this step — absent on the last one, the same law the rail enforces. */
+  onRemove?: () => void;
+  [key: string]: unknown;
+}
+
+/** The primary editable fields per kind — the ones a person actually authors on the
+ *  node. Everything else stays on the rail; a node holding every field is a form
+ *  wearing a node costume. */
+const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> = {
+  investigate:    [{ field: "question", placeholder: "what should the agent ask?" }],
+  slack_post:     [{ field: "channel", placeholder: "#channel" },
+                   { field: "message", placeholder: "message — or drag a port here" }],
+  notify:         [{ field: "trigger_id", placeholder: "notification trigger id" },
+                   { field: "message", placeholder: "message — or drag a port here" }],
+  brief:          [{ field: "subscription_id", placeholder: "briefing subscription id" }],
+  kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
+};
+
+/** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
+ *  way the reference canvases do, not as identical grey boxes. */
+const KIND_HUE: Record<string, string> = {
+  investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
+  brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
+};
+
+function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
+  const boundOf = (field: string) =>
+    data.inputs.find(i => i.field === field)?.boundTo ?? null;
+  const bindableSet = new Set(data.inputs.map(i => i.field));
+  const fields = PRIMARY_FIELDS[data.kind] ?? [];
+  const kindLabel = EFFECT_KINDS.find(k => k.value === data.kind)?.label ?? data.kind;
+  const hue = KIND_HUE[data.kind] ?? "var(--chart-6)";
+
+  return (
+    <div style={{
+      width: NODE_W, borderRadius: "var(--r3)", background: "var(--bg-2)",
+      border: `1px solid ${selected ? hue : "var(--b2)"}`,
+      boxShadow: selected ? `0 0 0 1px ${hue}, var(--shadow-md)` : "var(--shadow-sm)",
+      transition: "box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out)",
+    }}>
+      {/* The unnamed target handle SEQUENCE edges land on — an edge with no
+          targetHandle attaches to the default handle, and a node without one silently
+          drops the edge (measured: the trigger's spine vanished while every port
+          rendered). Hidden: geometry, not a port. */}
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, top: 20 }} />
+
+      {/* header — icon tile · kind · alias · remove. The tile carries the kind's hue,
+          so a chain reads as roles at a glance (the reference frames' trick). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+        borderBottom: "1px solid var(--b1)" }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: "var(--r2)", display: "grid",
+          placeItems: "center", color: hue,
+          background: "color-mix(in srgb, currentColor 14%, transparent)",
+        }}>
+          <Icon name={KIND_ICON[data.kind] ?? "process"} size={13} />
+        </span>
+        <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{kindLabel}</span>
+        <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)",
+          border: "1px solid var(--b1)", borderRadius: "var(--r-pill)",
+          padding: "1px 8px", background: "var(--bg-1)" }}>
+          {data.alias}
+        </span>
+        {data.onRemove && (
+          <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onRemove}>
+            <Icon name="close" size={11} />
+          </Button>
+        )}
+      </div>
+
+      {/* fields — each row owns its input port, dot centred ON the row it binds */}
+      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
+        {fields.map(({ field, placeholder }) => {
+          const bound = boundOf(field);
+          const bindable = bindableSet.has(field);
+          return (
+            <div key={field} style={{ position: "relative" }}>
+              {bindable && (
+                <Handle
+                  id={`in:${field}`} type="target" position={Position.Left}
+                  style={{ ...portStyle("in", !!bound), left: -(12 + PORT / 2),
+                           top: "calc(50% + 7px)", transform: "translateY(-50%)" }}
+                  title={`bind '${field}' — drag from a gives port`}
+                />
+              )}
+              <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 3,
+                letterSpacing: "0.04em" }}>
+                {field}
+              </div>
+              {bound ? (
+                <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center",
+                  gap: 7, padding: "6px 9px", borderRadius: "var(--r2)",
+                  border: "1px solid color-mix(in srgb, var(--chart-1) 55%, transparent)",
+                  background: "color-mix(in srgb, var(--chart-1) 10%, var(--bg-1))",
+                  color: "var(--chart-1)" }}>
+                  <Icon name="link" size={12} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis",
+                    whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{bound}</span>
+                  <Button variant="ghost" size="icon-sm" aria-label={`unbind ${field}`}
+                    className="nodrag" style={{ marginLeft: "auto", width: 18, height: 18 }}
+                    onClick={() => data.onClear(field)}>
+                    <Icon name="close" size={10} />
+                  </Button>
+                </div>
+              ) : (
+                <input
+                  className="nodrag aug-fs-sm"
+                  style={inputStyle}
+                  placeholder={placeholder}
+                  value={String(data.config[field] ?? "")}
+                  onChange={e => data.onPatch(field, e.target.value)}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* outputs — "gives X", one row per key, its dot half over the right edge */}
+      {data.publishes.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "7px 12px 9px",
+          display: "flex", flexDirection: "column", gap: 4 }}>
+          {data.publishes.map(key => (
+            <div key={key} style={{ position: "relative", display: "flex",
+              justifyContent: "flex-end", alignItems: "center", minHeight: 18 }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                gives{" "}
+                <span style={{ color: "var(--chart-2)", fontFamily: "var(--font-mono)" }}>
+                  {data.openSet ? "the action's outcome" : key}
+                </span>
+              </span>
+              <Handle
+                id={`out:${key}`} type="source" position={Position.Right}
+                style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
+                         top: "50%", transform: "translateY(-50%)" }}
+                title={data.openSet ? "drag to bind (key asked on drop)" : `drag '${key}' onto an input port`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One condition, humanised. The cron stays visible because it is the truth; the words
+ *  in front of it are for scanning, not a translation layer that could drift. */
+function conditionLine(c: { kind: string; config: Record<string, unknown> }): string {
+  if (c.kind === "schedule") return `on schedule · ${c.config.cron ?? ""}`;
+  if (c.kind === "metric") return `monitor ${c.config.monitor_id ?? ""} fires`;
+  if (c.kind === "source_change") return `${c.config.table ?? "a table"} changes`;
+  if (c.kind === "entity_appears") return `new key in ${c.config.table ?? "a table"}`;
+  return c.kind;
+}
+
+function DesignTriggerNode({ data }: {
+  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string };
+}) {
+  return (
+    <div style={{
+      width: 210, borderRadius: "var(--r3)", background: "var(--bg-2)",
+      border: "1px dashed var(--b3)", boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+        borderBottom: "1px solid var(--b1)" }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: "var(--r2)", display: "grid",
+          placeItems: "center", color: "var(--chart-3)",
+          background: "color-mix(in srgb, currentColor 14%, transparent)",
+        }}>
+          <Icon name="bolt" size={13} />
+        </span>
+        <span className="aug-fs-ui" style={{ fontWeight: 600 }}>Trigger</span>
+        {data.conditions.length > 1 && (
+          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t4)" }}>
+            {data.logic === "all" ? "all match" : "any match"}
+          </span>
+        )}
+      </div>
+      <div style={{ padding: "9px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {data.conditions.length === 0 && (
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>manual only</span>
+        )}
+        {data.conditions.map((c, i) => (
+          <span key={i} className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+            {conditionLine(c)}
+          </span>
+        ))}
+      </div>
+      <Handle type="source" position={Position.Right}
+        style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
+                 top: "50%", transform: "translateY(-50%)" }} />
+    </div>
+  );
+}
+
+const NODE_TYPES = {
+  step: StepNode, trigger: TriggerNode,
+  designStep: DesignStepNode, designTrigger: DesignTriggerNode,
+};
+
+/* ═══════════════════ the component ═══════════════════ */
+
 export function AutomationGraph({ automationId, automation, onSaved }: {
   automationId: string;
-  /** The record itself. Present ⇒ Structure becomes AUTHORABLE. Absent ⇒ the canvas is
-   *  exactly what it was: a picture. Passed rather than fetched, because the caller that
-   *  renders this already holds it and a second fetch is a second answer. */
+  /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent ⇒ read-only. */
   automation?: Automation;
-  /** Saved — the caller reloads its list, so a renamed step shows up everywhere. */
   onSaved?: () => void;
 }) {
-  const [mode, setMode] = useState<"structure" | "execution">("structure");
-  // "" = the latest run. A specific id pins the canvas to THAT run, which is what makes
-  // the rail a rail rather than a list of links to somewhere else.
+  const [mode, setMode] = useState<"design" | "execution">("design");
   const [runId, setRunId] = useState("");
   const [graph, setGraph] = useState<AutomationGraphData | null>(null);
   const [error, setError] = useState("");
-  /** Bumped after a save, to refetch the graph the server now derives. */
   const [reloadKey, setReloadKey] = useState(0);
+  /** Drag-time refusals — `applyConnect`'s sentence, shown then cleared. */
+  const [connectError, setConnectError] = useState("");
+  const [vocab, setVocab] = useState<Vocabulary | null>(null);
 
-  /** The design being edited. Seeded from the record and reseeded whenever the record
-   *  changes underneath — a save reloads the list, and a draft left pointing at the
-   *  previous version would re-submit stale steps. */
   const [draft, setDraft] = useState<Draft>(() => ({
     conditions: automation?.conditions ?? [], effects: automation?.effects ?? [],
   }));
@@ -238,134 +452,269 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     if (automation) setDraft({ conditions: automation.conditions, effects: automation.effects });
   }, [automation]);
 
-  const authoring = !!automation && mode === "structure";
-  const dirty = !!automation && !sameDraft(draft,
-    { conditions: automation.conditions, effects: automation.effects });
-
   useEffect(() => {
+    getAutomationVocabulary().then(setVocab).catch(() => setVocab({}));
+  }, []);
+
+  const authoring = !!automation && mode === "design";
+
+  // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
+  useEffect(() => {
+    if (mode !== "execution") return;
     let live = true;
-    const which = mode === "execution" ? (runId || "latest") : "";
-    getAutomationGraph(automationId, which)
+    getAutomationGraph(automationId, runId || "latest")
       .then((g) => { if (live) { setGraph(g); setError(""); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
   }, [automationId, mode, runId, reloadKey]);
 
-  const flow = useMemo(() => (graph ? toFlow(graph) : { nodes: [], edges: [] }), [graph]);
+  /* ── design-mode graph, drawn from the draft ── */
+  // Positions survive dragging but reset per automation — session-local by design:
+  // a stored layout is a second copy of the chain's order that could drift from it.
+  const positions = useRef(new Map<string, { x: number; y: number }>());
+  useEffect(() => { positions.current.clear(); }, [automationId]);
 
-  if (error) {
+  const patchField = useCallback((alias: string, field: string, value: unknown) => {
+    setDraft(d => ({
+      ...d,
+      effects: d.effects.map((e, i) =>
+        aliasFor(e, i) === alias ? { ...e, config: { ...e.config, [field]: value } } : e),
+    }));
+  }, []);
+
+  const clearField = useCallback((alias: string, field: string) => {
+    setDraft(d => clearBinding(d, alias, field));
+  }, []);
+
+  const design = useMemo(() => {
+    if (!vocab) return { nodes: [] as RFNode[], edges: [] as RFEdge[] };
+    const { steps, edges } = draftToFlow(draft, vocab);
+    const nodes: RFNode[] = [{
+      id: "__trigger",
+      type: "designTrigger",
+      position: positions.current.get("__trigger") ?? { x: 0, y: 60 },
+      data: { conditions: draft.conditions,
+              logic: automation?.condition_logic ?? "all" },
+    }, ...steps.map((s, i) => ({
+      id: s.alias,
+      type: "designStep" as const,
+      position: positions.current.get(s.alias) ?? { x: 260 + i * (NODE_W + 90), y: 0 },
+      data: {
+        ...s,
+        onPatch: (field: string, value: unknown) => patchField(s.alias, field, value),
+        onClear: (field: string) => clearField(s.alias, field),
+        // The last step keeps no remove control at all — the model requires one effect,
+        // and an affordance that fails at save teaches the wrong law. Same rule as the
+        // rail, enforced by ABSENCE both places.
+        onRemove: draft.effects.length > 1
+          ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
+          : undefined,
+      } as DesignNodeData,
+    }))];
+    const rfEdges: RFEdge[] = [
+      // the faint "runs after" spine, trigger → first step (order itself is the rail's)
+      ...(steps.length ? [{
+        id: "__seq:trigger", source: "__trigger", target: steps[0].alias,
+        style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
+      }] : []),
+      ...edges.map(e => ({
+        id: `bind:${e.from}.${e.key}->${e.to}.${e.field}`,
+        source: e.from,
+        sourceHandle: `out:${e.key}`,
+        target: e.to,
+        targetHandle: `in:${e.field}`,
+        label: e.key,
+        // Animated, because the edge carries DATA — the reference frames use motion to
+        // say exactly this, and only this. The sequence spine stays still.
+        animated: true,
+        style: { stroke: "var(--chart-1)", strokeWidth: 2 },
+        labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
+        labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
+        labelBgPadding: [7, 3] as [number, number],
+        labelBgBorderRadius: 6,
+        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--chart-1)" },
+      })),
+    ];
+    return { nodes, edges: rfEdges };
+  }, [draft, vocab, patchField, clearField, automation]);
+
+  /** Edges are handed over ONE FRAME after the nodes that carry their handles.
+   *  ReactFlow drops an edge whose named handle is not yet registered, and on the
+   *  first paint after the vocabulary arrives, nodes and edges land in the same
+   *  render — measured: every edge missing until a mode toggle remounted the canvas.
+   *  A frame later the handles exist and the same edges draw. */
+  const [edgesLive, setEdgesLive] = useState(false);
+  useEffect(() => {
+    setEdgesLive(false);
+    const frame = requestAnimationFrame(() => setEdgesLive(true));
+    return () => cancelAnimationFrame(frame);
+  }, [design.nodes.length, mode]);
+
+  const onConnect = useCallback((c: RFConnection) => {
+    if (!vocab || !c.source || !c.target) return;
+    const key = (c.sourceHandle ?? "").replace(/^out:/, "");
+    const field = (c.targetHandle ?? "").replace(/^in:/, "");
+    if (!key || !field) return;
+    // The open-set port ("*") cannot know its key at drag time; ask for it. A prompt
+    // is homely, but inventing a key silently would draw an edge the run then skips.
+    const realKey = key === "*"
+      ? (window.prompt("Which key of the action's outcome?") ?? "").trim()
+      : key;
+    if (!realKey) return;
+    const r = applyConnect(draft, vocab, {
+      fromAlias: c.source, key: realKey, toAlias: c.target, field,
+    });
+    if (r.error) {
+      setConnectError(r.error);
+      window.setTimeout(() => setConnectError(""), 3200);
+      return;
+    }
+    setDraft(r.draft);
+  }, [draft, vocab]);
+
+  if (error && mode === "execution") {
     return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Could not load the graph: {error}</div>;
   }
-  if (!graph) {
-    return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Loading…</div>;
-  }
+
+  const execution = mode === "execution" && graph ? toFlow(graph) : null;
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6 }}>
-        {(["structure", "execution"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => { setMode(m); if (m === "structure") setRunId(""); }}
-            className="aug-fs-xs"
-            style={{
-              padding: "2px 8px", borderRadius: 6, cursor: "pointer",
-              border: "1px solid var(--border)",
-              background: mode === m ? "var(--bg-3)" : "transparent",
-              color: mode === m ? "var(--t1)" : "var(--t3)",
-            }}
-          >
-            {m === "structure" ? "Structure" : "Execution"}
-          </button>
-        ))}
-        {/* Said plainly rather than shown as an empty Execution view: the automation has
-            simply never run, and its structure is what is on screen. */}
-        {graph.run_missing && (
+        <div style={{ display: "inline-flex", gap: 2, padding: 2,
+          border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
+          background: "var(--bg-1)" }}>
+          {(["design", "execution"] as const).map((m) => (
+            <Button key={m} variant={mode === m ? "secondary" : "ghost"} size="xs"
+              onClick={() => { setMode(m); if (m === "design") setRunId(""); }}>
+              {m === "design" ? "Design" : "Execution"}
+            </Button>
+          ))}
+        </div>
+        {mode === "execution" && graph?.run_missing && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             never run — showing the design
           </span>
         )}
-        {/* A `not_fired` or `gated` tick decorates nothing, so without this the Execution
-            view is indistinguishable from Structure and the viewer cannot tell whether
-            the run did nothing or the view is broken. The engine's own reason, verbatim. */}
-        {mode === "execution" && !graph.run_missing && graph.run_outcome
+        {mode === "execution" && graph && !graph.run_missing && graph.run_outcome
           && graph.run_outcome !== "fired" && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             last run {graph.run_outcome}
             {graph.run_reason ? ` — ${graph.run_reason}` : ""}
           </span>
         )}
-        {/* The canvas keeps showing the SAVED design while a draft is pending, and says
-            so. The alternative — redrawing a speculative graph from the draft — means
-            deriving node labels and edges in the client, which is precisely what this
-            file exists not to do: the server owns the graph, from the same `collect_refs`
-            the engine resolves against. A picture drawn by a second reader is a picture
-            that can disagree with the run. The rail beside it IS the pending design. */}
-        {authoring && dirty && (
-          <span className="aug-fs-xs" style={{ color: "var(--amb4)", marginLeft: "auto" }}>
-            showing the saved design — save to redraw
-          </span>
-        )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
-      {mode === "execution" && (graph.runs?.length ?? 0) > 0 && (
-        <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
-                      border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
-            runs
+        {mode === "execution" && (graph?.runs?.length ?? 0) > 0 && (
+          <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
+                        border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
+            <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
+              runs
+            </div>
+            {(graph?.runs ?? []).map((r) => {
+              const active = (runId || graph?.run_id) === r.id;
+              return (
+                <Button key={r.id} variant="ghost" size="sm" className="aug-fs-xs"
+                  onClick={() => setRunId(r.id)}
+                  style={{
+                    display: "block", width: "100%", height: "auto", textAlign: "left",
+                    padding: "3px 5px", marginBottom: 2,
+                    background: active ? "var(--bg-3)" : "transparent",
+                    color: active ? "var(--t1)" : "var(--t3)",
+                  }}>
+                  <div>{r.at ? r.at.replace("T", " ").slice(5, 16) : r.id.slice(0, 8)}</div>
+                  <div style={{ color: r.failed > 0 ? "var(--red4)" : "var(--t4)" }}>
+                    {r.outcome}{r.failed > 0 ? ` · ${r.failed} failed` : ""}
+                  </div>
+                </Button>
+              );
+            })}
           </div>
-          {(graph.runs ?? []).map((r) => {
-            const active = (runId || graph.run_id) === r.id;
-            return (
-              <button
-                key={r.id}
-                onClick={() => setRunId(r.id)}
-                className="aug-fs-xs"
-                style={{
-                  display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-                  padding: "3px 5px", borderRadius: 5, marginBottom: 2,
-                  border: "1px solid " + (active ? "var(--border)" : "transparent"),
-                  background: active ? "var(--bg-3)" : "transparent",
-                  color: active ? "var(--t1)" : "var(--t3)",
-                }}
-              >
-                <div>{r.at ? r.at.replace("T", " ").slice(5, 16) : r.id.slice(0, 8)}</div>
-                <div style={{ color: r.failed > 0 ? "var(--red4)" : "var(--t4)" }}>
-                  {r.outcome}{r.failed > 0 ? ` · ${r.failed} failed` : ""}
-                </div>
-              </button>
-            );
-          })}
+        )}
+
+        <div style={{ flex: 1, minWidth: 0, minHeight: 220,
+                      border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          {mode === "design" ? (
+            <ReactFlow
+              nodes={design.nodes}
+              edges={edgesLive ? design.edges : []}
+              nodeTypes={NODE_TYPES}
+              onConnect={onConnect}
+              onNodeDragStop={(_e, n) => positions.current.set(n.id, n.position)}
+              onEdgeDoubleClick={(_e, edge) => {
+                // the edge IS the binding — double-click removes both
+                const m = /^bind:.*->(.+)\.([^.]+)$/.exec(edge.id);
+                if (m) clearField(m[1], m[2]);
+              }}
+              fitView
+              fitViewOptions={{ minZoom: 0.5, maxZoom: 1, padding: 0.16 }}
+              nodesDraggable
+              nodesConnectable
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.3}
+              maxZoom={1.6}
+            >
+              <Background gap={18} size={1.2} color="var(--b1)" />
+              <Controls showInteractive={false} />
+              {/* The Volt frame's toolbar, ON the canvas: adding is part of designing,
+                  not a trip to a side panel. Both write the same draft the rail and
+                  Save share; the rail stays for the fields a node does not carry. */}
+              {authoring && (
+                <Panel position="top-left" style={{ display: "flex", gap: 6 }}>
+                  <Button variant="secondary" size="xs"
+                    onClick={() => setDraft(d => ({ ...d, conditions: [...d.conditions, newCondition()] }))}>
+                    <Icon name="bolt" size={11} /> Add Trigger
+                  </Button>
+                  <Button variant="secondary" size="xs"
+                    onClick={() => setDraft(d => ({ ...d, effects: [...d.effects, newEffect()] }))}>
+                    <Icon name="plus" size={11} /> Add Action
+                  </Button>
+                </Panel>
+              )}
+              {connectError && (
+                <Panel position="top-center">
+                  <span className="aug-fs-xs" style={{ color: "var(--amb5)",
+                    background: "var(--amb1)", border: "1px solid var(--amb2)",
+                    borderRadius: "var(--r-chip)", padding: "3px 10px" }}>
+                    {connectError}
+                  </span>
+                </Panel>
+              )}
+              <Panel position="bottom-center">
+                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                  drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
+                  input dot to bind · double-click an edge to unbind
+                </span>
+              </Panel>
+            </ReactFlow>
+          ) : !graph ? (
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
+          ) : (
+            <ReactFlow
+              nodes={execution!.nodes}
+              edges={execution!.edges}
+              nodeTypes={NODE_TYPES}
+              fitView
+              fitViewOptions={{ minZoom: 0.5, maxZoom: 1, padding: 0.16 }}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background gap={16} color="var(--border)" />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          )}
         </div>
-      )}
-      <div style={{ flex: 1, minWidth: 0, minHeight: 220, border: "1px solid var(--border)",
-                    borderRadius: 8, overflow: "hidden",
-                    // Dimmed, not disabled: it is still the truth about what is stored,
-                    // and a reader comparing it against the rail is exactly the compare
-                    // an edit wants.
-                    opacity: authoring && dirty ? 0.72 : 1 }}>
-        <ReactFlow
-          nodes={flow.nodes}
-          edges={flow.edges}
-          nodeTypes={NODE_TYPES}
-          fitView
-          fitViewOptions={{ minZoom: 0.5, maxZoom: 1, padding: 0.16 }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={16} color="var(--border)" />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </div>
-      {authoring && (
-        <AutomationAuthor
-          automation={automation!}
-          draft={draft}
-          onDraft={setDraft}
-          onSaved={() => { setReloadKey(k => k + 1); onSaved?.(); }}
-        />
-      )}
+
+        {authoring && (
+          <AutomationAuthor
+            automation={automation!}
+            draft={draft}
+            onDraft={setDraft}
+            onSaved={() => { setReloadKey(k => k + 1); onSaved?.(); }}
+          />
+        )}
       </div>
     </div>
   );

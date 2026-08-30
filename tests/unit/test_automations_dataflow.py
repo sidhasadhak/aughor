@@ -403,12 +403,15 @@ def test_a_step_SOMETHING_BINDS_TO_is_waited_for():
     def _dispatch(effect, automation):
         seen.append(dict(effect.config))
         return EffectOutcome(kind=effect.kind, target="t", status="executed",
-                             data={"answer": "Sales were 41,204 yesterday."})
+                             data={"ts": "1788.0001"})
 
-    _run(_automation(_effect(), _effect(message={"$from": "step1.answer"})), _dispatch)
+    # `.ts` rather than `.answer`: the fixture steps are slack_post, and B1's key
+    # validation now refuses at CONSTRUCTION a binding onto a key the kind cannot
+    # publish — this suite's own fixtures were the first thing it caught.
+    _run(_automation(_effect(), _effect(message={"$from": "step1.ts"})), _dispatch)
     assert seen[0][AWAIT_KEY] is True, "the consumed step must be marked to wait"
     assert AWAIT_KEY not in seen[1], "the LAST step has no consumer and must not wait"
-    assert seen[1]["message"] == "Sales were 41,204 yesterday."
+    assert seen[1]["message"] == "1788.0001"
 
 
 def test_the_wait_marker_follows_the_ALIAS_not_the_position():
@@ -422,10 +425,10 @@ def test_the_wait_marker_follows_the_ALIAS_not_the_position():
     def _dispatch(effect, automation):
         seen.append(dict(effect.config))
         return EffectOutcome(kind=effect.kind, target="t", status="executed",
-                             data={"answer": "x"})
+                             data={"ts": "x"})
 
     _run(_automation(_effect(alias="numbers"), _effect(),
-                     _effect(message={"$from": "numbers.answer"})), _dispatch)
+                     _effect(message={"$from": "numbers.ts"})), _dispatch)
     assert seen[0][AWAIT_KEY] is True, "'numbers' is bound to and must wait"
     assert AWAIT_KEY not in seen[1], "the middle step is referenced by nobody"
 
@@ -439,10 +442,43 @@ def test_an_unwaited_investigation_publishes_no_answer_so_the_post_is_SKIPPED():
     Absent instead, so the binding raises and the dependent step is SKIPPED with a reason.
     """
     def _dispatch(effect, automation):
-        # what `_dispatch_investigate` returns for a SUBMITTED run: an id, no answer
+        # what `_dispatch_slack_post` returns when the provider reports no ts —
+        # a published key DECLARED but absent at runtime, which is the exact hole
+        # "skipped, never run-with-a-hole" exists for.
         return EffectOutcome(kind=effect.kind, target="t", status="executed",
-                             data={"investigation_id": "inv-1"})
+                             data={"channel": "C1"})
 
-    run = _run(_automation(_effect(), _effect(message={"$from": "step1.answer"})), _dispatch)
+    run = _run(_automation(_effect(), _effect(message={"$from": "step1.ts"})), _dispatch)
     assert run.effects[1].status == "skipped"
     assert "upstream data unavailable" in run.effects[1].message
+
+
+# ── B1: the KEY is validated at save, not discovered at 09:00 ────────────────────
+
+def test_a_binding_onto_a_key_the_kind_cannot_publish_is_refused_at_SAVE():
+    """The hole B1 exists to close: `validate_chain` caught an unknown STEP but let an
+    unknown KEY through, so the failure surfaced on a schedule as a skipped step —
+    honest machinery adding up to a silent no-op."""
+    with pytest.raises(Exception, match="has no 'answer'"):
+        _automation(_effect(), _effect(message={"$from": "step1.answer"}))
+
+
+def test_a_binding_onto_a_no_output_kind_says_it_publishes_nothing():
+    notify = Effect(kind="notify", alias="ping", config={"trigger_id": "t1"})
+    with pytest.raises(Exception, match="publishes nothing"):
+        _automation(notify, _effect(message={"$from": "ping.ts"}))
+
+
+def test_kinetic_action_keys_stay_an_OPEN_set():
+    """`kinetic_action` publishes the declared action's own outcome shape, which this
+    module cannot enumerate — refusing unknown keys there would refuse the truth."""
+    act = Effect(kind="kinetic_action", alias="act", config={"action_id": "a1"})
+    auto = _automation(act, _effect(message={"$from": "act.whatever_the_action_says"}))
+    assert auto.effects[1].config["message"] == {"$from": "act.whatever_the_action_says"}
+
+
+def test_investigate_answer_is_a_DECLARED_key():
+    """The chain the whole arc was built for must remain expressible."""
+    inv = Effect(kind="investigate", alias="numbers", config={"question": "sales?"})
+    auto = _automation(inv, _effect(message={"$from": "numbers.answer"}))
+    assert auto.effects[1].config["message"] == {"$from": "numbers.answer"}

@@ -3411,6 +3411,90 @@ export interface SlackBotSummary {
   bot_user_id: string;
 }
 
+/** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
+ *  mirrored: a hand-copied vocabulary rots in the worst direction, and the server's
+ *  `PUBLISHED_KEYS` is the same table `validate_chain` refuses against. */
+export async function getAutomationVocabulary(): Promise<
+  Record<string, { publishes: string[] | null; bindable: string[] }>
+> {
+  const res = await fetch(`${getApiBase()}/automations/vocabulary`);
+  if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
+  return (await res.json()).kinds;
+}
+
+/* ── VA-11 · integrations: the credential as a governed object ─────────────── */
+
+/** One user grant, as the API returns it — token fields are DROPPED server-side
+ *  (`Connection.to_safe_dict`), so this type cannot even name them. */
+export interface IntegrationConnection {
+  id: string;
+  provider: string;
+  user_id: string;
+  scopes: string;
+  account: string;
+  token_type: string;
+  expires_at: string | null;
+  status: "active" | "needs_reconnect" | "revoked";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationProvider {
+  id: string;
+  name: string;
+  category: string;
+  blurb: string;
+  /** The org registered an OAuth client — flips the card from Set up to Connect. */
+  configured: boolean;
+  console_url: string;
+  connection: IntegrationConnection | null;
+}
+
+export async function getIntegrationsCatalog(): Promise<{
+  providers: IntegrationProvider[]; redirect_uri: string;
+}> {
+  const res = await fetch(`${getApiBase()}/integrations/catalog`);
+  if (!res.ok) throw new Error(`Failed to load the catalog (${res.status})`);
+  return res.json();
+}
+
+export async function setupIntegrationApp(provider: string, body: {
+  client_id: string; client_secret: string;
+}): Promise<{ redirect_uri: string }> {
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/app`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
+    throw new Error(detail || `Could not save the app (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Begin the dance. The caller sends the BROWSER to `authorize_url` — a fetch cannot
+ *  follow a consent screen. */
+export async function beginIntegrationConnect(provider: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect`, { method: "POST" });
+  if (!res.ok) {
+    let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
+    throw new Error(detail || `Could not start the connection (${res.status})`);
+  }
+  return (await res.json()).authorize_url;
+}
+
+export async function revokeIntegrationConnection(connId: string): Promise<{
+  connection: IntegrationConnection;
+  /** False ⇒ the provider offers no revocation endpoint (Microsoft): the grant must
+   *  also be removed on the account's own security page, and the UI must say so. */
+  provider_side: boolean;
+}> {
+  const res = await fetch(`${getApiBase()}/integrations/connections/${connId}/revoke`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(`Could not revoke (${res.status})`);
+  return res.json();
+}
+
 /** The Slack app manifest to paste at api.slack.com, plus the steps that follow it.
  *
  *  Rendered by the SERVER, never assembled here: the scopes and socket-mode settings have

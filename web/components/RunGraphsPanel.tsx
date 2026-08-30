@@ -1,36 +1,27 @@
 "use client";
 
 /**
- * CR5 — two honest run graphs, and deliberately no DAG editor (the Effect law
- * is a feature):
+ * CR5 → B1 — the deep-run phase view: the FIXED topology (flag-gated variants
+ * resolved server-side), the phases the checkpoint recorded, and the gate a
+ * paused run waits at, resumable through its native surface.
  *
- * (a) the automation run strip — conditions evaluated → per-effect outcomes,
- *     straight from `automation_runs`. A run that did nothing renders as
- *     "evaluated, did not fire" WITH ITS REASON; effect messages (authored
- *     refusals included) render verbatim, never paraphrased.
- * (b) the deep-run phase view — the FIXED topology (flag-gated variants
- *     resolved server-side), the phases the checkpoint recorded, and the gate
- *     a paused run waits at, resumable through its native surface.
+ * This file used to also carry an automation run strip. Retired 2026-08-30 with the
+ * whole top-level Runs layer: by then automation runs had THREE surfaces — that
+ * strip, Automations → History, and Activity → Traces (VA-4d put every automation
+ * run into `session_events`) — and three surfaces for one fact is two chances to
+ * disagree. The phase view had no second home, so it lives under Activity, beside
+ * the Traces its deep-analysis runs open in.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
-  getAllAutomationRuns, getInvestigationGraph, getInvestigationsList,
-  type AutomationRun, type InvestigationGraph, type InvestigationListRow,
+  getInvestigationGraph, getInvestigationsList,
+  type InvestigationGraph, type InvestigationListRow,
 } from "@/lib/api";
-import { fmtMs } from "@/lib/cost";
 import { relTime } from "@/lib/format";
 
-const OUTCOME_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "muted"> = {
-  fired: "positive", not_fired: "muted", gated: "caution", error: "negative",
-};
-const EFFECT_HUE: Record<string, "positive" | "negative" | "caution" | "muted"> = {
-  executed: "positive", failed: "negative", approval_required: "caution",
-  criterion_failed: "caution", skipped: "muted", invalid_params: "negative",
-  dispatch_error: "negative",
-};
 const PHASE_HUE: Record<string, "positive" | "negative" | "caution" | "muted"> = {
   complete: "positive", partial: "caution", skipped: "muted", error: "negative",
 };
@@ -78,14 +69,11 @@ function nodeLabel(node: string): string {
 export function RunGraphsPanel({ onOpenInvestigation }: {
   onOpenInvestigation?: (invId: string) => void;
 }) {
-  const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [invs, setInvs] = useState<InvestigationListRow[]>([]);
   const [selectedInv, setSelectedInv] = useState<string | null>(null);
-  const [showTicks, setShowTicks] = useState(false);
   const [graph, setGraph] = useState<InvestigationGraph | null>(null);
 
   const load = useCallback(() => {
-    getAllAutomationRuns({ limit: 50 }).then(setRuns).catch(() => {});
     getInvestigationsList(30)
       .then(rows => {
         const deep = rows.filter(r => r.kind === "investigation");
@@ -106,126 +94,8 @@ export function RunGraphsPanel({ onOpenInvestigation }: {
     getInvestigationGraph(selectedInv).then(setGraph).catch(() => setGraph(null));
   }, [selectedInv]);
 
-  // A run that FIRED gets its own card; the rest fold into one row per automation. The
-  // split is on the outcome the engine recorded, never on a string in the reason.
-  const firedRuns = useMemo(() => runs.filter(r => r.outcome !== "not_fired"), [runs]);
-  const shownRuns = showTicks ? runs : firedRuns;
-  const folded = useMemo(() => {
-    if (showTicks) return [];
-    const by = new Map<string, { id: string; name: string; ticks: number; lastAt: string | null }>();
-    for (const r of runs) {
-      if (r.outcome !== "not_fired") continue;
-      const id = r.automation_id;
-      const seen = by.get(id);
-      if (seen) {
-        seen.ticks += 1;
-        if (!seen.lastAt || String(r.started_at) > seen.lastAt) seen.lastAt = r.started_at;
-      } else {
-        by.set(id, { id, name: r.automation_name || id, ticks: 1, lastAt: r.started_at });
-      }
-    }
-    return [...by.values()].sort((a, b) => b.ticks - a.ticks);
-  }, [runs, showTicks]);
-
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-      {/* ── (a) automation run strip ── */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-        <span className="aug-label" style={{ color: "var(--t2)" }}>
-        Automation runs — conditions → effects
-        </span>
-        <span className="aug-fs-sm" style={{ color: "var(--t2)", marginRight: "auto" }}>
-          {folded.length > 0
-            ? `${folded.length} automation${folded.length === 1 ? "" : "s"} · `
-              + `${runs.length - firedRuns.length} evaluated without firing, folded`
-            : "the engine records one run per tick, including ticks that do nothing"}
-        </span>
-        <Button variant="ghost" size="xs" onClick={() => setShowTicks(v => !v)}
-          style={{ color: "var(--blue4)" }}>
-          {showTicks ? "fold quiet ticks" : "show every tick"}
-        </Button>
-      </div>
-
-      {/* A tick that evaluated and fired nothing is not a run worth a card — the engine
-          writes one per minute per automation, so the un-folded strip is a wall of
-          "evaluated — did not fire" with the real firings buried in it. One row per
-          automation carries the same facts; expanding it gives back every tick. */}
-      {!showTicks && folded.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-          {folded.map(f => (
-            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10,
-              background: "var(--bg-1)", border: "1px solid var(--b1)",
-              borderRadius: "var(--r3)", padding: "8px 14px" }}>
-              <StatusChip hue="muted" strength="soft">quiet</StatusChip>
-              <span className="aug-fs-ui" style={{ fontWeight: 500 }}>{f.name}</span>
-              <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-                {f.ticks} tick{f.ticks === 1 ? "" : "s"} evaluated · none fired
-                {f.lastAt ? ` · last ${relTime(f.lastAt)}` : ""}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
-        {runs.length === 0 ? (
-          <div className="aug-fs-sm" style={{ padding: 20, color: "var(--t2)",
-            background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-            No automation runs yet. The engine records one run per tick — including
-            ticks that evaluate and do nothing — for every automation you create.
-          </div>
-        ) : shownRuns.length === 0 ? (
-          <div className="aug-fs-sm" style={{ padding: 20, color: "var(--t2)",
-            background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-            Every run in this window evaluated without firing — folded above. Nothing acted.
-          </div>
-        ) : shownRuns.map(run => (
-          <div key={run.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r3)", padding: "10px 14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <StatusChip hue={OUTCOME_HUE[run.outcome] ?? "muted"} strength="soft">
-                {run.outcome === "not_fired" ? "evaluated — did not fire" : run.outcome}
-              </StatusChip>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{run.automation_name || run.automation_id}</span>
-              <span style={{ fontSize: 11, color: "var(--t2)" }}>
-                {relTime(run.started_at)} · {fmtMs(run.duration_ms)}
-              </span>
-              {run.reason && (
-                <span style={{ fontSize: 11, color: "var(--t3)", flex: 1, minWidth: 0,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  title={run.reason}>
-                  {run.reason}
-                </span>
-              )}
-            </div>
-            {run.conditions_fired.length > 0 && (
-              <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>
-                conditions fired: {run.conditions_fired.join(", ")}
-              </div>
-            )}
-            {run.effects.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-                {run.effects.map((ef, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
-                    fontSize: 11, paddingLeft: 10, borderLeft: "2px solid var(--b1)" }}>
-                    <StatusChip hue={EFFECT_HUE[ef.status] ?? "muted"} strength="soft">
-                      {ef.status}
-                    </StatusChip>
-                    <span style={{ color: "var(--t2)" }}>{ef.kind}{ef.target ? ` → ${ef.target}` : ""}</span>
-                    {ef.attempts > 1 && <span style={{ color: "var(--amb4)" }}>×{ef.attempts}</span>}
-                    {/* the authored message, verbatim — never paraphrased */}
-                    {ef.message && <span style={{ color: "var(--t3)" }}>{ef.message}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {run.error && (
-              <div style={{ fontSize: 11, color: "var(--red4)", marginTop: 6 }}>{run.error}</div>
-            )}
-          </div>
-        ))}
-      </div>
-
       {/* ── (b) deep-run phase view ── */}
       <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 8 }}>
         Deep-run phases — the fixed Agent topology

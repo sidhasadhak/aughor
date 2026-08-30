@@ -15,6 +15,7 @@ const loading = () => (
 
 const MonitorsPanel      = dynamic(() => import("@/components/MonitorsPanel").then(m => ({ default: m.MonitorsPanel })),           { ssr: false, loading });
 const ActionHubPanel     = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),         { ssr: false, loading });
+const IntegrationsPanel  = dynamic(() => import("@/components/IntegrationsPanel").then(m => ({ default: m.IntegrationsPanel })),   { ssr: false, loading });
 const SecurityAuditPanel = dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
 
 // Icon paths mirror the sidebar's NavIcon set (activity / gear / spark / shield).
@@ -44,11 +45,12 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // `LEGACY_OPS_LAYER` never mapped a nav route to it, no URL parameter persists this layer,
 // and the command palette has no entry for it. It was reachable only by clicking the tab
 // that no longer exists, so keeping the id would be defensive code against nothing.
-export type OpsLayer = "monitors" | "actions" | "security";
+export type OpsLayer = "monitors" | "actions" | "integrations" | "security";
 
 const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
   { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
+  { id: "integrations", icon: "plug",    label: "Integrations",     blurb: "Connect Google, Slack & Microsoft" },
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
 
@@ -83,6 +85,7 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;
         if (id === "actions")     return <ActionHubPanel />;
+        if (id === "integrations") return <IntegrationsPanel />;
         return <SecurityAuditPanel connId={connId} lens={secLens} onLensChange={onSecLensChange} />; // "security"
       }}
     />

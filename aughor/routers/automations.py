@@ -55,6 +55,25 @@ class PauseRequest(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@router.get("/automations/vocabulary")
+def vocabulary():
+    """B1 — what each effect kind publishes and may bind, for the canvas's ports.
+
+    FETCHED by the client rather than mirrored into it: a hand-copied vocabulary rots
+    in the worst direction (a key added here while the UI keeps refusing it), and the
+    required-keys mirror already costs a guard test to keep honest. `publishes: null`
+    is the OPEN set — a declared-action step's keys are that action's own outcome
+    shape, and the canvas draws it as a wildcard port rather than no port."""
+    from aughor.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
+    return {"kinds": {
+        kind: {
+            "publishes": list(keys) if keys is not None else None,
+            "bindable": list(BINDABLE_FIELDS.get(kind, ())),
+        }
+        for kind, keys in PUBLISHED_KEYS.items()
+    }}
+
+
 @router.get("/automations")
 def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
     return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}

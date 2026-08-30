@@ -89,8 +89,12 @@ def test_the_first_step_hangs_off_the_trigger():
 def test_a_fan_in_draws_two_data_edges():
     """Merged-data means step 3 can read step 1 — the case a previous-step-only chain
     cannot express, and the one worth SEEING."""
+    # `ask` is an investigate step because B1's key validation now refuses, at
+    # CONSTRUCTION, a binding onto a key the producer kind cannot publish — and
+    # `answer` is investigate's key, not slack_post's. This fixture was the guard's
+    # second catch of this suite's own fixtures (the dataflow suite was the first).
     g = build_graph(_automation(
-        _effect(alias="ask"),
+        Effect(kind="investigate", alias="ask", config={"question": "sales?"}),
         _effect(alias="open"),
         _effect(text={"$from": "ask.answer"}, thread_ts={"$from": "open.ts"}),
     ))

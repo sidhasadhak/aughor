@@ -22,8 +22,9 @@ import { type TimeRange } from "@/components/agentops/useTimeRange";
 import { Button } from "@/components/ui/button";
 import { ActivityStreamPanel } from "@/components/ActivityStreamPanel";
 import { TraceExplorerPanel } from "@/components/TraceExplorerPanel";
+import { RunGraphsPanel } from "@/components/RunGraphsPanel";
 
-type Mode = "usage" | "stream" | "runs";
+type Mode = "usage" | "stream" | "runs" | "phases";
 
 const MODE_BLURB: Record<Mode, string> = {
   usage: "what the fleet spent, and on what",
@@ -33,6 +34,9 @@ const MODE_BLURB: Record<Mode, string> = {
   // more precise word for what this shows: the top layer lists runs, and this
   // reconstructs one from the telemetry `session_events` kept about it.
   runs: "one run, reconstructed from its trace",
+  // B1 — moved here when the top-level Runs layer retired: the phase view's natural
+  // neighbours are the traces its deep-analysis runs open in.
+  phases: "deep analysis, phase by phase",
 };
 
 export function AgenticActivityPanel({ focusInvestigationId, focusTraceId, onTraceOpened,
@@ -82,6 +86,8 @@ export function AgenticActivityPanel({ focusInvestigationId, focusTraceId, onTra
           onClick={() => show("stream")}>Stream</Button>
         <Button variant={mode === "runs" ? "secondary" : "ghost"} size="xs"
           onClick={() => show("runs")}>Traces</Button>
+        <Button variant={mode === "phases" ? "secondary" : "ghost"} size="xs"
+          onClick={() => show("phases")}>Phases</Button>
         <span className="aug-fs-sm" style={{ color: "var(--t2)", marginLeft: 8 }}>
           {MODE_BLURB[mode]}
         </span>
@@ -114,6 +120,17 @@ export function AgenticActivityPanel({ focusInvestigationId, focusTraceId, onTra
             inert={mode !== "runs"} aria-hidden={mode !== "runs" || undefined}>
             <TraceExplorerPanel focusInvestigationId={focusInvestigationId}
               focusTraceId={effectiveTrace} />
+          </div>
+        )}
+        {visited.has("phases") && (
+          <div style={{ position: "absolute", inset: 0, display: mode === "phases" ? "flex" : "none",
+            flexDirection: "column", overflow: "auto" }}
+            inert={mode !== "phases"} aria-hidden={mode !== "phases" || undefined}>
+            {/* A phase row's deep-analysis run opens as its TRACE one tab over — the
+                two views describe the same run and hand off rather than compete. The id
+                spaces coincide by construction: a deep run MINTS its trace from its own
+                id (obs.py), so no mapping call is needed or wanted. */}
+            <RunGraphsPanel onOpenInvestigation={openTrace} />
           </div>
         )}
       </div>

@@ -107,7 +107,17 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # reader-facing prose. Renaming the attribute is a separate migration; aliasing
          # it here would hide the real name from the code that reads it.
          "aughor/agent/action_tools.py",
-         "tests/unit/test_agent_action_grants.py"),
+         "tests/unit/test_agent_action_grants.py",
+         # B1, same ground again: the effect KIND is the wire literal "kinetic_action",
+         # and these files spell the wire — the vocabulary tables (PUBLISHED_KEYS /
+         # BINDABLE_FIELDS keys), the canvas's per-kind maps, and the fixtures that
+         # construct Effects of that kind. Prose in all of them says "declared action";
+         # only the identifiers remain, and an identifier cannot be reworded without
+         # hiding the real name from the code that reads it.
+         "aughor/automations/dataflow.py",
+         "tests/unit/test_automations_dataflow.py",
+         "web/lib/automationFlow",
+         "web/components/AutomationGraph.tsx"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -177,6 +187,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     "investigation_in_web": (
         r"(?i)investigat", ("web",),
         ("web/lib/api.ts", "web/lib/uiMessageAdapter", "web/lib/sseFrames",
+         # B1 — the `investigate` EFFECT KIND is a wire literal (automations/models.py's
+         # own Literal), and these spell it: the flow module + its test construct
+         # effects of that kind, and the canvas keys its per-kind maps by it. The
+         # user-facing strings around them say "deep analysis" / "Investigate" as the
+         # roster label the glossary allows.
+         "web/lib/automationFlow", "web/components/AutomationGraph.tsx",
          "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/",
          # The Overview receives the shell's `onOpenInvestigation` prop (shared with three
          # other panels) and reads `resolve.investigation_id` off a needs-human row — a

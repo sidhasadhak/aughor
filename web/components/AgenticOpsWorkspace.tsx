@@ -23,7 +23,6 @@ const AgenticAgentsPanel = dynamic(() => import("@/components/AgenticAgentsPanel
 const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").then(m => ({ default: m.NeedsHumanPanel })),       { ssr: false, loading });
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
-const RunGraphsPanel     = dynamic(() => import("@/components/RunGraphsPanel").then(m => ({ default: m.RunGraphsPanel })),         { ssr: false, loading });
 
 /**
  * This screen's glyphs, by role. The drawings come from the platform icon set
@@ -46,8 +45,14 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
+// `runs` retired 2026-08-30 (B1). Checked before removal, the same audit the
+// automations-tab removal ran: no LEGACY_AGENTIC_LAYER entry maps to it, no URL
+// parameter persists this layer, and the command palette routes to the workspace,
+// not the tab. Its automation strip was the third surface for automation runs
+// (Automations → History and Activity → Traces are the others); its phase view —
+// the half with no second home — moved to Activity → Phases.
 export type AgenticOpsLayer =
-  "fleet" | "agents" | "attention" | "activity" | "runs" | "automations";
+  "fleet" | "agents" | "attention" | "activity" | "automations";
 
 // Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
@@ -57,8 +62,7 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
   { id: "fleet",     icon: "gauge",    label: "Overview",  blurb: "What's wrong · what's running · what it cost" },
   { id: "agents",    icon: "spark",    label: "Roster",    blurb: "One agent, fully: health, runs, spend, config" },
   { id: "attention", icon: "hand",     label: "Attention", blurb: "What needs a human, and for how long" },
-  { id: "activity",  icon: "activity", label: "Activity",  blurb: "Usage by model · the live tail · one run reconstructed" },
-  { id: "runs",      icon: "flow",     label: "Runs",      blurb: "Conditions → effects · deep analysis phases" },
+  { id: "activity",  icon: "activity", label: "Activity",  blurb: "Usage · the live tail · traces · deep-run phases" },
   // Moved here from Operations 2026-08-29 (user-decided). An automation IS an agent
   // operating on a schedule — since VA-9b it names the agent it runs as, every step
   // inherits that agent, and its governed writes are attributed to `agent:<id>` rather
@@ -172,7 +176,6 @@ export function AgenticOpsWorkspace({
             focusInvestigationId={traceFocus?.investigationId}
             focusTraceId={traceFocus?.traceId} range={range} />
         );
-        if (id === "runs") return <RunGraphsPanel onOpenInvestigation={onOpenInvestigation} />;
         if (id === "automations") return (
           <AutomationsPanel connId={connId} workspaceId={workspaceId} />
         );
