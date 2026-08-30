@@ -72,6 +72,8 @@ const COL_W = 260;
 /** Above this many nodes a run stops being readable end to end — measured on the live
  *  instance, where the median trace is 10 nodes and the long ones are 71 to 239. */
 const GROUP_THRESHOLD = 24;
+/** Up to this many cards a run reads fine as one line, so it stays one. */
+const ONE_ROW_UP_TO = 6;
 const ROW_H = 138;
 
 interface FlowNode extends TimelineNode {
@@ -212,6 +214,71 @@ export function bandAsNode(band: FlowBand): FlowNode {
   const first = band.members[0];
   const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
   return { ...first, id: band.id, duration_ms: total, children: [] };
+}
+
+/**
+ * A FLAT run, laid out as a block rather than a line.
+ *
+ * A single sequence has no tree to draw, so the tree layout gave it one long row — 68
+ * cards wide on a measured run, which no zoom makes readable. Wrapped in reading order
+ * into roughly a square, the same run is a block a reader can take in: the aspect ratio
+ * solves `cols · COL_W ≈ rows · ROW_H`, so the answer is shaped by the cards, not by a
+ * number somebody picked.
+ *
+ * **An opened stack grows DOWNWARD from its own cell**, and its row grows to fit the
+ * tallest stack opened in it. That is what keeps the rest of the run still: the cards
+ * before and after an opened stack do not move at all, where flowing its members back
+ * into the sequence would have shoved everything after it along.
+ *
+ * Returns pixel positions, because the row heights are no longer uniform once a stack is
+ * open and a `{col, row}` grid cannot say that.
+ */
+export function layoutGrid(
+  items: FlowItem[],
+  expanded: ReadonlySet<string>,
+  cell: { w: number; h: number },
+): Map<string, { x: number; y: number }> {
+  const pos = new Map<string, { x: number; y: number }>();
+  if (items.length === 0) return pos;
+
+  // A run short enough to read across stays a line. Reshaping four cards into a block
+  // answers a question nobody had, and the median run measured is ten nodes.
+  // Otherwise: cols·w ≈ TARGET · rows·h with rows = n/cols ⇒ cols ≈ √(n·h·TARGET/w).
+  //
+  // TARGET is the aspect being aimed AT, and it is not 1. A canvas pane is landscape, so
+  // a literal square is the wrong shape to fill it — solving for one put ten cards in two
+  // columns, a 520×690 ribbon in a pane twice as wide as it is tall.
+  const TARGET = 1.8;
+  const cols = items.length <= ONE_ROW_UP_TO
+    ? items.length
+    : Math.max(1, Math.round(Math.sqrt((items.length * cell.h * TARGET) / cell.w)));
+
+  // How many cards tall each row has to be: one, unless a stack in it is open.
+  const heights: number[] = [];
+  items.forEach((item, i) => {
+    const row = Math.floor(i / cols);
+    const tall = item.kind === "band" && expanded.has(item.id) ? item.members.length : 1;
+    heights[row] = Math.max(heights[row] ?? 1, tall);
+  });
+  const tops: number[] = [];
+  let y = 0;
+  for (let r = 0; r < heights.length; r++) {
+    tops[r] = y;
+    y += heights[r] * cell.h;
+  }
+
+  items.forEach((item, i) => {
+    const x = (i % cols) * cell.w;
+    const top = tops[Math.floor(i / cols)];
+    if (item.kind === "node") {
+      pos.set(item.node.id, { x, y: top });
+    } else if (expanded.has(item.id)) {
+      item.members.forEach((m, k) => pos.set(m.id, { x, y: top + k * cell.h }));
+    } else {
+      pos.set(item.id, { x, y: top });
+    }
+  });
+  return pos;
 }
 
 /** `{id: {col, row}}` for every node. Pure, and exported so the layout is testable
@@ -736,7 +803,9 @@ export function TraceFlow({
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
   /** The rail gives up its 208px on demand. On a narrow pane that is the difference
    *  between a canvas and a column of clipped cards. */
-  const [railOpen, setRailOpen] = useState(true);
+  // Hidden by default. It is a companion to the canvas, not a frame around it, and it
+  // was taking 208px from the thing the surface is for before anyone asked it to.
+  const [railOpen, setRailOpen] = useState(false);
   /** Repeated stretches folded into one card each.
    *
    *  ON by default only for a run long enough to need it — the median trace measured is
@@ -767,7 +836,14 @@ export function TraceFlow({
       else { bands.push(item); laidOut.push(bandAsNode(item)); }
     }
 
-    const pos = layoutForest(laidOut);
+    // A flat run is a sequence, so it wraps into a block; a nested one has a shape of its
+    // own and keeps the tree layout, which is the only thing that can show it. The notice
+    // above the canvas already tells the reader which of the two they are looking at.
+    const nestedRun = forest.some(n => n.children.length > 0);
+    const pos: Map<string, { x: number; y: number }> = nestedRun
+      ? new Map([...layoutForest(laidOut)].map(([id, p]) =>
+          [id, { x: p.col * COL_W, y: p.row * ROW_H }]))
+      : layoutGrid(items, expanded, { w: COL_W, h: ROW_H });
     const drawn = new Set(pos.keys());
 
     // The way back, on the first card of each opened band and nowhere else.
@@ -792,7 +868,7 @@ export function TraceFlow({
         return {
           id: n.id,
           type: "traceNode",
-          position: { x: p.col * COL_W, y: p.row * ROW_H },
+          position: { x: p.x, y: p.y },
           data: {
             node: n,
             event: eventForNode(n, events),
@@ -818,7 +894,7 @@ export function TraceFlow({
       rfNodes.push({
         id: band.id,
         type: "bandNode",
-        position: { x: p.col * COL_W, y: p.row * ROW_H },
+        position: { x: p.x, y: p.y },
         data: {
           band,
           // Built through the same path as any other card, off the synthetic node — so
@@ -892,7 +968,7 @@ export function TraceFlow({
 
     return {
       rfNodes, rfEdges: [...rfEdges, ...bridged],
-      nested: forest.some(n => n.children.length > 0),
+      nested: nestedRun,
       drawnNodes: (timeline.nodes ?? []).filter(n => drawn.has(n.id)),
       bandCount: bands.length,
       foldedAway: bands.reduce((n, b) => n + b.members.length - 1, 0),

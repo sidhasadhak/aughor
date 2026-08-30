@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  bandAsNode, buildForest, foldRepeats, layoutForest,
+  bandAsNode, buildForest, foldRepeats, layoutForest, layoutGrid,
 } from "@/components/agentops/TraceFlow";
 import type { TimelineNode, TraceFlowEdge } from "@/lib/api";
 
@@ -260,5 +260,97 @@ describe("bandAsNode", () => {
     if (band.kind !== "band") throw new Error("expected a stack");
     expect(bandAsNode(band).id).toBe(band.id);
     expect(bandAsNode(band).id).not.toBe(band.members[0].id);
+  });
+});
+
+/* ── a flat run is a block, not a line ──────────────────────────────────────── */
+
+const CELL = { w: 260, h: 138 };
+const asItems = (nodes: TimelineNode[]) =>
+  roots(nodes).map(node => ({ kind: "node" as const, node }));
+
+describe("layoutGrid", () => {
+  it("wraps a long sequence into roughly a square instead of one long row", () => {
+    // 68 cards in a row is what no zoom could read. The aspect ratio solves
+    // cols·w ≈ rows·h, so the shape comes from the cards rather than a chosen number.
+    const items = asItems(Array.from({ length: 68 }, (_, i) => step(`n${i}`, "tool_call", "t")));
+    const pos = layoutGrid(items, new Set(), CELL);
+    const xs = [...pos.values()].map(p => p.x);
+    const ys = [...pos.values()].map(p => p.y);
+    const width = Math.max(...xs) + CELL.w;
+    const height = Math.max(...ys) + CELL.h;
+    expect(width / height).toBeGreaterThan(0.5);
+    expect(width / height).toBeLessThan(2);
+  });
+
+  it("keeps reading order — left to right, then the next row down", () => {
+    const items = asItems(Array.from({ length: 9 }, (_, i) => step(`n${i}`, "tool_call", "t")));
+    const pos = layoutGrid(items, new Set(), CELL);
+    const inOrder = items.map(i => pos.get(i.node.id)!);
+    for (let i = 1; i < inOrder.length; i++) {
+      const prev = inOrder[i - 1];
+      const cur = inOrder[i];
+      const advanced = cur.y > prev.y || (cur.y === prev.y && cur.x > prev.x);
+      expect(advanced).toBe(true);
+    }
+  });
+
+  it("puts a short run on one row and leaves it alone", () => {
+    const items = asItems([step("a", "tool_call", "t"), step("b", "llm_call", "m")]);
+    const pos = layoutGrid(items, new Set(), CELL);
+    expect(new Set([...pos.values()].map(p => p.y)).size).toBe(1);
+  });
+});
+
+describe("an opened stack grows downward", () => {
+  const withStack = () => {
+    const nodes = [
+      step("head", "tool_call", "start"),
+      ...Array.from({ length: 5 }, (_, i) => step(`m${i}`, "llm_call", "gemini")),
+      step("tail", "tool_call", "end"),
+    ];
+    return foldRepeats(roots(nodes));
+  };
+
+  it("stacks its members in ONE column, one row-height apart", () => {
+    const items = withStack();
+    const band = items.find(i => i.kind === "band");
+    if (!band || band.kind !== "band") throw new Error("expected a stack");
+    const pos = layoutGrid(items, new Set([band.id]), CELL);
+    const members = band.members.map(m => pos.get(m.id)!);
+    expect(new Set(members.map(p => p.x)).size).toBe(1);
+    for (let i = 1; i < members.length; i++) {
+      expect(members[i].y - members[i - 1].y).toBe(CELL.h);
+    }
+  });
+
+  it("does not move the stack itself, or anything before it", () => {
+    // The whole point of growing downward: what the reader was looking at stays put.
+    // Cards in LATER rows do shift down — the row has to make room somewhere, and down
+    // is the only direction that does not reorder the run.
+    const items = withStack();
+    const band = items.find(i => i.kind === "band");
+    if (!band || band.kind !== "band") throw new Error("expected a stack");
+    const closed = layoutGrid(items, new Set(), CELL);
+    const open = layoutGrid(items, new Set([band.id]), CELL);
+    expect(open.get("head")).toEqual(closed.get("head"));
+    // The stack's own first card is exactly where the collapsed stack was.
+    expect(open.get(band.members[0].id)).toEqual(closed.get(band.id));
+  });
+
+  it("gives the row enough height for the tallest stack opened in it", () => {
+    const items = withStack();
+    const band = items.find(i => i.kind === "band");
+    if (!band || band.kind !== "band") throw new Error("expected a stack");
+    const open = layoutGrid(items, new Set([band.id]), CELL);
+    // Nothing may be drawn on top of the opened column.
+    const lastMember = open.get(band.members[band.members.length - 1].id)!;
+    const others = [...open.entries()]
+      .filter(([id]) => !band.members.some(m => m.id === id))
+      .map(([, p]) => p);
+    for (const o of others) {
+      const overlaps = o.x === lastMember.x && o.y > 0 && o.y <= lastMember.y;
+      expect(overlaps).toBe(false);
+    }
   });
 });

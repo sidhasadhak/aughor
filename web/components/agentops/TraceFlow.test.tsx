@@ -85,6 +85,9 @@ const drawn = () => handoff[handoff.length - 1] ?? { nodes: [], edges: [] };
  *  a bare `getAllByText` would pass just as happily if the card had vanished and only
  *  the rail were left. Scoping keeps each assertion about the surface it names. */
 const canvas = () => within(screen.getByTestId("canvas"));
+/** The rail is hidden until asked for — it is a companion to the canvas, not a frame
+ *  around it. Tests that read it open it first, the way a reader would. */
+const showRail = () => fireEvent.click(screen.getByText("Timeline"));
 const rail = () => within(screen.getByTestId("timeline-rail"));
 
 const node = (id: string, over: Partial<TimelineNode> = {}): TimelineNode => ({
@@ -377,6 +380,7 @@ describe("the timeline rail", () => {
 
   it("indexes every drawn node, so a canvas wider than the pane stays navigable", () => {
     render(<TraceFlow timeline={timeline(three)} edges={[]} />);
+    showRail();
     for (const name of ["intake", "plan", "answer"]) {
       expect(rail().getByText(name)).toBeInTheDocument();
     }
@@ -387,6 +391,7 @@ describe("the timeline rail", () => {
       <TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]}
                  events={[ev2({ span_id: "a", payload: { pick: "from-the-rail" } })]} />,
     );
+    showRail();
     expect(screen.queryByText(/from-the-rail/)).toBeNull();
 
     fireEvent.click(rail().getByText("a"));
@@ -398,6 +403,7 @@ describe("the timeline rail", () => {
       <TraceFlow timeline={timeline(three)} edges={[]}
                  events={[ev2({ kind: "tool_call", [BUILTIN_AGENT_FIELD]: "watcher" })]} />,
     );
+    showRail();
     expect(rail().getByText(/inside the platform/)).toBeInTheDocument();
     expect(rail().getByText("watcher")).toBeInTheDocument();
   });
@@ -545,10 +551,16 @@ describe("stacked nodes", () => {
     expect(cards.filter(n => n.type === "bandNode")).toHaveLength(2);
     const failed = cards.filter(n => n.type === "traceNode");
     expect(failed.map(n => n.id)).toEqual(["boom"]);
-    const xOf = (n: RFLike) => (n.position as { x: number }).x;
-    const bandXs = cards.filter(n => n.type === "bandNode").map(xOf).sort((a, b) => a - b);
-    expect(xOf(failed[0])).toBeGreaterThan(bandXs[0]);
-    expect(xOf(failed[0])).toBeLessThan(bandXs[1]);
+    // Reading order, not x alone: a flat run wraps into a block now, so "after" means
+    // further down the rows and then further along them.
+    const orderOf = (n: RFLike) => {
+      const p = n.position as { x: number; y: number };
+      return p.y * 1e6 + p.x;
+    };
+    const bandOrder = cards.filter(n => n.type === "bandNode").map(orderOf)
+      .sort((a, b) => a - b);
+    expect(orderOf(failed[0])).toBeGreaterThan(bandOrder[0]);
+    expect(orderOf(failed[0])).toBeLessThan(bandOrder[1]);
     const failedData = failed[0].data as { node: TimelineNode };
     expect(failedData.node.ok).toBe(false);
   });
