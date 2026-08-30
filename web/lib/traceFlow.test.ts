@@ -8,7 +8,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildForest, layoutForest } from "@/components/agentops/TraceFlow";
+import {
+  bandAsNode, buildForest, foldRepeats, layoutForest,
+} from "@/components/agentops/TraceFlow";
 import type { TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 const node = (id: string, over: Partial<TimelineNode> = {}): TimelineNode => ({
@@ -147,5 +149,129 @@ describe("layoutForest", () => {
     const ns = [node("a"), node("b")];
     const es = [child("a", "b")];
     expect([...forest(ns, es).entries()]).toEqual([...forest(ns, es).entries()]);
+  });
+});
+
+/* ── folding a repeated stretch ─────────────────────────────────────────────────
+ *
+ * Measured over the four longest traces on the live instance (239, 118, 104, 71 root
+ * nodes): a long run is a SHORT CYCLE repeated, not many different things. The 239-node
+ * one is `llm · llm · sql.execute · pii`, forty-eight times.
+ *
+ * That is why these test a cycle and not a stack of identical nodes. Folding consecutive
+ * IDENTICAL nodes — the obvious reading — takes 239 to 144, because the kinds interleave
+ * and no one kind ever runs more than three deep. Folding the cycle takes it to 12.
+ */
+
+/** One step of the measured cycle. */
+const step = (id: string, kind: string, name: string, over: Partial<TimelineNode> = {}) =>
+  node(id, { event_kind: kind, name, ...over });
+
+/** `reps` turns of `llm · llm · sql · pii`, the shape every long trace measured has. */
+const cycle = (reps: number): TimelineNode[] =>
+  Array.from({ length: reps }, (_, r) => [
+    step(`m${r}a`, "llm_call", "gemini-3.1-flash-lite"),
+    step(`m${r}b`, "llm_call", "gemini-3.1-flash-lite"),
+    step(`t${r}`, "tool_call", "sql.execute"),
+    step(`g${r}`, "guardrail", "pii"),
+  ]).flat();
+
+const roots = (nodes: TimelineNode[]) => buildForest(nodes, []);
+
+describe("foldRepeats", () => {
+  it("folds the measured cycle into one band", () => {
+    const items = foldRepeats(roots(cycle(12)));
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "band", period: 4, reps: 12 });
+  });
+
+  it("keeps a short run exactly as it is", () => {
+    // The median trace is 10 nodes. Folding must not touch what already fits.
+    const items = foldRepeats(roots([step("a", "llm_call", "m"), step("b", "tool_call", "t")]));
+    expect(items.map(i => i.kind)).toEqual(["node", "node"]);
+  });
+
+  it("prefers the SMALLEST period — three of `A B`, not one of `A B A B A B`", () => {
+    // A reader counting iterations means the small one.
+    const ab = Array.from({ length: 3 }, (_, r) => [
+      step(`a${r}`, "llm_call", "m"), step(`b${r}`, "tool_call", "t"),
+    ]).flat();
+    expect(foldRepeats(roots(ab))[0]).toMatchObject({ period: 2, reps: 3 });
+  });
+
+  it("never folds a stretch that is not contiguous", () => {
+    // A band occupies ONE position in a chain that means order. Gathering scattered
+    // nodes of the same kind would draw a sequence that never ran.
+    const seq = [...cycle(3), step("odd", "tool_call", "export.pptx"), ...cycle(3)];
+    const items = foldRepeats(roots(seq));
+    expect(items.map(i => i.kind)).toEqual(["band", "node", "band"]);
+    expect(items.flatMap(i => (i.kind === "band" ? i.members.map(m => m.id) : [i.node.id])))
+      .toEqual(seq.map(n => n.id));
+  });
+
+  it("preserves the run's order exactly, band or not", () => {
+    const seq = [step("head", "llm_call", "m"), ...cycle(5), step("tail", "tool_call", "t")];
+    const flat = foldRepeats(roots(seq))
+      .flatMap(i => (i.kind === "band" ? i.members.map(m => m.id) : [i.node.id]));
+    expect(flat).toEqual(seq.map(n => n.id));
+  });
+
+  it("refuses to fold two nodes into a band nobody would click", () => {
+    const items = foldRepeats(roots([step("a", "llm_call", "m"), step("a2", "llm_call", "m")]));
+    expect(items.map(i => i.kind)).toEqual(["node", "node"]);
+  });
+
+  it("folds a plain repeated node when there are enough of them", () => {
+    // The Blender case — a stack of one repeated step — falls out of the same algorithm
+    // at period 1 rather than needing a rule of its own.
+    const items = foldRepeats(roots(
+      Array.from({ length: 6 }, (_, i) => step(`m${i}`, "llm_call", "gemini"))));
+    expect(items[0]).toMatchObject({ kind: "band", period: 1, reps: 6 });
+  });
+});
+
+describe("a fold never hides a failure", () => {
+  it("draws a failed node as itself and breaks the band around it", () => {
+    // The one thing a reader is looking for must never be one click further away than
+    // everything else.
+    const seq = [...cycle(3), step("boom", "tool_call", "sql.execute", { ok: false }),
+                 ...cycle(3)];
+    const items = foldRepeats(roots(seq));
+    expect(items.map(i => i.kind)).toEqual(["band", "node", "band"]);
+    const alone = items[1];
+    expect(alone.kind === "node" && alone.node.id).toBe("boom");
+  });
+
+  it("treats an error_class as a failure even when ok is true", () => {
+    const seq = [...cycle(3), step("warned", "guardrail", "pii", { error_class: "Refused" }),
+                 ...cycle(3)];
+    const items = foldRepeats(roots(seq));
+    expect(items[1].kind === "node" && items[1].node.id).toBe("warned");
+  });
+
+  it("never puts a failure inside any band, however the run is shaped", () => {
+    const seq = [...cycle(2), step("boom", "llm_call", "gemini-3.1-flash-lite", { ok: false }),
+                 ...cycle(2)];
+    const inBands = foldRepeats(roots(seq))
+      .flatMap(i => (i.kind === "band" ? i.members : []));
+    expect(inBands.every(m => m.ok !== false && !m.error_class)).toBe(true);
+  });
+});
+
+describe("bandAsNode", () => {
+  it("sums what the whole stretch took, so a slow loop still reads as slow", () => {
+    const items = foldRepeats(roots(cycle(10)));
+    const band = items[0];
+    if (band.kind !== "band") throw new Error("expected a band");
+    // 40 members at 1ms each — the fixture's duration.
+    expect(bandAsNode(band).duration_ms).toBe(40);
+  });
+
+  it("carries an id of its own so the layout and the edge filter need no changes", () => {
+    const items = foldRepeats(roots(cycle(10)));
+    const band = items[0];
+    if (band.kind !== "band") throw new Error("expected a band");
+    expect(bandAsNode(band).id).toBe(band.id);
+    expect(bandAsNode(band).id).not.toBe(band.members[0].id);
   });
 });

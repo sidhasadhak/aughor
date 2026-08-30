@@ -43,11 +43,16 @@ vi.mock("@xyflow/react", async importOriginal => {
     nodes: RFLike[]; edges: RFLike[]; nodeTypes: Record<string, React.ComponentType<RFLike>>;
   }) => {
     handoff.push({ nodes, edges });
-    const Card = nodeTypes?.traceNode;
+    // Each node rendered through ITS OWN registered type. Hard-wiring `traceNode` here
+    // would have quietly dropped every band card the folding feature draws — a stub that
+    // renders less than the canvas does is a test that passes on a blank screen.
     return (
       <Provider>
         <div data-testid="canvas">
-          {Card ? nodes.map(n => <Card key={String(n.id)} {...n} />) : null}
+          {nodes.map(n => {
+            const Card = nodeTypes?.[String(n.type ?? "traceNode")];
+            return Card ? <Card key={String(n.id)} {...n} /> : null;
+          })}
         </div>
       </Provider>
     );
@@ -393,3 +398,123 @@ function ev2(over: Partial<SessionEvent> = {}): SessionEvent {
     ...over,
   } as SessionEvent;
 }
+
+/* ── folding a repeated stretch ─────────────────────────────────────────────────
+ *
+ * `lib/traceFlow.test.ts` proves the fold itself. These prove the component ACTS on it —
+ * the same split this file exists for, and the same defect it was written to catch: a
+ * correct pure function whose result never reaches the canvas.
+ */
+describe("repeated stretches", () => {
+  /** `reps` turns of the shape every long trace measured has. */
+  const cycle = (reps: number, tag = "x") =>
+    Array.from({ length: reps }, (_, r) => [
+      node(`${tag}m${r}a`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }),
+      node(`${tag}m${r}b`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }),
+      node(`${tag}t${r}`, { event_kind: "tool_call", name: "sql.execute" }),
+      node(`${tag}g${r}`, { event_kind: "guardrail", name: "pii" }),
+    ]).flat();
+
+  const renderCycle = (reps: number) =>
+    render(<TraceFlow timeline={timeline(cycle(reps))} edges={[]} />);
+
+  it("hands the canvas ONE card for a stretch that repeats, not forty", () => {
+    renderCycle(10);
+    expect(drawn().nodes).toHaveLength(1);
+    expect(drawn().nodes[0].type).toBe("bandNode");
+  });
+
+  it("counts a single repeated step in the singular", () => {
+    // "9 repeats of 1 steps" is the kind of line a reader trips over and a screen
+    // reader says out loud.
+    // Above the auto-group threshold, or nothing folds and there is no label to read.
+    render(<TraceFlow timeline={timeline(
+      Array.from({ length: 30 }, (_, i) => node(`m${i}`, { event_kind: "llm_call", name: "gemini" })),
+    )} edges={[]} />);
+    expect(canvas().getByLabelText("Expand 30 repeats of 1 step")).toBeInTheDocument();
+  });
+
+  it("says how many turns it stands for and what one turn is", () => {
+    // "×10" answers how many; a reader's next question is always what. A card that made
+    // them expand to find out would have moved the work rather than saved it.
+    renderCycle(10);
+    expect(canvas().getByText("×10")).toBeInTheDocument();
+    expect(canvas().getByText("40 nodes")).toBeInTheDocument();
+    expect(canvas().getAllByText("gemini-3.1-flash-lite")).toHaveLength(2);
+    expect(canvas().getByText("sql.execute")).toBeInTheDocument();
+  });
+
+  it("leaves a run that already fits completely alone", () => {
+    // The median trace measured is ten nodes. Folding what a reader can already see
+    // would be a control changing a picture nobody was struggling with.
+    render(<TraceFlow timeline={timeline([node("a"), node("b")])} edges={[]} />);
+    expect(drawn().nodes.map(n => n.type)).toEqual(["traceNode", "traceNode"]);
+  });
+
+  it("expands every node in the stack when the card is clicked", () => {
+    renderCycle(10);
+    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
+    expect(drawn().nodes).toHaveLength(40);
+    expect(drawn().nodes.every(n => n.type === "traceNode")).toBe(true);
+  });
+
+  it("offers the way back on the first card, and only there", () => {
+    renderCycle(10);
+    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
+    // One chip, not forty — the clutter this feature exists to remove.
+    expect(canvas().getAllByLabelText("Collapse these 10 repeats")).toHaveLength(1);
+  });
+
+  it("re-folds when that chip is used", () => {
+    renderCycle(10);
+    fireEvent.click(canvas().getByLabelText("Expand 10 repeats of 4 steps"));
+    fireEvent.click(canvas().getByLabelText("Collapse these 10 repeats"));
+    expect(drawn().nodes).toHaveLength(1);
+    expect(drawn().nodes[0].type).toBe("bandNode");
+  });
+
+  it("turns grouping off entirely on request, and shows every node", () => {
+    renderCycle(10);
+    fireEvent.click(screen.getByText("Grouped"));
+    expect(drawn().nodes).toHaveLength(40);
+    expect(screen.getByText("Group repeats")).toBeInTheDocument();
+  });
+
+  it("keeps the chain joined across a band", () => {
+    // The run's own `next` edges connect real nodes, so the two reaching into a folded
+    // stretch vanish with its members — leaving the band floating unless replaced.
+    const nodes = [node("head", { event_kind: "tool_call", name: "start" }), ...cycle(8)];
+    const edges = nodes.slice(0, -1).map((n, i) => edge(n.id, nodes[i + 1].id, "next"));
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = new Set(drawn().nodes.map(n => String(n.id)));
+    expect(ids.size).toBe(2);
+    for (const e of drawn().edges) {
+      expect(ids.has(String(e.source))).toBe(true);
+      expect(ids.has(String(e.target))).toBe(true);
+    }
+    expect(drawn().edges.some(e => String(e.source) === "head")).toBe(true);
+  });
+
+  it("draws a failed node as itself, never inside a stack", () => {
+    // The one thing a reader is looking for must not be one click further away than
+    // everything else.
+    // Distinct id prefixes per half: node ids are unique in a real trace (span ids),
+    // and a fixture that reuses them collides two bands onto one key.
+    const nodes = [...cycle(4, "a"), node("boom", {
+      event_kind: "tool_call", name: "sql.execute", ok: false }), ...cycle(4, "b")];
+    render(<TraceFlow timeline={timeline(nodes)} edges={[]} />);
+    const cards = drawn().nodes;
+    // Composition and POSITION, not array order: the handoff lists real nodes then
+    // bands, while what a reader sees is where each card sits.
+    expect(cards.filter(n => n.type === "bandNode")).toHaveLength(2);
+    const failed = cards.filter(n => n.type === "traceNode");
+    expect(failed.map(n => n.id)).toEqual(["boom"]);
+    const xOf = (n: RFLike) => (n.position as { x: number }).x;
+    const bandXs = cards.filter(n => n.type === "bandNode").map(xOf).sort((a, b) => a - b);
+    expect(xOf(failed[0])).toBeGreaterThan(bandXs[0]);
+    expect(xOf(failed[0])).toBeLessThan(bandXs[1]);
+    // And it is drawn as the failure it is, not as a card that merely escaped folding.
+    const failedData = failed[0].data as { node: TimelineNode };
+    expect(failedData.node.ok).toBe(false);
+  });
+});

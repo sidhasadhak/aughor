@@ -69,6 +69,9 @@ import { formatCount } from "@/lib/format";
 
 /** Card geometry. Columns clear a card; rows clear a usage block. */
 const COL_W = 260;
+/** Above this many nodes a run stops being readable end to end — measured on the live
+ *  instance, where the median trace is 10 nodes and the long ones are 71 to 239. */
+const GROUP_THRESHOLD = 24;
 const ROW_H = 138;
 
 interface FlowNode extends TimelineNode {
@@ -112,6 +115,128 @@ export function buildForest(nodes: TimelineNode[], edges: TraceFlowEdge[]): Flow
     claimed.add(child.id);
   }
   return nodes.filter(n => !claimed.has(n.id)).map(n => byId.get(n.id)!).filter(Boolean);
+}
+
+/* ── folding a repeated stretch ───────────────────────────────────────────────────
+ *
+ * Measured before any of this was written, over the four longest traces on the live
+ * instance: 239, 118, 104 and 71 root nodes. A long run is not long because it does many
+ * DIFFERENT things — it is a short cycle repeated. The 239-node trace is
+ * `llm · llm · sql.execute · pii`, about forty-eight times over.
+ *
+ * That measurement chose the design. Stacking *consecutive identical* nodes — the
+ * obvious reading of the request — collapses 239 to 144, which is still a sequence
+ * nobody can see the end of: the runs of one kind are only ever two or three long
+ * because the kinds interleave. Folding the repeated CYCLE collapses the same trace to
+ * 12 cards, and every long trace measured lands between 9 and 12.
+ *
+ * A band is a claim about the run, so it obeys the same rule every other claim on this
+ * canvas does — it may compress the picture, never change it:
+ *
+ * * **Contiguous only.** A band occupies one position in a chain that means order.
+ *   Gathering scattered nodes of the same kind would draw a sequence that never ran.
+ * * **A failure is never folded away.** Any node that did not succeed breaks the run and
+ *   is drawn as itself. The alternative — a band with a small "1 failed" on it — puts
+ *   the one thing a reader is looking for one click further away than everything else.
+ */
+
+/** What makes two nodes the same STEP for pattern matching: their face and their name.
+ *  Never duration — two calls to one model are the same step at any speed. */
+function stepSignature(node: TimelineNode): string {
+  return `${node.event_kind || node.kind || ""}\u0000${node.name || ""}`;
+}
+
+function succeeded(node: TimelineNode): boolean {
+  return node.ok !== false && !node.error_class;
+}
+
+/** The longest cycle worth looking for. Measured: the useful period is 5. */
+const MAX_PERIOD = 8;
+/** Two repetitions of a single node is not a stack worth a click. */
+const MIN_BAND_NODES = 4;
+
+export interface FlowBand {
+  kind: "band";
+  id: string;
+  /** The nodes it stands for, in order — `period × reps` of them. */
+  members: FlowNode[];
+  period: number;
+  reps: number;
+}
+
+export type FlowItem = { kind: "node"; node: FlowNode } | FlowBand;
+
+/**
+ * The root sequence with its repeated stretches folded. Pure, and exported because this
+ * is where the whole feature can be wrong — jsdom draws zero edges, so nothing about a
+ * canvas can catch it.
+ */
+export function foldRepeats(roots: FlowNode[]): FlowItem[] {
+  const sig = roots.map(stepSignature);
+  const items: FlowItem[] = [];
+  let i = 0;
+
+  while (i < roots.length) {
+    let found: { period: number; reps: number } | null = null;
+
+    // A failure anchors the sequence: it is drawn as itself, and no band may start on it
+    // or run through it.
+    if (succeeded(roots[i])) {
+      for (let period = 1; period <= MAX_PERIOD; period++) {
+        if (i + 2 * period > roots.length) break;
+        const same = (a: number, b: number) => {
+          for (let k = 0; k < period; k++) {
+            if (sig[a + k] !== sig[b + k]) return false;
+            if (!succeeded(roots[a + k]) || !succeeded(roots[b + k])) return false;
+          }
+          return true;
+        };
+        if (!same(i, i + period)) continue;
+        let reps = 2;
+        while (i + (reps + 1) * period <= roots.length && same(i, i + reps * period)) reps++;
+        // The smallest ACCEPTABLE period wins — the two conditions are one rule, and
+        // splitting them is how the first draft of this failed: the measured cycle
+        // `llm · llm · sql · pii` matches at period 1 (the two model calls) for a band of
+        // two, which is under the minimum. Stopping at the smallest MATCH rejected that
+        // and never tried period 4, so the 239-node trace folded into nothing. Keep
+        // widening until a period earns a band; `A B A B A B` still folds as three of
+        // `A B`, because period 2 is acceptable and reached first.
+        if (period * reps >= MIN_BAND_NODES) {
+          found = { period, reps };
+          break;
+        }
+      }
+    }
+
+    if (found) {
+      const { period, reps } = found;
+      const members = roots.slice(i, i + period * reps);
+      items.push({ kind: "band", id: `band:${members[0].id}`, members, period, reps });
+      i += period * reps;
+    } else {
+      items.push({ kind: "node", node: roots[i] });
+      i += 1;
+    }
+  }
+  return items;
+}
+
+/** A band, as the one node the canvas draws in its place.
+ *
+ *  Synthetic on purpose: `layoutForest` and the edge filter both key on node ids, so a
+ *  band that IS a node needs neither of them changed — the members simply stop being
+ *  drawn, and their edges fall out of the existing `drawn` filter on their own.
+ */
+export function bandAsNode(band: FlowBand): FlowNode {
+  const first = band.members[0];
+  const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
+  return {
+    ...first,
+    id: band.id,
+    name: `${band.reps} × ${band.period} step${band.period === 1 ? "" : "s"}`,
+    duration_ms: total,
+    children: [],
+  };
 }
 
 /** `{id: {col, row}}` for every node. Pure, and exported so the layout is testable
@@ -197,6 +322,9 @@ interface CardData {
    *  on every `final_response` row measured. */
   answer?: string;
   origin?: RunOrigin;
+  /** Set on the FIRST node of an expanded band — the way back. On that one card only:
+   *  a hundred identical "collapse" chips is the clutter this feature exists to remove. */
+  regroup?: { reps: number; onCollapse: () => void };
 }
 
 /** The body a face shows. Each branch prints only fields that face genuinely has. */
@@ -338,6 +466,19 @@ function NodeCard({ data }: { data: CardData }) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
 
+      {data.regroup && (
+        <Button
+          variant="ghost" size="xs" className="nodrag aug-fs-xs"
+          aria-label={`Collapse these ${data.regroup.reps} repeats`}
+          onClick={e => { e.stopPropagation(); data.regroup!.onCollapse(); }}
+          style={{ width: "100%", justifyContent: "flex-start", gap: 5, height: "auto",
+                   padding: "3px 9px", color: "var(--chart-3)",
+                   borderBottom: "1px solid var(--b1)", borderRadius: 0 }}>
+          <Icon name="layers" size={11} />
+          collapse ×{data.regroup.reps}
+        </Button>
+      )}
+
       <FaceHeader face={face} title={node.name} duration={node.duration_ms} failed={failed} />
 
       <FaceBody data={data} />
@@ -423,7 +564,89 @@ function NodeCard({ data }: { data: CardData }) {
   );
 }
 
-const NODE_TYPES = { traceNode: NodeCard };
+/** The data a band card is drawn from. */
+interface BandData {
+  band: FlowBand;
+  faces: RunFace[];
+  onExpand: () => void;
+  [key: string]: unknown;
+}
+
+/**
+ * A folded stretch, drawn as one card that says what it stands for.
+ *
+ * Deliberately shows the SHAPE of one turn rather than a count alone: "×20" answers how
+ * many, and a reader's next question is always what — a card that made them expand to
+ * find out would have moved the work rather than saved it. The stacked edges behind it
+ * are the affordance the request asked for; they also say, without a word, that this is
+ * several nodes and not one.
+ */
+function BandCard({ data }: { data: BandData }) {
+  const { band, faces, onExpand } = data;
+  const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
+  const shape = band.members.slice(0, band.period);
+
+  return (
+    <div style={{ position: "relative", width: CARD_W }}>
+      {/* Two offset plates behind the face, the way a deck of identical cards reads.
+          Inert: `pointerEvents: none`, so the whole target stays the card itself. */}
+      {[2, 1].map(depth => (
+        <div key={depth} aria-hidden style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          transform: `translate(${depth * 5}px, ${depth * 5}px)`,
+          background: "var(--bg-2)", border: "1px solid var(--border)",
+          borderRadius: "var(--r-chip)", opacity: depth === 1 ? 0.7 : 0.4,
+        }} />
+      ))}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Expand ${band.reps} repeats of ${band.period} ${
+          band.period === 1 ? "step" : "steps"}`}
+        onClick={onExpand}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onExpand(); } }}
+        style={{
+          position: "relative", width: CARD_W, cursor: "pointer",
+          background: "var(--bg-2)",
+          borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+          borderLeft: "3px solid var(--chart-3)",
+          borderRadius: "var(--r-chip)", overflow: "hidden",
+        }}>
+        <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 9px",
+          borderBottom: "1px solid var(--b1)" }}>
+          <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--chart-3)" }}>
+            ×{band.reps}
+          </span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            repeated {band.period === 1 ? "step" : `${band.period} steps`}
+          </span>
+          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t4)" }}>
+            {band.members.length} nodes
+          </span>
+        </div>
+        <div style={{ padding: "7px 9px", display: "flex", flexDirection: "column", gap: 3 }}>
+          {shape.map((m, i) => (
+            <div key={m.id} className="aug-fs-xs" style={{ display: "flex", gap: 6,
+              alignItems: "center", color: "var(--t3)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)",
+                flexShrink: 0, background: FACE_META[faces[i]].color }} />
+              {m.name || faces[i]}
+            </div>
+          ))}
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+            {ms(total)} total · click to expand
+          </div>
+        </div>
+        <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      </div>
+    </div>
+  );
+}
+
+const NODE_TYPES = { traceNode: NodeCard, bandNode: BandCard };
 
 /* ── the rail ────────────────────────────────────────────────────────────────── */
 
@@ -558,13 +781,52 @@ export function TraceFlow({
   /** The rail gives up its 208px on demand. On a narrow pane that is the difference
    *  between a canvas and a column of clipped cards. */
   const [railOpen, setRailOpen] = useState(true);
+  /** Repeated stretches folded into one card each.
+   *
+   *  ON by default only for a run long enough to need it — the median trace measured is
+   *  ten nodes, and folding what already fits on screen would be a control that changes
+   *  a picture nobody was struggling with. */
+  const [grouped, setGrouped] = useState(
+    () => (timeline.nodes ?? []).length > GROUP_THRESHOLD);
+  /** Bands the reader has opened. Ids, not indices: folding is recomputed whenever the
+   *  run changes, and an index would reopen whatever landed in that slot. */
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const origin = useMemo(() => originOf(events), [events]);
 
-  const { rfNodes, rfEdges, nested, drawnNodes } = useMemo(() => {
+  const { rfNodes, rfEdges, nested, drawnNodes, bandCount, foldedAway } = useMemo(() => {
     const forest = buildForest(timeline.nodes ?? [], edges ?? []);
-    const pos = layoutForest(forest);
+
+    // A collapsed band stands in the layout as ONE synthetic node, so neither
+    // `layoutForest` nor the edge filter below needs to know bands exist: its members
+    // are simply not in `drawn`, and their edges fall out on their own.
+    const items: FlowItem[] = grouped
+      ? foldRepeats(forest)
+      : forest.map(node => ({ kind: "node" as const, node }));
+    const bands: FlowBand[] = [];
+    const laidOut: FlowNode[] = [];
+    for (const item of items) {
+      if (item.kind === "node") laidOut.push(item.node);
+      else if (expanded.has(item.id)) laidOut.push(...item.members);
+      else { bands.push(item); laidOut.push(bandAsNode(item)); }
+    }
+
+    const pos = layoutForest(laidOut);
     const drawn = new Set(pos.keys());
+
+    // The way back, on the first card of each opened band and nowhere else.
+    const regroupAt = new Map<string, { reps: number; onCollapse: () => void }>();
+    for (const item of items) {
+      if (item.kind !== "band" || !expanded.has(item.id)) continue;
+      regroupAt.set(item.members[0].id, {
+        reps: item.reps,
+        onCollapse: () => setExpanded(cur => {
+          const next = new Set(cur);
+          next.delete(item.id);
+          return next;
+        }),
+      });
+    }
 
     const rfNodes: RFNode[] = (timeline.nodes ?? [])
       .filter(n => drawn.has(n.id))
@@ -584,6 +846,7 @@ export function TraceFlow({
             runUsage: timeline.usage ?? null,
             answer,
             origin,
+            regroup: regroupAt.get(n.id),
             onToggle: () => setOpenId(cur => (cur === n.id ? null : n.id)),
           } satisfies CardData,
           draggable: true,
@@ -592,6 +855,47 @@ export function TraceFlow({
           zIndex: open ? 10 : 0,
         };
       });
+
+    for (const band of bands) {
+      const p = pos.get(band.id);
+      if (!p) continue;
+      rfNodes.push({
+        id: band.id,
+        type: "bandNode",
+        position: { x: p.col * COL_W, y: p.row * ROW_H },
+        data: {
+          band,
+          faces: band.members.slice(0, band.period).map(faceOf),
+          onExpand: () => setExpanded(cur => new Set(cur).add(band.id)),
+        } satisfies BandData,
+        draggable: true,
+      });
+    }
+
+    // The chain across a band. The run's own `next` edges connect real nodes, so the two
+    // that reached into a folded stretch vanish with its members — leaving the band
+    // floating. These replace exactly those, and carry no latency label: the wait either
+    // side of twenty iterations is not one number.
+    const anchors = items.map(item =>
+      item.kind === "node"
+        ? { in: item.node.id, out: item.node.id }
+        : expanded.has(item.id)
+          ? { in: item.members[0].id, out: item.members[item.members.length - 1].id }
+          : { in: item.id, out: item.id });
+    const bridged: RFEdge[] = [];
+    for (let i = 0; i + 1 < items.length; i++) {
+      const spansBand = items[i].kind === "band" || items[i + 1].kind === "band";
+      if (!spansBand) continue;
+      const from = anchors[i].out;
+      const to = anchors[i + 1].in;
+      if (!drawn.has(from) || !drawn.has(to)) continue;
+      bridged.push({
+        id: `band-next-${from}-${to}`,
+        source: from, target: to, animated: false,
+        style: { stroke: "var(--b2)" },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--b2)" },
+      });
+    }
 
     const rfEdges: RFEdge[] = (edges ?? [])
       .filter(e => drawn.has(e.from) && drawn.has(e.to))
@@ -618,11 +922,14 @@ export function TraceFlow({
       }));
 
     return {
-      rfNodes, rfEdges,
+      rfNodes, rfEdges: [...rfEdges, ...bridged],
       nested: forest.some(n => n.children.length > 0),
       drawnNodes: (timeline.nodes ?? []).filter(n => drawn.has(n.id)),
+      bandCount: bands.length,
+      foldedAway: bands.reduce((n, b) => n + b.members.length - 1, 0),
     };
-  }, [timeline.nodes, timeline.usage, edges, events, openId, answer, origin]);
+  }, [timeline.nodes, timeline.usage, edges, events, openId, answer, origin,
+      grouped, expanded]);
 
   /**
    * Re-fit when the RUN changes.
@@ -680,8 +987,34 @@ export function TraceFlow({
             Waterfall shows the same nodes against time.
           </div>
         )}
+        {/* Grouping is offered only when there is something to group — a control that
+            reports "0 stacks" on a six-node run is a question the reader did not have. */}
+        {(bandCount > 0 || expanded.size > 0 || (drawnNodes.length > GROUP_THRESHOLD)) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+            {grouped && foldedAway > 0 && (
+              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                {formatCount(foldedAway)} repeats folded
+              </span>
+            )}
+            {grouped && expanded.size > 0 && (
+              <Button variant="ghost" size="xs" className="aug-fs-xs"
+                style={{ color: "var(--chart-3)" }}
+                onClick={() => setExpanded(new Set())}>
+                Collapse all
+              </Button>
+            )}
+            <Button variant="ghost" size="xs" className="aug-fs-xs"
+              style={{ color: grouped ? "var(--chart-3)" : "var(--t3)" }}
+              aria-pressed={grouped}
+              onClick={() => { setGrouped(g => !g); setExpanded(new Set()); }}>
+              <Icon name="layers" size={11} />
+              {grouped ? "Grouped" : "Group repeats"}
+            </Button>
+          </div>
+        )}
         <Button variant="ghost" size="xs" className="aug-fs-xs"
-          style={{ marginLeft: "auto", color: "var(--t3)" }}
+          style={{ marginLeft: bandCount > 0 || expanded.size > 0 ? undefined : "auto",
+                   color: "var(--t3)" }}
           onClick={() => setRailOpen(o => !o)}>
           {railOpen ? "Hide timeline" : "Timeline"}
         </Button>
