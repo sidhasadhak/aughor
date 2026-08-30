@@ -3411,6 +3411,49 @@ export interface SlackBotSummary {
   bot_user_id: string;
 }
 
+/** The Slack app manifest to paste at api.slack.com, plus the steps that follow it.
+ *
+ *  Rendered by the SERVER, never assembled here: the scopes and socket-mode settings have
+ *  to match what the running bot actually does, and a manifest a client re-types from a
+ *  README drifts from the code the first time either changes. */
+export interface SlackManifest {
+  manifest: Record<string, unknown>;
+  instructions: string[];
+}
+
+export async function getSlackBotManifest(params: {
+  name?: string; description?: string; agentId?: string; agentView?: boolean;
+}): Promise<SlackManifest> {
+  const qs = new URLSearchParams();
+  if (params.name) qs.set("name", params.name);
+  if (params.description) qs.set("description", params.description);
+  if (params.agentId) qs.set("agent_id", params.agentId);
+  if (params.agentView) qs.set("agent_view", "true");
+  const res = await fetch(`${getApiBase()}/slack-bots/manifest?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Could not render the manifest (${res.status})`);
+  return res.json();
+}
+
+/** Create a bot record. The server VERIFIES every credential against Slack before the
+ *  record exists — a bot stored with a bad token is a socket that fails to open at 03:00
+ *  with nobody watching — so a rejection here is Slack's answer, not a local guess. */
+export async function createSlackBot(body: {
+  name: string; agent_id?: string; connection_id?: string;
+  bot_token: string; app_token: string; signing_secret: string; agent_view?: boolean;
+}): Promise<SlackBotSummary> {
+  const res = await fetch(`${getApiBase()}/slack-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    // The server's own reason, verbatim — "invalid_auth" and "missing credential(s)" call
+    // for different fixes and a generic message would hide which one happened.
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack bot (${res.status})`);
+  }
+  return res.json();
+}
+
 /** The bots an automation may post AS. Returns [] when the plane is off (404), so a
  *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
  *  uses for the same reason. */
