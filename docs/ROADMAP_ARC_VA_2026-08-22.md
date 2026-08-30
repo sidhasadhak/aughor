@@ -583,6 +583,21 @@ Ship the broker plus two adapters; the rest is content.
 else's* tools; VA-11 decides how we get permission to. Deciding the second before the
 first would set the posture by accident.
 
+> ⚠️ **RE-SCOPED 2026-08-30 by `docs/LANGFLOW_STUDY_2026-08-30.md` — read it before starting.**
+> Studying Langflow (asked for as a workflow builder) turned up the answer to *this* wave
+> instead: **Langflow does not solve OAuth integrations — it outsources them.** Its own Google
+> OAuth component was deprecated in 1.4.0 and its docs route to **Composio**, keyed by an API
+> key, with service authentication "managed through the Composio platform". The category —
+> Composio, and **Arcade**, which appears in the user's own integrations screenshots — is a
+> connector runtime that custodies per-user tokens and exposes tools **over MCP**.
+>
+> That makes **most of deliverable 2 and all of deliverable 4 a BUY, not a build**: the OAuth
+> broker and the forty adapters are that product's whole business, and reaching them is
+> **VA-9d plus a connection record**, not a new subsystem. What stays ours is the user-scoped
+> `Connection` and the catalog surface — the token may live with the vendor, the attribution
+> may not. **One policy question gates the entire shape: is a third-party custodian of your
+> users' Gmail/Slack tokens acceptable?** If no, this reverts to the build above.
+
 ---
 
 ### VA-4 — Automations dataflow + the run canvas — **UNPARKED and BUILT 2026-08-29**
