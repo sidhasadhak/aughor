@@ -191,3 +191,21 @@ def test_an_https_override_makes_slack_oauth_available_again(client):
         "client_id": "c", "client_secret": "s",
         "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
     assert _slack(client)["oauth_ready"] is True
+
+
+def test_a_stored_callback_that_cannot_work_is_not_readiness(client):
+    """The flaw the user's own screen exposed: their stored callback was
+    `https://<workspace>.slack.com/oauth/callback`, saved before the domain rule existed.
+    Readiness looked only at the scheme, saw `https://`, and would have gone on offering
+    the button that cannot open. It asks the validator now, so the two cannot disagree."""
+    from aughor.integrations.models import ProviderApp
+    from aughor.integrations.store import save_app
+
+    # Written directly: the route refuses this now, and the point is a record that
+    # PREDATES the rule.
+    save_app(ProviderApp(id="slack", client_id="c", client_secret="s",
+                         redirect_uri="https://luxexperience-crew.slack.com/oauth/callback"))
+
+    slack = _slack(client)
+    assert slack["oauth_ready"] is False
+    assert slack["alt_door"] == "slack_app"

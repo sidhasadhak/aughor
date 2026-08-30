@@ -52,8 +52,13 @@ def _oauth_ready(provider, app, request) -> bool:
     """
     if not provider.https_only:
         return True
-    callback = (app.redirect_uri if app else "") or _callback_uri(request)
-    return callback.startswith("https://")
+    stored = (app.redirect_uri if app else "") or ""
+    # A stored callback that cannot work is not readiness — it is a record written before
+    # these rules existed, and treating its `https://` as proof would send a fresh install
+    # back to the button that cannot open.
+    if stored and _redirect_problem(provider, stored):
+        return False
+    return (stored or _callback_uri(request)).startswith("https://")
 
 
 # ── catalog ──────────────────────────────────────────────────────────────────────
@@ -119,6 +124,34 @@ def _provider_domains(provider) -> set[str]:
             for u in (provider.authorize_url, provider.token_url, provider.revoke_url) if u}
 
 
+def _redirect_problem(provider, uri: str) -> str:
+    """Why this callback cannot work, or "" when it can.
+
+    One rule-set, asked by two callers: the save (which refuses) and `_oauth_ready`
+    (which routes). Split out after the readiness check was fooled by a STORED callback
+    that predates these rules — it saw `https://` and called the deployment ready, while
+    the address itself was the provider's own. A readiness that does not ask the same
+    question as the validator is a second opinion, and the two will disagree.
+    """
+    if not uri:
+        return ""
+    if not uri.startswith(("http://", "https://")):
+        return "the callback must be an absolute http:// or https:// URL"
+    if not uri.endswith("/oauth/callback"):
+        return ("the callback must end with /oauth/callback — that is the only route "
+                "that can complete the exchange")
+    if provider.https_only and uri.startswith("http://"):
+        return (f"{provider.name} refuses an http:// redirect URL, localhost included — "
+                "register an https:// address")
+    from urllib.parse import urlparse
+    host = urlparse(uri).netloc
+    if _own_domain(host) in _provider_domains(provider):
+        return (f"'{host}' is {provider.name}'s own address. The callback is where "
+                f"{provider.name} sends the browser BACK to Aughor, so it must be an "
+                "address that reaches THIS API over HTTPS — a tunnel to it is enough.")
+    return ""
+
+
 def _check_redirect(provider, uri: str) -> str:
     """An authored callback, or a sentence saying why it cannot be one.
 
@@ -129,29 +162,9 @@ def _check_redirect(provider, uri: str) -> str:
     is going to be rejected either way.
     """
     uri = uri.strip()
-    if not uri:
-        return ""
-    if not uri.startswith(("http://", "https://")):
-        raise HTTPException(422, "the callback must be an absolute http:// or https:// URL")
-    if not uri.endswith("/oauth/callback"):
-        raise HTTPException(422, "the callback must end with /oauth/callback — that is the "
-                                 "only route that can complete the exchange")
-    if provider.https_only and uri.startswith("http://"):
-        raise HTTPException(422, f"{provider.name} refuses an http:// redirect URL, "
-                                 "localhost included — register an https:// address")
-    # The callback is where the provider sends the browser BACK TO THIS API. Pointing it
-    # at the provider's own domain is the mistake this field invites — a workspace URL is
-    # the address a person has in hand when they are asked for "the Slack URL" — and it
-    # fails silently: consent succeeds, the provider redirects to itself, and nothing
-    # ever reaches the exchange. Found live, with a stored
-    # `https://<workspace>.slack.com/oauth/callback`.
-    from urllib.parse import urlparse
-    host = urlparse(uri).netloc
-    if _own_domain(host) in _provider_domains(provider):
-        raise HTTPException(422,
-            f"'{host}' is {provider.name}'s own address. The callback is where "
-            f"{provider.name} sends the browser BACK to Aughor, so it must be an address "
-            "that reaches THIS API over HTTPS — a tunnel to it is enough.")
+    problem = _redirect_problem(provider, uri)
+    if problem:
+        raise HTTPException(422, problem)
     return uri
 
 
