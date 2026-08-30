@@ -25,10 +25,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from aughor.automations.dataflow import alias_for, collect_refs, parse_ref
+from aughor.automations.dataflow import (
+    GUARD_SKIP, alias_for, collect_refs, effect_refs, guard_clauses, parse_ref,
+    render_clause,
+)
 
 
-def _condition_label(cond: Any) -> str:
+def condition_label(cond: Any) -> str:
+    """One condition, in the words the canvas uses.
+
+    Public since B2: a dry run describes conditions instead of evaluating them, and the
+    trigger node and the preview must not word the same condition differently.
+    """
     kind = getattr(cond, "kind", "")
     cfg = getattr(cond, "config", {}) or {}
     if kind == "schedule":
@@ -60,7 +68,7 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "type": "trigger",
         "label": "When",
         "detail": f" {'AND' if logic == 'all' else 'OR'} ".join(
-            _condition_label(c) for c in conditions) or "manual",
+            condition_label(c) for c in conditions) or "manual",
     })
 
     outcomes = list(getattr(run, "effects", []) or []) if run is not None else []
@@ -77,10 +85,18 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             # bound method is truthy — so an `or` fallback silently never ran and the
             # method's repr carried the whole config, `bot_token` included, into a UI
             # payload. Caught by the no-spill test. Only the allowlist below may label.
-            "detail": _effect_detail(effect),
+            "detail": effect_detail(effect),
         }
         # VA-9b — whose work this step is. On the STRUCTURE graph too, because "which
         # agent will act" is part of the design, not only of a run.
+        # W1 — the guard, as sentences. On the structure graph too: whether a step will
+        # run at all is a design fact, and a canvas that omits it draws a chain that
+        # always fires. `render_clause` renders reference PATHS and authored literals
+        # only, never a resolved value — the no-spill rule this module already keeps.
+        clauses = guard_clauses(effect)
+        if clauses:
+            node["when"] = [render_clause(c) for c in clauses]
+            node["when_logic"] = getattr(effect, "when_logic", "all") or "all"
         acting = (getattr(effect, "agent_id", "") or getattr(automation, "agent_id", "") or "")
         if acting:
             node["agent_id"] = acting
@@ -89,6 +105,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             o = outcomes[i]
             node["status"] = getattr(o, "status", "")
             node["message"] = getattr(o, "message", "")
+            # W1 — WHICH KIND of skip. A step held back by its own guard is the design
+            # working; a step skipped for missing upstream data is something breaking,
+            # and they are the same `skipped` status. Read off the GUARD_SKIP constant
+            # the engine writes rather than sniffed out of the prose: a matching key
+            # that quietly stops matching is how a guard goes blind.
+            if node["status"] == "skipped":
+                node["guarded"] = str(node["message"]).startswith(GUARD_SKIP)
             # VA-4c — which step was slow, and how many attempts it took. The run's single
             # duration could not answer either.
             node["duration_ms"] = getattr(o, "duration_ms", 0.0) or 0.0
@@ -109,9 +132,16 @@ def build_graph(automation: Any, run: Any = None) -> dict:
                       "to": alias, "type": "sequence"})
 
         # data: one edge per binding, labelled with the key it carries.
-        for ref in collect_refs(getattr(effect, "config", {}) or {}):
+        #
+        # W1 — `effect_refs`, so a guard's references draw too. A guard reads the chain
+        # exactly as a param does, and an arrow the engine follows that the picture omits
+        # is the disagreement this module exists to prevent. Marked `guard` so the canvas
+        # can say WHICH: this edge decides whether the step runs, it does not fill a field.
+        param_refs = collect_refs(getattr(effect, "config", {}) or {})
+        for n, ref in enumerate(effect_refs(effect)):
             source, key = parse_ref(ref)
-            edges.append({"from": source, "to": alias, "type": "data", "label": key})
+            edges.append({"from": source, "to": alias, "type": "data", "label": key,
+                          "guard": n >= len(param_refs)})
 
     out = {
         "nodes": nodes,
@@ -140,9 +170,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
     return out
 
 
-def _effect_detail(effect: Any) -> str:
+def effect_detail(effect: Any) -> str:
     """A short, honest label for what this step targets — never the whole config, which
-    can carry a message body or a credential-shaped value."""
+    can carry a message body or a credential-shaped value.
+
+    Public since B2: a dry run reports what each step WOULD target, and this allowlist is
+    the vetted way to name it. A second labeller would be a second chance to spill.
+    """
     cfg = getattr(effect, "config", {}) or {}
     for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
                 "trigger_id", "channel"):

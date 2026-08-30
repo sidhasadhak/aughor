@@ -3414,12 +3414,21 @@ export interface SlackBotSummary {
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
  *  mirrored: a hand-copied vocabulary rots in the worst direction, and the server's
  *  `PUBLISHED_KEYS` is the same table `validate_chain` refuses against. */
-export async function getAutomationVocabulary(): Promise<
-  Record<string, { publishes: string[] | null; bindable: string[] }>
-> {
+export interface GuardOp { op: string; label: string; unary: boolean }
+
+export interface AutomationVocabulary {
+  kinds: Record<string, { publishes: string[] | null; bindable: string[] }>;
+  /** W1 — every comparison the engine can make, with the word each READS as and
+   *  whether it takes a second value. `unary` is what tells a form to hide the right
+   *  field rather than ask for a value that is then ignored. */
+  guardOps: GuardOp[];
+}
+
+export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
   const res = await fetch(`${getApiBase()}/automations/vocabulary`);
   if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
-  return (await res.json()).kinds;
+  const body = await res.json();
+  return { kinds: body.kinds ?? {}, guardOps: body.guard_ops ?? [] };
 }
 
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
@@ -3549,6 +3558,18 @@ export async function getSlackBots(): Promise<SlackBotSummary[]> {
 }
 
 export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
+
+/** W1 — one comparison in a step's guard. Either side may be a literal or a
+ *  `{"$from": "step1.answer"}` binding, resolved against the same chain context the
+ *  step's params are. The operators are FETCHED (`getAutomationVocabulary`), never
+ *  listed here: a picker offering an operator the engine cannot evaluate fails at
+ *  09:00, on a schedule, with nobody watching. */
+export interface GuardClause {
+  left: unknown;
+  op: string;
+  right?: unknown;
+}
+
 export interface AutoEffect {
   kind: EffectKind;
   /** VA-4a — this step's name, which `{"$from": "<alias>.<key>"}` bindings point AT.
@@ -3556,6 +3577,19 @@ export interface AutoEffect {
    *  automation written before VA-4a has none. Declared here because a client that
    *  cannot see the field is a client that drops it on save. */
   alias?: string;
+  /** W1 — run this step ONLY IF the guard holds. Empty/absent = always, which is every
+   *  automation written before W1.
+   *
+   *  Declared for the reason `alias` above is, which this repo has already paid for
+   *  once: the authoring form rebuilt each effect as `{kind, config}` and silently
+   *  dropped the field it could not see, unwiring the chain it had just saved. Spread,
+   *  never rebuild.
+   *
+   *  Called **"Only if" on every surface** — the trigger node is already labelled
+   *  "When" on the canvas, and two Whens in one picture is a collision a reader pays
+   *  for. `when` is the wire's word; the boundary is where it is translated. */
+  when?: GuardClause[];
+  when_logic?: "all" | "any";
   config: Record<string, unknown>;
 }
 
@@ -3684,6 +3718,14 @@ export interface AutomationGraphNode {
   agent_id?: string; delegated?: boolean;
   duration_ms?: number; attempts?: number; investigation_id?: string;
   fired?: string[]; at?: string;
+  /** W1 — the step's guard, already rendered as sentences by the server (paths and
+   *  authored literals only, never a value it read). Present on the STRUCTURE graph
+   *  too: whether a step will run at all is a design fact. */
+  when?: string[]; when_logic?: string;
+  /** W1 — this `skipped` step was held by its own GUARD, not by missing upstream data.
+   *  Same status, opposite meanings: one is the design working, the other is something
+   *  breaking. */
+  guarded?: boolean;
 }
 
 export interface AutomationRunSummary {
@@ -3692,12 +3734,48 @@ export interface AutomationRunSummary {
 }
 export interface AutomationGraphEdge {
   from: string; to: string; type: string; label?: string;
+  /** W1 — this data edge feeds a GUARD: it decides whether the step runs, rather than
+   *  filling one of its fields. */
+  guard?: boolean;
 }
 export interface AutomationGraphData {
   nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
   mode: string; name?: string; run_missing?: boolean;
   run_outcome?: string; run_reason?: string; run_at?: string;
   agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
+  /** B2 — this graph is a PREVIEW: nothing in it happened. */
+  dry_run?: boolean;
+}
+
+/** B2 — what this design WOULD do, dispatching nothing.
+ *
+ *  Returns the run AND the graph, because a dry run is never stored: there is no id for
+ *  `getAutomationGraph` to look up afterwards. The graph is the same shape an execution
+ *  view already renders, which is the whole reason a preview returns an `AutomationRun`
+ *  rather than a report of its own. */
+export interface AutomationDryRun {
+  run: AutomationRun;
+  graph: AutomationGraphData;
+}
+
+/** Preview a DRAFT — the unsaved one in the editor. The payload is `updatePayload`'s, so
+ *  a preview previews exactly what Save would send, never a second assembly of it. */
+export async function dryRunAutomationDraft(body: NewAutomation): Promise<AutomationDryRun> {
+  const res = await fetch(`${getApiBase()}/automations/dry-run`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
+  return parsed;
+}
+
+/** Preview a STORED automation, exactly as it sits. */
+export async function dryRunAutomation(id: string): Promise<AutomationDryRun> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/dry-run`, { method: "POST" });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
+  return parsed;
 }
 
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {

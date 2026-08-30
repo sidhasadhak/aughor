@@ -495,12 +495,20 @@ async def _boot_canvas_explorers() -> None:
     """Background task: resume canvas explorers from saved state (via the ONE
     kernel-supervised spawn path)."""
     from aughor.canvas.store import get_canvas
-    from aughor.explorer.store import canvas_has_state, canvas_ids_with_state
+    from aughor.explorer.store import canvas_ids_with_state, canvas_needs_resume
     from aughor.routers._shared import spawn_explorer
 
     canvas_states = canvas_ids_with_state()
     for canvas_id in canvas_states:
-        if not canvas_has_state(canvas_id):
+        # Having state is not the same as having unfinished work. `spawn_explorer`'s own
+        # guard only refuses an exploration that is CURRENTLY RUNNING, so on a fresh boot
+        # it waves every saved canvas through — and a `complete` one re-explores from
+        # scratch, spending model tokens on every restart. The connection branch below
+        # has skipped terminal phases for exactly this reason since it was fixed once
+        # already; this is the same check, from the same place.
+        if not canvas_needs_resume(canvas_id):
+            logger.info("Canvas explorer not resumed for %s — its exploration already "
+                        "finished; start a new one explicitly to re-explore", canvas_id)
             continue
         try:
             canvas = get_canvas(canvas_id)
@@ -539,8 +547,8 @@ async def _kernel_boot_recovery() -> None:
             if canvas_id:
                 # Canvas explorers are also resumed by _boot_canvas_explorers;
                 # the spawn guard + idempotency key make double-resume a no-op.
-                from aughor.explorer.store import canvas_has_state
-                if not canvas_has_state(canvas_id):
+                from aughor.explorer.store import canvas_needs_resume
+                if not canvas_needs_resume(canvas_id):
                     continue
                 tables = (job.get("payload") or {}).get("tables_filter")
                 res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
@@ -549,8 +557,7 @@ async def _kernel_boot_recovery() -> None:
                 # Aggregate phase — the bare state reads 'pending' forever on a
                 # multi-schema connection, so recovery kept re-spawning explorers
                 # for explorations that had already completed per schema.
-                phase = (_expl_store.load_aggregate(conn_id) or {}).get("phase", "pending")
-                if phase in ("complete", "failed"):
+                if not _expl_store.is_unfinished(_expl_store.load_aggregate(conn_id)):
                     continue
                 res = await spawn_explorer(
                     conn_id,

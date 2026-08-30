@@ -41,15 +41,18 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
-import { EFFECT_KINDS, newCondition, newEffect } from "@/components/automations/AutomationRows";
+import {
+  EFFECT_KINDS, newCondition, newEffect, useAutomationVocabulary,
+} from "@/components/automations/AutomationRows";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
   getAutomationGraph, getAutomationVocabulary,
-  type Automation, type AutomationGraphData,
+  type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
-  aliasFor, applyConnect, clearBinding, draftToFlow, type Vocabulary,
+  aliasFor, applyConnect, clearBinding, draftToFlow, GUARD_FIELD, guardSentences,
+  type Vocabulary,
 } from "@/lib/automationFlow";
 
 export type { AutomationGraphData };
@@ -84,7 +87,10 @@ function ms(n: number): string {
 function StepNode({ data }: { data: Record<string, unknown> }) {
   const status = String(data.status || "");
   const produced = (data.produced as string[]) || [];
-  const accent = status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
+  // A guarded skip reads in the guard's own hue: it is the design working, and the dim
+  // `skipped` grey is the colour of something having gone wrong.
+  const accent = data.guarded ? "var(--chart-3)"
+    : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
   return (
     <div style={{
       minWidth: 190, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
@@ -102,10 +108,25 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
           {String(data.detail)}
         </div>
       )}
+      {/* W1 — the guard this step carried, and (below) whether it is what held the step.
+          A run canvas that shows only "skipped" cannot tell a design working from an
+          upstream breaking. */}
+      {Array.isArray(data.when) && (data.when as string[]).length > 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-3)", marginTop: 3,
+          fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis",
+          whiteSpace: "nowrap" }}>
+          only if {(data.when as string[]).join(
+            data.when_logic === "any" ? " or " : " and ")}
+        </div>
+      )}
       {!!status && (
         <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
-          ● {status}
-          {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0 && (
+          ● {data.dryRun && status === "executed" ? "would run"
+              : data.guarded ? "held · condition not met" : status}
+          {/* A preview's duration is how long the INERT dispatcher took — "0ms" next to
+              "would run" is noise dressed as a measurement. */}
+          {!data.dryRun && typeof data.duration_ms === "number"
+            && (data.duration_ms as number) > 0 && (
             <span style={{ color: "var(--t4)" }}> · {ms(data.duration_ms as number)}</span>
           )}
           {typeof data.attempts === "number" && (data.attempts as number) > 1 && (
@@ -165,7 +186,11 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
     id: n.id,
     type: n.type === "trigger" ? "trigger" : "step",
     position: { x: i * 250, y: 0 },
-    data: { ...n },
+    // B2 — the preview flag rides on every node. The status a dry run produces is
+    // `executed`, which is the engine's honest word for "this step ran to completion"
+    // and exactly the wrong one to put on screen when nothing ran: found by driving it,
+    // with "● executed" sitting under a banner reading "nothing was sent".
+    data: { ...n, dryRun: !!graph.dry_run },
   }));
 
   // A data edge already implies "runs after", so a sequence edge on the same pair is
@@ -173,9 +198,22 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
   const carriesData = new Set(
     graph.edges.filter((e) => e.type === "data").map((e) => `${e.from}->${e.to}`),
   );
-  const drawn = graph.edges.filter(
-    (e) => e.type !== "sequence" || !carriesData.has(`${e.from}->${e.to}`),
-  );
+  // W1 + B2 — a step can bind the SAME upstream key twice: once into a field and once
+  // in its guard (`message: {$from: numbers.answer}` beside `only if numbers.answer is
+  // set`). `build_graph` reports both, correctly — they are different claims — but in
+  // Execution mode there are no per-field handles to land on, so the two arrows are one
+  // arrow drawn twice, with one id. React logged a duplicate-key error and the second
+  // edge was liable to be dropped. Deduped by what an execution edge actually says:
+  // "this key flows from here to there". The guard is stated on the node either way.
+  const seenData = new Set<string>();
+  const drawn = graph.edges.filter((e) => {
+    if (e.type === "sequence") return !carriesData.has(`${e.from}->${e.to}`);
+    if (e.type !== "data") return true;
+    const key = `${e.from}->${e.to}:${e.label ?? ""}`;
+    if (seenData.has(key)) return false;
+    seenData.add(key);
+    return true;
+  });
 
   const edges: RFEdge[] = drawn.map((e, i) => {
     const isData = e.type === "data";
@@ -186,10 +224,12 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
       label: isData ? e.label : undefined,
       animated: false,
       style: isData
-        ? { stroke: "var(--chart-1)", strokeWidth: 1.6 }
+        ? (e.guard
+            ? { stroke: "var(--chart-3)", strokeWidth: 1.6, strokeDasharray: "5 4" }
+            : { stroke: "var(--chart-1)", strokeWidth: 1.6 })
         : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
-                   color: isData ? "var(--chart-1)" : "var(--t4)" },
+                   color: isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t4)" },
       data: { edgeType: e.type },
     };
   });
@@ -223,6 +263,10 @@ interface DesignNodeData {
   publishes: string[];
   openSet: boolean;
   inputs: { field: string; boundTo: string | null }[];
+  /** W1 — the guard, raw. Rendered into sentences with the server's operator words
+   *  rather than stored as prose, so a node and the editor cannot word it differently. */
+  when: GuardClause[];
+  whenLogic: "all" | "any";
   onPatch: (field: string, value: unknown) => void;
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
@@ -251,6 +295,9 @@ const KIND_HUE: Record<string, string> = {
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
+  // Operator WORDS come from the server's vocabulary (cached module-side, so N nodes
+  // make one request) — a local map would be a second spelling of a closed set.
+  const { guardOps } = useAutomationVocabulary();
   const boundOf = (field: string) =>
     data.inputs.find(i => i.field === field)?.boundTo ?? null;
   const bindableSet = new Set(data.inputs.map(i => i.field));
@@ -344,6 +391,31 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           );
         })}
       </div>
+
+      {/* W1 — "only if", with a port of its own. An input port that DECIDES rather than
+          fills, so it is drawn apart from the field rows and never inside them. The
+          strip is absent when there is no guard: an empty one would say a step is
+          conditional when it always runs. */}
+      {data.when.length > 0 && (
+        <div style={{ position: "relative", borderTop: "1px solid var(--b1)",
+          padding: "7px 12px 8px", background: "var(--bg-1)" }}>
+          <Handle
+            id={`in:${GUARD_FIELD}`} type="target" position={Position.Left}
+            style={{ ...portStyle("in", true), left: -(12 + PORT / 2),
+                     top: "50%", transform: "translateY(-50%)",
+                     borderColor: "var(--chart-3)", background: "var(--chart-3)" }}
+            title="this step runs only if the guard holds"
+          />
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+            only if{data.when.length > 1 ? ` · ${data.whenLogic}` : ""}
+          </div>
+          {guardSentences(data.when, guardOps).map((line, i) => (
+            <div key={i} className="aug-fs-xs" style={{ color: "var(--chart-3)",
+              fontFamily: "var(--font-mono)", marginTop: 2, overflow: "hidden",
+              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line}</div>
+          ))}
+        </div>
+      )}
 
       {/* outputs — "gives X", one row per key, its dot half over the right edge */}
       {data.publishes.length > 0 && (
@@ -439,6 +511,11 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const [mode, setMode] = useState<"design" | "execution">("design");
   const [runId, setRunId] = useState("");
   const [graph, setGraph] = useState<AutomationGraphData | null>(null);
+  /** B2 — a dry run's graph. Held rather than refetched, because a preview is never
+   *  stored: there is no run id for the graph route to look up. It takes precedence over
+   *  the server's graph while it is on screen, and any move that asks for a REAL run
+   *  clears it — a preview must never be mistaken for something that happened. */
+  const [preview, setPreview] = useState<AutomationGraphData | null>(null);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   /** Drag-time refusals — `applyConnect`'s sentence, shown then cleared. */
@@ -453,20 +530,25 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   }, [automation]);
 
   useEffect(() => {
-    getAutomationVocabulary().then(setVocab).catch(() => setVocab({}));
+    // W1 — the fetch now carries the guard operators too; this canvas wants only the
+    // per-kind ports, and `AutomationRows` fetches (and caches) the same document for
+    // the "Only if" pickers.
+    getAutomationVocabulary().then(v => setVocab(v.kinds)).catch(() => setVocab({}));
   }, []);
 
   const authoring = !!automation && mode === "design";
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
-    if (mode !== "execution") return;
+    // A preview owns the canvas while it is up; refetching here would replace it with
+    // the last REAL run the moment it was shown.
+    if (mode !== "execution" || preview) return;
     let live = true;
     getAutomationGraph(automationId, runId || "latest")
       .then((g) => { if (live) { setGraph(g); setError(""); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [automationId, mode, runId, reloadKey]);
+  }, [automationId, mode, runId, reloadKey, preview]);
 
   /* ── design-mode graph, drawn from the draft ── */
   // Positions survive dragging but reset per automation — session-local by design:
@@ -527,13 +609,18 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         label: e.key,
         // Animated, because the edge carries DATA — the reference frames use motion to
         // say exactly this, and only this. The sequence spine stays still.
+        // W1 — a GUARD edge carries data too, but to a decision rather than a field, so
+        // it reads in its own hue and dashes: same motion, different claim.
         animated: true,
-        style: { stroke: "var(--chart-1)", strokeWidth: 2 },
+        style: e.guard
+          ? { stroke: "var(--chart-3)", strokeWidth: 2, strokeDasharray: "5 4" }
+          : { stroke: "var(--chart-1)", strokeWidth: 2 },
         labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
         labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
         labelBgPadding: [7, 3] as [number, number],
         labelBgBorderRadius: 6,
-        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--chart-1)" },
+        markerEnd: { type: MarkerType.ArrowClosed,
+                     color: e.guard ? "var(--chart-3)" : "var(--chart-1)" },
       })),
     ];
     return { nodes, edges: rfEdges };
@@ -577,7 +664,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Could not load the graph: {error}</div>;
   }
 
-  const execution = mode === "execution" && graph ? toFlow(graph) : null;
+  const shown = preview ?? graph;
+  const execution = mode === "execution" && shown ? toFlow(shown) : null;
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
@@ -587,17 +675,26 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           background: "var(--bg-1)" }}>
           {(["design", "execution"] as const).map((m) => (
             <Button key={m} variant={mode === m ? "secondary" : "ghost"} size="xs"
-              onClick={() => { setMode(m); if (m === "design") setRunId(""); }}>
+              onClick={() => {
+                setMode(m); setPreview(null);
+                if (m === "design") setRunId("");
+              }}>
               {m === "design" ? "Design" : "Execution"}
             </Button>
           ))}
         </div>
-        {mode === "execution" && graph?.run_missing && (
+        {mode === "execution" && preview && (
+          <span className="aug-fs-xs" style={{ color: "var(--chart-3)" }}>
+            preview — nothing was sent{preview.run_reason?.includes(";")
+              ? ` · ${preview.run_reason.split(";").slice(1).join(";").trim()}` : ""}
+          </span>
+        )}
+        {mode === "execution" && !preview && graph?.run_missing && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             never run — showing the design
           </span>
         )}
-        {mode === "execution" && graph && !graph.run_missing && graph.run_outcome
+        {mode === "execution" && !preview && graph && !graph.run_missing && graph.run_outcome
           && graph.run_outcome !== "fired" && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             last run {graph.run_outcome}
@@ -606,7 +703,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
-        {mode === "execution" && (graph?.runs?.length ?? 0) > 0 && (
+        {mode === "execution" && !preview && (graph?.runs?.length ?? 0) > 0 && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
                         border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
             <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
@@ -616,7 +713,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               const active = (runId || graph?.run_id) === r.id;
               return (
                 <Button key={r.id} variant="ghost" size="sm" className="aug-fs-xs"
-                  onClick={() => setRunId(r.id)}
+                  onClick={() => { setPreview(null); setRunId(r.id); }}
                   style={{
                     display: "block", width: "100%", height: "auto", textAlign: "left",
                     padding: "3px 5px", marginBottom: 2,
@@ -688,7 +785,11 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                 </span>
               </Panel>
             </ReactFlow>
-          ) : !graph ? (
+          // B2 — `shown`, not `graph`: a PREVIEW is a graph this canvas was handed rather
+          // than one it fetched, and gating the body on the fetched one left a dry run
+          // reading "Loading…" underneath its own "nothing was sent" banner. Found by
+          // driving it — the banner and the body were reading two different states.
+          ) : !shown ? (
             <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
           ) : (
             <ReactFlow
@@ -709,6 +810,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
 
         {authoring && (
           <AutomationAuthor
+            onPreview={(g) => { setPreview(g); setMode("execution"); }}
             automation={automation!}
             draft={draft}
             onDraft={setDraft}

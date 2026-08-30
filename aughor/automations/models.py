@@ -23,7 +23,7 @@ writes exactly one run, including the ones that deliberately did nothing, and ``
 from __future__ import annotations
 
 import uuid
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -105,6 +105,29 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
 }
 
 
+class GuardClause(BaseModel):
+    """W1 — one comparison in a step's ``when`` guard.
+
+    Either side may be a literal or a ``{"$from": "step1.answer"}`` binding, resolved
+    against the same accumulated chain context the step's params are. Structural, never
+    an expression string, for this plane's three standing reasons: it is validated when
+    the automation is saved, it is not an injection surface, and it DRAWS — a guard that
+    reads step 1 is an edge on the canvas exactly like a param that does.
+    """
+    left: Any = None
+    op: Literal["truthy", "falsy", "eq", "ne", "gt", "gte", "lt", "lte", "contains"]
+    #: Ignored by the unary operators (`truthy`/`falsy`) rather than rejected: an
+    #: authoring form that switches the operator on a filled-in row should not have to
+    #: clear a field to stay valid.
+    right: Any = None
+
+    @model_validator(mode="after")
+    def _require_a_subject(self) -> "GuardClause":
+        if self.left is None:
+            raise ValueError("a guard clause needs a left side — the value being tested")
+        return self
+
+
 class Effect(BaseModel):
     """What to do when the conditions hold — a reference to an existing primitive.
 
@@ -135,6 +158,17 @@ class Effect(BaseModel):
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
     alias: str = ''
+    #: W1 — run this step ONLY IF every (or any) clause holds against the accumulated
+    #: chain context. Empty = always, which is every automation written before W1.
+    #:
+    #: The engine could only skip a step by ABSENCE before this — a binding that would
+    #: not resolve — so "post it only if there is something worth posting" was not
+    #: expressible, and a daily chain either sent an empty report or was not automated.
+    #: Named `when` on the wire and **"Only if" on every surface**: the trigger node is
+    #: already labelled "When" on the canvas, and two Whens on one picture is a name
+    #: collision a reader pays for.
+    when: list[GuardClause] = Field(default_factory=list)
+    when_logic: Literal["all", "any"] = "all"
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")

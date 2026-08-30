@@ -40,7 +40,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    UnresolvedBinding, alias_for, collect_refs, parse_ref, resolve,
+    GUARD_SKIP, UnresolvedBinding, alias_for, effect_refs, evaluate_guard,
+    guard_clauses, parse_ref, render_clause, resolve,
 )
 from aughor.automations.models import (
     Automation,
@@ -370,11 +371,16 @@ AWAIT_KEY = "_await_result"
 def _downstream_binds(alias: str, later: list[Effect]) -> bool:
     """Does any later step reference ``alias``?
 
-    Reads the same `collect_refs` the graph derives its data edges from, so a step the
+    Reads the same `effect_refs` the graph derives its data edges from, so a step the
     canvas draws an arrow out of is exactly a step the engine waits for.
+
+    W1 — `effect_refs`, so a step consumed ONLY by a downstream guard is waited for too.
+    Missing that would be the subtlest bug in this wave: "post only if step 1 found
+    something" would test the *job id* `investigate` returns when nobody waits — a
+    non-empty string, so `truthy` would hold every single morning.
     """
     for nxt in later:
-        for ref in collect_refs(nxt.config):
+        for ref in effect_refs(nxt):
             if parse_ref(ref)[0] == alias:
                 return True
     return False
@@ -582,7 +588,7 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     """
     question = str(effect.config.get("question", ""))
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
-    # loop from `collect_refs`). An unconsumed investigate keeps submitting and returning,
+    # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
     # which is what "run this nightly" wants and what every automation written before this
     # already does.
     await_result = bool(effect.config.get(AWAIT_KEY))
@@ -641,6 +647,58 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "agent_alert": _dispatch_agent_alert,
     "slack_post": _dispatch_slack_post,
 }
+
+
+# ── B2: the dry run ──────────────────────────────────────────────────────────────
+#
+# A design could be inspected AFTER it ran and never tried BEFORE it was armed — so the
+# only way to find out what an automation would do was to let it do it, to real people.
+#
+# Measured before writing this, because the plan said the harness already existed:
+# `evals/equivalence.py`'s inert dispatch runs `persist=False` and publishes NOTHING, so
+# every chained step after the first came back "upstream data unavailable". It would have
+# reported a working chain as broken. Four more differences turned up in the same pass,
+# each one a side effect a preview must not have — see `run_automation(dry_run=True)`.
+
+#: What a dry-run step "publishes", per key. Marked so it can never be mistaken for a
+#: measured value — and readable, because it turns a downstream step's resolved config
+#: into a wiring diagram in words: "would post «numbers.answer» to #ops".
+def _sample(alias: str, key: str) -> str:
+    return f"«{alias}.{key}»"
+
+
+def dry_sample(alias: str, effect: Effect, later: list[Effect]) -> dict:
+    """The sample output one step publishes into a dry run's chain context.
+
+    The declared keys (B1's `PUBLISHED_KEYS`) UNION every key a later step actually asks
+    of this alias. The union is what makes the open set work: a declared-action step's
+    outcome shape is unknowable — `validate_chain` accepts bindings onto it unchecked for
+    exactly that reason — so a dry run reads the question from the steps that ask it,
+    using the same `effect_refs` everything else in this seam derives from. Without it a
+    preview would report "upstream data unavailable" for a binding the engine will
+    satisfy perfectly well at 09:00.
+    """
+    from aughor.automations.dataflow import PUBLISHED_KEYS
+    keys = set(PUBLISHED_KEYS.get(effect.kind) or ())
+    for nxt in later:
+        for ref in effect_refs(nxt):
+            target, key = parse_ref(ref)
+            if target == alias and key:
+                keys.add(key)
+    return {k: _sample(alias, k) for k in sorted(keys)}
+
+
+def dry_dispatch(effect: Effect, automation: Automation) -> EffectOutcome:
+    """Dispatch nothing, report what WOULD have been dispatched.
+
+    The label comes from `graph.effect_detail` — the allowlist that already exists
+    because a step's config can carry a message body or a credential-shaped value, and
+    this string is read on screen. Never the bound config wholesale.
+    """
+    from aughor.automations.graph import effect_detail
+    target = effect_detail(effect)
+    return EffectOutcome(kind=effect.kind, target=target or "—", status="executed",
+                         message=f"would run{f' → {target}' if target else ''}")
 
 
 def default_dispatch(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -717,14 +775,49 @@ def run_automation(
     sleeper: Callable[[float], None] = _time.sleep,
     rng: Callable[[], float] = random.random,
     persist: bool = True,
+    dry_run: bool = False,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
     Never raises for an expected outcome — gated, not-fired and effect failures are all *statuses*,
     recorded on the run. Only a genuinely unexpected error becomes ``outcome="error"``, and even
     that is persisted rather than lost.
+
+    **B2 · ``dry_run``** — walk the chain and dispatch nothing. It returns an ordinary
+    ``AutomationRun``, which is the whole point: `Activity`'s run canvas already renders
+    one, so a preview needed no second way of drawing a chain (the VA-4d lesson — check
+    whether an existing view's substrate is unfed before building a new view).
+
+    Five things separate it from ``persist=False`` with an inert dispatcher, and every
+    one of them was MEASURED rather than assumed:
+
+    1. **The lifecycle gate is reported, not enforced.** You dry-run precisely because
+       the automation is not armed yet; gating on ``enabled`` would answer "disabled" to
+       every question a preview exists to ask.
+    2. **Conditions are described, not evaluated.** A daily cron says "not due" all day —
+       three consecutive live run-nows returned ``not_fired`` while W1 was being proved.
+       A preview answers "what would it do WHEN it fires".
+    3. **Steps publish samples.** The existing inert dispatcher published nothing, so
+       every step after the first read "upstream data unavailable" — a working chain
+       reported as broken.
+    4. **No baseline is committed.** ``commit_fired_baselines`` runs regardless of
+       ``persist``: a preview would have CONSUMED a source change, and the real tick at
+       09:00 would then not fire. A preview that alters the next real run is not one.
+    5. **No span is emitted.** VA-4d made the run id the trace id, so a dry run would
+       otherwise appear in ``Activity`` as a run that happened.
+
+    Guards are **reported, never decided** (see the chain loop): a sample cannot answer
+    "will tomorrow's number clear this threshold", and a preview that pretended to would
+    be worse than one that says when the question gets asked.
     """
     now = now or datetime.now(timezone.utc)
+    if dry_run:
+        # A preview never writes: not the run row, not a delivery claim, not a baseline.
+        # `dispatch` is OVERRIDDEN, not defaulted: a preview that can be handed a real
+        # dispatcher is not a preview, and "the caller passed one" is not a reason to
+        # send a message to a real channel.
+        persist = False
+        dispatch = dry_dispatch
     # Run timestamps derive from the TICK clock (``now``), not a second wall-clock read:
     # `_schedule_fired` compares the cron against the previous run's `started_at`, so mixing an
     # injected evaluation clock with wall-clock record stamps makes since-last-run arithmetic
@@ -761,19 +854,31 @@ def run_automation(
 
     # 1 — lifecycle gates (side-effect-free, no warehouse)
     gate_reason = _gated(automation, now)
-    if gate_reason is not None:
+    if gate_reason is not None and not dry_run:
         return _finish(AutomationRun(**base, outcome="gated", reason=gate_reason))
 
     # 2 — conditions
-    try:
-        fired, details, reason = evaluate_conditions(automation, now=now, probe=probe)
-    except Exception as exc:
-        logger.warning("automation %s condition evaluation failed: %s", automation.id, exc)
-        return _finish(AutomationRun(**base, outcome="error",
-                                     reason="condition evaluation failed",
-                                     error=f"{type(exc).__name__}: {exc}"))
-    if not fired:
-        return _finish(AutomationRun(**base, outcome="not_fired", reason=reason))
+    if dry_run:
+        # Described, not evaluated. The reason line carries BOTH facts a reader needs:
+        # that nothing was sent, and what WOULD gate this today — so a preview of a
+        # paused automation still says it is paused instead of quietly pretending.
+        fired = True
+        # graph.py's labeller, not a second one: the trigger node on the canvas and the
+        # reason line on a preview must not word the same condition differently.
+        from aughor.automations.graph import condition_label
+        details = [condition_label(c) for c in automation.conditions]
+        reason = "dry run — nothing was sent" + (f"; {gate_reason}" if gate_reason else "")
+    else:
+        try:
+            fired, details, reason = evaluate_conditions(automation, now=now, probe=probe)
+        except Exception as exc:
+            logger.warning("automation %s condition evaluation failed: %s",
+                           automation.id, exc)
+            return _finish(AutomationRun(**base, outcome="error",
+                                         reason="condition evaluation failed",
+                                         error=f"{type(exc).__name__}: {exc}"))
+        if not fired:
+            return _finish(AutomationRun(**base, outcome="not_fired", reason=reason))
 
     # 3 — effects, in declared order (the first step that can cause a side effect)
     #
@@ -796,6 +901,15 @@ def run_automation(
         alias = alias_for(effect, i)
         try:
             bound = resolve(effect.config, context)
+            # W1 — the guard is evaluated in the SAME try as the params, because an
+            # unresolvable reference means the same thing on either side: the upstream
+            # this step depends on is not there. Evaluated BEFORE the dispatch, so a
+            # guarded-off step costs nothing — no request, no token, no send.
+            # B2 — in a preview a guard is REPORTED, never decided. A sample cannot
+            # answer "will tomorrow's number clear this threshold", and a dry run that
+            # guessed would show a sound design as mostly held — the exact reading that
+            # would send someone rewriting a chain that was fine.
+            should_run, why_not = (True, "") if dry_run else evaluate_guard(effect, context)
         except UnresolvedBinding as exc:
             # SKIPPED, never run-with-a-hole. These steps send messages and write to
             # systems; a missing channel or a missing thread id is not a value to
@@ -806,6 +920,16 @@ def run_automation(
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
             continue
+        if not should_run:
+            # `skipped`, whose own definition is "did not run, and that is not a failure
+            # of this step" — which is precisely a guard holding. The MESSAGE carries the
+            # difference between a design working and an upstream breaking, and it is the
+            # one thing a reader needs at 09:00.
+            outcomes.append(EffectOutcome(
+                kind=effect.kind, target=alias, status="skipped",
+                agent_id=acting_agent(effect, automation),
+                message=f"{GUARD_SKIP}: {why_not}"))
+            continue
         # VA-13 — does anything LATER bind to this step's output?
         #
         # Only a step somebody is waiting on should be waited FOR. `investigate` submits a
@@ -814,7 +938,7 @@ def run_automation(
         # when the next step runs. So the engine tells the step, and only a step that is
         # actually consumed pays the latency.
         #
-        # Derived from `collect_refs` — the same function the graph's data edges come from
+        # Derived from `effect_refs` — the same function the graph's data edges come from
         # — so "the canvas drew an edge here" and "the engine waited here" cannot disagree.
         # Carried on the bound config rather than in the dispatcher signature: six
         # dispatchers would otherwise grow a parameter five of them ignore.
@@ -827,10 +951,17 @@ def run_automation(
         # into it — which is why its runs were invisible there and needed a bespoke
         # canvas. A span per step makes an automation run a run like any other: waterfall,
         # events, logs, filters and cost, none of it designed twice.
-        with _step_span(effect, automation, alias, run_id):
-            outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
-                                  dispatch_fn, sleeper=sleeper, rng=rng,
-                                  sleep_budget=sleep_budget)
+        bound_effect = effect.model_copy(update={"config": bound})
+        if dry_run:
+            # NO SPAN. VA-4d made the run id the trace id, so a dry run under a span
+            # would appear in `Activity` as a run that happened — a preview must leave
+            # the record exactly as it found it.
+            outcome = _run_effect(bound_effect, automation, dispatch_fn, sleeper=sleeper,
+                                  rng=rng, sleep_budget=sleep_budget)
+        else:
+            with _step_span(effect, automation, alias, run_id):
+                outcome = _run_effect(bound_effect, automation, dispatch_fn,
+                                      sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
         step_ms = (_time.monotonic() - step_t0) * 1000.0
         # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
         # set it is six chances to forget, and a step that silently ran as nobody is
@@ -841,6 +972,17 @@ def run_automation(
             # each remembering to time themselves is six chances to forget, and a step
             # with no duration is invisible in exactly the view built to find slow ones.
             "duration_ms": round(step_ms, 1), "started_at": step_started})
+        if dry_run:
+            guard = guard_clauses(effect)
+            outcome = outcome.model_copy(update={
+                # What a later step will be able to read — declared keys plus whatever
+                # the later steps actually ask for, so the open set works too.
+                "data": dry_sample(alias, effect, automation.effects[i + 1:]),
+                # The guard, named as a question that has not been asked yet.
+                "message": outcome.message + (
+                    f" · only if {' and '.join(render_clause(c) for c in guard)}"
+                    " — checked when it runs" if guard else ""),
+            })
         outcomes.append(outcome)
         # Only a step that EXECUTED contributes. A failed step publishing an empty dict
         # would let a downstream binding resolve to nothing and run anyway — the exact
@@ -850,7 +992,14 @@ def run_automation(
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False
-    if automation.fallback_effect is not None and all(o.status != "executed" for o in outcomes):
+    # W1 — a run whose every step was SKIPPED did not fail; before the guard existed a
+    # step-1 skip was impossible, so `all(not executed)` and "everything failed" were the
+    # same set. They no longer are: an automation guarded off on a quiet morning would
+    # have paged on-call to say the automation itself was broken. The fallback needs a
+    # step that actually TRIED and did not succeed.
+    attempted = [o for o in outcomes if o.status != "skipped"]
+    if (automation.fallback_effect is not None and attempted
+            and all(o.status != "executed" for o in attempted)):
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
                                     sleeper=sleeper, rng=rng, sleep_budget=sleep_budget))
@@ -861,7 +1010,11 @@ def run_automation(
     # uncommitted baseline re-fires the change next tick (at-least-once, never lost).
     try:
         from aughor.automations.probes import commit_fired_baselines
-        commit_fired_baselines(automation)
+        # B2 — NOT in a preview. This runs regardless of `persist`, so a dry run would
+        # consume a source change and the real tick would then find nothing new: a
+        # preview that alters the next real run is not a preview.
+        if not dry_run:
+            commit_fired_baselines(automation)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "baseline commit is best-effort; the fired run is already recorded",

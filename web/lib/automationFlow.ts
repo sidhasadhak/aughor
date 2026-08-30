@@ -13,7 +13,7 @@
  * does; an input dot exists because the dispatcher reads that field. Nothing here
  * invents a port the engine would not honour — the Langflow look on Aughor's law.
  */
-import type { AutoCondition, AutoEffect } from "@/lib/api";
+import type { AutoCondition, AutoEffect, GuardClause, GuardOp } from "@/lib/api";
 
 export interface KindVocabulary {
   /** Keys this kind publishes into the chain context. `null` = an OPEN set
@@ -44,6 +44,47 @@ function bindingRef(value: unknown): string | null {
   return null;
 }
 
+/** W1 — every `alias.key` an EARLIER step publishes, for a guard's subject picker.
+ *
+ * Open-set producers (the declared-action kind, `publishes: null`) contribute nothing:
+ * their keys are that action's own outcome shape, which no client can enumerate, and a
+ * picker cannot honestly offer a name it does not know. The wire still accepts such a
+ * guard — the model is more expressive than this form, which is the right way round.
+ */
+/** A guard as sentences, for a node face. Pure — the same reason everything else in
+ *  this module is: jsdom draws no edges, so what a test can catch has to live outside
+ *  the canvas. Operator WORDS come from the server's vocabulary, never a local map. */
+export function guardSentences(clauses: GuardClause[], ops: GuardOp[]): string[] {
+  const label = new Map(ops.map(o => [o.op, o.label]));
+  const unary = new Set(ops.filter(o => o.unary).map(o => o.op));
+  const side = (v: unknown): string => {
+    const ref = bindingRef(v);
+    if (ref !== null) return ref;
+    // An empty literal must still occupy the sentence — the server's renderer says the
+    // same thing the same way, so a node and a run cannot word one guard differently.
+    if (v === null || v === undefined) return "nothing";
+    return v === "" ? '""' : String(v);
+  };
+  return clauses.map(c => {
+    const word = label.get(c.op) ?? c.op;
+    return unary.has(c.op)
+      ? `${side(c.left)} ${word}`
+      : `${side(c.left)} ${word} ${side(c.right)}`;
+  });
+}
+
+export function upstreamKeys(effects: AutoEffect[], index: number, vocab: Vocabulary):
+    { ref: string; alias: string; key: string }[] {
+  const out: { ref: string; alias: string; key: string }[] = [];
+  effects.slice(0, index).forEach((e, i) => {
+    for (const key of vocab[e.kind]?.publishes ?? []) {
+      const alias = aliasFor(e, i);
+      out.push({ ref: `${alias}.${key}`, alias, key });
+    }
+  });
+  return out;
+}
+
 export interface FlowStep {
   alias: string;
   index: number;
@@ -54,14 +95,23 @@ export interface FlowStep {
   openSet: boolean;
   /** Input ports, each with what it is currently bound to (or null). */
   inputs: { field: string; boundTo: string | null }[];
+  /** W1 — this step's guard. A node that omits it draws a step that always runs. */
+  when: GuardClause[];
+  whenLogic: "all" | "any";
 }
 
 export interface FlowEdgeSpec {
   from: string;        // producer alias
   key: string;         // published key the edge carries
   to: string;          // consumer alias
-  field: string;       // consumer config field
+  field: string;       // consumer config field, or GUARD_FIELD
+  /** W1 — this edge feeds the step's guard: it DECIDES whether the step runs rather
+   *  than filling one of its fields. Drawn to the node's own guard port. */
+  guard?: boolean;
 }
+
+/** The pseudo-field a guard edge lands on. Not a config key — the guard is not one. */
+export const GUARD_FIELD = "__guard";
 
 /**
  * The design, as steps-with-ports and the edges its bindings already are.
@@ -85,6 +135,8 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
       index: i,
       kind: e.kind,
       config: (e.config ?? {}) as Record<string, unknown>,
+      when: e.when ?? [],
+      whenLogic: e.when_logic ?? "all",
       publishes: v.publishes === null ? ["*"] : v.publishes,
       openSet: v.publishes === null,
       inputs,
@@ -101,6 +153,19 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
       const from = inp.boundTo.slice(0, dot);
       if (!known.has(from)) continue;  // validate_chain refuses these at save; do not draw a lie
       edges.push({ from, key: inp.boundTo.slice(dot + 1), to: s.alias, field: inp.field });
+    }
+    // W1 — a guard reads the chain exactly as a param does, so it draws. The server's
+    // graph does the same from `effect_refs`; the design canvas derives from the DRAFT
+    // and must not be the one reader that omits it.
+    for (const clause of s.when) {
+      for (const side of [clause.left, clause.right]) {
+        const ref = bindingRef(side);
+        if (!ref) continue;
+        const dot = ref.indexOf(".");
+        if (dot <= 0 || !known.has(ref.slice(0, dot))) continue;
+        edges.push({ from: ref.slice(0, dot), key: ref.slice(dot + 1), to: s.alias,
+                     field: GUARD_FIELD, guard: true });
+      }
     }
   }
   return { steps, edges };

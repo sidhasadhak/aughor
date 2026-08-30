@@ -68,7 +68,53 @@ def test_every_step_is_a_node_named_the_way_a_reference_names_it():
 def test_a_binding_becomes_a_DATA_edge_labelled_with_the_key_it_carries():
     g = build_graph(_automation(_effect(), _effect(thread_ts={"$from": "step1.ts"})))
     data = data_edges_only(g)
-    assert data == [{"from": "step1", "to": "step2", "type": "data", "label": "ts"}]
+    # W1 — `guard` is on every data edge, false here: this one FILLS a field. An edge
+    # that decides whether the step runs at all is a different claim about the chain.
+    assert data == [{"from": "step1", "to": "step2", "type": "data", "label": "ts",
+                     "guard": False}]
+
+
+def test_a_GUARD_reference_draws_too_and_says_it_is_a_guard():
+    """W1 — a guard reads the chain exactly as a param does. An arrow the engine follows
+    that the picture omits is the disagreement this module exists to prevent."""
+    from aughor.automations.models import Effect
+    g = build_graph(_automation(
+        Effect(kind="investigate", alias="report", config={"question": "q"}),
+        Effect(kind="slack_post", config={"bot_id": "sb_1", "channel": "C1"},
+               when=[{"left": {"$from": "report.answer"}, "op": "truthy"}])))
+    data = data_edges_only(g)
+    assert data == [{"from": "report", "to": "step2", "type": "data", "label": "answer",
+                     "guard": True}]
+
+
+def test_a_step_carries_its_guard_as_sentences_on_the_STRUCTURE_graph():
+    """Whether a step will run at all is a DESIGN fact. A canvas that omits it draws a
+    chain that always fires."""
+    from aughor.automations.models import Effect
+    g = build_graph(_automation(
+        Effect(kind="investigate", alias="report", config={"question": "q"}),
+        Effect(kind="slack_post", config={"bot_id": "sb_1", "channel": "C1"},
+               when=[{"left": {"$from": "report.answer"}, "op": "truthy"}])))
+    step = [n for n in g["nodes"] if n["id"] == "step2"][0]
+    assert step["when"] == ["report.answer is set"]
+    assert step["when_logic"] == "all"
+    assert g["mode"] == "structure", "no run needed to know the guard exists"
+
+
+def test_a_guarded_skip_is_MARKED_apart_from_an_upstream_skip():
+    """Both are `skipped`, and they mean opposite things: one is the design working, the
+    other is something breaking. Read off the engine's own constant, never sniffed."""
+    from aughor.automations.dataflow import GUARD_SKIP
+    run = _Run([
+        EffectOutcome(kind="slack_post", target="a", status="skipped",
+                      message=f"{GUARD_SKIP}: report.answer is set"),
+        EffectOutcome(kind="slack_post", target="b", status="skipped",
+                      message="upstream data unavailable: step 'x' produced nothing"),
+    ])
+    nodes = [n for n in build_graph(_automation(_effect(), _effect()), run)["nodes"]
+             if n["type"] == "effect"]
+    assert nodes[0]["guarded"] is True
+    assert nodes[1]["guarded"] is False
 
 
 def test_sequence_edges_are_a_DIFFERENT_kind_from_data_edges():

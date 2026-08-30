@@ -96,6 +96,21 @@ automations-run-as-agents (VA-9b), per-agent tool grants (VA-9c).
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
 inside Create Agent.
 
+**B2 · dry run (2026-08-30)** — "try it before you arm it", on the draft in the editor.
+A preview returns an `AutomationRun` and the graph beside it, so the Execution canvas
+renders it unchanged; steps read "would run", a guard reads "checked when it runs", and
+the banner says "preview — nothing was sent" alongside whatever would gate it today.
+
+**W1 · `when` on an effect (2026-08-30)** — a step runs ONLY IF its guard holds against what
+earlier steps published. Structural clauses (`{"left": {"$from": "s1.answer"}, "op": "truthy"}`),
+never an expression string, for this plane's three standing reasons: validated at save, not an
+injection surface, and it draws. Authored as **"Only if"** on every surface — the trigger node
+already owns the word "When". Two properties beyond the obvious: a step consumed only by a
+downstream *guard* is still **awaited** (or `investigate` would hand it the job id it returns
+when nobody waits — a non-empty string, so `is set` would hold every morning), and a run whose
+every step was guarded off no longer fires the **fallback**, because "nothing was meant to run"
+is not "everything failed".
+
 ---
 
 ## 3 · ACTIVE — Arc VA, remaining
@@ -118,9 +133,12 @@ most-wanted feature on this list.
 Measured: our engine runs a strictly sequential list. It cannot branch between effects, fan out
 over a list, or parallelise. The user named this gap directly; it is real.
 
-- **W1 · `when` on an effect** — a guard evaluated against the accumulated `context`, so a step
-  can be skipped by condition rather than only by a missing binding. The chain loop already
-  holds `context`; smallest change, largest payoff.
+- ~~**W1 · `when` on an effect**~~ — **SHIPPED 2026-08-30.** A guard over the accumulated
+  `context`, evaluated BEFORE the dispatch so a held step costs nothing. Its references run
+  through the one `effect_refs` that validation, the engine's await and both canvases already
+  read, so a guard cannot become a fourth, invisible dataflow. Operators are FETCHED from
+  `/automations/vocabulary`; the subject is a picker over what upstream steps publish, never
+  free text (B1's law, one field over).
 - **W2 · `for_each` on an effect** — bind a step to an upstream list and run it per item,
   appending one `EffectOutcome` each. `resolve()` already walks lists.
 - **W3 · parallel-safe steps** — lowest priority; nothing measured is latency-bound.
@@ -140,8 +158,16 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   are the same feature — the port IS the typed binding, drawn. Reference for the
   redesign (user-supplied): https://docs.langflow.org/concepts-components — their component
   anatomy (header/inputs/outputs, port types, tool-mode toggle) is the vocabulary to beat.
-- **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
-  `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
+- ~~**B2 · Dry-run.**~~ — **SHIPPED 2026-08-30.** `run_automation(dry_run=True)` returns an
+  ordinary `AutomationRun`, so the existing run canvas draws a preview with no second way
+  of showing a chain. ⚠️ **The plan's premise was half true**: `evals/equivalence.py`'s inert
+  dispatcher publishes NOTHING, so every step after the first read "upstream data
+  unavailable" — a working chain reported as broken. Four more side effects had to be
+  suppressed, each measured off the engine: the delivery CLAIM (would have silenced the
+  real run), the source BASELINE (runs regardless of `persist` — a preview would consume
+  the change), the SPAN (VA-4d made the run id the trace id), and the stored run. Gates and
+  conditions are reported rather than enforced, because "disabled" and "not due" are the two
+  states a design lives in before it goes live. Guards are reported, never decided.
 
 ### 3.4 · VA-11 — the credential becomes a governed object (SPECCED 2026-08-30)
 
@@ -261,8 +287,11 @@ study is the *feature inventory*, not the stack — Arc VA is the result.
 
 ```
 NOW
-  W1  `when` guard on an effect   (small — largest expressive payoff)
-  B2  dry-run an automation       (small — reuses evals' inert dispatch)
+  ✅ B2  SHIPPED 2026-08-30 — "Dry run" on the design rail: the chain walked with sample
+        values, nothing dispatched, claimed, committed, spanned or stored
+  ✅ W1  SHIPPED 2026-08-30 — "Only if" on a step: guard clauses over the chain context,
+        evaluated before the dispatch, drawn on both canvases, refused at save like any
+        other reference; a guarded-off run no longer pages on-call
   ✅ B1  SHIPPED `16019b5a` — typed ports (server vocabulary, fetched), drag-to-bind,
         unknown KEYS refused at save; Runs layer retired into Activity → Phases
 

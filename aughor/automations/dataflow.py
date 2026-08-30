@@ -71,6 +71,37 @@ def collect_refs(params: Any) -> list[str]:
     return out
 
 
+def _clause_side(clause: Any, side: str) -> Any:
+    """One side of a guard clause, whether it arrived as a model or a raw dict."""
+    return clause.get(side) if isinstance(clause, dict) else getattr(clause, side, None)
+
+
+def guard_clauses(effect: Any) -> list:
+    return list(getattr(effect, "when", None) or [])
+
+
+def effect_refs(effect: Any) -> list[str]:
+    """Every reference ONE STEP makes — its bound config AND its ``when`` guard.
+
+    W1 — **a guard is dataflow too.** Three readers derive the chain from references and
+    each would answer differently if the guard's path were walked by only some of them:
+
+    * ``validate_chain`` — is this sound? A guard onto a deleted step would save fine.
+    * ``_downstream_binds`` — must this step be waited FOR? An ``investigate`` consumed
+      only by a downstream guard would hand it a *job id* instead of an answer, and the
+      guard would read a truthy string forever.
+    * ``build_graph`` — what does the canvas draw? An arrow the engine follows and the
+      picture omits is the disagreement VA-4a exists to prevent.
+
+    So they all read this, and the guard cannot become a fourth, invisible dataflow.
+    """
+    refs = collect_refs(getattr(effect, "config", {}) or {})
+    for clause in guard_clauses(effect):
+        refs.extend(collect_refs(_clause_side(clause, "left")))
+        refs.extend(collect_refs(_clause_side(clause, "right")))
+    return refs
+
+
 def resolve(params: Any, context: dict[str, dict]) -> Any:
     """Replace every binding in `params` with its value from `context`.
 
@@ -101,6 +132,158 @@ def alias_for(effect: Any, index: int) -> str:
     without being rewritten, and so a reference reads the way a person counts.
     """
     return (getattr(effect, "alias", "") or "").strip() or f"step{index + 1}"
+
+
+# ── W1: the guard ────────────────────────────────────────────────────────────────
+#
+# Until now a step could only be skipped by an ABSENCE — a binding that would not
+# resolve. "Post it only if there is something worth posting" was not expressible, so
+# a chain either sent an empty report every morning or was not automated at all.
+#
+# A guard is a small STRUCTURAL predicate over the same context bindings read from,
+# never an expression string. The reasons are this module's own, unchanged: a string
+# would need a parser (an injection surface), could not be validated at save, and
+# could not be drawn. `{"left": {"$from": "step1.answer"}, "op": "truthy"}` is all
+# three — checkable, inert, and an edge on the canvas.
+
+#: The closed set of comparisons, and how each READS on a surface. Exposed through
+#: `/automations/vocabulary` so the authoring UI offers exactly what the engine can
+#: evaluate: a hand-copied mirror of this list would rot in the worst direction —
+#: an operator the picker offers and the engine refuses.
+GUARD_OPS: dict[str, str] = {
+    "truthy":   "is set",
+    "falsy":    "is empty",
+    "eq":       "is",
+    "ne":       "is not",
+    "gt":       ">",
+    "gte":      "≥",
+    "lt":       "<",
+    "lte":      "≤",
+    "contains": "contains",
+}
+
+#: Operators that read ONE side. `right` is ignored for these rather than rejected:
+#: an authoring UI that switches op on a filled-in form should not have to erase a
+#: field to stay valid.
+UNARY_OPS: tuple[str, ...] = ("truthy", "falsy")
+
+#: The prefix every guard skip carries. One writer (the engine), and `graph.py` reads
+#: THIS constant rather than sniffing for the words — a matching key that stops
+#: matching is how a guard goes quietly blind.
+GUARD_SKIP = "condition not met"
+
+
+class GuardUnevaluable(ValueError):
+    """The comparison cannot be made — ``"n/a" > 5``, or ``contains`` on a number.
+
+    Skipped, never guessed. Treating an unevaluable guard as *false* would silently
+    stop a chain, and as *true* would run the step the guard exists to prevent; both
+    look identical in run history to a guard that simply did not match.
+    """
+
+
+def _numeric(value: Any) -> Optional[float]:
+    """A number, or None. A warehouse column arrives as a string often enough that
+    refusing ``"12" > 5`` would make the guard useless on real data — but `bool` is
+    an `int` in Python, and `True > 0` is a comparison nobody wrote on purpose."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def render_clause(clause: Any) -> str:
+    """A clause as a short sentence — reference PATHS and authored literals only.
+
+    Never a resolved value. A guard may read a message body, a thread id or whatever
+    an action published, and this string is written into run history and drawn on the
+    canvas; `graph.py` carries a no-spill test for exactly that reason. "step1.answer
+    is empty" says which clause held without saying what it read.
+    """
+    def side(value: Any) -> str:
+        if is_binding(value):
+            return str(value[FROM])
+        # An empty literal must still OCCUPY the sentence. Found live: a guard written
+        # against `""` rendered as "condition not met:  is set" — a hole where the
+        # subject belongs, which reads as a bug in the renderer rather than as the
+        # comparison someone wrote.
+        if value is None:
+            return "nothing"
+        if value == "":
+            return '""'
+        text = str(value)
+        return text if len(text) <= 40 else text[:39] + "…"
+
+    op = _clause_side(clause, "op") or ""
+    label = GUARD_OPS.get(str(op), str(op))
+    left = side(_clause_side(clause, "left"))
+    if op in UNARY_OPS:
+        return f"{left} {label}"
+    return f"{left} {label} {side(_clause_side(clause, 'right'))}"
+
+
+def _clause_holds(op: str, left: Any, right: Any) -> bool:
+    if op == "truthy":
+        return bool(left)
+    if op == "falsy":
+        return not bool(left)
+    if op == "eq":
+        return left == right
+    if op == "ne":
+        return left != right
+    if op == "contains":
+        if isinstance(left, str):
+            return str(right) in left
+        if isinstance(left, (list, tuple, dict, set)):
+            return right in left
+        raise GuardUnevaluable(f"{type(left).__name__} does not contain things")
+    a, b = _numeric(left), _numeric(right)
+    if a is None or b is None:
+        raise GuardUnevaluable(f"'{op}' needs two numbers")
+    return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]
+
+
+def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
+    """``(should this step run, why not)`` for one effect's ``when`` guard.
+
+    An empty guard runs — which is every automation written before W1, byte for byte.
+
+    Raises :class:`UnresolvedBinding` when a clause reads a step that produced nothing,
+    deliberately sharing the params path's outcome: the step is skipped and the message
+    names the missing upstream. A guard is not a place to be lenient about absence — the
+    steps behind it send messages and write to systems.
+    """
+    clauses = guard_clauses(effect)
+    if not clauses:
+        return True, ""
+    logic = str(getattr(effect, "when_logic", "") or "all")
+    results: list[tuple[bool, str]] = []
+    for clause in clauses:
+        op = str(_clause_side(clause, "op") or "")
+        left = resolve(_clause_side(clause, "left"), context)
+        right = None if op in UNARY_OPS else resolve(_clause_side(clause, "right"), context)
+        try:
+            held = _clause_holds(op, left, right)
+        except GuardUnevaluable as exc:
+            # Unevaluable is a HOLD, and says so in its own words: "cannot compare" is a
+            # different fix from "did not match", and a reader who is told the wrong one
+            # goes looking at the wrong step.
+            return False, f"{render_clause(clause)} — cannot compare ({exc})"
+        results.append((held, render_clause(clause)))
+    if logic == "any":
+        if any(held for held, _ in results):
+            return True, ""
+        return False, " or ".join(text for _, text in results)
+    failed = [text for held, text in results if not held]
+    if failed:
+        return False, " and ".join(failed)
+    return True, ""
 
 
 #: B1 — what each effect kind PUBLISHES into the chain context, DECLARED.
@@ -158,7 +341,10 @@ def validate_chain(effects: list) -> Optional[str]:
     seen: dict[str, str] = {}   # alias → effect kind, for the key check above
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
-        for ref in collect_refs(getattr(effect, "config", {}) or {}):
+        # W1 — `effect_refs`, not `collect_refs(config)`: a guard reads the context too,
+        # and a guard onto a step that does not exist must be refused at SAVE like any
+        # other reference. Before this, `when` was the one dataflow path nothing checked.
+        for ref in effect_refs(effect):
             target, _ = parse_ref(ref)
             if target == alias:
                 return f"step '{alias}' refers to itself ({ref})"

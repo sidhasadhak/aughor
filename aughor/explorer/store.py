@@ -456,3 +456,42 @@ def dismiss_insight_canvas(canvas_id: str, insight_id: str, reason: str = "") ->
 
 def canvas_has_state(canvas_id: str) -> bool:
     return has_state(_canvas_key(canvas_id))
+
+
+#: The phases an exploration does not come back from. Derived from the enum, never
+#: spelled: a renamed member would otherwise stop matching silently, and a boot check
+#: that quietly stops matching re-runs every exploration on every restart.
+TERMINAL_PHASES: tuple[str, ...] = (ExplorationPhase.COMPLETE.value,
+                                    ExplorationPhase.FAILED.value)
+
+
+def is_unfinished(state: dict) -> bool:
+    """Does this saved exploration state have work left?
+
+    A MISSING phase counts as unfinished, which is the safe direction: an unrecognised
+    state might be mid-run, and resuming one that was done costs a re-run while skipping
+    one that was not loses the work outright.
+    """
+    return str((state or {}).get("phase", "")) not in TERMINAL_PHASES
+
+
+def canvas_needs_resume(canvas_id: str) -> bool:
+    """Should a boot resume this canvas's explorer?
+
+    Boot recovery exists for the exploration a previous process INTERRUPTED — one whose
+    saved phase is still mid-run. A `complete` or `failed` canvas has already reached its
+    end; re-spawning it is not recovery, it is a fresh exploration nobody asked for, and
+    (measured 2026-08-30) `spawn_explorer` waves it through because its own guard only
+    refuses an exploration that is *currently running*. Two canvases in that state meant
+    two full re-explorations on every single restart, each one spending model tokens.
+
+    The connection path already worked this way — `_kernel_boot_recovery` skips a
+    terminal aggregate phase, with a comment saying recovery "kept re-spawning explorers
+    for explorations that had already completed". The canvas path never got the same
+    check. This is that check, in one place both paths read.
+
+    A `failed` exploration is restartable on demand (`POST /exploration/{id}/start`);
+    what it must not be is retried forever, with no backoff and no cap, by the act of
+    restarting the server.
+    """
+    return canvas_has_state(canvas_id) and is_unfinished(load_canvas(canvas_id))

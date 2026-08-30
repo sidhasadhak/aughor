@@ -54,6 +54,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Approvals** | The queue of actions awaiting a human | the kinetic "inbox" (one **Inbox** exists: recommendations) |
 | **Monitor** | A watch-a-metric rule | — |
 | **Automation** | The condition→effect engine | — |
+| **Only if** | A guard on ONE step: it runs only when the guard holds against what earlier steps published. `when` is the wire's field name | "When" (the automation's trigger already owns that word on the canvas), filter, condition (that is the trigger's) |
 | **Advice rule** | A "if metric X then recommend Y" entry | playbook (the `playbook/` sense) |
 | **Starter** | A named question template that seeds a run | research playbook |
 

@@ -9,7 +9,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { applyConnect, clearBinding, draftToFlow, type Vocabulary } from "@/lib/automationFlow";
+import {
+  applyConnect, clearBinding, draftToFlow, GUARD_FIELD, guardSentences, upstreamKeys,
+  type Vocabulary,
+} from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
 const VOCAB: Vocabulary = {
@@ -125,5 +128,146 @@ describe("clearBinding", () => {
     // a field that was NOT a binding is untouched — clearing must not blank prose
     const noop = clearBinding(d, "step2", "channel");
     expect(noop.effects[1].config.channel).toBe("#c");
+  });
+});
+
+/* ── W1 · the guard ─────────────────────────────────────────────────────────── */
+
+const OPS = [
+  { op: "truthy", label: "is set", unary: true },
+  { op: "gt", label: ">", unary: false },
+];
+
+describe("the guard, drawn", () => {
+  it("draws a guard reference as an edge — onto the guard port, not a field", () => {
+    // The engine follows this reference (`effect_refs`), so the picture must too. An
+    // arrow the run takes and the canvas omits is the disagreement this module exists
+    // to prevent — and it lands on the step's own guard port, because a guard DECIDES
+    // whether the step runs rather than filling one of its fields.
+    const { edges } = draftToFlow(draft(
+      eff("investigate", { question: "sales?" }, "numbers"),
+      { ...eff("slack_post", { channel: "#ops" }), when: [{ left: { $from: "numbers.answer" }, op: "truthy" }] },
+    ), VOCAB);
+    expect(edges).toEqual([
+      { from: "numbers", key: "answer", to: "step2", field: GUARD_FIELD, guard: true },
+    ]);
+  });
+
+  it("does not draw a guard onto a step that is not there", () => {
+    // `validate_chain` refuses these at save; drawing one would be a picture of a
+    // chain the engine would never run.
+    const { edges } = draftToFlow(draft(
+      { ...eff("slack_post", { channel: "#ops" }), when: [{ left: { $from: "ghost.answer" }, op: "truthy" }] },
+    ), VOCAB);
+    expect(edges).toEqual([]);
+  });
+
+  it("draws BOTH sides of a comparison between two steps", () => {
+    const { edges } = draftToFlow(draft(
+      eff("investigate", { question: "sales?" }, "a"),
+      eff("slack_post", { channel: "#ops" }, "b"),
+      { ...eff("notify", { trigger_id: "t" }), when: [{
+        left: { $from: "a.answer" }, op: "gt", right: { $from: "b.ts" } }] },
+    ), VOCAB);
+    expect(edges.map(e => `${e.from}.${e.key}`)).toEqual(["a.answer", "b.ts"]);
+  });
+
+  it("carries the guard onto the step so a node can show it", () => {
+    const { steps } = draftToFlow(draft(
+      { ...eff("notify", { trigger_id: "t" }), when: [{ left: 1, op: "gt", right: 0 }],
+        when_logic: "any" as const },
+    ), VOCAB);
+    expect(steps[0].when).toHaveLength(1);
+    expect(steps[0].whenLogic).toBe("any");
+  });
+});
+
+describe("guardSentences", () => {
+  it("uses the SERVER's word for each operator, and a binding reads as its path", () => {
+    expect(guardSentences([{ left: { $from: "step1.answer" }, op: "truthy" }], OPS))
+      .toEqual(["step1.answer is set"]);
+  });
+
+  it("omits the right side for a unary operator rather than printing an empty one", () => {
+    expect(guardSentences([{ left: { $from: "s.a" }, op: "truthy", right: "ignored" }], OPS))
+      .toEqual(["s.a is set"]);
+  });
+
+  it("falls back to the raw operator when the vocabulary has not arrived yet", () => {
+    // A page that renders before the fetch lands must say something true rather than
+    // blank out the one line telling the reader the step is conditional.
+    expect(guardSentences([{ left: { $from: "s.a" }, op: "gt", right: 5 }], []))
+      .toEqual(["s.a gt 5"]);
+  });
+});
+
+describe("upstreamKeys", () => {
+  it("offers only what runs BEFORE this step — the rule validate_chain enforces", () => {
+    const effects = [eff("investigate", {}, "a"), eff("slack_post", {}, "b"),
+                     eff("notify", {}, "c")];
+    expect(upstreamKeys(effects, 1, VOCAB).map(u => u.ref))
+      .toEqual(["a.investigation_id", "a.answer"]);
+    expect(upstreamKeys(effects, 0, VOCAB)).toEqual([]);
+  });
+
+  it("offers nothing for an open-set producer rather than inventing a key", () => {
+    const effects = [eff("kinetic_action", {}, "act"), eff("notify", {}, "n")];
+    expect(upstreamKeys(effects, 1, VOCAB)).toEqual([]);
+  });
+});
+
+describe("a preview never wears a real run's words", () => {
+  it("marks every node so a chip can say 'would run' instead of 'executed'", async () => {
+    // The engine's honest word for a dry-run step is `executed` — it ran to completion,
+    // through an inert dispatcher. On screen, under a banner reading "nothing was sent",
+    // that is exactly the wrong word. Found by driving it.
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { nodes } = toFlow({
+      nodes: [{ id: "s1", type: "effect", label: "s1", status: "executed" }],
+      edges: [], mode: "execution", dry_run: true,
+    });
+    expect(nodes[0].data.dryRun).toBe(true);
+  });
+
+  it("leaves a REAL run's nodes unmarked", async () => {
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { nodes } = toFlow({
+      nodes: [{ id: "s1", type: "effect", label: "s1", status: "executed" }],
+      edges: [], mode: "execution",
+    });
+    expect(nodes[0].data.dryRun).toBe(false);
+  });
+});
+
+describe("one arrow per claim, not per reference", () => {
+  it("draws a key bound BOTH as a field and in a guard exactly once", async () => {
+    // `build_graph` reports both — they are different claims about the chain — but an
+    // execution edge has no per-field handle to land on, so the two are one arrow drawn
+    // twice under one id. React logged a duplicate-key error; found by driving it.
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { edges } = toFlow({
+      nodes: [{ id: "numbers", type: "effect", label: "numbers" },
+              { id: "step2", type: "effect", label: "step2" }],
+      edges: [
+        { from: "numbers", to: "step2", type: "data", label: "answer", guard: false },
+        { from: "numbers", to: "step2", type: "data", label: "answer", guard: true },
+      ],
+      mode: "execution",
+    });
+    expect(edges).toHaveLength(1);
+    expect(new Set(edges.map(e => e.id)).size).toBe(edges.length);
+  });
+
+  it("keeps two edges when they carry DIFFERENT keys", async () => {
+    const { toFlow } = await import("@/components/AutomationGraph");
+    const { edges } = toFlow({
+      nodes: [{ id: "a", type: "effect", label: "a" }, { id: "b", type: "effect", label: "b" }],
+      edges: [
+        { from: "a", to: "b", type: "data", label: "answer" },
+        { from: "a", to: "b", type: "data", label: "investigation_id" },
+      ],
+      mode: "execution",
+    });
+    expect(edges).toHaveLength(2);
   });
 });

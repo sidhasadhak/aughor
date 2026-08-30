@@ -7,9 +7,12 @@
  * an edit looks exactly like one that was already enabled, and a draft that reads dirty
  * forever looks exactly like one you have genuinely changed.
  */
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { sameDraft, updatePayload } from "@/components/automations/AutomationAuthor";
+import {
+  AutomationAuthor, sameDraft, updatePayload,
+} from "@/components/automations/AutomationAuthor";
 import type { Automation, AutoCondition, AutoEffect } from "@/lib/api";
 
 const cond = (over: Partial<AutoCondition> = {}): AutoCondition =>
@@ -113,5 +116,54 @@ describe("the dirty check", () => {
       { conditions: a.conditions, effects: a.effects },
       { conditions: [cond({ config: { cron: "0 * * * *" } })], effects: a.effects },
     )).toBe(false);
+  });
+});
+
+/* ── B2 · the dry run ───────────────────────────────────────────────────────── */
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  listUserAgents: vi.fn(async () => []),
+  getSlackBots: vi.fn(async () => []),
+  getAutomationVocabulary: vi.fn(async () => ({ kinds: {}, guardOps: [] })),
+  updateAutomation: vi.fn(async () => ({})),
+  dryRunAutomationDraft: vi.fn(async () => ({ run: {}, graph: { nodes: [], edges: [] } })),
+}));
+
+describe("Dry run", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("previews EXACTLY what Save would send", async () => {
+    // One payload builder. A second assembly here could preview a design the save does
+    // not make — a preview you cannot trust is worse than none, because it is believed.
+    const { dryRunAutomationDraft } = await import("@/lib/api");
+    const a = automation();
+    const draft = { conditions: a.conditions, effects: a.effects };
+    render(<AutomationAuthor automation={a} draft={draft} onDraft={() => {}}
+      onSaved={() => {}} onPreview={() => {}} />);
+
+    fireEvent.click(await screen.findByText("Dry run"));
+    await waitFor(() => expect(dryRunAutomationDraft).toHaveBeenCalled());
+    expect(vi.mocked(dryRunAutomationDraft).mock.calls[0][0])
+      .toEqual(updatePayload(a, draft));
+  });
+
+  it("is offered on a design nobody has edited today", async () => {
+    // Save and Discard are for a dirty draft; a preview is not. An untouched design is
+    // still one nobody has ever seen run, which is the whole question.
+    const a = automation();
+    render(<AutomationAuthor automation={a} draft={{ conditions: a.conditions, effects: a.effects }}
+      onDraft={() => {}} onSaved={() => {}} onPreview={() => {}} />);
+    expect(await screen.findByText("Dry run")).toBeInTheDocument();
+    expect(screen.queryByText("Save design")).not.toBeInTheDocument();
+  });
+
+  it("hands the graph up rather than storing it — a preview has no id to refetch by", async () => {
+    const seen: unknown[] = [];
+    const a = automation();
+    render(<AutomationAuthor automation={a} draft={{ conditions: a.conditions, effects: a.effects }}
+      onDraft={() => {}} onSaved={() => {}} onPreview={(g) => seen.push(g)} />);
+    fireEvent.click(await screen.findByText("Dry run"));
+    await waitFor(() => expect(seen).toHaveLength(1));
   });
 });

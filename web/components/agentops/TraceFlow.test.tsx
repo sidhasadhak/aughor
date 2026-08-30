@@ -18,7 +18,8 @@
  * and edges the component computes and passes down. That is where the bug lived: the
  * forest was right and the canvas got nothing. Geometry stays a browser question.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import React from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TraceFlow, eventForNode } from "@/components/agentops/TraceFlow";
@@ -28,6 +29,13 @@ import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 /** What the component handed the renderer on the most recent render. */
 const handoff: { nodes: RFLike[]; edges: RFLike[] }[] = [];
+/** Every viewport move the component asked for. */
+const fits: string[] = [];
+const fakeRf = {
+  fitView: () => { fits.push("fit"); },
+  setCenter: () => { fits.push("center"); },
+  getZoom: () => 1,
+};
 type RFLike = Record<string, unknown>;
 
 // Partial: only the canvas is replaced. `Handle`, `Position` and `MarkerType` stay real,
@@ -39,15 +47,30 @@ vi.mock("@xyflow/react", async importOriginal => {
   const Provider = actual.ReactFlowProvider as React.ComponentType<{
     children?: React.ReactNode;
   }>;
-  const Stub = ({ nodes, edges, nodeTypes }: {
+  const Stub = ({ nodes, edges, nodeTypes, onInit }: {
     nodes: RFLike[]; edges: RFLike[]; nodeTypes: Record<string, React.ComponentType<RFLike>>;
+    onInit?: (rf: unknown) => void;
   }) => {
     handoff.push({ nodes, edges });
-    const Card = nodeTypes?.traceNode;
+    // Hand the component an instance ONCE, so the re-fit it performs is observable.
+    // Without this `rf` stays null, the effect returns early, and a test asserting the
+    // viewport does not jump would pass with the jump fully intact.
+    const inited = React.useRef(false);
+    React.useEffect(() => {
+      if (inited.current) return;
+      inited.current = true;
+      onInit?.(fakeRf);
+    }, [onInit]);
+    // Each node rendered through ITS OWN registered type. Hard-wiring `traceNode` here
+    // would have quietly dropped every band card the folding feature draws — a stub that
+    // renders less than the canvas does is a test that passes on a blank screen.
     return (
       <Provider>
         <div data-testid="canvas">
-          {Card ? nodes.map(n => <Card key={String(n.id)} {...n} />) : null}
+          {nodes.map(n => {
+            const Card = nodeTypes?.[String(n.type ?? "traceNode")];
+            return Card ? <Card key={String(n.id)} {...n} /> : null;
+          })}
         </div>
       </Provider>
     );
@@ -62,6 +85,9 @@ const drawn = () => handoff[handoff.length - 1] ?? { nodes: [], edges: [] };
  *  a bare `getAllByText` would pass just as happily if the card had vanished and only
  *  the rail were left. Scoping keeps each assertion about the surface it names. */
 const canvas = () => within(screen.getByTestId("canvas"));
+/** The rail is hidden until asked for — it is a companion to the canvas, not a frame
+ *  around it. Tests that read it open it first, the way a reader would. */
+const showRail = () => fireEvent.click(screen.getByText("Timeline"));
 const rail = () => within(screen.getByTestId("timeline-rail"));
 
 const node = (id: string, over: Partial<TimelineNode> = {}): TimelineNode => ({
@@ -99,6 +125,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   handoff.length = 0;
+  fits.length = 0;
 });
 
 describe("TraceFlow", () => {
@@ -353,6 +380,7 @@ describe("the timeline rail", () => {
 
   it("indexes every drawn node, so a canvas wider than the pane stays navigable", () => {
     render(<TraceFlow timeline={timeline(three)} edges={[]} />);
+    showRail();
     for (const name of ["intake", "plan", "answer"]) {
       expect(rail().getByText(name)).toBeInTheDocument();
     }
@@ -363,6 +391,7 @@ describe("the timeline rail", () => {
       <TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]}
                  events={[ev2({ span_id: "a", payload: { pick: "from-the-rail" } })]} />,
     );
+    showRail();
     expect(screen.queryByText(/from-the-rail/)).toBeNull();
 
     fireEvent.click(rail().getByText("a"));
@@ -374,6 +403,7 @@ describe("the timeline rail", () => {
       <TraceFlow timeline={timeline(three)} edges={[]}
                  events={[ev2({ kind: "tool_call", [BUILTIN_AGENT_FIELD]: "watcher" })]} />,
     );
+    showRail();
     expect(rail().getByText(/inside the platform/)).toBeInTheDocument();
     expect(rail().getByText("watcher")).toBeInTheDocument();
   });
@@ -393,3 +423,270 @@ function ev2(over: Partial<SessionEvent> = {}): SessionEvent {
     ...over,
   } as SessionEvent;
 }
+
+/* ── stacking a run of like nodes ───────────────────────────────────────────────
+ *
+ * `lib/traceFlow.test.ts` proves the rule. These prove the component ACTS on it — the
+ * same split this file exists for, and the same defect it was written to catch: a
+ * correct pure function whose result never reaches the canvas.
+ */
+describe("stacked nodes", () => {
+  /** A long run of one thing, which is what a stack is for. */
+  const sameKind = (n: number, name = "gemini-3.1-flash-lite") =>
+    Array.from({ length: n }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name }));
+
+  it("hands the canvas ONE card for a run of like nodes", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    expect(drawn().nodes).toHaveLength(1);
+    expect(drawn().nodes[0].type).toBe("bandNode");
+  });
+
+  it("wears the face of the thing it stacks, and says how many", () => {
+    // Every node inside is this node; the only new information is how many and how long.
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    expect(canvas().getByText("×30")).toBeInTheDocument();
+    expect(canvas().getByText("gemini-3.1-flash-lite")).toBeInTheDocument();
+    expect(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"))
+      .toBeInTheDocument();
+  });
+
+  it("draws the ordinary node card, not a shrunken summary of one", () => {
+    // The default card is what a reader already knows how to read, and every node in the
+    // stack IS that node. An earlier pass replaced it with a condensed two-line summary
+    // to save vertical room the layout was not short of; this locks that back.
+    const stacked = Array.from({ length: 30 }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }));
+    render(<TraceFlow timeline={timeline(stacked)} edges={[]} />);
+    const card = canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes");
+    // The ordinary card in its default state is name · duration · Details. The condensed
+    // summary this replaced had no Details affordance at all, so its presence is what
+    // separates "the node, stacked" from "a card about the node".
+    expect(within(card).getByText("Details")).toBeInTheDocument();
+    expect(within(card).getByText("gemini-3.1-flash-lite")).toBeInTheDocument();
+    expect(within(card).getByText("×30")).toBeInTheDocument();
+  });
+
+  it("shows the stack's TOTAL duration, the one number a single face would get wrong", () => {
+    const stacked = Array.from({ length: 30 }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini", duration_ms: 100 }));
+    render(<TraceFlow timeline={timeline(stacked)} edges={[]} />);
+    const band = drawn().nodes.find(n => n.type === "bandNode");
+    const bandData = band!.data as { card: { node: TimelineNode } };
+    expect(bandData.card.node.duration_ms).toBe(3000);
+  });
+
+  it("does NOT stack like nodes that something else came between", () => {
+    // The rule, in the user's own words: two model calls with an ask between them are
+    // two cards, because they are not one after the other.
+    const nodes = [
+      ...sameKind(12),
+      node("ask", { event_kind: "user_request", name: "ask" }),
+      ...sameKind(12).map(n => node(`b${n.id}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" })),
+    ];
+    render(<TraceFlow timeline={timeline(nodes)} edges={[]} />);
+    const types = drawn().nodes.map(n => n.type);
+    expect(types.filter(t => t === "bandNode")).toHaveLength(2);
+    expect(types.filter(t => t === "traceNode")).toHaveLength(1);
+  });
+
+  it("leaves a run that already fits completely alone", () => {
+    // The median trace measured is ten nodes. Folding what a reader can already see
+    // would be a control changing a picture nobody was struggling with.
+    render(<TraceFlow timeline={timeline([node("a"), node("b")])} edges={[]} />);
+    expect(drawn().nodes.map(n => n.type)).toEqual(["traceNode", "traceNode"]);
+  });
+
+  it("expands every node in the stack when the card is clicked", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    expect(drawn().nodes).toHaveLength(30);
+    expect(drawn().nodes.every(n => n.type === "traceNode")).toBe(true);
+  });
+
+  it("offers the way back on the first card, and only there", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    // One chip, not thirty — the clutter this feature exists to remove.
+    expect(canvas().getAllByLabelText("Collapse these 30 repeats")).toHaveLength(1);
+  });
+
+  it("re-stacks when that chip is used", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    fireEvent.click(canvas().getByLabelText("Collapse these 30 repeats"));
+    expect(drawn().nodes).toHaveLength(1);
+    expect(drawn().nodes[0].type).toBe("bandNode");
+  });
+
+  it("turns stacking off entirely on request, and shows every node", () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    fireEvent.click(screen.getByText("Grouped"));
+    expect(drawn().nodes).toHaveLength(30);
+    expect(screen.getByText("Group repeats")).toBeInTheDocument();
+  });
+
+  it("keeps the chain joined across a stack", () => {
+    // The run's own `next` edges connect real nodes, so the two reaching into a stacked
+    // run vanish with its members — leaving the stack floating unless replaced.
+    const nodes = [node("head", { event_kind: "tool_call", name: "start" }), ...sameKind(30)];
+    const edges = nodes.slice(0, -1).map((n, i) => edge(n.id, nodes[i + 1].id, "next"));
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = new Set(drawn().nodes.map(n => String(n.id)));
+    expect(ids.size).toBe(2);
+    for (const e of drawn().edges) {
+      expect(ids.has(String(e.source))).toBe(true);
+      expect(ids.has(String(e.target))).toBe(true);
+    }
+    expect(drawn().edges.some(e => String(e.source) === "head")).toBe(true);
+  });
+
+  it("draws a failed node as itself, never inside a stack", () => {
+    const nodes = [...sameKind(12),
+      node("boom", { event_kind: "llm_call", name: "gemini-3.1-flash-lite", ok: false }),
+      ...sameKind(12).map(n => node(`b${n.id}`,
+        { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }))];
+    render(<TraceFlow timeline={timeline(nodes)} edges={[]} />);
+    const cards = drawn().nodes;
+    expect(cards.filter(n => n.type === "bandNode")).toHaveLength(2);
+    const failed = cards.filter(n => n.type === "traceNode");
+    expect(failed.map(n => n.id)).toEqual(["boom"]);
+    // Reading order, not x alone: a flat run wraps into a block now, so "after" means
+    // further down the rows and then further along them.
+    const orderOf = (n: RFLike) => {
+      const p = n.position as { x: number; y: number };
+      return p.y * 1e6 + p.x;
+    };
+    const bandOrder = cards.filter(n => n.type === "bandNode").map(orderOf)
+      .sort((a, b) => a - b);
+    expect(orderOf(failed[0])).toBeGreaterThan(bandOrder[0]);
+    expect(orderOf(failed[0])).toBeLessThan(bandOrder[1]);
+    const failedData = failed[0].data as { node: TimelineNode };
+    expect(failedData.node.ok).toBe(false);
+  });
+});
+
+/* ── keeping the reader's place ─────────────────────────────────────────────── */
+
+/** The re-fit is deferred a frame (ReactFlow measures after commit), so an assertion
+ *  made straight after a click runs BEFORE the fit would have happened and passes with
+ *  the jump fully intact — this pair did exactly that until the frames were flushed. */
+const settleFrames = async () => {
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+  }
+};
+
+describe("the viewport when a stack opens", () => {
+  const sameKind = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }));
+
+  it("does NOT re-fit — the card under the cursor stays where it was", async () => {
+    // Reported from the browser: expanding a stack jumped the viewport, losing the very
+    // node the reader had just clicked. The re-fit was keyed on the DRAWN nodes, which
+    // are exactly what expanding changes.
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));  // the mount fit
+    fits.length = 0;
+
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    await waitFor(() => expect(drawn().nodes).toHaveLength(30));
+    await settleFrames();
+    expect(fits).toEqual([]);
+  });
+
+  it("does not re-fit when stacking is switched off either", async () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));
+    fits.length = 0;
+    fireEvent.click(screen.getByText("Grouped"));
+    await waitFor(() => expect(drawn().nodes).toHaveLength(30));
+    await settleFrames();
+    expect(fits).toEqual([]);
+  });
+
+  it("STILL re-fits when the run itself changes", async () => {
+    // The control. Without it this pair passes just as well with the re-fit deleted —
+    // and a canvas that never fits opens every new run at the previous one's pan.
+    const { rerender } = render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));
+    fits.length = 0;
+    rerender(<TraceFlow timeline={timeline([node("other", { name: "another run" })])} edges={[]} />);
+    await waitFor(() => expect(fits).toContain("fit"));
+  });
+});
+
+/* ── the guardrail filter ───────────────────────────────────────────────────── */
+describe("guardrails that allowed", () => {
+  const withGuards = () => {
+    // Distinct `seq` per node: `eventForNode` matches on span first and SEQUENCE second,
+    // so a fixture where every node is seq 0 hands one event to all of them — which is
+    // how the blocked-guardrail case first "passed" for the wrong reason.
+    const nodes = [
+      node("q", { seq: 1, event_kind: "user_request", name: "ask" }),
+      node("g1", { seq: 2, event_kind: "guardrail", name: "pii", span_id: "g1" }),
+      node("m1", { seq: 3, event_kind: "llm_call", kind: "model", name: "gemini" }),
+      node("g2", { seq: 4, event_kind: "guardrail", name: "pii", span_id: "g2" }),
+      node("t1", { seq: 5, event_kind: "tool_call", name: "sql.execute" }),
+    ];
+    const edges = nodes.slice(0, -1).map((n, i) => edge(n.id, nodes[i + 1].id, "next"));
+    return { nodes, edges };
+  };
+
+  it("hides them by DEFAULT — a third of every canvas, carrying no decision", () => {
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = drawn().nodes.map(n => String(n.id));
+    expect(ids).not.toContain("g1");
+    expect(ids).not.toContain("g2");
+    expect(ids).toEqual(expect.arrayContaining(["q", "m1", "t1"]));
+  });
+
+  it("says how many it took away, and brings them back on request", () => {
+    // A control that vanishes once it has done its job leaves the reader unable to ask
+    // what it removed.
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    fireEvent.click(screen.getByText("2 guardrails hidden"));
+    expect(drawn().nodes.map(n => String(n.id))).toEqual(
+      expect.arrayContaining(["q", "g1", "m1", "g2", "t1"]));
+    expect(screen.getByText("Guardrails shown")).toBeInTheDocument();
+  });
+
+  it("NEVER hides one that blocked", () => {
+    // A filter about noise must not swallow an outcome.
+    const { nodes, edges } = withGuards();
+    render(
+      <TraceFlow timeline={timeline(nodes)} edges={edges}
+                 events={[ev2({ seq: 2, span_id: "g1", kind: "guardrail",
+                                payload: { blocked: true } })]} />,
+    );
+    const ids = drawn().nodes.map(n => String(n.id));
+    expect(ids).toContain("g1");
+    expect(ids).not.toContain("g2");
+  });
+
+  it("never hides one that FAILED either", () => {
+    const { nodes, edges } = withGuards();
+    nodes[1] = node("g1", { seq: 2, event_kind: "guardrail", name: "pii", ok: false });
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    expect(drawn().nodes.map(n => String(n.id))).toContain("g1");
+  });
+
+  it("keeps the chain joined across what it removed", () => {
+    // The run's own `next` edges ran THROUGH the hidden nodes, so without a bridge the
+    // cards either side are left floating with no line into them.
+    const { nodes, edges } = withGuards();
+    render(<TraceFlow timeline={timeline(nodes)} edges={edges} />);
+    const ids = new Set(drawn().nodes.map(n => String(n.id)));
+    for (const e of drawn().edges) {
+      expect(ids.has(String(e.source))).toBe(true);
+      expect(ids.has(String(e.target))).toBe(true);
+    }
+    // q → m1 → t1: every card after the first has something pointing at it.
+    for (const id of ["m1", "t1"]) {
+      expect(drawn().edges.some(e => String(e.target) === id)).toBe(true);
+    }
+  });
+});
