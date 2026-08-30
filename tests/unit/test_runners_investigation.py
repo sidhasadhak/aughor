@@ -358,3 +358,34 @@ def test_a_plain_headline_still_wins_when_the_path_sends_one(monkeypatch):
     run = run_investigation(InvestigationRequest(question="q", connection_id="c",
                                                  wait=True))
     assert run.headline == "the whole answer"
+
+
+def test_the_investigate_paths_answer_report_carries_the_headline(monkeypatch):
+    """A deep run emits no headline frame at all — it finishes with one `answer_report`
+    and the sentence lives inside it. Two live runs (102s and 96s) came back with "" for
+    exactly this, and the step that needed the answer was skipped as if nothing upstream
+    had produced anything."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-9"},
+              {"type": "answer_report", "investigation_id": "inv-9",
+               "answer_report": {"headline": "51 orders vs a 740.9 prior average",
+                                 "sections": []}})
+
+    run = run_investigation(InvestigationRequest(question="how were sales?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "51 orders vs a 740.9 prior average"
+
+
+def test_a_typed_delta_never_overwrites_the_finished_answer(monkeypatch):
+    """A report is the finished sentence; a delta is one being typed. Order on the wire
+    must not decide which survives."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "answer_report", "answer_report": {"headline": "the whole answer"}},
+              {"type": "headline_delta", "headline": "the wh"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"

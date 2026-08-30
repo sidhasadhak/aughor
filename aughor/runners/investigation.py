@@ -199,7 +199,23 @@ def run_investigation(
                     seen["investigation_id"] = str(payload["investigation_id"])
                 elif kind == "receipt_id" and payload.get("receipt_id"):
                     seen["receipt_id"] = str(payload["receipt_id"])
-                elif kind in ("headline", "headline_delta") and payload.get("headline"):
+                elif kind == "answer_report":
+                    # THE INVESTIGATE PATH'S ANSWER. A deep run never emits a headline
+                    # frame at all: it finishes with one `answer_report`, and the
+                    # sentence lives INSIDE the report. Two live runs — 102s and 96s,
+                    # both completing with a headline on their investigation record —
+                    # came back with "" because this drain only knew the chat path's
+                    # vocabulary, so the step that needed the answer was skipped as if
+                    # the upstream had produced nothing.
+                    #
+                    # Checked BEFORE the delta branch and never overwritten by it: the
+                    # report is the finished sentence, a delta is a sentence being typed.
+                    report = payload.get("answer_report")
+                    if isinstance(report, dict) and report.get("headline"):
+                        seen["headline"] = str(report["headline"])
+                        seen["headline_is_final"] = "1"
+                elif (kind in ("headline", "headline_delta") and payload.get("headline")
+                        and not seen.get("headline_is_final")):
                     # The answer itself. Sniffed off the same stream as the ids above and
                     # for the same reason: the door emits it, and re-deriving it from the
                     # investigation record afterwards would be a second reader of a
@@ -216,10 +232,13 @@ def run_investigation(
                     # that needed the answer was skipped for missing upstream data, so
                     # the tokens were spent and nothing was delivered.
                     seen["headline"] = str(payload["headline"])
+                    if kind == "headline":
+                        seen["headline_is_final"] = "1"
                 elif kind == "error":
                     seen["error"] = str(payload.get("message", ""))[:2000]
 
         asyncio.run(_drain())
+        seen.pop("headline_is_final", None)   # a drain marker, not a result field
         _note_dispatch(caller, req, seen)
 
     def _inline(reason: str) -> InvestigationRun:
