@@ -3482,6 +3482,13 @@ export interface IntegrationProvider {
   /** The authored callback, when one was set; "" means the derived one applies. */
   redirect_uri: string;
   console_url: string;
+  /** Whether the OAuth dance can complete on THIS deployment: false when the provider
+   *  refuses `http://` and the callback this API would send is one. The card then routes
+   *  to `alt_door` instead of offering a button that cannot work here. */
+  oauth_ready: boolean;
+  /** A door needing no public callback — `"slack_app"` is Slack's app + Socket Mode,
+   *  which a laptop can complete. `""` when OAuth is the only way in. */
+  alt_door: string;
   /** This provider REFUSES an `http://` redirect URL, localhost included — Slack says
    *  so in its own docs, Google and Microsoft accept the loopback address. The Set-up
    *  form uses it to warn BEFORE the credentials are pasted, instead of after the

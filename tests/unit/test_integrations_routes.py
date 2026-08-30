@@ -159,3 +159,35 @@ def test_a_tunnel_to_this_api_is_accepted(client):
         "client_id": "c", "client_secret": "s",
         "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
     assert ok.status_code == 200, ok.text
+
+
+# ── the door a laptop can actually open ───────────────────────────────────────────
+
+def _slack(client):
+    return next(p for p in client.get("/integrations/catalog").json()["providers"]
+                if p["id"] == "slack")
+
+
+def test_slack_oauth_is_not_offered_when_the_callback_cannot_be_https(client):
+    """The whole point: a fresh install is reached over http://, Slack refuses http://,
+    so its OAuth button cannot work — and pointing a new user at it costs them an evening
+    on a tunnel to reach a token nothing consumes yet."""
+    assert _slack(client)["oauth_ready"] is False
+    assert _slack(client)["alt_door"] == "slack_app"
+
+
+def test_a_provider_that_takes_the_loopback_address_is_ready(client):
+    """Google and Microsoft accept `http://localhost`, so nothing changes for them."""
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["oauth_ready"] is True
+    assert google["alt_door"] == ""
+
+
+def test_an_https_override_makes_slack_oauth_available_again(client):
+    """A tunnel (or a real deployment) is the case OAuth was written for — the readiness
+    reads the SAME callback `connect` will send, so the button and the dance agree."""
+    client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert _slack(client)["oauth_ready"] is True

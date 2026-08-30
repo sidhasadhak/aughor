@@ -41,6 +41,21 @@ def _callback_uri(request: Request) -> str:
     return f"{proto}://{host}/oauth/callback"
 
 
+def _oauth_ready(provider, app, request) -> bool:
+    """Can the OAuth dance complete on THIS deployment, for THIS provider?
+
+    The only thing that decides it today is the scheme of the callback the provider will
+    be handed: an `https_only` provider cannot be given an `http://` address, and a
+    laptop has no other. Read off the SAME two sources `connect` uses — the stored
+    override first, the derived address second — so the button and the dance cannot
+    disagree about whether it would work.
+    """
+    if not provider.https_only:
+        return True
+    callback = (app.redirect_uri if app else "") or _callback_uri(request)
+    return callback.startswith("https://")
+
+
 # ── catalog ──────────────────────────────────────────────────────────────────────
 
 @router.get("/integrations/catalog")
@@ -68,6 +83,12 @@ def catalog(request: Request):
             # So the Set-up form can say that THIS redirect URI will not be accepted,
             # rather than showing a string the provider rejects on the next click.
             "https_only": p.https_only,
+            # Whether the OAuth dance can complete on THIS deployment at all. A provider
+            # that refuses `http://` cannot be connected from a laptop, and offering the
+            # button anyway is how a fresh install spends an evening on a tunnel to reach
+            # a token nothing consumes yet. False routes the card to `alt_door`.
+            "oauth_ready": _oauth_ready(p, app, request),
+            "alt_door": p.alt_door,
             "connection": conn.to_safe_dict() if conn else None,
         })
     return {"providers": out, "redirect_uri": _callback_uri(request)}

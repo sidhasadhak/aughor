@@ -230,6 +230,17 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
    second provider. Then **Slack and Microsoft as data, not code.**
 4. **The catalog surface** — categorised, searchable, one `Connect` per provider, with
    `+ Custom MCP` as its last entry (where VA-9d surfaces to a user).
+   🔑 **Decided 2026-08-30, from a live install failure: a card must offer the door THIS
+   deployment can open.** Slack's OAuth needs an HTTPS callback; a laptop has none; so a
+   freshly-cloned Aughor was being pointed at the one door it cannot open — to reach a
+   token **nothing consumes yet** (`broker.fresh_access_token()` still has zero callers,
+   §3.4's own note). Meanwhile RC-5's Slack app path — manifest + three tokens + Socket
+   Mode, an *outbound* socket, no callback, no tunnel — works on a laptop today and is
+   what `slack_post` actually uses. The catalog now computes `oauth_ready` from the same
+   callback `connect` would send, and routes to `Provider.alt_door` when it is false.
+   The user's framing, which is the general rule: *"someone who just installed from
+   GitHub would not know how to start a tunnel."* **A provider gains an `alt_door`
+   whenever one exists that needs no public callback.**
 5. **LATER, not now — `CredentialBackend` seam.** A large deployment that genuinely needs 900
    providers points the same `Connection` at a self-hosted vendor broker (Nango under
    `NANGO_ENCRYPTION_KEY`) and the governance plane never notices — what moves is the vault,

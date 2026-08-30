@@ -22,7 +22,13 @@ import {
   beginIntegrationConnect, getIntegrationsCatalog, revokeIntegrationConnection,
   setupIntegrationApp,
   type IntegrationProvider,
+  getSlackBots,
+  listUserAgents,
+  type SlackBotSummary,
+  type UserAgent,
 } from "@/lib/api";
+
+import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -46,6 +52,13 @@ export function IntegrationsPanel() {
   /** Set after a revoke of a provider with no revocation endpoint — the one case where
    *  "revoked" is only half true and the reader must be told the other half. */
   const [notice, setNotice] = useState("");
+  /** The provider whose alternative door is open — Slack's app flow, today. */
+  const [doorFor, setDoorFor] = useState<string | null>(null);
+  const [bots, setBots] = useState<SlackBotSummary[]>([]);
+  const [agents, setAgents] = useState<UserAgent[]>([]);
+  /** Which agent the new app answers AS. Optional: a bot with none still posts, it just
+   *  cannot answer an @mention as anybody. */
+  const [doorAgent, setDoorAgent] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -53,6 +66,16 @@ export function IntegrationsPanel() {
       setProviders(d.providers);
       setRedirectUri(d.redirect_uri);
       setError("");
+      // Only when a provider actually routes to that door — an install with no Slack
+      // provider should not be asking about Slack bots on every load.
+      if (d.providers.some(p => p.alt_door === "slack_app")) {
+        const [b, a] = await Promise.all([
+          getSlackBots().catch(() => []),
+          listUserAgents().catch(() => []),
+        ]);
+        setBots(b);
+        setAgents(a);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -199,6 +222,18 @@ export function IntegrationsPanel() {
                         typo, a rotated secret, or an app swapped for another could not
                         be corrected from any screen. The credentials are still never
                         READ back — the form replaces them, it does not display them. */}
+                    {/* A provider whose OAuth cannot complete HERE routes to the door
+                        that can. Slack refuses `http://`, a laptop has nothing else, and
+                        its app+Socket-Mode path needs no callback at all — so offering
+                        Connect would be pointing a fresh install at the one door its
+                        deployment cannot open. OAuth comes back on its own the moment
+                        the callback is https (a tunnel, or a real deployment). */}
+                    {!p.oauth_ready && p.alt_door === "slack_app" ? (
+                      <Button variant="default" size="xs"
+                        onClick={() => setDoorFor(cur => cur === p.id ? null : p.id)}>
+                        {doorFor === p.id ? "Close" : "Add Slack app"}
+                      </Button>
+                    ) : (<>
                     {p.configured && (
                       <Button variant="ghost" size="xs" disabled={busy === p.id}
                         title={`Replace the ${p.name} OAuth client`}
@@ -220,11 +255,62 @@ export function IntegrationsPanel() {
                         {p.connection?.status === "needs_reconnect" ? "Reconnect" : "Connect"}
                       </Button>
                     )}
+                    </>)}
                   </span>
                 </div>
                 <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
                   {p.blurb}
                 </div>
+
+                {/* Why this card looks different from its neighbours — said plainly,
+                    because "Add Slack app" beside Google's "Connect" is otherwise an
+                    inconsistency a reader has to explain to themselves. */}
+                {!p.oauth_ready && p.alt_door === "slack_app" && (
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 6,
+                    lineHeight: 1.5 }}>
+                    {p.name}&apos;s OAuth needs an HTTPS callback and this deployment is
+                    reached at <code>{redirectUri}</code>. A Slack <strong>app</strong>
+                    {" "}needs none — it opens an outbound socket — so it works on a
+                    laptop with no tunnel. {bots.length > 0 && (
+                      <>Connected: {bots.map(b => b.name).join(", ")}.</>
+                    )}
+                  </div>
+                )}
+
+                {doorFor === p.id && (
+                  <div style={{ marginTop: 12, borderTop: "1px solid var(--b1)",
+                    paddingTop: 12 }}>
+                    {agents.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div className="aug-fs-xs" style={{ color: "var(--t4)",
+                          marginBottom: 4 }}>
+                          Answer as (optional) — an app with no agent can still post; it
+                          just cannot answer an @mention as anybody.
+                        </div>
+                        <select className="aug-fs-ui" style={inputStyle} value={doorAgent}
+                          aria-label="Answer as agent"
+                          onChange={e => setDoorAgent(e.target.value)}>
+                          <option value="">No agent — posting only</option>
+                          {agents.map(a => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <AgentSlackDoor
+                      agentId={doorAgent}
+                      agentName={agents.find(a => a.id === doorAgent)?.name || "Aughor"}
+                      connectionId=""
+                      heading="Add a Slack app"
+                      intro={"No callback, no tunnel, no HTTPS: a Slack app opens an "
+                        + "**outbound** socket to Slack, which is why it works from a "
+                        + "laptop when OAuth cannot. Aughor renders the manifest; you "
+                        + "create the app in Slack and paste three values back."}
+                      skipLabel="Close"
+                      onDone={() => { setDoorFor(null); setDoorAgent(""); void load(); }}
+                    />
+                  </div>
+                )}
                 {p.connection?.status === "active" && p.connection.scopes && (
                   // What the provider says was GRANTED — read back from the token
                   // response, so a scope the user declined is never listed.

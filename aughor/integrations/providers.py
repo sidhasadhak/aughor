@@ -50,6 +50,14 @@ class Provider(BaseModel):
     #: adapter's data — and because the person pasting credentials needs to be told
     #: BEFORE they walk into the provider's own error page.
     https_only: bool = False
+    #: A door this provider offers that needs NO public callback, when it has one.
+    #:
+    #: Slack's app+Socket-Mode path is the case: an outbound WebSocket from Aughor, no
+    #: redirect URL, no HTTPS, no tunnel — which is the only Slack integration a laptop
+    #: install can complete. It already exists here (RC-5's bot factory); what was
+    #: missing is that the catalog pointed a fresh installer at OAuth, the one door
+    #: their deployment cannot open. Empty = OAuth is the only way in.
+    alt_door: str = ""
 
 
 PROVIDERS: dict[str, Provider] = {p.id: p for p in [
@@ -80,6 +88,7 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in [
         pkce=False,
         console_url="https://api.slack.com/apps",
         https_only=True,
+        alt_door="slack_app",
     ),
     Provider(
         id="microsoft",
