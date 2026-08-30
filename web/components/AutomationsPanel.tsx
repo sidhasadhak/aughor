@@ -602,7 +602,14 @@ function describeEffect(e: AutoEffect): string {
   // "slack_post" on the card, which is the one thing a reader scanning the list wants.
   const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id
     || e.config.question || e.config.channel || "";
-  return `${e.kind}${t ? `(${String(t).slice(0, 24)})` : ""}`;
+  // B1 made these fields BINDABLE, and `String({$from: …})` is "[object Object]" —
+  // found by driving a step whose channel is bound. A reference describes itself.
+  const target = t && typeof t === "object" && "$from" in (t as object)
+    ? String((t as { $from: unknown }).$from) : String(t);
+  // W2 — a step that runs per item says so here too, or the list claims one send where
+  // N happen.
+  const fan = e.for_each ? " · per item" : "";
+  return `${e.kind}${target ? `(${target.slice(0, 24)})` : ""}${fan}`;
 }
 
 function relTime(iso: string): string {

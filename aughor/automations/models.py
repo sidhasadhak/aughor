@@ -128,6 +128,51 @@ class GuardClause(BaseModel):
         return self
 
 
+class ForEach(BaseModel):
+    """W2 — the list a step runs once per item of.
+
+    Our engine ran a strictly sequential list: one step, one dispatch. "Post a summary per
+    region" was therefore not expressible — the author wrote three near-identical steps, or
+    did it by hand. A fan-out is the second of the two primitives the sequential list is
+    missing (the first was W1's guard).
+
+    ``source`` is a **literal list** or a ``{"$from": "step1.rows"}`` binding, and nothing
+    else. Two refusals are deliberate and are enforced here rather than at 09:00:
+
+    * **a string is not a list.** Python would happily iterate ``"EMEA"`` into four
+      messages, one per character. A source that is text is a mistake with a loud symptom,
+      so it is named as one.
+    * **a literal longer than** :data:`~aughor.automations.dataflow.MAX_FAN_OUT` **is
+      refused, never truncated.** These steps send messages; posting the first 50 of 500
+      and dropping the rest silently is worse than refusing to post at all (`no silent
+      caps` — say what was dropped, or do not drop).
+
+    Each iteration publishes its item under the reserved alias ``item``: a dict item is
+    read field-wise (``{"$from": "item.channel"}``), a scalar as ``{"$from": "item.value"}``.
+    That is not new resolution machinery — the item is simply one more entry in the same
+    accumulated context every binding already resolves against.
+    """
+    source: Any = None
+
+    @model_validator(mode="after")
+    def _check_source(self) -> "ForEach":
+        from aughor.automations.dataflow import MAX_FAN_OUT, is_binding
+        if is_binding(self.source):
+            return self
+        if isinstance(self.source, str) or not isinstance(self.source, list):
+            raise ValueError(
+                "for_each needs a list of items or a {\"$from\": \"step.key\"} binding — "
+                f"got {type(self.source).__name__}"
+                + (" (a string would run once per character)" if isinstance(self.source, str) else "")
+            )
+        if len(self.source) > MAX_FAN_OUT:
+            raise ValueError(
+                f"for_each over {len(self.source)} items exceeds the {MAX_FAN_OUT}-item cap; "
+                "narrow the list rather than sending a truncated part of it"
+            )
+        return self
+
+
 class Effect(BaseModel):
     """What to do when the conditions hold — a reference to an existing primitive.
 
@@ -169,6 +214,14 @@ class Effect(BaseModel):
     #: collision a reader pays for.
     when: list[GuardClause] = Field(default_factory=list)
     when_logic: Literal["all", "any"] = "all"
+    #: W2 — run this step once per item of a list instead of exactly once. Absent = the
+    #: single dispatch every automation written before W2 performs, byte for byte.
+    #:
+    #: The guard is evaluated PER ITEM (a fan-out whose guard were checked once would be
+    #: an all-or-nothing filter, and "post the regions that moved" is the point), and each
+    #: iteration appends its own `EffectOutcome`, so the run history shows what actually
+    #: went out rather than one row standing for N sends.
+    for_each: Optional[ForEach] = None
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -326,6 +379,16 @@ class EffectOutcome(BaseModel):
     #: is how a node links to its own spend without this model inventing a usage field
     #: it cannot fill for the other five effect kinds.
     investigation_id: str = ""
+    #: W2 — which iteration of a fan-out this outcome is (1-based), and how many there
+    #: were. Both 0 on an ordinary step, which is every outcome recorded before W2.
+    #:
+    #: Structured rather than folded into `message`, and the reason is a standing lesson
+    #: of this module: `graph.py` decides a step was HELD by reading `message` against
+    #: the `GUARD_SKIP` constant, so a "[2/3] " prefix would have made every guarded
+    #: iteration read as an ordinary skip. A number a surface can render as "2 of 3"
+    #: cannot go blind that way.
+    fan_index: int = 0
+    fan_count: int = 0
     #: VA-4a — what this effect PRODUCED, for later effects to consume. Every dispatcher
     #: already held this and discarded it here: the investigate runner had its run, the
     #: declared-action executor its dispatch result, `slack_post` the thread `ts` it was

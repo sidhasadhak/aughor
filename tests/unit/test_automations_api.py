@@ -223,3 +223,46 @@ def test_the_preview_returns_the_graph_an_execution_view_reads(flag_on):
     assert g["mode"] == "execution" and g["dry_run"] is True
     steps = [n for n in g["nodes"] if n["type"] == "effect"]
     assert [n["status"] for n in steps] == ["executed", "executed"]
+
+
+# ── W2 · the fan-out, over the wire ──────────────────────────────────────────────
+
+def test_the_fan_out_vocabulary_comes_from_the_code(flag_on):
+    """Third fetched vocabulary, same argument: the cap is enforced by the model and the
+    engine, and a form carrying its own copy would offer a list the save then refuses."""
+    from aughor.automations.dataflow import (
+        FAN_PUBLISHED, ITEM_ALIAS, ITEM_VALUE, MAX_FAN_OUT,
+    )
+
+    vocab = client.get("/automations/vocabulary").json()["for_each"]
+    assert vocab["max_items"] == MAX_FAN_OUT
+    assert vocab["item_alias"] == ITEM_ALIAS
+    assert vocab["item_value_key"] == ITEM_VALUE
+    assert vocab["publishes"] == list(FAN_PUBLISHED)
+
+
+def test_a_fanned_step_round_trips_through_create(flag_on):
+    """`for_each` must survive the wire. A field the API drops is a chain that silently
+    sends once where it was designed to send per item."""
+    body = dict(BODY, effects=[
+        {"kind": "notify", "alias": "tell", "config": {"trigger_id": "trig-1",
+                                                       "message": {"$from": "item.value"}},
+         "for_each": {"source": ["EMEA", "NA"]}},
+    ])
+    created = client.post("/automations", json=body)
+    assert created.status_code in (200, 201), created.text
+    stored = client.get(f"/automations/{created.json()['id']}").json()
+    assert stored["effects"][0]["for_each"] == {"source": ["EMEA", "NA"]}
+
+
+def test_an_unsound_fan_out_is_refused_at_save(flag_on):
+    """`slack_post` publishes two strings; neither is a list. Refused when it is saved,
+    not discovered at 09:00 as "cannot iterate a str"."""
+    body = dict(BODY, effects=[
+        {"kind": "notify", "alias": "first", "config": {"trigger_id": "trig-1"}},
+        {"kind": "notify", "config": {"trigger_id": "trig-2",
+                                      "message": {"$from": "item.value"}},
+         "for_each": {"source": {"$from": "first.message"}}},
+    ])
+    refused = client.post("/automations", json=body)
+    assert refused.status_code == 422, refused.text

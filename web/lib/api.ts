@@ -3422,13 +3422,30 @@ export interface AutomationVocabulary {
    *  whether it takes a second value. `unary` is what tells a form to hide the right
    *  field rather than ask for a value that is then ignored. */
   guardOps: GuardOp[];
+  /** W2 — the fan-out's own vocabulary. `maxItems` is the engine's cap: a form that
+   *  carried its own copy would offer a list the save then refuses, which is the drift
+   *  every fetched vocabulary here exists to prevent. `itemAlias`/`itemValueKey` are
+   *  how an iteration names its item (`item.value`), so a hint can say it without
+   *  hardcoding the reserved word. */
+  forEach: { maxItems: number; itemAlias: string; itemValueKey: string;
+             publishes: string[] };
 }
 
 export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
   const res = await fetch(`${getApiBase()}/automations/vocabulary`);
   if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
   const body = await res.json();
-  return { kinds: body.kinds ?? {}, guardOps: body.guard_ops ?? [] };
+  const fe = body.for_each ?? {};
+  return {
+    kinds: body.kinds ?? {},
+    guardOps: body.guard_ops ?? [],
+    forEach: {
+      maxItems: fe.max_items ?? 0,
+      itemAlias: fe.item_alias ?? "item",
+      itemValueKey: fe.item_value_key ?? "value",
+      publishes: fe.publishes ?? [],
+    },
+  };
 }
 
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
@@ -3590,6 +3607,15 @@ export interface AutoEffect {
    *  for. `when` is the wire's word; the boundary is where it is translated. */
   when?: GuardClause[];
   when_logic?: "all" | "any";
+  /** W2 — run this step once per item of a list instead of exactly once. Absent = the
+   *  single dispatch every automation written before W2 performs.
+   *
+   *  `source` is a literal list or a `{"$from": "step1.rows"}` binding, and each
+   *  iteration publishes its item under the reserved alias `item` — a dict item read
+   *  field-wise (`{"$from": "item.channel"}`), a scalar as `{"$from": "item.value"}`.
+   *
+   *  Called **"For each" on every surface**, which is also the wire's word. */
+  for_each?: { source: unknown } | null;
   config: Record<string, unknown>;
 }
 

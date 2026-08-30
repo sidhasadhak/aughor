@@ -51,7 +51,7 @@ import {
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
-  aliasFor, applyConnect, clearBinding, draftToFlow, GUARD_FIELD, guardSentences,
+  aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
   type Vocabulary,
 } from "@/lib/automationFlow";
 
@@ -89,6 +89,7 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
   const produced = (data.produced as string[]) || [];
   // A guarded skip reads in the guard's own hue: it is the design working, and the dim
   // `skipped` grey is the colour of something having gone wrong.
+  const fan = (data.fan ?? null) as { count: number; executed: number; skipped: number } | null;
   const accent = data.guarded ? "var(--chart-3)"
     : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
   return (
@@ -123,6 +124,11 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
         <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
           ● {data.dryRun && status === "executed" ? "would run"
               : data.guarded ? "held · condition not met" : status}
+          {!!fan && (
+            <span style={{ color: "var(--t4)" }}>
+              {" "}· {fan.executed} of {fan.count}{fan.skipped ? ` · ${fan.skipped} held` : ""}
+            </span>
+          )}
           {/* A preview's duration is how long the INERT dispatcher took — "0ms" next to
               "would run" is noise dressed as a measurement. */}
           {!data.dryRun && typeof data.duration_ms === "number"
@@ -132,6 +138,16 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
           {typeof data.attempts === "number" && (data.attempts as number) > 1 && (
             <span style={{ color: "var(--t4)" }}> · {String(data.attempts)} attempts</span>
           )}
+        </div>
+      )}
+      {/* W2 — a step that ran once per item. The status line above already carries how
+          many of them ran (the server writes "2 of 3 ran" as the message); this says
+          what the list WAS, which is the half a run cannot infer. */}
+      {!!data.for_each && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-2)", marginTop: 3,
+          fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis",
+          whiteSpace: "nowrap" }}>
+          for each {String(data.for_each)}
         </div>
       )}
       {!!data.agent_id && (
@@ -267,6 +283,8 @@ interface DesignNodeData {
    *  rather than stored as prose, so a node and the editor cannot word it differently. */
   when: GuardClause[];
   whenLogic: "all" | "any";
+  /** W2 — the fan-out, as one line ("EMEA, NA" or "rows.items"). "" = runs once. */
+  forEach: string;
   onPatch: (field: string, value: unknown) => void;
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
@@ -414,6 +432,29 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
               fontFamily: "var(--font-mono)", marginTop: 2, overflow: "hidden",
               textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line}</div>
           ))}
+        </div>
+      )}
+
+      {/* W2 — "for each", with a port of its own for the same reason the guard has one:
+          a list decides how many times the step runs, not what one run says, so it is
+          drawn apart from the field rows. Absent when the step runs once — an empty
+          strip would say a step repeats when it does not. */}
+      {!!data.forEach && (
+        <div style={{ position: "relative", borderTop: "1px solid var(--b1)",
+          padding: "7px 12px 8px", background: "var(--bg-1)" }}>
+          <Handle
+            id={`in:${FAN_FIELD}`} type="target" position={Position.Left}
+            style={{ ...portStyle("in", true), left: -(12 + PORT / 2),
+                     top: "50%", transform: "translateY(-50%)",
+                     borderColor: "var(--chart-2)", background: "var(--chart-2)" }}
+            title="this step runs once per item of this list"
+          />
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+            for each
+          </div>
+          <div className="aug-fs-xs" style={{ color: "var(--chart-2)",
+            fontFamily: "var(--font-mono)", marginTop: 2, overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.forEach}</div>
         </div>
       )}
 
@@ -612,15 +653,20 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         // W1 — a GUARD edge carries data too, but to a decision rather than a field, so
         // it reads in its own hue and dashes: same motion, different claim.
         animated: true,
+        // W2 — a FAN edge carries the list a step repeats over: its own hue again, and
+        // dashed for the same reason the guard's is — neither fills a field.
         style: e.guard
           ? { stroke: "var(--chart-3)", strokeWidth: 2, strokeDasharray: "5 4" }
-          : { stroke: "var(--chart-1)", strokeWidth: 2 },
+          : e.fan
+            ? { stroke: "var(--chart-2)", strokeWidth: 2, strokeDasharray: "2 3" }
+            : { stroke: "var(--chart-1)", strokeWidth: 2 },
         labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
         labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
         labelBgPadding: [7, 3] as [number, number],
         labelBgBorderRadius: 6,
         markerEnd: { type: MarkerType.ArrowClosed,
-                     color: e.guard ? "var(--chart-3)" : "var(--chart-1)" },
+                     color: e.guard ? "var(--chart-3)"
+                          : e.fan ? "var(--chart-2)" : "var(--chart-1)" },
       })),
     ];
     return { nodes, edges: rfEdges };

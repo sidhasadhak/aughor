@@ -94,10 +94,13 @@ export function missingKeys(row: AutoCondition | AutoEffect): string[] {
 /** A `message` is either a sentence or a `{"$from": …}` binding. Rendered as the text a
  *  person typed either way, so the field round-trips: showing `[object Object]` for a
  *  binding would invite someone to overwrite the one thing that makes the chain work. */
+function fieldText(value: unknown): string {
+  if (value == null) return "";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
 function messageText(e: AutoEffect): string {
-  const m = e.config.message;
-  if (m == null) return "";
-  return typeof m === "string" ? m : JSON.stringify(m);
+  return fieldText(e.config.message);
 }
 
 /** Text back to a value. A well-formed binding object becomes one; anything else stays
@@ -128,7 +131,13 @@ function parseMessage(text: string): unknown {
  *  the canvas — and a prop is a thing one of them can forget to pass. The cache is a
  *  module-level promise: N rows on screen make one request, and a failure degrades to
  *  an empty list (no operators offered) rather than an unhandled rejection. */
-const EMPTY_VOCAB: AutomationVocabulary = { kinds: {}, guardOps: [] };
+const EMPTY_VOCAB: AutomationVocabulary = {
+  kinds: {}, guardOps: [],
+  // A cap of 0 while the fetch is in flight: the "+ item" control stays disabled rather
+  // than offering a list the save would refuse. Degrading to a guessed number is how a
+  // form and an engine come to disagree about the same rule.
+  forEach: { maxItems: 0, itemAlias: "item", itemValueKey: "value", publishes: [] },
+};
 let vocabCache: Promise<AutomationVocabulary> | null = null;
 
 export function useAutomationVocabulary(): AutomationVocabulary {
@@ -221,6 +230,94 @@ export function GuardRows({ e, siblings, index, onChange }: {
             style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ── W2 · "For each" ──────────────────────────────────────────────────────────────
+ *
+ * The wire calls it `for_each` and so does every surface — unlike `when`/"Only if",
+ * there is no collision to translate away.
+ *
+ * Only a LITERAL list is authored here, and deliberately: it is the case that always
+ * works ("post per region" is three region names someone types), while a bound source
+ * needs an upstream that publishes a list, and nothing in this plane does yet except
+ * the declared-action kind's open outcome. The wire accepts that binding and the canvas
+ * draws it — the model stays more expressive than the form, which is the right way
+ * round.
+ */
+export function ForEachRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const { forEach: vocab } = useAutomationVocabulary();
+  const source = e.for_each?.source;
+  const bound = source !== null && source !== undefined && !Array.isArray(source);
+  const items: unknown[] = Array.isArray(source) ? source : [];
+  // Items this form can safely EDIT. A dict item is authored on the wire (its fields are
+  // read `{"$from": "item.room"}`), and a text input would render it "[object Object]"
+  // and replace it with that string on the first keystroke — deleting a working design
+  // to make a form work. Shown read-only instead. Found by driving it.
+  const editable = items.every(i => i === null || typeof i !== "object");
+  const put = (next: unknown[] | null) =>
+    onChange({ ...e, for_each: next === null ? null : { source: next } });
+
+  // A bound source is shown, never edited away by a form that cannot express it: an
+  // editor that silently replaced `{"$from": "rows.items"}` with an empty list would
+  // delete a working design on first render.
+  if (bound || !editable) {
+    return (
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+        <div style={{ ...labelStyle, marginBottom: 3 }}>For each</div>
+        <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)",
+          color: "var(--chart-2)" }}>
+          {bound ? refOf(source) : `${items.length} items · edited on the canvas`}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>For each</span>
+        <span style={{ flex: 1 }} />
+        {e.for_each ? (
+          <>
+            <Button variant="ghost" className="h-auto font-normal"
+              style={{ ...ghostBtn, padding: 0 }}
+              disabled={items.length >= vocab.maxItems}
+              title={items.length >= vocab.maxItems
+                ? `${vocab.maxItems} items is the cap` : undefined}
+              onClick={() => put([...items, ""])}>+ item</Button>
+            <Button variant="ghost" className="h-auto font-normal"
+              style={{ ...ghostBtn, padding: 0, color: "var(--red3)" }}
+              onClick={() => put(null)}>runs once</Button>
+          </>
+        ) : (
+          <Button variant="ghost" className="h-auto font-normal"
+            style={{ ...ghostBtn, padding: 0 }}
+            onClick={() => put([""])}>+ list</Button>
+        )}
+      </div>
+      {items.map((item, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+          <input className="aug-fs-sm" style={{ ...inputStyle, flex: 1 }}
+            value={String(item ?? "")}
+            aria-label={`For each item ${i + 1}`} placeholder="one item — e.g. EMEA"
+            onChange={ev => put(items.map((v, n) => (n === i ? ev.target.value : v)))} />
+          <Button variant="ghost" className="h-auto font-normal" aria-label="Remove item"
+            onClick={() => put(items.filter((_, n) => n !== i))}
+            style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
+        </div>
+      ))}
+      {items.length > 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          runs once per item · read it as{" "}
+          <code style={{ fontFamily: "var(--font-mono)", color: "var(--chart-2)" }}>
+            {vocab.itemAlias}.{vocab.itemValueKey}
+          </code>
+        </div>
+      )}
     </div>
   );
 }
@@ -318,8 +415,12 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
                 ))}
               </select>
             )}
-            <input style={inputStyle} value={String(e.config.channel ?? "")}
-              onChange={ev => set({ channel: ev.target.value })}
+            {/* Bound like the message below it, and for the same reason: B1 made
+                `channel` bindable, and `String({$from: …})` renders "[object Object]" —
+                an editor inviting someone to overwrite the binding that makes the chain
+                work. Found by driving a step whose channel reads `item.room`. */}
+            <input style={inputStyle} value={fieldText(e.config.channel)}
+              onChange={ev => set({ channel: parseMessage(ev.target.value) })}
               placeholder="channel — e.g. #aughor-canvas or C0…" />
             {/* Left as free text on purpose: a step whose message is
                 `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
@@ -337,6 +438,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />
+        <ForEachRows e={e} onChange={onChange} />
       </div>
       {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove action" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>

@@ -26,8 +26,8 @@ from __future__ import annotations
 from typing import Any
 
 from aughor.automations.dataflow import (
-    GUARD_SKIP, alias_for, collect_refs, effect_refs, guard_clauses, parse_ref,
-    render_clause,
+    FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs, fan_source,
+    guard_clauses, is_binding, parse_ref, render_clause, FROM,
 )
 
 
@@ -46,6 +46,71 @@ def condition_label(cond: Any) -> str:
     if kind in ("source_change", "entity_appears"):
         return f"{kind} · {cfg.get('table', '')}".strip(" ·")
     return kind or "condition"
+
+
+def fan_label(effect: Any) -> str:
+    """How a step's fan-out READS on a canvas: ``"rows.items"`` or ``"EMEA, NA, APAC"``.
+
+    Authored literals are shown for the same reason W1 shows them in a guard — the author
+    typed them, and a canvas that said only "3 items" would be a picture you cannot check
+    against the design. Resolved values are never shown (there are none yet on a structure
+    graph, and this module's standing rule is that only the allowlist may label). Dict
+    items are counted rather than rendered: their fields are a payload, not a label.
+    """
+    src = fan_source(effect)
+    if src is None:
+        return ""
+    if is_binding(src):
+        return str(src[FROM])
+    if not isinstance(src, list):
+        return ""
+    scalars = [i for i in src if not isinstance(i, (dict, list))]
+    if len(scalars) != len(src):
+        return f"{len(src)} items"
+    shown = [str(i)[:24] for i in scalars[:3]]
+    more = len(scalars) - len(shown)
+    return ", ".join(shown) + (f" +{more} more" if more else "")
+
+
+def group_outcomes(effects: list, outcomes: list) -> list[list]:
+    """The outcomes belonging to each effect, in order.
+
+    W2 broke a load-bearing assumption of this module, which used to read
+    ``outcomes[i]``: the engine appended **exactly one outcome per effect**, so position
+    was identity. A fanned step appends one per ITEM, which would have shifted every node
+    after it onto another step's status — a picture that is wrong rather than missing,
+    and the failure this module exists to prevent.
+
+    ``fan_count`` is how many an iteration says its step produced; a fan-out refused
+    before it ran (an unusable source, an empty list) appends a single outcome with 0,
+    like any ordinary step.
+    """
+    groups: list[list] = []
+    cursor = 0
+    for _effect in effects:
+        if cursor >= len(outcomes):
+            groups.append([])
+            continue
+        take = max(1, int(getattr(outcomes[cursor], "fan_count", 0) or 0))
+        groups.append(list(outcomes[cursor:cursor + take]))
+        cursor += take
+    return groups
+
+
+def _group_status(group: list) -> str:
+    """One status for a step that may have run N times.
+
+    A failure ANYWHERE is the headline — "2 of 3 posted" with a green node is how a
+    partial send reads as a whole one. Otherwise an executed iteration wins over a held
+    one, because the step did run; all-held reads as `skipped`, which is what it is.
+    """
+    statuses = [getattr(o, "status", "") for o in group]
+    for status in statuses:
+        if status not in ("executed", "skipped"):
+            return status
+    if "executed" in statuses:
+        return "executed"
+    return statuses[0] if statuses else ""
 
 
 def build_graph(automation: Any, run: Any = None) -> dict:
@@ -73,6 +138,7 @@ def build_graph(automation: Any, run: Any = None) -> dict:
 
     outcomes = list(getattr(run, "effects", []) or []) if run is not None else []
     effects = list(getattr(automation, "effects", []) or [])
+    groups = group_outcomes(effects, outcomes)
 
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
@@ -101,9 +167,15 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         if acting:
             node["agent_id"] = acting
             node["delegated"] = bool(getattr(effect, "agent_id", ""))
-        if i < len(outcomes):
-            o = outcomes[i]
-            node["status"] = getattr(o, "status", "")
+        # W2 — a design fact like the guard above: does this step run once, or once per
+        # item of a list? A canvas that omitted it would draw one send where N happen.
+        fanned_over = fan_label(effect)
+        if fanned_over:
+            node["for_each"] = fanned_over
+        group = groups[i] if i < len(groups) else []
+        if group:
+            o = group[0]
+            node["status"] = _group_status(group)
             node["message"] = getattr(o, "message", "")
             # W1 — WHICH KIND of skip. A step held back by its own guard is the design
             # working; a step skipped for missing upstream data is something breaking,
@@ -111,20 +183,44 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             # the engine writes rather than sniffed out of the prose: a matching key
             # that quietly stops matching is how a guard goes blind.
             if node["status"] == "skipped":
-                node["guarded"] = str(node["message"]).startswith(GUARD_SKIP)
+                node["guarded"] = all(
+                    str(getattr(x, "message", "")).startswith(GUARD_SKIP)
+                    for x in group if getattr(x, "status", "") == "skipped")
             # VA-4c — which step was slow, and how many attempts it took. The run's single
-            # duration could not answer either.
-            node["duration_ms"] = getattr(o, "duration_ms", 0.0) or 0.0
-            node["attempts"] = getattr(o, "attempts", 1) or 1
+            # duration could not answer either. W2 — summed and maxed across the
+            # iterations: a fanned step's cost is what all of them cost, and its worst
+            # attempt count is the one worth seeing.
+            node["duration_ms"] = round(
+                sum(getattr(x, "duration_ms", 0.0) or 0.0 for x in group), 1)
+            node["attempts"] = max(int(getattr(x, "attempts", 1) or 1) for x in group)
             # The outcome carried this and the node did not — caught live, by reading a
             # real run rather than a constructed one.
             node["started_at"] = getattr(o, "started_at", "") or ""
-            if getattr(o, "investigation_id", ""):
+            # Only when there is exactly one: a fanned `investigate` produces one
+            # investigation per item, and linking the node to an arbitrary one of them
+            # would be a receipt for work the reader did not click on.
+            if len(group) == 1 and getattr(o, "investigation_id", ""):
                 node["investigation_id"] = o.investigation_id
+            if int(getattr(o, "fan_count", 0) or 0):
+                ran = sum(1 for x in group if getattr(x, "status", "") == "executed")
+                node["fan"] = {"count": len(group), "executed": ran,
+                               "skipped": sum(1 for x in group
+                                              if getattr(x, "status", "") == "skipped")}
+                # The headline a reader needs at 09:00 is how many of them went, and the
+                # first thing that did not — not the first iteration's message, which on
+                # a healthy fan-out says nothing at all.
+                bad = next((x for x in group
+                            if getattr(x, "status", "") != "executed"), None)
+                node["message"] = (f"{ran} of {len(group)} ran"
+                                   + (f" · {getattr(bad, 'message', '')}" if bad else ""))
             # What the step PRODUCED, named. In Execution mode this is what makes a
             # data edge checkable by eye: the key an edge claims to carry is either in
-            # this list or the edge is lying.
-            node["produced"] = sorted((getattr(o, "data", None) or {}).keys())
+            # this list or the edge is lying. A fanned step publishes its COUNT and
+            # nothing else — its per-item values are N values, not one.
+            node["produced"] = (
+                (list(FAN_PUBLISHED) if node["status"] == "executed" else [])
+                if node.get("fan") else
+                sorted((getattr(o, "data", None) or {}).keys()))
         nodes.append(node)
 
         # sequence: the trigger starts the first step; each step precedes the next.

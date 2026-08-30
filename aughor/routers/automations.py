@@ -64,7 +64,10 @@ def vocabulary():
     required-keys mirror already costs a guard test to keep honest. `publishes: null`
     is the OPEN set — a declared-action step's keys are that action's own outcome
     shape, and the canvas draws it as a wildcard port rather than no port."""
-    from aughor.automations.dataflow import BINDABLE_FIELDS, GUARD_OPS, PUBLISHED_KEYS, UNARY_OPS
+    from aughor.automations.dataflow import (
+        BINDABLE_FIELDS, FAN_PUBLISHED, GUARD_OPS, ITEM_ALIAS, ITEM_VALUE, MAX_FAN_OUT,
+        PUBLISHED_KEYS, UNARY_OPS,
+    )
     return {
         "kinds": {
             kind: {
@@ -79,6 +82,17 @@ def vocabulary():
         # value that is then ignored.
         "guard_ops": [{"op": op, "label": label, "unary": op in UNARY_OPS}
                       for op, label in GUARD_OPS.items()],
+        # W2 — the fan-out's own vocabulary, fetched for the third time for the same
+        # reason: the cap is enforced by the engine and by the model, and an authoring
+        # form carrying its own copy would drift into offering a 200-item list the save
+        # then refuses. A step may SOURCE a fan-out only if its `publishes` above is
+        # `null` — the open set — because every closed set in this plane is strings.
+        "for_each": {
+            "max_items": MAX_FAN_OUT,
+            "item_alias": ITEM_ALIAS,
+            "item_value_key": ITEM_VALUE,
+            "publishes": list(FAN_PUBLISHED),
+        },
     }
 
 

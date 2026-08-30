@@ -55,6 +55,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Monitor** | A watch-a-metric rule | — |
 | **Automation** | The condition→effect engine | — |
 | **Only if** | A guard on ONE step: it runs only when the guard holds against what earlier steps published. `when` is the wire's field name | "When" (the automation's trigger already owns that word on the canvas), filter, condition (that is the trigger's) |
+| **For each** | A fan-out on ONE step: it runs once per item of a list, and each iteration reads its item as `item.<field>` (a scalar as `item.value`). `for_each` is the wire's field name, and the surface word too — there is no collision to translate away | loop, iterate, batch (a batch is one send of many things; this is many sends) |
 | **Advice rule** | A "if metric X then recommend Y" entry | playbook (the `playbook/` sense) |
 | **Starter** | A named question template that seeds a run | research playbook |
 

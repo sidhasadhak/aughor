@@ -10,8 +10,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyConnect, clearBinding, draftToFlow, GUARD_FIELD, guardSentences, upstreamKeys,
-  type Vocabulary,
+  applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
+  upstreamKeys, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -269,5 +269,65 @@ describe("one arrow per claim, not per reference", () => {
       mode: "execution",
     });
     expect(edges).toHaveLength(2);
+  });
+});
+
+/**
+ * W2 — the fan-out, in the same mapping.
+ *
+ * A step that runs once per item is a DESIGN fact: a canvas that omitted it would draw
+ * one send where N happen. Its source is dataflow like any binding, so a bound source
+ * draws an edge — to a port of its own, because a list decides how many times a step
+ * runs rather than filling one of its fields.
+ */
+describe("for_each", () => {
+  const fanned = (source: unknown, alias = "posts"): AutoEffect => ({
+    kind: "slack_post", alias,
+    config: { channel: "#ops", message: { $from: "item.value" } },
+    for_each: { source },
+  });
+
+  it("labels a literal list by its items — the author typed them", () => {
+    const { steps } = draftToFlow(draft(fanned(["EMEA", "NA"])), VOCAB);
+    expect(steps[0].forEach).toBe("EMEA, NA");
+    expect(steps[0].forEachRef).toBeNull();
+  });
+
+  it("counts a long list instead of spelling it out", () => {
+    const { steps } = draftToFlow(draft(fanned(["a", "b", "c", "d", "e"])), VOCAB);
+    expect(steps[0].forEach).toBe("a, b, c +2 more");
+  });
+
+  it("counts dict items rather than rendering their fields — a payload is not a label", () => {
+    const { steps } = draftToFlow(draft(fanned([{ region: "EMEA" }, { region: "NA" }])), VOCAB);
+    expect(steps[0].forEach).toBe("2 items");
+  });
+
+  it("draws a bound source as an edge to the fan port", () => {
+    const { steps, edges } = draftToFlow(
+      draft(eff("kinetic_action", { action_id: "a1" }, "rows"),
+            fanned({ $from: "rows.items" })), VOCAB);
+    expect(steps[1].forEach).toBe("rows.items");
+    const fan = edges.filter(e => e.fan);
+    expect(fan).toHaveLength(1);
+    expect(fan[0]).toMatchObject({ from: "rows", key: "items", to: "posts",
+                                   field: FAN_FIELD });
+  });
+
+  it("draws no fan edge for a literal list — there is no upstream to point at", () => {
+    const { edges } = draftToFlow(draft(fanned(["EMEA"])), VOCAB);
+    expect(edges.filter(e => e.fan)).toHaveLength(0);
+  });
+
+  it("says nothing about a step that runs once", () => {
+    const { steps } = draftToFlow(draft(eff("slack_post", { channel: "#ops" })), VOCAB);
+    expect(steps[0].forEach).toBe("");
+  });
+
+  it("does not mistake the item reference for a chain edge", () => {
+    // `item.value` is resolved per ITERATION against the item, not against a step. An
+    // edge from a step called "item" would be a picture of dataflow that does not exist.
+    const { edges } = draftToFlow(draft(fanned(["EMEA"])), VOCAB);
+    expect(edges.some(e => e.from === "item")).toBe(false);
   });
 });

@@ -40,8 +40,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    GUARD_SKIP, UnresolvedBinding, alias_for, effect_refs, evaluate_guard,
-    guard_clauses, parse_ref, render_clause, resolve,
+    FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding, alias_for,
+    effect_refs, evaluate_guard, fan_items, fan_source, guard_clauses, is_binding,
+    item_context, item_refs, parse_ref, render_clause, resolve,
 )
 from aughor.automations.models import (
     Automation,
@@ -688,6 +689,23 @@ def dry_sample(alias: str, effect: Effect, later: list[Effect]) -> dict:
     return {k: _sample(alias, k) for k in sorted(keys)}
 
 
+def dry_fan_item(effect: Effect) -> dict:
+    """The one representative item a preview walks when the fan-out source is a BINDING.
+
+    Same shape as :func:`dry_sample` and for the same reason: a preview's context holds
+    sample strings, not the list tomorrow will produce, so the keys come from what this
+    step actually asks of its item (`{"$from": "item.channel"}` → `channel`). Without it
+    a preview would resolve `item.channel` against nothing and report a sound fan-out as
+    a step with unavailable upstream data.
+
+    A LITERAL list needs none of this — its items are known now, and walking them for
+    real is what makes a preview say "would post 3 messages: EMEA, NA, APAC".
+    """
+    keys = {parse_ref(ref)[1] for ref in item_refs(effect) if parse_ref(ref)[1]}
+    return {k: _sample(ITEM_ALIAS, k) for k in sorted(keys)} or {
+        "value": _sample(ITEM_ALIAS, "value")}
+
+
 def dry_dispatch(effect: Effect, automation: Automation) -> EffectOutcome:
     """Dispatch nothing, report what WOULD have been dispatched.
 
@@ -899,96 +917,160 @@ def run_automation(
     outcomes: list[EffectOutcome] = []
     for i, effect in enumerate(automation.effects):
         alias = alias_for(effect, i)
+        # W2 — the list this step runs once per item of, or None for the single dispatch
+        # every automation written before W2 performs, byte for byte. Resolved BEFORE the
+        # params because an unresolvable SOURCE and an unresolvable param mean the same
+        # thing — the upstream this step needs is not there — and must read the same way
+        # in the run history rather than as two different failures.
         try:
-            bound = resolve(effect.config, context)
-            # W1 — the guard is evaluated in the SAME try as the params, because an
-            # unresolvable reference means the same thing on either side: the upstream
-            # this step depends on is not there. Evaluated BEFORE the dispatch, so a
-            # guarded-off step costs nothing — no request, no token, no send.
-            # B2 — in a preview a guard is REPORTED, never decided. A sample cannot
-            # answer "will tomorrow's number clear this threshold", and a dry run that
-            # guessed would show a sound design as mostly held — the exact reading that
-            # would send someone rewriting a chain that was fine.
-            should_run, why_not = (True, "") if dry_run else evaluate_guard(effect, context)
+            items = fan_items(effect, context,
+                              dry_item=dry_fan_item(effect) if dry_run else None)
         except UnresolvedBinding as exc:
-            # SKIPPED, never run-with-a-hole. These steps send messages and write to
-            # systems; a missing channel or a missing thread id is not a value to
-            # default, and `skipped` already exists precisely for "did not run, and
-            # that is not a failure of this step".
             outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="skipped",
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
             continue
-        if not should_run:
-            # `skipped`, whose own definition is "did not run, and that is not a failure
-            # of this step" — which is precisely a guard holding. The MESSAGE carries the
-            # difference between a design working and an upstream breaking, and it is the
-            # one thing a reader needs at 09:00.
+        except FanRefused as exc:
+            # Not an upstream absence — the step's OWN source is unusable — so it reads
+            # as `invalid_params`, the status a dispatcher already returns for a config
+            # it cannot use, rather than as a skip nobody investigates.
+            outcomes.append(EffectOutcome(
+                kind=effect.kind, target=alias, status="invalid_params",
+                agent_id=acting_agent(effect, automation), message=str(exc)))
+            continue
+        if items is not None and not items:
+            # An empty list is a SKIP, never a failure: "post per region that moved" on a
+            # morning when nothing moved is the automation working. `skipped` also keeps
+            # it out of `attempted` below, so a quiet morning cannot fire the fallback —
+            # W1's lesson, which cost an on-call page to learn.
             outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="skipped",
-                agent_id=acting_agent(effect, automation),
-                message=f"{GUARD_SKIP}: {why_not}"))
+                agent_id=acting_agent(effect, automation), message=FAN_EMPTY_SKIP))
             continue
-        # VA-13 — does anything LATER bind to this step's output?
-        #
-        # Only a step somebody is waiting on should be waited FOR. `investigate` submits a
-        # background job and returns a job id, which is the right shape for "run this
-        # nightly" and useless for "post its answer into Slack": there is no answer yet
-        # when the next step runs. So the engine tells the step, and only a step that is
-        # actually consumed pays the latency.
-        #
-        # Derived from `effect_refs` — the same function the graph's data edges come from
-        # — so "the canvas drew an edge here" and "the engine waited here" cannot disagree.
-        # Carried on the bound config rather than in the dispatcher signature: six
-        # dispatchers would otherwise grow a parameter five of them ignore.
-        if _downstream_binds(alias, automation.effects[i + 1:]):
-            bound = {**bound, AWAIT_KEY: True}
-        step_started = now_iso_z()
-        step_t0 = _time.monotonic()
-        # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one
-        # layer over one substrate (session_events)", and an automation emitted NOTHING
-        # into it — which is why its runs were invisible there and needed a bespoke
-        # canvas. A span per step makes an automation run a run like any other: waterfall,
-        # events, logs, filters and cost, none of it designed twice.
-        bound_effect = effect.model_copy(update={"config": bound})
-        if dry_run:
-            # NO SPAN. VA-4d made the run id the trace id, so a dry run under a span
-            # would appear in `Activity` as a run that happened — a preview must leave
-            # the record exactly as it found it.
-            outcome = _run_effect(bound_effect, automation, dispatch_fn, sleeper=sleeper,
-                                  rng=rng, sleep_budget=sleep_budget)
-        else:
-            with _step_span(effect, automation, alias, run_id):
-                outcome = _run_effect(bound_effect, automation, dispatch_fn,
-                                      sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
-        step_ms = (_time.monotonic() - step_t0) * 1000.0
-        # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
-        # set it is six chances to forget, and a step that silently ran as nobody is
-        # exactly the gap this wave closes.
-        outcome = outcome.model_copy(update={
-            "agent_id": acting_agent(effect, automation),
-            # Stamped at the call site for the same reason as the agent: six dispatchers
-            # each remembering to time themselves is six chances to forget, and a step
-            # with no duration is invisible in exactly the view built to find slow ones.
-            "duration_ms": round(step_ms, 1), "started_at": step_started})
-        if dry_run:
-            guard = guard_clauses(effect)
+        # One iteration for an ordinary step, N for a fanned one — the SAME body either
+        # way. A fan-out that ran down a second dispatch path would be a second place for
+        # the guard, the await, the span and the timing to each be subtly wrong.
+        fan_count = 0 if items is None else len(items)
+        iterations = [({}, 0)] if items is None else [
+            (item_context(item), n + 1) for n, item in enumerate(items)]
+        executed = 0
+        published: dict = {}
+        for item_ctx, fan_index in iterations:
+            # The item is one more entry in the accumulated context, under a reserved
+            # alias — not a second resolution mechanism. `{"$from": "item.channel"}` is
+            # resolved by the same function, validated by the same checker and drawn by
+            # the same canvas as `{"$from": "step1.ts"}`.
+            step_context = context if not item_ctx else {**context, ITEM_ALIAS: item_ctx}
+            label = alias if not fan_index else f"{alias}[{fan_index}/{fan_count}]"
+            fan = {"fan_index": fan_index, "fan_count": fan_count}
+            try:
+                bound = resolve(effect.config, step_context)
+                # W1 — the guard is evaluated in the SAME try as the params, because an
+                # unresolvable reference means the same thing on either side: the upstream
+                # this step depends on is not there. Evaluated BEFORE the dispatch, so a
+                # guarded-off step costs nothing — no request, no token, no send.
+                # W2 — and evaluated PER ITEM, which is the whole point of a guard on a
+                # fanned step: "post the regions that moved" is a filter over the list,
+                # and a guard checked once would make it all-or-nothing.
+                # B2 — in a preview a guard is REPORTED, never decided. A sample cannot
+                # answer "will tomorrow's number clear this threshold", and a dry run that
+                # guessed would show a sound design as mostly held — the exact reading that
+                # would send someone rewriting a chain that was fine.
+                should_run, why_not = (True, "") if dry_run else evaluate_guard(effect, step_context)
+            except UnresolvedBinding as exc:
+                # SKIPPED, never run-with-a-hole. These steps send messages and write to
+                # systems; a missing channel or a missing thread id is not a value to
+                # default, and `skipped` already exists precisely for "did not run, and
+                # that is not a failure of this step".
+                outcomes.append(EffectOutcome(
+                    kind=effect.kind, target=label, status="skipped", **fan,
+                    agent_id=acting_agent(effect, automation),
+                    message=f"upstream data unavailable: {exc}"))
+                continue
+            if not should_run:
+                # `skipped`, whose own definition is "did not run, and that is not a failure
+                # of this step" — which is precisely a guard holding. The MESSAGE carries the
+                # difference between a design working and an upstream breaking, and it is the
+                # one thing a reader needs at 09:00.
+                outcomes.append(EffectOutcome(
+                    kind=effect.kind, target=label, status="skipped", **fan,
+                    agent_id=acting_agent(effect, automation),
+                    message=f"{GUARD_SKIP}: {why_not}"))
+                continue
+            # VA-13 — does anything LATER bind to this step's output?
+            #
+            # Only a step somebody is waiting on should be waited FOR. `investigate` submits a
+            # background job and returns a job id, which is the right shape for "run this
+            # nightly" and useless for "post its answer into Slack": there is no answer yet
+            # when the next step runs. So the engine tells the step, and only a step that is
+            # actually consumed pays the latency.
+            #
+            # Derived from `effect_refs` — the same function the graph's data edges come from
+            # — so "the canvas drew an edge here" and "the engine waited here" cannot disagree.
+            # Carried on the bound config rather than in the dispatcher signature: six
+            # dispatchers would otherwise grow a parameter five of them ignore.
+            if _downstream_binds(alias, automation.effects[i + 1:]):
+                bound = {**bound, AWAIT_KEY: True}
+            step_started = now_iso_z()
+            step_t0 = _time.monotonic()
+            # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one
+            # layer over one substrate (session_events)", and an automation emitted NOTHING
+            # into it — which is why its runs were invisible there and needed a bespoke
+            # canvas. A span per step makes an automation run a run like any other: waterfall,
+            # events, logs, filters and cost, none of it designed twice.
+            # W2 — one span per ITERATION, named for it. N sends that shared one span would
+            # be one bar in the waterfall standing for work that happened N times, and the
+            # trace canvas folds adjacent like-with-like into a stack on its own.
+            bound_effect = effect.model_copy(update={"config": bound})
+            if dry_run:
+                # NO SPAN. VA-4d made the run id the trace id, so a dry run under a span
+                # would appear in `Activity` as a run that happened — a preview must leave
+                # the record exactly as it found it.
+                outcome = _run_effect(bound_effect, automation, dispatch_fn, sleeper=sleeper,
+                                      rng=rng, sleep_budget=sleep_budget)
+            else:
+                with _step_span(effect, automation, label, run_id):
+                    outcome = _run_effect(bound_effect, automation, dispatch_fn,
+                                          sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
+            step_ms = (_time.monotonic() - step_t0) * 1000.0
+            # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
+            # set it is six chances to forget, and a step that silently ran as nobody is
+            # exactly the gap this wave closes.
             outcome = outcome.model_copy(update={
-                # What a later step will be able to read — declared keys plus whatever
-                # the later steps actually ask for, so the open set works too.
-                "data": dry_sample(alias, effect, automation.effects[i + 1:]),
-                # The guard, named as a question that has not been asked yet.
-                "message": outcome.message + (
-                    f" · only if {' and '.join(render_clause(c) for c in guard)}"
-                    " — checked when it runs" if guard else ""),
-            })
-        outcomes.append(outcome)
+                "agent_id": acting_agent(effect, automation),
+                # Stamped at the call site for the same reason as the agent: six dispatchers
+                # each remembering to time themselves is six chances to forget, and a step
+                # with no duration is invisible in exactly the view built to find slow ones.
+                "duration_ms": round(step_ms, 1), "started_at": step_started, **fan})
+            if dry_run:
+                guard = guard_clauses(effect)
+                fanned_note = (" · once per item at run time"
+                               if fan_index and is_binding(fan_source(effect)) else "")
+                outcome = outcome.model_copy(update={
+                    # What a later step will be able to read — declared keys plus whatever
+                    # the later steps actually ask for, so the open set works too.
+                    "data": dry_sample(alias, effect, automation.effects[i + 1:]),
+                    # The guard, named as a question that has not been asked yet.
+                    "message": outcome.message + fanned_note + (
+                        f" · only if {' and '.join(render_clause(c) for c in guard)}"
+                        " — checked when it runs" if guard else ""),
+                })
+            outcomes.append(outcome)
+            if outcome.status == "executed":
+                executed += 1
+                published = dict(outcome.data or {})
         # Only a step that EXECUTED contributes. A failed step publishing an empty dict
         # would let a downstream binding resolve to nothing and run anyway — the exact
         # silent-hole this guards against.
-        if outcome.status == "executed":
-            context[alias] = dict(outcome.data or {})
+        #
+        # W2 — a fanned step publishes its COUNT and nothing else. There are N per-item
+        # values and `{"$from": "step2.ts"}` could only mean one of them, so `validate_chain`
+        # refuses that binding at save; what remains useful downstream is "did any of them
+        # go out, and how many", which a guard can read.
+        if not executed:
+            continue
+        context[alias] = {"count": executed} if fan_count else published
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False

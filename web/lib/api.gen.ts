@@ -9847,6 +9847,7 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             };
+            for_each?: components["schemas"]["ForEach"] | null;
             /**
              * Kind
              * @enum {string}
@@ -9945,6 +9946,35 @@ export interface components {
              * @default
              */
             think: string;
+        };
+        /**
+         * ForEach
+         * @description W2 — the list a step runs once per item of.
+         *
+         *     Our engine ran a strictly sequential list: one step, one dispatch. "Post a summary per
+         *     region" was therefore not expressible — the author wrote three near-identical steps, or
+         *     did it by hand. A fan-out is the second of the two primitives the sequential list is
+         *     missing (the first was W1's guard).
+         *
+         *     ``source`` is a **literal list** or a ``{"$from": "step1.rows"}`` binding, and nothing
+         *     else. Two refusals are deliberate and are enforced here rather than at 09:00:
+         *
+         *     * **a string is not a list.** Python would happily iterate ``"EMEA"`` into four
+         *       messages, one per character. A source that is text is a mistake with a loud symptom,
+         *       so it is named as one.
+         *     * **a literal longer than** :data:`~aughor.automations.dataflow.MAX_FAN_OUT` **is
+         *       refused, never truncated.** These steps send messages; posting the first 50 of 500
+         *       and dropping the rest silently is worse than refusing to post at all (`no silent
+         *       caps` — say what was dropped, or do not drop).
+         *
+         *     Each iteration publishes its item under the reserved alias ``item``: a dict item is
+         *     read field-wise (``{"$from": "item.channel"}``), a scalar as ``{"$from": "item.value"}``.
+         *     That is not new resolution machinery — the item is simply one more entry in the same
+         *     accumulated context every binding already resolves against.
+         */
+        ForEach: {
+            /** Source */
+            source?: unknown;
         };
         /** FreezeIn */
         FreezeIn: {
